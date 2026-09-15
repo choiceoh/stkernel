@@ -2264,8 +2264,12 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                 and config.get("reform_sf_pack") and (m != 7 or config.get("decode_reform"))
                 and not any(config.get(k) for k in ("split", "skip_a", "skip_sf", "even"))):
             raise ValueError("scatter probe requires packed t,r,sf6 at 7/14/21/28 tokens")
+    # reform_every_static (probe config only): every static row count takes the
+    # M16 reform tile, whose K256 FC1 box is one 256 w13 chunk; the t tile's
+    # K512 box spans two of them.
     reform = bool(config.get("decode_reform", False)) and (
-        1 <= m <= 8 or (config.get("batch_reform", False) and m == 16))
+        1 <= m <= 8 or (config.get("batch_reform", False) and m == 16)
+        or bool(config.get("reform_every_static", False)))
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))

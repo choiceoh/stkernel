@@ -28,6 +28,8 @@ Sections (engine_kernel_check.py --lanes moe_c2_cells[:section...][:layers=3,4,5
            timeline, so FC1's and FC2's rates can be read apart
   prefill  noise-controlled exactness and eager timing of the served prefill kernels per chunk (m=2304 Q0 words,
            m=9216 SF6 words)
+  shapes   short-prefill static row counts (12, 32): the t tile over a 256 chunk, and the M16 reform tile for
+           every static row count (probe config reform_every_static) over 512 and 256
   price    what the FC1 input (A + SFA) and scale (SF6) boxes cost the served 16-row tile: the probe-only timing
            cells xa / xs skip those TMA issues (their numerics are garbage and are not compared)
 """
@@ -47,7 +49,7 @@ from probes.engine_decode_fusions import _capture, _time
 TARGET_U8 = 41.9      # distinct experts per layer an 8-row C=1 verify reads on the fleet
 LAYERS = (3, 4, 5)
 CHUNKS = (512, 256, 128)
-SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'price')
+SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price')
 RANKS = '/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors'
 # bytes a unique expert streams per layer: w13 + w2 + SF6 FC1 (128 x 1552) + SF6 FC2 (64 x 1552)
 EXPERT_BYTES = 1024 * 2048 + 4096 * 256 + (128 + 64) * 1552
@@ -264,8 +266,10 @@ def capture_arms(group, fx, arms):
 
 def exact_arms(report, group, fx, fixtures, graphs, accs, control, second, candidates, *, scope, seeds=3):
     """Replay every arm in both orders over changed inputs/routes, a zero route and poisoned accumulators; gate
-    each candidate (and the control's second copy) on the ulp bound against the control."""
+    each candidate (and the control's second copy) on the ulp bound against the control. Returns the labels that
+    failed (their timing is meaningless; the caller times the rest and fails the section)."""
     labels = [control, *candidates, second]
+    failed = []
     for fixture in fixtures:
         totals = {label: {} for label in (second, *candidates)}
         cells, uniques = 0, []
@@ -290,9 +294,11 @@ def exact_arms(report, group, fx, fixtures, graphs, accs, control, second, candi
                    reference=control, arm=label, noise_control=label == second, cells=cells, unique_experts=uniques,
                    replay_orders='forward/reverse', poisoned=True, zero_route=True, elements=cells * len(group) * fx.rows * 4096,
                    max_ulps_gate=MAX_ULPS, passed=ok, **total)
-            if not ok:
-                raise RuntimeError(f'{fixture[0]} {scope} {label}: FP32 accumulator {total["fp32_max_ulps"]:.3g} ulps '
-                                   f'from {control} (bound {MAX_ULPS})')
+            if not ok and label not in failed:
+                failed.append(label)
+    if second in failed:
+        raise RuntimeError(f'{scope}: the control differs from itself beyond {MAX_ULPS} ulps -- no candidate can be judged')
+    return failed
 
 
 def chunk_cells(report, layers, chunks, spread, brackets):
@@ -301,6 +307,7 @@ def chunk_cells(report, layers, chunks, spread, brackets):
                 ('c2_independent', 16, 16, 1.0))
     arms = [(str(c), c, None) for c in chunks] + [('512b', control, None)]
     candidates = [str(c) for c in chunks if c != control]
+    failures = []
     for rows in (16, 8):
         fx = Fixtures(layers, rows)
         mine = [f for f in fixtures if f[1] == rows]
@@ -308,10 +315,11 @@ def chunk_cells(report, layers, chunks, spread, brackets):
         for scope, group in (('single', layers[:1]), ('chain', layers)):
             graphs, accs = capture_arms(group, fx, arms)
             try:
-                exact_arms(report, group, fx, mine, graphs, accs, str(control), '512b', candidates, scope=scope)
+                failed = exact_arms(report, group, fx, mine, graphs, accs, str(control), '512b', candidates, scope=scope)
+                failures += [f'{label}@{rows}/{scope}' for label in failed]
                 for fixture in mine:
                     uniques = fx.load(fixture, 7)[:len(group)]
-                    for label in candidates:
+                    for label in (c for c in candidates if c not in failed):
                         res = bracket(report, graphs, str(control), label, brackets=brackets, fixture=fixture[0],
                                       rows=rows, scope=scope, layers=len(group), unique_experts=uniques)
                         stream_bytes = sum(uniques) * EXPERT_BYTES
@@ -322,6 +330,40 @@ def chunk_cells(report, layers, chunks, spread, brackets):
             finally:
                 for graph in graphs.values():
                     graph.reset()
+    if failures:
+        raise RuntimeError(f'chunk cells beyond the ulp bound: {failures}')
+
+
+def shape_cells(report, layers, spread, brackets):
+    """The static row counts outside C=1 (1..8) and C=2 (16): a short prefill of 9..15 or 17..80 tokens takes the
+    t tile, whose K512 FC1 box spans two 256 w13 chunks. Arms against the served t over 512: t over 256, the M16
+    reform tile for every static row count over 512 (the geometry alone) and over 256 (geometry and chunk)."""
+    from engine.kernels.b12x import moe_dispatch as md
+    every = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), reform_every_static=True)
+    arms = [('t512', 512, None), ('t256', 256, None), ('reform512', 512, every), ('reform256', 256, every),
+            ('t512b', 512, None)]
+    candidates = ['t256', 'reform512', 'reform256']
+    failures = []
+    for rows in (32, 12):
+        fixtures = ((f'prefill{rows}_independent', rows, rows, 1.0), (f'prefill{rows}_one_request', rows, 1, 0.3))
+        fx = Fixtures(layers, rows)
+        fx.load(fixtures[0], 1)
+        for scope, group in (('single', layers[:1]), ('chain', layers)):
+            graphs, accs = capture_arms(group, fx, arms)
+            try:
+                failed = exact_arms(report, group, fx, fixtures, graphs, accs, 't512', 't512b', candidates, scope=scope)
+                failures += [f'{label}@{rows}/{scope}' for label in failed]
+                for fixture in fixtures:
+                    uniques = fx.load(fixture, 7)[:len(group)]
+                    for label in (c for c in ('reform512', 'reform256') if c not in failed):
+                        bracket(report, graphs, 't512', label, brackets=brackets, fixture=fixture[0], rows=rows,
+                                scope=scope, layers=len(group), unique_experts=uniques)
+            finally:
+                for graph in graphs.values():
+                    graph.reset()
+    report('shape_verdict', failed=failures, expected_failures='t256 (a K512 box over two 256 chunks)')
+    if [f for f in failures if not f.startswith('t256@')]:
+        raise RuntimeError(f'shape cells beyond the ulp bound: {failures}')
 
 
 def depth_cells(report, layers, spread, brackets):
@@ -334,7 +376,8 @@ def depth_cells(report, layers, spread, brackets):
     for scope, group in (('single', layers[:1]), ('chain', layers)):
         graphs, accs = capture_arms(group, fx, arms)
         try:
-            exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', ['fc2_two_slots'], scope=scope)
+            if exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', ['fc2_two_slots'], scope=scope):
+                raise RuntimeError(f'depth {scope}: two FC2 slots beyond the ulp bound')
             uniques = fx.load(fixture, 7)[:len(group)]
             bracket(report, graphs, 'served', 'fc2_two_slots', brackets=brackets, fixture='c2_two_requests_depth',
                     rows=16, scope=scope, layers=len(group), unique_experts=uniques)
@@ -551,6 +594,8 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
                             ('stamps', lambda: (stamp_cells(report, layers, [(str(c), c, None) for c in chunks], spread),
                                                 stamp_cells(report, layers, [('c1_served', 512, None)], spread, rows=8))),
                             ('prefill', lambda: prefill_cells(report, layers, chunks, brackets)),
+                            # after the served shapes: an arm reading a mis-described box could fault the context
+                            ('shapes', lambda: shape_cells(report, layers, spread, brackets)),
                             # last: the timing cells read garbage scales/inputs, a fault would poison the context
                             ('price', lambda: price_cells(report, layers, spread, brackets))):
             if section not in wanted:
