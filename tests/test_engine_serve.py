@@ -2654,6 +2654,29 @@ class OpenAIDialectTests(unittest.TestCase):
         self.assertEqual(c.tool_calls_done(), [])
         self.assertEqual(c.finish_reason(), "length")
 
+    def test_consecutive_string_arguments_match_in_streamed_and_whole_responses(self):
+        from engine.base.serve import _Choice
+        from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls
+        expected = {"body": 'Hello "민수"', "subject": "Status update", "to": "lee@example.test"}
+        wire = ('<tool_call>notify' + ''.join(
+            f'<arg_key>{key}</arg_key><arg_value>{value}</arg_value>'
+            for key, value in expected.items()) + '</tool_call>').encode()
+        for chunk_size in (1, 3, 16, len(wire)):
+            with self.subTest(chunk_size=chunk_size):
+                choice = _Choice(0, 1, threading.Event(), queue.Queue(), tok=ByteTokenizer(), stop=[],
+                                 reasoning=False, tool_parser=parse_tool_calls, tool_stream=partial_tool_calls)
+                deltas = []
+                for offset in range(0, len(wire), chunk_size):
+                    choice.feed(list(wire[offset:offset + chunk_size]), None, None)
+                    deltas.extend(choice.flush())
+                deltas.extend(choice.flush(final=True))
+                streamed = ''.join(call.get('function', {}).get('arguments', '')
+                                   for delta in deltas for call in delta.get('tool_calls', []))
+                whole = choice.tool_calls_done()[0]['function']['arguments']
+                self.assertEqual(streamed, whole)
+                self.assertEqual(json.loads(whole), expected)
+                self.assertEqual(choice.finish_reason(), 'tool_calls')
+
     def test_without_a_partial_parser_a_call_still_arrives_whole(self):
         from engine.base.serve import _Choice
         parser = lambda text: [("f", '{"a": 1}')] if "<tool_call>" in text else None

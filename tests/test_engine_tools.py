@@ -46,6 +46,14 @@ class PartialToolCallTests(unittest.TestCase):
         "two calls": '<tool_call>a<arg_key>k</arg_key><arg_value>v1</arg_value></tool_call>'
                      '<tool_call>b<arg_key>k</arg_key><arg_value>한글</arg_value></tool_call>',
         "quotes and escapes": '<tool_call>echo<arg_key>s</arg_key><arg_value>he said "hi"\\n끝</arg_value></tool_call>',
+        "consecutive text arguments": '<tool_call>notify<arg_key>body</arg_key><arg_value>Hello</arg_value>'
+                                      '<arg_key>subject</arg_key><arg_value>Status update</arg_value>'
+                                      '<arg_key>to</arg_key><arg_value>lee@example.test</arg_value></tool_call>',
+        "key markers inside a completed value": '<tool_call>write<arg_key>text</arg_key>'
+                    '<arg_value>literal <arg_key>example</arg_key> text</arg_value>'
+                    '<arg_key>path</arg_key><arg_value>notes.txt</arg_value></tool_call>',
+        "repeated key": '<tool_call>edit<arg_key>name</arg_key><arg_value>old</arg_value>'
+                        '<arg_key>name</arg_key><arg_value>new</arg_value></tool_call>',
     }
 
     def test_every_prefix_only_ever_grows(self):
@@ -76,6 +84,19 @@ class PartialToolCallTests(unittest.TestCase):
         self.assertEqual(partial_tool_calls(opening + "3")[0][1], "{")
         self.assertEqual(partial_tool_calls(opening + '{"a"')[0][1], "{")
         self.assertEqual(partial_tool_calls(opening + "서울")[0][1], '{"n": "서울')
+
+    def test_arriving_argument_starts_after_the_last_complete_value(self):
+        body = '<tool_call>notify<arg_key>body</arg_key><arg_value>Hello</arg_value>'
+        next_arg = '<arg_key>to</arg_key><arg_value>lee@example.test'
+        self.assertEqual(partial_tool_calls(body + next_arg),
+                         [('notify', '{"body": "Hello", "to": "lee@example.test', False)])
+        self.assertEqual(partial_tool_calls(body + '<arg_key>to</arg_key><arg_value>'),
+                         [('notify', '{"body": "Hello"', False)])
+
+    def test_repeated_key_keeps_the_last_value_without_retracting_the_stream(self):
+        text = self.SHAPES['repeated key']
+        self.assertEqual(json.loads(partial_tool_calls(text)[0][1]), {"name": "new"})
+        self.assertEqual(json.loads(parse_tool_calls(text)[0][1]), {"name": "new"})
 
     def test_a_closing_tag_halfway_here_is_not_value_text(self):
         opening = '<tool_call>f<arg_key>n</arg_key><arg_value>서울'
@@ -205,6 +226,8 @@ class QwenXmlPartialToolCallTests(unittest.TestCase):
         "two calls": qwen_call("a", {"k": "v1"}) + qwen_call("b", {"k": "한글"}, first=False),
         "quotes and escapes": qwen_call("echo", {"s": 'he said "hi"\\n끝'}),
         "a tag-like value": qwen_call("echo", {"s": "a <b> </param c"}),
+        "repeated key": '<tool_call>\n<function=edit>\n<parameter=name>\nold\n</parameter>\n'
+                        '<parameter=name>\nnew\n</parameter>\n</function>\n</tool_call>',
     }
 
     def test_every_prefix_only_ever_grows(self):

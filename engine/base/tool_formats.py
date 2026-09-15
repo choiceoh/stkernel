@@ -132,6 +132,16 @@ def _value(raw: str, text_typed: bool = False):
     return text
 
 
+def _arguments_json(pairs) -> str:
+    """Keep wire order, including repeated keys, so a stream never rewrites a sent value.
+
+    JSON readers retain the final value of a repeated key, as the whole parser's dict
+    did, but collapsing the members before streaming would replace an earlier prefix.
+    """
+    return "{" + ", ".join(json.dumps(k, ensure_ascii=False) + ": " + json.dumps(v, ensure_ascii=False)
+                           for k, v in pairs) + "}"
+
+
 def parse_arg_pairs(content: str, tools=None):
     typed = _text_keys(tools)
     calls = []
@@ -141,8 +151,8 @@ def parse_arg_pairs(content: str, tools=None):
         if not name:
             continue
         strings = typed.get(name, ())
-        args = {k.strip(): _value(v, k.strip() in strings) for k, v in _ARG.findall(body)}
-        calls.append((name, json.dumps(args, ensure_ascii=False)))
+        args = [(k.strip(), _value(v, k.strip() in strings)) for k, v in _ARG.findall(body)]
+        calls.append((name, _arguments_json(args)))
     return calls or None
 
 
@@ -183,13 +193,17 @@ def partial_arg_pairs(content: str, tools=None):
                 return calls
             continue
         strings = typed.get(name, ())
-        done = [(k.strip(), _value(v, k.strip() in strings)) for k, v in _ARG.findall(body)]
-        text = json.dumps(dict(done), ensure_ascii=False)
+        matches = list(_ARG.finditer(body))
+        done = [(m[1].strip(), _value(m[2], m[1].strip() in strings)) for m in matches]
+        text = _arguments_json(done)
         if closed:
             calls.append((name, text, True))
             continue
         text = text[:-1]                        # the object stays open while the call does
-        arriving = _ARRIVING.search(body)
+        # Search only the unconsumed tail. Starting at an earlier, completed key lets
+        # the regex backtrack across its closing tags to reach the next open value,
+        # emitting XML as a JSON key that a streaming client cannot take back.
+        arriving = _ARRIVING.search(body, matches[-1].end() if matches else 0)
         if arriving:
             key = arriving.group(1).strip()
             # `</arg_value` is not value text -- it is a closing tag halfway here, and the
@@ -284,8 +298,8 @@ def parse_function_xml(content: str, tools=None):
             continue
         name, inner = found
         strings = typed.get(name, ())
-        args = {k.strip(): _xml_value(v, k.strip() in strings) for k, v in _PARAMETER.findall(inner)}
-        calls.append((name, json.dumps(args, ensure_ascii=False)))
+        args = [(k.strip(), _xml_value(v, k.strip() in strings)) for k, v in _PARAMETER.findall(inner)]
+        calls.append((name, _arguments_json(args)))
     return calls or None
 
 
@@ -314,7 +328,7 @@ def partial_function_xml(content: str, tools=None):
         name, inner = found
         strings = typed.get(name, ())
         done = [(k.strip(), _xml_value(v, k.strip() in strings)) for k, v in _PARAMETER.findall(inner)]
-        text = json.dumps(dict(done), ensure_ascii=False)
+        text = _arguments_json(done)
         if closed:
             calls.append((name, text, True))
             continue
