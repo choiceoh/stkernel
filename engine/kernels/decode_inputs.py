@@ -4,16 +4,18 @@ import triton
 import triton.language as tl
 
 
-@triton.jit
+# A host position is a runtime scalar, not a constexpr: as a constexpr every distinct position compiled its own
+# kernel on the eager draft path, on a user's step (2,629 variants in ten minutes of a 2026-09-15 onepass).
+@triton.jit(do_not_specialize=["POSITION"])
 def _draft_inputs(A, P, IDS, POS, AS: tl.constexpr, PS: tl.constexpr, T: tl.constexpr,
-                  MASK: tl.constexpr, DEVICE_POSITION: tl.constexpr, POSITION: tl.constexpr, B: tl.constexpr):
+                  MASK: tl.constexpr, DEVICE_POSITION: tl.constexpr, POSITION, B: tl.constexpr):
     row = tl.program_id(0)
     i = tl.arange(0, B)
     anchor = tl.load(A + row * AS)
     if DEVICE_POSITION:
         position = tl.load(P + row * PS)
     else:
-        position = tl.full((), POSITION, tl.int64)
+        position = POSITION.to(tl.int64)
     tl.store(IDS + row * T + i, tl.where(i == 0, anchor, tl.full((), MASK, tl.int64)), i < T)
     tl.store(POS + row * T + i, position + i.to(tl.int64), i < T)
 
