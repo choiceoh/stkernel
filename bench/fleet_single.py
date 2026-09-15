@@ -16,7 +16,11 @@ The same rule serves a box of its own (ost-97x, the operator's Windows PC on the
 once it has sshd and an x86_64 image): point FLEET_SINGLE_GPU_HOST at its ssh alias. The
 controller's ~/.ssh/config owns the alias -- address, user, port -- and nothing here
 overrides it. Whether the host is one of the fleet's own boxes (so a fleet boot and a
-single check must not share it) is `on_fleet`, from the name.
+single check must not share it) is `on_fleet`, from the name. The FLOOR, though, is a
+Spark's: 16 GiB of a GB10's one pool, held for an engine earlyoom would otherwise pick.
+A box of its own owes production nothing and may not even have one pool -- ost-97x has
+31 GiB of host RAM beside a discrete 8 GiB card -- so FLEET_SINGLE_GPU_FLOOR_GIB says
+what that box owes itself instead (bench/OST_97X_LANE.md).
 """
 from __future__ import annotations
 
@@ -33,6 +37,7 @@ KIND = 'single'
 DEFAULT_HOST = 'srv4'           # bench/fleet.sh carries the same default; tests/test_fleet_single.py pins that
 DEFAULT_GPU = 'GB10'
 FLOOR_GIB = 16.0                # = engine/profiles/glm53/boot.py TEST_FLOOR_GIB, what a --test boot leaves the box
+FLOOR_ENV = 'FLEET_SINGLE_GPU_FLOOR_GIB'
 DEFAULT_BUDGET_GIB = 8.0        # what one ST check may take beside production; ST_PROBE_GIB raises or lowers it
 BUDGET_ENV = 'ST_PROBE_GIB'
 CACHE = '.single-gpu-evidence'
@@ -63,6 +68,25 @@ def budget_gib(environ=None) -> float:
     except (TypeError, ValueError):
         return DEFAULT_BUDGET_GIB
     return value if value > 0 else DEFAULT_BUDGET_GIB
+
+
+def floor_gib(environ=None) -> float:
+    """The room a check must leave that box, in GiB (FLEET_SINGLE_GPU_FLOOR_GIB).
+
+    The default is a Spark's, and it is a Spark's for a reason: 16 GiB is what a --test
+    boot leaves a GB10 so earlyoom does not pick the engine, on a box with ONE pool for
+    host and device. A box of its own owes production nothing, and the pool may not even
+    be one -- ost-97x has 31 GiB of host RAM and a discrete 8 GiB card, so a check's
+    device memory is not drawn from what this floor guards and 16 GiB of host RAM refuses
+    every check the box could otherwise run (2026-09-15: MemAvailable 13.6 GiB, so even a
+    zero budget was refused). What such a box owes itself instead is this.
+    """
+    env = os.environ if environ is None else environ
+    try:
+        value = float(env.get(FLOOR_ENV, FLOOR_GIB))
+    except (TypeError, ValueError):
+        return FLOOR_GIB
+    return value if value >= 0 else FLOOR_GIB
 
 
 def on_fleet(name: str, environ=None) -> bool:
@@ -146,11 +170,12 @@ print('reclaimed' if ok else 'short', round(m['MemFree'] / 2 ** 30, 1)); raise S
 
 
 def reclaim(name: str, budget: float = None, *, run=subprocess.run, timeout: float = 120.0,
-            floor: float = FLOOR_GIB) -> list:
+            floor: float = None) -> list:
     """Make `budget` GiB immediately free on that box, or say why not; [] means it is free now."""
     if not name:
         return ['the single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)']
     budget = budget_gib() if budget is None else float(budget)
+    floor = floor_gib() if floor is None else float(floor)
     import base64
     code = base64.b64encode(RECLAIM.encode()).decode()
     command = f'python3 -c "import base64,sys;exec(base64.b64decode(\'{code}\'))" {budget} {floor}'
@@ -173,11 +198,12 @@ def reclaim(name: str, budget: float = None, *, run=subprocess.run, timeout: flo
 
 
 def evidence(name: str, budget: float = None, *, run=subprocess.run, timeout: float = 8.0,
-             floor: float = FLOOR_GIB) -> list:
+             floor: float = None) -> list:
     """Every reason to believe that box has no room for this check; [] means it has. Not knowing is a reason."""
     if not name:
         return ['the single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)']
     budget = budget_gib() if budget is None else float(budget)
+    floor = floor_gib() if floor is None else float(floor)
     try:
         done = run([*SSH, target(name), QUERY], capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -199,22 +225,24 @@ def evidence(name: str, budget: float = None, *, run=subprocess.run, timeout: fl
 
 
 def cached_evidence(name: str, directory, budget: float = None, *, ttl: float = TTL_S, now=time.time,
-                    run=subprocess.run) -> list:
+                    run=subprocess.run, floor: float = None) -> list:
     """`evidence`, remembered for `ttl` seconds under the fleet directory (one ssh per TTL)."""
     budget = budget_gib() if budget is None else float(budget)
+    floor = floor_gib() if floor is None else float(floor)   # part of the key: a changed floor must not read an answer computed under the old one
     path = Path(directory) / CACHE
     try:
         value = json.loads(path.read_text())
         if (isinstance(value, dict) and value.get('host') == name and value.get('budget') == budget
+                and value.get('floor') == floor
                 and isinstance(value.get('reasons'), list)
                 and isinstance(value.get('at'), (int, float)) and 0 <= now() - value['at'] <= ttl):
             return list(value['reasons'])
     except (OSError, ValueError):
         pass
-    reasons = evidence(name, budget, run=run)
+    reasons = evidence(name, budget, run=run, floor=floor)
     try:
         temporary = path.with_name(f'{path.name}.{os.getpid()}')
-        temporary.write_text(json.dumps(dict(host=name, budget=budget, reasons=reasons, at=now())) + '\n')
+        temporary.write_text(json.dumps(dict(host=name, budget=budget, floor=floor, reasons=reasons, at=now())) + '\n')
         temporary.replace(path)
     except OSError:
         pass
@@ -250,9 +278,11 @@ def collect(name: str, since: float, into, run=subprocess.run):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('evidence', 'reclaim', 'host', 'label', 'on-fleet', 'budget', 'collect'))
+    parser.add_argument('action', choices=('evidence', 'reclaim', 'host', 'label', 'on-fleet', 'budget', 'floor', 'collect'))
     parser.add_argument('--host', default=None, help='defaults to FLEET_SINGLE_GPU_HOST, then ' + DEFAULT_HOST)
     parser.add_argument('--gib', type=float, default=None, help=f'this check\'s budget; defaults to {BUDGET_ENV}, then {DEFAULT_BUDGET_GIB}')
+    parser.add_argument('--floor', type=float, default=None,
+                        help=f'the room a check must leave that box; defaults to {FLOOR_ENV}, then {FLOOR_GIB} (a Spark\'s)')
     parser.add_argument('--cache', help='fleet directory; remembers the answer for --ttl seconds')
     parser.add_argument('--ttl', type=float, default=TTL_S)
     parser.add_argument('--since', type=float, default=None, help='collect: files the lane host wrote after this epoch second')
@@ -274,13 +304,16 @@ def main(argv=None):
     if args.action == 'budget':
         print(budget_gib() if args.gib is None else args.gib)
         return 0
+    if args.action == 'floor':
+        print(floor_gib() if args.floor is None else args.floor)
+        return 0
     if args.action == 'on-fleet':
         return 0 if on_fleet(name) else 1
     if args.action == 'reclaim':
-        reasons = reclaim(name, args.gib)
+        reasons = reclaim(name, args.gib, floor=args.floor)
     else:
-        reasons = (cached_evidence(name, args.cache, args.gib, ttl=args.ttl) if args.cache
-                   else evidence(name, args.gib))
+        reasons = (cached_evidence(name, args.cache, args.gib, ttl=args.ttl, floor=args.floor) if args.cache
+                   else evidence(name, args.gib, floor=args.floor))
     for reason in reasons:
         print(reason)
     return 1 if reasons else 0

@@ -40,6 +40,44 @@ that immutable ID to the build. `ST_IMAGE` selects the output tag, not different
 dependencies. A newly rebuilt seed must be validated and its ID updated in the
 manifest before use; an arbitrary tag is not enough.
 
+## The x86_64 check image
+
+There is a second, unrelated image, and the distinction matters: `st-engine:glm53-sm120-x86`
+is for **checks on an RTX 5050**, never for measurements, and it shares no layer with the
+above. It cannot: the seed's parent `glm53:v13-b12x-it` is a locally built ARM64 vLLM image
+with no registry digest and `ai.vllm.build.commit=unknown`, `promote_deep_gemm.py` lifts a
+compiled extension out of it byte-for-byte, and `install_cuda132.py` refuses a non-aarch64
+host. So the x86_64 side inherits nothing and names every package from an index:
+
+```bash
+python3 engine/runtime/make_x86_64_lock.py engine/runtime/cuda132.x86_64.lock.json
+bash engine/runtime/build-x86_64.sh
+```
+
+`cuda132.x86_64.lock.json` holds 42 SHA256-pinned wheels; the cu132 index publishes no
+digest, so the three torch wheels are fetched and hashed by the generator. Its `deviations`
+field records the three entries that cannot match this lock -- `nvidia-cudla` dropped
+(Tegra-only), `flashinfer-python` at the published `0.6.18.post1` rather than the fleet's
+unpublished dev build, `tilelang` at `0.1.14`, the nearest version with an x86_64 wheel --
+and the absence of DeepGEMM, which no x86_64 build can reproduce. Everything the vLLM
+parent supplied on ARM64 and a base image does not -- 31 packages, 59 wheels, read from
+every locked wheel's `Requires-Dist` -- is resolved into `closure.json` at fetch time, so
+the build still runs `--network none`. Torch's own requirements are not the whole of it:
+`flashinfer` needs `tvm_ffi`, and a closure built from torch alone yields an image that
+installs cleanly and cannot import flashinfer. The image carries `TORCH_CUDA_ARCH_LIST=12.0`
+and `CUTE_DSL_ARCH=sm_120`, no `engine` source, and no `runtime-manifest.json`: `verify.py`
+describes the ARM64 runtime and does not apply to it. `engine/kernels/b12x`
+(`@supported_compute_capability([120, 121])`, torch and flashinfer only) is what it can run;
+every native lane is `-gencode arch=compute_121a` and `engine/kernels/cells.py` refuses a
+device that is not a GB10. See `bench/OST_97X_LANE.md`.
+
+**Not yet validated.** The lock is verified wheel by wheel and the chain has run end to end
+once, but the one image built so far carried a torch-only closure and could not import
+flashinfer. No image has been built from the corrected closure and none has been checked on
+a GPU. The build moves ~3 GB and writes ~16 GB; run it when the box can spare that.
+
+## The runtime manifest
+
 The result owns the `engine` source and imports DeepGEMM directly. vLLM and its
 overlay files are absent. Each image contains `/opt/st/runtime-manifest.json`.
 The verifier checks Python, every locked package, actual compiler selection,

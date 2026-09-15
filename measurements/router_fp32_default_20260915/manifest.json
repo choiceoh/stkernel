@@ -26,7 +26,8 @@
       "failed": 0
     },
     "full_cpu": {
-      "status": "running"
+      "status": "not_confirmed",
+      "reason": "Execution environment changed before the final result was collected."
     },
     "after_main_merge": {
       "tests": 73,
@@ -61,5 +62,6 @@
     "tests/test_engine_router_widths.py": "c8da10c7ef99196a1d752db631d23c3a31cf71cc82f4646a23d5e04e5364d6be",
     "tests/test_prefill_dense_prefix.py": "2afcaf0f75b30f7cfca6247d468e5eb9b7879a2fca4c740dd148bdf84cb48bba"
   },
-  "merged_main": "ef235c3d167e086110a84fad593b7ec33b30fb1a"
+  "merged_main": "ef235c3d167e086110a84fad593b7ec33b30fb1a",
+  "final_merge_main": "3abf7ab92b60499bc10e0ef7440d00b33e98285c"
 }
