@@ -36,10 +36,37 @@ device kernel bodies, inputs, flags and shapes are the ones tested here.
 - CPU tests: **37 passed, 8 GPU-only skipped** (`cpu-tests.log`, 45 total).
   The read-only task checkout was mounted at `/repo`, with `--workdir /repo`
   and `PYTHONPATH=/repo`; CUDA was hidden.
+- The final automatic-default candidate was compiled and loaded again:
+  **PASS**, `compile-final.json`, cache key `20b59b6a4b9c5b6d444799ed`.
+  Its two static kernels have the same resource usage. The rebased CPU suite
+  also passed (37 passed, 8 skipped; `cpu-tests-final.log`).
 - GB10 exactness and component timing: **PASS**, `c1mhc-tails-a55c`, ticket
   `17894505191390768`, revision 4. Payload 12.4 seconds after 459.7 seconds
   waiting in the canonical queue. Peak allocated memory: 378,778,624 bytes.
 - TP4 transport and consumer performance: not measured yet.
+
+`source-reuse.json` verifies that the final native source differs from the
+GPU-qualified source only at three C++ and two pybind host defaults (0 to -1).
+The native dense source of old base `5871c559` and new base `8b593fae` is
+identical. `qualified-native.tar.gz` preserves the tested source overlay from
+`f772d319`; apply it to base `5871c559` in an isolated checkout to reproduce.
+
+The full TP4 reservation is `c1pack-full-v4-a55c`, ticket `1789447070414497`,
+revision 4. Its command was replaced with the qualified MHC candidate:
+
+```sh
+ST_BRACKET_VALIDATION=full bash bench/st_bracket.sh pair \
+  b2e596739566f0d0ce288c05fc35eff95b1c9a54 \
+  --base 8b593fae2883eda0c819d5a4b9e11d436a45ad06
+```
+
+The live `/v1/models` response reports `max_concurrent_requests=2`, speculative
+width 7 and maximum context 1,048,576. The current canonical harness therefore
+runs **C=1 twice and C=2 once** per boot, with C=1 at 2K/32K/128K and C=2 at
+2K/32K. Its historical `c4` record keys and this ticket's original C4 note do
+not establish a four-request serving measurement. The 32-row C4 native
+transition check is separate. The historical ticket name also does not select
+the rejected input-pack prototype.
 
 ## GPU gate
 
