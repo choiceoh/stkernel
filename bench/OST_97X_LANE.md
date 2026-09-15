@@ -240,14 +240,88 @@ build is also not free: it moves ~3 GB of wheels and writes a ~16 GB image, and 
 unconstrained on this box left Windows with 0.6 GiB of free RAM. Give it a quiet moment, or
 a `--cpu-quota`.
 
-### The native lanes
+### The native lanes: three instructions, not an architecture
 
-They are not built here. Every native lane is `-gencode arch=compute_121a` and
-`engine/kernels/cells.py` refuses a device that is not a GB10, so what this box runs is
-`engine/kernels/b12x` -- `@supported_compute_capability([120, 121])`, torch and
-flashinfer, no DeepGEMM. The image carries a host compiler anyway (the full Python
-base, not `-slim`): without one a JIT extension dies at `gcc: No such file or
-directory` before ptxas can say anything about the kernel at all.
+Changing only the arch flag does not build them. `ptxas`, on this box:
+
+| source | features `sm_120` does not have |
+|---|---|
+| `mla/glm53_megakernel.cu` | `add.u8x4` ×288, `ldmatrix.b8` ×16, `.m16n16` ×16 |
+| `dense/kernels.cu` | `add.u8x4` ×936 |
+
+Those counts are PTX occurrences, and they are the reason this looked like a wall. In the
+**sources** it is three sites:
+
+- `mk_add_u8x4` -- one helper in each file, and the comment above it names its own
+  replacement: *"CUDA 13.2: `__vadd4` still lowers to carry-isolation arithmetic on SM121."*
+  The fleet rejects `__vadd4` for **speed**; the byte semantics are the same modulo-256 add.
+  A check build has no speed to protect.
+- `ldmatrix.sync.aligned.m16n16.x1.trans.shared.b8` -- one site, in the `O += P C` inner
+  loop. It also needs nothing written for it: the same B fragment is what
+  `mla_e4m3x2_strided` already builds for the `ROWS` path further down the same file, which
+  is production code the fleet runs today.
+
+So both files now carry an `#else` for `__CUDA_ARCH__ < 1210`, and both compile for sm_120.
+
+**A fallback that merely compiles would be worse than none** -- wrong fragment layout
+returns plausible, wrong numbers, and a check lane that lies is not a check lane. So the
+layout claim is measured rather than asserted, on the card, against a CPU reference:
+`probes/sm120_b_fragment_check.cu`.
+
+```
+$ nvcc -O2 -gencode arch=compute_120,code=sm_120 -std=c++17 probes/sm120_b_fragment_check.cu -o /tmp/c && /tmp/c
+check 1: mma m16n8k16 fragment layouts
+  LAYOUT CONFIRMED: all 128 elements match CPU matmul (worst 0.0)
+check 2: the strided B form the sm_120 fallback reuses
+  STRIDED FORM CONFIRMED: all 256 elements match the CPU reference
+```
+
+And the other half of the claim -- that none of this reaches the fleet -- is checked the
+only way worth checking it, by compiling the *same source* for the Sparks' target and
+comparing the output to a baseline taken before the edit:
+
+| source | sm_121a PTX vs pre-edit | sm_120 |
+|---|---|---|
+| `mla/glm53_megakernel.cu` | **identical** | compiles, 2,317,000 bytes |
+| `dense/kernels.cu` | **identical** | compiles, 3,775,944 bytes |
+
+Compiling was not running, and running was an operator decision, taken 2026-09-15 and
+recorded under D5 in `engine/CHARTER.md`: a card that is not a GB10 may **check**, never
+measure. Three things carry that, and the shape of them matters more than the size:
+
+- `engine/kernels/arch.py` maps a capability to its build target. `mla` and `dense` take
+  their `-gencode` from `bound().device.capability` instead of a literal -- the bound shape
+  already declares the card, so there is **no knob** (D11: inputs are facts, and a knob
+  would be a second source of truth for one). Only those two lanes are listed, because only
+  those two have been compiled and checked anywhere else; the other five stay pinned, and
+  `oneshot` cannot leave the fleet at all.
+- `cells.py` gains a middle verdict for the device lane. A GB10 is `admitted`, a card no
+  lane was ever built for is `refused` exactly as before, and a **built but unmeasured**
+  card is `unmeasured` with a `measure` recipe -- the repository's own word for "the
+  wrapper serves it, but it runs by declaration".
+- The runtime gates in `mla` and `dense` needed **no change at all**: they compare the
+  probed device against the bound one, which is already the right question on either card.
+
+```
+GB10       SM121/48   -> admitted    recipe=None
+RTX 5050   SM120/20   -> unmeasured  recipe=measure
+H100       SM90/132   -> refused     recipe=rewrite
+```
+
+The fleet reads exactly as before, and that is checked rather than asserted:
+`gencode(MEASURED.device.capability)` returns `['-gencode', 'arch=compute_121a,code=sm_121a']`
+-- the literal that used to be there -- and the sm_121a PTX of both kernels is byte-identical
+to its pre-edit baseline.
+
+What is still a real difference, and no verdict can talk it away: **20 SMs against 48**, on a
+persistent megakernel built around 48 at TP=4. That is why the verdict is `unmeasured` and
+why a number from this card is this card's.
+
+`oneshot` is out regardless: it needs `<infiniband/verbs.h>` for the fleet's RoCE rails.
+
+The image carries a host compiler (the full Python base, not `-slim`) because without one a
+JIT extension dies at `gcc: No such file or directory` before ptxas can say anything about
+the kernel at all.
 
 ## Verify
 

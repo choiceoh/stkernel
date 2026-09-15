@@ -347,7 +347,16 @@ __device__ __forceinline__ void mk_cp_wait_upto(int n) {
 // This packed add preserves modulo-256 byte semantics and emits VIADD.U8x4.
 __device__ __forceinline__ uint32_t mk_add_u8x4(uint32_t a, uint32_t b) {
   uint32_t out;
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 1210
   asm("add.u8x4 %0, %1, %2;" : "=r"(out) : "r"(a), "r"(b));
+#else
+  // sm_120 has no add.u8x4 -- ptxas refuses the whole translation unit over it, which is
+  // what kept this lane off the RTX 5050 check box. __vadd4 is the carry-isolation form
+  // the comment above rejects, and rejecting it is a SPEED decision: the byte semantics
+  // are the same modulo-256 add. So a check build below sm_121a gets the arithmetic
+  // without the instruction, and no lane the fleet measures is built below sm_121a.
+  out = __vadd4(a, b);
+#endif
   return out;
 }
 

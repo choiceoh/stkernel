@@ -343,7 +343,16 @@ __device__ __forceinline__ void mk_cp_wait_upto(int n) {
 // This packed add preserves modulo-256 byte semantics and emits VIADD.U8x4.
 __device__ __forceinline__ uint32_t mk_add_u8x4(uint32_t a, uint32_t b) {
   uint32_t out;
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 1210
   asm("add.u8x4 %0, %1, %2;" : "=r"(out) : "r"(a), "r"(b));
+#else
+  // sm_120 has no add.u8x4 -- ptxas refuses the whole translation unit over it, which is
+  // what kept this lane off the RTX 5050 check box. __vadd4 is the carry-isolation form
+  // the comment above rejects, and rejecting it is a SPEED decision: the byte semantics
+  // are the same modulo-256 add. So a check build below sm_121a gets the arithmetic
+  // without the instruction, and no lane the fleet measures is built below sm_121a.
+  out = __vadd4(a, b);
+#endif
   return out;
 }
 
@@ -2368,6 +2377,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         // ldmatrix.trans produces four consecutive K bytes for column g
         // and four for g+8. Permute its row addresses so each register contains
         // the two MMA K pairs (2q,2q+1) and (8+2q,9+2q), in that order.
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 1210
         const int row = lane & 15;
         const int krow = (row >> 2) * 2 + (row & 1) + ((row >> 1) & 1) * 8;
         const uint32_t cb = static_cast<uint32_t>(__cvta_generic_to_shared(
@@ -2382,6 +2392,28 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
           mla_mma_bf16(acc[nt+1][0], acc[nt+1][1], acc[nt+1][2], acc[nt+1][3], a0, a1, a2, a3,
                        mla_e4m3x2_value(v1), mla_e4m3x2_value(v1 >> 16));
         }
+#else
+        // sm_120 has neither ldmatrix's .b8 element type nor its .m16n16 shape, and this is
+        // the only site in this file that asks for either. Nothing new has to be written for
+        // it: the B fragment those two registers carry is the one mla_e4m3x2_strided already
+        // builds for the ROWS path below -- two K-consecutive bytes at one column, then the
+        // pair eight K further on, which is exactly this mma's B layout (b0 = k 2q,2q+1 at
+        // n; b1 = k 2q+8,2q+9 at n). So the check build runs the fleet's own arithmetic by
+        // its own other route, and the fleet's route is untouched above.
+        //
+        // Both halves of that claim were measured on an RTX 5050 before this was written:
+        // the m16n8k16 fragment layouts against a CPU matmul (128/128 elements), then this
+        // strided form against a CPU reference over a tile with a non-square row pitch
+        // (256/256). A is left exactly as the ldmatrix above produced it -- .b16 is fine here.
+        const uint8_t* cbs = tile8 + (size_t)(q4 * 2) * MLA_RP + warp * 64;
+#pragma unroll
+        for (int nt = 0; nt < 8; ++nt) {
+          const int n = nt * 8 + g;
+          mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
+                       mla_e4m3x2_strided(cbs + n, MLA_RP),
+                       mla_e4m3x2_strided(cbs + 8 * MLA_RP + n, MLA_RP));
+        }
+#endif
       }
       __syncthreads();
     }

@@ -563,7 +563,11 @@ class RecipeTests(unittest.TestCase):
         "index64": replace(MEASURED, indexer=Indexer(heads=32, head_dim=64, pool=4, topk=2048, compress="kpool")),
         "draft64": replace(MEASURED, drafter=Drafter(head_dim=64, kv_heads=8, layers=5, window=2048)),
         "kda32": replace(MEASURED, linear=LinearAttention(heads=32, v_heads=32, k_dim=128, v_dim=128, conv=4)),
-        "device": replace(MEASURED, device=Device(capability=(12, 0), sms=16)),
+        # a card no lane has ever been built for: still refused outright
+        "device": replace(MEASURED, device=Device(capability=(9, 0), sms=132)),
+        # one that is built and self-tested but never measured here (engine/kernels/arch.py):
+        # it runs by declaration, so it is `unmeasured` and can never be `admitted`
+        "device_check": replace(MEASURED, device=Device(capability=(12, 0), sms=20)),
         "mxfp4": replace(MEASURED, moe=replace(MEASURED.moe, quant="mxfp4")),
     }
 
@@ -591,6 +595,7 @@ class RecipeTests(unittest.TestCase):
                          ("kda_ring", "unmeasured", "measure"), ("kda_chunk", "refused", "wire"),
                          ("kda_chunk", "unmeasured", "measure"), ("moe", "refused", "convert"),
                          ("moe", "unmeasured", "measure"), ("device", "refused", "rewrite"),
+                         ("device", "unmeasured", "measure"),
                          ("mla", "refused", "establish"), ("mhc_decode", "refused", "establish"),
                          ("mhc_prefill", "refused", "establish"), ("mhc_decode", "refused", "wire"),
                          ("mhc_prefill", "refused", "wire"), ("mhc_prefill", "refused", "instance")} <= seen, seen)
