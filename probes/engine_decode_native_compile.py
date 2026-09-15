@@ -13,10 +13,11 @@ import sys
 def mhc_resources(resources):
     # CUDA 13 prints "Function <symbol>:", while older dumps used
     # "Function : <symbol>". Match the symbol before inspecting its usage.
+    # Every mHC kernel: the ordinary grid, the consumers and the packet forms.
     return [dict(kernel=name.strip().rstrip(':'), usage=usage.strip())
             for name, usage in re.findall(r'^\s*Function\s+(?::\s*)?([^\n]+)\n([^\n]*)',
                                            resources, flags=re.MULTILINE)
-            if 'mk_mhc_ar_' in name]
+            if 'mk_mhc_' in name]
 
 
 def main():

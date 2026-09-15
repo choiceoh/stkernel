@@ -3709,8 +3709,10 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer) {
   auto stream = c10::cuda::getCurrentCUDAStream();
   // Separate occupancy for both new instantiations. Only immutable fn may
   // be prepared early, and only when the caller opted into the PDL chain.
-  // A serialized launch remains correct: overlap is opportunistic.
-  if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 8) {
+  // A serialized launch remains correct: overlap is opportunistic. That is
+  // what lets 16 rows (C=2 at K=7) take this path: a sum too wide for the
+  // one-shot consumer releases nothing early, and this launch follows it.
+  if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 16) {
     auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
     static int ar_grids[2] = {0, 0};
     int& grid = ar_grids[bf16_fn ? 1 : 0];
@@ -3790,8 +3792,8 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   }
   // A BF16 consumer pointer has the vector layout. Never silently send it
   // to the scalar-layout fallback when an internal caller breaks the gate.
-  TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 8),
-              "AR consumer requires PDL and 1..8 tokens");
+  TORCH_CHECK(!ar_consumer || (mk_pdl_enabled() && ints[0] > 0 && ints[0] <= 16),
+              "AR consumer requires PDL and 1..16 tokens");
   MKMhcArgs a{};
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];
