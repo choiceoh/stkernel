@@ -37,6 +37,24 @@ def _worker(rank, directory, mode):
                 assert comm.gather_objects(rank) == [0, 1]
             assert comm.preparation is None
             result['passed'] = True
+        elif mode == 'decode-experts':
+            from types import SimpleNamespace
+            from engine.profiles.glm53.adapter import Glm53Engine
+            comm.wait_prepared('weights-loaded', timeout_s=6)
+            engine = Glm53Engine.__new__(Glm53Engine)
+            engine.caches = SimpleNamespace(device='cpu')
+            engine.drafter = SimpleNamespace(k=7)
+            engine.memory = None
+            engine.jit_windows = SimpleNamespace(mark=lambda *args: None)
+            def warm(rows, device):
+                assert rows == (16, 8)
+                if rank == 1:
+                    time.sleep(2)
+            engine.net = SimpleNamespace(comm=comm, warmup_decode_experts=warm)
+            engine._warmup_decode_experts(2)
+            assert comm.preparation is None
+            assert comm.gather_objects(rank) == [0, 1]
+            result['passed'] = True
         elif mode == 'mismatch':
             comm.wait_prepared(f'phase-{rank}', timeout_s=6)
             raise AssertionError('different preparation phases were accepted')
@@ -106,6 +124,9 @@ class DistributedPreparationTests(unittest.TestCase):
 
     def test_slow_preparation_outlives_serving_timeout_on_either_rank(self):
         self.assertEqual(self.run_case('slow'), [{'passed': True}] * 2)
+
+    def test_decode_loading_keeps_the_boot_group_until_all_variants_are_ready(self):
+        self.assertEqual(self.run_case('decode-experts'), [{'passed': True}] * 2)
 
     def test_different_phases_fail_on_every_rank(self):
         for result in self.run_case('mismatch'):

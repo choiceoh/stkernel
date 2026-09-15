@@ -798,7 +798,9 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # still packed weights, exhausting NCCL's 120 s serving deadline.
         # Meet on the CPU control plane before any post-load device collective.
         with recorder.phase("wait for weight preparation"):
-            comm.wait_prepared("weights-loaded", final=True)
+            # Keep the preparation group through rank-local decode module
+            # loading; capture closes it after every expert variant is ready.
+            comm.wait_prepared("weights-loaded")
         if memory is not None:
             memory.checkpoint("loaded")
         with recorder.phase("runner"):

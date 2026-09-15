@@ -73,7 +73,7 @@ class Comm:
     group: object = None
     control: object = None            # a gloo group beside NCCL: the loop's arrivals and votes are host objects (45차 §23 B3)
     transport: object = None
-    preparation: object = None       # boot-only Gloo group, closed after weights are ready
+    preparation: object = None       # boot-only Gloo group, closed after decode experts are ready
 
     def prepare_oneshot(self, rails: int = 2, *, inline_flags: bool = True, consumer_max_elements=None):
         """`consumer_max_elements` is a probe's same-build control (0: every sum on the ordinary kernel); serving
