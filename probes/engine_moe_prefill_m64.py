@@ -78,10 +78,14 @@ def eligibility(md):
         'row-major weights are not the tiled recipe':
             md._prefill_m64_eligible(m=2304, tile_m=64, **{**common, 'tiled': False}),
     }
-    return admitted, refused, dict(experts_local=cell.experts_local, hidden=cell.hidden,
-                                   inter_local=cell.inter_local, topk=cell.topk,
-                                   quant=cell.quant, activation=cell.activation,
-                                   swiglu_limit=cell.swiglu_limit)
+    return admitted, refused, cell
+
+
+def cell_fields(cell):
+    """The admitted cell as JSON, so a record says which shape the gate was evaluated for."""
+    return dict(experts_local=cell.experts_local, hidden=cell.hidden,
+                inter_local=cell.inter_local, topk=cell.topk, quant=cell.quant,
+                activation=cell.activation, swiglu_limit=cell.swiglu_limit)
 
 
 def identity():
@@ -91,7 +95,7 @@ def identity():
 def cpu_check(report):
     from engine.kernels.b12x import moe_dispatch as md
     admitted, refused, cell = eligibility(md)
-    report('cell', **cell)
+    report('cell', **cell_fields(cell))
     failures = [f'{m} rows must be admitted' for m, ok in admitted.items() if not ok]
     failures += [reason for reason, ok in refused.items() if ok]
     report('eligibility', admitted=admitted, refused_as_expected=not failures,
@@ -141,7 +145,7 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         raise RuntimeError('the M64 candidate is pinned to sm_121a; a verdict from another '
                            f'card is that card\'s (this one is {torch.cuda.get_device_capability()})')
     admitted, refused, cell = eligibility(md)
-    report('cell', **cell)
+    report('cell', **cell_fields(cell))
     if not all(admitted.values()) or any(refused.values()):
         raise RuntimeError('eligibility moved; run --cpu for the detail')
 
