@@ -1,0 +1,1543 @@
+{
+  "passed": true,
+  "records": [
+    {
+      "lane": "moe_pair_identity",
+      "shared_mode": "ordinary",
+      "rank_file": "/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors",
+      "weights_sha256": {
+        "L3.moe.gate": "d9b073de20e23bca95c0110f8d131a655e27b8dd1ec9370943b78734b189e86e",
+        "L3.moe.bias": "a7e9cd3226bcb86e10d968f96e59da7587f7a6b5ef72fa963d28f55967058f4a",
+        "L3.moe.sh_gate_up": "c07e92349380ff565c30545a50e06bd74853f50834520f76b4149b2e457e9e97",
+        "L3.moe.sh_down": "a56b4ed2e6be77b3410195dc8d459799e53c64308d53b776ad10334a554fbc25",
+        "L3.moe.w13": "f75862ef0a624e6fb80391d11320d710822792b53028fd7c074b24014b6b0c8e",
+        "L3.moe.w13_sf": "729cb1867c4202bf82a3aaf2a85201d04ff061e368e9f68ebf906d8ea935c00d",
+        "L3.moe.w2": "6acdfea43502063b8137ca8428ab8332b7430ebe57af976b3dcbe950029d0ab7",
+        "L3.moe.w2_sf": "c5b07a16094f1e619159cbdc51d5a368613dbf3474f411ab06b85934189ce3d8"
+      },
+      "sources_sha256": {
+        "engine/kernels/b12x/moe_dispatch.py": "8aa7744ec7016389b707b5178b8e86725630f51861eabd9006d20c67531e96d7",
+        "engine/kernels/b12x/moe_static_kernel_v4.py": "e5e03ad7cc10f254fce584795f68afc1629c00b1dc34f9efa934498be0cb3536",
+        "engine/kernels/b12x/moe_static_common.py": "e2576dcf4fc1d442fcd882c772d1d6da65e92c4cc97d79db1b68e7961d99b2f7",
+        "engine/kernels/b12x/moe_static_kernel_v5.py": "4c3e8f66fb678d14fe2d97dd352c6e7ddb7b95b2b5ce710ebdb26398a232226e",
+        "engine/kernels/b12x/moe_w4a16_fp4_helpers.py": "dc6fc3c4f4b98f98812437e3189144418edee9ef822fb0c6c730305e8a7187ea",
+        "engine/kernels/b12x/moe_micro_kernel.py": "3c0099213a5cf00b51cd6d8483f30372a02de61bda2cd2ccdd1ba38e8aa841ce",
+        "engine/kernels/moe_output.py": "006d1ab7244f37bfc5f1dfe3b734c0950fa8c02b51d6629994e65492a1068068",
+        "engine/profiles/glm53/net.py": "2e5dc7887ab0db6a02e7301ea9cf2698bd4e78d9728f2f1c804ab2a1870bc254",
+        "engine/profiles/glm53/lanes.py": "43c22e8e578da5f01577fa3f848653b9b8208e21f976826983dd990244ae6d20",
+        "engine/kernels/dense/shared_mlp.py": "3fe4eaee2ba200365040dc33a833d9775e8307d469e132f08cc21bc629504415",
+        "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+        "probes/engine_moe_pair_check.py": "3d24b46ecf1a1e01fb900a9865ce86a32f4b13d69d50f7bc8f131fdeef855be3",
+        "probes/engine_decode_fusions.py": "6675674d1370231d9ca540f0bda3bd59fb1777b1f0d30b2b9937191e856dfcd5",
+        "probes/engine_decode_batch.py": "5c61c7154f778e230a867b78f269a192bbb95eb3f162a3553a25ad1863161601"
+      },
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "gpu": "NVIDIA GB10",
+      "scales": "folded",
+      "rows": [
+        8,
+        16
+      ],
+      "seed": 91416,
+      "direct_scatter_only": false,
+      "scatter_reuse_only": false,
+      "fc2_prefetch_only": false,
+      "sync_cleanup_only": false,
+      "scatter_vec4_only": false,
+      "scatter_packed_load_only": true,
+      "configs_m8": [
+        {
+          "tile_m": 32,
+          "fc1": 2,
+          "fc2": 2,
+          "a_rows": 32,
+          "stamps": false,
+          "wide": true,
+          "skip_sf": false,
+          "skip_a": false,
+          "v4": true,
+          "a_ring": false,
+          "tiled": true,
+          "sf_pack": false,
+          "decode_reform": true,
+          "reform_sf_pack": true,
+          "batch_reform": true,
+          "c2_direct_scatter": false,
+          "scatter_packed_load": false,
+          "sf6_separate": true,
+          "sf6_word_expand": true,
+          "sf6_fc2_word_expand": true,
+          "packed_activation_store": true,
+          "fc1_reuse_a": true,
+          "compact_staging": true,
+          "c2_scatter_reuse": false,
+          "c2_fc2_prefetch": false,
+          "sf6_registers": true,
+          "sync_cleanup": true,
+          "scatter_vec4": true
+        },
+        {
+          "tile_m": 32,
+          "fc1": 2,
+          "fc2": 2,
+          "a_rows": 32,
+          "stamps": false,
+          "wide": true,
+          "skip_sf": false,
+          "skip_a": false,
+          "v4": true,
+          "a_ring": false,
+          "tiled": true,
+          "sf_pack": false,
+          "decode_reform": true,
+          "reform_sf_pack": true,
+          "batch_reform": true,
+          "c2_direct_scatter": false,
+          "sf6_separate": true,
+          "sf6_word_expand": true,
+          "sf6_fc2_word_expand": true,
+          "packed_activation_store": true,
+          "fc1_reuse_a": true,
+          "compact_staging": true,
+          "c2_scatter_reuse": false,
+          "c2_fc2_prefetch": false,
+          "sf6_registers": true,
+          "sync_cleanup": true,
+          "scatter_vec4": true,
+          "scatter_packed_load": true
+        }
+      ],
+      "configs_m16": [
+        {
+          "tile_m": 32,
+          "fc1": 2,
+          "fc2": 2,
+          "a_rows": 32,
+          "stamps": false,
+          "wide": true,
+          "skip_sf": false,
+          "skip_a": false,
+          "v4": true,
+          "a_ring": false,
+          "tiled": true,
+          "sf_pack": false,
+          "decode_reform": true,
+          "reform_sf_pack": true,
+          "batch_reform": true,
+          "c2_direct_scatter": false,
+          "scatter_packed_load": false,
+          "sf6_separate": true,
+          "sf6_word_expand": true,
+          "sf6_fc2_word_expand": true,
+          "packed_activation_store": true,
+          "fc1_reuse_a": true,
+          "compact_staging": true,
+          "c2_scatter_reuse": false,
+          "c2_fc2_prefetch": false,
+          "sf6_registers": true,
+          "sync_cleanup": true,
+          "scatter_vec4": true
+        },
+        {
+          "tile_m": 32,
+          "fc1": 2,
+          "fc2": 2,
+          "a_rows": 32,
+          "stamps": false,
+          "wide": true,
+          "skip_sf": false,
+          "skip_a": false,
+          "v4": true,
+          "a_ring": false,
+          "tiled": true,
+          "sf_pack": false,
+          "decode_reform": true,
+          "reform_sf_pack": true,
+          "batch_reform": true,
+          "c2_direct_scatter": false,
+          "sf6_separate": true,
+          "sf6_word_expand": true,
+          "sf6_fc2_word_expand": true,
+          "packed_activation_store": true,
+          "fc1_reuse_a": true,
+          "compact_staging": true,
+          "c2_scatter_reuse": false,
+          "c2_fc2_prefetch": false,
+          "sf6_registers": true,
+          "sync_cleanup": true,
+          "scatter_vec4": true,
+          "scatter_packed_load": true
+        }
+      ],
+      "production_recipe": "t,r,sf6,batch,q0",
+      "candidate_default_by_rows": {
+        "8": true,
+        "16": false
+      },
+      "candidate_default_enabled": false,
+      "includes": "routed+shared experts, output cast/add; C1 keeps its shared overlap policy"
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 1,
+      "max_expert_rows": 64,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 2,
+      "max_expert_rows": 32,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 8,
+      "max_expert_rows": 8,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 16,
+      "max_expert_rows": 4,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 32,
+      "max_expert_rows": 2,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 56,
+      "max_expert_rows": 2,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 64,
+      "max_expert_rows": 1,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "unique_experts": 8,
+      "max_expert_rows": 8,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_real_router_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "relative_max": 0.0,
+      "unique_experts": 55,
+      "correlated": false,
+      "request_groups": 0,
+      "router_in_timing": false
+    },
+    {
+      "lane": "moe_pair_real_router_numerics",
+      "shared_mode": "ordinary",
+      "rows": 8,
+      "relative_max": 0.0,
+      "unique_experts": 9,
+      "correlated": true,
+      "request_groups": 1,
+      "router_in_timing": false
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 1,
+      "max_expert_rows": 128,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 2,
+      "max_expert_rows": 64,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 8,
+      "max_expert_rows": 16,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 16,
+      "max_expert_rows": 8,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 32,
+      "max_expert_rows": 4,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 56,
+      "max_expert_rows": 3,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 80,
+      "max_expert_rows": 2,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 128,
+      "max_expert_rows": 1,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "unique_experts": 8,
+      "max_expert_rows": 16,
+      "relative_max": 0.0,
+      "repeat_relative": [
+        0.0,
+        0.0
+      ],
+      "changed_input_and_route": true,
+      "poisoned_output": true
+    },
+    {
+      "lane": "moe_pair_real_router_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "relative_max": 0.0,
+      "unique_experts": 97,
+      "correlated": false,
+      "request_groups": 0,
+      "router_in_timing": false
+    },
+    {
+      "lane": "moe_pair_real_router_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "relative_max": 0.0,
+      "unique_experts": 9,
+      "correlated": true,
+      "request_groups": 1,
+      "router_in_timing": false
+    },
+    {
+      "lane": "moe_pair_real_router_numerics",
+      "shared_mode": "ordinary",
+      "rows": 16,
+      "relative_max": 0.0,
+      "unique_experts": 20,
+      "correlated": true,
+      "request_groups": 2,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.1441280022263527
+        },
+        {
+          "arm": "A",
+          "ms": 0.1472800001502037
+        },
+        {
+          "arm": "A",
+          "ms": 0.14692799746990204
+        },
+        {
+          "arm": "B",
+          "ms": 0.14416000247001648
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 8,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.22812800109386444
+        },
+        {
+          "arm": "A",
+          "ms": 0.22702399641275406
+        },
+        {
+          "arm": "A",
+          "ms": 0.22699200361967087
+        },
+        {
+          "arm": "B",
+          "ms": 0.2284960001707077
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 8,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.295184001326561
+        },
+        {
+          "arm": "A",
+          "ms": 0.2950400114059448
+        },
+        {
+          "arm": "A",
+          "ms": 0.29550400376319885
+        },
+        {
+          "arm": "B",
+          "ms": 0.2948799878358841
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 16,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.35150399804115295
+        },
+        {
+          "arm": "A",
+          "ms": 0.3521279990673065
+        },
+        {
+          "arm": "A",
+          "ms": 0.3515680134296417
+        },
+        {
+          "arm": "B",
+          "ms": 0.34992000460624695
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 16,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.5356959998607635
+        },
+        {
+          "arm": "A",
+          "ms": 0.5363679826259613
+        },
+        {
+          "arm": "A",
+          "ms": 0.5358879864215851
+        },
+        {
+          "arm": "B",
+          "ms": 0.5401119887828827
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 32,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.589279979467392
+        },
+        {
+          "arm": "A",
+          "ms": 0.5925760269165039
+        },
+        {
+          "arm": "A",
+          "ms": 0.5916000008583069
+        },
+        {
+          "arm": "B",
+          "ms": 0.5895040035247803
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 32,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.9148479998111725
+        },
+        {
+          "arm": "A",
+          "ms": 0.9074400067329407
+        },
+        {
+          "arm": "A",
+          "ms": 0.9124319851398468
+        },
+        {
+          "arm": "B",
+          "ms": 0.896479994058609
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 56,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.9519840180873871
+        },
+        {
+          "arm": "A",
+          "ms": 0.9490240216255188
+        },
+        {
+          "arm": "A",
+          "ms": 0.9503840208053589
+        },
+        {
+          "arm": "B",
+          "ms": 0.9501279890537262
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 56,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 1.0158720016479492
+        },
+        {
+          "arm": "A",
+          "ms": 1.0165599584579468
+        },
+        {
+          "arm": "A",
+          "ms": 1.014959990978241
+        },
+        {
+          "arm": "B",
+          "ms": 1.0152640342712402
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 64,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 8,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 1.0667200088500977
+        },
+        {
+          "arm": "A",
+          "ms": 1.0661920309066772
+        },
+        {
+          "arm": "A",
+          "ms": 1.0666719675064087
+        },
+        {
+          "arm": "B",
+          "ms": 1.065887987613678
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 64,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 8,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.8848479986190796
+        },
+        {
+          "arm": "A",
+          "ms": 0.8848319947719574
+        },
+        {
+          "arm": "A",
+          "ms": 0.8840160071849823
+        },
+        {
+          "arm": "B",
+          "ms": 0.8841280043125153
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 55,
+      "correlated": false,
+      "request_groups": 0,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 8,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.9397119879722595
+        },
+        {
+          "arm": "A",
+          "ms": 0.9392800033092499
+        },
+        {
+          "arm": "A",
+          "ms": 0.935120016336441
+        },
+        {
+          "arm": "B",
+          "ms": 0.9374879896640778
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 55,
+      "correlated": false,
+      "request_groups": 0,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 8,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.1841440051794052
+        },
+        {
+          "arm": "A",
+          "ms": 0.18361599743366241
+        },
+        {
+          "arm": "A",
+          "ms": 0.1838879957795143
+        },
+        {
+          "arm": "B",
+          "ms": 0.18460799753665924
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 9,
+      "correlated": true,
+      "request_groups": 1,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 8,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.24518399685621262
+        },
+        {
+          "arm": "A",
+          "ms": 0.24544000625610352
+        },
+        {
+          "arm": "A",
+          "ms": 0.24462399631738663
+        },
+        {
+          "arm": "B",
+          "ms": 0.24592000246047974
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 9,
+      "correlated": true,
+      "request_groups": 1,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.17127999663352966
+        },
+        {
+          "arm": "A",
+          "ms": 0.17153599858283997
+        },
+        {
+          "arm": "A",
+          "ms": 0.17105600237846375
+        },
+        {
+          "arm": "B",
+          "ms": 0.17086400091648102
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 8,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.2454560026526451
+        },
+        {
+          "arm": "A",
+          "ms": 0.24539200216531754
+        },
+        {
+          "arm": "A",
+          "ms": 0.24544000625610352
+        },
+        {
+          "arm": "B",
+          "ms": 0.2454719990491867
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 8,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.3084000051021576
+        },
+        {
+          "arm": "A",
+          "ms": 0.30875200033187866
+        },
+        {
+          "arm": "A",
+          "ms": 0.3073119968175888
+        },
+        {
+          "arm": "B",
+          "ms": 0.3086559921503067
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 16,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.3672960102558136
+        },
+        {
+          "arm": "A",
+          "ms": 0.3662559986114502
+        },
+        {
+          "arm": "A",
+          "ms": 0.3662880063056946
+        },
+        {
+          "arm": "B",
+          "ms": 0.3670399934053421
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 16,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.5512319803237915
+        },
+        {
+          "arm": "A",
+          "ms": 0.5491679906845093
+        },
+        {
+          "arm": "A",
+          "ms": 0.5491040050983429
+        },
+        {
+          "arm": "B",
+          "ms": 0.5507359802722931
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 32,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.6048800051212311
+        },
+        {
+          "arm": "A",
+          "ms": 0.6040639877319336
+        },
+        {
+          "arm": "A",
+          "ms": 0.6048640012741089
+        },
+        {
+          "arm": "B",
+          "ms": 0.6043680012226105
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 32,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.9103200137615204
+        },
+        {
+          "arm": "A",
+          "ms": 0.9100320041179657
+        },
+        {
+          "arm": "A",
+          "ms": 0.9102720022201538
+        },
+        {
+          "arm": "B",
+          "ms": 0.9127520024776459
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 56,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.9663360118865967
+        },
+        {
+          "arm": "A",
+          "ms": 0.9643360078334808
+        },
+        {
+          "arm": "A",
+          "ms": 0.9643200039863586
+        },
+        {
+          "arm": "B",
+          "ms": 0.9642879962921143
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 56,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 1.269808053970337
+        },
+        {
+          "arm": "A",
+          "ms": 1.2856000065803528
+        },
+        {
+          "arm": "A",
+          "ms": 1.2742080092430115
+        },
+        {
+          "arm": "B",
+          "ms": 1.2760800123214722
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 80,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 1.3226879835128784
+        },
+        {
+          "arm": "A",
+          "ms": 1.3216639757156372
+        },
+        {
+          "arm": "A",
+          "ms": 1.3303680419921875
+        },
+        {
+          "arm": "B",
+          "ms": 1.3422079682350159
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 80,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 2.0187840461730957
+        },
+        {
+          "arm": "A",
+          "ms": 1.9971200227737427
+        },
+        {
+          "arm": "A",
+          "ms": 2.131135940551758
+        },
+        {
+          "arm": "B",
+          "ms": 2.0215840339660645
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 128,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 2.041632056236267
+        },
+        {
+          "arm": "A",
+          "ms": 2.0983359813690186
+        },
+        {
+          "arm": "A",
+          "ms": 2.041904091835022
+        },
+        {
+          "arm": "B",
+          "ms": 2.04201602935791
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 128,
+      "base_tile_m": 16,
+      "candidate_tile_m": 16
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 1.6096320152282715
+        },
+        {
+          "arm": "A",
+          "ms": 1.565567970275879
+        },
+        {
+          "arm": "A",
+          "ms": 1.5673120021820068
+        },
+        {
+          "arm": "B",
+          "ms": 1.5542880296707153
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 97,
+      "correlated": false,
+      "request_groups": 0,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 1.608896017074585
+        },
+        {
+          "arm": "A",
+          "ms": 1.604800045490265
+        },
+        {
+          "arm": "A",
+          "ms": 1.604207992553711
+        },
+        {
+          "arm": "B",
+          "ms": 1.6048799753189087
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 97,
+      "correlated": false,
+      "request_groups": 0,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.1982720047235489
+        },
+        {
+          "arm": "A",
+          "ms": 0.1974719986319542
+        },
+        {
+          "arm": "A",
+          "ms": 0.198015995323658
+        },
+        {
+          "arm": "B",
+          "ms": 0.1979999989271164
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 9,
+      "correlated": true,
+      "request_groups": 1,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.26182401180267334
+        },
+        {
+          "arm": "A",
+          "ms": 0.26232001185417175
+        },
+        {
+          "arm": "A",
+          "ms": 0.26214399933815
+        },
+        {
+          "arm": "B",
+          "ms": 0.2624000012874603
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 9,
+      "correlated": true,
+      "request_groups": 1,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 16,
+      "cache": "warm",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.3715840131044388
+        },
+        {
+          "arm": "A",
+          "ms": 0.3717600107192993
+        },
+        {
+          "arm": "A",
+          "ms": 0.3739839941263199
+        },
+        {
+          "arm": "B",
+          "ms": 0.37411201000213623
+        }
+      ],
+      "eviction_bytes": 0,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 20,
+      "correlated": true,
+      "request_groups": 2,
+      "router_in_timing": false
+    },
+    {
+      "lane": "decode_batch_timing",
+      "shared_mode": "ordinary",
+      "candidate": "moe_pair_real_router_ffn",
+      "rows": 16,
+      "cache": "evicted",
+      "samples": [
+        {
+          "arm": "B",
+          "ms": 0.4280799925327301
+        },
+        {
+          "arm": "A",
+          "ms": 0.426816001534462
+        },
+        {
+          "arm": "A",
+          "ms": 0.42671999335289
+        },
+        {
+          "arm": "B",
+          "ms": 0.42671999335289
+        }
+      ],
+      "eviction_bytes": 134217728,
+      "timing_version": 3,
+      "eviction_in_timing": false,
+      "host_enqueue_in_timing": false,
+      "scope": "captured same-weight components; eviction outside events; not engine speed",
+      "unique_experts": 20,
+      "correlated": true,
+      "request_groups": 2,
+      "router_in_timing": false
+    },
+    {
+      "lane": "moe_pair_complete",
+      "shared_mode": "ordinary",
+      "passed": true,
+      "max_allocated_bytes": 1940130816
+    }
+  ],
+  "scope": "same-runtime component gate; no NIC, full model, tok/s or acceptance"
+}
