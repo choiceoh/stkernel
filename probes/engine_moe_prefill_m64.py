@@ -130,7 +130,6 @@ def _spread(runs):
 
 
 def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
-    from functools import partial
     from unittest.mock import patch
 
     import torch
@@ -182,14 +181,32 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
 
     def watch(**kw):
         seen['tile_m'] = kw['workspace'].tile_m
-        seen['asked'] = kw.get('_prefill_tile64')
+        seen['reached_with'] = kw.get('_prefill_tile64')
         return real_dynamic(**kw)
 
+    def entry(tile64):
+        # Overwrite, do not default. `b12x_fused_moe` forwards `_prefill_tile64=None`
+        # explicitly, and a call-time keyword beats functools.partial -- a partial here
+        # silently lost the flag and BOTH arms ran M128 (first srv4 run, 2026-09-15).
+        def call(**kw):
+            if tile64:
+                kw['_prefill_tile64'] = True
+            seen['asked'] = kw.get('_prefill_tile64')
+            return real_moe(**kw)
+        return call
+
     def run(x, sel, w, tile64):
-        entry = partial(real_moe, _prefill_tile64=True) if tile64 else real_moe
-        with patch.object(md, 'launch_sm120_moe', entry), \
+        with patch.object(md, 'launch_sm120_moe', entry(tile64)), \
                 patch.object(md, 'launch_sm120_dynamic_moe', watch):
             return lane.moe(x, sel, w, *weights, cell.swiglu_limit, scales=scales)
+
+    def backend_for(m):
+        return md.select_sm120_moe_backend(
+            num_tokens=m, num_topk=cell.topk, activation_precision='fp4',
+            quant_mode=cell.quant, num_experts=cell.experts_local,
+            num_local_experts=cell.experts_local, hidden_size=cell.hidden,
+            intermediate_size=cell.inter_local, activation=cell.activation,
+            swiglu_limit=cell.swiglu_limit)
 
     def timed(fn, evict):
         cold = torch.empty(128 << 20, dtype=torch.uint8, device='cuda') if evict else None
@@ -205,9 +222,17 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         torch.cuda.synchronize()
         return out, start.elapsed_time(end)
 
-    failures = []
+    failures, skipped = [], []
     generator = torch.Generator(device='cuda').manual_seed(640_876)
     for m in rows:
+        # The M64 window opens at 65 rows, but the dispatcher reaches the dynamic backend
+        # only past its routed-pair cutover; below it the static family serves and there is
+        # no M64 lane to compare. Report the skip -- do not let it read as a pass.
+        chosen = backend_for(m)
+        if chosen != 'dynamic':
+            skipped.append(m)
+            report('rows', m=m, backend=chosen, skipped='the static backend serves this width')
+            continue
         x = (torch.randn(m, cell.hidden, device='cuda', generator=generator,
                          dtype=torch.float32) * 0.3).to(torch.bfloat16)
         sel = (torch.randint(0, cell.experts_local, (m, cell.topk), device='cuda',
@@ -223,7 +248,8 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
         (m128_runs, m128_tile), (m64_runs, m64_tile) = arms['m128'], arms['m64']
         if (m128_tile, m64_tile) != (128, 64):
             failures.append(f'{m} rows did not reach both lanes ({m128_tile}, {m64_tile})')
-            report('rows', m=m, reached=(m128_tile, m64_tile), passed=False)
+            report('rows', m=m, reached=(m128_tile, m64_tile), asked=seen.get('asked'),
+                   reached_with=seen.get('reached_with'), passed=False)
             continue
 
         floor = max(_spread(m128_runs), _spread(m64_runs))
@@ -255,9 +281,10 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
             failures.append(f'{m} rows: arms differ by {across:.3e}, floor {floor:.3e}')
         report('rows', passed=within, **values)
 
-    report('verdict', passed=not failures, failures=failures)
+    report('verdict', passed=not failures, failures=failures, skipped_static_rows=skipped)
     if output:
-        Path(output).write_text(json.dumps(dict(passed=not failures, failures=failures), indent=1))
+        Path(output).write_text(json.dumps(
+            dict(passed=not failures, failures=failures, skipped_static_rows=skipped), indent=1))
     if failures:
         raise RuntimeError('; '.join(failures))
 

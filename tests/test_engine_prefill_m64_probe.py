@@ -98,7 +98,11 @@ class ContractTests(unittest.TestCase):
 
     def test_the_gpu_arm_asks_for_the_private_lane_through_the_served_entry(self):
         text = PROBE.read_text(encoding='utf-8')
-        self.assertIn('_prefill_tile64=True', text, 'the candidate asks by name')
+        # It must OVERWRITE the keyword, not supply it as a default: b12x_fused_moe
+        # forwards `_prefill_tile64=None` explicitly, and a call-time keyword beats
+        # functools.partial -- a partial here lost the flag and both arms ran M128.
+        self.assertIn("kw['_prefill_tile64'] = True", text, 'the candidate asks by name')
+        self.assertNotIn('partial(real_moe', text, 'a partial is overridden by the callee')
         self.assertIn('launch_sm120_moe', text,
                       'the arms must differ at the served entry, not below it')
         self.assertNotIn('_prefill_m64_workspace', text,
