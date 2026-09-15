@@ -290,6 +290,10 @@ REASONING_END = "</think>"                       # the model closes its reasonin
 # of these words agreed on 14 of 30 texts and ended 3 points apart, so one run is that noisy. On 62 questions of new
 # forms (dates, paths, knapsack, tables, seating, units, Korean puzzles) 61 were right.
 REASONING_OPENER = "We need to parse the problem. We have"
+# Tool turns should start from the current observation. A repeated fixed opener
+# can elicit an earlier matching plan again; leave those turns to the model.
+# Explicit request openers still override both profile defaults at the door.
+TOOL_REASONING_OPENER = ""
 REQUEST_TIMEOUT_S = 3600.0                       # a request older than this is cancelled (the production probe's long-ingest bound x12)
 # A finished turn shorter than this is released, not parked. A GLM-5.3 slot's recurrent state is ~256 MiB a rank
 # whatever the length, so parking a 17-token health ping wrote that to NVMe every thirty seconds and pushed real
@@ -1252,7 +1256,7 @@ def local_serve(a, tp, lanes, layers, prompts) -> int:
                         tool_parser=parse_tool_calls, tool_stream=partial_tool_calls, tool_grammar=tool_grammar,
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                         vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 and engine.vision is not None else None,
-                        reasoning_opener=REASONING_OPENER)
+                        reasoning_opener=REASONING_OPENER, tool_reasoning_opener=TOOL_REASONING_OPENER)
         httpd = None
         if comm.rank == 0:
             httpd = server._serve_http()                       # the door opens before the loop
@@ -1600,7 +1604,7 @@ def fleet(a) -> int:
                         tool_call_start=tool_call_token(tok), generation=generation_defaults(a.ckpt_meta),
                vision=vision_mod.Door(engine.vision.V, tok) if comm.rank == 0 else None,
                latency_root=Path(a.dump_dir) / 'onepass-latency', lease=lease, park_min_tokens=PARK_MIN_TOKENS,
-               reasoning_opener=REASONING_OPENER)
+               reasoning_opener=REASONING_OPENER, tool_reasoning_opener=TOOL_REASONING_OPENER)
         serving = True
         server.loop()
     except BaseException as exc:

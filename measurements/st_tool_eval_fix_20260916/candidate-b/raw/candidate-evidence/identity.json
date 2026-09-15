@@ -1,0 +1,119 @@
+{
+  "sha": "fad98cf73fe0e670a34beacaffde55d9d7d7ec4f",
+  "at": "2026-09-16T05:53:04.155284+09:00",
+  "ranks": {
+    "srv1": {
+      "id": "15c021225f2eb02041c063060cf7396bdccedd12dfd08dbd6d6e6453cb6fabc1",
+      "image": "sha256:7b68a349b495ffa29145893530f32917840167cb89343815c97d068480576701",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 3075690,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-15T20:48:30.956017206Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      },
+      "mount": "/home/choiceoh/st-releases/fad98cf73fe0",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --kv-gib 7.0  --port 8001 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2 --tier-dir /home/choiceoh/glm53-logs/st-bracket-tier/tool-template-b-0916-hold-fad98cf73fe0 --dump-dir /home/choiceoh/glm53-logs/st-bracket-dumps/tool-template-b-0916-hold-fad98cf73fe0 "
+      ],
+      "code_files": 337,
+      "code_sha256": "dda3661d1b188482e28bd8478f1a8e4eb891e735d99479321e47102cb79ec796",
+      "error_signatures": [],
+      "calibration_lines": [
+        "boot rendezvous draft-calibration: rank 1 prepared; waiting for 4 ranks (deadline 1800s)"
+      ]
+    },
+    "srv2": {
+      "id": "542f1d3651b858f09ecddb4f71d3e43f47ac8a0b630bb1979ac31e4e6623451f",
+      "image": "sha256:3479b328c0138658a492b904ec650174b2d7b7806d21c68e2bb143a9e057e308",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 3921616,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-15T20:48:29.650490444Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      },
+      "mount": "/home/choiceoh/st-releases/fad98cf73fe0",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --kv-gib 7.0  --port 8001 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2 --tier-dir /home/choiceoh/glm53-logs/st-bracket-tier/tool-template-b-0916-hold-fad98cf73fe0 --dump-dir /home/choiceoh/glm53-logs/st-bracket-dumps/tool-template-b-0916-hold-fad98cf73fe0 "
+      ],
+      "code_files": 337,
+      "code_sha256": "dda3661d1b188482e28bd8478f1a8e4eb891e735d99479321e47102cb79ec796",
+      "error_signatures": [],
+      "calibration_lines": [
+        "    draft_fc_calibration     auto                             [production default]",
+        "boot rendezvous draft-calibration: rank 0 prepared; waiting for 4 ranks (deadline 1800s)"
+      ]
+    },
+    "srv3": {
+      "id": "115f766bf121b59f2d24285eb60e830fcebcf24be09a02a96751ecee4b7e109d",
+      "image": "sha256:af8d35c02a998a226666fba84334005ac1b8fdfa48261188d211758216f198bd",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 2413058,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-15T20:48:30.055822843Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      },
+      "mount": "/home/choiceoh/st-releases/fad98cf73fe0",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --kv-gib 7.0  --port 8001 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2 --tier-dir /home/choiceoh/glm53-logs/st-bracket-tier/tool-template-b-0916-hold-fad98cf73fe0 --dump-dir /home/choiceoh/glm53-logs/st-bracket-dumps/tool-template-b-0916-hold-fad98cf73fe0 "
+      ],
+      "code_files": 337,
+      "code_sha256": "dda3661d1b188482e28bd8478f1a8e4eb891e735d99479321e47102cb79ec796",
+      "error_signatures": [],
+      "calibration_lines": [
+        "boot rendezvous draft-calibration: rank 2 prepared; waiting for 4 ranks (deadline 1800s)"
+      ]
+    },
+    "srv4": {
+      "id": "b6c2650cdd1c142bac5f7cf424148393c0cd2701848a5f6727e3127103478468",
+      "image": "sha256:768527bef2ea278dbf2a922f839d356bbfcf4dd6f0747951b9137a2e10a7df7f",
+      "state": {
+        "Status": "running",
+        "Running": true,
+        "Paused": false,
+        "Restarting": false,
+        "OOMKilled": false,
+        "Dead": false,
+        "Pid": 1610558,
+        "ExitCode": 0,
+        "Error": "",
+        "StartedAt": "2026-09-15T20:48:30.412030433Z",
+        "FinishedAt": "0001-01-01T00:00:00Z"
+      },
+      "mount": "/home/choiceoh/st-releases/fad98cf73fe0",
+      "command": [
+        "-lc",
+        "source /repo/launchers/lib/common-tp4.sh; eval \"$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u engine/profiles/glm53/boot.py --production --kv-gib 7.0  --port 8001 --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full --ckpt-meta /repo/st-glm53-meta --drafter-dir /home/choiceoh/models/GLM-5.3-Flash-DFlash2 --tier-dir /home/choiceoh/glm53-logs/st-bracket-tier/tool-template-b-0916-hold-fad98cf73fe0 --dump-dir /home/choiceoh/glm53-logs/st-bracket-dumps/tool-template-b-0916-hold-fad98cf73fe0 "
+      ],
+      "code_files": 337,
+      "code_sha256": "dda3661d1b188482e28bd8478f1a8e4eb891e735d99479321e47102cb79ec796",
+      "error_signatures": [],
+      "calibration_lines": [
+        "boot rendezvous draft-calibration: rank 3 prepared; waiting for 4 ranks (deadline 1800s)"
+      ]
+    }
+  }
+}
