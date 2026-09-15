@@ -579,6 +579,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
                     drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena, policy=draft_policy, tuning=tuning)
+                    if capture_rows is not None:
+                        recorder.gauge('drafter_decode_cells', len(drafter.bind_decode_cells(capture_rows)))
                     recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
                     recorder.gauge('draft_fc_bias_status', drafter.fc_bias_status)
                     recorder.gauge("drafter_block_fp8_packs", sum(
@@ -832,6 +834,24 @@ def decode_absorb_report(net):
     return dict(rows=list(rows), executed=sorted(executed), resident_bytes=0, output_layout='token-major')
 
 
+def drafter_decode_cell_report(drafter):
+    """Each drafter MLP projection bound to a C1 cell must reach it during preparation."""
+    rows = getattr(drafter, 'decode_cell_rows', ())
+    if not rows:
+        return {}
+    dense, missing = {}, []
+    for name, layer in drafter.dense.items():
+        declared = tuple(getattr(layer, 'decode_input_rows', ()))
+        if not declared:
+            continue
+        actual = set(declared).intersection(getattr(layer, 'bound_input_executed', ()))
+        dense[name] = sorted(actual)
+        missing.extend((name, m) for m in declared if m not in actual)
+    if missing or not dense:
+        raise RuntimeError(f'bound drafter C1 cells were not executed: {missing}')
+    return dict(rows=list(rows), dense=dense)
+
+
 def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
@@ -845,6 +865,7 @@ def native_execution_report(net, drafter):
     proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
+                 drafter_decode_cells=drafter_decode_cell_report(drafter),
                  target_w4=sum(bool(p.executed & 1) for p in target),
                  target_fp8=sum(bool(p.executed & 2) for p in target),
                  head_fp8=net.dense['head'].executed,

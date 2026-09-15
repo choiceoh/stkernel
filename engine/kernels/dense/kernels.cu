@@ -1627,20 +1627,20 @@ mk_query_pair_kernel(MKQueryPairCtx pair) {
     mk_gemm_input_cta3_body<2,2,3,false,12>(pair.readers[1],block-first_blocks);
 }
 
-// C=2 (K=7, sixteen rows): KDA input and the KDA/MLA outputs. A CTA owns eight
-// output columns and runs the ordinary 16-row lane's MMA, X[16] @ W[8], with
-// mk_gemm2_kernel<2>'s operands in its order, reading the invocation-owned wide
-// input pack. Eight warps take independent K blocks; the epilogue replays every
-// column's original per-slice FMA chain and slice sum (#946). With eight slices
-// each warp owns one slice and accumulates it, as the C1 MODE kernels do. Eight W
-// rows per CTA keep the ring and partials at 26.6 KB or less: three CTAs per SM.
-// gate/up, MLP down, qkv_a and a joined query grid were measured in this form
-// and rejected (measurements/st_c2_dense_cells_20260915).
+// C=2 (K=7, sixteen rows): the bound W4 cells. A CTA owns eight output columns
+// and runs the ordinary 16-row lane's MMA, X[16] @ W[8], with mk_gemm2_kernel<2>'s
+// operands in its order, reading the invocation-owned wide input pack. Eight
+// warps take independent K blocks; the epilogue replays every column's original
+// per-slice FMA chain and slice sum (#946). With eight slices each warp owns one
+// slice and accumulates it, as the C1 MODE kernels do. Eight W rows per CTA keep
+// the ring and partials at 26.6 KB or less: three CTAs per SM. Judged by chains
+// of distinct layers with evicted caches (measurements/st_c2_dense_cells_20260915);
+// a joined query grid in this form measured neutral and is not built.
 constexpr int ROWS16_RAW_NIB=64*W4_RAW_PITCH, ROWS16_RAW_BYTES=ROWS16_RAW_NIB+64*8;
 template <bool DIRECT=false, int KBLKS=32, int SLICES=3>
 __device__ __forceinline__ void mk_gemm_rows16_body(MKGemm2Ctx c,int block) {
-  static_assert(KBLKS==16 || KBLKS==32);
-  static_assert(SLICES==3 || (SLICES==8 && KBLKS==32 && !DIRECT));
+  static_assert(KBLKS==16 || KBLKS==24 || KBLKS==32);
+  static_assert(SLICES==2 || SLICES==3 || SLICES==6 || (SLICES==8 && KBLKS==32 && !DIRECT));
   constexpr bool SLICED=SLICES==8;
   constexpr int NB=2,DIST=NB-1;
   asm volatile("griddepcontrol.launch_dependents;");
@@ -3781,11 +3781,13 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
     producer_q = pk.data_ptr<uint8_t>();
     producer_s = reinterpret_cast<float*>(pk.data_ptr<uint8_t>() + kblk * 1024);
   }
-  // K=7 C=2: KDA input and the KDA/MLA TX outputs run sixteen-row CTAs
-  // (measurements/st_c2_dense_cells_20260915); forward_pipeline=false keeps the
-  // wide pack + mk_gemm2_kernel<2> route as their same-build control.
+  // K=7 C=2: the KDA input, gate/up and qkv_a matrices and the KDA/MLA output and
+  // MLP down TX slots run sixteen-row CTAs (measurements/st_c2_dense_cells_20260915);
+  // forward_pipeline=false keeps the wide pack + mk_gemm2_kernel<2> route as their
+  // same-build control.
   if (m == 16 && forward_pipeline &&
-      (address.has_value() ? n == 4096 && (k == 2048 || k == 4096) : n == 6416 && k == 4096)) {
+      (address.has_value() ? n == 4096 && (k == 2048 || k == 3072 || k == 4096)
+                           : k == 4096 && (n == 6416 || n == 6144 || n == 2048))) {
     mk_run_gemm_rows16(x, wq4, ws4, out, n, rgs_ptr, address);
     return;
   }
@@ -3817,9 +3819,10 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
 }
 
 // C=2 sixteen-row cells: the wide input pack, then mk_gemm_rows16_kernel. Each
-// shape keeps the ordinary lane's K slices at sixteen rows (KDA input 8, outputs
-// 3); a changed plan is refused, not re-sliced. Nothing global: pack and partials
-// are owned by the invocation, so private workspaces do not apply.
+// shape keeps the ordinary lane's K slices at sixteen rows (KDA input 8, gate/up 2,
+// qkv_a 6, outputs and MLP down 3); a changed plan is refused, not re-sliced.
+// Nothing global: pack and partials are owned by the invocation, so private
+// workspaces do not apply.
 constexpr int ROWS16_SMEM_BASE=MK_SMEM_ALIGN+2*ROWS16_RAW_BYTES;
 constexpr int rows16_smem(int kblks,int slices) {
   return ROWS16_SMEM_BASE+(slices==8?8:kblks)*128*(int)sizeof(float);
@@ -3831,7 +3834,10 @@ static void mk_rows16_attrs() {
     MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,bytes));
   };
   set(mk_gemm_rows16_kernel<false,32,8>,rows16_smem(32,8));
+  set(mk_gemm_rows16_kernel<false,32,2>,rows16_smem(32,2));
+  set(mk_gemm_rows16_kernel<false,32,6>,rows16_smem(32,6));
   set(mk_gemm_rows16_kernel<true,16,3>,rows16_smem(16,3));
+  set(mk_gemm_rows16_kernel<true,24,3>,rows16_smem(24,3));
   set(mk_gemm_rows16_kernel<true,32,3>,rows16_smem(32,3));
   ready=true;
 }
@@ -3854,8 +3860,9 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
               && ((uintptr_t)x.data_ptr() & 7) == 0, "sixteen-row cells take aligned BF16 [16, K] rows");
   const int64_t k = x.size(1), n = n_orig;
   const bool direct = address.has_value();
-  TORCH_CHECK((!direct && k == 4096 && n == 6416) || (direct && n == 4096 && (k == 2048 || k == 4096)),
-              "sixteen-row cells: KDA input to a matrix; KDA and MLA outputs to a TX slot");
+  TORCH_CHECK((!direct && k == 4096 && (n == 6416 || n == 6144 || n == 2048)) ||
+              (direct && n == 4096 && (k == 2048 || k == 3072 || k == 4096)),
+              "sixteen-row cells: KDA input, gate/up and qkv_a to a matrix; KDA/MLA outputs and MLP down to a TX slot");
   TORCH_CHECK(rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device()
               && wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8
               && wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128 && wq4.size(1) == k / KSTEP
@@ -3874,7 +3881,7 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
   c.rgs = (const float*)rgs_ptr;
   c.m = 16; c.k = (int)k; c.n = (int)wq4.size(0) * SMEM_W_ROWS; c.n_orig = (int)n;
   c.ksr = mk_choose_ksr2(16, c.n, c.k);
-  const int slices = n == 6416 ? 8 : 3;
+  const int slices = n == 6416 ? 8 : n == 6144 ? 2 : n == 2048 ? 6 : 3;
   TORCH_CHECK(c.ksr == slices, "sixteen-row cells require the ordinary lane's K slices");
   if (direct) {
     auto a = *address;
@@ -3893,8 +3900,14 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
   const int grid = (int)n / 8;
   if (n == 6416)
     mk_launch(mk_gemm_rows16_kernel<false,32,8>, grid, rows16_smem(32,8), stream, c);
+  else if (n == 6144)
+    mk_launch(mk_gemm_rows16_kernel<false,32,2>, grid, rows16_smem(32,2), stream, c);
+  else if (n == 2048)
+    mk_launch(mk_gemm_rows16_kernel<false,32,6>, grid, rows16_smem(32,6), stream, c);
   else if (k == 2048)
     mk_launch(mk_gemm_rows16_kernel<true,16,3>, grid, rows16_smem(16,3), stream, c);
+  else if (k == 3072)
+    mk_launch(mk_gemm_rows16_kernel<true,24,3>, grid, rows16_smem(24,3), stream, c);
   else
     mk_launch(mk_gemm_rows16_kernel<true,32,3>, grid, rows16_smem(32,3), stream, c);
 }
@@ -3913,7 +3926,10 @@ std::vector<int64_t> mk_rows16_info() {
     out.insert(out.end(), {a.numRegs, (int64_t)a.localSizeBytes, bps, smem});
   };
   note(mk_gemm_rows16_kernel<false,32,8>, rows16_smem(32,8));
+  note(mk_gemm_rows16_kernel<false,32,2>, rows16_smem(32,2));
+  note(mk_gemm_rows16_kernel<false,32,6>, rows16_smem(32,6));
   note(mk_gemm_rows16_kernel<true,16,3>, rows16_smem(16,3));
+  note(mk_gemm_rows16_kernel<true,24,3>, rows16_smem(24,3));
   note(mk_gemm_rows16_kernel<true,32,3>, rows16_smem(32,3));
   return out;
 }
