@@ -1,0 +1,21 @@
+image sha256:848e493f37af252865deea2fe6169916f6bac727343b5ab592cd74fcf3639544; host srv4; 2026-09-15T04:21:40Z
+[transformers] You are using a model of type `glm5_next` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+{
+ "AutoTokenizer.from_pretrained": 2.228,
+ "TokenizerInfo.from_huggingface": 1.134,
+ "tokenizers.Tokenizer.from_file": 0.835,
+ "Tokenizer.get_vocab(with_added_tokens=True)": 0.18,
+ "detect metadata (to_str)": 0.781,
+ "TokenizerInfo(encoded_vocab, ...)": 0.208,
+ "same vocab dict": true,
+ "same metadata": true,
+ "metadata": {
+  "vocab_type": "VocabType.BYTE_LEVEL",
+  "add_prefix_space": "False"
+ },
+ "same decoded vocab": true,
+ "same stop ids": true,
+ "same special ids": true,
+ "same vocab type / prefix": true,
+ "same dump_metadata": true
+}

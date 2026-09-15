@@ -3408,3 +3408,19 @@ C=1(8행)만 쓰는 공유 전문가 겹침을 C=2 16행에 여는 후보를 같
   - 캐시가 빈 노드의 첫 요청이 그 네 길이(256·2,048·2,304·4,096)와 정확히 같으면, conv 의 `T` 특수화가 그 요청 안에서 컴파일한다. 다른 모든 길이가 원래 치르던 비용이다.
 
 [근거 줄·캐시 확인·명령](measurements/st_boot_warmup_decode_only_20260915/README.md).
+
+### 문법 자격 검사 — xgrammar 가 문의 토크나이저에서 입력을 읽는다 (2026-09-15)
+
+- **근거.**
+  - `qualify grammar` 는 main `3acae017` 따뜻한 부팅 두 번에서 6.75 / 10.18 s(rank 0)였다.
+  - `for_checkpoint` 는 transformers `AutoTokenizer` 를 따로 만들어(CPU 2.2 s) `TokenizerInfo.from_huggingface`(1.1 s)에 넘겼다. 엔진은 같은 `tokenizer.json` 을 이미 `tokenizers.Tokenizer` 로 읽는다.
+  - GLM-5.3 메타에서 백엔드의 `get_vocab(with_added_tokens=True)`·`to_str()` 로 만든 TokenizerInfo 는 vocab dict, metadata, decoded vocab 154,880 개, stop/special id, `dump_metadata` 가 모두 같았다.
+- **바꾼 것.**
+  - `base/grammar.tokenizer_info` 를 더했고, `for_checkpoint(tokenizer=)` 와 `Grammars(info=)` 가 이를 받는다.
+  - GLM 부팅은 문의 토크나이저를 `qualify grammar` 에서 한 번 로드해 문법과 문이 함께 쓴다.
+  - 기본 경로(토크나이저 없음)는 그대로다.
+- **버린 것.** `TokenizerInfo.serialize_json` 디스크 캐시는 NUL 토큰 다섯 개가 빈 바이트열로 왕복해 넣지 않았다.
+- **검증.** CPU 44 테스트 OK. 합성 byte-level·Metaspace 토크나이저에서 두 경로의 TokenizerInfo 와 JSON/스키마 마스크가 같다.
+- **미측정.** GPU 부팅. 다음 부팅의 `qualify grammar`·`door` 행으로 확인한다. 랭크당 약 −2.2 s 는 CPU 추정이다.
+
+[단계별 시간·대조·버린 방법](measurements/st_boot_grammar_tokenizer_20260915/README.md).

@@ -48,27 +48,57 @@ def available() -> bool:
         return False
 
 
-def for_checkpoint(ckpt, vocab: int, device=None, stop_token_ids=None) -> "Grammars | None":
+def for_checkpoint(ckpt, vocab: int, device=None, stop_token_ids=None, tokenizer=None) -> "Grammars | None":
     """`Grammars` over the checkpoint's tokenizer, or None where xgrammar is not installed -- then response_format is
     refused at the door (D3), never silently unenforced. Every rank builds one (each row's matcher runs everywhere); every
     profile's boot binds structured output this way.
 
     `device`: prove the mask kernel there and pay its JIT at boot (`Grammars.qualify`; 45차 §23 B2, the same rule as
-    every other first-use cost: what cannot be served does not boot, D3)."""
+    every other first-use cost: what cannot be served does not boot, D3).
+
+    `tokenizer`: the checkpoint's `tokenizers.Tokenizer`, already loaded, from a profile that knows its tokenizer.json
+    holds every token transformers would give it (`tokenizer_info`). Without one, transformers loads the tokenizer."""
     if not available():
         return None
-    from transformers import AutoTokenizer
-    g = Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
+    if tokenizer is not None:
+        g = Grammars(None, vocab, stop_token_ids=stop_token_ids,
+                     info=tokenizer_info(tokenizer, vocab, stop_token_ids))
+    else:
+        from transformers import AutoTokenizer
+        g = Grammars(AutoTokenizer.from_pretrained(str(ckpt)), vocab, stop_token_ids=stop_token_ids)
     if device is not None:
         g.qualify(device)
     return g
+
+
+def tokenizer_info(tokenizer, vocab_size: int, stop_token_ids):
+    """xgrammar's TokenizerInfo over a `tokenizers.Tokenizer`, with the inputs `TokenizerInfo.from_huggingface` takes
+    from a transformers fast tokenizer: the vocabulary with its added tokens (what `PreTrainedTokenizerFast.get_vocab`
+    returns), the vocab type and prefix space detected from the serialized backend, and the stop ids.
+
+    It skips building the transformers tokenizer only to read those back: on GLM-5.3's 154,880-token tokenizer that
+    object and `from_huggingface` cost 2.23 + 1.13 s a rank, this 1.17 s, and the two infos agree in every decoded
+    token, stop and special id and their metadata (measurements/st_boot_grammar_tokenizer_20260915). The caller vouches
+    that the transformers tokenizer would add no token of its own; the stop ids must be given, as the engine's are."""
+    import xgrammar as xgr
+    if not stop_token_ids:
+        raise ValueError("a TokenizerInfo read from the backend needs the engine's stop token ids")
+    vocab = tokenizer.get_vocab(with_added_tokens=True)
+    size = vocab_size or max(len(vocab), max(vocab.values()) + 1)
+    encoded = [""] * size
+    for token, index in vocab.items():
+        if index < size:
+            encoded[index] = token
+    metadata = xgr.TokenizerInfo._detect_metadata_from_hf(tokenizer.to_str())
+    return xgr.TokenizerInfo(encoded, vocab_type=metadata["vocab_type"], vocab_size=size,
+                             stop_token_ids=sorted(stop_token_ids), add_prefix_space=metadata["add_prefix_space"])
 
 
 class Grammars:
     """Compiled grammars keyed by spec, over one tokenizer (the checkpoint's, as a transformers tokenizer),
     and the one bitmask every row of a step is filled into."""
 
-    def __init__(self, hf_tokenizer, vocab_size: int, stop_token_ids=None):
+    def __init__(self, hf_tokenizer, vocab_size: int, stop_token_ids=None, *, info=None):
         import xgrammar as xgr
         from concurrent.futures import ThreadPoolExecutor
         self.xgr = xgr
@@ -76,8 +106,9 @@ class Grammars:
         # stop tokens too. Left to itself xgrammar takes the tokenizer's single `eos_token`, and a model whose
         # generation config ends on something else would finish its JSON on a token the engine does not stop
         # at -- the grammar then allows nothing but that token, and the row runs to its limit repeating it.
-        info = xgr.TokenizerInfo.from_huggingface(hf_tokenizer, vocab_size=vocab_size,
-                                                  stop_token_ids=sorted(stop_token_ids) if stop_token_ids else None)
+        if info is None:                          # `info`: already read from the backend (`tokenizer_info`)
+            info = xgr.TokenizerInfo.from_huggingface(hf_tokenizer, vocab_size=vocab_size,
+                                                      stop_token_ids=sorted(stop_token_ids) if stop_token_ids else None)
         self.vocab_size = vocab_size
         self.compiler = xgr.GrammarCompiler(info)
         self.words = int(xgr.allocate_token_bitmask(1, vocab_size).shape[-1])
