@@ -4054,7 +4054,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
 
 static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
-                bool ar_consumer = false, const at::Tensor& packets = {}, int tail_mode = 0) {
+                bool ar_consumer = false, const at::Tensor& packets = {}, int tail_mode = -1) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
@@ -4135,12 +4135,12 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
 }
 
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = 0) {
+                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1) {
   mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
 }
 
 void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = 0) {
+                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1) {
   mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
 }
 
@@ -4879,10 +4879,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
-        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = 0);
+        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1);
   m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
-        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = 0);
+        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1);
   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("hidden") = HIDDEN_V41);

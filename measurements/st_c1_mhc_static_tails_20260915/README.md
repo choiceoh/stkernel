@@ -1,6 +1,15 @@
 # C=1 MHC static tail ownership (2026-09-15)
 
-## Candidate and current gate
+## Result and implementation
+
+The native gate passed. The 89-boundary interval falls **8.11% warm / 8.43%
+evicted** for ordinary AR inputs and **8.77% / 8.81%** for local rank packets.
+Both independent captures improved in every measured case. All output fields
+match bitwise, including mixed row counts and the FP32 fallback. These are
+component results; full TP4 consumer comparison is the remaining gate.
+
+Raw records are in `gpu.jsonl` and `queue.log`; `components.md` is generated
+by `python3 measurements/st_c1_mhc_static_tails_20260915/summarize.py FILE.jsonl`.
 
 The packed C=1 consumer has eight rows and 48 resident CTAs: three groups of
 16 hidden-dimension chunks. Two groups process three rows apiece and the third
@@ -14,9 +23,10 @@ arrivals and each token's wait/reset remain. The native host gate requires
 hidden size 4096, eight rows, lossless BF16 coefficients, an AR or direct-packet
 consumer, and exactly 48 resident CTAs. All other shapes keep dynamic tails.
 
-Source `f81800a0` on base `5871c559` keeps the production default dynamic.
-Native `tail_mode=0/1/-1` selects dynamic/forced-static/shape-gated-auto for
-same-build measurement. The default will change only after qualification.
+Source `f772d319` on base `5871c559` qualified native `tail_mode=0/1/-1`
+(dynamic/forced-static/shape-gated-auto). The full-serving candidate selects
+the proven automatic gate by default. This changes only host defaults; the
+device kernel bodies, inputs, flags and shapes are the ones tested here.
 
 ## Evidence
 
@@ -26,8 +36,9 @@ same-build measurement. The default will change only after qualification.
 - CPU tests: **37 passed, 8 GPU-only skipped** (`cpu-tests.log`, 45 total).
   The read-only task checkout was mounted at `/repo`, with `--workdir /repo`
   and `PYTHONPATH=/repo`; CUDA was hidden.
-- GB10 exactness and component timing: queued as `c1mhc-tails-a55c`, ticket
-  `17894505191390768`.
+- GB10 exactness and component timing: **PASS**, `c1mhc-tails-a55c`, ticket
+  `17894505191390768`, revision 4. Payload 12.4 seconds after 459.7 seconds
+  waiting in the canonical queue. Peak allocated memory: 378,778,624 bytes.
 - TP4 transport and consumer performance: not measured yet.
 
 ## GPU gate
