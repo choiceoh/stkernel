@@ -74,15 +74,13 @@ class GateStampTests(unittest.TestCase):
         first = self.stamps(engine)[0]
         self.assertEqual((first["forward_seconds"], first["vote_seconds"]), (1.0, 8.0))
 
-    def test_the_sync_before_the_vote_is_the_devices_and_only_on_cuda(self):
+    def test_the_sync_before_the_vote_is_the_devices_and_only_where_there_is_one(self):
         import torch
         engine = self.engine()
-        with patch.object(torch.cuda, "synchronize") as sync:
+        with patch.object(torch.cuda, "is_initialized", return_value=False),              patch.object(torch.cuda, "synchronize") as sync:
             engine._warmup_prefill_memory()
-        sync.assert_not_called()                          # this engine's caches are on the CPU
-        engine.caches.device = "cuda:0"
-        engine._prefill_forward = MagicMock(return_value=(torch.ones(1, 8), None))
-        with patch.object(torch.cuda, "synchronize") as sync:
+        sync.assert_not_called()                          # no context: there is nothing to wait for
+        with patch.object(torch.cuda, "is_initialized", return_value=True),              patch.object(torch.cuda, "synchronize") as sync:
             engine._warmup_prefill_memory()
         self.assertEqual(sync.call_count, 2)              # one per pass, before its vote
 
