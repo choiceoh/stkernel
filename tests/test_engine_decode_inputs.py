@@ -65,6 +65,12 @@ class InputTests(unittest.TestCase):
         self.assertEqual(result.shape, (4, 15))
         self.assertEqual(result.dtype, torch.float32)
 
+    def test_a_host_position_is_a_runtime_scalar_not_a_specialization(self):
+        from engine.kernels import decode_inputs
+        params = {p.name: p for p in decode_inputs._draft_inputs.params}
+        self.assertFalse(params['POSITION'].is_constexpr)       # a constexpr compiled one kernel per position
+        self.assertTrue(params['POSITION'].do_not_specialize)   # nor a variant for 1 or multiples of 16
+
 
 @unittest.skipUnless(torch.cuda.is_available(), 'requires CUDA')
 class InputCudaTests(unittest.TestCase):
@@ -93,6 +99,24 @@ class InputCudaTests(unittest.TestCase):
                         self.assertTrue(torch.equal(block.cpu(), expected))
                 finally:
                     graph.reset()
+
+    def test_host_positions_share_one_kernel_and_match_host_bits(self):
+        from engine.kernels import decode_inputs
+        anchors = torch.tensor([13], device='cuda')
+        for position in (0, 1, 16, 17, 128 * 1024, (1 << 31) - 1):
+            build(anchors, position, 7, 154879)
+        cache = decode_inputs._draft_inputs.device_caches[torch.cuda.current_device()][0]
+        compiled = len(cache)
+        for position in list(range(2, 40)) + [1 << 20, (1 << 31) - 2]:
+            ids, pos = build(anchors, position, 7, 154879)
+            a, p = build(anchors.cpu(), position, 7, 154879)
+            self.assertTrue(torch.equal(ids.cpu(), a) and torch.equal(pos.cpu(), p))
+        self.assertEqual(len(cache), compiled)                   # no position compiled another kernel
+        for position in ((1 << 31), (1 << 63) - 8):               # an int64 scalar: at most one more signature
+            ids, pos = build(anchors, position, 7, 154879)
+            a, p = build(anchors.cpu(), position, 7, 154879)
+            self.assertTrue(torch.equal(ids.cpu(), a) and torch.equal(pos.cpu(), p))
+        self.assertLessEqual(len(cache), compiled + 1)
 
 
 if __name__ == '__main__':
