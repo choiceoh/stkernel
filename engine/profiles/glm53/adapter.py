@@ -1277,9 +1277,20 @@ class Glm53Engine:
                 new = mine[: accepted + 1]
             else:
                 self.note_ceilings(dists[at: at + count], draft_probs)
-                k = len(drafts[: count - 1])
-                accepted, new = block_verify(dists[at: at + count], drafts[: count - 1], draft_probs,
+                # A grammar ends a row's live positions AT a draft: one it refuses, or a stop token it accepts
+                # (base/grammar.Matcher.fill). That draft is verified like the others. The masked target gives a
+                # refused draft no mass, so the verification rejects it and the correction comes from the residual
+                # at its position. Leaving it out and drawing its position as the bonus made WHICH drafts were
+                # verified depend on what had been drafted, and the committed tokens stopped following the target.
+                # The last live position has no row after it: the stand-in is drawn from only when every draft was
+                # accepted, which ends on the stop token, and the committed tokens stop there.
+                k = min(len(drafts), count)
+                target = dists[at: at + count]
+                if k == count:
+                    target = torch.cat([target, target[-1:]])
+                accepted, new = block_verify(target, drafts[:k], draft_probs,
                                              self._uniforms(seq, draws.VERIFY, k) + self._uniforms(seq, draws.FRESH, 1))
+                new = new[:count]
             verdicts.append((accepted, new))
             at += count
         out, at = [], 0
