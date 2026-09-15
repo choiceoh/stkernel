@@ -1,12 +1,52 @@
-# C=1 MHC static tail ownership (2026-09-15)
+# C=1 MHC static tail ownership: accepted (2026-09-15)
 
 ## Result and implementation
+
+**Accepted by the user** after reviewing the measured step rate, acceptance
+and prefill observations ("저정도면 그냥 후보 수용해"). The qualified static
+eight-row path remains enabled by default. The queued additional candidate
+boot was cancelled; adoption is not conditional on more benchmarking.
 
 The native gate passed. The 89-boundary interval falls **8.11% warm / 8.43%
 evicted** for ordinary AR inputs and **8.77% / 8.81%** for local rank packets.
 Both independent captures improved in every measured case. All output fields
 match bitwise, including mixed row counts and the FP32 fallback. These are
-component results; full TP4 consumer comparison is the remaining gate.
+component results. The observed whole-serving C=1 step rate is essentially
+unchanged; no whole-engine 8% speedup is claimed. The user accepted the
+candidate with the evidence below before a complete paired TP4 repeat.
+
+### C=1 serving observations reviewed for acceptance
+
+| Metric | Dynamic baseline | Static candidate | Observed change |
+| --- | ---: | ---: | ---: |
+| Decode step/s, inside-answer window median | 19.896189 | 19.897425 | +0.0062% |
+| Raw speculative acceptance | 51.0719% | 53.6997% | +2.6278 percentage points |
+| Generated tokens/step | 4.0643 | 4.2220 | +3.88% |
+| 2K TTFT, median of three fresh requests | 1.0892 s | 1.0796 s | -0.88% |
+| 32K TTFT | 9.4927 s | 9.6728 s | +1.90% |
+| 128K TTFT | 37.3635 s | 36.9422 s | -1.13% |
+| Final-answer correctness | 9/9 | 9/9 | preserved in this sample |
+
+Sources: `onepass-control-cold.json` (baseline `78c3f5ed`, run
+`20260915T061115-e904f00ebe5d`) and `onepass-incomplete.json` (candidate
+`b2e59673`, run `20260915T055558-6151c6353435`). Both C=1 intervals are prepared,
+profiler-off, free of observed JIT/capture and exclusive, with no prefix-cache
+reuse. Actual input lengths are 2,627 / 33,826 / 129,784 tokens. TTFT includes
+first-token generation; it is not an isolated prefill-kernel timer.
+
+The candidate record ends early during subsequent C=2 preparation, as detailed
+below. These are one-boot C=1 observations, not a complete paired full-run
+benchmark. The latency-recorder fix in baseline `78c3f5ed` and accepted source
+`fcd32f13` changes accepted recording widths, not the measured C=1 kernel.
+Fresh random prefix salts can change generated continuations; the higher
+acceptance rate is an observation, not an established effect of this change.
+
+`adoption.json` records the decision, source identities and exact arithmetic
+behind this table. The baseline's already-running second pass also completed:
+**9/9 final answers**, **19.897906 step/s**, **50.6767% acceptance**
+(`onepass-control-warm.json`). There is no matched second candidate pass.
+`full-control.log` records normal four-rank cleanup and fleet release;
+`full-candidate-cancelled.log` records the queued candidate cancellation.
 
 Raw records are in `gpu.jsonl` and `queue.log`; `components.md` is generated
 by `python3 measurements/st_c1_mhc_static_tails_20260915/summarize.py FILE.jsonl`.
@@ -23,12 +63,34 @@ arrivals and each token's wait/reset remain. The native host gate requires
 hidden size 4096, eight rows, lossless BF16 coefficients, an AR or direct-packet
 consumer, and exactly 48 resident CTAs. All other shapes keep dynamic tails.
 
+The downstream PDL wait remains in place. NVIDIA documents that this wait
+holds dependent work until the upstream kernels complete and flush their
+global-memory results; removing the unused dynamic exit-ticket reset does
+not remove that dependency. See the [CUDA PDL guide](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/programmatic-dependent-launch.html).
+
 Source `f772d319` on base `5871c559` qualified native `tail_mode=0/1/-1`
 (dynamic/forced-static/shape-gated-auto). The full-serving candidate selects
 the proven automatic gate by default. This changes only host defaults; the
 device kernel bodies, inputs, flags and shapes are the ones tested here.
 
 ## Evidence
+
+### Quality criterion for this task
+
+The user explicitly selected **final-answer correctness** for this optimization
+("최종정답이면 되지"). The serving comparison therefore uses the recorded
+`quality.dimensions.result` counts for C=1. Proof-certificate, derivation,
+counterfactual and witness scores remain in the raw records, but do not veto
+this task's answer-correctness result. The canonical harness and its original
+pass/fail fields have not been rewritten.
+
+Fresh prefixes, profiler-off measurement, no observed JIT/capture, exclusive
+traffic and execution integrity are still checked. The user subsequently
+accepted this candidate on the available evidence and ended additional
+benchmarking. That acceptance does not convert the incomplete candidate run
+into a complete paired comparison or a pass of the stricter proof rubric.
+
+### Recorded checks
 
 - CPU native compile/load: **PASS**, `compile.json`. CUDA was hidden; both new
   native specializations were found, with cuobjdump reporting 128 registers,
@@ -43,8 +105,9 @@ device kernel bodies, inputs, flags and shapes are the ones tested here.
 - GB10 exactness and component timing: **PASS**, `c1mhc-tails-a55c`, ticket
   `17894505191390768`, revision 4. Payload 12.4 seconds after 459.7 seconds
   waiting in the canonical queue. Peak allocated memory: 378,778,624 bytes.
-- First TP4 attempt: C=1 completed at 2K/32K/128K, but the full run is
-  **incomplete and invalid as speed evidence**; details below.
+- First TP4 attempt: C=1 completed at 2K/32K/128K, with **9/9 final answers**;
+  the full run is **incomplete**. Its C=1 observations are shown above, and
+  the subsequent C=2 recorder failure is retained below.
 
 `source-reuse.json` verifies that the final native source differs from the
 GPU-qualified source only at three C++ and two pybind host defaults (0 to -1).
@@ -78,8 +141,9 @@ external traffic. Nevertheless, the quality gate passed only **5/9** cases
 (50/57 rubric points): final results were 9/9, while derivation, counterfactual
 and witness checks were incomplete. Korean corruption was 0/5.
 
-The record correctly clears `decode.windows_med` and retains the raw value
-only as invalid evidence. Then C=2 preparation received HTTP 409 and the
+The harness clears `decode.windows_med` under its original proof rubric and
+retains `raw_windows_med`. This task's final-answer criterion was selected
+after that run. C=2 preparation then received HTTP 409 and the
 remaining run was not executed. The existing latency recorder accepted only
 concurrencies 1 and 4, although the current canonical harness follows this
 server's admission width of 2. That unconditional refusal explains the 409.
@@ -97,8 +161,18 @@ Both repeat arms contain exactly this fix:
 | Static C1 candidate plus same recording fix | `fcd32f1358cbd34799c23bdf2fca367d542b1181` | `c1mhc-final-a55c` | `17894525771743125` |
 
 The engine differences between these arms are only `kernels.cu` and its
-`SOURCE.json` provenance. No quality check or workload budget was weakened.
-The candidate's native CUDA source is still the one in `compile-final.json`.
+`SOURCE.json` provenance. Both use the same workload, token budget and raw
+harness grading. The task-specific interpretation follows the user's
+final-answer criterion above. The candidate's native CUDA source is still
+the one in `compile-final.json`.
+
+The candidate's queued command was changed to a single-arm full chain at
+revision 2, retaining ticket `17894525771743125`, because the matched baseline
+already had its own full reservation. After the user accepted the candidate,
+`bench/fleet.sh cancel c1mhc-final-a55c` stopped this waiter before admission.
+No additional candidate boot or C=2 pass is claimed. Baseline run 1 completed
+and reported C=2 final answers **11/12**; C=2 is additional coverage, not the
+C=1 final-answer count used for this decision.
 
 ## GPU gate
 
@@ -129,5 +203,8 @@ bash probes/run_engine_probe.sh probes/engine_kernel_check.py \
 Runtime: `sha256:848e493f37af252865deea2fe6169916f6bac727343b5ab592cd74fcf3639544`,
 Torch 2.13.0+cu132 / CUDA 13.2. Native source SHA-256:
 `b3cd1b099ecf5e984cddcf712dbc751962c755dafea391f5623a6deebf85fdb4`.
-GPU work runs only through the canonical fleet queue. Final adoption requires
-the full TP4 onepass under `engine/CHARTER.md` D17.
+GPU work runs only through the canonical fleet queue. The full TP4 onepass
+workflow followed `engine/CHARTER.md` D17; the user's explicit acceptance ended
+further benchmarking before the complete candidate repeat. Accepted runtime
+source is `fcd32f1358cbd34799c23bdf2fca367d542b1181` (static tails plus the
+recording-width fix); later commits preserve documentation and evidence.
