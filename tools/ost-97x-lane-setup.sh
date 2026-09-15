@@ -130,7 +130,12 @@ fi
 if [ "$want_docker" = 1 ]; then
   step "docker with the NVIDIA runtime"
   . /etc/os-release
-  if command -v docker >/dev/null; then
+  # Ask whether docker RUNS, not whether a path exists. On this box /usr/bin/docker was a
+  # dangling symlink into /mnt/wsl/docker-desktop/ left by an uninstalled Docker Desktop:
+  # `command -v` happens to answer no for a dangling link, so the install below ran -- but
+  # let that mount come back without a working daemon behind it and the path test would say
+  # yes, skip the install, and hand a broken CLI to nvidia-ctk and systemctl under `set -e`.
+  if docker --version >/dev/null 2>&1; then
     echo "  docker already installed: $(docker --version)"
   else
     sudo install -m 0755 -d /etc/apt/keyrings
