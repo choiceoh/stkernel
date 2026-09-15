@@ -228,12 +228,13 @@ class WiringTests(unittest.TestCase):
         store = SimpleNamespace(amax=lambda name: torch.ones(16), calibrated=lambda name: True,
                                 gptq_damping={'target': .01})
         comm = SimpleNamespace(wait_prepared=lambda stage: None, gather_objects=lambda x: [x, x])
-        prepare_store(tuning, store, DraftPolicy('fp8', 'decode', True), SimpleNamespace(hidden=16), comm)
-        self.assertEqual(store.gptq_damping, {'target': .01, store_name(reader): .02,
-            store_name('fc.weight'): .02, decode_name(store_name('fc.weight')): .02})
+        facts = SimpleNamespace(hidden=16, aux_layers=[5, 14, 24, 33, 42])
+        prepare_store(tuning, store, DraftPolicy('fp8', 'decode', True), facts, comm)
+        self.assertEqual(store.gptq_damping, {'target': .01, store_name(reader, facts): .02,
+            store_name('fc.weight', facts): .02, decode_name(store_name('fc.weight', facts)): .02})
         store.amax = lambda name: None
         with self.assertRaisesRegex(ValueError, 'channel peaks'):
-            prepare_store(tuning, store, DraftPolicy(), SimpleNamespace(hidden=16), comm)
+            prepare_store(tuning, store, DraftPolicy(), facts, comm)
         comm.gather_objects = lambda x: [None, 'peer missing statistics']
         with self.assertRaisesRegex(ValueError, 'rank 1: peer missing'):
             prepare_store(tuning, store, DraftPolicy(), SimpleNamespace(hidden=16), comm)

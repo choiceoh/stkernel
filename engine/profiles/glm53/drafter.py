@@ -156,13 +156,19 @@ def rope(x: torch.Tensor, positions: torch.Tensor, theta: float):
     return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1).to(x.dtype)
 
 
-STORE_PREFIX = "DFlash2Qwen3ForCausalLM/model."      # the pack store's namespace for the drafter (kernels/dense/store)
+STORE_PREFIX = "DFlash2Qwen3ForCausalLM/"      # the pack store's namespace for the drafter (kernels/dense/store packs it per tile)
 
 
-def store_name(name: str) -> str:
-    """The pack store's name of a prepared dense weight: what its packs and calibration blobs are filed under."""
+def store_name(name: str, F: DrafterFacts) -> str:
+    """The pack store's name of a prepared dense weight: what its packs and calibration blobs are filed under.
+
+    The namespace names the target layers `fc` reads. A calibration blob is a sum over a reader's inputs, and every
+    drafter input follows from those layers' outputs -- fc's directly, each block reader's through the context it
+    attends to. Blobs summed from other layers pass every check the store makes (shapes, rows, finite peaks) and
+    would pack the readers for inputs they never see. The ones taken while this profile read the outputs one layer
+    early stay under `DFlash2Qwen3ForCausalLM/model.*`, where nothing reads them any more."""
     module = name.removesuffix(".weight").replace("self_attn.qkv", "self_attn.qkv_proj").replace("mlp.gate_up", "mlp.gate_up_proj")
-    return STORE_PREFIX + module
+    return f"{STORE_PREFIX}outputs-{'-'.join(str(layer) for layer in F.aux_layers)}/model.{module}"
 
 
 def dense_shapes(F: DrafterFacts, world: int) -> "dict[str, tuple[int, int]]":
@@ -249,7 +255,7 @@ class Drafter:
                                                [n + "attention_conv.kernel_projection.weight"] + [n + f"self_attn.{s}_proj.weight" for s in ("q", "k", "v")]),
                                               (n + "post_attention_layernorm.weight", n + "mlp.gate_up",
                                                [n + "mlp_conv.kernel_projection.weight"] + [n + f"mlp.{s}_proj.weight" for s in ("gate", "up")])):
-                amax = amax_of(store_name(dense_name))
+                amax = amax_of(store_name(dense_name, F))
                 if amax is None or any(p.get(k) is None for k in readers + [norm]):
                     continue
                 alpha = self.tuning.smoothing_alpha.get(norm, 0.5)
@@ -309,8 +315,8 @@ class Drafter:
             if name == "fc.weight":
                 options['decode_precision'] = policy.fc_precision
                 if policy.fc_calibration == 'decode':
-                    options['decode_name'] = require_decode_calibration(store, store_name(name), w.shape[1])
-            self.dense[name] = DenseLinear(w,store=store,name=store_name(name),smooth=smooth.get(name),
+                    options['decode_name'] = require_decode_calibration(store, store_name(name, F), w.shape[1])
+            self.dense[name] = DenseLinear(w,store=store,name=store_name(name, F),smooth=smooth.get(name),
                                           prefill=needs_fp8(F, max_seqs, name), **options)
         self.context_kv = torch.cat(context)
         self.context_norm = torch.stack([p[f"layers.{L}.self_attn.k_norm.weight"] for L in range(F.layers)])
