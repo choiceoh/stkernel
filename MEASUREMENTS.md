@@ -3089,21 +3089,24 @@ srv2 CUDA 13.2.1 시드(CuTe DSL 4.6.2, 장치 숨김)의 네이티브 컴파일
 `moe_pair_sync` GPU 레인은 준비만 했고, 플릿 티켓·GPU 컨텍스트·부팅은 없었다.
 [CPU 시뮬레이션·네이티브 컴파일·동기화 명령 순서 근거](measurements/st_moe_sync_cleanup_c2_20260915/README.md).
 
-### C=2 의 16행 전체합을 one-shot PDL consumer 로 (2026-09-15, 판정 없음 — TP4 는 캠페인 리드 몫)
+### C=2 의 16행 전체합을 one-shot PDL consumer 로 (2026-09-15, 기본값 채택 — 운영자 상시 지시로 TP4 확인 없이 머지)
 
 C=2 스텝의 전체합(타깃·드래프터, 스텝당 14.6회)은 16 × 4096 = 65,536 원소라 consumer 상한 8행에 걸려 일반 `k_oneshot` 으로 갔다.
 - **그 상한은 이 빌드의 커널 한계가 아니었다.** 엔진 `build()` 는 `OSAR_COMPACT_CTA` 를 정의하지 않는다.
   - 그래서 `k_oneshot_consumer` 는 일반 커널과 같은 48 CTA × 256 격자, CTA 당 티켓 1, MAXEL 을 덮는 `VECITER`=3 stash 다.
   - "12 CTA·두 벡터 stash" 는 vLLM overlay 의 선택 옵션(`VLLM_GLM53_AR_COMPACT_CTA=1`, 기본 0)에만 있다.
   - 8행은 vLLM 시절 C=1 A/B 범위가 옮겨 온 값이고, `cells.py` 주석이 그 출처를 잘못 적었다.
-- 변경: `ONESHOT_CONSUMER_MAX_ELEMENTS` 16행. 부팅 자체 시험(NCCL 대조·소거·캡처 재생)과 지연 게이지에 16행 셀을 더했다.
-  네이티브 소스는 main 과 바이트가 같다(캐시 키 동일).
-- CPU(이미지 `b45454b5`): 엔진 소스에서 뽑은 격자·stash·소유·혼합 티켓 g++ 오라클 PASS, 변이 4/4 잡음.
-  프로덕션 확장 4변형과 단일 GPU 오라클 컴파일·로드 PASS. 관련 17 모듈 106 시험 중 98 통과, 8 skip(GB10 필요), 실패 0.
-- C=2 후속 커널 감사: 16행 합 바로 뒤는 Triton/TileLang/torch 뿐이고, PDL 인 `mk_mhc_kernel` 은 대기 뒤에만 읽는다.
-- 크기 추정(09-13 4랭크 트레이스, 한 레일): 일반 합도 생산자 끝 0.6 µs 뒤 출발하고, 전체합의 후속은 조기 출발하지 않는다.
-  남는 기전은 대기 CTA 48 → 32 뿐이다. **기대 이득은 스텝당 0.1 ms 이하로 추정한다(미측정).**
-- 패킷 커널(코디네이터 추가 과제): `k_publish_packets`·`k_oneshot_moe_packets` 에서 정확성을 지키며 뺄 16행 고정비·직렬화 비용은 못 찾았다.
-  행에 비례해 느는 것은 페이로드 전송이다(floor 0.24~0.29 µs/KiB, 한 레일 상한). 버린 후보 넷과 이유는 README 에 있다.
+- 변경: `ONESHOT_CONSUMER_MAX_ELEMENTS` 16행(기본값). 네이티브 소스는 main 과 바이트가 같다(캐시 키 동일).
+  - 일반 커널은 내부 대조군 인자 `consumer_max_elements`(0)로 고를 수 있다. STK_ 노브는 없다.
+  - 16행 소거 시험·캡처 재생과 게이지 셀을 더했다. 16행 consumer 는 멈춤 감시의 부트스트랩 유예(16 시퀀스)를 지난 23번째 집합통신에서 처음 돈다. 틀리면 매달리지 않고 STALL·trap 으로 끝난다.
+- 정확성:
+  - 단일 GPU(`c2cons-gpu2-a4b9787e`): 네 rank, 1~64행과 꼬리 크기에서 consumer == 일반 == rank 순서 fold 가 BF16 바이트까지 같다. 늦은 PDL 생산자·조기 PDL 후속·NaN 독을 둔 캡처 사슬도 같다.
+  - CPU: 엔진 소스에서 뽑은 stash·소유·혼합 티켓 g++ 오라클 PASS, 변이 4/4 잡음. 확장 4변형·오라클 컴파일 PASS. 관련 19 모듈 118 시험 중 110 통과, 8 skip(GB10), 실패 0.
+- **이득(단일 GPU, GPU 쪽만, 피어 미리 착지, B/A/A/B)**: 16행 합 한 번이 consumer 에서 **−9.1~−9.7%**(생산자 PDL/일반 × warm/evicted, 반복 폭 ≤0.5%)다.
+  - 8행은 −18~−21% 로 C=1 의 기존 선택과 맞는다. 이득은 쉬는 CTA(16행 16개)에서 오고, 조기 출발에서는 오지 않는다(09-13 트레이스 분해와 일치).
+  - 절대 µs 는 프로덕션 옆 공유 GPU 라 믿지 않는다. **TP4 스텝 이득·onepass 는 미측정이다.**
+- 첫 단일 GPU 티켓(`c2cons-gpu-4d50fd37`)은 시험 결함으로 실패했다. 캡처가 프록시 요청을 먹는다고 잘못 셌다. 고친 뒤 통과했고 원래 로그를 남겼다.
+- 패킷 커널(코디네이터 추가 과제): `k_publish_packets`·`k_oneshot_moe_packets` 에서 정확성을 지키며 뺄 16행 고정비·직렬화 비용은 못 찾았다. 코드 변경은 없다.
+  - 행에 비례해 느는 것은 페이로드 전송이다(floor 0.24~0.29 µs/KiB, 한 레일 상한). 넣지 않은 후보 넷과 이유는 README 에 있다.
 
-단일 GPU 결과·TP4 미검증 목록·재현: `measurements/st_c2_oneshot_consumer_20260915/README.md`.
+단일 GPU·타이밍 원자료, 4랭크 미검증 목록, 재현: `measurements/st_c2_oneshot_consumer_20260915/README.md`.
