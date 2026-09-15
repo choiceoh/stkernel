@@ -422,6 +422,51 @@ def scatter_add_bf16x4_to_f32(addr: Int64, val0_f32, val1_f32, val2_f32, val3_f3
 
 
 @dsl_user_op
+def scatter_add_bf16x8_from_smem_to_f32(addr, smem_addr, route_weight, *, loc=None, ip=None):
+    """Load one aligned BF16x8 span and emit its two FP32 vector reductions.
+
+    Decode multiplies each staged BF16 value by the FP32 route weight before
+    saturated BF16 rounding. The prefill helper rounds the weight to BF16
+    first, so it cannot supply this decode boundary. Keep the shared load
+    inside the side-effecting scatter so a later tile reload is never CSE'd.
+    """
+    llvm.inline_asm(
+        None,
+        [Int64(addr).ir_value(loc=loc, ip=ip),
+         Int32(smem_addr).ir_value(loc=loc, ip=ip),
+         route_weight.ir_value(loc=loc, ip=ip)],
+        "{ .reg .b32 p0,p1,p2,p3; .reg .b16 h0,h1,h2,h3,h4,h5,h6,h7;"
+        " .reg .f32 f0,f1,f2,f3,f4,f5,f6,f7; .reg .b64 next;"
+        " ld.shared.v4.u32 {p0,p1,p2,p3}, [$1];"
+        " mov.b32 {h0,h1}, p0; mov.b32 {h2,h3}, p1;"
+        " mov.b32 {h4,h5}, p2; mov.b32 {h6,h7}, p3;"
+        " cvt.f32.bf16 f0, h0; cvt.f32.bf16 f1, h1;"
+        " cvt.f32.bf16 f2, h2; cvt.f32.bf16 f3, h3;"
+        " cvt.f32.bf16 f4, h4; cvt.f32.bf16 f5, h5;"
+        " cvt.f32.bf16 f6, h6; cvt.f32.bf16 f7, h7;"
+        " mul.rn.f32 f0, f0, $2; mul.rn.f32 f1, f1, $2;"
+        " mul.rn.f32 f2, f2, $2; mul.rn.f32 f3, f3, $2;"
+        " mul.rn.f32 f4, f4, $2; mul.rn.f32 f5, f5, $2;"
+        " mul.rn.f32 f6, f6, $2; mul.rn.f32 f7, f7, $2;"
+        " cvt.rn.satfinite.bf16x2.f32 p0, f1, f0;"
+        " cvt.rn.satfinite.bf16x2.f32 p1, f3, f2;"
+        " cvt.rn.satfinite.bf16x2.f32 p2, f5, f4;"
+        " cvt.rn.satfinite.bf16x2.f32 p3, f7, f6;"
+        " mov.b32 {h0,h1}, p0; mov.b32 {h2,h3}, p1;"
+        " mov.b32 {h4,h5}, p2; mov.b32 {h6,h7}, p3;"
+        " cvt.f32.bf16 f0, h0; cvt.f32.bf16 f1, h1;"
+        " cvt.f32.bf16 f2, h2; cvt.f32.bf16 f3, h3;"
+        " cvt.f32.bf16 f4, h4; cvt.f32.bf16 f5, h5;"
+        " cvt.f32.bf16 f6, h6; cvt.f32.bf16 f7, h7;"
+        " red.relaxed.gpu.global.add.v4.f32 [$0], {f0,f1,f2,f3};"
+        " add.u64 next, $0, 16;"
+        " red.relaxed.gpu.global.add.v4.f32 [next], {f4,f5,f6,f7}; }",
+        "l,r,f", has_side_effects=True, is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT, loc=loc, ip=ip,
+    )
+
+
+@dsl_user_op
 def scatter_store_bf16x2_to_f32(addr: Int64, val0_f32, val1_f32, *, loc=None, ip=None):
     """Private route output: identical saturated BF16 contribution, no atomic.
 

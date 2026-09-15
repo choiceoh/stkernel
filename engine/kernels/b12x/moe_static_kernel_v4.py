@@ -30,6 +30,7 @@ from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint64
 from cutlass.cute.nvgpu import cpasync
 from .moe_micro_kernel import (
     scatter_add_bf16x2_to_f32, scatter_add_bf16x4_to_f32, scatter_store_bf16x2_to_f32,
+    scatter_add_bf16x8_from_smem_to_f32,
 )
 
 from flashinfer.cute_dsl.utils import (
@@ -134,6 +135,7 @@ class MoEStaticKernelV4:
         sf6_registers: bool = True,
         sync_cleanup: bool = True,
         scatter_vec4: bool = True,
+        scatter_packed_load: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation: str = "silu",
@@ -258,6 +260,7 @@ class MoEStaticKernelV4:
         self.scatter_vec4 = bool(scatter_vec4 and self.scatter_fp32 and self.decode_reform
                                  and self.reform_sf_pack and not self.direct_scatter
                                  and not self.route_scatter)
+        self.scatter_packed_load = bool(scatter_packed_load and self.scatter_vec4)
         self.a_barrier_count = 0 if self.sync_cleanup else self.fc1_stages * 2
         # Scatter only consumes rows in this M16 tile. Avoid initializing
         # 112 unused token/weight entries per item and reclaim their storage.
@@ -697,6 +700,32 @@ class MoEStaticKernelV4:
         if seen != {(r, c, 0) for r in range(self.epi_tile[0]) for c in range(self.epi_tile[1])}:
             raise ValueError("direct scatter incomplete output coverage")
 
+    def _scatter_smem_byte_offset(self, element_offset):
+        """S<3,4,3> applies to bytes; the outer epilogue layout counts BF16."""
+        offset = element_offset * 2
+        return offset ^ ((offset >> 3) & 0x70)
+
+    def _verify_scatter_packed_layout(self):
+        """Bind every aligned load to the ordinary BF16 shared consumer map."""
+        layout = self.epi_smem_layout_staged
+        if self.epi_tile != (16, 256) or layout.inner != cute.make_swizzle(3, 4, 3):
+            raise ValueError("packed scatter requires the M16/N256 BF16 S<3,4,3> layout")
+        byte_swizzle = cute.make_composed_layout(layout.inner, 0, cute.make_layout(16*256*2))
+        seen = set()
+        for row in range(self.epi_tile[0]):
+            for col in range(0, self.epi_tile[1], 8):
+                elements = [int(cute.crd2idx((row, col+j, 0), layout.outer)) for j in range(8)]
+                ordinary = [int(cute.crd2idx(2 * offset, byte_swizzle)) for offset in elements]
+                start = self._scatter_smem_byte_offset(elements[0])
+                if start % 16 or ordinary != [start+2*j for j in range(8)]:
+                    raise ValueError("packed scatter load differs from the ordinary shared layout")
+                for offset in ordinary:
+                    if offset in seen:
+                        raise ValueError("packed scatter shared output coordinates overlap")
+                    seen.add(offset)
+        if seen != set(range(0, 16*256*2, 2)):
+            raise ValueError("packed scatter shared output coverage is incomplete")
+
     def _setup_attributes(self, hidden_size: int):
         self._hidden_size = hidden_size
         if self.scatter_vec4 and hidden_size % 4:
@@ -744,6 +773,8 @@ class MoEStaticKernelV4:
         self.a2_smem_layout = self._make_a_smem_layout(self.tile_m, self.fc2_tile_k, 1)
         if self.direct_scatter:
             self._validate_direct_scatter_layout()
+        if self.scatter_packed_load:
+            self._verify_scatter_packed_layout()
         self.sfa2_smem_layout = sm120_make_smem_layout_sfa(
             self.tiled_mma,
             self.tile_shape_mnk,
@@ -1266,6 +1297,8 @@ class MoEStaticKernelV4:
         sfb2_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
+        if cutlass.const_expr(self.scatter_packed_load):
+            scatter_smem_base_addr = shared_ptr_to_u32(storage.sC.data_ptr())
         scatter_weight_base_addr = shared_ptr_to_u32(
             storage.scatter_weight_cache.data_ptr()
         )
@@ -2262,64 +2295,73 @@ class MoEStaticKernelV4:
                             wv = _ld_shared_f32(
                                 scatter_weight_base_addr + cached_row * Int32(4)
                             )
-                            sc_v0 = cutlass.Float32(sC[warp_m_base + local_row, local_col, 0])
-                            sc_v1 = cutlass.Float32(
-                                sC[warp_m_base + local_row, local_col + Int32(1), 0]
-                            )
-                            sc_v2 = cutlass.Float32(
-                                sC[warp_m_base + local_row, local_col + Int32(2), 0]
-                            )
-                            sc_v3 = cutlass.Float32(
-                                sC[warp_m_base + local_row, local_col + Int32(3), 0]
-                            )
-                            sc_v4 = cutlass.Float32(
-                                sC[warp_m_base + local_row, local_col + Int32(4), 0]
-                            )
-                            sc_v5 = cutlass.Float32(
-                                sC[warp_m_base + local_row, local_col + Int32(5), 0]
-                            )
-                            sc_v6 = cutlass.Float32(
-                                sC[warp_m_base + local_row, local_col + Int32(6), 0]
-                            )
-                            sc_v7 = cutlass.Float32(
-                                sC[warp_m_base + local_row, local_col + Int32(7), 0]
-                            )
-                            if cutlass.const_expr(self.route_scatter):
-                                route_row = tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
-                                out_ptr = get_ptr_as_int64(scatter_output, route_row * scatter_N + global_col)
-                                scatter_store_bf16x2_to_f32(out_ptr + Int64(0), wv * sc_v0, wv * sc_v1)
-                                scatter_store_bf16x2_to_f32(out_ptr + Int64(8), wv * sc_v2, wv * sc_v3)
-                                scatter_store_bf16x2_to_f32(out_ptr + Int64(16), wv * sc_v4, wv * sc_v5)
-                                scatter_store_bf16x2_to_f32(out_ptr + Int64(24), wv * sc_v6, wv * sc_v7)
-                            elif cutlass.const_expr(self.scatter_fp32):
-                                if cutlass.const_expr(self.scatter_vec4):
-                                    scatter_add_bf16x4_to_f32(
-                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col),
-                                        wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3)
-                                    scatter_add_bf16x4_to_f32(
-                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
-                                        wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7)
-                                else:
-                                    scatter_add_bf16x2_to_f32(
-                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
-                                        wv * sc_v0, wv * sc_v1)
-                                    scatter_add_bf16x2_to_f32(
-                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
-                                        wv * sc_v2, wv * sc_v3)
-                                    scatter_add_bf16x2_to_f32(
-                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
-                                        wv * sc_v4, wv * sc_v5)
-                                    scatter_add_bf16x2_to_f32(
-                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
-                                        wv * sc_v6, wv * sc_v7)
+                            if cutlass.const_expr(self.scatter_packed_load):
+                                # sC's outer layout counts BF16 elements. Its
+                                # pointer swizzle applies to byte addresses.
+                                sc_offset = Int32(sC.layout((cached_row, local_col, 0)))
+                                sc_addr = scatter_smem_base_addr + self._scatter_smem_byte_offset(sc_offset)
+                                scatter_add_bf16x8_from_smem_to_f32(
+                                    get_ptr_as_int64(scatter_output, tok * scatter_N + global_col),
+                                    sc_addr, wv)
                             else:
-                                scatter_add_v4_bf16x2(
-                                    get_ptr_as_int64(
-                                        scatter_output, tok * scatter_N + global_col
-                                    ),
-                                    wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
-                                    wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
+                                sc_v0 = cutlass.Float32(sC[warp_m_base + local_row, local_col, 0])
+                                sc_v1 = cutlass.Float32(
+                                    sC[warp_m_base + local_row, local_col + Int32(1), 0]
                                 )
+                                sc_v2 = cutlass.Float32(
+                                    sC[warp_m_base + local_row, local_col + Int32(2), 0]
+                                )
+                                sc_v3 = cutlass.Float32(
+                                    sC[warp_m_base + local_row, local_col + Int32(3), 0]
+                                )
+                                sc_v4 = cutlass.Float32(
+                                    sC[warp_m_base + local_row, local_col + Int32(4), 0]
+                                )
+                                sc_v5 = cutlass.Float32(
+                                    sC[warp_m_base + local_row, local_col + Int32(5), 0]
+                                )
+                                sc_v6 = cutlass.Float32(
+                                    sC[warp_m_base + local_row, local_col + Int32(6), 0]
+                                )
+                                sc_v7 = cutlass.Float32(
+                                    sC[warp_m_base + local_row, local_col + Int32(7), 0]
+                                )
+                                if cutlass.const_expr(self.route_scatter):
+                                    route_row = tok * Int32(self.output_tile_count_n) + Int32(tile_coord[1])
+                                    out_ptr = get_ptr_as_int64(scatter_output, route_row * scatter_N + global_col)
+                                    scatter_store_bf16x2_to_f32(out_ptr + Int64(0), wv * sc_v0, wv * sc_v1)
+                                    scatter_store_bf16x2_to_f32(out_ptr + Int64(8), wv * sc_v2, wv * sc_v3)
+                                    scatter_store_bf16x2_to_f32(out_ptr + Int64(16), wv * sc_v4, wv * sc_v5)
+                                    scatter_store_bf16x2_to_f32(out_ptr + Int64(24), wv * sc_v6, wv * sc_v7)
+                                elif cutlass.const_expr(self.scatter_fp32):
+                                    if cutlass.const_expr(self.scatter_vec4):
+                                        scatter_add_bf16x4_to_f32(
+                                            get_ptr_as_int64(scatter_output, tok * scatter_N + global_col),
+                                            wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3)
+                                        scatter_add_bf16x4_to_f32(
+                                            get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                            wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7)
+                                    else:
+                                        scatter_add_bf16x2_to_f32(
+                                            get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(0)),
+                                            wv * sc_v0, wv * sc_v1)
+                                        scatter_add_bf16x2_to_f32(
+                                            get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(2)),
+                                            wv * sc_v2, wv * sc_v3)
+                                        scatter_add_bf16x2_to_f32(
+                                            get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                            wv * sc_v4, wv * sc_v5)
+                                        scatter_add_bf16x2_to_f32(
+                                            get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(6)),
+                                            wv * sc_v6, wv * sc_v7)
+                                else:
+                                    scatter_add_v4_bf16x2(
+                                        get_ptr_as_int64(
+                                            scatter_output, tok * scatter_N + global_col
+                                        ),
+                                        wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
+                                        wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7,
+                                    )
                             vec_idx += Int32(self.num_threads_per_warp)
                     if cutlass.const_expr(not self.scatter_reuse):
                         self.epilog_sync_barrier.arrive_and_wait()

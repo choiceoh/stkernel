@@ -2,7 +2,9 @@
 
 Implementation and native compilation record, 2026-09-15. Base: `937666be`.
 The default SF6 staged-output path now combines four adjacent FP32 scatter
-reductions into two. GPU latency, replay and serving results are pending.
+reductions into two. The subsequent GPU component result below passes
+numerical/replay checks and reduces latency at low expert occupancy.
+Full-model serving results are pending.
 
 ## Implementation
 
@@ -75,3 +77,39 @@ The existing same-pack comparison changes only `scatter_vec4`, captures the
 served FFN consumer at M8/M16, exercises changed activations/routes and real
 L3 router fixtures, and runs B/A/A/B component timing after numerical checks.
 It does not establish full-model TP4 acceptance or serving speed.
+
+## Subsequent GPU result
+
+Canonical fleet session `moe-maturity-vec4-a2bc` completed on 2026-09-15 at
+14:04 KST, using commit `6f22ccf7` and the pinned image above on NVIDIA GB10.
+The queue held the original isolated commit; PR #1002 rebased and merged the
+same kernel sources. `gpu-pair.json` retains the raw component artifact,
+including source and rank-weight hashes. All 22 numerical cells have zero
+relative error, including real-router inputs. Repeated replay spread is zero.
+Peak allocated GPU memory was 1,940,130,816 bytes.
+
+The following times are arithmetic means of the two samples per arm in the
+single B/A/A/B sequence. In `engine_decode_batch.timing`, **B is the baseline
+(index 0, pairwise RED) and A is the candidate (index 1, vector RED)**. The FFN includes
+routed/shared experts and the output finalizer; router work is outside timing.
+
+| M8 fixture | Cache | Baseline B, microseconds | Candidate A, microseconds | Candidate latency change |
+|---|---|---:|---:|---:|
+| 8 unique experts | warm | 178.048 | 157.256 | -11.68% |
+| 8 unique experts | evicted | 247.056 | 228.992 | -7.31% |
+| Actual L3 router, correlated rows, 9 experts | warm | 193.512 | 182.464 | -5.71% |
+| Actual L3 router, correlated rows, 9 experts | evicted | 259.032 | 244.424 | -5.64% |
+| Actual L3 router, independent rows, 55 experts | warm | 889.896 | 888.344 | -0.17% |
+| Actual L3 router, independent rows, 55 experts | evicted | 948.128 | 943.280 | -0.51% |
+
+This is a single component bracket, not full-model speed evidence. The M8
+synthetic fixtures with 16 or more experts range from -0.84% to +0.66%, so the
+sample does not establish a material improvement at those occupancies.
+M16 in this original run
+selected the unchanged production direct-register kernel in both arms and
+therefore provides no vector-RED performance evidence. The packed-load change
+corrects that comparison and records production-default status per row count.
+Its completed follow-up isolates RED width and packed loads separately; see
+[`../st_moe_packed_scatter_20260915/README.md`](../st_moe_packed_scatter_20260915/README.md).
+That repeat shows smaller RED-width gains than this first run, so the largest
+gain above should not be treated as a stable serving-speed claim.
