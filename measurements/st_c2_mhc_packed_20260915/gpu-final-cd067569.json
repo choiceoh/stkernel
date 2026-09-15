@@ -1,0 +1,2194 @@
+[
+ {
+  "event": "identity",
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "gpu": "NVIDIA GB10",
+  "source_sha256": {
+   "engine/kernels/dense/kernels.cu": "d042d34a5f24c140939b273d87ce8b89188ac5a8d619ccbacdf5d5da67e7e215",
+   "engine/kernels/dense/mhc.py": "c470c94ce88cc973b33a8d209a77c8c0428c96a9aab7e0422833f10e214346cf",
+   "engine/kernels/dense/__init__.py": "b76a01fc8628955e84210c1d5040c55cd36e2e4dd7b94bed0ef9e1f6401efae6",
+   "probes/engine_mhc_c2_packed.py": "9a7987ad21d4c250df13cb7202488c41778427bc3e24f9230bd056053a3486de",
+   "probes/engine_kernel_check.py": "d37e19ed99d3a0a912135fd006afad245ca6a96f7972a80e517cc94ec56617c2",
+   "tests/test_engine_direct_mhc_cuda.py": "e7abb99e9694b649655c1891cd8896254d2bd197397302a136c2d241cce11294"
+  }
+ },
+ {
+  "event": "direct_mhc_dispatch",
+  "tests": 1,
+  "skipped": 0,
+  "rows": [
+   1,
+   7,
+   8,
+   16,
+   28,
+   64
+  ]
+ },
+ {
+  "event": "mhc_packed_weights",
+  "source": "/home/choiceoh/models/st-glm53-nvidia-tp4-9391/rank3of4.safetensors",
+  "keys": 90,
+  "fn_sha256": "68d566be070af278f8cea1f66b5bb4e9be2687feafe76d87164f7ff3a3107926",
+  "lossless_bf16": 90,
+  "lossy": []
+ },
+ {
+  "event": "mhc_packed_refusals",
+  "cases": [
+   {
+    "rows": 17,
+    "family": "ordinary",
+    "consumer": true,
+    "refused": "AR consumer requires PDL and 1..16 tokens"
+   },
+   {
+    "rows": 16,
+    "family": "ordinary",
+    "consumer": true,
+    "refused": null
+   }
+  ]
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 1,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 1"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 2,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 2"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 7,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 7"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 8,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 8"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 9,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 9"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 12,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 12"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 15,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 15"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 16,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 16"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 17,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 17"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 32,
+  "calls": 6,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "breadth 32"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 1,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 1"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 2,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 2"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 7,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 7"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 8,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 8"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 9,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 9"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 12,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 12"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 15,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 15"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 16,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 16"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 17,
+  "calls": 6,
+  "arms": [
+   "grid_fp32",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.0,
+   0.001,
+   1.0,
+   32.0,
+   0.5
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "breadth 17"
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 8,
+  "calls": 84,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.001,
+   1.0,
+   1.0
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "depth 8"
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.5204130411148071
+   },
+   {
+    "arm": "A",
+    "ms": 1.2931029796600342
+   },
+   {
+    "arm": "A",
+    "ms": 1.280287504196167
+   },
+   {
+    "arm": "B",
+    "ms": 1.5248329639434814
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.570111010223627
+   },
+   {
+    "arm": "A",
+    "ms": 1.304001983255148
+   },
+   {
+    "arm": "A",
+    "ms": 1.3026239983737469
+   },
+   {
+    "arm": "B",
+    "ms": 1.568958006799221
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.2863949537277222
+   },
+   {
+    "arm": "A",
+    "ms": 1.2838399410247803
+   },
+   {
+    "arm": "A",
+    "ms": 1.2928534746170044
+   },
+   {
+    "arm": "B",
+    "ms": 1.2865614891052246
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.3102289997041225
+   },
+   {
+    "arm": "A",
+    "ms": 1.301418986171484
+   },
+   {
+    "arm": "A",
+    "ms": 1.3054419979453087
+   },
+   {
+    "arm": "B",
+    "ms": 1.3083900101482868
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.5275444984436035
+   },
+   {
+    "arm": "A",
+    "ms": 1.3010234832763672
+   },
+   {
+    "arm": "A",
+    "ms": 1.280982494354248
+   },
+   {
+    "arm": "B",
+    "ms": 1.5252540111541748
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.5674689896404743
+   },
+   {
+    "arm": "A",
+    "ms": 1.3031360059976578
+   },
+   {
+    "arm": "A",
+    "ms": 1.3033680021762848
+   },
+   {
+    "arm": "B",
+    "ms": 1.5634220093488693
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.2870924472808838
+   },
+   {
+    "arm": "A",
+    "ms": 1.2834910154342651
+   },
+   {
+    "arm": "A",
+    "ms": 1.2832444906234741
+   },
+   {
+    "arm": "B",
+    "ms": 1.2887184619903564
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 1.308215994387865
+   },
+   {
+    "arm": "A",
+    "ms": 1.30308198928833
+   },
+   {
+    "arm": "A",
+    "ms": 1.3027829937636852
+   },
+   {
+    "arm": "B",
+    "ms": 1.3087569996714592
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 8,
+  "calls": 5,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.001,
+   1.0,
+   1.0
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "depth 8"
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.09262549877166748
+   },
+   {
+    "arm": "A",
+    "ms": 0.07936099916696548
+   },
+   {
+    "arm": "A",
+    "ms": 0.07941299676895142
+   },
+   {
+    "arm": "B",
+    "ms": 0.09224750101566315
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.1451569995842874
+   },
+   {
+    "arm": "A",
+    "ms": 0.10141199920326471
+   },
+   {
+    "arm": "A",
+    "ms": 0.10118199861608446
+   },
+   {
+    "arm": "B",
+    "ms": 0.14468499971553683
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.09232600033283234
+   },
+   {
+    "arm": "A",
+    "ms": 0.09508699923753738
+   },
+   {
+    "arm": "A",
+    "ms": 0.09453850239515305
+   },
+   {
+    "arm": "B",
+    "ms": 0.09227749705314636
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.14489699993282557
+   },
+   {
+    "arm": "A",
+    "ms": 0.13021500082686543
+   },
+   {
+    "arm": "A",
+    "ms": 0.13087200047448277
+   },
+   {
+    "arm": "B",
+    "ms": 0.14621899975463748
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.09469400346279144
+   },
+   {
+    "arm": "A",
+    "ms": 0.07928100228309631
+   },
+   {
+    "arm": "A",
+    "ms": 0.07940500229597092
+   },
+   {
+    "arm": "B",
+    "ms": 0.09525299817323685
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.13093300070613623
+   },
+   {
+    "arm": "A",
+    "ms": 0.10179699934087694
+   },
+   {
+    "arm": "A",
+    "ms": 0.10098399897105992
+   },
+   {
+    "arm": "B",
+    "ms": 0.13057900220155716
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.07956349849700928
+   },
+   {
+    "arm": "A",
+    "ms": 0.07940450310707092
+   },
+   {
+    "arm": "A",
+    "ms": 0.07939299941062927
+   },
+   {
+    "arm": "B",
+    "ms": 0.07952599972486496
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.10093499952927232
+   },
+   {
+    "arm": "A",
+    "ms": 0.10169199854135513
+   },
+   {
+    "arm": "A",
+    "ms": 0.10118199861608446
+   },
+   {
+    "arm": "B",
+    "ms": 0.10117699881084263
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.09281949698925018
+   },
+   {
+    "arm": "A",
+    "ms": 0.07930800318717957
+   },
+   {
+    "arm": "A",
+    "ms": 0.07961250096559525
+   },
+   {
+    "arm": "B",
+    "ms": 0.09221400320529938
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.14529700111597776
+   },
+   {
+    "arm": "A",
+    "ms": 0.10144999925978482
+   },
+   {
+    "arm": "A",
+    "ms": 0.10090499999932945
+   },
+   {
+    "arm": "B",
+    "ms": 0.14625799981877208
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.09233749657869339
+   },
+   {
+    "arm": "A",
+    "ms": 0.09504249691963196
+   },
+   {
+    "arm": "A",
+    "ms": 0.09466999769210815
+   },
+   {
+    "arm": "B",
+    "ms": 0.09226000308990479
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.14507100079208612
+   },
+   {
+    "arm": "A",
+    "ms": 0.13053500116802752
+   },
+   {
+    "arm": "A",
+    "ms": 0.13049700250849128
+   },
+   {
+    "arm": "B",
+    "ms": 0.14503300096839666
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.09473250061273575
+   },
+   {
+    "arm": "A",
+    "ms": 0.07957000285387039
+   },
+   {
+    "arm": "A",
+    "ms": 0.0794915035367012
+   },
+   {
+    "arm": "B",
+    "ms": 0.09472350031137466
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.1308410014025867
+   },
+   {
+    "arm": "A",
+    "ms": 0.1012669987976551
+   },
+   {
+    "arm": "A",
+    "ms": 0.10145899932831526
+   },
+   {
+    "arm": "B",
+    "ms": 0.13053200021386147
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 8,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.07969550043344498
+   },
+   {
+    "arm": "A",
+    "ms": 0.07943399995565414
+   },
+   {
+    "arm": "A",
+    "ms": 0.07916899770498276
+   },
+   {
+    "arm": "B",
+    "ms": 0.07973100244998932
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 8,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.10081699909642339
+   },
+   {
+    "arm": "A",
+    "ms": 0.10184799833223224
+   },
+   {
+    "arm": "A",
+    "ms": 0.10184099804610014
+   },
+   {
+    "arm": "B",
+    "ms": 0.10150299919769168
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "packets",
+  "rows": 16,
+  "calls": 84,
+  "arms": [
+   "fp32",
+   "packed",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.001,
+   1.0,
+   1.0
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": true,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "fp32",
+  "label": "depth 16"
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.030463933944702
+   },
+   {
+    "arm": "A",
+    "ms": 1.7549635171890259
+   },
+   {
+    "arm": "A",
+    "ms": 1.7444759607315063
+   },
+   {
+    "arm": "B",
+    "ms": 2.022167921066284
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.0736279785633087
+   },
+   {
+    "arm": "A",
+    "ms": 1.7704829946160316
+   },
+   {
+    "arm": "A",
+    "ms": 1.771113995462656
+   },
+   {
+    "arm": "B",
+    "ms": 2.0700939893722534
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.0351834297180176
+   },
+   {
+    "arm": "A",
+    "ms": 1.758023977279663
+   },
+   {
+    "arm": "A",
+    "ms": 1.7576930522918701
+   },
+   {
+    "arm": "B",
+    "ms": 2.0434799194335938
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.069666989147663
+   },
+   {
+    "arm": "A",
+    "ms": 1.769709013402462
+   },
+   {
+    "arm": "A",
+    "ms": 1.7714070081710815
+   },
+   {
+    "arm": "B",
+    "ms": 2.064391978085041
+   }
+  ],
+  "calls": 84,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.040795087814331
+   },
+   {
+    "arm": "A",
+    "ms": 1.7485134601593018
+   },
+   {
+    "arm": "A",
+    "ms": 1.7484184503555298
+   },
+   {
+    "arm": "B",
+    "ms": 2.036717414855957
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:fp32->packed",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.067988969385624
+   },
+   {
+    "arm": "A",
+    "ms": 1.7705500088632107
+   },
+   {
+    "arm": "A",
+    "ms": 1.7695459946990013
+   },
+   {
+    "arm": "B",
+    "ms": 2.067281998693943
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.035788059234619
+   },
+   {
+    "arm": "A",
+    "ms": 1.7475769519805908
+   },
+   {
+    "arm": "A",
+    "ms": 1.7481834888458252
+   },
+   {
+    "arm": "B",
+    "ms": 2.032973527908325
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "packets:control->serving",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 2.0640479996800423
+   },
+   {
+    "arm": "A",
+    "ms": 1.7690160013735294
+   },
+   {
+    "arm": "A",
+    "ms": 1.7687850035727024
+   },
+   {
+    "arm": "B",
+    "ms": 2.0628659948706627
+   }
+  ],
+  "calls": 84,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "mhc_packed_exact",
+  "family": "ordinary",
+  "rows": 16,
+  "calls": 5,
+  "arms": [
+   "grid_fp32",
+   "consumer_fp32",
+   "consumer",
+   "control",
+   "serving"
+  ],
+  "scales": [
+   0.001,
+   1.0,
+   1.0
+  ],
+  "replay_orders": "forward/reverse",
+  "descriptor_rebound": false,
+  "poisoned_outputs": true,
+  "bitwise": true,
+  "reference": "grid_fp32",
+  "label": "depth 16"
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.1169390007853508
+   },
+   {
+    "arm": "A",
+    "ms": 0.10474050045013428
+   },
+   {
+    "arm": "A",
+    "ms": 0.11024949699640274
+   },
+   {
+    "arm": "B",
+    "ms": 0.11633449792861938
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.16544299898669124
+   },
+   {
+    "arm": "A",
+    "ms": 0.12667400087229908
+   },
+   {
+    "arm": "A",
+    "ms": 0.12664000131189823
+   },
+   {
+    "arm": "B",
+    "ms": 0.16569799976423383
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.11636999994516373
+   },
+   {
+    "arm": "A",
+    "ms": 0.11818449944257736
+   },
+   {
+    "arm": "A",
+    "ms": 0.11818599700927734
+   },
+   {
+    "arm": "B",
+    "ms": 0.11717399954795837
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.16589200077578425
+   },
+   {
+    "arm": "A",
+    "ms": 0.15555900055915117
+   },
+   {
+    "arm": "A",
+    "ms": 0.15545800095424056
+   },
+   {
+    "arm": "B",
+    "ms": 0.16551799979060888
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.11773949861526489
+   },
+   {
+    "arm": "A",
+    "ms": 0.10479249805212021
+   },
+   {
+    "arm": "A",
+    "ms": 0.10460250079631805
+   },
+   {
+    "arm": "B",
+    "ms": 0.11802549660205841
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.1551319994032383
+   },
+   {
+    "arm": "A",
+    "ms": 0.12627100083045661
+   },
+   {
+    "arm": "A",
+    "ms": 0.126462000887841
+   },
+   {
+    "arm": "B",
+    "ms": 0.15511000016704202
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.11649149656295776
+   },
+   {
+    "arm": "A",
+    "ms": 0.10483100265264511
+   },
+   {
+    "arm": "A",
+    "ms": 0.10482800006866455
+   },
+   {
+    "arm": "B",
+    "ms": 0.11648750305175781
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.1690819999203086
+   },
+   {
+    "arm": "A",
+    "ms": 0.1271980011370033
+   },
+   {
+    "arm": "A",
+    "ms": 0.12670400156639516
+   },
+   {
+    "arm": "B",
+    "ms": 0.16873800056055188
+   }
+  ],
+  "calls": 5,
+  "bracket": 0,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.11637549847364426
+   },
+   {
+    "arm": "A",
+    "ms": 0.10461749881505966
+   },
+   {
+    "arm": "A",
+    "ms": 0.10470250248908997
+   },
+   {
+    "arm": "B",
+    "ms": 0.11649800091981888
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.1663399995304644
+   },
+   {
+    "arm": "A",
+    "ms": 0.12660999922081828
+   },
+   {
+    "arm": "A",
+    "ms": 0.126952001824975
+   },
+   {
+    "arm": "B",
+    "ms": 0.16563799930736423
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.11637900024652481
+   },
+   {
+    "arm": "A",
+    "ms": 0.11798150092363358
+   },
+   {
+    "arm": "A",
+    "ms": 0.11768700182437897
+   },
+   {
+    "arm": "B",
+    "ms": 0.1166364997625351
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:grid_fp32->consumer_fp32",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.1665190001949668
+   },
+   {
+    "arm": "A",
+    "ms": 0.1559529989026487
+   },
+   {
+    "arm": "A",
+    "ms": 0.15616899961605668
+   },
+   {
+    "arm": "B",
+    "ms": 0.16595900105312467
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.12250799685716629
+   },
+   {
+    "arm": "A",
+    "ms": 0.12146150320768356
+   },
+   {
+    "arm": "A",
+    "ms": 0.1220569983124733
+   },
+   {
+    "arm": "B",
+    "ms": 0.11992649734020233
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:consumer_fp32->consumer",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.15566999977454543
+   },
+   {
+    "arm": "A",
+    "ms": 0.12672500032931566
+   },
+   {
+    "arm": "A",
+    "ms": 0.12657500128261745
+   },
+   {
+    "arm": "B",
+    "ms": 0.15581999951973557
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 16,
+  "cache": "warm",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.11645899713039398
+   },
+   {
+    "arm": "A",
+    "ms": 0.10485749691724777
+   },
+   {
+    "arm": "A",
+    "ms": 0.10474299639463425
+   },
+   {
+    "arm": "B",
+    "ms": 0.11644849926233292
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "timing",
+  "candidate": "ordinary:control->serving",
+  "rows": 16,
+  "cache": "evicted",
+  "samples": [
+   {
+    "arm": "B",
+    "ms": 0.16904100123792887
+   },
+   {
+    "arm": "A",
+    "ms": 0.12683100113645196
+   },
+   {
+    "arm": "A",
+    "ms": 0.1271870017517358
+   },
+   {
+    "arm": "B",
+    "ms": 0.169257000554353
+   }
+  ],
+  "calls": 5,
+  "bracket": 1,
+  "real_packs": true
+ },
+ {
+  "event": "m14_diagnosis",
+  "rows": 14,
+  "input_scale": 0.0,
+  "layout": "vector pack, the lane",
+  "kernel": "mk_mhc_bf16_kernel (persistent grid, reads [output, stream, hidden])",
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 229376
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 56
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 224
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 57344
+   }
+  },
+  "recorded_failure": null
+ },
+ {
+  "event": "m14_diagnosis",
+  "rows": 14,
+  "input_scale": 0.0,
+  "layout": "scalar pack",
+  "kernel": "mk_mhc_bf16_kernel (persistent grid, reads [output, stream, hidden])",
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 229376
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 56
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 224
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 57344
+   }
+  },
+  "recorded_failure": null
+ },
+ {
+  "event": "m14_diagnosis",
+  "rows": 14,
+  "input_scale": 0.001,
+  "layout": "vector pack, the lane",
+  "kernel": "mk_mhc_bf16_kernel (persistent grid, reads [output, stream, hidden])",
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 229376
+   },
+   "post": {
+    "mismatched": 56,
+    "total": 56,
+    "max_absolute": 0.000341951847076416,
+    "max_relative": 0.00035362889073452854,
+    "first_index": 0
+   },
+   "comb": {
+    "mismatched": 224,
+    "total": 224,
+    "max_absolute": 0.00012126564979553223,
+    "max_relative": 0.0004928824880973726,
+    "first_index": 0
+   },
+   "layer_input": {
+    "mismatched": 1798,
+    "total": 57344,
+    "max_absolute": 6.103515625e-05,
+    "max_relative": 50.202312138728324,
+    "first_index": 1
+   }
+  },
+  "recorded_failure": {
+   "field": "post",
+   "mismatched": 56,
+   "total": 56,
+   "max_absolute": 0.000341951847076416,
+   "max_relative": 0.0003536288859322667
+  }
+ },
+ {
+  "event": "m14_diagnosis",
+  "rows": 14,
+  "input_scale": 0.001,
+  "layout": "scalar pack",
+  "kernel": "mk_mhc_bf16_kernel (persistent grid, reads [output, stream, hidden])",
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 229376
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 56
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 224
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 57344
+   }
+  },
+  "recorded_failure": {
+   "field": "post",
+   "mismatched": 56,
+   "total": 56,
+   "max_absolute": 0.000341951847076416,
+   "max_relative": 0.0003536288859322667
+  }
+ },
+ {
+  "event": "m14_scalar_layout",
+  "rows": 14,
+  "input_scale": 0.001,
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 229376
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 56
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 224
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 57344
+   }
+  }
+ },
+ {
+  "event": "m14_scalar_layout",
+  "rows": 14,
+  "input_scale": 1.0,
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 229376
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 56
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 224
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 57344
+   }
+  }
+ },
+ {
+  "event": "m14_scalar_layout",
+  "rows": 16,
+  "input_scale": 0.001,
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 262144
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 64
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 256
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 65536
+   }
+  }
+ },
+ {
+  "event": "m14_scalar_layout",
+  "rows": 16,
+  "input_scale": 1.0,
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 262144
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 64
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 256
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 65536
+   }
+  }
+ },
+ {
+  "event": "m14_scalar_layout",
+  "rows": 28,
+  "input_scale": 0.001,
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 458752
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 112
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 448
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 114688
+   }
+  }
+ },
+ {
+  "event": "m14_scalar_layout",
+  "rows": 28,
+  "input_scale": 1.0,
+  "fields": {
+   "residual": {
+    "mismatched": 0,
+    "total": 458752
+   },
+   "post": {
+    "mismatched": 0,
+    "total": 112
+   },
+   "comb": {
+    "mismatched": 0,
+    "total": 448
+   },
+   "layer_input": {
+    "mismatched": 0,
+    "total": 114688
+   }
+  }
+ },
+ {
+  "event": "complete",
+  "status": "PASS",
+  "consumer_metrics_measured": false
+ }
+]
