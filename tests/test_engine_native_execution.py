@@ -64,6 +64,27 @@ class NativeQualificationTests(unittest.TestCase):
                 native_execution_report(net, drafter)
             setattr(obj, field, before)
 
+    def test_shared_overlap_proof_names_every_overlapped_capture_width(self):
+        from engine.profiles.glm53.boot import shared_overlap_report
+        overlap = NS(executed=True, rows={8, 16})
+        net = NS(F=NS(spec_k=7), shared_mlp={3: object()}, shared_overlap=overlap, decode_fastpath_rows=(8, 16))
+        self.assertEqual(shared_overlap_report(net), dict(rows=[8, 16]))
+        overlap.rows = {1, 8}               # an eager short prefill is not the C=2 capture
+        with self.assertRaisesRegex(RuntimeError, r'capture width: \[16\]'):
+            shared_overlap_report(net)
+        overlap.rows = {16}
+        with self.assertRaisesRegex(RuntimeError, r'capture width: \[8\]'):
+            shared_overlap_report(net)
+        net.decode_fastpath_rows = (8,)     # one captured width asks for its own
+        overlap.rows = {8}
+        self.assertEqual(shared_overlap_report(net), dict(rows=[8]))
+        net.decode_fastpath_rows = (8, 16, 24, 32)
+        overlap.rows = {8, 16}              # C=3 and C=4 keep the shared chain: not demanded
+        self.assertEqual(shared_overlap_report(net), dict(rows=[8, 16]))
+        net.decode_fastpath_rows = ()       # no declared capture widths: the executed flag alone
+        overlap.rows = set()
+        self.assertEqual(shared_overlap_report(net), {})
+
     def test_nonfinite_prefill_releases_slots_and_refuses_readiness(self):
         for failure in ('hidden', 'aux', 'head'):
             with self.subTest(failure=failure):

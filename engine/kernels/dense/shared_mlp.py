@@ -66,6 +66,7 @@ class SharedOverlap:
     def __init__(self, device):
         self.stream = torch.cuda.Stream(device=device)
         self.executed = False
+        self.rows = set()  # joined FFN widths: the boot proof asks for every overlapped capture width
 
     def __call__(self, shared, x, routed, *, finish=None):
         parent = torch.cuda.current_stream(x.device)
@@ -96,4 +97,5 @@ class SharedOverlap:
                 parent.wait_stream(self.stream)
         partial.record_stream(parent)
         self.executed = True
+        self.rows.add(x.shape[0])
         return output + partial if finish is None else output

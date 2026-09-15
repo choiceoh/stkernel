@@ -4,14 +4,23 @@ import torch
 _CAPTURE_STREAMS = {}
 
 
-def _capture(fn):
-    # A fresh Stream for every cell eventually cycles PyTorch's stream pool
-    # onto a live SharedOverlap stream. Reuse one warm/capture stream per
-    # device. Repeated captures no longer consume fresh pool entries.
+def capture_stream():
+    """The one warm/capture stream `_capture` uses on the current device.
+
+    A fresh Stream for every cell eventually cycles PyTorch's stream pool
+    onto a live SharedOverlap stream. A probe that owns one can take this
+    stream first and refuse an alias before any cell runs.
+    """
     device = torch.cuda.current_device()
     if device not in _CAPTURE_STREAMS:
         _CAPTURE_STREAMS[device] = torch.cuda.Stream(device=device)
-    stream = _CAPTURE_STREAMS[device]
+    return _CAPTURE_STREAMS[device]
+
+
+def _capture(fn):
+    # Reuse one warm/capture stream per device (capture_stream): repeated
+    # captures no longer consume fresh pool entries.
+    stream = capture_stream()
     stream.wait_stream(torch.cuda.current_stream())
     with torch.cuda.stream(stream):
         fn()

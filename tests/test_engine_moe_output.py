@@ -98,10 +98,11 @@ class MoeOutputContractTests(unittest.TestCase):
         events = []
         parent = NS(wait_stream=lambda stream: events.append('join'))
         side = NS(wait_stream=lambda stream: events.append('fork'))
-        x = NS(device='cuda', record_stream=lambda stream: events.append('x_owned'))
+        x = NS(device='cuda', shape=(16, 4096), record_stream=lambda stream: events.append('x_owned'))
+        failing = NS(device='cuda', shape=(8, 4096), record_stream=x.record_stream)
         shared = NS(record_stream=lambda stream: events.append('shared_owned'))
         owner = SharedOverlap.__new__(SharedOverlap)
-        owner.stream, owner.executed = side, False
+        owner.stream, owner.executed, owner.rows = side, False, set()
         def finish(acc, partial):
             self.assertIs(partial, shared)
             self.assertEqual(events[-2:], ['join', 'shared_owned'])
@@ -111,19 +112,22 @@ class MoeOutputContractTests(unittest.TestCase):
             actual = owner(lambda value: shared, x, lambda consume: consume('FP32'), finish=finish)
             self.assertEqual(actual, 'packet')
             self.assertTrue(owner.executed)
+            self.assertEqual(owner.rows, {16})
             def fail(acc, partial):
                 self.assertEqual(events[-2:], ['join', 'shared_owned'])
                 raise RuntimeError('finalizer failed')
             with self.assertRaisesRegex(RuntimeError, 'finalizer failed'):
-                owner(lambda value: shared, x, lambda consume: consume('FP32'), finish=fail)
+                owner(lambda value: shared, failing, lambda consume: consume('FP32'), finish=fail)
             with self.assertRaisesRegex(RuntimeError, 'did not consume'):
-                owner(lambda value: shared, x, lambda consume: None, finish=finish)
+                owner(lambda value: shared, failing, lambda consume: None, finish=finish)
             self.assertEqual(events[-1], 'join')
             def twice(consume):
                 consume('FP32')
                 return consume('FP32')
             with self.assertRaisesRegex(RuntimeError, 'exactly once'):
-                owner(lambda value: shared, x, twice, finish=finish)
+                owner(lambda value: shared, failing, twice, finish=finish)
+            # A join that failed is not a width the boot proof may count.
+            self.assertEqual(owner.rows, {16})
 
     def test_wide_profile_consumes_before_next_expert_invocation(self):
         from engine.profiles.glm53.net import Glm53Net
@@ -148,6 +152,42 @@ class MoeOutputContractTests(unittest.TestCase):
         out = Glm53Net._moe(net, 3, x, finalize=finish)
         self.assertEqual(out.shape, x.shape)
         self.assertEqual(events, ['expert', 'L3.moe.sh_gate_up', 'L3.moe.sh_down', 'finish', 'released'])
+
+    def test_shared_overlap_takes_c1_and_c2_verify_rows_and_leaves_wider_batches_serial(self):
+        from itertools import product
+        from engine.profiles.glm53.net import Glm53Net, shared_overlap_rows
+        self.assertEqual([m for m in range(1, 33) if shared_overlap_rows(m, 7)], [1, 2, 3, 4, 5, 6, 7, 8, 16])
+        self.assertEqual([m for m in range(1, 33) if shared_overlap_rows(m, 7, c2=False)], list(range(1, 9)))
+        self.assertEqual([m for m in range(1, 65) if shared_overlap_rows(m, 15)], list(range(1, 17)) + [32])
+        for rows, c2, finalized in product(range(1, 33), (True, False), (True, False)):
+            events = []
+            x = torch.randn(rows, 8).bfloat16()
+            acc = torch.randn(rows, 8)
+            def expert(value, ids, weights, *, finalize=None):
+                events.append('expert')
+                return acc.bfloat16() if finalize is None else finalize(acc)
+            def overlap(shared, value, routed, *, finish=None):
+                self.assertIs(value, x)
+                events.append('overlap')
+                if finish is None:
+                    return routed() + shared(value)
+                return routed(lambda partial: finish(partial, shared(value)))
+            def linear(value, name):
+                events.append(name)
+                return torch.ones(rows, 16 if name.endswith('sh_gate_up') else 8).bfloat16()
+            net = NS(F=NS(spec_k=7, swiglu_limit=10.), p={}, shared_overlap=overlap,
+                     shared_mlp={3: lambda value: torch.ones(rows, 8).bfloat16()},
+                     route=lambda *args: (None, None), _experts={3: expert}, linear=linear,
+                     _activation=lambda g, u, limit: g, comm=NS(all_reduce=lambda value: value))
+            kwargs = dict(finalize=lambda a, b: a.bfloat16() + b) if finalized else {}
+            if not c2:
+                kwargs['c2_overlap'] = False         # the probe's same-build control
+            with self.subTest(rows=rows, c2=c2, finalized=finalized):
+                out = Glm53Net._moe(net, 3, x, **kwargs)
+                self.assertEqual(out.shape, x.shape)
+                overlapped = rows <= 8 or (c2 and rows == 16)
+                self.assertEqual(events, ['overlap', 'expert'] if overlapped else
+                                 ['expert', 'L3.moe.sh_gate_up', 'L3.moe.sh_down'])
 
 
 @unittest.skipUnless(torch.cuda.is_available(), 'requires admitted GB10')

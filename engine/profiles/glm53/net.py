@@ -58,6 +58,16 @@ JOINED_SLICES = 20          # query rows a captured step's decode selection join
                             # (20,000 columns) decides for any count, so a joined C=2 block selects like each row's launch
 
 
+def shared_overlap_rows(rows: int, spec_k: int, *, c2: bool = True) -> bool:
+    """Whether an FFN of `rows` runs its shared expert beside the routed kernel (SharedOverlap).
+
+    GPU component gates: one request's verify rows (C=1) and exactly two requests' (C=2, sixteen at K=7) win;
+    C=4 with reused routes regressed (M=28 about 3%), so 24 and 32 rows keep the shared chain after the
+    routed kernel. `c2=False` is the probe's same-build control (measurements/st_c2_shared_overlap_20260915).
+    """
+    return rows <= spec_k + 1 or (c2 and rows == 2 * (spec_k + 1))
+
+
 @dataclass(frozen=True)
 class Segment:
     seq: int
@@ -1024,11 +1034,12 @@ class Glm53Net:
 
 
     @operation("moe", layer_arg=1)
-    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None, route_observer=None) -> torch.Tensor:
+    def _moe(self, L: int, x: torch.Tensor, reduce=None, *, reduce_pair=None, finalize=None, route_observer=None,
+             c2_overlap: bool = True) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.moe."
-        # GPU component gate: C=1 wins; C=4 with reused routes regresses.
-        # Keep the established shared chain for wider captured batches.
-        if self.shared_overlap is not None and x.shape[0] <= F.spec_k + 1:
+        # C=1 and C=2 run the shared expert beside the routed kernel; wider captured batches keep the
+        # established shared chain (shared_overlap_rows). `c2_overlap=False` is the probe's same-build control.
+        if self.shared_overlap is not None and shared_overlap_rows(x.shape[0], F.spec_k, c2=c2_overlap):
             def routed(consume=None):
                 sel, w = self.route(L, x)
                 if route_observer is not None:

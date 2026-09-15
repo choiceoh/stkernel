@@ -63,6 +63,11 @@ def main():
         from probes.engine_decode_dsa_inputs import check as dsa_inputs_check
         dsa_inputs_check(args.ranks)
         return
+    if args.lanes == 'shared_overlap':
+        # sixteen-row (C=2) shared expert beside the routed kernel against the served serial finalizer, then timings
+        from probes.engine_moe_shared_overlap import main as shared_overlap_check
+        shared_overlap_check(args.ranks, samples=args.samples, output=args.output)
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check

@@ -49,7 +49,7 @@ from engine.profiles.glm53.caches import (Glm53Caches, layout, snapshot_layout, 
                                         cache_capacity, state_dtype)   # noqa: E402
 from engine.profiles.glm53 import drafter as drafter_mod           # noqa: E402
 from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             # noqa: E402
-from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
+from engine.profiles.glm53.net import Glm53Net, shared_overlap_rows  # noqa: E402
 from engine.profiles.glm53.weights import rank_loader            # noqa: E402
 from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
 
@@ -852,6 +852,19 @@ def drafter_decode_cell_report(drafter):
     return dict(rows=list(rows), dense=dense)
 
 
+def shared_overlap_report(net):
+    """Every capture width whose shared expert the gate overlaps (C=1, C=2) must have joined it there."""
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows or not net.shared_mlp:
+        return {}
+    expected = {m for m in rows if shared_overlap_rows(m, net.F.spec_k)}
+    executed = expected.intersection(getattr(net.shared_overlap, 'rows', ()))
+    if executed != expected:
+        raise RuntimeError(f'shared expert overlap was not executed at every overlapped capture width: '
+                           f'{sorted(expected - executed)}')
+    return dict(rows=sorted(executed))
+
+
 def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
@@ -875,6 +888,7 @@ def native_execution_report(net, drafter):
                  mhc=len(net.mhc.executed),
                  shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
                  shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
+                 shared_overlap_rows=shared_overlap_report(net),
                  router_tensorcore=len(net._router_tensorcore),
                  prefill_collectives=sorted(net.prefill_transport.executed),
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
