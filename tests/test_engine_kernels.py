@@ -108,7 +108,8 @@ class KernelPackageTests(unittest.TestCase):
         MLA build root (a cache path, the same class as TRITON_CACHE_DIR); the CUDA TU has no getenv."""
         allowed = {("mla/__init__.py", "ST_MLA_BUILD_ROOT"),
                    ("dense/__init__.py", "ST_DENSE_BUILD_ROOT"),
-                   ("oneshot/__init__.py", "ST_ONESHOT_BUILD_ROOT")}
+                   ("oneshot/__init__.py", "ST_ONESHOT_BUILD_ROOT"),
+                   ("native_root.py", "ST_NATIVE_BUILD_ROOT")}
         found = set()
         for path in KERNELS.rglob("*.py"):
             rel = str(path.relative_to(KERNELS))

@@ -1,0 +1,56 @@
+# docker logs -t st-glm53 on srv4 (rank 3, tempab5-0915 hold, 2026-09-15 UTC), lines 1-54,
+# '[b12x sf6] prepared FC1+FC2', FutureWarning and 'return func' lines removed, cut at 220 chars
+2026-09-15T02:25:21.045098565Z   fleet reserved by queue/tempab5-0915
+2026-09-15T02:25:21.287877726Z   box: GB10 (DGX Spark): SM121, unified 122 GiB (100 free)
+2026-09-15T02:25:21.397588523Z [W915 02:25:21.659974880 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+2026-09-15T02:25:23.231418097Z [oneshot] inline proxy serving peers=3 inline_bytes=8 wr_reuse=1
+2026-09-15T02:25:23.528139106Z   rank3: one-shot rails=2 latency µs {'sum_8rows': 32.7, 'sum_8rows_p90': 33.2, 'sum_16rows': 45.5, 'sum_16rows_p90': 46.0, 'sum_32rows': 75.7, 'sum_32rows_p90': 76.2, 'max_8keys': 14.4, 'm
+2026-09-15T02:25:27.050691303Z boot rendezvous draft-calibration: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T02:25:27.619762643Z boot rendezvous draft-tuning: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T02:25:27.625548240Z boot rendezvous draft-fc-bias-auto: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T02:25:28.000671645Z boot rendezvous arena-admission: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T02:27:31.222848078Z boot rendezvous weights-loaded: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T02:28:32.120265008Z 2026-09-15 02:28:32,119 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-15T02:28:32.121279722Z 2026-09-15 02:28:32,121 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_fb88d8562a179eab
+2026-09-15T02:28:39.835589848Z 2026-09-15 02:28:39,835 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cut
+2026-09-15T02:28:39.835825222Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=1024 -> rows 37760/37760 tiles 295/295 tasks 1180/1180
+2026-09-15T02:28:39.837163149Z [tp-sf6-q0] LAUNCHED E288/H4096/I512/top8 T=128
+2026-09-15T02:28:41.676940605Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=8192 -> rows 44928/44928 tiles 351/351 tasks 1404/1404
+2026-09-15T02:29:29.136329028Z [megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-15T02:29:29.136365876Z [megakernel] mla prefill32 LAUNCHED T=30205 W=2051 register-Q tile=32
+2026-09-15T02:29:31.891866529Z 2026-09-15 02:29:31,891 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-15T02:29:31.892088208Z 2026-09-15 02:29:31,891 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/dynamic_e288_k4096_n512_t8_tiled_03b7bd3e8012fc3a
+2026-09-15T02:29:38.876864785Z 2026-09-15 02:29:38,876 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cut
+2026-09-15T02:29:38.877012128Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=258048 -> rows 294784/294784 tiles 2303/2303 tasks 9212/9212
+2026-09-15T02:30:17.212950275Z 2026-09-15 02:30:17,212 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-15T02:30:17.213102850Z 2026-09-15 02:30:17,212 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1f
+2026-09-15T02:30:18.365207173Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-15T02:30:19.236674381Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-15T02:30:25.267821668Z 2026-09-15 02:30:25,267 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cut
+2026-09-15T02:30:25.268048547Z [b12x static v2] lane serving: static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync (mac=48, m=1, routed=8, smem=91136 B)
+2026-09-15T02:30:25.560024680Z 2026-09-15 02:30:25,559 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1
+2026-09-15T02:30:26.723790746Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-15T02:30:27.606447473Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-15T02:30:33.582903088Z 2026-09-15 02:30:33,582 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cut
+2026-09-15T02:30:33.583079439Z [b12x static v2] lane serving: static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync (mac=48, m=8, routed=64, smem=91136 B)
+2026-09-15T02:30:33.805526371Z 2026-09-15 02:30:33,805 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1_c678b3213d1b
+2026-09-15T02:30:34.930113495Z REFORM_SF6_LAYOUT_PASS FC1=4096 FC2=1024
+2026-09-15T02:30:38.990547537Z 2026-09-15 02:30:38,990 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cut
+2026-09-15T02:30:38.990742016Z [b12x static v2] lane serving: static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1 (mac=48, m=64, routed=512, smem=101376 B)
+2026-09-15T02:30:39.228606139Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=4096 -> rows 40832/294784 tiles 319/2303 tasks 1276/9212
+2026-09-15T02:30:39.632937522Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32760 -> rows 69504/294784 tiles 543/2303 tasks 2172/9212
+2026-09-15T02:30:40.928079444Z   kernel warmup returned 4.76 GiB of inactive allocator cache
+2026-09-15T02:31:39.583490633Z 2026-09-15 02:31:39,583 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6
+2026-09-15T02:31:41.530241521Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-15T02:31:42.431049013Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-15T02:31:48.866470133Z 2026-09-15 02:31:48,866 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cut
+2026-09-15T02:31:48.866818964Z [b12x static v2] lane serving: static2_m16_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3sync (mac=48, m=16, routed=1
+2026-09-15T02:31:52.040192456Z 2026-09-15 02:31:52,039 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v
+2026-09-15T02:31:53.216663428Z DECODE_REFORM_LAYOUT_PASS 1024
+2026-09-15T02:31:54.150277378Z REFORM_SF6_LAYOUT_PASS FC1=2048 FC2=2048
+2026-09-15T02:31:59.992753408Z 2026-09-15 02:31:59,992 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cut
+2026-09-15T02:31:59.992818752Z [b12x static v2] lane serving: static2_m8_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync (mac=48, m=8, routed=64, smem=91136 B)
+2026-09-15T02:32:53.715898775Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=2048 -> rows 38784/294784 tiles 303/2303 tasks 1212/9212
+2026-09-15T02:32:54.755285775Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=16384 -> rows 53120/294784 tiles 415/2303 tasks 1660/9212
+2026-09-15T02:32:55.642671409Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=18432 -> rows 55168/294784 tiles 431/2303 tasks 1724/9212
+2026-09-15T02:32:56.643086481Z [b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32768 -> rows 69504/294784 tiles 543/2303 tasks 2172/9212

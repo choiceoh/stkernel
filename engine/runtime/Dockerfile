@@ -14,6 +14,7 @@ ENV PYTHONPATH=/opt/st \
     ST_MLA_BUILD_ROOT=/cache/cu132/mla \
     ST_DENSE_BUILD_ROOT=/cache/cu132/st-dense \
     ST_ONESHOT_BUILD_ROOT=/cache/cu132/st-oneshot \
+    ST_NATIVE_BUILD_ROOT=/cache/cu132/st-native \
     MAX_JOBS=2
 ENTRYPOINT ["python3", "-m", "engine.profiles.glm53.boot"]
 CMD ["--help"]

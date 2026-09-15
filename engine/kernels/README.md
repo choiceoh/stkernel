@@ -89,7 +89,10 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
 ## 노브 (D11, 2026-09-12 정리)
 
 이 패키지는 환경 변수를 읽지 않는다(예외는 `ST_MLA_BUILD_ROOT`, `ST_DENSE_BUILD_ROOT`,
-`ST_ONESHOT_BUILD_ROOT` 캐시 경로, `TRITON_CACHE_DIR` 와 같은 부류).
+`ST_ONESHOT_BUILD_ROOT`, `ST_NATIVE_BUILD_ROOT` 캐시 경로, `TRITON_CACHE_DIR` 와 같은 부류).
+나머지 네이티브 확장(bounded graph, decode queue, mapped staging, prefill top-k)은
+`native_root.build_root` 로 `ST_NATIVE_BUILD_ROOT` 아래에 빌드한다 — `$HOME` 은 컨테이너 안이라
+부팅마다 사라진다.
 `tests/test_engine_kernels.py` 가 AST 로 강제한다. 이식 때 남았던 43개 환경 노브는 셋으로 갈랐다.
 
 - **코드에 박은 프로덕션 채택값**: 메가커널 PDL on, GEMM 입력 모드(`MK_INPUT_CTA=4`, `MK_INPUT_REUSE=1`),
@@ -256,7 +259,7 @@ one-shot은 Tensor 본체·기존 factory·pybind 헤더와 `AT_PER_OPERATOR_HEA
 
 b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
 `/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
-(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
+(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). 키 파일이 다른 커널은 다른 모듈에 둔다(`_cute_dsl_module`): flashinfer 는 키가 다른 커널을 빌드할 때 모듈 디렉터리를 통째로 지우므로, 변형 파일을 더하는 동적 커널이 정적 커널과 한 모듈을 쓰던 동안에는 부팅마다 서로의 `.o` 를 지우고 다시 컴파일했다(2026-09-15). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
 `cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. direct micro 커널도 같은 래퍼를 탄다(모듈
 `st_b12x_direct_micro_sm121a_cute_dsl`, TVM-FFI 형태: 포인터는 정수 주소, 스트림은 env 스트림). 디스크에서 다시 읽은 `.o` 로는
 block-dim 프로브(레지스터 압력이 512 스레드 CTA 를 막는지)를 못 돌리므로, 빌드 때 판정을 `<커널>.blockdim.json` 사이드카로 `.o` 옆에

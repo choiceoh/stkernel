@@ -1668,6 +1668,8 @@ def _scale_runtime_addresses(weights, *, direct_sf6: bool) -> tuple[int, int]:
 # cache (#3874, #4029; docs/design_docs/cute_dsl_kernel_cache.md), so a fresh
 # process JITLinks an exported ``.o`` instead of re-running the MLIR pipeline.
 # The in-process dicts stay as the level-1 memoization the design describes.
+# A module's key files must be the same for every kernel in it: see
+# _cute_dsl_module.
 # ---------------------------------------------------------------------------
 _CUTE_DSL_MODULE = "st_b12x_moe"
 
@@ -1721,6 +1723,23 @@ def _kernel_source_files() -> Tuple[str, ...]:
         fp4_common.__file__,
         dense_blockscaled_gemm_sm120_b12x.__file__,
     )
+
+
+def _cute_dsl_module(key_files: Tuple[str, ...]) -> str:
+    """The on-disk module of the kernels whose cache key is `key_files`.
+
+    flashinfer wipes a module directory whose meta.json (the key files' hash)
+    differs from the kernel it is building. The dynamic kernels add variant files
+    to the static set, so while every family shared one module each build erased
+    the others' artifacts: every boot recompiled the prefill and decode kernels
+    (about 53 s a rank, 2026-09-15). The static set keeps the historical module;
+    any other set gets its own, named by its files in order, while their
+    contents stay the key.
+    """
+    if tuple(key_files) == _kernel_source_files():
+        return _CUTE_DSL_MODULE
+    names = "\0".join(os.path.basename(path) for path in key_files)
+    return f"{_CUTE_DSL_MODULE}_{hashlib.sha256(names.encode()).hexdigest()[:8]}"
 
 
 def _disk_kernel_name(prefix: str, cache_key: Tuple) -> str:
@@ -4706,8 +4725,36 @@ def _get_dynamic_kernel(
     packed2_fake = cute.runtime.make_fake_compact_tensor(
         cutlass.Uint8, (E, (k // 256) * (n // 128), REFORM_SF_STAGE)
         if reform_sf_pack else (1, 1, 16), stride_order=(2, 1, 0), assumed_align=16)
+    key_files = _kernel_source_files() + (
+        tuple(os.path.join(os.path.dirname(__file__), name) for name in
+              ('moe_dynamic_prefill_packets.py', 'moe_w4a16_fp4_helpers.py'))
+        if _prefill_packets else ()) + (
+        tuple(os.path.join(os.path.dirname(__file__), name) for name in
+              ('moe_prefill_q0_batch8.py', '_prefill_q0_batch8.py'))
+        if _prefill_q0_batch8 else ()) + (
+        (os.path.join(os.path.dirname(__file__), 'moe_dynamic_prefill_n128_tiled.py'),)
+        if _prefill_n128 else ()) + (
+        tuple(os.path.join(os.path.dirname(__file__), name) for name in
+              ('moe_dynamic_prefill_m64.py', '_prefill_m64_bodies.py'))
+        if _prefill_tile64 else ()) + (
+        tuple(os.path.join(os.path.dirname(__file__), name) for name in
+              ("moe_dynamic_prefill_raw_route.py", "moe_dynamic_gated_sf6_prefill.py",
+               "moe_dynamic_gated_raw_q0.py", "moe_dynamic_gated_sf6_q0.py"))
+        if _prefill_scale_expansion else ()) + (
+        tuple(os.path.join(os.path.dirname(__file__), name) for name in
+              ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_prefill.py"))
+        if prefill_word_unpack else ()) + (
+        tuple(os.path.join(os.path.dirname(__file__), name) for name in
+              ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_q0_words.py"))
+        if short_word_unpack else ()) + (
+        (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
+        if tp_sf6_q0 else ()) + (
+        (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_raw_q0.py"),)
+        if tp_sf6_q0 and not reform_sf_pack else ()) + (
+        (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
+        if ep_local_cls is not None or tp_sf6_q0 else ())
     compiled = build_and_load_cute_dsl_kernel(
-        _CUTE_DSL_MODULE,
+        _cute_dsl_module(key_files),
         _disk_kernel_name(f"dynamic_e{E}_k{k}_n{n}_t{num_topk}{'_tiled' if tiled else ''}"
                           f"{'' if chunk == TILED_W13_K_IN else f'_c{chunk}'}", cache_key),
         lambda: cute.compile(
@@ -4751,34 +4798,7 @@ def _get_dynamic_kernel(
             stream_fake,
             options="--opt-level 2 --enable-tvm-ffi",
         ),
-        extra_key_files=_kernel_source_files() + (
-            tuple(os.path.join(os.path.dirname(__file__), name) for name in
-                  ('moe_dynamic_prefill_packets.py', 'moe_w4a16_fp4_helpers.py'))
-            if _prefill_packets else ()) + (
-            tuple(os.path.join(os.path.dirname(__file__), name) for name in
-                  ('moe_prefill_q0_batch8.py', '_prefill_q0_batch8.py'))
-            if _prefill_q0_batch8 else ()) + (
-            (os.path.join(os.path.dirname(__file__), 'moe_dynamic_prefill_n128_tiled.py'),)
-            if _prefill_n128 else ()) + (
-            tuple(os.path.join(os.path.dirname(__file__), name) for name in
-                  ('moe_dynamic_prefill_m64.py', '_prefill_m64_bodies.py'))
-            if _prefill_tile64 else ()) + (
-            tuple(os.path.join(os.path.dirname(__file__), name) for name in
-                  ("moe_dynamic_prefill_raw_route.py", "moe_dynamic_gated_sf6_prefill.py",
-                   "moe_dynamic_gated_raw_q0.py", "moe_dynamic_gated_sf6_q0.py"))
-            if _prefill_scale_expansion else ()) + (
-            tuple(os.path.join(os.path.dirname(__file__), name) for name in
-                  ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_prefill.py"))
-            if prefill_word_unpack else ()) + (
-            tuple(os.path.join(os.path.dirname(__file__), name) for name in
-                  ("moe_dynamic_gated_sf6_words.py", "moe_dynamic_gated_sf6_q0_words.py"))
-            if short_word_unpack else ()) + (
-            (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_sf6_q0.py"),)
-            if tp_sf6_q0 else ()) + (
-            (os.path.join(os.path.dirname(__file__), "moe_dynamic_gated_raw_q0.py"),)
-            if tp_sf6_q0 and not reform_sf_pack else ()) + (
-            (os.path.join(os.path.dirname(__file__), "moe_dynamic_ep_local.py"),)
-            if ep_local_cls is not None or tp_sf6_q0 else ()),
+        extra_key_files=key_files,
     )
 
     if prefill_reuse:
