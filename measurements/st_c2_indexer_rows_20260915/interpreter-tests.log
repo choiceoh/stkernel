@@ -1,0 +1,7 @@
+test_row_lengths (tests.test_engine_indexer_rows.IndexerRowsKernelTests.test_row_lengths) ... ok
+test_mask_horizon (tests.test_engine_indexer_rows.IndexerRowsKernelTests.test_mask_horizon) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.479s
+
+OK

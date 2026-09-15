@@ -104,16 +104,17 @@ class GraphCaches:
         # table. The real arena map, including its -1 entries, stays untouched.
         self.block_table = self.real.block_table.index_select(0, self.sequence_ids).clamp_min_(0)
 
-    def row_lengths(self, contexts, tokens, pool_size, lane):
-        """Read-only lengths shared by the DSA layers of one gathered batch."""
+    def row_lengths(self, contexts, tokens, pool_size, lane, width=0):
+        """Read-only lengths shared by the DSA layers of one gathered batch; `width` asks the lane for the
+        rows' windows over their joined candidates as well (the same for every layer of the batch)."""
         if not hasattr(self, 'block_table'):
             raise RuntimeError('decode lengths require gathered graph caches')
         if self._decode_lengths is None:
-            values = lane(contexts, tokens, pool_size)
-            self._decode_lengths = (contexts, tokens, pool_size, lane, values)
+            values = lane(contexts, tokens, pool_size, width=width) if width else lane(contexts, tokens, pool_size)
+            self._decode_lengths = (contexts, tokens, pool_size, lane, width, values)
         else:
-            ctx, t, kp, producer, _ = self._decode_lengths
-            if contexts is not ctx or tokens != t or pool_size != kp or lane is not producer:
+            ctx, t, kp, producer, w, _ = self._decode_lengths
+            if contexts is not ctx or tokens != t or pool_size != kp or lane is not producer or width != w:
                 raise ValueError('decode length inputs changed within one gathered batch')
         return self._decode_lengths[-1]
 
