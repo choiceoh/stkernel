@@ -16,7 +16,8 @@ def _build():
     global _EXT
     if _EXT is None:
         from torch.utils.cpp_extension import load
-        from engine.kernels.common.native_cache import build_root, prepare_cuda_sources
+        from engine.kernels.common.native_cache import prepare_cuda_sources
+        from engine.kernels.native_root import build_root
         src = Path(__file__).with_suffix('.cu')
         flags = ['-O3', '-gencode', 'arch=compute_121a,code=sm_121a']
         key, build, sources = prepare_cuda_sources(build_root('prefill-topk'), [src],
