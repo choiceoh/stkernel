@@ -187,14 +187,22 @@ class PackStore:
         arena. `device`: where the fp64 work runs -- the weight's device for a tile-wide K, the CPU above it."""
         from engine.kernels.dense import GPTQ_ACT_ORDER
         from engine.kernels.dense.packing import gptq_factor
+        # The drafter's newly collected block Hessians pass the same FP64
+        # factorisation on CPU, while GB10's GPU factorisation failed during
+        # a full boot. Its wide FC already uses CPU. Keep all drafter inverse
+        # factors on that validated path; packing still moves the factor to
+        # the weight's device and uses the same calibration and quantizer.
+        factor_device = 'cpu' if name.startswith('DFlash2Qwen3ForCausalLM/') else device
         damping = self.gptq_damping.get(name, 0.01)
-        identity = (name, smooth_sha, tuple(hessian.shape), str(device), damping)
+        identity = (name, smooth_sha, tuple(hessian.shape), str(factor_device), damping)
         if self._factor_entry is not None and self._factor_entry[0] == identity:
             self.stats['factor_reused'] += 1
             return self._factor_entry[1]
         self._factor_entry = None                                   # the previous weight's, freed before this one's
-        factor = gptq_factor(hessian, percdamp=damping, act_order=GPTQ_ACT_ORDER, factor_device=device)
+        factor = gptq_factor(hessian, percdamp=damping, act_order=GPTQ_ACT_ORDER, factor_device=factor_device)
         self.stats['factor_built'] += 1
+        if torch.device(factor_device).type == 'cpu':
+            self.stats['factor_cpu'] += 1
         if factor[1].numel() * factor[1].element_size() <= self.FACTOR_BYTES:
             self._factor_entry = (identity, factor)
         return factor
