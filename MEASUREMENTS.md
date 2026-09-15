@@ -3360,3 +3360,20 @@ C=1(8행)만 쓰는 공유 전문가 겹침을 C=2 16행에 여는 후보를 같
 - **미측정.** GPU 부팅. 재부팅 한 번에 프로덕션 약 −45 s(브래킷 모양 약 −28 s)는 추정이다.
 
 [설계·요구 대응·근거](measurements/st_prefill_gate_reuse_20260915/README.md).
+
+### 팩 스토어 — 가중치 하나의 두 레인이 해시와 교정 로드를 한 번만 한다 (2026-09-15)
+
+- **근거.**
+  - main `3acae017` 프로덕션 두 번째 부팅(03:38 UTC)에서 `loaded` 는 53.5 s, rank 0 의 `prepare native execution` 은 32.16 s 였다.
+  - dense 가중치마다 W4 레인(`pack`)과 FP8 레인(`pack_fp8`)이 각자 가중치를 복사해 sha256 하고, 교정 blob 을 로드·`isfinite`·스무딩·sha256 했다. rank 3 의 대상 blob 은 203개 7.25 GiB 다.
+- **바꾼 것.**
+  - `PackStore.weight_digest` → `WeightDigest`. 가중치는 워커 스레드에서 한 번 해시하고, 교정 해시는 그 가중치의 레인들에 한 번이다.
+  - digest 는 해시한 바이트(저장소·오프셋·레이아웃·`_version`)에만 답한다. 빌드 경로는 Hessian 을 다시 읽어 해시가 같은지 확인한다.
+  - 식별자 dict 는 그대로다. 이미 파일된 팩을 같은 이름으로 찾으므로 팩 바이트와 수치가 바뀌지 않는다.
+- **CPU 측정.** rank 3 의 실제 blob, 차가운 페이지 캐시, 가중치 234개(합성 BF16, 실제 모양).
+  - old 25.88 / 24.64 s → new 13.85 / 14.86 s, 랭크당 −10.9 s(−43%).
+  - 두 변형 모두 같은 437개 팩 파일을 찾았고, 빌드는 0 이었다.
+- **검증.** CPU 85 테스트 OK(7 스킵, CUDA 전용).
+- **미측정.** GPU 부팅. 다음 부팅의 rank 0 `prepare native execution`(기준 32.16 s)과 `loaded`(기준 53.5 s)로 확인한다. 약 −10 s 는 추정이다.
+
+[표·명령·원시 출력](measurements/st_boot_pack_digests_20260915/README.md).

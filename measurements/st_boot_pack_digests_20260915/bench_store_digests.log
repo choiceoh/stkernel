@@ -1,0 +1,6 @@
+image sha256:b45454b5fdc138bfaafa6470cf9cb49bbcd74783ceffb343b0a7b1d0cf87fcd5; tree 9d7b9478802c90dfb54774146e5b36693997adc0; host srv4; 2026-09-15T04:04:03Z
+{"setup": {"cache": 232, "gptq": 232, "calibration_digest_reused": 202, "fp8_cache": 205, "fp8_gptq": 205}, "items": 234}
+{"variant": "old", "seconds": 25.881, "hessian_reads": 437, "stats": {"cache": 232, "gptq": 232, "fp8_cache": 205, "fp8_gptq": 205}, "built": {}, "weights": 234, "threads": 20}
+{"variant": "new", "seconds": 13.851, "hessian_reads": 235, "stats": {"cache": 232, "gptq": 232, "calibration_digest_reused": 202, "fp8_cache": 205, "fp8_gptq": 205}, "built": {}, "weights": 234, "threads": 20}
+{"variant": "new", "seconds": 14.858, "hessian_reads": 235, "stats": {"cache": 232, "gptq": 232, "calibration_digest_reused": 202, "fp8_cache": 205, "fp8_gptq": 205}, "built": {}, "weights": 234, "threads": 20}
+{"variant": "old", "seconds": 24.636, "hessian_reads": 437, "stats": {"cache": 232, "gptq": 232, "fp8_cache": 205, "fp8_gptq": 205}, "built": {}, "weights": 234, "threads": 20}

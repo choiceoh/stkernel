@@ -5,6 +5,7 @@ pack also needs an exact calibration digest; historical caches without it
 are rebuilt because the old builder could silently fall back to RTN.
 """
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import inspect
 import os
@@ -12,6 +13,37 @@ from pathlib import Path
 from typing import NamedTuple
 
 import torch
+
+
+def _bytes_key(tensor):
+    """What names a tensor's bytes while it lives: its storage and place in it, its layout and its write count."""
+    return (str(tensor.device), tensor.dtype, tuple(tensor.shape), tuple(tensor.stride()),
+            tensor.untyped_storage().data_ptr(), tensor.storage_offset(), tensor._version)
+
+
+class WeightDigest:
+    """sha256 of one weight's bytes, hashed once for every lane that packs it (`PackStore.weight_digest`).
+
+    A weight's W4 pack and its FP8 pack are looked up by the same bytes, and each lane used to copy them to
+    the host and hash them again. The digest answers only for the bytes it hashed -- the same storage, offset,
+    layout and write count -- because a pack must never be read under another tensor's hash.
+    """
+
+    def __init__(self, weight, future):
+        self.key = _bytes_key(weight)
+        self._future = future
+        # (blob path, device, inode, size, mtime, k, smoothing hash) -> sha256 of that validated, smoothed Hessian: the
+        # W4 and FP8 lanes of this weight read one blob under one smoothing. Scoped to this weight's lanes, so a store
+        # that is asked again later (a rewritten blob, a new boot's calibration) reads the file again.
+        self.calibrations = {}
+
+    def covers(self, weight):
+        return _bytes_key(weight) == self.key
+
+    def of(self, weight):
+        if not self.covers(weight):
+            raise ValueError("a weight digest was offered for different bytes")
+        return self._future.result()
 
 
 class Need(NamedTuple):
@@ -31,6 +63,7 @@ class PackStore:
         self.stats = Counter()
         self.read_files = set()
         self._factor_entry = None                # (identity, factor) of the last weight: its two lanes share one factorisation
+        self._hasher = None                       # one worker: a weight's bytes hash while its calibration loads and hashes
         self.gptq_damping = {}                    # explicit per-reader preparation tuning; default identities stay intact
         from engine.kernels.dense import pack_w4
         self.algorithm = hashlib.sha256(
@@ -93,6 +126,46 @@ class PackStore:
             hessian = smooth_hessian(hessian.float(), smooth.cpu())
         return hessian
 
+    def weight_digest(self, weight):
+        """Start hashing `weight`'s bytes on the store's worker; every lane of the weight reads the returned digest.
+
+        The copy to the host is taken here, on the caller's thread, and it is always a copy: a later write to the
+        source cannot reach the hash. Only sha256 runs beside the caller's next work, the calibration's load and hash.
+        """
+        raw = weight.detach().contiguous().view(torch.uint8).to('cpu', copy=True).numpy()
+        if self._hasher is None:
+            self._hasher = ThreadPoolExecutor(max_workers=1, thread_name_prefix='st-pack-digest')
+        return WeightDigest(weight, self._hasher.submit(lambda: hashlib.sha256(raw).hexdigest()))
+
+    def _calibration_sha(self, name, k, smooth, digest):
+        """sha256 of `name`'s validated, smoothed [k, k] Hessian, or None when the store has no blob. Loaded, checked
+        and hashed once for all the lanes of `digest`'s weight: a GLM-5.3 rank used to push 7.2 GiB of Hessians
+        through the load, the finite check, the smoothing and sha256 twice, once per lane."""
+        path = self.calibration_path(name)
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return None
+        key = (str(path), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, int(k), self._smooth_sha(smooth))
+        sha = digest.calibrations.get(key)
+        if sha is not None:
+            self.read_files.add(path)
+            self.stats['calibration_digest_reused'] += 1
+            return sha
+        hessian = self._hessian(name, k, smooth)
+        if hessian is None:
+            return None
+        sha = hashlib.sha256(hessian.contiguous().numpy()).hexdigest()
+        digest.calibrations[key] = sha
+        return sha
+
+    def _calibrated_hessian(self, name, k, smooth, sha):
+        """The Hessian a build packs from, read again: it must still be the bytes its identity named."""
+        hessian = self._hessian(name, k, smooth)
+        if hessian is None or hashlib.sha256(hessian.contiguous().numpy()).hexdigest() != sha:
+            raise ValueError(f'calibration changed while packing: {self.calibration_path(name)}')
+        return hessian
+
     def amax(self, name):
         """The channel peaks [k] of `name`'s calibrated input (unsmoothed domain), or None when the blob has none."""
         path = self.calibration_path(name)
@@ -130,18 +203,22 @@ class PackStore:
         damping = self.gptq_damping.get(name, 0.01)
         return {} if damping == 0.01 else {'gptq_damping': damping}
 
-    def pack_wide(self, weight, name, *, rank=None, smooth=None):
+    def pack_wide(self, weight, name, *, rank=None, smooth=None, digest=None):
         """The tiles of a weight wider than the decode kernel's K, from one GPTQ over the whole weight and its full
-        calibration Hessian (kernels/dense.pack_w4_wide); cached as one blob under the wide identity."""
+        calibration Hessian (kernels/dense.pack_w4_wide); cached as one blob under the wide identity. `digest`: this
+        weight's `WeightDigest` when another lane already hashed it."""
         from engine.kernels.dense import W4Pack, pack_w4_wide
         rank = self.rank if rank is None else rank
         n, k = weight.shape
-        hessian = self._hessian(name, k, smooth)
-        if hessian is None:
+        if not self.calibration_path(name).is_file():
             raise ValueError(f"pack_wide needs the calibration of {name}")
-        raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
-        identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, wide=True,
-                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(),
+        if digest is None:
+            digest = self.weight_digest(weight)
+        calibration = self._calibration_sha(name, k, smooth, digest)
+        if calibration is None:
+            raise ValueError(f"pack_wide needs the calibration of {name}")
+        identity = dict(version=2, weight=digest.of(weight), shape=(n,k), name=name, wide=True,
+                        calibration=calibration,
                         per_row=not name.startswith('DFlash2Qwen3ForCausalLM/'), algorithm=self.algorithm,
                         smooth=self._smooth_sha(smooth), **self._tuning_identity(name))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
@@ -157,6 +234,7 @@ class PackStore:
                 packs.append(W4Pack(tile.data, tile.scale, tile.rowscale, n, self.TILE, True))
             self.stats['cache'] += 1
         else:
+            hessian = self._calibrated_hessian(name, k, smooth, calibration)
             packs = pack_w4_wide(weight, hessian, per_row=identity['per_row'],
                                  factor=self._factor(name, hessian, identity['smooth'], 'cpu'))
             self.stats['built'] += 1
@@ -171,16 +249,16 @@ class PackStore:
         self.stats['gptq'] += 1
         return packs
 
-    def pack(self, weight, name, *, rank=None, smooth=None):
+    def pack(self, weight, name, *, rank=None, smooth=None, digest=None):
         from engine.kernels.dense import pack_w4
         rank = self.rank if rank is None else rank
         per_row = not name.startswith('DFlash2Qwen3ForCausalLM/')
         n, k = weight.shape
-        hessian = self._hessian(name, k, smooth)
-        raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
-        weight_sha = hashlib.sha256(raw).hexdigest()
-        calibration_sha = (hashlib.sha256(hessian.contiguous().numpy()).hexdigest()
-                           if hessian is not None else 'rtn')
+        if digest is None:
+            digest = self.weight_digest(weight)
+        calibration = self._calibration_sha(name, k, smooth, digest)      # None: no blob, the pack rounds to nearest
+        weight_sha = digest.of(weight)
+        calibration_sha = calibration if calibration is not None else 'rtn'
         identity = dict(version=2, weight=weight_sha, shape=(n,k), name=name,
                         calibration=calibration_sha, per_row=per_row, algorithm=self.algorithm,
                         smooth=self._smooth_sha(smooth), **self._tuning_identity(name))
@@ -193,18 +271,23 @@ class PackStore:
             if blob['identity'] != identity:
                 raise ValueError(f'dense pack identity mismatch: {cache}')
             pack = self.decode(blob, weight.device, n, k)
-            if hessian is not None:
+            if calibration is not None:
                 from dataclasses import replace
                 pack = replace(pack, calibrated=True)
             self.stats['cache'] += 1
         else:
+            hessian = None if calibration is None else self._calibrated_hessian(name, k, smooth, calibration)
             kind = 'gptq' if hessian is not None else 'rtn'
+
+            def legacy_digests():
+                yield 'sha256-'+weight_sha
+                yield hashlib.md5(weight.detach().contiguous().view(torch.uint8).cpu().numpy()).hexdigest()
             # The original cache used both MD5 and SHA256 aliases.
-            for digest in ('sha256-'+weight_sha, hashlib.md5(raw).hexdigest()):
+            for alias in legacy_digests():
                 if self._tuning_identity(name):
                     break            # legacy blobs do not attest a non-default inverse damping
                 mode = 'row' if per_row else 'ten'
-                legacy = self.root/'mkpacks'/f'rank{rank}'/(digest+f'-{n}x{k}-bfloat16-v4-{mode}-{kind}-lr0.pt')
+                legacy = self.root/'mkpacks'/f'rank{rank}'/(alias+f'-{n}x{k}-bfloat16-v4-{mode}-{kind}-lr0.pt')
                 if not legacy.is_file():
                     continue
                 self.read_files.add(legacy)
@@ -236,20 +319,23 @@ class PackStore:
                 os.replace(temporary,cache)
             finally:
                 temporary.unlink(missing_ok=True)
-        self.stats['gptq' if hessian is not None else 'rtn'] += 1
+        self.stats['gptq' if calibration is not None else 'rtn'] += 1
         return pack
 
-    def pack_fp8(self, weight, name, *, rank=None, smooth=None):
+    def pack_fp8(self, weight, name, *, rank=None, smooth=None, digest=None):
         """The FP8 lane's (q e4m3, UE8M0 block scales) of a calibrated weight: GPTQ on the fp8 grid (packing.fp8_gptq),
         cached under the weight's, the Hessian's and the packer's identity; None when the store has no calibration."""
         from engine.kernels.dense.packing import fp8_gptq
         n, k = weight.shape
-        hessian = self._hessian(name, k, smooth)
-        if hessian is None:
+        if not self.calibration_path(name).is_file():
             return None
-        raw = weight.detach().contiguous().view(torch.uint8).cpu().numpy()
-        identity = dict(version=2, weight=hashlib.sha256(raw).hexdigest(), shape=(n,k), name=name, kind='fp8',
-                        calibration=hashlib.sha256(hessian.contiguous().numpy()).hexdigest(), algorithm=self.algorithm,
+        if digest is None:
+            digest = self.weight_digest(weight)
+        calibration = self._calibration_sha(name, k, smooth, digest)
+        if calibration is None:
+            return None
+        identity = dict(version=2, weight=digest.of(weight), shape=(n,k), name=name, kind='fp8',
+                        calibration=calibration, algorithm=self.algorithm,
                         smooth=self._smooth_sha(smooth), **self._tuning_identity(name))
         key = hashlib.sha256(repr(identity).encode()).hexdigest()
         cache = self.root/'st-dense-packs'/(key+'.pt')
@@ -261,6 +347,7 @@ class PackStore:
             q, scale = blob['q'].to(weight.device), blob['scale'].to(weight.device)
             self.stats['fp8_cache'] += 1
         else:
+            hessian = self._calibrated_hessian(name, k, smooth, calibration)
             device = 'cpu' if k > self.TILE else weight.device
             q, scale = fp8_gptq(weight, hessian.to(weight.device),
                                 factor=self._factor(name, hessian, identity['smooth'], device))
@@ -276,7 +363,10 @@ class PackStore:
         return q, scale
 
     def release_pages(self):
-        """All mmap readers have returned; return their clean UMA file cache."""
+        """All mmap readers have returned; return their clean UMA file cache, and the digest worker."""
+        if self._hasher is not None:
+            self._hasher.shutdown(wait=True)
+            self._hasher = None
         for path in self.read_files:
             with path.open('rb') as handle:
                 os.posix_fadvise(handle.fileno(),0,0,os.POSIX_FADV_DONTNEED)
