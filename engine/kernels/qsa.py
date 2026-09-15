@@ -439,7 +439,9 @@ def _store_qsa_rows_kernel(
     dims = tl.arange(0, BLOCK_D)
     slot = tl.load(slots_ptr + row)
     valid = (row < num_rows) & (slot >= 0) & (slot < num_blocks * PAGE_SIZE)
-    block = tl.maximum(slot, 0) // PAGE_SIZE
+    # int64 before the page stride: an int32 slot mapping times a block-major page stride (5,431,296 bf16 rows for
+    # Qwen3.8's 13 attention layers) wraps from page 396 on
+    block = (tl.maximum(slot, 0) // PAGE_SIZE).to(tl.int64)
     token = tl.maximum(slot, 0) % PAGE_SIZE
     values = tl.load(
         rows_ptr + row * stride_rows_row + dims * stride_rows_dim,

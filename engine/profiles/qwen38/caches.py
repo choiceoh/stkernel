@@ -101,14 +101,14 @@ def layout(F, layers, *, mtp: bool = True) -> CacheLayout:
             field("rec", L, (F.spec_k + 1, F.v_heads_local, F.k_dim, F.v_dim), F.gdn_state_dtype.replace("fp", "f"))
     if any(L in F.ple_layers for L in layers):
         field("ple_ids", -1, (PLE_ID_RING,), "i64")
-        field("ple_conv", -1, (F.hc * F.hidden, (F.ple_conv - 1) * 3 + F.spec_k + 1), "bf16")
+        field("ple_conv", -1, (F.hc * F.hidden, (F.ple_conv - 1) * F.ngram_size + F.spec_k + 1), "bf16")
     return CacheLayout(aligned(max(1, paged), quantum), aligned(state, ALIGN), kv_offsets, key_offsets, tuple(fields))
 
 
 def snapshot_layout(F, layers):
     """What a prefix checkpoint at block boundary P keeps: per GDN layer the conv's last conv-1 inputs and the state at
-    P-1; PLE's previous ngram_size-1 token ids and its conv's (ple_conv-1)*3 inputs. A block is whole QSA groups, so
-    the index-key ring holds nothing at P. Returns (nbytes, fields)."""
+    P-1; PLE's previous ngram_size-1 token ids and its conv's (ple_conv-1)*ngram_size inputs (the conv is dilated by
+    ngram_size). A block is whole QSA groups, so the index-key ring holds nothing at P. Returns (nbytes, fields)."""
     fields, at = [], 0
 
     def field(name, L, shape, dtype):
@@ -123,7 +123,7 @@ def snapshot_layout(F, layers):
             field("rec", L, (F.v_heads_local, F.k_dim, F.v_dim), F.gdn_state_dtype.replace("fp", "f"))
     if any(L in F.ple_layers for L in layers):
         field("ple_ids", -1, (F.ngram_size - 1,), "i64")
-        field("ple_conv", -1, (F.hc * F.hidden, (F.ple_conv - 1) * 3), "bf16")
+        field("ple_conv", -1, (F.hc * F.hidden, (F.ple_conv - 1) * F.ngram_size), "bf16")
     return aligned(max(at, 1), ALIGN), tuple(fields)
 
 
@@ -288,7 +288,7 @@ class Qwen38Caches:
         if ("ple_ids", -1) in self._snap:
             ids, conv = self.ple(slot)
             self._snap["ple_ids", -1][snap].copy_(ids.index_select(0, self._ring_cells(position, F.ngram_size - 1, ids.shape[0])))
-            span = (F.ple_conv - 1) * 3
+            span = (F.ple_conv - 1) * F.ngram_size
             self._snap["ple_conv", -1][snap].copy_(conv.index_select(1, self._ring_cells(position, span, conv.shape[1])))
 
     def restore(self, slot: int, position: int, snap: int) -> None:
@@ -306,7 +306,7 @@ class Qwen38Caches:
         if ("ple_ids", -1) in self._snap:
             ids, conv = self.ple(slot)
             ids.index_copy_(0, self._ring_cells(position, F.ngram_size - 1, ids.shape[0]), self._snap["ple_ids", -1][snap])
-            span = (F.ple_conv - 1) * 3
+            span = (F.ple_conv - 1) * F.ngram_size
             conv.index_copy_(1, self._ring_cells(position, span, conv.shape[1]), self._snap["ple_conv", -1][snap])
 
     def mark_gdn(self, layer: int, snap: int, state, taps) -> None:
@@ -319,7 +319,7 @@ class Qwen38Caches:
 
     def mark_ple(self, snap: int, ids, taps) -> None:
         """PLE at a block boundary inside a prefill chunk: the previous ngram_size-1 ids and the conv inputs
-        [(ple_conv-1)*3, 10240] before it."""
+        [(ple_conv-1)*ngram_size, 10240] before it."""
         if not 0 <= snap < self.snapshots:
             raise IndexError("a mark needs a declared snapshot")
         self._snap["ple_ids", -1][snap].copy_(ids)

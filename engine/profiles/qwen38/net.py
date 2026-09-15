@@ -45,6 +45,21 @@ from engine.profiles.qwen38.lanes import Lanes
 BF16, F32 = torch.bfloat16, torch.float32
 HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
 PLE_GATHER_ROWS = 2048                             # token rows a PLE table gather addresses at once: [2048, 16, 160] int64
+FIRST_BUCKET = 4096                                # tokens of the smallest context bucket; each next one doubles
+
+
+def bucket_blocks(block: int, needed: int, top: int) -> int:
+    """The page-table width a step addresses: the smallest rung of 4,096 * 2^i tokens, in whole blocks, that covers
+    `needed` blocks, never past `top`. The paged QSA kernels compile their table width in (a constexpr), so prefill
+    and the captured decode buckets share these rungs: one compile a rung, not one a prompt length."""
+    if block <= 0 or top <= 0 or not 0 < needed <= top:
+        raise ValueError(f"a step needs 1..{top} blocks of {block} tokens, not {needed}")
+    reach = FIRST_BUCKET
+    while True:
+        blocks = min(top, -(-reach // block))
+        if blocks >= needed:
+            return blocks
+        reach *= 2
 
 
 @dataclass(frozen=True)
@@ -238,9 +253,11 @@ class Qwen38Net:
 
     # -- the step's addressing -----------------------------------------------------------------------------------------
     def step_meta(self, step, caches) -> StepMeta:
-        """The step's addressing. A host step's page table is cut to the blocks its longest segment reaches (the QSA
-        scores are as wide as the table); a captured step's is its bucket's width, gathered on the device, with the
-        unreserved entries (-1) read as page 0 -- they lie past every row's length, so no kernel reads them."""
+        """The step's addressing. A host step's page table is cut to the bucket rung its longest segment reaches (the
+        QSA scores are as wide as the table; `bucket_blocks`); a captured step's is its bucket's width, gathered on the
+        device, with the unreserved entries (-1) read as page 0 -- they lie past every row's length, so no kernel reads
+        them. The raw index-key ring takes only each segment's last QSA_KEY_RING positions: a longer prefill would write
+        cells more than once in one launch, and which write lands is not defined."""
         F = self.F
         dev = step.ids.device
         if getattr(step, "captured", False):
@@ -258,7 +275,8 @@ class Qwen38Net:
             rows_req = torch.repeat_interleave(torch.arange(n, device=dev, dtype=torch.int32),
                                                torch.tensor(counts, device=dev))
             seqs = torch.tensor([s.seq for s in step.segments], device=dev, dtype=torch.long)
-            blocks = -(-max(s.ctx + s.length for s in step.segments) // F.block)
+            blocks = bucket_blocks(F.block, -(-max(s.ctx + s.length for s in step.segments) // F.block),
+                                   caches.block_table.shape[1])
             page_table = caches.block_table[:, :blocks].index_select(0, seqs)
             starts = torch.tensor([0] + list(torch.tensor(counts).cumsum(0).tolist()), device=dev, dtype=torch.int32)
             slot_table = torch.tensor([[s.slot] for s in step.segments], device=dev, dtype=torch.int32)
@@ -273,7 +291,9 @@ class Qwen38Net:
         key_slots = torch.where(closes, key_pages.long() * per_group + group % per_group,
                                 torch.full_like(positions, -1)).to(torch.int32)
         from engine.profiles.qwen38.caches import QSA_KEY_RING
-        ring_slots = (slot_table[rr, 0].long() * QSA_KEY_RING + positions % QSA_KEY_RING).to(torch.int32)
+        ring_slots = torch.where(positions >= lengths[rr] - QSA_KEY_RING,
+                                 slot_table[rr, 0].long() * QSA_KEY_RING + positions % QSA_KEY_RING,
+                                 torch.full_like(positions, -1)).to(torch.int32)
         return StepMeta(positions, positions.to(torch.int32), rows_req, page_table, lengths, starts, slot_table,
                         kv_slots, key_slots, ring_slots)
 
@@ -299,7 +319,7 @@ class Qwen38Net:
             else:
                 out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
             x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
-            out = self._moe(n, x)
+            out = self._moe(n, x, compact=not rows)
         h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc)
         hidden, _ = lanes.hc_mix(normed, p["close.down"], p["close.up"], F.hc, inject=False)
         if last_hidden_only:
@@ -428,12 +448,14 @@ class Qwen38Net:
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 
     # -- MoE ----------------------------------------------------------------------------------------------------------
-    def _moe(self, prefix: str, x: torch.Tensor) -> torch.Tensor:
+    def _moe(self, prefix: str, x: torch.Tensor, *, compact: bool) -> torch.Tensor:
+        """`compact`: an eager step, whose experts see only this rank's routed pairs (the lane reads their count on the
+        host); a captured step keeps every route, another rank's on local expert 0 at weight 0 (lanes.local_routes)."""
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix + "moe."
         logits = torch.mm(x, p[n + "gate"].t())
         ids, weights = lanes.route(logits, F.topk_experts)
-        routed = self._experts[prefix](x, ids, weights)
+        routed = self._experts[prefix](x, ids, weights, compact=compact)
         shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up")), n + "sh_down")
         gate = torch.sigmoid(torch.mm(x, p[n + "shared_gate"].t()).float())
         return self.comm.all_reduce((routed.float() + shared.float() * gate).to(x.dtype))
@@ -588,7 +610,7 @@ class Qwen38Net:
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
         out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers)
         x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
-        out = self._moe("mtp.L0.", x)
+        out = self._moe("mtp.L0.", x, compact=not getattr(step, "captured", False))
         streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc)
         hidden, _ = lanes.hc_mix(normed, p["mtp.close.down"], p["mtp.close.up"], F.hc, inject=False)
         if last_hidden_only:

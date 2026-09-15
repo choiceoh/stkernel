@@ -15,8 +15,9 @@ this table is where its wire items land (engine/kernels/cells.py names the servi
     mla           qsa_attend: the BF16-KV sparse paged GQA ported with the QSA ops (engine/kernels/qsa), the kernel
                   that served this model in the vLLM stack, instead of glue.gqa's one-scale e4m3 latent
     indexer       qsa_compress / qsa_store / qsa_select: engine/kernels/qsa
-    moe           b12x's NVFP4 dispatcher over this rank's 128 experts: global expert ids are remapped to local ones and
-                  a route to another rank's expert runs on local expert 0 with weight 0 (b12x refuses EP as such)
+    moe           b12x's NVFP4 dispatcher over this rank's 128 experts (b12x refuses EP as such): global expert ids are
+                  remapped to local ones; an eager step dispatches only this rank's pairs, a captured step keeps every
+                  route and runs another rank's on local expert 0 with weight 0
 
 The wizard's four measurements (the MoE tile at 128 local experts, the recurrent tile at 4/12 heads, one-shot and the
 prefill collectives at hidden 2560) are GPU tickets; nothing here claims them.
@@ -56,7 +57,8 @@ class Lanes:
     # MoE
     route: object           # (logits [N, E], k) -> (ids int32 [N, k] global, weights f32 [N, k]): softmax fp32, top-k, renormalised
     moe: object             # (x [N, H] bf16, ids [N, k] global, weights [N, k] f32, w13, w13_sf, w2, w2_sf, *, scales,
-                            #  first_expert) -> [N, H] bf16: this rank's routed partial
+                            #  first_expert, compact) -> [N, H] bf16: this rank's routed partial; `compact` (an eager
+                            #  step) runs only this rank's pairs, reading their count on the host
     moe_prepare: object = None      # (w13, w13_sf, w2, w2_sf, top_k, *, scales) -> views, once per bound layer before capture
     graph_resources: object = None  # () -> workspace owners to retain until the captured graphs close
     swiglu: object = None           # (fused [N, 2I]) -> silu(gate) * up: the shared expert's activation
@@ -183,10 +185,11 @@ def reference() -> Lanes:
                                       "the composition's State (tests/test_engine_composition.py), not a table lane")
         return refuse
 
-    def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert):
+    def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert, compact=False):
         """W4A4 as the served kernel sees it: activations quantised per 16 under the ModelOpt input scale, weights
         dequantised from the rank's packed layout (the fidelity the kernel is held to; the model's own reference is
-        weight-only, engine/modules/moe, and the quality gate weighs the difference)."""
+        weight-only, engine/modules/moe, and the quality gate weighs the difference). It visits only local pairs
+        either way, so `compact` changes nothing here."""
         from engine.modules.moe import expert_gemm
         from engine.modules.nvfp4_sf import unswizzle_sf
         E, two_i, half_h = w13.shape
@@ -267,17 +270,33 @@ def served(*, tp=None) -> Lanes:
         prepared[key] = (views, sf13, sf2)
         return prepared[key]
 
-    def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert):
-        E = w13.shape[0]
-        views, sf13, sf2 = moe_prepare(w13, w13_sf, w2, w2_sf, ids.shape[1], scales=scales)
-        local, w = local_routes(ids, weights, first_expert, E)
+    def dispatch(x, ids, weights, w13, sf13, w2, sf2, views, scales, E):
         output = torch.empty_like(x, memory_format=torch.contiguous_format)
         return b12x_fused_moe(x=x.contiguous(), output=output, w1_weight=w13, w1_weight_sf=sf13, w2_weight=w2,
-                              w2_weight_sf=sf2, token_selected_experts=local.contiguous(),
-                              token_final_scales=w.contiguous(), num_experts=E, num_local_experts=E, top_k=ids.shape[1],
+                              w2_weight_sf=sf2, token_selected_experts=ids.contiguous(),
+                              token_final_scales=weights.contiguous(), num_experts=E, num_local_experts=E, top_k=ids.shape[1],
                               w1_alpha=scales.alpha13, w2_alpha=scales.alpha2, fc2_input_scale=scales.input2,
                               input_global_scale=scales.input13, activation="silu", swiglu_alpha=1.0, swiglu_beta=0.0,
                               swiglu_limit=None, activation_precision="fp4", quant_mode="nvfp4", _weight_views=views)
+
+    def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert, compact=False):
+        E = w13.shape[0]
+        views, sf13, sf2 = moe_prepare(w13, w13_sf, w2, w2_sf, ids.shape[1], scales=scales)
+        local, w = local_routes(ids, weights, first_expert, E)
+        if not compact:
+            # a captured step's shapes are fixed: every route stays, another rank's on local expert 0 at weight 0
+            return dispatch(x, local, w, w13, sf13, w2, sf2, views, scales, E)
+        # An eager step runs only this rank's (token, route) pairs, one route a row: at EP=4 the other ranks' routes are
+        # ~3/4 of a prefill chunk's pairs, and on expert 0 they are rows of compute for a product of zero. Each pair's
+        # weighted output (bf16) is summed per token in fp32 and rounded once.
+        shifted = ids.to(torch.int32) - first_expert
+        token, route = ((shifted >= 0) & (shifted < E)).nonzero(as_tuple=True)
+        out = torch.zeros(x.shape[0], x.shape[1], dtype=torch.float32, device=x.device)
+        if token.numel():
+            pairs = dispatch(x.index_select(0, token), local[token, route][:, None], w[token, route][:, None],
+                             w13, sf13, w2, sf2, views, scales, E)
+            out.index_add_(0, token, pairs.float())
+        return out.to(x.dtype)
 
     def on_main(fn):
         if tp is None:
