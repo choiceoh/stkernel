@@ -3,7 +3,7 @@
 GLM-5.3 is served with SPEC_K=7 drafts a step from GLM-5.3-Flash-DFlash2:
 a 5-layer Qwen3-shaped block drafter (hidden 4096, 32 q / 8 kv heads of
 128, q/k norms, rope theta 1e4, sliding window 2048, NON-causal inside the
-block) that reads the target's hidden states at layers 5,14,24,33,42
+block) that reads the target's hidden states after layers 5,14,24,33,42 (0-based)
 (concatenated, `fc` -> 4096, `hidden_norm`) as its attention CONTEXT --
 projected once per verified token to K/V for all five layers, rope'd, kept
 -- and, per step, runs one block of [anchor token, K mask tokens] against
@@ -85,14 +85,19 @@ class DrafterFacts:
     conv_group: int
     sel_rank: int
     sel_top_k: int
-    target_layers: tuple            # target layer ids whose hidden states feed fc (1-based as the config counts them)
+    target_layers: tuple            # target layer ids whose OUTPUTS feed fc (0-based layer indices, as DFlash counts them)
     k: int                          # drafts per step: SPEC_K
 
     @property
     def aux_layers(self) -> "list[int]":
-        """The target's layer indices whose OUTPUT is taken: the served model
-        keeps `hidden after layer idx` when idx + 1 is in target_layer_ids."""
-        return [t - 1 for t in self.target_layers]
+        """The target's layer indices whose OUTPUT is taken: `target_layer_ids` as they are, 0-based.
+
+        DFlash names the layer whose completed output it reads. The reference implementation reads
+        `hidden_states[id + 1]` (index 0 is the embeddings), SGLang captures before layer id + 1 ("the
+        completed output of layer k"), and vLLM adds 1 to convert the ids to its before-layer capture. This
+        profile used to take id - 1 -- the output one layer early -- from a before-layer capture read as
+        after-layer."""
+        return list(self.target_layers)
 
 
 def load(path: "str | Path" = DRAFTER) -> DrafterFacts:
@@ -866,7 +871,7 @@ def _selfcheck() -> None:
     F = load()
     assert (F.layers, F.heads, F.kv_heads, F.head_dim, F.window, F.block) == (5, 32, 8, 128, 2048, 8)
     assert F.k == SPEC_K and F.k <= F.block - 1, "the draft width is the profile's, and a block holds it"
-    assert F.aux_layers == [4, 13, 23, 32, 41] and F.sel_top_k == 16 and F.mask_id == 154856
+    assert F.aux_layers == [5, 14, 24, 33, 42] and F.sel_top_k == 16 and F.mask_id == 154856
     sp = specs(F)
     from engine.base.params import total_bytes
     import struct

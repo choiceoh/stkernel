@@ -154,7 +154,7 @@ class NVFP4DataflowTests(unittest.TestCase):
         cache.pool.reserve(0, 16)
         f = DrafterFacts(layers=1, hidden=net.F.hidden, heads=2, kv_heads=1, head_dim=4, inter=32,
                         rms_eps=1e-6, rope_theta=10000., window=8, block=4, mask_id=net.vp-1,
-                        conv_taps=2, conv_group=4, sel_rank=4, sel_top_k=3, target_layers=(1, 3), k=3)
+                        conv_taps=2, conv_group=4, sel_rank=4, sel_top_k=3, target_layers=(0, 2), k=3)
         d = Drafter(f, net, net.vp)
         gen = torch.Generator().manual_seed(98)
         d.p = {s.name: ((torch.ones(s.shape) if s.name.endswith("norm.weight") else
