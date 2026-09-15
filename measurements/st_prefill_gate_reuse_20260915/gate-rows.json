@@ -1,0 +1,287 @@
+{
+ "expert-c1c2-0914-main963-hold-9c45086a0622": {
+  "allocator_limit_bytes": 72431279144,
+  "arena_bytes": 59544280104,
+  "baseline_reserved_bytes": 2097152,
+  "os_reserve_bytes": 7516192768,
+  "rows": {
+   "prefill/1024/0/prepared": {
+    "at_seconds": 205.976,
+    "available_bytes": 38297182208,
+    "immediately_free_bytes": 43929116672,
+    "oom_margin_bytes": 31854731264,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/1024/0/prepared",
+    "reserved_bytes": 59844329472,
+    "seconds": 1.5361
+   },
+   "prefill/128/0/prepared": {
+    "at_seconds": 204.4367,
+    "available_bytes": 38360293376,
+    "immediately_free_bytes": 43997761536,
+    "oom_margin_bytes": 31917842432,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/128/0/prepared",
+    "reserved_bytes": 59781414912,
+    "seconds": 23.1766
+   },
+   "prefill/32256/0/prepared": {
+    "at_seconds": 319.9939,
+    "available_bytes": 36678504448,
+    "immediately_free_bytes": 42247909376,
+    "oom_margin_bytes": 30236053504,
+    "passed": true,
+    "peak_reserved_bytes": 66605547520,
+    "peak_workspace_bytes": 7059170264,
+    "phase": "prefill/32256/0/prepared",
+    "reserved_bytes": 60536389632,
+    "seconds": 114.0147
+   },
+   "prefill/32256/1016320/prepared": {
+    "at_seconds": 349.8917,
+    "available_bytes": 31164338176,
+    "immediately_free_bytes": 36727861248,
+    "oom_margin_bytes": 24721887232,
+    "passed": true,
+    "peak_reserved_bytes": 70170705920,
+    "peak_workspace_bytes": 10624328664,
+    "phase": "prefill/32256/1016320/prepared",
+    "reserved_bytes": 66035122176,
+    "seconds": 29.871
+   }
+  },
+  "source": "srv2:~/glm53-logs/st-bracket-dumps/<session>/memory-rank0.json (expert-c1c2-0914-main963-hold-9c45086a0622)"
+ },
+ "main963-rank0": {
+  "allocator_limit_bytes": 72431279144,
+  "arena_bytes": 59544280104,
+  "baseline_reserved_bytes": 2097152,
+  "os_reserve_bytes": 7516192768,
+  "rows": {
+   "prefill/1024/0/prepared": {
+    "at_seconds": 133.1024,
+    "available_bytes": 38358589440,
+    "immediately_free_bytes": 43992080384,
+    "oom_margin_bytes": 31916138496,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/1024/0/prepared",
+    "reserved_bytes": 59844329472,
+    "seconds": 1.5536
+   },
+   "prefill/128/0/prepared": {
+    "at_seconds": 131.5443,
+    "available_bytes": 38424064000,
+    "immediately_free_bytes": 44062969856,
+    "oom_margin_bytes": 31981613056,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/128/0/prepared",
+    "reserved_bytes": 59781414912,
+    "seconds": 22.795
+   },
+   "prefill/32256/0/prepared": {
+    "at_seconds": 207.3498,
+    "available_bytes": 36681355264,
+    "immediately_free_bytes": 42257506304,
+    "oom_margin_bytes": 30238904320,
+    "passed": true,
+    "peak_reserved_bytes": 66605547520,
+    "peak_workspace_bytes": 7059170264,
+    "phase": "prefill/32256/0/prepared",
+    "reserved_bytes": 60536389632,
+    "seconds": 74.2441
+   },
+   "prefill/32256/1016320/prepared": {
+    "at_seconds": 237.5947,
+    "available_bytes": 31098761216,
+    "immediately_free_bytes": 36669186048,
+    "oom_margin_bytes": 24656310272,
+    "passed": true,
+    "peak_reserved_bytes": 70170705920,
+    "peak_workspace_bytes": 10624328664,
+    "phase": "prefill/32256/1016320/prepared",
+    "reserved_bytes": 66035122176,
+    "seconds": 30.2209
+   }
+  },
+  "source": "srv2:~/glm53-logs/st-bracket-dumps/<session>/memory-rank0.json (main963-rank0)"
+ },
+ "selfeat-0915-hold-745a8dd31edc": {
+  "allocator_limit_bytes": 72431279144,
+  "arena_bytes": 59544280104,
+  "baseline_reserved_bytes": 2097152,
+  "os_reserve_bytes": 7516192768,
+  "rows": {
+   "prefill/1024/0/prepared": {
+    "at_seconds": 205.0247,
+    "available_bytes": 38407143424,
+    "immediately_free_bytes": 44050735104,
+    "oom_margin_bytes": 31964692480,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/1024/0/prepared",
+    "reserved_bytes": 59823357952,
+    "seconds": 1.6589
+   },
+   "prefill/128/0/prepared": {
+    "at_seconds": 203.3626,
+    "available_bytes": 38458900480,
+    "immediately_free_bytes": 44108378112,
+    "oom_margin_bytes": 32016449536,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/128/0/prepared",
+    "reserved_bytes": 59781414912,
+    "seconds": 23.4663
+   },
+   "prefill/32256/0/prepared": {
+    "at_seconds": 270.5465,
+    "available_bytes": 36833845248,
+    "immediately_free_bytes": 42416857088,
+    "oom_margin_bytes": 30391394304,
+    "passed": true,
+    "peak_reserved_bytes": 66626519040,
+    "peak_workspace_bytes": 7080141784,
+    "phase": "prefill/32256/0/prepared",
+    "reserved_bytes": 60536389632,
+    "seconds": 65.5186
+   },
+   "prefill/32256/1016320/prepared": {
+    "at_seconds": 300.0703,
+    "available_bytes": 31247613952,
+    "immediately_free_bytes": 36655939584,
+    "oom_margin_bytes": 24805163008,
+    "passed": true,
+    "peak_reserved_bytes": 69960990720,
+    "peak_workspace_bytes": 10414613464,
+    "phase": "prefill/32256/1016320/prepared",
+    "reserved_bytes": 66077065216,
+    "seconds": 29.5204
+   }
+  },
+  "source": "srv2:~/glm53-logs/st-bracket-dumps/<session>/memory-rank0.json (selfeat-0915-hold-745a8dd31edc)"
+ },
+ "tempab2-0915-hold-4c128a79c639": {
+  "allocator_limit_bytes": 72431279144,
+  "arena_bytes": 59544280104,
+  "baseline_reserved_bytes": 2097152,
+  "os_reserve_bytes": 7516192768,
+  "rows": {
+   "prefill/1024/0/prepared": {
+    "at_seconds": 207.1089,
+    "available_bytes": 38268776448,
+    "immediately_free_bytes": 43883524096,
+    "oom_margin_bytes": 31826325504,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/1024/0/prepared",
+    "reserved_bytes": 59844329472,
+    "seconds": 1.5552
+   },
+   "prefill/128/0/prepared": {
+    "at_seconds": 205.543,
+    "available_bytes": 38326378496,
+    "immediately_free_bytes": 43946881024,
+    "oom_margin_bytes": 31883927552,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/128/0/prepared",
+    "reserved_bytes": 59781414912,
+    "seconds": 22.5399
+   },
+   "prefill/32256/0/prepared": {
+    "at_seconds": 284.6249,
+    "available_bytes": 36380049408,
+    "immediately_free_bytes": 41942814720,
+    "oom_margin_bytes": 29937598464,
+    "passed": true,
+    "peak_reserved_bytes": 66605547520,
+    "peak_workspace_bytes": 7059170264,
+    "phase": "prefill/32256/0/prepared",
+    "reserved_bytes": 60536389632,
+    "seconds": 77.511
+   },
+   "prefill/32256/1016320/prepared": {
+    "at_seconds": 315.2,
+    "available_bytes": 30853926912,
+    "immediately_free_bytes": 36410970112,
+    "oom_margin_bytes": 24411475968,
+    "passed": true,
+    "peak_reserved_bytes": 70170705920,
+    "peak_workspace_bytes": 10624328664,
+    "phase": "prefill/32256/1016320/prepared",
+    "reserved_bytes": 66035122176,
+    "seconds": 30.5714
+   }
+  },
+  "source": "srv2:~/glm53-logs/st-bracket-dumps/<session>/memory-rank0.json (tempab2-0915-hold-4c128a79c639)"
+ },
+ "tempab5-0915-hold-7166a2702b69": {
+  "allocator_limit_bytes": 72431279144,
+  "arena_bytes": 59544280104,
+  "baseline_reserved_bytes": 2097152,
+  "os_reserve_bytes": 7516192768,
+  "rows": {
+   "prefill/1024/0/prepared": {
+    "at_seconds": 193.9374,
+    "available_bytes": 37888471040,
+    "immediately_free_bytes": 43319390208,
+    "oom_margin_bytes": 31446020096,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/1024/0/prepared",
+    "reserved_bytes": 59844329472,
+    "seconds": 1.5772
+   },
+   "prefill/128/0/prepared": {
+    "at_seconds": 192.3568,
+    "available_bytes": 37961740288,
+    "immediately_free_bytes": 43398356992,
+    "oom_margin_bytes": 31519289344,
+    "passed": true,
+    "peak_reserved_bytes": 64151879680,
+    "peak_workspace_bytes": 4605502424,
+    "phase": "prefill/128/0/prepared",
+    "reserved_bytes": 59781414912,
+    "seconds": 22.9624
+   },
+   "prefill/32256/0/prepared": {
+    "at_seconds": 259.476,
+    "available_bytes": 36241555456,
+    "immediately_free_bytes": 41620135936,
+    "oom_margin_bytes": 29799104512,
+    "passed": true,
+    "peak_reserved_bytes": 66605547520,
+    "peak_workspace_bytes": 7059170264,
+    "phase": "prefill/32256/0/prepared",
+    "reserved_bytes": 60536389632,
+    "seconds": 65.5352
+   },
+   "prefill/32256/1016320/prepared": {
+    "at_seconds": 289.0347,
+    "available_bytes": 30646263808,
+    "immediately_free_bytes": 36018647040,
+    "oom_margin_bytes": 24203812864,
+    "passed": true,
+    "peak_reserved_bytes": 70170705920,
+    "peak_workspace_bytes": 10624328664,
+    "phase": "prefill/32256/1016320/prepared",
+    "reserved_bytes": 66035122176,
+    "seconds": 29.5419
+   }
+  },
+  "source": "srv2:~/glm53-logs/st-bracket-dumps/<session>/memory-rank0.json (tempab5-0915-hold-7166a2702b69)"
+ }
+}
