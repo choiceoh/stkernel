@@ -61,6 +61,11 @@ SECTOR = 4096                # O_DIRECT's alignment on this fleet (base/kv_tier 
 # the file just read and the arena about to be asked for. It also reads FASTER, three runs on
 # srv4 against the real rank file: 3.94/4.20/4.38 GiB/s at 1 GiB, 4.75/4.93/5.18 at 512 MiB --
 # the narrower buffer reaches the disk's O_DIRECT ceiling and the wider one does not (45차 §49).
+#
+# That finding shipped into `runs` and STOPPED THERE for four days: `load` kept a 1 GiB default of its
+# own and passes it down explicitly, so every caller that did not name a width -- the fleet boot is one
+# -- went on coalescing to 1 GiB. The 2026-09-16 boot's own gauge is what caught it: `read_bytes`
+# 1,066,911,488 = 1,017.5 MiB, which is the wide case to the byte. `load` defaults here now.
 MAX_RUN = 512 << 20
 
 # safetensors dtype names -> torch. Only what this checkpoint actually holds;
@@ -192,7 +197,7 @@ class RankLoader:
 
     # -- the whole thing -----------------------------------------------------
 
-    def load(self, keys, device: str = "cuda", max_run: int = 1 << 30,
+    def load(self, keys, device: str = "cuda", max_run: int = MAX_RUN,
              recorder=None, arena=None) -> dict:
         """{name: tensor} with every tensor a view into an uploaded block.
 
@@ -208,13 +213,17 @@ class RankLoader:
         # two buffers so a read overlaps the upload before it; one run has nothing to overlap
         # with, and the second buffer would be half a gigabyte of pinned memory held for nothing.
         width = self.staging_bytes(runs)
+        staged_at = time.perf_counter()
         owners, buffers = staging(width, 1 if len(runs) == 1 else 2, device)
+        staging_s = time.perf_counter() - staged_at
         out, blocks, staged = {}, [], None
         # What the ledger could not say, and so what a load lever could not be built on: whether this
-        # rank read the disk or the page cache, and which half of the phase it spent. A boot's `load`
-        # row was 44.5 GiB in 5.245 s = 8.49 GiB/s, and this drive's O_DIRECT ceiling is 6.2 -- the row
-        # was above the hardware and nothing recorded which path it took (boot-time study 5-i).
-        waited_s = copied_s = 0.0
+        # rank read the disk or the page cache, and where the phase went. The first boot that answered
+        # (2026-09-16, rank 0) said `direct=1`, and that the 10.667 s row held 2.746 s of waiting for
+        # reads and 1.480 s of uploading -- so SIX AND A HALF SECONDS of it were neither. The rest of
+        # this function is where they are: one pinned pair of `staging` buffers a gigabyte each, and a
+        # view built for every one of the rank file's tensors. Both are stamped.
+        waited_s = copied_s = views_s = 0.0
 
         def read(index):
             return self._read_run(runs[index], buffers[index % len(buffers)])
@@ -248,18 +257,23 @@ class RankLoader:
                             os.posix_fadvise(stream.fileno(), self.data_base + run.start,
                                              run.nbytes, os.POSIX_FADV_DONTNEED)
                     blocks.append(block)
+                    viewed = time.perf_counter()
                     for name, offset, size in run.keys:
                         entry = self.header[name]
                         dtype = getattr(torch, _DTYPES[entry["dtype"]])
                         out[name] = (block[offset:offset + size]
                                      .view(dtype).reshape(entry["shape"]))
+                    views_s += time.perf_counter() - viewed
                     if recorder is not None:
                         recorder.count("blocks")
                         recorder.count("bytes", run.nbytes)
             if recorder is not None:
                 recorder.gauge("direct", int(self.direct))
+                recorder.gauge("stage_s", round(staging_s, 3))
                 recorder.gauge("wait_s", round(waited_s, 3))
                 recorder.gauge("copy_s", round(copied_s, 3))
+                recorder.gauge("views_s", round(views_s, 3))
+                recorder.gauge("tensors", sum(len(r.keys) for r in runs))
                 recorder.gauge("read_bytes", int(width))     # the widest run + its sectors: one read's size
         finally:
             staged = None                     # the staging buffers are no one else's
