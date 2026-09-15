@@ -3723,29 +3723,37 @@ void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                          partial, arrive, address.data_ptr<int64_t>());
 }
 
-// Probe-only: a C1 bound cell's input quantization alone, into caller storage laid
-// out exactly as that cell's own pack ([k/128 x 1024] FP8 words, then [k/128 x 8]
-// scales). It sizes what a producer-side pack could remove from the cell.
+// Probe-only: a bound cell's input quantization alone, into caller storage laid out
+// exactly as that cell's own pack. Eight rows: the C1 pack ([k/128 x 1024] FP8 words,
+// then [k/128 x 8] scales). Sixteen rows: the wide pack the sixteen-row CTA reads
+// ([k/128 x 32 x 128] bytes, then [k/128 x 32] scales). It sizes and checks what a
+// producer-side pack removes from the cell.
 void mk_run_input_pack(torch::Tensor x, torch::Tensor packed) {
-  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2 && x.size(0) == 8
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2
+                  && (x.size(0) == 8 || x.size(0) == 16)
                   && x.size(1) % KSTEP == 0 && x.size(1) <= KBLK_LIMIT * KSTEP && x.stride(1) == 1
                   && x.stride(0) >= x.size(1) && x.stride(0) % 4 == 0 && ((uintptr_t)x.data_ptr() & 7) == 0,
-              "input pack requires aligned BF16 [8, k] rows");
-  const int k = (int)x.size(1), kblk = k / KSTEP;
+              "input pack requires aligned BF16 [8 or 16, k] rows");
+  const int m = (int)x.size(0), k = (int)x.size(1), kblk = k / KSTEP;
+  const int64_t words = m == 8 ? (int64_t)kblk * 1024 : (int64_t)kblk * 32 * KSTEP;
   TORCH_CHECK(packed.device() == x.device() && packed.scalar_type() == torch::kUInt8
                   && packed.is_contiguous() && ((uintptr_t)packed.data_ptr() & 7) == 0
-                  && packed.numel() == (int64_t)kblk * 1024 + (int64_t)kblk * 8 * (int64_t)sizeof(float),
+                  && packed.numel() == words + (int64_t)kblk * (m == 8 ? 8 : 32) * (int64_t)sizeof(float),
               "input pack storage must hold the cell's FP8 words and row scales");
   set_kernel_attrs();
   auto stream = c10::cuda::getCurrentCUDAStream();
   auto* q = packed.data_ptr<uint8_t>();
-  mk_launch(mk_input_pack_kernel, kblk, 0, stream,
-            MKInputPackCtx{(const __nv_bfloat16*)x.data_ptr(), q,
-                           reinterpret_cast<float*>(q + (size_t)kblk * 1024), 8, k, x.stride(0)});
+  const MKInputPackCtx input{(const __nv_bfloat16*)x.data_ptr(), q,
+                             reinterpret_cast<float*>(q + (size_t)words), m, k, x.stride(0)};
+  if (m == 8)
+    mk_launch(mk_input_pack_kernel, kblk, 0, stream, input);
+  else
+    mk_launch(mk_wide_input_pack_kernel, kblk * 2, 0, stream, input);
 }
 
 void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, torch::Tensor out,
-                        int64_t n_orig, int64_t rgs_ptr, c10::optional<torch::Tensor> address);
+                        int64_t n_orig, int64_t rgs_ptr, c10::optional<torch::Tensor> address,
+                        const uint8_t* producer_q = nullptr, const float* producer_s = nullptr);
 
 // A model-owned declaration reaches this entry point directly; no process-wide
 // probe setter changes neighboring models, ordinary GEMMs or already captured graphs.
@@ -3771,15 +3779,20 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
   const uint8_t* producer_q = nullptr;
   const float* producer_s = nullptr;
   if (producer_pack.has_value()) {
-    // Written by x's producer from x's own BF16 bytes, in mk_input_pack_kernel's layout.
+    // Written by x's producer from x's own BF16 bytes in the reading cell's layout:
+    // mk_input_pack_kernel's for a C1 cell, mk_wide_input_pack_kernel's for the
+    // sixteen-row KDA output CTA (the one sixteen-row cell whose input has a producer).
     auto pk = *producer_pack;
     const int64_t kblk = k / KSTEP;
-    TORCH_CHECK(c1 && pk.device() == x.device() && pk.scalar_type() == torch::kUInt8 && pk.is_contiguous()
-                    && ((uintptr_t)pk.data_ptr() & 7) == 0
-                    && pk.numel() == kblk * 1024 + kblk * 8 * (int64_t)sizeof(float),
-                "a producer pack is an aligned C1 cell pack: [k/128 x 1024] FP8 words, then [k/128 x 8] scales");
+    const bool kda_output16 = m == 16 && forward_pipeline && address.has_value() && n == 4096 && k == 2048;
+    const int64_t words = c1 ? kblk * 1024 : kblk * 32 * KSTEP;
+    TORCH_CHECK((c1 || kda_output16) && pk.device() == x.device() && pk.scalar_type() == torch::kUInt8
+                    && pk.is_contiguous() && ((uintptr_t)pk.data_ptr() & 7) == 0
+                    && pk.numel() == words + kblk * (c1 ? 8 : 32) * (int64_t)sizeof(float),
+                "a producer pack is its reading cell's aligned pack: a C1 cell's [k/128 x 1024] FP8 words and "
+                "[k/128 x 8] scales, or the sixteen-row KDA output's [k/128 x 32 x 128] bytes and [k/128 x 32] scales");
     producer_q = pk.data_ptr<uint8_t>();
-    producer_s = reinterpret_cast<float*>(pk.data_ptr<uint8_t>() + kblk * 1024);
+    producer_s = reinterpret_cast<float*>(pk.data_ptr<uint8_t>() + words);
   }
   // K=7 C=2: the KDA input, gate/up and qkv_a matrices and the KDA/MLA output and
   // MLP down TX slots run sixteen-row CTAs (measurements/st_c2_dense_cells_20260915);
@@ -3788,7 +3801,7 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
   if (m == 16 && forward_pipeline &&
       (address.has_value() ? n == 4096 && (k == 2048 || k == 3072 || k == 4096)
                            : k == 4096 && (n == 6416 || n == 6144 || n == 2048))) {
-    mk_run_gemm_rows16(x, wq4, ws4, out, n, rgs_ptr, address);
+    mk_run_gemm_rows16(x, wq4, ws4, out, n, rgs_ptr, address, producer_q, producer_s);
     return;
   }
   float* partial = nullptr;
@@ -3854,7 +3867,8 @@ static torch::Tensor mk_rows16_pack(torch::Tensor x, int k, const uint8_t*& q, c
 }
 
 void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, torch::Tensor out,
-                        int64_t n_orig, int64_t rgs_ptr, c10::optional<torch::Tensor> address) {
+                        int64_t n_orig, int64_t rgs_ptr, c10::optional<torch::Tensor> address,
+                        const uint8_t* producer_q, const float* producer_s) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2 && x.size(0) == 16
               && x.stride(1) == 1 && x.stride(0) >= x.size(1) && x.stride(0) % 4 == 0
               && ((uintptr_t)x.data_ptr() & 7) == 0, "sixteen-row cells take aligned BF16 [16, K] rows");
@@ -3895,7 +3909,15 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
                 "sixteen-row output must match its BF16 matrix");
     c.out = (__nv_bfloat16*)out.data_ptr();
   }
-  auto packed = mk_rows16_pack(x, c.k, c.input_q, c.input_s);
+  torch::Tensor packed;
+  if (producer_q) {
+    // The KDA output norm wrote this CTA's wide pack beside x (mk_run_gemm_bound_input checked its layout).
+    TORCH_CHECK(direct && k == 2048 && producer_s, "only the sixteen-row KDA output reads a producer pack");
+    c.input_q = producer_q;
+    c.input_s = producer_s;
+  } else {
+    packed = mk_rows16_pack(x, c.k, c.input_q, c.input_s);
+  }
   auto stream = c10::cuda::getCurrentCUDAStream();
   const int grid = (int)n / 8;
   if (n == 6416)

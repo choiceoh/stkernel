@@ -40,7 +40,7 @@ def main():
     args = parser.parse_args()
     if args.lanes == 'producer_pack':
         from probes.engine_producer_pack import main as producer_pack_check
-        producer_pack_check(args.ranks, samples=args.samples, output=args.output)
+        producer_pack_check(args.ranks, seqs=args.seqs, samples=args.samples, output=args.output)
         return
     if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
         from probes.engine_dense_cells import main as dense_cells_check

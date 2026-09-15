@@ -194,6 +194,21 @@ def bound_input_cell(rows, n, k):
         or (rows in (24, 32) and (n, k) == (4096, 1536)))
 
 
+def producer_pack_nbytes(rows, cols):
+    """The input pack a bound cell reads when its input's producer wrote it. Eight rows: the C1 cell's own
+    layout (mk_input_pack_kernel), [k/128 x 1024] FP8 words then [k/128 x 8] row scales. Sixteen rows: the
+    wide pack the sixteen-row CTA reads (mk_wide_input_pack_kernel), [k/128 x 32 x 128] FP8 bytes in natural
+    order then [k/128 x 32] row scales; rows 16..31 of each K block are unused."""
+    blocks = cols // 128
+    if cols % 128 or not blocks:
+        raise ValueError('an input pack needs a positive 128-aligned width')
+    if rows == 8:
+        return blocks * 1024 + blocks * 8 * 4
+    if rows == 16:
+        return blocks * 32 * 128 + blocks * 32 * 4
+    raise ValueError('producer input packs exist at 8 and 16 rows only')
+
+
 def w4_gemm(x, pack, workspace=None, *, bound_input=False):
     if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols or x.shape[1] > KMAX
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
@@ -361,15 +376,17 @@ class DenseLinear:
         return self._write_slot
 
     def producer_pack_rows(self, rows):
-        """Rows at which this direct writer reads a pack its input's producer wrote: a bound C1 cell only."""
-        return (rows == 8 and self.slot_writer(rows) is not None and self._bound_input(rows, self.packs[0]))
+        """Rows at which this direct writer reads a pack its input's producer wrote: a bound C1 cell, or at 16
+        rows the KDA output's sixteen-row CTA (4096x2048), the one bound TX cell with a pack-writing producer."""
+        return ((rows == 8 or (rows == 16 and self.cols == 2048)) and self.slot_writer(rows) is not None
+                and self._bound_input(rows, self.packs[0]))
 
     def _write_slot(self, x, address, pack=None):
         if self.slot_writer(x.shape[0]) is None or x.ndim != 2 or x.shape[1] != self.cols:
             raise ValueError("unsupported direct W4 producer")
         p = self.packs[0]
         if pack is not None and not self.producer_pack_rows(x.shape[0]):
-            raise ValueError("a producer pack is only a bound C1 cell's input")
+            raise ValueError("a producer pack is only a bound C1 cell's or the sixteen-row KDA output's input")
         if self._bound_input(x.shape[0], p):
             extension().run_gemm_bound_input(x, p.data, p.scale, address, p.rows,
                                              p.rowscale.data_ptr(), self.workspace, address,
