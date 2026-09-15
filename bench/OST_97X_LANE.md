@@ -1,5 +1,7 @@
 # ost-97x: the 5050 on the tailnet
 
+> 살아 있는 참조 — **이 상자가 단일 GPU 레인으로 무엇을 할 수 있는지. 설정이 바뀌면 여기부터 고친다.** 여기가 틀리면 그건 버그다.
+
 `bench/fleet_single.py` and `probes/run_engine_probe.sh` both name this box as the
 single-GPU lane's alternative to a Spark: *"ost-97x, the operator's Windows PC on the
 tailnet, once it has sshd in WSL2, docker with the NVIDIA runtime and an x86_64 image."*
