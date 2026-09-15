@@ -181,9 +181,10 @@ def wide_input_cell(rows, n, k):
 def bound_input_cell(rows, n, k):
     """Candidate K=7 input reuse, explicitly bound before graph capture.
 
-    At 16 rows the KDA input and the KDA/MLA TX outputs run sixteen-row CTAs, the
-    other cells the wide pack (measurements/st_c2_dense_cells_20260915). K1536
-    queries share their pack through QueryPair; M14's rejected cells stay out.
+    At 16 rows the KDA input, gate/up, qkv_a and the KDA/MLA/MLP-down TX outputs run
+    sixteen-row CTAs (measurements/st_c2_dense_cells_20260915, judged on chains of
+    distinct layers with L2 evicted -- the serving regime). K1536 queries share their
+    pack through QueryPair; M14's rejected cells stay out.
     """
     if rows == 8:
         return ((k == 4096 and n in (4096, 6144, 6416))

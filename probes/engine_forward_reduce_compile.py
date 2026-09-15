@@ -52,8 +52,8 @@ def main():
         raise RuntimeError(f'expected one joined-query specialization; got {len(queries)}')
     rows16 = [b.strip() for b in re.split(r'(?m)^\s*Function(?:\s+|:)', usage)[1:]
               if re.search(r'mk_gemm_rows16_kernel', b.splitlines()[0])] if args.rows16 else []
-    if args.rows16 and len(rows16) != 3:
-        raise RuntimeError(f'expected the KDA input and two TX output sixteen-row specializations; got {len(rows16)}')
+    if args.rows16 and len(rows16) != 6:
+        raise RuntimeError(f'expected three matrix and three TX output sixteen-row specializations; got {len(rows16)}')
     assert not torch.cuda.is_initialized()
     result = dict(status='PASS', gpu_used=False, torch=torch.__version__, cuda=torch.version.cuda,
                   cache_key=key, source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
