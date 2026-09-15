@@ -134,8 +134,9 @@ class _Xgr:
     """Enough of xgrammar to drive the step buffer where the real one is absent. It answers the way the real one
     was measured to: a fill overwrites the whole row it is given, and the kernel reads the packed words."""
 
-    def __init__(self, words, allow, refuse=(), needed=True):
+    def __init__(self, words, allow, refuse=(), needed=True, stop=()):
         self.words, self.allow, self.refuse, self.needed = words, list(allow), set(refuse), needed
+        self.stop = set(stop)                            # accepting one of these terminates the matcher
         self.accepted, self.rolled, self.fills = [], 0, []
 
     # -- the compiler's half (what `qualify` reaches for) ---------------------------------
@@ -168,7 +169,7 @@ class _Xgr:
         return self.needed
 
     def is_terminated(self):
-        return False
+        return bool(self.accepted) and self.accepted[-1] in self.stop
 
     def accept_token(self, token):
         if token in self.refuse:
@@ -181,12 +182,12 @@ class _Xgr:
         del self.accepted[len(self.accepted) - n:]
 
 
-def fake(allow=(1, 5, 70), vocab=128, refuse=(), needed=True):
+def fake(allow=(1, 5, 70), vocab=128, refuse=(), needed=True, stop=()):
     """A `Grammars` with the fake module under it: the real buffers, the real walk, no xgrammar."""
     from concurrent.futures import ThreadPoolExecutor
     from engine.base.grammar import Grammars, Matcher
     g = Grammars.__new__(Grammars)
-    g.xgr = _Xgr((vocab + 31) // 32, allow, refuse, needed)
+    g.xgr = _Xgr((vocab + 31) // 32, allow, refuse, needed, stop)
     g.vocab_size, g.words = vocab, (vocab + 31) // 32
     g.staging = g.landing = g.crossed = None
     g._cache, g._lock = {}, threading.Lock()
@@ -213,6 +214,96 @@ class CheckpointTests(unittest.TestCase):
         with patch.object(grammar, "for_checkpoint", return_value="bound") as bound:
             self.assertEqual(boot.grammars("ckpt", 7, "cuda:0", [1]), "bound")
         bound.assert_called_once_with("ckpt", 7, "cuda:0", [1])
+        with patch.object(grammar, "for_checkpoint", return_value="bound") as bound:
+            self.assertEqual(boot.grammars("ckpt", 7, "cuda:0", [1], tokenizer="tok"), "bound")
+        bound.assert_called_once_with("ckpt", 7, "cuda:0", [1], tokenizer="tok")
+
+
+class TokenizerInfoTests(unittest.TestCase):
+    """base/grammar.tokenizer_info reads xgrammar's inputs off the `tokenizers` backend; they must be the ones
+    TokenizerInfo.from_huggingface takes from the transformers fast tokenizer wrapping that same backend."""
+
+    def setUp(self):
+        try:
+            import torch  # noqa: F401
+            import xgrammar  # noqa: F401
+            from tokenizers import Tokenizer  # noqa: F401
+            from transformers import PreTrainedTokenizerFast  # noqa: F401
+        except ImportError as exc:
+            self.skipTest(f"grammar stack unavailable here: {exc}")
+
+    @staticmethod
+    def trained(kind):
+        from tokenizers import Tokenizer, decoders, models, pre_tokenizers, trainers
+        tok = Tokenizer(models.BPE())
+        if kind == "byte-level":
+            tok.pre_tokenizer = pre_tokenizers.ByteLevel(add_prefix_space=False)
+            tok.decoder = decoders.ByteLevel()
+            alphabet = pre_tokenizers.ByteLevel.alphabet()
+        else:
+            tok.pre_tokenizer = pre_tokenizers.Metaspace(replacement="\u2581", prepend_scheme="always")
+            tok.decoder = decoders.Metaspace(replacement="\u2581", prepend_scheme="always")
+            alphabet = []
+        trainer = trainers.BpeTrainer(vocab_size=320, special_tokens=["<eos>", "<think>", "</think>", "<tool_call>"],
+                                      initial_alphabet=alphabet, show_progress=False)
+        text = ['{"name": "\ud64d\uae38\ub3d9", "n": [1, 2.5, true, null]}', "hello world, again and again",
+                "\t\ttabs and\nnewlines \u00e9\u00e8 \u4e2d\u6587", "<tool_call>get_weather</tool_call>"] * 8
+        tok.train_from_iterator(text, trainer)
+        tok.no_truncation()
+        tok.no_padding()
+        return tok
+
+    def test_the_backend_gives_from_huggingface_its_own_inputs(self):
+        import xgrammar as xgr
+        from transformers import PreTrainedTokenizerFast
+        from engine.base.grammar import tokenizer_info
+        for kind in ("byte-level", "metaspace"):
+            tok = self.trained(kind)
+            size = tok.get_vocab_size(with_added_tokens=True)
+            stops = [tok.token_to_id("<eos>"), tok.token_to_id("</think>")]
+            hf = PreTrainedTokenizerFast(tokenizer_object=tok, eos_token="<eos>")
+            for vocab in (size, size + 29):                             # the head may be wider than the tokenizer
+                with self.subTest(kind=kind, vocab=vocab):
+                    want = xgr.TokenizerInfo.from_huggingface(hf, vocab_size=vocab, stop_token_ids=sorted(stops))
+                    got = tokenizer_info(tok, vocab, stops)
+                    self.assertEqual(list(got.decoded_vocab), list(want.decoded_vocab))
+                    self.assertEqual((got.vocab_type, got.add_prefix_space, got.vocab_size),
+                                     (want.vocab_type, want.add_prefix_space, want.vocab_size))
+                    self.assertEqual(list(got.stop_token_ids), list(want.stop_token_ids))
+                    self.assertEqual(list(got.special_token_ids), list(want.special_token_ids))
+                    self.assertEqual(got.dump_metadata(), want.dump_metadata())
+
+    def test_grammars_over_the_backend_mask_what_the_transformers_path_masks(self):
+        import torch
+        from transformers import PreTrainedTokenizerFast
+        from engine.base import grammar
+        tok = self.trained("byte-level")
+        size = tok.get_vocab_size(with_added_tokens=True)
+        stops = [tok.token_to_id("<eos>")]
+        via_hf = grammar.Grammars(PreTrainedTokenizerFast(tokenizer_object=tok, eos_token="<eos>"), size,
+                                  stop_token_ids=stops)
+        via_backend = grammar.for_checkpoint("/unused", size, None, stops, tokenizer=tok)
+        ids = tok.encode('{"name": "x", "n": [1, true]}').ids
+        schema = '{"type": "object", "properties": {"name": {"type": "string"}, "n": {"type": "array"}}}'
+        for spec in ({"type": "json_object"}, {"type": "json_schema", "schema": schema}):
+            with self.subTest(spec=spec["type"]):
+                matchers = [g.matcher(spec, max_rollback=len(ids) + 1) for g in (via_hf, via_backend)]
+                for step in range(len(ids)):
+                    masks = []
+                    for g, m in zip((via_hf, via_backend), matchers):
+                        drafts = ids[step:step + 3]
+                        filled = g.prepare([("row", m, drafts)], "cpu")
+                        logits = torch.zeros(filled.live("row", len(drafts) + 1), size)
+                        filled.apply("row", logits)
+                        masks.append(torch.isinf(logits))
+                    self.assertTrue(torch.equal(masks[0], masks[1]), f"step {step}")
+                    for m in matchers:
+                        m.advance([ids[step]])
+
+    def test_the_backend_path_needs_the_engines_stop_ids(self):
+        from engine.base.grammar import tokenizer_info
+        with self.assertRaisesRegex(ValueError, "stop token ids"):
+            tokenizer_info(self.trained("byte-level"), 400, [])
 
 
 class StepBufferTests(unittest.TestCase):
@@ -412,14 +503,14 @@ class PickRichTests(unittest.TestCase):
     """The adapter's rich pick over a grammar row: the mask decides what may be picked, and a draft the grammar
     refuses ends the row before the positions behind it cost anything."""
 
-    def engine(self, vocab=128, k=3, allow=(1, 5, 70), refuse=(), rows=(0,)):
+    def engine(self, vocab=128, k=3, allow=(1, 5, 70), refuse=(), rows=(0,), stop=()):
         try:
             import torch  # noqa: F401
         except ImportError as exc:
             self.skipTest(str(exc))
         from types import SimpleNamespace
         from engine.profiles.glm53.adapter import Glm53Engine
-        g, m = fake(allow=allow, vocab=vocab, refuse=refuse)
+        g, m = fake(allow=allow, vocab=vocab, refuse=refuse, stop=stop)
         e = Glm53Engine.__new__(Glm53Engine)                 # the methods, none of the boot
         e.options, e.limits, e.seeds, e.seed = {r: {} for r in rows}, {r: (16, 0.0) for r in rows}, {}, 0
         e.nonces = {r: r + 1 for r in rows}                  # every admitted row has its draws' key (base/draws)
@@ -484,6 +575,39 @@ class PickRichTests(unittest.TestCase):
         self.assertEqual(sorted((~torch.isinf(block[3])).nonzero().flatten().tolist()), [70],
                          "the second row's span starts where the first one ended")
         self.assertEqual(block[:5].data_ptr(), block.data_ptr(), "the spans are views, not copies")
+
+    def test_a_sampled_row_verifies_the_draft_its_grammar_stops_at(self):
+        """At a temperature, the committed token follows the masked target however the grammar ends the walk. The
+        draft the walk stops at is verified like the others: a refused one has no mass under the mask, so it is
+        rejected and the correction is drawn from the residual; an accepted stop token commits and ends the row.
+        Drawing that draft's position as the bonus instead over-produced what the drafter had proposed beside it
+        (id 5 at 0.3 against 0.2 here) and under-produced the stop token (0.4 against 0.6)."""
+        import math
+        import random
+        import torch
+        for case, draft_ids, grammar in (("refused", (4, 5), dict(refuse=(4,))), ("stop", (70, 5), dict(stop=(70,)))):
+            with self.subTest(case=case):
+                e, g, m = self.engine(k=1, **grammar)
+                e.limits[0] = (16, 1.0)
+                e.steps_verified, e._ceiling_every, e.ceilings_off = 0, 64, True
+                logits = torch.full((2, 128), -30.0)
+                logits[:, 70] = math.log(3.0)              # the grammar allows 1, 5 and 70: 0.2, 0.2 and 0.6 of the mass
+                logits[:, 1] = logits[:, 5] = 0.0
+                logits[:, 4] = 5.0                         # the model's favourite, which the grammar does not allow
+                q = torch.zeros(1, 128)
+                q[0, draft_ids[0]] = q[0, draft_ids[1]] = 0.5
+                pick, counts, trials = random.Random(11), {1: 0, 5: 0, 70: 0}, 3000
+                for trial in range(trials):
+                    e.nonces[0] = trial + 1                # a row's draws are keyed by its nonce (base/draws)
+                    draft = draft_ids[0] if pick.random() < 0.5 else draft_ids[1]
+                    masks = g.prepare([(0, m, [draft])], "cpu")
+                    live = masks.live(0, 2)
+                    self.assertEqual(live, 1 if draft == draft_ids[0] else 2)
+                    (accepted, new, _), = e._pick_rich([(0, logits[:live], [draft], q)], masks)
+                    self.assertLessEqual(len(new), live, "a row never commits past its last live position")
+                    counts[new[0]] += 1
+                for token, want in ((1, 0.2), (5, 0.2), (70, 0.6)):
+                    self.assertAlmostEqual(counts[token] / trials, want, delta=0.035, msg=(case, token, counts))
 
     def test_a_row_with_no_step_to_ride_along_with_fills_its_own(self):
         """The prompt's first token is picked outside any decode step: it still gets its mask."""

@@ -222,7 +222,7 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
             else:
                 v = tl.load(lp + idx, mask=live, other=NEG_INF).to(tl.float32)
                 w = tl.exp((v - mx) / temp)
-            keep = live & (w.to(tl.int32, bitcast=True) >= tau)
+            keep = live & (w > 0.0) & (w.to(tl.int32, bitcast=True) >= tau)
             wk = tl.where(keep, w, 0.0)
             if DRAW:
                 pick = tl.minimum(pick, tl.min(tl.where(keep & (tl.cumsum(wk, axis=0) + run > aim), idx, N)))
@@ -233,7 +233,7 @@ def _sampler(LOGITS, TEMP, TOPK, TOPP, UNIFORM, OUT, PROBS, TAU, KEPT,
                 # upstream, and a NaN distribution is not how this should say so
                 tl.store(pout + idx, tl.where(kept > 0.0, wk / kept, 0.0), mask=idx < WIDTH)
         # a uniform of 1 - 1ulp against a mass the search summed in another order can walk off the
-        # end of the row; the last kept id is where that walk was headed.
+        # end of the row; the last positive kept id is where that walk was headed.
         if DRAW:
             tl.store(OUT + row, tl.where(pick >= N, last, pick).to(tl.int64))
         if REPORT:

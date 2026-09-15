@@ -45,6 +45,7 @@ NEEDS_CUDA = {
 NEEDS_CONFIG = {
     'engine.profiles.glm53.net': ('engine.profiles.glm53.facts', 'CKPT'),
     'engine.profiles.glm53.drafter': ('engine.profiles.glm53.drafter', 'DRAFTER'),
+    'engine.profiles.qwen38.facts': ('engine.profiles.qwen38.facts', 'CKPT'),
 }
 
 

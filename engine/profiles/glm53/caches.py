@@ -140,10 +140,27 @@ def cache_capacity(F, layers, draft, kv_gib: float, max_seqs: int, snapshot_gib:
     return blocks, snapshots
 
 
-def stage_bytes(F, layers, max_seqs: int) -> int:
-    """The boundary stage: per state slot, one KDA state and conv taps (a snapshot without the drafter ring) where a
-    decode step ahead of the host parks the state of a block boundary it crossed (45차 §23: boundaries while generating)."""
-    return (max_seqs + 1) * snapshot_layout(F, layers, None)[0]
+def draft_stash_cells(F) -> int:
+    """How many drafter ring cells past a block boundary the stage keeps. The ring files a position's key in the cell
+    of the position a window before it, so every position written past boundary P destroys a cell a snapshot at P
+    needs. The async chain runs up to two decode steps ahead of the host (pipeline.AsyncDecode's depth), each
+    committing at most spec_k + 1 tokens: the crossing step and the two after it write fewer than three blocks' worth
+    before the host takes the snapshot (a burst stops at the boundary, a synchronous step waits for it)."""
+    return 3 * (F.spec_k + 1)
+
+
+def stage_layout(F, layers, draft=None):
+    """The boundary stage's per-slot layout: a snapshot's KDA state and conv taps, and -- with a drafter -- its ring's
+    cells for positions P .. P + draft_stash_cells - 1 as they were before the steps past P wrote them."""
+    stash = None if draft is None else (draft[0], draft_stash_cells(F), draft[2], draft[3])
+    return snapshot_layout(F, layers, stash)
+
+
+def stage_bytes(F, layers, max_seqs: int, draft=None) -> int:
+    """The boundary stage: per state slot, one KDA state and conv taps where a decode step ahead of the host parks
+    the state of a block boundary it crossed (45차 §23: boundaries while generating), and the drafter ring cells
+    that step and the ones after it overwrite (`stage_layout`)."""
+    return (max_seqs + 1) * stage_layout(F, layers, draft)[0]
 
 
 class Glm53Caches:
@@ -151,13 +168,15 @@ class Glm53Caches:
         import torch
 
         self.F, self.layers = F, tuple(layers)
+        if stage and draft is not None and draft_stash_cells(F) >= draft[1]:
+            raise ValueError("the boundary stage keeps a drafter window's worth of cells or more: the ring is too short")
         self.layout = layout(F, self.layers, draft)
         self.snapshot_bytes_n, self._snapshot_fields = snapshot_layout(F, self.layers, draft)
         self.snapshots = snapshots
         self.pool = BlockPool(num_blocks, F.block, max_seqs, num_blocks)
         self.slots = SlotPool(max_seqs + 1)
         p = self.layout
-        staged = stage_bytes(F, self.layers, max_seqs) if stage else 0
+        staged = stage_bytes(F, self.layers, max_seqs, draft) if stage else 0
         # Preflight all regions, including alignment at an existing arena cursor.
         if aligned(arena.used, ALIGN) + p.nbytes(num_blocks, max_seqs) + snapshots * self.snapshot_bytes_n + staged > arena.nbytes:
             raise MemoryError("arena cannot hold the declared GLM caches, block table, prefix snapshots and boundary stage")
@@ -187,7 +206,7 @@ class Glm53Caches:
                                                               base.storage_offset() + f.offset // size)
         self._stage = {}
         if stage:
-            self.stage_bytes, self._stage_fields = snapshot_layout(F, self.layers, None)
+            self.stage_bytes, self._stage_fields = stage_layout(F, self.layers, draft)
             self.stage_store = arena.carve((max_seqs + 1) * self.stage_bytes, "glm53 boundary stage")
             for f in self._stage_fields:
                 dtype = field_dtype(f.dtype)
@@ -276,8 +295,10 @@ class Glm53Caches:
         import torch
         return torch.tensor([(position - count + i) % width for i in range(count)], device=self.device)
 
-    def checkpoint(self, slot: int, position: int, snap: int) -> None:
-        """Copy the rings' state at chunk boundary `position` out of `slot` into snapshot `snap`."""
+    def checkpoint(self, slot: int, position: int, snap: int, past: int = 0) -> None:
+        """Copy the rings' state at chunk boundary `position` out of `slot` into snapshot `snap`. `past`: how many
+        positions after the boundary the rings already hold -- a synchronous decode step that crossed it, whose
+        drafter cells were put aside first (`stash_draft`)."""
         F = self.F
         if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
             raise IndexError("checkpoint needs a real state slot and a declared snapshot")
@@ -293,6 +314,10 @@ class Glm53Caches:
             self._snap["rec", L][snap].copy_(rec_ring[rec_cell])
         if ("draft", -1) in self._snap:
             self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
+            if past:
+                if not 0 < past <= draft_stash_cells(F) or ("draft", -1) not in self._stage:
+                    raise ValueError("a checkpoint past its boundary takes one decode step's drafter cells from the stage")
+                self._put_back_draft(slot, position, snap)
 
     def mark_kda(self, layer: int, snap: int, state, taps) -> None:
         """A block boundary inside a prefill step: the layer's recurrent state there [H, K, V] and the conv inputs of the
@@ -323,8 +348,9 @@ class Glm53Caches:
     def stage_boundaries(self, slots, ctx_before, counts) -> None:
         """For every row of a decode step (device tensors [n]: state slot, context before the step, tokens committed):
         if the step crossed a block boundary P (ctx_before < P <= ctx_before + count), park the KDA state at P-1 and
-        the conv inputs before P in the slot's stage. The rings hold them now; a step ahead of the host would have
-        overwritten them by the time the host asks. Nothing moves for rows that did not cross."""
+        the conv inputs before P in the slot's stage, with the drafter ring cells the positions past P will overwrite
+        (called before the step's observe). The rings hold them now; a step ahead of the host would have overwritten
+        them by the time the host asks. Nothing moves for rows that did not cross."""
         import torch
         if not self._stage:
             raise RuntimeError("this cache has no boundary stage")
@@ -348,10 +374,30 @@ class Glm53Caches:
                 conv_ring, rec_ring = self.kda(L, slot)
                 self._stage["conv", L][slot].copy_(conv_ring.index_select(1, conv_cells))
                 self._stage["rec", L][slot].copy_(rec_ring[rec_cell])
+            self.stash_draft(slot, P)                               # before this step's observe writes past P
 
-    def checkpoint_from_stage(self, slot: int, snap: int) -> None:
-        """The staged boundary of `slot` into snapshot `snap`. The drafter's ring is taken live: the steps since the
-        boundary wrote at most a dozen positions past it, which land on the oldest cells of its 2,048 window."""
+    def stash_draft(self, slot: int, position: int) -> None:
+        """Put aside the drafter ring cells for positions `position` .. + draft_stash_cells - 1 before a decode step
+        that crosses block boundary `position` writes them: what `stage_boundaries` does for the steps ahead of the
+        host, for a synchronous step."""
+        if ("draft", -1) not in self._stage:
+            return
+        cells = draft_stash_cells(self.F)
+        ring = self.draft_ring(slot)
+        self._stage["draft", -1][slot].copy_(ring.index_select(2, self._ring_cells(position + cells, cells, ring.shape[2])))
+
+    def _put_back_draft(self, slot: int, position: int, snap: int) -> None:
+        """Snapshot `snap` holds `slot`'s live drafter ring: put back the cells of positions `position` .. from the
+        stage, as they were before the positions past the boundary were written over them."""
+        cells = draft_stash_cells(self.F)
+        ring = self._snap["draft", -1][snap]
+        ring.index_copy_(2, self._ring_cells(position + cells, cells, ring.shape[2]), self._stage["draft", -1][slot])
+
+    def checkpoint_from_stage(self, slot: int, snap: int, position: "int | None" = None) -> None:
+        """The staged boundary `position` of `slot` into snapshot `snap`. The drafter's ring is taken live with the
+        cells the steps past the boundary overwrote put back from the stage: each position past it lands on the cell
+        of the position a window before, which the snapshot still needs (left there, the restored row reads a key
+        rotated to a position after the boundary, from another request, as its oldest context)."""
         if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
             raise IndexError("checkpoint needs a real state slot and a declared snapshot")
         if not self._stage:
@@ -362,7 +408,11 @@ class Glm53Caches:
             self._snap["conv", L][snap].copy_(self._stage["conv", L][slot])
             self._snap["rec", L][snap].copy_(self._stage["rec", L][slot])
         if ("draft", -1) in self._snap:
+            if position is None or position <= 0 or position % self.F.block:
+                raise ValueError("a staged drafter ring is put back at its block boundary")
             self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
+            if ("draft", -1) in self._stage:
+                self._put_back_draft(slot, position, snap)
 
     def restore(self, slot: int, position: int, snap: int) -> None:
         """The inverse: `slot` continues from `position` with the snapshot's state."""

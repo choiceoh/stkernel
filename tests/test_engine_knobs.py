@@ -42,7 +42,7 @@ class KnobDeclarationTests(unittest.TestCase):
         self.assertEqual(set(cfg.knobs), {"mla_prefill", "context_ceiling", "kda_state_dtype",
                                           "execution_overlap", "early_observe", "prefill_tiles", "direct_mhc", "prefill_project_tiles",
                                           "nvme_mapped_staging", "decode_iterations", "deferred_kda", "prefill_ffn_packets", "terminal_mhc", "prefill_indexer_shards",
-                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles", "oneshot_rails", "oneshot_inline"})
+                                          "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles", "oneshot_rails", "oneshot_inline", "GLM53_DENSE_W4A16_GUARD_ROWS"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
         self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,batch,q0"))
         from engine.base.config import ConfigError
@@ -56,6 +56,19 @@ class KnobDeclarationTests(unittest.TestCase):
         self.assertEqual(self._declared({'STK_prefill_indexer_shards':'1'})['prefill_indexer_shards'],1)
         with self.assertRaises(ConfigError):
             self._declared({'STK_prefill_indexer_shards':'1'},production=True)
+
+    def test_dense_precision_guard_is_declared_and_fixed_in_production(self):
+        from engine.base.config import ConfigError
+        key = 'GLM53_DENSE_W4A16_GUARD_ROWS'
+        for production in (False, True):
+            self.assertEqual(self._declared({}, production=production)[key], 4096)
+        for raw, expected in (('0', 0), ('8192', 8192), ('', 4096)):
+            self.assertEqual(self._declared({'STK_' + key: raw})[key], expected)
+            with self.assertRaises(ConfigError):
+                self._declared({'STK_' + key: raw}, production=True)
+        for raw in ('-1', 'nope', '1.5'):
+            with self.assertRaisesRegex(ValueError, key):
+                self._declared({'STK_' + key: raw})
 
     def test_packet_prefill_defaults_on_with_explicit_nonproduction_opt_out(self):
         from engine.base.config import ConfigError

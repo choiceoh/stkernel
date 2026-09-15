@@ -76,6 +76,7 @@ class Stub:
         self.forgotten = []
         self.sampling_history, self.grammars = object(), object()
         self._ids_stage, self._rich_stage = object(), object()
+        self._rich_policies = {0: object()}
         for name in ("_ends_tensor", "matchers", "embeds", "seeds", "staged", "inflight", "lps", "media"):
             setattr(self, name, {seq: object() for seq in live} or {0: object()})
 
@@ -121,6 +122,7 @@ class EngineReleaseTests(unittest.TestCase):
         self.assertIsNone(stub.grammars)                    # xgrammar bitmasks
         self.assertIsNone(stub._ids_stage)                  # pinned upload staging
         self.assertIsNone(stub._rich_stage)                 # the rich sampler's two fp32 planes
+        self.assertEqual(stub._rich_policies, {})
         self.assertIsNone(stub.caches._id_ring)             # 16 pinned host buffers
         self.assertEqual(stub.vision._rope, {})             # rope tables, one per picture grid
         self.assertIsNone(stub.arena)

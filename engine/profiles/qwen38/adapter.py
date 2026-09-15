@@ -138,8 +138,10 @@ class ServedComposition:
                     scores = scores.index_select(0, torch.tensor(last, device=device))
             elif rows is not None:
                 scores = scores.index_select(0, torch.tensor(rows, device=device))
-            if hidden and rows is not None:
-                streams = streams.index_select(0, torch.tensor(rows, device=device))
+            if hidden:
+                # never the graph's own tensor: a prefill split at a mark keeps each piece's streams until the prompt
+                # is in, and the next piece's replay of the same shape would overwrite them
+                streams = streams.clone() if rows is None else streams.index_select(0, torch.tensor(rows, device=device))
             store.commit(step)
             return (scores, streams) if hidden else scores
         self.caches.prepare(served)
@@ -159,10 +161,11 @@ class ServedMTP:
     head's rows sit in the target's blocks (caches region F.layers) at the positions they describe, so a rejected chain
     is overwritten like any draft.
 
-    With the draft graphs captured, an observation of up to k+1 positions waits, holding its own copy of the streams
-    rows (the target graph's outputs are overwritten by its next replay), until `propose` runs every waiting row in one
-    replay; a second observation of the same row first runs the one waiting. Longer observations (a prompt) run the
-    head eagerly at once."""
+    With the draft graphs captured, an observation of up to k+1 positions waits -- its streams rows are the
+    composition's own copy, never a graph's output -- until `propose` runs every waiting row in one replay; a second
+    observation of the same row first runs the one waiting, and `forget` runs it while the row still holds its slot and
+    blocks (a park: the head's rows belong in blocks the tier keeps) and drops it once they are released. Longer
+    observations (a prompt) run the head eagerly at once."""
 
     def __init__(self, net, caches, store, k: int):
         if k <= 0:
@@ -170,7 +173,7 @@ class ServedMTP:
         self.net, self.caches, self.store, self.k = net, caches, store, k
         self.graphs = None
         self._next: dict = {}                     # seq -> (draft token, head streams [1, hc*H] | None, its position)
-        self._waiting: dict = {}                  # seq -> (ctx, next ids, the target's streams rows [m, hc*H])
+        self._waiting: dict = {}                  # seq -> (slot, ctx, next ids, the target's streams rows [m, hc*H])
 
     def capture(self, max_seqs: int, *, ceiling: int, memory=None) -> None:
         from engine.profiles.qwen38.decode_graphs import DraftGraphs
@@ -196,8 +199,8 @@ class ServedMTP:
     def _run_waiting(self, seqs) -> None:
         rows = []
         for seq in seqs:
-            ctx, ids, streams = self._waiting.pop(seq)
-            rows.append((seq, self.store.slot_of[seq], ctx, ids, streams))
+            slot, ctx, ids, streams = self._waiting.pop(seq)
+            rows.append((seq, slot, ctx, ids, streams))
         for (seq, _slot, ctx, ids, _streams), token in zip(rows, self.graphs.run(rows)):
             self._next[seq] = (token, None, ctx + len(ids))
 
@@ -209,7 +212,7 @@ class ServedMTP:
             self._run_waiting([seq])              # its rows are positions before these
         self._next.pop(seq, None)
         if self.graphs is not None and n <= self.k + 1:
-            self._waiting[seq] = (ctx, [int(t) for t in next_ids[:n]], hidden[:n].clone())
+            self._waiting[seq] = (self.store.slot_of[seq], ctx, [int(t) for t in next_ids[:n]], hidden[:n])
             return
         ids = torch.tensor([int(t) for t in next_ids[:n]], dtype=torch.int64, device=hidden.device)
         token, streams = self._head(seq, ctx, ids, hidden[:n])
@@ -237,7 +240,16 @@ class ServedMTP:
 
     def forget(self, seq: int) -> None:
         self._next.pop(seq, None)
-        self._waiting.pop(seq, None)
+        waiting = self._waiting.get(seq)
+        if waiting is not None:
+            slot, ctx = waiting[0], waiting[1]
+            # a park forgets the row before its slot and blocks go (base/runner.park_begin): run the head's rows into
+            # them; a released row's blocks are no longer its own, so its rows are dropped
+            if self.caches.slots.owner[slot] == seq and ctx + self.graphs.tokens <= self.caches.pool.tokens[seq]:
+                self._run_waiting([seq])
+                self._next.pop(seq, None)
+            else:
+                self._waiting.pop(seq)
 
 
 def build_model(net, caches, F, *, eos_ids, max_new: int, temperature: float, top_p: float, seed: int = 0,

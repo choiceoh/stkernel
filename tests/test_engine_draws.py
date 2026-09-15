@@ -16,12 +16,18 @@ sys.path.insert(0, str(ROOT))
 
 from engine.base import draws                                          # noqa: E402
 
+ENDPOINT_SEED = 4465410241719536755  # FRESH/0 at nonce=0,generation=0 rounded to 1.0 before the clamp
+
 torch = None
 if importlib.util.find_spec("torch") is not None:
     import torch
 
 
 class KeyTests(unittest.TestCase):
+    def test_rounding_does_not_close_the_upper_endpoint(self):
+        key = draws.row_key(ENDPOINT_SEED, 0, 0)
+        self.assertEqual(draws.uniform(key, draws.FRESH, 0), 1.0 - 2.0 ** -24)
+
     def test_uniforms_lie_in_the_unit_interval_and_are_float32_values(self):
         k = draws.row_key(0, 1, 0)
         us = draws.uniforms(k, draws.PICK, 1000)
@@ -67,9 +73,52 @@ class KeyTests(unittest.TestCase):
         self.assertEqual(draws.step_layout(2), [(draws.DRAFT, 0), (draws.DRAFT, 1), (draws.VERIFY, 0), (draws.VERIFY, 1),
                                                 (draws.FRESH, 0)])
 
+    def test_request_nonce_preserves_the_seeded_hash_for_every_generation(self):
+        for engine_seed in (0, 1, (1 << 64) - 1):
+            for seed in (0, 7, -19, 1 << 63, (1 << 100) + 3):
+                nonce = draws.request_nonce(engine_seed, 4321, seed)
+                self.assertTrue(-(1 << 63) <= nonce < (1 << 63))
+                for generated in (0, 1, 31, 128000):
+                    self.assertEqual(draws.row_key(engine_seed, nonce, generated), draws.row_key(seed, 0, generated))
+                self.assertEqual(nonce, draws.request_nonce(engine_seed, 9876, seed))
+            self.assertEqual(draws.request_nonce(engine_seed, 4321), 4321)
+
 
 @unittest.skipUnless(torch is not None, "requires PyTorch")
 class TensorAgreementTests(unittest.TestCase):
+    def test_upper_endpoint_matches_on_host_tensor_and_fused_graph(self):
+        expected = torch.tensor([[draws.uniform(draws.row_key(ENDPOINT_SEED, 0, 0), p, i)
+                                  for p, i in draws.step_layout(7)]])
+        self.assertLess(float(expected.max()), 1.)
+        for device in (['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu']):
+            zeros = torch.zeros(1, dtype=torch.int64, device=device)
+            key = draws.row_keys(ENDPOINT_SEED, zeros, zeros)
+            self.assertEqual(draws.uniform_tensor(key, draws.FRESH, 1).item(), expected[0, -1].item())
+            block = draws.step_block(ENDPOINT_SEED, zeros, zeros, 7)
+            torch.testing.assert_close(block.cpu(), expected, rtol=0, atol=0)
+            if device == 'cuda':
+                graph = torch.cuda.CUDAGraph()
+                with torch.cuda.graph(graph):
+                    block = draws.step_block(ENDPOINT_SEED, zeros, zeros, 7)
+                try:
+                    graph.replay()
+                    torch.testing.assert_close(block.cpu(), expected, rtol=0, atol=0)
+                finally:
+                    graph.reset()
+
+    def test_bonus_token_cannot_land_in_a_zero_probability_tail(self):
+        from engine.base.sampler import block_verify_batch
+        for device in (['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu']):
+            p = torch.tensor([[1., 0., 0.]], device=device)
+            zeros = torch.zeros(1, dtype=torch.int64, device=device)
+            block = draws.step_block(ENDPOINT_SEED, zeros, zeros, 7)
+            draft = torch.zeros((1, 7), dtype=torch.int64, device=device)
+            accepted, tokens, counts = block_verify_batch(p[:, None].expand(-1, 8, -1).contiguous(), draft,
+                draft[:, :, None].contiguous(), torch.ones((1, 7, 1), device=device), block[:, 7:].contiguous())
+            self.assertEqual(accepted.tolist(), [7])
+            self.assertEqual(counts.tolist(), [8])
+            self.assertEqual(tokens.tolist(), [[0] * 8])
+
     def test_the_tensor_hash_matches_the_host_hash_bit_for_bit(self):
         import random
         rng = random.Random(7)
@@ -95,6 +144,33 @@ class TensorAgreementTests(unittest.TestCase):
                                  "and the verification's: exactly the host's VERIFY then FRESH")
             self.assertNotEqual(block[0].tolist(), block[2].tolist(), "the same row one token later draws afresh")
 
+    # Seed 0, nonce 50471549, generation 0: the walk's first uniform is (2^53 - 1 - m) * 2^-53 for a small m, which
+    # rounds UP to exactly 1.0 when narrowed to float32 -- one draw in 2^25 does (found by scanning nonces).
+    TOP = dict(seed=0, nonce=50471549, generation=0)
+
+    def test_a_draw_that_rounds_up_to_one_is_kept_below_it_on_every_path(self):
+        seed, nonce, gen = self.TOP.values()
+        k = draws.row_key(seed, nonce, gen)
+        top = draws.mix((k ^ draws.word(draws.DRAFT, 0)) & draws.MASK) >> 11
+        self.assertEqual(draws._float32(top * 2.0 ** -53), 1.0, "the rounding the clamp is for")
+        self.assertEqual(draws.uniform(k, draws.DRAFT, 0), draws.BELOW_ONE)
+        self.assertEqual(draws._float32(draws.BELOW_ONE), draws.BELOW_ONE)
+        keys = draws.row_keys(seed, torch.tensor([nonce]), torch.tensor([gen]))
+        self.assertEqual(draws.uniform_tensor(keys, draws.DRAFT, 1)[0, 0].item(), draws.BELOW_ONE)
+        self.assertEqual(draws.step_block(seed, torch.tensor([nonce]), torch.tensor([gen]), 3)[0, 0].item(), draws.BELOW_ONE)
+
+    def test_mixed_request_seeds_survive_row_reordering_on_cpu_and_cuda(self):
+        devices = ["cpu"] + (["cuda"] if torch.cuda.is_available() else [])
+        for device in devices:
+            seeds, admissions, gens = [0, None, 1 << 80, 31], [4, 5, 6, 7], [10, 11, 12, 13]
+            nonce = torch.tensor([draws.request_nonce(19, n, s) for n, s in zip(admissions, seeds)], device=device)
+            generated = torch.tensor(gens, device=device)
+            order = torch.tensor([3, 0, 2, 1], device=device)
+            got = draws.step_block(19, nonce[order], generated[order], 7).tolist()
+            for i, row in enumerate([3, 0, 2, 1]):
+                key = draws.row_key(19, admissions[row], gens[row]) if seeds[row] is None else draws.row_key(seeds[row], 0, gens[row])
+                self.assertEqual(got[i], [draws.uniform(key, p, j) for p, j in draws.step_layout(7)])
+
     @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
     def test_the_device_agrees_with_the_host_on_cuda_too(self):
         nonces = torch.tensor([1, 2, 3, 1 << 38], device="cuda")
@@ -103,6 +179,9 @@ class TensorAgreementTests(unittest.TestCase):
         for i in range(4):
             k = draws.row_key(7, int(nonces[i]), int(gens[i]))
             self.assertEqual(block[i].tolist(), [draws.uniform(k, p, j) for p, j in draws.step_layout(5)])
+        top = draws.step_block(self.TOP["seed"], torch.tensor([self.TOP["nonce"]], device="cuda"),
+                               torch.tensor([self.TOP["generation"]], device="cuda"), 5).cpu()
+        self.assertEqual(top[0, 0].item(), draws.BELOW_ONE, "the kernel keeps a draw that rounds up below one too")
 
     def test_the_sampler_and_the_verifier_take_them_as_inputs(self):
         from engine.base.sampler import block_verify, block_verify_batch, draw, sample
@@ -154,7 +233,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn('b["alive"], b["nonce"], b["generated"])', pipeline)
         self.assertIn('block = draws.step_block(e.seed, b["nonce"], b["generated"], K)', pipeline)
         self.assertIn('block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], b["draws"])', pipeline)
-        self.assertIn('nonce=self._upload([e.nonces[s] for s in seqs], torch.int64)', pipeline)
+        self.assertIn('draws.request_nonce(e.seed, e.nonces[s], getattr(e, "seeds", {}).get(s))', pipeline)
         graphs = (ROOT / "engine/profiles/glm53/decode_graphs.py").read_text()
         self.assertIn('block = draws.step_block(draws_seed, inputs["nonce"], inputs["generated"], drafter.k)', graphs)
         self.assertIn("def run(self, shape, temperatures, top_k=None, top_p=None, uniforms=None):", graphs)

@@ -1,7 +1,32 @@
 """Actual GLM shapes, rounding, routing ties and changed-input graph replay."""
 import unittest
+from types import SimpleNamespace
 
 import torch
+
+
+class RouterBoundaryTests(unittest.TestCase):
+    def test_underflowing_and_tiny_sigmoid_scores_match_the_model_router(self):
+        from engine.modules.moe import route
+        from engine.profiles.glm53.net import Glm53Net
+        for device in (['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu']):
+            x = torch.eye(4, device=device)
+            logits = torch.tensor([-100., -60., 0., 100.], device=device)[:, None].expand(-1, 288).contiguous()
+            bias = torch.linspace(-.1, .1, 288, device=device)
+            net = SimpleNamespace(F=SimpleNamespace(topk_experts=8, routed_scale=2.5),
+                                  p={'L3.moe.bias': bias}, lanes=SimpleNamespace(route_weights=None))
+            want = route(x, logits.T.contiguous(), score='sigmoid', topk=8, bias=bias, normalize=True, scaling=2.5)
+            candidates = [Glm53Net._select_routes(net, 3, logits)]
+            if device == 'cuda':
+                from engine.kernels.glm_pointwise import route_weights
+                candidates.append(route_weights(logits, bias, 8, 2.5))
+            for ids, weights in candidates:
+                self.assertTrue(torch.isfinite(weights).all())
+                self.assertEqual(weights[0].count_nonzero().item(), 0)
+                self.assertLess(weights[1].sum().item(), .001)
+                # The shared router returns unsorted top-k; the selected set is the contract.
+                torch.testing.assert_close(ids.sort(-1).values, want[0].int().sort(-1).values, rtol=0, atol=0)
+                torch.testing.assert_close(weights, want[1], rtol=4e-7, atol=1e-12)
 
 
 @unittest.skipUnless(torch.cuda.is_available(), "native kernels require CUDA")
@@ -37,7 +62,7 @@ class PointwiseTests(unittest.TestCase):
             s = x.sigmoid()
             selected = (s + bias).topk(8, -1).indices
             w = s.gather(-1, selected)
-            return selected.int(), w / w.sum(-1, keepdim=True) * 2.5
+            return selected.int(), w / (w.sum(-1, keepdim=True) + 1e-20) * 2.5
         for rows in (1, 7, 28, 256):
             x = torch.randn(rows, 288, device="cuda") * 3
             bias = torch.randn(288, device="cuda") * .02

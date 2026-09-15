@@ -3360,3 +3360,67 @@ C=1(8행)만 쓰는 공유 전문가 겹침을 C=2 16행에 여는 후보를 같
 - **미측정.** GPU 부팅. 재부팅 한 번에 프로덕션 약 −45 s(브래킷 모양 약 −28 s)는 추정이다.
 
 [설계·요구 대응·근거](measurements/st_prefill_gate_reuse_20260915/README.md).
+
+### 팩 스토어 — 가중치 하나의 두 레인이 해시와 교정 로드를 한 번만 한다 (2026-09-15)
+
+- **근거.**
+  - main `3acae017` 프로덕션 두 번째 부팅(03:38 UTC)에서 `loaded` 는 53.5 s, rank 0 의 `prepare native execution` 은 32.16 s 였다.
+  - dense 가중치마다 W4 레인(`pack`)과 FP8 레인(`pack_fp8`)이 각자 가중치를 복사해 sha256 하고, 교정 blob 을 로드·`isfinite`·스무딩·sha256 했다. rank 3 의 대상 blob 은 203개 7.25 GiB 다.
+- **바꾼 것.**
+  - `PackStore.weight_digest` → `WeightDigest`. 가중치는 워커 스레드에서 한 번 해시하고, 교정 해시는 그 가중치의 레인들에 한 번이다.
+  - digest 는 해시한 바이트(저장소·오프셋·레이아웃·`_version`)에만 답한다. 빌드 경로는 Hessian 을 다시 읽어 해시가 같은지 확인한다.
+  - 식별자 dict 는 그대로다. 이미 파일된 팩을 같은 이름으로 찾으므로 팩 바이트와 수치가 바뀌지 않는다.
+- **CPU 측정.** rank 3 의 실제 blob, 차가운 페이지 캐시, 가중치 234개(합성 BF16, 실제 모양).
+  - old 25.88 / 24.64 s → new 13.85 / 14.86 s, 랭크당 −10.9 s(−43%).
+  - 두 변형 모두 같은 437개 팩 파일을 찾았고, 빌드는 0 이었다.
+- **검증.** CPU 85 테스트 OK(7 스킵, CUDA 전용).
+- **미측정.** GPU 부팅. 다음 부팅의 rank 0 `prepare native execution`(기준 32.16 s)과 `loaded`(기준 53.5 s)로 확인한다. 약 −10 s 는 추정이다.
+
+[표·명령·원시 출력](measurements/st_boot_pack_digests_20260915/README.md).
+
+### 네이티브 확장 — 모든 랭크가 첫 집합통신 전에 한꺼번에 빌드하고 랑데부한다 (2026-09-15)
+
+- **근거.**
+  - main `3acae017` 의 첫 콜드 부팅(03:25 UTC)은 네이티브 확장을 첫 사용 자리에서 하나씩 빌드했다: 32K 프리필 안, 타깃 캡처 안, 버스트 파이프라인 안.
+  - 노드별 빌드 끝 시각이 17.6–33.9 s 벌어졌다. decode queue 를 먼저 끝낸 rank 1 이 one-shot 합에서 약 31 s 를 기다리다 `unspecified launch failure` 로 죽었고, 나머지 랭크는 `WC error 12` 뒤 따라 죽었다.
+  - 노드마다 네 빌드에 158.6–182.4 s 가 들었다.
+- **바꾼 것.**
+  - `profiles/glm53/natives.py` 가 fleet 부팅이 싣는 확장 일곱 개를 확장당 스레드 하나로 한꺼번에 빌드한다.
+  - `boot.fleet` 은 `Comm.init()` 전에 빌드를 시작하고, one-shot 준비 전에 `native-builds` 랑데부에서 만난다. 실패한 랭크는 실패 단계로 피어를 즉시 멈춘다.
+  - `dense.extension()` 을 `build()` 와 장치 확인으로 나눴다. 키·플래그·경로·수치·노브는 그대로다.
+- **CPU 측정(`st-engine:glm53`, CUDA 숨김).**
+  - 키가 있을 때: 하나씩 0.27 s, 한꺼번에 0.09 s. 오늘 흩어져 치르는 로드와 같은 크기다.
+  - 키가 없을 때: 하나씩 372.9 s, 한꺼번에 65.7 s(가장 긴 dense). cgroup 최고 15.57 GiB(16 GiB 상한, 페이지 캐시 포함)였다. 두 표본은 배경 부하가 달랐다.
+- **검증.** CPU 66 테스트 OK(7 스킵). 목록 누락 검사는 `engine/kernels` 의 모든 `cpp_extension.load` 모듈을 대조한다.
+- **미측정.** GPU 부팅. 다음 부팅 로그의 `rankN: native builds in X s` 줄과 rank 0 표의 `native builds` 행, 그리고 콜드 부팅의 `STALL` 로 확인한다. CuTe-DSL·Triton JIT 은 여전히 첫 사용 때 랭크마다 컴파일한다.
+
+[표·로그·명령](measurements/st_boot_native_prebuild_20260915/README.md).
+
+### 문 열기 전 워밍업 — 프리필 길이 여섯 개를 뺀다 (2026-09-15)
+
+- **근거.**
+  - main `3acae017` 의 두 따뜻한 부팅(03:38, 03:51 UTC)에서 `warmup shapes` 는 5.25 / 5.15 s 였고, 그중 프리필 64·256·1,024·2,048·2,304·4,096 토큰이 4.66 / 4.56 s 였다.
+  - 이 여섯 번이 도는 레인(32행 dense W4, 64행 mHC, 128 토큰 샤딩, 640 routed pair, 8,192행 라우터)은 모두 메모리 워밍업과 커널 워밍업이 이미 돈다.
+  - 커널 워밍업이 끝난 때부터 문이 열릴 때까지 srv2·srv4 `/cache` 에 새로 쓰인 파일은 두 부팅 모두 0 개였다.
+- **바꾼 것.** `boot.fleet` 이 `warmup_shapes(lengths=())` 를 부른다. 디코드 폭 1·2 의 동기·비동기 워밍업은 남긴다.
+- **검증.** CPU 11 테스트 OK(`warmup_admission`, `warmup_draws`, `bootpaths`).
+- **미측정.** GPU 부팅. 다음 부팅의 rank 0 `warmup:` 줄에서 `prefill/…` 가 사라지고 `warmup shapes` 가 0.6 s 안팎이어야 한다. 부팅마다 약 −4.6 s 는 추정이다.
+  - 캐시가 빈 노드의 첫 요청이 그 네 길이(256·2,048·2,304·4,096)와 정확히 같으면, conv 의 `T` 특수화가 그 요청 안에서 컴파일한다. 다른 모든 길이가 원래 치르던 비용이다.
+
+[근거 줄·캐시 확인·명령](measurements/st_boot_warmup_decode_only_20260915/README.md).
+
+### 문법 자격 검사 — xgrammar 가 문의 토크나이저에서 입력을 읽는다 (2026-09-15)
+
+- **근거.**
+  - `qualify grammar` 는 main `3acae017` 따뜻한 부팅 두 번에서 6.75 / 10.18 s(rank 0)였다.
+  - `for_checkpoint` 는 transformers `AutoTokenizer` 를 따로 만들어(CPU 2.2 s) `TokenizerInfo.from_huggingface`(1.1 s)에 넘겼다. 엔진은 같은 `tokenizer.json` 을 이미 `tokenizers.Tokenizer` 로 읽는다.
+  - GLM-5.3 메타에서 백엔드의 `get_vocab(with_added_tokens=True)`·`to_str()` 로 만든 TokenizerInfo 는 vocab dict, metadata, decoded vocab 154,880 개, stop/special id, `dump_metadata` 가 모두 같았다.
+- **바꾼 것.**
+  - `base/grammar.tokenizer_info` 를 더했고, `for_checkpoint(tokenizer=)` 와 `Grammars(info=)` 가 이를 받는다.
+  - GLM 부팅은 문의 토크나이저를 `qualify grammar` 에서 한 번 로드해 문법과 문이 함께 쓴다.
+  - 기본 경로(토크나이저 없음)는 그대로다.
+- **버린 것.** `TokenizerInfo.serialize_json` 디스크 캐시는 NUL 토큰 다섯 개가 빈 바이트열로 왕복해 넣지 않았다.
+- **검증.** CPU 44 테스트 OK. 합성 byte-level·Metaspace 토크나이저에서 두 경로의 TokenizerInfo 와 JSON/스키마 마스크가 같다.
+- **미측정.** GPU 부팅. 다음 부팅의 `qualify grammar`·`door` 행으로 확인한다. 랭크당 약 −2.2 s 는 CPU 추정이다.
+
+[단계별 시간·대조·버린 방법](measurements/st_boot_grammar_tokenizer_20260915/README.md).

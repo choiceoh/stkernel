@@ -2253,6 +2253,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("c2_scatter_reuse_v1",)
     if config.get("c2_fc2_prefetch", False):
         cfg += ("c2_fc2_prefetch_v1",)
+    if config.get("scatter_vec4", False):
+        cfg += ("scatter_vec4_v1",)
     return cfg + _static_kernel_cache_key(**fields)
 
 
@@ -2292,6 +2294,12 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
     # and one CTA; their FC2 and scatter reads all follow the FC1 publication.
     sync_cleanup = (reform and bool(config.get("reform_sf_pack", False))
                     and bool(config.get("sync_cleanup", True)))
+    # Staged output owns contiguous eight-column spans. The direct-register
+    # path owns pairs in different spans and keeps its existing v2 RED.
+    scatter_vec4 = (reform and bool(config.get("reform_sf_pack", False))
+                    and not direct_scatter and not config.get("probe_direct_scatter", False)
+                    and not config.get("probe_route_scatter", False)
+                    and bool(config.get("scatter_vec4", True)))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
@@ -2300,7 +2308,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                 c2_scatter_reuse=scatter_reuse,
                 c2_fc2_prefetch=bool(scatter_reuse and int(config.get("fc2", 2)) == 2
                                      and config.get("c2_fc2_prefetch", True)),
-                sf6_registers=sf6_registers, sync_cleanup=sync_cleanup)
+                sf6_registers=sf6_registers, sync_cleanup=sync_cleanup, scatter_vec4=scatter_vec4)
 
 
 def _get_static_kernel_v2(
@@ -2415,6 +2423,7 @@ def _get_static_kernel_v2(
         compact_staging=bool(config["compact_staging"]),
         sf6_registers=bool(config["sf6_registers"]),
         sync_cleanup=bool(config["sync_cleanup"]),
+        scatter_vec4=bool(config["scatter_vec4"]),
         sf_vec_size=sf_vec_size,
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),

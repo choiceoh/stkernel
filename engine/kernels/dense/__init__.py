@@ -15,7 +15,9 @@ from engine.kernels.cells import DENSE_ALIGN, DENSE_KMAX, dense_glue_refusal
 
 
 @cache
-def extension():
+def build():
+    """Compile the dense lane's module when its key is new, and load it. No device is touched, so the fleet boot
+    builds it before its first collective (profiles/glm53/natives); `extension` probes the device at first use."""
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_cuda_sources
     source = Path(__file__).with_name("kernels.cu")
@@ -25,8 +27,13 @@ def extension():
              "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
     root = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))
     key, directory, sources = prepare_cuda_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
-    ext = load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
-               build_directory=str(directory), verbose=False)
+    return load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
+                build_directory=str(directory), verbose=False)
+
+
+@cache
+def extension():
+    ext = build()
     from engine.base.kernel_shape import bound
     device = bound().device
     if tuple(ext.probe_device())[:3] != (*device.capability, device.sms):
@@ -267,24 +274,34 @@ class DenseLinear:
         self.bound_input_executed = set()
         self.producer_pack_executed = set()
         packs = []
+        # The lanes below look their packs up by this weight's bytes: one hash of them serves every lane, taken beside
+        # the first lane's calibration load (kernels/dense/store.WeightDigest) instead of once per lane.
+        digest = None
+        if store is not None and ((decode_precision != 'fp8' and (self.cols <= TILE or store.calibrated(w4_name)))
+                                  or (prefill and store.calibrated(name))
+                                  or (decode_name is not None and decode_precision == 'fp8')):
+            digest = store.weight_digest(weight)
         if decode_precision == 'fp8':
             pass  # No W4 invocation exists: skip its packing, factorisation and resident bytes.
         elif self.cols > TILE and store is not None and store.calibrated(w4_name):
-            packs = list(store.pack_wide(weight, w4_name, smooth=smooth))   # one GPTQ over the whole K, from the full Hessian
+            packs = list(store.pack_wide(weight, w4_name, smooth=smooth, digest=digest))   # one GPTQ over the whole K, from the full Hessian
         elif self.cols > TILE and hessians is not None and hessians.shape == (self.cols, self.cols):
             packs = pack_w4_wide(weight, hessians)
         else:
             for start in range(0, self.cols, TILE):
                 w = weight[:, start:start+TILE].contiguous()
                 key = w4_name if self.cols <= TILE else f'{w4_name}.k{start//TILE}'
-                packs.append(store.pack(w, key, smooth=None if smooth is None else smooth[start:start+TILE]) if store is not None else
+                shared = digest if digest is not None and digest.covers(w) else None   # a tile copy is other bytes
+                packs.append(store.pack(w, key, smooth=None if smooth is None else smooth[start:start+TILE], digest=shared)
+                             if store is not None else
                              pack_w4(w, hessian=None if hessians is None else hessians[start//TILE]))
         self.packs = tuple(_fold(packs))
         packs.clear()                     # the folded copy is the pack now; the tiles are 42 MiB of nothing
         self.calibrated = bool(self.packs) and all(p.calibrated for p in self.packs)
         if prefill:
             # the FP8 lane's weights: GPTQ on the fp8 grid from the same calibration, else round-to-nearest
-            fp8 = store.pack_fp8(weight, name, smooth=smooth) if (store is not None and store.calibrated(name)) else None
+            fp8 = (store.pack_fp8(weight, name, smooth=smooth, digest=digest)
+                   if (store is not None and store.calibrated(name)) else None)
             self.fp8 = FP8Linear(weight, quantized=fp8, name=name)
         else:
             self.fp8 = None
@@ -292,7 +309,7 @@ class DenseLinear:
         if decode_name is not None and decode_precision == 'fp8':
             # Decode GPTQ must affect the executed FP8 grid, while even a
             # one-token prefill retains the shared pack. No raw BF16 reader.
-            fp8 = store.pack_fp8(weight, decode_name, smooth=smooth) if store is not None else None
+            fp8 = store.pack_fp8(weight, decode_name, smooth=smooth, digest=digest) if store is not None else None
             if fp8 is None:
                 raise ValueError('FP8 decode requires its completed decode calibration')
             self.decode_fp8 = FP8Linear(weight, quantized=fp8, name=decode_name)

@@ -52,6 +52,7 @@ from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             #
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
 from engine.profiles.glm53.weights import rank_loader            # noqa: E402
 from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
+from engine.profiles.glm53 import natives                        # noqa: E402
 
 GIB = 1 << 30
 KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
@@ -183,12 +184,16 @@ def generation_defaults(ckpt=facts.CKPT) -> dict:
     return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
 
 
-def grammars(ckpt, vocab: int, device=None, stop_token_ids=None):
+def grammars(ckpt, vocab: int, device=None, stop_token_ids=None, tokenizer=None):
     """base/grammar.for_checkpoint: structured output over the checkpoint's tokenizer on every rank, or None where
     xgrammar is not installed (the door then refuses response_format, D3); `device` proves the mask kernel at boot
-    (the same shape as `vision.qualify`)."""
+    (the same shape as `vision.qualify`). `tokenizer`: the door's own (`tokenizer(ckpt)`) -- GLM-5.3's tokenizer.json
+    holds every token transformers would give it, so xgrammar reads its vocabulary there instead of from a second
+    parse through transformers (base/grammar.tokenizer_info)."""
     from engine.base import grammar
-    return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
+    if tokenizer is None:
+        return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
+    return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids, tokenizer=tokenizer)
 
 
 CHAT_TEMPLATE = "chat_template_mm_v2.jinja"     # what production serves with (launchers/lib/glm53-chat.sh); honours the `thinking` kwarg
@@ -290,11 +295,15 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
+                        GLM53_DENSE_W4A16_GUARD_ROWS=4096,
                         execution_overlap=0, early_observe=0, prefill_tiles=1, terminal_mhc=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("GLM53_DENSE_W4A16_GUARD_ROWS", 4096, _dt.date(2026, 9, 30),
+             "ModelOpt dense prefill activation precision guard; zero measures all-NVFP4",
+             "STK_GLM53_DENSE_W4A16_GUARD_ROWS=4096", lane_tables.dense_w4a16_guard_rows),
         Knob("decode_absorb_tiles", gb10_defaults["decode_absorb_tiles"], _dt.date(2026, 9, 30),
              "Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending",
              "STK_decode_absorb_tiles=0", int),
@@ -506,7 +515,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
     arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes + 256 * (len(specs) + len(dspecs) + len(vspecs) + 64)
-                   + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs) + calib_bytes)
+                   + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs, draft_shape) + calib_bytes)
     memory = None
     redeclare = None                    # the same table, re-runnable once a ledger exists (45차 §51)
     if len(net.layers) == F.layers:
@@ -1314,6 +1323,11 @@ def fleet(a) -> int:
     # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
     # outside this table (boot-time study, 2026-09-11), so the recorder opens before them.
     rec = Recorder("boot")
+    # Every native extension this boot loads starts building now, one thread each, while the comm initialises; the
+    # ranks meet below, before the one-shot transport's first sum. A native built at its first use left a rank's
+    # peers waiting in a collective for its compile, and main's first cold boot died of it (profiles/glm53/natives).
+    builds_started = time.perf_counter()
+    builds = natives.NativeBuilds(natives.builds(cfg["oneshot_rails"], bool(cfg["oneshot_inline"])))
     with rec.phase("comm"):
         comm = Comm.init()
     rec.root.name = f"rank{comm.rank}"
@@ -1323,6 +1337,20 @@ def fleet(a) -> int:
         if comm.rank == 0:
             print(cfg.table())
             print(f"  kernel shape ({shape_source}): {shape.describe()}")
+        with rec.phase("native builds"):
+            try:
+                seconds = builds.wait()
+            except BaseException as exc:
+                # The peers wait at the rendezvous below for up to 1800 s; a failed phase ends their wait now.
+                try:
+                    comm.wait_prepared(f"failed: rank {comm.rank}: {type(exc).__name__}: {str(exc)[:200]}", timeout_s=60.)
+                except BaseException:                 # noqa: BLE001 -- it raises by design; `exc` is the cause
+                    pass
+                raise
+            comm.wait_prepared("native-builds")
+            for name, value in seconds.items():
+                rec.gauge(f"native_{name}_s", value)
+            print(natives.line(comm.rank, seconds, time.perf_counter() - builds_started), flush=True)
         with rec.phase("prepare one-shot"):
             if cfg["oneshot_rails"] not in (1, 2):
                 raise ValueError("one-shot rails must be 1 or 2")
@@ -1335,7 +1363,7 @@ def fleet(a) -> int:
             print(f"  rank{comm.rank}: one-shot rails={comm.transport.rails} latency µs {comm.transport.latency}", flush=True)
         with rec.phase("lanes"):
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
-                                       consume_scales=True)
+                                       consume_scales=True, dense_guard_rows=cfg["GLM53_DENSE_W4A16_GUARD_ROWS"])
         from engine.profiles.glm53.execution import ExecutionPlan
         if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")
@@ -1387,7 +1415,7 @@ def fleet(a) -> int:
                             "fp8_gptq": str(engine.pack_stats.get("fp8_gptq", 0)),                             # FP8 lane weights GPTQ'd on their grid
                             "smoothed": str(engine.pack_stats.get("smoothed", 0)),                             # inputs' channel smoothing folded into their norms
                             "calibration": engine.calibration.status() if engine.calibration is not None else "complete",
-                            "dense_w4a16_guard_rows": str(lane_tables.dense_w4a16_guard_rows())}
+                            "dense_w4a16_guard_rows": str(cfg["GLM53_DENSE_W4A16_GUARD_ROWS"])}
         # A stale tier under one rank diverges the ranks (45th 21), and a fleet that split mid-step leaves
         # a turn parked on half of them (2026-09-13 13:01:47). Reconcile in seconds, before the capture: every
         # rank keeps the conversations every rank holds alike and drops the rest. This check used to KILL the
@@ -1408,14 +1436,22 @@ def fleet(a) -> int:
         with rec.phase("capture decode"):
             engine.capture_decode(MAX_SEQS)
         with rec.phase("warmup shapes"):
-            paid = engine.warmup_shapes()                   # first-use JIT paid at boot, not on the first user (45차 §23 B2)
+            # The decode widths only: their host path (pinned id staging, the burst queue and readback) runs nowhere
+            # else before the door. The six prefill lengths (64..4,096) this used to add run no lane the memory warmup
+            # (128, 1,024, 32,256 tokens) and the kernel warmup (1, 8, 64, 512, 4,095) had not: the 32-row dense W4
+            # lane, 64-row mHC, 128-token sharding, 640 routed pairs and the 8,192-row router all sit inside those. Two
+            # warm boots of 3acae017 wrote no file to /cache from the kernel warmup to the door; these cost 4.66 and 4.56 s,
+            # every boot (measurements/st_boot_warmup_decode_only_20260915). A length-specialised Triton kernel (the
+            # conv's T) still compiles at a request's first new length, as it did for every length but these six.
+            paid = engine.warmup_shapes(lengths=())
         if engine.vision is None:                           # production serves images and video (PR #431): so does this boot, or it does not boot
             raise RuntimeError(f"{vision_mod.FILE} is missing from {a.ranks}: write it once per node with "
                                f"`python3 engine/profiles/glm53/preshard.py --vision --out {a.ranks}` (45차 §23 A7)")
         with rec.phase("qualify vision"):
             paid.update(engine.vision.qualify())            # the largest image, before the door opens (D3)
         with rec.phase("qualify grammar"):
-            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos)   # response_format (json_object / json_schema), every rank
+            tok = tokenizer(a.ckpt_meta)                    # the door's tokenizer, loaded here once: the grammar reads its vocabulary
+            engine.grammars = grammars(a.ckpt_meta, F.vocab, caches.device, engine.eos, tokenizer=tok)   # response_format, every rank
         if engine.memory is None or not engine.memory.ready:
             raise RuntimeError("full-model serving requires runtime memory qualification")
         # Keep this final release as well as the earlier prefill/kernel warmups.
@@ -1453,7 +1489,6 @@ def fleet(a) -> int:
                 if runner.prefix_tier is not None:
                     print(tier_line(runner.prefix_tier.tier, PREFIX_TIER_GIB, "prefix boundaries"))
         with rec.phase("door"):
-            tok = tokenizer(a.ckpt_meta)
             renderer = chat_renderer(a.ckpt_meta) if comm.rank == 0 else None
         from engine.profiles.glm53.tools import parse_tool_calls, partial_tool_calls, tool_call_token, tool_grammar
         if comm.rank == 0:

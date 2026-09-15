@@ -244,7 +244,7 @@ def budget(kv_gib: float, max_seqs: int, chunk: int = 6912, box_gib: "float | No
              f"the FP32 baseline's tiered/untiered budget (sharded drafter ring: {'yes' if draft_native else 'no'})"),
         Line("compressed prefix cache and codec", boot.prefix_host_bytes(tier_enabled) / GIB, DECLARED,
              "prefix tier: bounded lossless RAM copies plus chunk workspace, outside the raw arena; compression ratio unmeasured"),
-        Line("generated-boundary staging", stage_bytes(F, range(F.layers), max_seqs) / GIB, READ,
+        Line("generated-boundary staging", stage_bytes(F, range(F.layers), max_seqs, draft_shape) / GIB, READ,
              "caches.stage_bytes: per-slot recurrent state and convolution history"),
         Line("workspace ceiling (outside the arena)", ceiling, DECLARED, workspace_evidence),
         Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED, "kv_tier: pinned staging + device scratch, conversations and prefix tiers"),

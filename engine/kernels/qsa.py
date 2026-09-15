@@ -439,7 +439,9 @@ def _store_qsa_rows_kernel(
     dims = tl.arange(0, BLOCK_D)
     slot = tl.load(slots_ptr + row)
     valid = (row < num_rows) & (slot >= 0) & (slot < num_blocks * PAGE_SIZE)
-    block = tl.maximum(slot, 0) // PAGE_SIZE
+    # int64 before the page stride: an int32 slot mapping times a block-major page stride (5,431,296 bf16 rows for
+    # Qwen3.8's 13 attention layers) wraps from page 396 on
+    block = (tl.maximum(slot, 0) // PAGE_SIZE).to(tl.int64)
     token = tl.maximum(slot, 0) % PAGE_SIZE
     values = tl.load(
         rows_ptr + row * stride_rows_row + dims * stride_rows_dim,
@@ -966,6 +968,36 @@ def qsa_compress_groups_with_ratio(raw_keys, raw_positions, compressor_state_cac
     return pooled, first_positions
 
 
+def qualify(device, *, heads=((6, 256), (4, 128)), rotary_dim: int, theta: float, eps: float, dtype=torch.bfloat16,
+            rows=(1, 7, 300), max_position: int = 262144, band_max: float = 5e-2, band_rms: float = 2e-2,
+            seed: int = 0) -> dict:
+    """Hold `norm_rope_partial` to engine/modules (rmsnorm_unit_offset, then rope_tables + apply_rope over the first
+    `rotary_dim` channels) on `device`, at each (heads, head_dim) the model normalises and rotates (the query heads and
+    the indexer's), within a few BF16 steps (engine/kernels/gated_residual.drift). The ported vLLM kernels are not
+    held here: their bodies are the ones that served this model (SOURCES.json)."""
+    from engine.kernels.gated_residual import drift
+    from engine.modules.norm import rmsnorm_unit_offset
+    from engine.modules.rotary import apply_rope, rope_tables
+    gen = torch.Generator(device="cpu").manual_seed(seed)
+    worst = {}
+    for h, d in heads:
+        w = (torch.randn(d, generator=gen) * 0.1).to(device=device, dtype=dtype)
+        key, most = f"norm_rope_{h}x{d}", (0.0, 0.0)
+        for n in rows:
+            x = torch.randn(n, h, d, generator=gen).to(device=device, dtype=dtype)
+            positions = torch.randint(0, max_position, (n,), generator=gen).to(device)
+            cos, sin = rope_tables(positions, rotary_dim, theta, dtype=dtype)
+            m, r = drift(norm_rope_partial(x, w, eps, positions, theta, rotary_dim),
+                         apply_rope(rmsnorm_unit_offset(x, w, eps), cos, sin))
+            most = (max(most[0], m), max(most[1], r))
+        worst[key] = most
+    bad = {k: v for k, v in worst.items() if v[0] > band_max or v[1] > band_rms}
+    if bad:
+        raise RuntimeError(f"QSA norm and partial rotation drift from engine/modules beyond max {band_max:g} / "
+                           f"rms {band_rms:g}: {bad}")
+    return worst
+
+
 __all__ = ["norm_rope_partial", "qsa_mqa_paged", "expand_qsa_block_indices_cuda", "select_blocks",
            "qsa_select_paged_tokens", "qsa_sparse_paged_attention", "qsa_store_cache_rows",
-           "qsa_compress_groups_with_ratio"]
+           "qsa_compress_groups_with_ratio", "qualify"]

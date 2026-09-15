@@ -87,6 +87,7 @@ class Glm53Engine:
         self.ends = {}                                      # seq -> end tokens: the model's plus the request's stop_token_ids
         self._ends_tensor = {}                              # cached device end-token ids for min_tokens
         self.sampling_history = None                        # penalty tensors; history(seq) remains the token-list protocol
+        self._rich_policies = {}                            # cached GPU transforms for host grammar/reasoning rows
         self.lps = {}                                       # seq -> per committed token (id, logprob, [(id, logprob)...]) when asked
         self.matchers = {}                                  # seq -> base/grammar.Matcher when the request carries a grammar
         self.grammars = None                                # base/grammar.Grammars, bound at boot when structured output is served
@@ -538,6 +539,7 @@ class Glm53Engine:
             self.drafter.diagnostics = None
         self._ids_stage = self._rich_stage = None           # pinned host ids; the rich sampler's two fp32 planes
         self.sampling_history = None                        # penalty tensors
+        getattr(self, "_rich_policies", {}).clear()
         self.grammars = None                                # xgrammar's compiled grammars and bitmask buffers
         self._ends_tensor, self.matchers, self.embeds, self.seeds = {}, {}, {}, {}
         self.staged, self.inflight, self.lps, self.media = {}, {}, {}, {}
@@ -604,6 +606,8 @@ class Glm53Engine:
         return self.lps.get(seq)
 
     def _bind_options(self, seq: int, options: "dict | None") -> None:
+        getattr(self, "_rich_policies", {}).pop(seq, None)
+        getattr(self, "_ends_tensor", {}).pop(seq, None)
         options = dict(options or {})
         self.options[seq] = options
         self.ends[seq] = self.eos | set(options.get("stop_token_ids") or ())
@@ -651,6 +655,7 @@ class Glm53Engine:
         them reached through `self.history` directly and died on the first request of a boot that had not."""
         if self.sampling_history is not None:
             self.sampling_history.forget(seq)
+        getattr(self, "_rich_policies", {}).pop(seq, None)
 
     CEILING_FAILURES_KEPT = 3
 
@@ -752,9 +757,9 @@ class Glm53Engine:
         """The runner's prefix cache keeps this sequence's state at a block boundary (base/prefix.py): out of the rings
         right after the step that reached it, or out of the caches' stage when a step ahead of the host parked it there."""
         if self.staged.get(seq) == position:
-            self.caches.checkpoint_from_stage(self.slot[seq], snap)
+            self.caches.checkpoint_from_stage(self.slot[seq], snap, position)
         else:
-            self.caches.checkpoint(self.slot[seq], position, snap)
+            self.caches.checkpoint(self.slot[seq], position, snap, past=self.ctx[seq] - position)
 
     def restore(self, seq: int, position: int, snap: int) -> None:
         """A new sequence adopts a cached prefix: its rings take the boundary's state, its context starts there."""
@@ -846,18 +851,8 @@ class Glm53Engine:
 
     # -- decode steps ahead of the host (pipeline.py, 45차 §23 B3) ------------------------------------------------
     def _plain_ahead(self, seq: int) -> bool:
-        """Greedy, or a truncation the sampler takes as numbers: the device can commit, observe and
-        propose without the host. top-k joins top_p here -- the pipeline carries both per row now."""
-        if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
-            return False
-        opts = self.options.get(seq, {})
-        if any(opts.get(k) is not None for k in ("seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
-                                                  "logit_bias", "logprobs", "grammar", "min_p")):
-            return False
-        if seq in self.matchers or self.seeds.get(seq) is not None or seq in self.lps:
-            return False
-        return (self.min_new.get(seq, 0) <= self._generated_count(seq)
-                and not self._reasoning_boundary(seq))
+        """The same capability decision as async_ready, without recording a chain exit."""
+        return self._blocked_by(seq) is None
 
     def _reasoning_boundary(self, seq: int) -> bool:
         """Drain before outstanding blocks can cross a host-enforced thinking cap.
@@ -883,10 +878,9 @@ class Glm53Engine:
     # WHAT kept a decode step off the device-side chain. `st:async_decode_steps_total` and
     # `st:sync_drain_steps_total` say how often it happened; neither says why, and the two answers call for
     # opposite work. A drain because rows churned is the pipeline's problem (PR #671 took most of those away);
-    # a drain because one row asked for logprobs is a scheduling problem, and no amount of fusing inside the
-    # chain touches it. Reasons are named the way an operator would ask about them.
-    CHAIN_BLOCKERS = ("seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
-                      "logit_bias", "logprobs", "grammar", "min_p")
+    # grammar and reasoning boundaries still need host state. Device sampling options no longer drain the batch.
+    # Reasons are named the way an operator would ask about them.
+    CHAIN_BLOCKERS = ("grammar", "min_p")
 
     def _chain_exit(self, reason: str) -> bool:
         self.chain_exits[reason] = self.chain_exits.get(reason, 0) + 1
@@ -902,12 +896,6 @@ class Glm53Engine:
                 return name
         if seq in self.matchers:
             return "grammar"
-        if self.seeds.get(seq) is not None:
-            return "seed"
-        if seq in self.lps:
-            return "logprobs"
-        if self.min_new.get(seq, 0) > self._generated_count(seq):
-            return "min_tokens"
         if self._reasoning_boundary(seq):
             return "reasoning_budget"
         return None
@@ -919,8 +907,7 @@ class Glm53Engine:
             return self._chain_exit("rows_churned")
         blocked = next((why for why in (self._blocked_by(s) for s in seqs) if why is not None), None)
         if blocked is not None:
-            # One row is enough: the batch runs ahead together or not at all, so at max_seqs 4 a single
-            # request asking for logprobs takes the other three off the chain with it.
+            # Host grammar/reasoning boundaries still apply to the whole batch.
             return self._chain_exit(blocked)
         return True
 
@@ -1165,6 +1152,39 @@ class Glm53Engine:
         return process_logits(raw, opts, seen, counts, drafts_before, self.decodable, forbid=forbid, out=out,
                               force=force)
 
+    def _row_logits_block(self, seq, raw, drafts, out):
+        """GPU transforms for every live grammar position, with one history update and one launch.
+
+        The matcher still prepares masks and advances on the host. Its speculative
+        walk and rollback are unchanged; this replaces the per-position tensor work
+        between the target and the mask. CPU execution remains the reference.
+        """
+        if not raw.is_cuda:
+            for i in range(raw.shape[0]):
+                self._row_logits(seq, raw[i], i, drafts[:i], out=out[i])
+            return out
+        from engine.base.sampler import History
+        from engine.base.sampling_options import SamplingState, _upload
+        if self.sampling_history is None:
+            self.sampling_history = History(int(raw.shape[-1]), raw.device)
+        seen, counts = self.sampling_history.of(seq, self.tokens[seq], self.prompt_len[seq])
+        if not hasattr(self, "_rich_policies"):
+            self._rich_policies = {}
+        policy = self._rich_policies.get(seq)
+        opts = self.options.get(seq, {})
+        if policy is None:
+            policy = self._rich_policies[seq] = SamplingState(
+                [opts], seen.unsqueeze(0), counts.unsqueeze(0), [self.min_new.get(seq, 0)])
+        policy.seen, policy.counts = seen.unsqueeze(0), counts.unsqueeze(0)
+        force = [self._reasoning_over(seq, opts, drafts[:i]) for i in range(raw.shape[0])]
+        # The draft width stays K even when the grammar invalidates an earlier
+        # proposal; live positions and stop-set length are runtime kernel inputs.
+        padded = drafts + [-1] * max(0, self.drafter.k - len(drafts))
+        return policy.process(raw, _upload(torch.tensor([padded], dtype=torch.int64), raw.device),
+                              _upload(torch.tensor([self._generated_count(seq)]), raw.device),
+                              self._end_ids(seq, raw.device).unsqueeze(0), decodable=self.decodable, out=out,
+                              forces=_upload(torch.tensor([x if x is not None else -1 for x in force]), raw.device))
+
     def _reasoning_over(self, seq: int, opts: dict, drafts_before) -> "int | None":
         """The reasoning-end token, when this row's thinking budget is spent and it is still thinking.
 
@@ -1240,7 +1260,7 @@ class Glm53Engine:
         together. Doing it a position at a time meant a 154,880-wide sort and a `multinomial` per position: 11.8 ms
         for the 24 rows of one step.
         """
-        from engine.base.sampler import block_verify, rows as sampler_rows, top_logprobs
+        from engine.base.sampler import block_verify, rows as sampler_rows, top_logprobs_batch
         device = jobs[0][1].device
         if masks is None:
             pending = [(seq, self.matchers[seq], drafts) for seq, _, drafts, _ in jobs if seq in self.matchers]
@@ -1251,8 +1271,7 @@ class Glm53Engine:
         at, temps, ks, ps, uniform_rows = 0, [], [], [], []
         for (seq, raw, drafts, _), count in zip(jobs, spans):
             opts = self.options.get(seq, {})
-            for i in range(count):
-                self._row_logits(seq, raw[i], i, drafts[:i], out=block[at + i])
+            self._row_logits_block(seq, raw[:count], drafts, block[at: at + count])
             if masks is not None and masks.has(seq):
                 masks.apply(seq, block[at: at + count])   # one launch for the row: -inf straight from the packed words
             temps += [self.limits[seq][1]] * count
@@ -1277,15 +1296,26 @@ class Glm53Engine:
                 new = mine[: accepted + 1]
             else:
                 self.note_ceilings(dists[at: at + count], draft_probs)
-                k = len(drafts[: count - 1])
-                accepted, new = block_verify(dists[at: at + count], drafts[: count - 1], draft_probs,
+                # A grammar ends a row's live positions AT a draft: one it refuses, or a stop token it accepts
+                # (base/grammar.Matcher.fill). That draft is verified like the others. The masked target gives a
+                # refused draft no mass, so the verification rejects it and the correction comes from the residual
+                # at its position. Leaving it out and drawing its position as the bonus made WHICH drafts were
+                # verified depend on what had been drafted, and the committed tokens stopped following the target.
+                # The last live position has no row after it: the stand-in is drawn from only when every draft was
+                # accepted, which ends on the stop token, and the committed tokens stop there.
+                k = min(len(drafts), count)
+                target = dists[at: at + count]
+                if k == count:
+                    target = torch.cat([target, target[-1:]])
+                accepted, new = block_verify(target, drafts[:k], draft_probs,
                                              self._uniforms(seq, draws.VERIFY, k) + self._uniforms(seq, draws.FRESH, 1))
+                new = new[:count]
             verdicts.append((accepted, new))
             at += count
         out, at = [], 0
         for (seq, _, _, _), count, (accepted, new) in zip(jobs, spans, self._agree_verdicts(verdicts, spans, device)):
             want = self.options.get(seq, {}).get("logprobs")
-            lps = [(tok, *top_logprobs(block[at + i], tok, want)) for i, tok in enumerate(new)] if want is not None else None
+            lps = top_logprobs_batch(block[at: at + len(new)], new, want) if want is not None else None
             out.append((accepted, new, lps))
             at += count
         return out
@@ -1467,6 +1497,9 @@ class Glm53Engine:
             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
             committed = len(new)                                           # clipped tokens must not enter the next turn's context
             committed_counts.append(committed)
+            boundary = (s.ctx + committed) // self.F.block * self.F.block
+            if committed and boundary > s.ctx:
+                self.caches.stash_draft(s.slot, boundary)                  # the cells a snapshot at the boundary needs, before observe
             if aux is not None:
                 prepared = getattr(self.decode_graphs, "observations", {}).get(shape) if self.decode_graphs is not None else None
                 if prepared is not None:

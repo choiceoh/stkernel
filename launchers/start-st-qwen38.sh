@@ -50,7 +50,16 @@ case "$RECLAIM_FILE_CACHE" in
 esac
 RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/st-qwen38-tep4}
 ENGINE_DIR=${ST_ENGINE_DIR:-/home/choiceoh/st-engine-qwen38}
-[ "$(basename "$ENGINE_DIR")" != st-engine ] || { echo "ABORT: $ENGINE_DIR is production's release tree" >&2; exit 2; }
+# A shell carrying production's environment must not rsync --delete this tree over a release or retag its image:
+# production runs ~/st-engine or a pinned ~/st-releases/<commit> as st-engine:glm53 or st-engine:prod-<commit>.
+case "$(readlink -m "$ENGINE_DIR")" in
+  */st-engine|*/st-engine/|/home/choiceoh/st-releases|/home/choiceoh/st-releases/*)
+    echo "ABORT: $ENGINE_DIR is production's release tree; a Qwen3.8 window uses its own (ST_ENGINE_DIR)" >&2; exit 2 ;;
+esac
+case "$IMAGE" in
+  st-engine:glm53|st-engine:prod-*)
+    echo "ABORT: $IMAGE is production's image tag; a Qwen3.8 window builds its own (ST_IMAGE)" >&2; exit 2 ;;
+esac
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-qwen38

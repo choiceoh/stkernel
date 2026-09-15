@@ -88,8 +88,9 @@ def _rows_by_sorting(logits, temperature, top_k, top_p, uniform, valid, probs):
         w = torch.where(keep, w, torch.zeros((), device=w.device))
         total = w.sum()
         if uniform is not None:
-            out[i] = int(torch.searchsorted(w.cumsum(0).contiguous(), (float(uniform[i]) * total).reshape(1),
-                                            right=True).clamp_max(N - 1))
+            walk = w.cumsum(0)                             # past the walk's end: its last id with mass (_inverse_cdf)
+            out[i] = int(torch.searchsorted(walk.contiguous(), (float(uniform[i]) * total).reshape(1),
+                                            right=True).clamp_max(walk.argmax()))
         if probs is not None:
             probs[i, :N] = w / total
     return out if uniform is not None else None
@@ -144,8 +145,8 @@ if __name__ == "__main__":
 
 
 # ---- the OpenAI-dialect options a row may carry (45차 §23 A3/A4/B4) ----------------------------------------------
-# A row with any of these leaves the captured sampler: its logits are gathered whole and processed here, on every
-# rank identically (the same keyed uniforms, base/draws), so the picks agree without a message.
+# Synchronous/prefill rows use the reference below. Device decode carries options
+# and committed history in base/sampling_options; sampled verdicts agree across ranks.
 
 OPTION_KEYS = ("top_p", "top_k", "seed", "presence_penalty", "frequency_penalty", "repetition_penalty",
                "logit_bias", "stop_token_ids", "logprobs", "grammar", "grammar_after",
@@ -360,11 +361,17 @@ def _inverse_cdf(probs: torch.Tensor, u: torch.Tensor) -> torch.Tensor:
 
     `torch.multinomial` is a whole kernel to do this and arrives with two host-side sanity checks
     bolted on; vLLM avoids it with V exponentials a row (Gumbel-max). The walk needs one uniform.
+
+    A uniform just below one, against a total summed in another order than the walk, can aim past the
+    walk's end. That draw was headed for the last id with mass, which is where the walk first reaches its
+    end (`argmax` answers the first maximum); clamping to V - 1 handed out the vocabulary's last id,
+    whatever its mass. kernels/common/sampler guards its draw the same way.
     """
     flat = probs.reshape(-1, probs.shape[-1])
+    walk = flat.cumsum(-1)
     aim = (u.reshape(-1) * flat.sum(-1)).unsqueeze(1)
-    return torch.searchsorted(flat.cumsum(-1).contiguous(), aim.contiguous(), right=True) \
-        .squeeze(1).clamp_max(flat.shape[-1] - 1)
+    pick = torch.searchsorted(walk.contiguous(), aim.contiguous(), right=True).squeeze(1)
+    return torch.minimum(pick, walk.argmax(-1))
 
 
 def draw(probs: torch.Tensor, uniform) -> int:
@@ -687,3 +694,14 @@ def top_logprobs(logits: torch.Tensor, chosen: int, k: int) -> "tuple[float, lis
     lp = torch.log_softmax(logits.float(), dim=-1)
     top = lp.topk(k).indices.tolist() if k > 0 else []
     return float(lp[chosen]), [(i, float(lp[i])) for i in top]
+
+
+def top_logprobs_batch(logits: torch.Tensor, chosen, k: int):
+    """The same scores for a block, with compact readbacks instead of one per top token."""
+    lp = torch.log_softmax(logits.float(), dim=-1)
+    values, ids = lp.topk(k, dim=-1)
+    tokens = torch.tensor(chosen, dtype=torch.int64, device=logits.device)
+    scores = lp.gather(1, tokens.unsqueeze(1)).squeeze(1).tolist()
+    tops, scores_top = ids.tolist(), values.tolist()
+    return [(tok, score, list(zip(top, top_scores)))
+            for tok, score, top, top_scores in zip(chosen, scores, tops, scores_top)]

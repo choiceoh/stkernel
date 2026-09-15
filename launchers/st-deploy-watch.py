@@ -20,7 +20,9 @@ same reason `base/fleet_lease.py` is: it has to be runnable where the engine's v
 3. *The suite did not regress.* The engine tests are run over the candidate tree AND over the tree
    that is deployed, and the answer is the DIFFERENCE: files that fail on the candidate and not on
    the deployed one, or fail worse. A dozen engine test files fail on any tree right now, so an
-   absolute count is not a signal and a green bar is not available; the delta is.
+   absolute count is not a signal and a green bar is not available; the delta is. Each tree's files
+   run inside the seed image that tree pins (engine/runtime/dependencies.json), CUDA hidden -- the
+   libraries it would boot with, not the head's python, which has no torch.
 
 What it does NOT do: it does not arm itself (`--install` prints the two commands and stops), it
 does not take the fleet from another stack -- nor from a ticket the queue granted or a session's
@@ -176,16 +178,71 @@ def boot_ticket_waiting(fleet_dir: "Path | None" = None) -> "str | None":
     return None
 
 
+# The gate's container: one per tree, the files in parallel inside it. It runs on rank 0's node beside the
+# door and the scheduler while they serve, so it is niced, CPU- and memory-bounded, and has no network or GPU.
+GATE_WORKERS = 4
+GATE_CPUS = "4"
+GATE_MEMORY = "6g"
+GATE_MARK = "ST_GATE "
+GATE_DRIVER = r"""
+import json, os, subprocess, sys
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+os.nice(19)
+timeout, workers = int(sys.argv[1]), int(sys.argv[2])
+def verdict(name):
+    try:
+        done = subprocess.run([sys.executable, "-m", "unittest", "tests." + name], capture_output=True, text=True,
+                              timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return name, "NO VERDICT (timed out)"
+    tail = (done.stdout + done.stderr).strip().splitlines()
+    return name, next((line for line in reversed(tail) if line.startswith(("OK", "FAILED"))), "NO VERDICT")
+names = sorted(path.stem for path in Path("tests").glob("test_engine_*.py"))
+with ThreadPoolExecutor(max_workers=workers) as pool:
+    print("ST_GATE " + json.dumps(dict(pool.map(verdict, names))), flush=True)
+"""
+
+
+def gate_image(tree: Path) -> str:
+    """The seed image `tree` pins: its tests run on the libraries it would boot with."""
+    return json.loads((tree / "engine/runtime/dependencies.json").read_text())["seed_image_id"]
+
+
 def failures(tree: Path, timeout: int) -> "dict[str, str]":
-    """{test file: its one-line verdict} for the files that do not pass, over `tree`."""
+    """{test file: its one-line verdict} for the files that do not pass, over `tree`.
+
+    The files run in the tree's own seed image with CUDA hidden, one container per tree. They used to
+    run under the head's python, which has no torch: every file that imports it failed, and the gate
+    counted 76 "regressions" against the 09-13 tree and refused every deploy (2026-09-15). A container
+    that cannot say anything -- no pinned seed, the image not on this node, docker failing -- leaves
+    every file of the tree without a verdict, and the gate refuses on that rather than passing.
+    """
+    names = sorted(path.stem for path in (tree / "tests").glob("test_engine_*.py"))
+
+    def unknown(reason):
+        return {name: f"NO VERDICT ({reason})" for name in names}
+
+    try:
+        image = gate_image(tree)
+    except (OSError, KeyError, ValueError) as exc:
+        return unknown(f"no seed image pinned: {type(exc).__name__}")
+    cmd = ["docker", "run", "--rm", "--pull", "never", "--network", "none", "--cpus", GATE_CPUS,
+           "--memory", GATE_MEMORY, "-e", "CUDA_VISIBLE_DEVICES=", "-e", "NVIDIA_VISIBLE_DEVICES=void",
+           "-e", "PYTHONPATH=/repo", "-v", f"{tree}:/repo:ro", "-w", "/repo", "--entrypoint", "python3", image,
+           "-c", GATE_DRIVER, str(timeout), str(GATE_WORKERS)]
+    try:
+        code, stdout, stderr = run(cmd, timeout=max(3600, 4 * timeout))
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return unknown(f"gate container: {type(exc).__name__}")
+    line = next((line for line in reversed(stdout.splitlines()) if line.startswith(GATE_MARK)), None)
+    if line is None:
+        said = (stderr or stdout).strip().splitlines()
+        return unknown(f"gate container rc={code}: {said[-1][:160] if said else 'no output'}")
+    verdicts = json.loads(line[len(GATE_MARK):])
     out = {}
-    for path in sorted((tree / "tests").glob("test_engine_*.py")):
-        name = path.stem
-        # niced: this runs on rank 0's node, beside the door and the scheduler, while they serve
-        code, stdout, stderr = run(["nice", "-n", "19", sys.executable, "-m", "unittest", f"tests.{name}"],
-                                   cwd=tree, timeout=timeout)
-        tail = (stdout + stderr).strip().splitlines()
-        verdict = next((line for line in reversed(tail) if line.startswith(("OK", "FAILED"))), "NO VERDICT")
+    for name in names:
+        verdict = verdicts.get(name, "NO VERDICT")
         if not verdict.startswith("OK"):
             out[name] = re.sub(r"id='\d+'", "id=..", verdict)
     return out
@@ -197,6 +254,39 @@ def regressed(deployed: "dict[str, str]", candidate: "dict[str, str]") -> "list[
 
 
 # -- the actions ----------------------------------------------------------------------------------
+GATE_TREES = RELEASES / "gate"
+
+
+def gate_tree(sha: str, log) -> "Path | None":
+    """The whole commit `sha`, for the gate to judge: extracted once, next to the releases.
+
+    A release carries only what boots (CARRY), and the engine tests also read bench/, tools/ and
+    measurements/ beside it. Judged over release trees, seven files that pass on their commit failed
+    for a missing file, and the gate refused main for it (2026-09-15)."""
+    target = GATE_TREES / sha[:12]
+    if target.is_dir():
+        return target
+    staging = target.with_suffix(".partial")
+    run(["rm", "-rf", str(staging)])
+    staging.mkdir(parents=True)
+    code, _, err = run(["bash", "-c", f"set -o pipefail; git -C {SOURCE} archive {sha} | tar -x -C {staging}"])
+    if code:
+        log(f"  gate: cannot extract {sha[:12]} ({err.strip()[:80]})")
+        run(["rm", "-rf", str(staging)])
+        return None
+    staging.rename(target)
+    return target
+
+
+def prune_gate_trees(keep) -> None:
+    """Only the trees a next cycle can compare stay: the candidate's and the deployed commit's."""
+    names = {sha[:12] for sha in keep if sha}
+    if GATE_TREES.is_dir():
+        for path in GATE_TREES.iterdir():
+            if path.name not in names:
+                run(["rm", "-rf", str(path)])
+
+
 def cut(sha: str, log) -> "Path | None":
     """A release directory for `sha`: a checkout, not a copy of a working tree that may be mid-edit.
 
@@ -310,9 +400,14 @@ def cycle(a, log) -> int:
         return 1
     deployed_tree = Path(held["release"]) if held.get("release") and Path(held["release"]).exists() else None
     if a.gate and deployed_tree is not None:
-        log("  gate: the engine suite over the candidate and over what is deployed")
-        after = failures(release, a.test_timeout)
-        before = failures(deployed_tree, a.test_timeout)
+        log("  gate: the engine suite over the candidate and over what is deployed, each commit whole")
+        judged, baseline = gate_tree(head, log), gate_tree(held["deployed"], log) if held.get("deployed") else None
+        if judged is None or baseline is None:
+            log("  REFUSED: the gate could not extract both commits; nothing recorded, the next cycle tries again")
+            return 1
+        after = failures(judged, a.test_timeout)
+        before = failures(baseline, a.test_timeout)
+        prune_gate_trees((head, held.get("deployed")))
         worse = regressed(before, after)
         if worse:
             log(f"  REFUSED: {len(worse)} file(s) regressed against {deployed_tree.name}: {', '.join(worse)}")
