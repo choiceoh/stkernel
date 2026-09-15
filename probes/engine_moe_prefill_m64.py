@@ -45,6 +45,10 @@ ROWS = (65, 129, 1024, 2304, 2305, 4608, 6912, 8192)
 ORACLE_ROWS = 129          # the reference lane loops over experts in Python
 REPEATS = 3
 TOLERANCE_FACTOR = 4.0
+# A candidate that cannot reproduce its own output is not a reorder, it is a defect, and no
+# cross-arm rule can rescue it: `across <= floor x factor` is vacuous once the floor is large.
+# An FP32-atomic reorder on a BF16 result lands far under this.
+REPRODUCIBLE_CEILING = 1e-3
 
 SOURCES = (
     'engine/kernels/b12x/moe_dynamic_prefill_m64.py',
@@ -252,11 +256,17 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
                    reached_with=seen.get('reached_with'), passed=False)
             continue
 
-        floor = max(_spread(m128_runs), _spread(m64_runs))
+        control_spread, candidate_spread = _spread(m128_runs), _spread(m64_runs)
+        floor = max(control_spread, candidate_spread)
         across = _relative(m64_runs[0], m128_runs[0])
+        # Two rules, and the first is the one that matters: the candidate must agree with
+        # ITSELF. Only then does comparing the arms against that floor mean anything.
+        reproducible = candidate_spread <= max(control_spread * tolerance_factor,
+                                               REPRODUCIBLE_CEILING)
         within = across <= max(floor * tolerance_factor, 1e-6)
-        values = dict(m=m, m128_spread=_spread(m128_runs), m64_spread=_spread(m64_runs),
-                      across_arms=across, floor=floor, within_reorder_noise=within)
+        values = dict(m=m, m128_spread=control_spread, m64_spread=candidate_spread,
+                      across_arms=across, floor=floor, reproducible=reproducible,
+                      within_reorder_noise=within)
 
         if m <= ORACLE_ROWS:
             oracle = reference(x, sel, w, *weights, cell.swiglu_limit, scales=scales)
@@ -277,9 +287,12 @@ def gpu_check(report, ranks, output, rows, repeats, tolerance_factor):
             values[f'{label}_bracket_drift'] = abs(t_b1 - t_b2) / base if base else None
             del b1, a1, a2, b2
 
-        if not within:
+        if not reproducible:
+            failures.append(f'{m} rows: the candidate disagrees with itself by '
+                            f'{candidate_spread:.3e} (the control: {control_spread:.3e})')
+        elif not within:
             failures.append(f'{m} rows: arms differ by {across:.3e}, floor {floor:.3e}')
-        report('rows', passed=within, **values)
+        report('rows', passed=reproducible and within, **values)
 
     report('verdict', passed=not failures, failures=failures, skipped_static_rows=skipped)
     if output:

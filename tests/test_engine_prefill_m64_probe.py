@@ -81,6 +81,34 @@ class NoiseArithmeticTests(unittest.TestCase):
         self.assertEqual(self.m._spread([]), 0.0)
 
 
+class GateRuleTests(unittest.TestCase):
+    """The rule must fail a candidate that cannot reproduce itself.
+
+    The first srv4 run passed a candidate whose own repeats differed by 107%: the rule was
+    `across <= floor x factor`, and the floor was the candidate's own spread, so a broken
+    arm raised the bar it was measured against. A self-agreement rule comes first.
+    """
+
+    def test_a_candidate_that_disagrees_with_itself_cannot_be_rescued_by_the_cross_arm_rule(self):
+        m = probe()
+        control, candidate, across = 0.0, 1.0674, 1.8522      # the measured m=1024 row
+        self.assertFalse(candidate <= max(control * m.TOLERANCE_FACTOR, m.REPRODUCIBLE_CEILING),
+                         'a 107% self-spread must fail the reproducibility rule')
+        self.assertTrue(across <= max(max(control, candidate) * m.TOLERANCE_FACTOR, 1e-6),
+                        'and the cross-arm rule alone would have passed it')
+
+    def test_an_ordinary_reorder_still_passes(self):
+        m = probe()
+        control, candidate = 1.5e-4, 3.0e-4
+        self.assertTrue(candidate <= max(control * m.TOLERANCE_FACTOR, m.REPRODUCIBLE_CEILING))
+
+    def test_the_probe_checks_reproducibility_before_the_cross_arm_difference(self):
+        text = PROBE.read_text(encoding='utf-8')
+        self.assertIn('REPRODUCIBLE_CEILING', text)
+        self.assertLess(text.index('if not reproducible:'), text.index('elif not within:'),
+                        'self-agreement is the first gate')
+
+
 class ContractTests(unittest.TestCase):
     def test_every_named_source_exists(self):
         for name in probe().SOURCES:
