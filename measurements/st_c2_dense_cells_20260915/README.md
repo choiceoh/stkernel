@@ -300,3 +300,22 @@ is small, about −1.2 µs per KDA layer. The 8-row rows recheck #968 on this bu
   - all 1,024 B shared, zero stack/local.
 - Production-flag native compile/load with CUDA hidden: `compile-producer-pack16.json`.
 - 63 tests, 40 passed and 23 GPU skips (`cpu-tests-producer-pack16.log`).
+
+**Post-merge confirmation.** Session `c2oprojpack16-postmerge0915` ran on main `d5f0b1aa` (#978's squash), 11:24:51–11:25:02, beside production.
+- Its five hashed sources equal both the pre-merge ticket's and the merged tree's: kernels.cu, dense `__init__.py`, kda `output.py` and both probes.
+- Raw events: `gpu-c2oprojpack16-postmerge0915.jsonl`.
+- PASS: exact at 8 and 16 rows, single and chain, both replay orders.
+
+| Rows | Scope | Cache | Control → producer mean / min µs | Mean Δ | Min Δ | Samples (control / producer) |
+|---:|---|---|---:|---:|---:|---|
+| 16 | chain ×8 | evicted | 302.03 / 301.56 → 300.39 / 299.75 | −0.54% | −0.60% | 302.4, 302.3, 301.9, 301.6 / 300.8, 299.7, 300.7, 300.4 |
+| 16 | chain ×8 | warm | 256.30 / 251.92 → 253.68 / 249.17 | −1.02% | −1.09% | |
+| 16 | single | evicted | 57.10 / 56.83 → 57.07 / 57.04 | −0.05% | +0.36% | 57.1, 57.4, 57.0, 56.8 / 57.0, 57.1, 57.1, 57.1 |
+| 16 | single | warm | 27.01 / 26.83 → 26.81 / 26.75 | −0.75% | −0.27% | |
+| 8 | chain ×8 | evicted | 280.53 / 280.12 → 277.55 / 277.21 | −1.06% | −1.04% | |
+| 8 | chain ×8 | warm | 223.45 / 218.91 → 217.45 / 217.35 | −2.69% | −0.71% | |
+| 8 | single | evicted | 54.29 / 54.24 → 53.49 / 53.38 | −1.47% | −1.58% | |
+| 8 | single | warm | 18.44 / 18.26 → 18.17 / 18.13 | −1.49% | −0.72% | |
+
+The 16-row chain evicted win repeats: every producer sample is again below every control sample. One 16-row layer
+evicted is a tie (min +0.36%), so the verdict stays with the chain.
