@@ -82,8 +82,8 @@ class Recorder:
 
     def begin(self, token, diagnostic=False, concurrency=1, *, instrumentation=None):
         global _OBSERVER
-        if type(concurrency) is not int or concurrency not in (1, 4):
-            raise ValueError('latency concurrency must be 1 or 4')
+        if type(concurrency) is not int or not 1 <= concurrency <= 4:
+            raise ValueError('latency concurrency must be between 1 and 4')
         if not re.fullmatch(r'[a-zA-Z0-9_-]{1,100}', token):
             raise ValueError('invalid latency request token')
         if self.active is not None:
