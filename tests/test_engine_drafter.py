@@ -462,5 +462,18 @@ class ObserveOverlapTests(unittest.TestCase):
         self.assertTrue(all(torch.equal(a[0], b[0]) and torch.equal(a[1], b[1]) for a, b in zip(full, part)))
 
 
+@unittest.skipUnless(torch is not None, "requires PyTorch")
+class AuxLayerConventionTests(unittest.TestCase):
+    def test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads(self):
+        """DFlash's ids are 0-based layers whose completed OUTPUT feeds fc: the reference implementation reads
+        hidden_states[id + 1], SGLang captures before layer id + 1, and vLLM adds 1 for its before-layer capture.
+        GLM-5.3's config says 5, 14, 24, 33, 42; the profile read 4, 13, 23, 32, 41 until 2026-09-15."""
+        from engine.profiles.glm53.drafter import DrafterFacts
+        F = DrafterFacts(layers=5, hidden=4096, heads=32, kv_heads=8, head_dim=128, inter=12288, rms_eps=1e-5,
+                         rope_theta=1e4, window=2048, block=8, mask_id=154856, conv_taps=2, conv_group=16,
+                         sel_rank=256, sel_top_k=16, target_layers=(5, 14, 24, 33, 42), k=7)
+        self.assertEqual(F.aux_layers, [5, 14, 24, 33, 42])
+
+
 if __name__ == "__main__":
     unittest.main()
