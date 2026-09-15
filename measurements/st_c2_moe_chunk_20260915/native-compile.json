@@ -1,0 +1,249 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "chunks": [
+    512,
+    256
+  ],
+  "kernels": [
+    {
+      "kind": "static",
+      "rows": 8,
+      "chunk": 512,
+      "stamps": false,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync_58cb3f3f89e47138",
+      "status": "PASS",
+      "seconds": 7.86
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 512,
+      "stamps": false,
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3sync_46a439c51a9ac540",
+      "status": "PASS",
+      "seconds": 8.78
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "chunk": 512,
+      "stamps": false,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1_f23c350dfd1c8659",
+      "status": "PASS",
+      "seconds": 4.65
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 512,
+      "stamps": true,
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32swutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3sync_abea0b6cdba4dbcf",
+      "status": "PASS",
+      "seconds": 8.99
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "chunk": 256,
+      "stamps": false,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncc256_7c3f2043841e4861",
+      "status": "PASS",
+      "seconds": 7.85
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 256,
+      "stamps": false,
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncc256_8d00defb17275e85",
+      "status": "PASS",
+      "seconds": 9.08
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "chunk": 256,
+      "stamps": false,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutsf6v1c256_ac8e15357194d51d",
+      "status": "PASS",
+      "seconds": 4.76
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 256,
+      "stamps": true,
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32swutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncc256_6b64e295545d877a",
+      "status": "PASS",
+      "seconds": 9.24
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 512,
+      "c2_fc2_prefetch": false,
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreusesync_b89a2709db1dcd5e",
+      "status": "PASS",
+      "seconds": 9.85
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 512,
+      "c2_fc2_prefetch": false,
+      "stamps": true,
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32swutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreusesync_0dc93f76740375e3",
+      "status": "PASS",
+      "seconds": 9.54
+    },
+    {
+      "kind": "static",
+      "rows": 8,
+      "chunk": 512,
+      "stamps": true,
+      "name": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32swutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync_5059a14facf5d685",
+      "status": "PASS",
+      "seconds": 8.55
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 512,
+      "spec": "xa",
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncxa_75dde5ff41e062b7",
+      "status": "PASS",
+      "seconds": 9.54
+    },
+    {
+      "kind": "static",
+      "rows": 16,
+      "chunk": 512,
+      "spec": "xs",
+      "name": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncxs_b65cef8d7e4c7175",
+      "status": "PASS",
+      "seconds": 7.13
+    },
+    {
+      "kind": "static",
+      "rows": 12,
+      "chunk": 512,
+      "stamps": false,
+      "name": "static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1_484da90bf608c023",
+      "status": "PASS",
+      "seconds": 2.42
+    },
+    {
+      "kind": "static",
+      "rows": 12,
+      "chunk": 512,
+      "reform_every_static": true,
+      "name": "static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync_6fa5f9e0e8cf7672",
+      "status": "PASS",
+      "seconds": 4.32
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "chunk": 512,
+      "reform_every_static": true,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssync_9ef6e323e46a3d30",
+      "status": "PASS",
+      "seconds": 4.61
+    },
+    {
+      "kind": "static",
+      "rows": 12,
+      "chunk": 256,
+      "stamps": false,
+      "name": "static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutsf6v1c256_ec2527bc0425a80c",
+      "status": "PASS",
+      "seconds": 2.51
+    },
+    {
+      "kind": "static",
+      "rows": 12,
+      "chunk": 256,
+      "reform_every_static": true,
+      "name": "static2_m12_k4096_n512_t8_r96_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncc256_46f3b40239428ab3",
+      "status": "PASS",
+      "seconds": 4.2
+    },
+    {
+      "kind": "static",
+      "rows": 32,
+      "chunk": 256,
+      "reform_every_static": true,
+      "name": "static2_m32_k4096_n512_t8_r256_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncc256_8834cfa016f1aa5a",
+      "status": "PASS",
+      "seconds": 4.32
+    },
+    {
+      "kind": "dynamic",
+      "rows": 2304,
+      "chunk": 512,
+      "packets": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_fb88d8562a179eab",
+      "status": "PASS",
+      "seconds": 4.5
+    },
+    {
+      "kind": "dynamic",
+      "rows": 16384,
+      "chunk": 512,
+      "packets": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_4e466f602bfca73d",
+      "status": "PASS",
+      "seconds": 3.62
+    },
+    {
+      "kind": "dynamic",
+      "rows": 16384,
+      "chunk": 512,
+      "packets": true,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_03b7bd3e8012fc3a",
+      "status": "PASS",
+      "seconds": 3.64
+    },
+    {
+      "kind": "dynamic",
+      "rows": 2304,
+      "chunk": 256,
+      "packets": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_c256_dd58ad6818694ca1",
+      "status": "PASS",
+      "seconds": 3.53
+    },
+    {
+      "kind": "dynamic",
+      "rows": 16384,
+      "chunk": 256,
+      "packets": false,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_c256_9fec29e68d6828c3",
+      "status": "PASS",
+      "seconds": 3.51
+    },
+    {
+      "kind": "dynamic",
+      "rows": 16384,
+      "chunk": 256,
+      "packets": true,
+      "name": "dynamic_e288_k4096_n512_t8_tiled_c256_cbd6a9c193a4f34d",
+      "status": "PASS",
+      "seconds": 3.46
+    }
+  ],
+  "scope": "native compile of the served handles per w13 chunk; GPU numerics and timing pending",
+  "source_sha256": {
+    "engine/kernels/b12x/moe_dispatch.py": "b6e66e60f5d7726e49523f268b9ffbc3dbe81bfb79350bb771d4653da9708f22",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "22db8bae78e0f8202b8929bc0c3e8f8b2b15c9d3fb74befeb63bbb3fef29cbab",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "86a0256e7f9519ca548e3150c9c6fd5a2fae5b84f3ee12a324220c93bb789864",
+    "engine/kernels/b12x/moe_static_common.py": "e2576dcf4fc1d442fcd882c772d1d6da65e92c4cc97d79db1b68e7961d99b2f7",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6.py": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_q0.py": "759a519145c3edecac42ea917abbd8003b142f02ba4d41f86fc2d58e939a51ba",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_q0_words.py": "7e6662a438dab421a0ddb38bb857eb9a553fb8bab81d3865a02e6b6e338da755",
+    "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a",
+    "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "22ac9d842fc180a3c292928ce98fd6ff7d07453267e08eac604f43d7de7b28c6",
+    "probes/engine_moe_chunk_compile.py": "8dc3ab39212cc093839f2f62078541d447afd598ba580fc11958cc15ad6a4086"
+  }
+}
