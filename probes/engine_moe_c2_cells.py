@@ -1,10 +1,16 @@
-"""C=2 routed-expert cells on real rank weights: the tile-major w13 chunk, the per-item timeline, and prefill.
+"""C=2 routed-expert cells on real rank weights: the tile-major w13 chunk, FC2 ring depth, the per-item timeline.
 
-Same build, same process, one set of rank bytes. Every arm is the served b12x MoE (t,r,sf6,batch,q0) over its
-own tile-major copy of w13 at one chunk (moe_static_kernel_v5.TILED_W13_CHUNKS); w2, the SF6 scale planes and
-the alphas are the served layer's. Chunk 512 (moe_static_kernel_v5.TILED_W13_K_IN) is the same-build control.
-Numerics precede timing and are zero-tolerance: the FP32 scatter accumulator a decode finalizer consumes, and
-the BF16 output of a prefill call.
+Same build, same process, one set of rank bytes. An arm is the served b12x MoE (t,r,sf6,batch,q0) over one w13
+chunk (moe_static_kernel_v5.TILED_W13_CHUNKS) and, for the depth arm, one static-lane config; w2, the SF6 scale
+planes and the alphas are the served layer's. Chunk 512 (moe_static_kernel_v5.TILED_W13_K_IN) with the served
+config is the same-build control.
+
+Numerics precede timing. The kernel adds its FP32 (decode, Q0 prefill) or BF16 (long prefill) route partials
+atomically in an order it does not specify, so the same handle replayed twice can differ in the last ulp of a
+sum. Every comparison therefore also replays a second copy of the control and reports both pairs: how many FP32
+elements differ and by how many ulps, how many BF16 model-boundary values (BF16(FP32 scatter), what the
+finalizer consumes) differ. The gate is the ulp bound: an arm reading wrong bytes or scales moves values by
+orders of magnitude, an add order by a few ulps; the BF16 counts are reported against the control's own.
 
 Occupancy is each layer's real router over synthetic rows. A request is a group of related verify rows whose
 spread is calibrated so one 8-row request reads the fleet's 41.9 distinct experts per layer
@@ -14,10 +20,14 @@ one graph, each with its own weights and routes, which no L2 holds at once. Timi
 (64 replays per sample) and evicted (a 128 MiB flush before every replay, outside the events).
 
 Sections (engine_kernel_check.py --lanes moe_c2_cells[:section...][:layers=3,4,5][:chunks=512,256,128]):
-  chunk    exactness and timing of every chunk against 512: C=2 two requests, C=1 one request, 16 independent rows
+  chunk    noise-controlled exactness and timing of every chunk against 512: C=2 two requests, C=1 one request,
+           16 independent rows
+  depth    the C=2 tile's FC2 prefetch ring (three slots, #962) against two slots: does a deeper ring stream
+           faster per CTA (exactness, timing, stamps)
   stamps   the stamped 16-row tile per chunk (eager calls): per-item FC1+quant / publication / FC2 and the CTA
            timeline, so FC1's and FC2's rates can be read apart
-  prefill  exactness and eager timing of the served prefill kernels per chunk (m=2304 Q0 words, m=9216 SF6 words)
+  prefill  noise-controlled exactness and eager timing of the served prefill kernels per chunk (m=2304 Q0 words,
+           m=9216 SF6 words)
   price    what the FC1 input (A + SFA) and scale (SF6) boxes cost the served 16-row tile: the probe-only timing
            cells xa / xs skip those TMA issues (their numerics are garbage and are not compared)
 """
@@ -37,6 +47,7 @@ from probes.engine_decode_fusions import _capture, _time
 TARGET_U8 = 41.9      # distinct experts per layer an 8-row C=1 verify reads on the fleet
 LAYERS = (3, 4, 5)
 CHUNKS = (512, 256, 128)
+SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'price')
 RANKS = '/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors'
 # bytes a unique expert streams per layer: w13 + w2 + SF6 FC1 (128 x 1552) + SF6 FC2 (64 x 1552)
 EXPERT_BYTES = 1024 * 2048 + 4096 * 256 + (128 + 64) * 1552
@@ -44,6 +55,10 @@ EXPERT_BYTES = 1024 * 2048 + 4096 * 256 + (128 + 64) * 1552
 # + 16 SFA x 256 B + 32 SF6 x 1552 B; FC2 = 16 B stages x 16 KB + 16 SF6 x 1552 B
 FC1_ITEM_BYTES = 32 * 16384 + 16 * 2048 + 16 * 256 + 32 * 1552
 FC2_ITEM_BYTES = 16 * 16384 + 16 * 1552
+# the numerical gate: an add order moves a sum by a few ulps of its largest partial, which is the tensor's
+# scale for a sum that cancels to ~0; wrong bytes or scales move it by that scale itself (>= 1e4 ulps)
+MAX_ULPS = 64
+MAX_BF16_REL = 0.25
 
 
 def _sample_sha(t):
@@ -140,6 +155,31 @@ def calibrate(layers, report):
     return spread
 
 
+def fp32_noise(got, want):
+    """FP32 accumulator difference in ulps, and the BF16 model-boundary values it changes."""
+    d = (got - want).abs()
+    rms = want.float().pow(2).mean().sqrt().clamp_min(2.0 ** -20)
+    scale = torch.maximum(torch.maximum(got.abs(), want.abs()), rms.expand_as(want))
+    ulp = torch.nextafter(scale, torch.full_like(scale, float('inf'))) - scale
+    return dict(fp32_diff=int((d != 0).sum()), fp32_max_abs=float(d.max()), fp32_max_ulps=float((d / ulp).max()),
+                bf16_diff=int((got.bfloat16() != want.bfloat16()).sum()))
+
+
+def bf16_noise(got, want):
+    """BF16 output difference, relative to the larger magnitude."""
+    g, w = got.float(), want.float()
+    d = (g - w).abs()
+    rms = w.pow(2).mean().sqrt().clamp_min(2.0 ** -10)
+    scale = torch.maximum(torch.maximum(g.abs(), w.abs()), rms.expand_as(w))
+    return dict(bf16_diff=int((d != 0).sum()), bf16_max_abs=float(d.max()), bf16_max_rel=float((d / scale).max()))
+
+
+def _merge(total, cell):
+    for k, v in cell.items():
+        total[k] = max(total.get(k, 0), v) if k.startswith(('fp32_max', 'bf16_max')) else total.get(k, 0) + v
+    return total
+
+
 def bracket(report, graphs, control, candidate, *, brackets, **meta):
     flush = torch.empty(128 << 20, device='cuda', dtype=torch.uint8)
     out = {}
@@ -172,116 +212,152 @@ def bracket(report, graphs, control, candidate, *, brackets, **meta):
     return out
 
 
+class Fixtures:
+    """Static x / per-layer ids and routes a row count's graphs read; `load` refills them for a fixture."""
+
+    def __init__(self, layers, rows):
+        self.layers, self.rows = layers, rows
+        self.x = torch.empty(rows, 4096, device='cuda', dtype=torch.bfloat16)
+        self.ids = [torch.zeros(rows, 8, device='cuda', dtype=torch.int32) for _ in layers]
+        self.routes = [torch.full((rows, 8), 1. / 8, device='cuda') for _ in layers]
+
+    def load(self, fixture, seed, *, zero_route=False):
+        _, _, groups, spread = fixture
+        self.x.copy_(grouped(self.rows, groups, spread, seed))
+        for layer, i, r in zip(self.layers, self.ids, self.routes):
+            picked, weight = layer.route(self.x)
+            i.copy_(picked)
+            r.copy_(weight)
+            if zero_route:
+                r[0, 0] = 0.
+        return [int(i.unique().numel()) for i in self.ids]
+
+
+def capture_arms(group, fx, arms):
+    """arms: [(label, chunk, static-lane config or None for the served one)] -> (graphs, FP32 accumulators)."""
+    from engine.kernels.b12x import moe_dispatch as md
+    accs = {label: [torch.empty(fx.rows, 4096, device='cuda', dtype=torch.float32) for _ in group]
+            for label, _, _ in arms}
+    graphs = {}
+    previous = md._STATIC_V2_OVERRIDE
+    try:
+        for label, chunk, config in arms:
+            md._STATIC_V2_OVERRIDE = config if config is not None else previous
+
+            def run(label=label, chunk=chunk):
+                outs = []
+                for layer, i, r, acc in zip(group, fx.ids, fx.routes, accs[label]):
+                    def finalize(accumulator, acc=acc):
+                        acc.copy_(accumulator)
+                        return acc
+                    outs.append(layer.moe(chunk, fx.x, i, r, finalize=finalize))
+                return outs
+            graphs[label], _ = _capture(run)
+    except BaseException:
+        for graph in graphs.values():
+            graph.reset()
+        raise
+    finally:
+        md._STATIC_V2_OVERRIDE = previous
+    return graphs, accs
+
+
+def exact_arms(report, group, fx, fixtures, graphs, accs, control, second, candidates, *, scope, seeds=3):
+    """Replay every arm in both orders over changed inputs/routes, a zero route and poisoned accumulators; gate
+    each candidate (and the control's second copy) on the ulp bound against the control."""
+    labels = [control, *candidates, second]
+    for fixture in fixtures:
+        totals = {label: {} for label in (second, *candidates)}
+        cells, uniques = 0, []
+        for seed in range(seeds):
+            uniques = fx.load(fixture, 1000 * seed + fx.rows, zero_route=seed == seeds - 1)[:len(group)]
+            for order in (labels, labels[::-1]):
+                for label in labels:
+                    for acc in accs[label]:
+                        acc.fill_(float('nan'))
+                for label in order:
+                    graphs[label].replay()
+                torch.cuda.synchronize()
+                for label in (second, *candidates):
+                    for n, (got, want) in enumerate(zip(accs[label], accs[control])):
+                        if not want.isfinite().all().item() or not got.isfinite().all().item():
+                            raise RuntimeError(f'{fixture[0]} {scope} layer {group[n].L} {label}: unwritten accumulator')
+                        _merge(totals[label], fp32_noise(got, want))
+                cells += 1
+        for label, total in totals.items():
+            ok = total['fp32_max_ulps'] <= MAX_ULPS
+            report('exact', fixture=fixture[0], rows=fx.rows, scope=scope, layers=[l.L for l in group],
+                   reference=control, arm=label, noise_control=label == second, cells=cells, unique_experts=uniques,
+                   replay_orders='forward/reverse', poisoned=True, zero_route=True, elements=cells * len(group) * fx.rows * 4096,
+                   max_ulps_gate=MAX_ULPS, passed=ok, **total)
+            if not ok:
+                raise RuntimeError(f'{fixture[0]} {scope} {label}: FP32 accumulator {total["fp32_max_ulps"]:.3g} ulps '
+                                   f'from {control} (bound {MAX_ULPS})')
+
+
 def chunk_cells(report, layers, chunks, spread, brackets):
     control = 512
     fixtures = (('c2_two_requests', 16, 2, spread), ('c1_one_request', 8, 1, spread),
                 ('c2_independent', 16, 16, 1.0))
+    arms = [(str(c), c, None) for c in chunks] + [('512b', control, None)]
+    candidates = [str(c) for c in chunks if c != control]
     for rows in (16, 8):
-        x = torch.empty(rows, 4096, device='cuda', dtype=torch.bfloat16)
-        ids = [torch.zeros(rows, 8, device='cuda', dtype=torch.int32) for _ in layers]
-        routes = [torch.full((rows, 8), 1. / 8, device='cuda') for _ in layers]
+        fx = Fixtures(layers, rows)
         mine = [f for f in fixtures if f[1] == rows]
-
-        def load(fixture, seed):
-            name, _, groups, s = fixture
-            x.copy_(grouped(rows, groups, s, seed))
-            for layer, i, r in zip(layers, ids, routes):
-                picked, weight = layer.route(x)
-                i.copy_(picked)
-                r.copy_(weight)
-            return [int(i.unique().numel()) for i in ids]
-
-        load(mine[0], 1)
+        fx.load(mine[0], 1)
         for scope, group in (('single', layers[:1]), ('chain', layers)):
-            accs = {c: [torch.empty(rows, 4096, device='cuda', dtype=torch.float32) for _ in group] for c in chunks}
-            graphs = {}
+            graphs, accs = capture_arms(group, fx, arms)
             try:
-                for chunk in chunks:
-                    def run(chunk=chunk):
-                        outs = []
-                        for layer, i, r, acc in zip(group, ids, routes, accs[chunk]):
-                            def finalize(accumulator, acc=acc):
-                                acc.copy_(accumulator)
-                                return acc
-                            outs.append(layer.moe(chunk, x, i, r, finalize=finalize))
-                        return outs
-                    graphs[chunk], _ = _capture(run)
-                # zero tolerance against the served control, before any timing
-                cells = 0
+                exact_arms(report, group, fx, mine, graphs, accs, str(control), '512b', candidates, scope=scope)
                 for fixture in mine:
-                    for seed in range(3):
-                        uniques = load(fixture, 1000 * seed + rows)
-                        if seed == 2:
-                            for r in routes:
-                                r[0, 0] = 0.
-                        for order in (chunks, chunks[::-1]):
-                            for chunk in chunks:
-                                for acc in accs[chunk]:
-                                    acc.fill_(float('nan'))
-                            for chunk in order:
-                                graphs[chunk].replay()
-                            torch.cuda.synchronize()
-                            for chunk in chunks:
-                                for n, (got, want) in enumerate(zip(accs[chunk], accs[control])):
-                                    if not want.isfinite().all().item() or not got.isfinite().all().item():
-                                        raise RuntimeError(f'{fixture[0]} {scope} chunk {chunk}: unwritten accumulator')
-                                    if not torch.equal(got, want):
-                                        diff = (got - want).abs().max().item()
-                                        raise RuntimeError(f'{fixture[0]} {scope} layer {group[n].L} chunk {chunk}: '
-                                                           f'differs from 512 by {diff}')
-                            cells += 1
-                    report('exact', fixture=fixture[0], rows=rows, scope=scope, layers=[l.L for l in group],
-                           chunks=list(chunks), reference=control, cells=cells, unique_experts=uniques[:len(group)],
-                           replay_orders='forward/reverse', poisoned=True, zero_route=True)
-                for fixture in mine:
-                    uniques = load(fixture, 7)[:len(group)]
-                    for chunk in chunks:
-                        if chunk == control:
-                            continue
-                        res = bracket(report, graphs, control, chunk, brackets=brackets, fixture=fixture[0], rows=rows,
-                                      scope=scope, layers=len(group), unique_experts=uniques)
+                    uniques = fx.load(fixture, 7)[:len(group)]
+                    for label in candidates:
+                        res = bracket(report, graphs, str(control), label, brackets=brackets, fixture=fixture[0],
+                                      rows=rows, scope=scope, layers=len(group), unique_experts=uniques)
                         stream_bytes = sum(uniques) * EXPERT_BYTES
                         report('rate', fixture=fixture[0], rows=rows, scope=scope, unique_experts=uniques,
-                               expert_bytes=stream_bytes,
+                               expert_bytes=stream_bytes, candidate=label,
                                control_gbps_evicted=stream_bytes / res['evicted']['control_us']['mean'] * 1e6 / 1e9,
-                               candidate_gbps_evicted=stream_bytes / res['evicted']['candidate_us']['mean'] * 1e6 / 1e9,
-                               candidate=chunk)
+                               candidate_gbps_evicted=stream_bytes / res['evicted']['candidate_us']['mean'] * 1e6 / 1e9)
             finally:
                 for graph in graphs.values():
                     graph.reset()
 
 
+def depth_cells(report, layers, spread, brackets):
+    from engine.kernels.b12x import moe_dispatch as md
+    fixture = ('c2_two_requests', 16, 2, spread)
+    two_slots = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), c2_fc2_prefetch=False)
+    arms = [('served', 512, None), ('fc2_two_slots', 512, two_slots), ('served_b', 512, None)]
+    fx = Fixtures(layers, 16)
+    fx.load(fixture, 1)
+    for scope, group in (('single', layers[:1]), ('chain', layers)):
+        graphs, accs = capture_arms(group, fx, arms)
+        try:
+            exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', ['fc2_two_slots'], scope=scope)
+            uniques = fx.load(fixture, 7)[:len(group)]
+            bracket(report, graphs, 'served', 'fc2_two_slots', brackets=brackets, fixture='c2_two_requests_depth',
+                    rows=16, scope=scope, layers=len(group), unique_experts=uniques)
+        finally:
+            for graph in graphs.values():
+                graph.reset()
+    stamp_cells(report, layers, [('served', 512, None), ('fc2_two_slots', 512, two_slots)], spread)
+
+
 def price_cells(report, layers, spread, brackets):
     from engine.kernels.b12x import moe_dispatch as md
-    rows, control = 16, 512
-    x = grouped(rows, 2, spread, 7)
-    ids, routes = zip(*(layer.route(x) for layer in layers))
-    served = md._parse_glm53_static_v2('t,r,sf6,batch')
-    arms = {'served': served, 'xa': md._parse_glm53_static_v2('t,r,sf6,batch,xa', probe=True),
-            'xs': md._parse_glm53_static_v2('t,r,sf6,batch,xs', probe=True)}
+    fixture = ('c2_two_requests', 16, 2, spread)
+    arms = [('served', 512, None), ('xa', 512, md._parse_glm53_static_v2('t,r,sf6,batch,xa', probe=True)),
+            ('xs', 512, md._parse_glm53_static_v2('t,r,sf6,batch,xs', probe=True))]
+    fx = Fixtures(layers, 16)
     for scope, group in (('single', layers[:1]), ('chain', layers)):
-        accs = {name: [torch.empty(rows, 4096, device='cuda', dtype=torch.float32) for _ in group] for name in arms}
-        graphs = {}
-        previous = md._STATIC_V2_OVERRIDE
+        uniques = fx.load(fixture, 7)[:len(group)]
+        graphs, _ = capture_arms(group, fx, arms)
         try:
-            for name, config in arms.items():
-                md._STATIC_V2_OVERRIDE = config
-                def run(name=name):
-                    outs = []
-                    for layer, i, r, acc in zip(group, ids, routes, accs[name]):
-                        def finalize(accumulator, acc=acc):
-                            acc.copy_(accumulator)
-                            return acc
-                        outs.append(layer.moe(control, x, i, r, finalize=finalize))
-                    return outs
-                graphs[name], _ = _capture(run)
-            md._STATIC_V2_OVERRIDE = previous
-            uniques = [int(i.unique().numel()) for i in ids[:len(group)]]
             for name in ('xa', 'xs'):
-                bracket(report, graphs, 'served', name, brackets=brackets, fixture='c2_two_requests_price', rows=rows,
+                bracket(report, graphs, 'served', name, brackets=brackets, fixture='c2_two_requests_price', rows=16,
                         scope=scope, layers=len(group), unique_experts=uniques, numerics='garbage (timing cell)')
         finally:
-            md._STATIC_V2_OVERRIDE = previous
             for graph in graphs.values():
                 graph.reset()
 
@@ -307,18 +383,24 @@ def stamp_summary(st):
                 dma_fc1.append((d1 - d0) / 1e3)
                 dma_fc2.append((d2 - d1) / 1e3)
     med = statistics.median
+    tb1 = s[:, k2.STAMP_BARRIER1]
+    phase0 = [(int(tb1[b]) - int(t0[b])) / 1e3 for b in live if int(tb1[b]) > 0]
+    phase1 = [(int(t1[b]) - int(tb1[b])) / 1e3 for b in live if int(tb1[b]) > 0]
     return dict(span_us=(kernel_end - base) / 1e3, frontend_us=med((int(t1[b]) - int(t0[b])) / 1e3 for b in live),
+                phase0_barrier1_us=med(phase0) if phase0 else None, route_quant_barrier2_us=med(phase1) if phase1 else None,
+                start_skew_us=max((int(t0[b]) - base) / 1e3 for b in live),
                 items_per_cta=sorted(int(n_items[b]) for b in live),
                 fc1_quant_us=med(fc1), publish_us=med(publish), fc2_us=med(fc2),
                 dma_fc1_us=med(dma_fc1) if dma_fc1 else None, dma_fc2_us=med(dma_fc2) if dma_fc2 else None,
                 idle_tail_us=med((kernel_end - int(t_end[b])) / 1e3 for b in live), items_timed=len(fc1))
 
 
-def stamp_cells(report, layers, chunks, spread, calls=12):
+def stamp_cells(report, layers, arms, spread, calls=12, rows=16):
+    """arms: [(label, chunk, static-lane config or None)]; each gets the stamps cell on top of its config.
+    16 rows are C=2's two requests, 8 rows C=1's one."""
     from engine.kernels.b12x import moe_dispatch as md
     layer = layers[0]
-    rows = 16
-    x = grouped(rows, 2, spread, 31)
+    x = grouped(rows, rows // 8, spread, 31)
     ids, routes = layer.route(x)
     acc = torch.empty(rows, 4096, device='cuda', dtype=torch.float32)
     flush = torch.empty(128 << 20, device='cuda', dtype=torch.uint8)
@@ -327,11 +409,10 @@ def stamp_cells(report, layers, chunks, spread, calls=12):
         acc.copy_(accumulator)
         return acc
 
-    config = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), stamps=True)
     previous = md._STATIC_V2_OVERRIDE
-    md._STATIC_V2_OVERRIDE = config
     try:
-        for chunk in chunks:
+        for label, chunk, config in arms:
+            md._STATIC_V2_OVERRIDE = dict(config or md._parse_glm53_static_v2('t,r,sf6,batch'), stamps=True)
             summaries = []
             for call in range(calls + 2):
                 flush.zero_()
@@ -340,13 +421,13 @@ def stamp_cells(report, layers, chunks, spread, calls=12):
                 layer.moe(chunk, x, ids, routes, finalize=finalize)
                 torch.cuda.synchronize()
                 if call >= 2:   # the first calls compile and fault the handle in
-                    stamps = [v for (mac, dev), v in md._STATIC_V2_STAMPS.items()]
-                    summaries.append(stamp_summary(stamps[-1]))
-            keys = ('span_us', 'frontend_us', 'fc1_quant_us', 'publish_us', 'fc2_us', 'idle_tail_us')
+                    summaries.append(stamp_summary(list(md._STATIC_V2_STAMPS.values())[-1]))
+            keys = ('span_us', 'frontend_us', 'phase0_barrier1_us', 'route_quant_barrier2_us', 'start_skew_us',
+                    'fc1_quant_us', 'publish_us', 'fc2_us', 'idle_tail_us')
             medians = {k: statistics.median(s[k] for s in summaries) for k in keys}
             medians['dma_fc1_us'] = statistics.median(s['dma_fc1_us'] for s in summaries if s['dma_fc1_us'])
             medians['dma_fc2_us'] = statistics.median(s['dma_fc2_us'] for s in summaries if s['dma_fc2_us'])
-            report('stamps', chunk=chunk, layer=layer.L, rows=rows, unique_experts=int(ids.unique().numel()),
+            report('stamps', arm=label, chunk=chunk, layer=layer.L, rows=rows, unique_experts=int(ids.unique().numel()),
                    calls=calls, evicted=True, medians=medians, items_per_cta=summaries[-1]['items_per_cta'],
                    fc1_item_bytes=FC1_ITEM_BYTES, fc2_item_bytes=FC2_ITEM_BYTES,
                    fc1_gbps_per_cta=FC1_ITEM_BYTES / medians['fc1_quant_us'] * 1e6 / 1e9,
@@ -360,30 +441,37 @@ def prefill_cells(report, layers, chunks, brackets, reps=4):
     layer = layers[0]
     control = 512
     flush = torch.empty(128 << 20, device='cuda', dtype=torch.uint8)
+    labels = [(str(c), c) for c in chunks] + [('512b', control)]
+    errors = []
     for m in (2304, 9216):
         g = torch.Generator(device='cuda').manual_seed(m)
         x = torch.randn(m, 4096, device='cuda', generator=g).bfloat16()
         ids, routes = layer.route(x)
         routes[0, 0] = 0.
-        outs = {c: torch.empty(m, 4096, device='cuda', dtype=torch.bfloat16) for c in chunks}
+        outs = {label: torch.empty(m, 4096, device='cuda', dtype=torch.bfloat16) for label, _ in labels}
         try:
-            for chunk in chunks:           # compile and fault in
-                layer.moe(chunk, x, ids, routes, output=outs[chunk])
-            for order in (chunks, chunks[::-1]):
-                for chunk in chunks:
-                    outs[chunk].fill_(float('nan'))
-                for chunk in order:
-                    layer.moe(chunk, x, ids, routes, output=outs[chunk])
+            for label, chunk in labels:           # compile and fault in
+                layer.moe(chunk, x, ids, routes, output=outs[label])
+            totals = {label: {} for label, _ in labels if label != str(control)}
+            for order in (labels, labels[::-1]):
+                for label, _ in labels:
+                    outs[label].fill_(float('nan'))
+                for label, chunk in order:
+                    layer.moe(chunk, x, ids, routes, output=outs[label])
                 torch.cuda.synchronize()
-                for chunk in chunks:
-                    if not outs[chunk].isfinite().all().item():
-                        raise RuntimeError(f'prefill m={m} chunk {chunk}: non-finite output')
-                    if not torch.equal(outs[chunk], outs[control]):
-                        raise RuntimeError(f'prefill m={m} chunk {chunk}: differs from 512 by '
-                                           f'{(outs[chunk].float() - outs[control].float()).abs().max().item()}')
-            report('exact', fixture='prefill', rows=m, scope='single', layers=[layer.L], chunks=list(chunks),
-                   reference=control, unique_experts=[int(ids.unique().numel())], replay_orders='forward/reverse',
-                   poisoned=True, zero_route=True)
+                for label in totals:
+                    if not outs[label].isfinite().all().item():
+                        raise RuntimeError(f'prefill m={m} {label}: non-finite output')
+                    _merge(totals[label], bf16_noise(outs[label], outs[str(control)]))
+            for label, total in totals.items():
+                ok = total['bf16_max_rel'] <= MAX_BF16_REL
+                report('exact', fixture='prefill', rows=m, scope='single', layers=[layer.L], reference=str(control),
+                       arm=label, noise_control=label == '512b', cells=2, elements=2 * m * 4096,
+                       unique_experts=[int(ids.unique().numel())], replay_orders='forward/reverse', poisoned=True,
+                       zero_route=True, max_rel_gate=MAX_BF16_REL, passed=ok, **total)
+                if not ok:
+                    raise RuntimeError(f'prefill m={m} {label}: BF16 output {total["bf16_max_rel"]:.3g} relative '
+                                       f'from {control} (bound {MAX_BF16_REL})')
             for chunk in chunks:
                 if chunk == control:
                     continue
@@ -396,7 +484,7 @@ def prefill_cells(report, layers, chunks, brackets, reps=4):
                             flush.zero_()
                             torch.cuda.synchronize()
                             start.record()
-                            layer.moe(arm, x, ids, routes, output=outs[arm])
+                            layer.moe(arm, x, ids, routes, output=outs[str(arm)])
                             end.record()
                             end.synchronize()
                         samples.append(dict(arm=arm, us=statistics.mean(s.elapsed_time(e) for s, e in events) * 1000))
@@ -410,13 +498,16 @@ def prefill_cells(report, layers, chunks, brackets, reps=4):
                        min_change_pct=100 * (min(a) / min(b) - 1))
         except Exception as exc:
             report('component_failed', section='prefill', rows=m, error=f'{type(exc).__name__}: {exc}'[:1500])
+            errors.append(f'm={m}')
+    if errors:
+        raise RuntimeError(f'prefill cells failed: {errors}')
 
 
 def main(ranks=None, *, sections=(), samples=None, output=None):
     options = dict(token.split('=', 1) for token in sections if '=' in token)
-    wanted = {token for token in sections if '=' not in token} or {'chunk', 'stamps', 'prefill', 'price'}
-    if wanted - {'chunk', 'stamps', 'prefill', 'price'}:
-        raise ValueError(f'unknown moe_c2_cells sections: {sorted(wanted)}')
+    wanted = {token for token in sections if '=' not in token} or set(SECTIONS)
+    if wanted - set(SECTIONS):
+        raise ValueError(f'unknown moe_c2_cells sections: {sorted(wanted - set(SECTIONS))}')
     layer_ids = tuple(int(v) for v in options.get('layers', ','.join(map(str, LAYERS))).split(','))
     chunks = tuple(int(v) for v in options.get('chunks', ','.join(map(str, CHUNKS))).split(','))
     if 512 not in chunks or any(c not in CHUNKS for c in chunks):
@@ -456,7 +547,9 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
                allocated_bytes=torch.cuda.memory_allocated())
         spread = calibrate(layers, report)
         for section, fn in (('chunk', lambda: chunk_cells(report, layers, chunks, spread, brackets)),
-                            ('stamps', lambda: stamp_cells(report, layers, chunks, spread)),
+                            ('depth', lambda: depth_cells(report, layers, spread, brackets)),
+                            ('stamps', lambda: (stamp_cells(report, layers, [(str(c), c, None) for c in chunks], spread),
+                                                stamp_cells(report, layers, [('c1_served', 512, None)], spread, rows=8))),
                             ('prefill', lambda: prefill_cells(report, layers, chunks, brackets)),
                             # last: the timing cells read garbage scales/inputs, a fault would poison the context
                             ('price', lambda: price_cells(report, layers, spread, brackets))):

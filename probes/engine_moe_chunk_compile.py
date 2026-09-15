@@ -5,7 +5,9 @@ arithmetic, and only the 4-D weight tensor they compile against changes. This pr
 traces, lays out its TMA descriptors over that tensor and passes ptxas for each chunk:
 
   static   the served recipe t,r,sf6,batch at 8 rows (C=1), 16 rows (C=2) and 32 rows (the t tile a short
-           static prefill takes), and the stamped 16-row tile the GPU cells read their timeline from
+           static prefill takes), and the stamped 16-row tile the GPU cells read their timeline from; at the 512
+           chunk also the arms the GPU cells compare it with: the C=2 tile with two FC2 slots (plain and
+           stamped), the stamped C=1 tile and the probe-only xa / xs timing cells
   dynamic  the served prefill classes: Q0 words (m=2304), long SF6 words (m=16384) and its FFN packets
 
 It proves nothing about numerics or speed (probes/engine_moe_c2_cells.py on the single-GPU lane).
@@ -63,6 +65,9 @@ def main():
             for chunk in chunks:
                 for rows, stamps in ((8, False), (16, False), (32, False), (16, True)):
                     cases.append(('static', rows, chunk, dict(stamps=stamps)))
+            for rows, extra in ((16, dict(c2_fc2_prefetch=False)), (16, dict(c2_fc2_prefetch=False, stamps=True)),
+                                (8, dict(stamps=True)), (16, dict(spec='xa')), (16, dict(spec='xs'))):
+                cases.append(('static', rows, 512, extra))
         if 'dynamic' in only:
             for chunk in chunks:
                 for m, packets in ((2304, False), (16384, False), (16384, True)):
@@ -76,7 +81,9 @@ def main():
                 before = len(records)
                 try:
                     if kind == 'static':
-                        config = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), stamps=extra['stamps'])
+                        spec = 't,r,sf6,batch' + (',' + extra['spec'] if 'spec' in extra else '')
+                        config = dict(md._parse_glm53_static_v2(spec, probe=True),
+                                      **{k: v for k, v in extra.items() if k != 'spec'})
                         md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows * 8, config=config,
                                                  mac_override=48, w13_chunk=chunk, **glm)
                     else:
