@@ -1,0 +1,41 @@
+# The x86_64 CHECK image. NOT the production runtime and not a source of measurements.
+#
+# It shares no layer with st-engine:glm53: that image descends from glm53:v13-b12x-it, an
+# ARM64 vLLM build that carries the patched FlashInfer/CuTe and the compiled DeepGEMM
+# extension promote_deep_gemm.py lifts byte-for-byte. None of that exists for x86_64, so
+# this one starts from a stock Python base and installs an index-named set instead.
+#
+# What it is for: engine/kernels/b12x declares @supported_compute_capability([120, 121])
+# and imports torch and flashinfer only. sm_120 is an RTX 5050. Every native lane (mla,
+# dense, oneshot, bounded_graph, decode_queue, mapped_staging) is built
+# -gencode arch=compute_121a and engine/kernels/cells.py refuses a device that is not a
+# GB10 with the measured SM count, so those stay the fleet's and are absent here.
+#
+# Build context is the directory fetch_x86_64.py prepared; the build itself takes no network.
+ARG ST_X86_BASE=python:3.12-slim-bookworm
+FROM ${ST_X86_BASE}
+COPY wheels /tmp/st-x86/wheels
+COPY cuda132.x86_64.lock.json install_x86_64.py closure.json /tmp/st-x86/
+RUN python3 /tmp/st-x86/install_x86_64.py && rm -rf /tmp/st-x86 /root/.cache
+# sm_120, not sm_121a: the one substantive difference from Dockerfile.seed's environment.
+ENV CUDA_HOME=/usr/local/cuda-13.2 \
+    CUDA_PATH=/usr/local/cuda-13.2 \
+    CUDA_VERSION=13.2.1 \
+    NVIDIA_REQUIRE_CUDA="cuda>=13.0" \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    PATH=/usr/local/cuda-13.2/bin:/usr/local/nvidia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib64:/usr/local/nvidia/lib:/usr/local/cuda-13.2/lib64:/usr/local/cuda-13.2/nvvm/lib64 \
+    TRITON_PTXAS_PATH=/usr/local/cuda-13.2/bin/ptxas \
+    TRITON_PTXAS_BLACKWELL_PATH=/usr/local/cuda-13.2/bin/ptxas \
+    TORCH_CUDA_ARCH_LIST=12.0 \
+    CUTE_DSL_ARCH=sm_120 \
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+    CUDA_CACHE_PATH=/cache/cu132-sm120/driver \
+    TRITON_CACHE_DIR=/cache/cu132-sm120/triton \
+    TILELANG_CACHE_DIR=/cache/cu132-sm120/tilelang \
+    FLASHINFER_WORKSPACE_BASE=/cache/cu132-sm120 \
+    ST_NATIVE_BUILD_ROOT=/cache/cu132-sm120/st-native \
+    MAX_JOBS=2
+ENTRYPOINT ["python3"]
+CMD ["--version"]
