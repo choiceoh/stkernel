@@ -65,7 +65,7 @@ def _weights(X, Sel, Ids, W, E: tl.constexpr, K: tl.constexpr,
     ids = tl.load(Sel + r * K + i, i < K, 0).to(tl.int32)
     x = tl.load(X + r * E + ids, i < K, 0)
     s = tl.where(i < K, tl.div_rn(1., 1. + libdevice.exp(-x)), 0.)
-    w = tl.div_rn(s, tl.sum(s, 0)) * SCALE
+    w = tl.div_rn(s, tl.sum(s, 0) + 1e-20) * SCALE
     tl.store(Ids + r * K + i, ids, i < K)
     tl.store(W + r * K + i, w, i < K)
 

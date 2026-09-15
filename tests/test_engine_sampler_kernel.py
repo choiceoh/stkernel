@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import torch  # noqa: E402
 
-from engine.base.sampler import _rows_by_sorting, rows, threshold  # noqa: E402
+from engine.base.sampler import _inverse_cdf, _rows_by_sorting, rows, threshold  # noqa: E402
 
 CUDA = torch.cuda.is_available()
 
@@ -53,6 +53,43 @@ class ThresholdTests(unittest.TestCase):
 
     def test_a_row_with_one_live_token_keeps_it(self):
         self.assertEqual(threshold(torch.tensor([1.0, 0.0, 0.0]), None, 0.9), 1.0)
+
+
+class SamplingBoundaryTests(unittest.TestCase):
+    def test_zero_probability_tokens_are_never_selected_at_the_upper_endpoint(self):
+        for device in (['cpu', 'cuda'] if CUDA else ['cpu']):
+            for top_p in (1., .95):
+                logits = torch.tensor([[float('-inf'), 0., -1000., float('-inf')]], device=device).repeat(3, 1)
+                u = torch.tensor([0., 1. - 2. ** -24, 1.], device=device)
+                t, k, p = policy(3, device, top_p=top_p)
+                self.assertEqual(rows(logits, t, k, p, u).tolist(), [1, 1, 1])
+                self.assertEqual(_rows_by_sorting(logits, t, k, p, u, None, None).tolist(), [1, 1, 1])
+                self.assertEqual(_inverse_cdf(torch.tensor([[0., 1., 0., 0.]], device=device).repeat(3, 1), u).tolist(),
+                                 [1, 1, 1])
+
+    def test_cdf_rounding_and_tiny_mass_cannot_select_a_zero_tail(self):
+        # The first row's parallel sum exceeds its CDF endpoint by one FP32 ULP.
+        p = torch.cat((torch.rand(7, generator=torch.Generator().manual_seed(0)), torch.zeros(3)))
+        for device in (['cpu', 'cuda'] if CUDA else ['cpu']):
+            rows_ = torch.stack((p, torch.tensor([0., 2. ** -149] + [0.] * 8))).to(device)
+            u = torch.full((2,), 1. - 2. ** -24, device=device)
+            self.assertEqual(_inverse_cdf(rows_, u).tolist(), [6, 1])
+
+    @unittest.skipUnless(CUDA, 'requires CUDA')
+    def test_cdf_boundary_guard_replays_with_changed_distributions(self):
+        probs = torch.tensor([[1., 0., 0.]], device='cuda')
+        u = torch.tensor([1.], device='cuda')
+        _inverse_cdf(probs, u)
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            picked = _inverse_cdf(probs, u)
+        try:
+            for mass in ([1., 0., 0.], [0., 1., 0.], [0., 2. ** -149, 0.]):
+                probs.copy_(torch.tensor([mass], device='cuda'))
+                graph.replay()
+                self.assertGreater(probs[0, picked.item()].item(), 0.)
+        finally:
+            graph.reset()
 
 
 @unittest.skipUnless(CUDA, "requires CUDA")
@@ -223,25 +260,30 @@ class NoHostCrossingTests(unittest.TestCase):
         logits = torch.randn(4, 16384, device="cuda", generator=g)
         t = torch.ones(4, device="cuda")
         p = torch.full((4,), 0.9, device="cuda")
+        u = torch.zeros(4, device="cuda")
         graph = torch.cuda.CUDAGraph()
-        graph.register_generator_state(g)
         stream = torch.cuda.Stream()
         stream.wait_stream(torch.cuda.current_stream())
         with torch.cuda.stream(stream):
             for _ in range(3):
-                sample(logits, t, p, g)
+                sample(logits, t, p, u)
         torch.cuda.current_stream().wait_stream(stream)
         torch.cuda.synchronize()
         with torch.cuda.graph(graph):
-            picked = sample(logits, t, p, g)
+            picked = sample(logits, t, p, u)
         graph.replay()
         torch.cuda.synchronize()
         first = picked.clone()
         graph.replay()
         torch.cuda.synchronize()
-        self.assertFalse(torch.equal(first, picked) and bool((first == first[0]).all()),
-                         "a replay that cannot move at all is not drawing")
+        self.assertTrue(torch.equal(first, picked), "the same explicit draws must replay exactly")
+        u.fill_(1. - 2. ** -24)
+        graph.replay()
+        torch.cuda.synchronize()
+        self.assertFalse(torch.equal(first, picked), "changed explicit draws must reach the captured sampler")
+        torch.testing.assert_close(picked, sample(logits, t, p, u), rtol=0, atol=0)
         self.assertTrue(bool(((picked >= 0) & (picked < 16384)).all()))
+        graph.reset()
 
 
 if __name__ == "__main__":

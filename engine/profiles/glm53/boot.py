@@ -291,11 +291,15 @@ def declared(a, comm_world: int) -> Config:
         # STK_* environment cannot silently restore the stock long-prefill
         # path.
         defaults = dict(mla_prefill="tile32", context_ceiling=0, kda_state_dtype=facts.KDA_STATE_DTYPE,
+                        GLM53_DENSE_W4A16_GUARD_ROWS=4096,
                         execution_overlap=0, early_observe=0, prefill_tiles=1, terminal_mhc=0,
                         draft_fc_precision=SERVING_POLICY.fc_precision, draft_fc_calibration=SERVING_POLICY.fc_calibration,
                         draft_diagnostics=int(SERVING_POLICY.diagnostics), draft_tuning='', **gb10_defaults)
         return Config(facts_ + [Fact(k, v, "production default") for k, v in defaults.items()], knobs=[])
     knobs = [
+        Knob("GLM53_DENSE_W4A16_GUARD_ROWS", 4096, _dt.date(2026, 9, 30),
+             "ModelOpt dense prefill activation precision guard; zero measures all-NVFP4",
+             "STK_GLM53_DENSE_W4A16_GUARD_ROWS=4096", lane_tables.dense_w4a16_guard_rows),
         Knob("decode_absorb_tiles", gb10_defaults["decode_absorb_tiles"], _dt.date(2026, 9, 30),
              "Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending",
              "STK_decode_absorb_tiles=0", int),
@@ -1355,7 +1359,7 @@ def fleet(a) -> int:
             print(f"  rank{comm.rank}: one-shot rails={comm.transport.rails} latency µs {comm.transport.latency}", flush=True)
         with rec.phase("lanes"):
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
-                                       consume_scales=True)
+                                       consume_scales=True, dense_guard_rows=cfg["GLM53_DENSE_W4A16_GUARD_ROWS"])
         from engine.profiles.glm53.execution import ExecutionPlan
         if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")
@@ -1407,7 +1411,7 @@ def fleet(a) -> int:
                             "fp8_gptq": str(engine.pack_stats.get("fp8_gptq", 0)),                             # FP8 lane weights GPTQ'd on their grid
                             "smoothed": str(engine.pack_stats.get("smoothed", 0)),                             # inputs' channel smoothing folded into their norms
                             "calibration": engine.calibration.status() if engine.calibration is not None else "complete",
-                            "dense_w4a16_guard_rows": str(lane_tables.dense_w4a16_guard_rows())}
+                            "dense_w4a16_guard_rows": str(cfg["GLM53_DENSE_W4A16_GUARD_ROWS"])}
         # A stale tier under one rank diverges the ranks (45th 21), and a fleet that split mid-step leaves
         # a turn parked on half of them (2026-09-13 13:01:47). Reconcile in seconds, before the capture: every
         # rank keeps the conversations every rank holds alike and drops the rest. This check used to KILL the
