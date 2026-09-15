@@ -121,7 +121,10 @@ def select(keys, k):
     block = min(2048, max(16, triton.next_power_of_2(width)))
     segs = triton.cdiv(width, block)
     out = torch.empty((rows, segs * k), dtype=torch.int64, device=keys.device)
-    _select[(rows, segs)](keys, out, width, keys.stride(0), out.stride(0), K=k, SEGS=segs, BLOCK=block)
+    # These serial reductions stay within one warp. Four warps added shared
+    # memory exchanges and CTA barriers to every winner, including the merge.
+    _select[(rows, segs)](keys, out, width, keys.stride(0), out.stride(0), K=k, SEGS=segs, BLOCK=block,
+                         num_warps=1)
     return out if segs == 1 else select(out, k)
 
 
@@ -152,7 +155,7 @@ def select_logits(local_logits, start, valid, k):
     segs = triton.cdiv(valid, block)
     out = torch.empty((rows, segs * k), dtype=torch.int64, device=local_logits.device)
     _select_logits[(rows, segs)](local_logits, out, local_logits.stride(0), local_logits.stride(1),
-                                valid, start, k, segs, block)
+                                valid, start, k, segs, block, num_warps=1)
     return out if segs == 1 else select(out, k)
 
 

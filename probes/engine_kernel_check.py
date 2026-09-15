@@ -38,6 +38,10 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'vocab_selection':
+        from probes.engine_vocab_selection import run as vocab_selection_check
+        vocab_selection_check(args.output)
+        return
     if args.lanes == 'producer_pack':
         from probes.engine_producer_pack import main as producer_pack_check
         producer_pack_check(args.ranks, seqs=args.seqs, samples=args.samples, output=args.output)
