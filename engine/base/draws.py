@@ -66,10 +66,15 @@ def _float32(x: float) -> float:
     return struct.unpack("f", struct.pack("f", x))[0]
 
 
+# The largest float32 below one. A 53-bit uniform within 2^-54 of one rounds UP to exactly 1.0 when it is narrowed
+# to float32 -- about one draw in 2^25 -- and a draw at 1.0 aims at the whole mass of a row and walks off its end.
+BELOW_ONE = 1.0 - 2.0 ** -24
+
+
 def uniform(key: int, purpose: int, position: int) -> float:
     """One uniform in [0, 1) as the float32 the device produces."""
     z = mix((int(key) ^ word(purpose, position)) & MASK)
-    return _float32((z >> 11) * 2.0 ** -53)
+    return min(_float32((z >> 11) * 2.0 ** -53), BELOW_ONE)
 
 
 def uniforms(key: int, purpose: int, count: int, start: int = 0) -> "list[float]":
@@ -110,7 +115,7 @@ def row_keys(seed: int, nonces, generations):
 
 def _to_uniform(z):
     import torch
-    return (_lsr(z, 11).to(torch.float64) * 2.0 ** -53).to(torch.float32)
+    return (_lsr(z, 11).to(torch.float64) * 2.0 ** -53).to(torch.float32).clamp_max(BELOW_ONE)
 
 
 def uniform_tensor(keys, purpose: int, count: int, start: int = 0):

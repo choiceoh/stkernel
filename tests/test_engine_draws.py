@@ -95,6 +95,21 @@ class TensorAgreementTests(unittest.TestCase):
                                  "and the verification's: exactly the host's VERIFY then FRESH")
             self.assertNotEqual(block[0].tolist(), block[2].tolist(), "the same row one token later draws afresh")
 
+    # Seed 0, nonce 50471549, generation 0: the walk's first uniform is (2^53 - 1 - m) * 2^-53 for a small m, which
+    # rounds UP to exactly 1.0 when narrowed to float32 -- one draw in 2^25 does (found by scanning nonces).
+    TOP = dict(seed=0, nonce=50471549, generation=0)
+
+    def test_a_draw_that_rounds_up_to_one_is_kept_below_it_on_every_path(self):
+        seed, nonce, gen = self.TOP.values()
+        k = draws.row_key(seed, nonce, gen)
+        top = draws.mix((k ^ draws.word(draws.DRAFT, 0)) & draws.MASK) >> 11
+        self.assertEqual(draws._float32(top * 2.0 ** -53), 1.0, "the rounding the clamp is for")
+        self.assertEqual(draws.uniform(k, draws.DRAFT, 0), draws.BELOW_ONE)
+        self.assertEqual(draws._float32(draws.BELOW_ONE), draws.BELOW_ONE)
+        keys = draws.row_keys(seed, torch.tensor([nonce]), torch.tensor([gen]))
+        self.assertEqual(draws.uniform_tensor(keys, draws.DRAFT, 1)[0, 0].item(), draws.BELOW_ONE)
+        self.assertEqual(draws.step_block(seed, torch.tensor([nonce]), torch.tensor([gen]), 3)[0, 0].item(), draws.BELOW_ONE)
+
     @unittest.skipUnless(torch is not None and torch.cuda.is_available(), "requires CUDA")
     def test_the_device_agrees_with_the_host_on_cuda_too(self):
         nonces = torch.tensor([1, 2, 3, 1 << 38], device="cuda")
@@ -103,6 +118,9 @@ class TensorAgreementTests(unittest.TestCase):
         for i in range(4):
             k = draws.row_key(7, int(nonces[i]), int(gens[i]))
             self.assertEqual(block[i].tolist(), [draws.uniform(k, p, j) for p, j in draws.step_layout(5)])
+        top = draws.step_block(self.TOP["seed"], torch.tensor([self.TOP["nonce"]], device="cuda"),
+                               torch.tensor([self.TOP["generation"]], device="cuda"), 5).cpu()
+        self.assertEqual(top[0, 0].item(), draws.BELOW_ONE, "the kernel keeps a draw that rounds up below one too")
 
     def test_the_sampler_and_the_verifier_take_them_as_inputs(self):
         from engine.base.sampler import block_verify, block_verify_batch, draw, sample
