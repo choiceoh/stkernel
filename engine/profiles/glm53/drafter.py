@@ -454,9 +454,10 @@ class Drafter:
         if self.fast_attention:
             from engine.kernels.draft_attention import draft_attention
             if isinstance(ring, tuple):
-                o = draft_attention(qh.contiguous(),kh.contiguous(),vh,ring[0],ctx_len,slot=ring[1],layer=L)
+                o = draft_attention(qh.contiguous(),kh.contiguous(),vh,ring[0],ctx_len,slot=ring[1],layer=L,
+                                    window=F.window)
             else:
-                o = draft_attention(qh.contiguous(), kh.contiguous(), vh, ring[L], ctx_len)
+                o = draft_attention(qh.contiguous(), kh.contiguous(), vh, ring[L], ctx_len, window=F.window)
             return self.target.comm.all_reduce(self.linear(o.reshape(B, heads*F.head_dim), q+"o_proj.weight"))
         # the context window: the last min(ctx, window) verified positions, then the block itself (non-causal)
         # A fixed window keeps GEMM/reduction geometry identical in eager and
@@ -469,8 +470,11 @@ class Drafter:
         rep = F.heads // F.kv_heads
         k_all, v_all = k_all.repeat_interleave(rep, dim=1), v_all.repeat_interleave(rep, dim=1)
         scores = torch.einsum("bhd,nhd->bhn", qh.float(), k_all.float()) * F.head_dim ** -0.5
-        valid = torch.cat([cpos >= 0, torch.ones(B, device=x.device, dtype=torch.bool)])
-        scores = scores.masked_fill(~valid[None, None, :], float("-inf"))
+        # DFlash's sliding window is per query: block row j (at ctx_len + j) sees a context position while their
+        # distance is under the window, so the anchor keeps window - 1 context positions and row j that many less j
+        near = cpos[None, :] > ctx_len + torch.arange(B, device=x.device)[:, None] - F.window        # [B, n_ctx]
+        valid = torch.cat([(cpos >= 0)[None, :] & near, torch.ones(B, B, device=x.device, dtype=torch.bool)], 1)
+        scores = scores.masked_fill(~valid[:, None, :], float("-inf"))
         o = torch.einsum("bhn,nhd->bhd", torch.softmax(scores, dim=-1), v_all.float()).to(x.dtype)
         return self.linear(o.reshape(B, F.heads * F.head_dim), q + "o_proj.weight")
 
@@ -607,7 +611,7 @@ class Drafter:
             # GEMMs cover all rows once, and so does the attention: each row reads its own device-selected slot
             # at its own context length, so the rows are a grid dimension and there is nothing to concatenate.
             out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),
-                              field, ctx, slot=slots, layer=L)
+                              field, ctx, slot=slots, layer=L, window=F.window)
             return self.target.comm.all_reduce(self.linear(out.reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
         S, W, kv, D, rep = field.shape[0], F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
         qh = norm_rope(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
@@ -619,7 +623,14 @@ class Drafter:
         q_all = torch.zeros(S, kv, rep * t, D, dtype=qh.dtype, device=qh.device).index_copy_(0, slots, q_rows)
         length = torch.zeros(S, dtype=ctx.dtype, device=ctx.device).index_copy_(0, slots, ctx)
         cells = torch.arange(W + t, device=ctx.device)
-        mask = ((cells < length.clamp_max(W).view(S, 1)) | (cells >= W)).view(S, 1, 1, W + t)
+        # A ring cell c holds the newest context position congruent to c (negative: not written yet). DFlash's
+        # window is per query: row j of the block (at length + j) sees positions within window - 1 - j of the
+        # anchor. The queries are laid out rep x t, so query i is block row i % t.
+        last = length.view(S, 1) - 1
+        held = last - (last - cells[None, :W]).remainder(W)                                         # [S, W]
+        row = (torch.arange(rep * t, device=ctx.device) % t).view(1, rep * t, 1)
+        near = (held[:, None, :] >= 0) & (held[:, None, :] > length.view(S, 1, 1) + row - W)         # [S, q, W]
+        mask = torch.cat([near, torch.ones(S, rep * t, t, dtype=torch.bool, device=ctx.device)], 2).view(S, 1, rep * t, W + t)
         keys, values = field[:, L, 0, :W + t].transpose(1, 2), field[:, L, 1, :W + t].transpose(1, 2)   # [S, kv, W+t, D], views
         fused = sdpa_kernel([SDPBackend.CUDNN_ATTENTION, SDPBackend.EFFICIENT_ATTENTION]) if x.is_cuda else nullcontext()
         with fused:                                                                            # D3: no math fallback on CUDA

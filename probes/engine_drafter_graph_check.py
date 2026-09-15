@@ -29,11 +29,17 @@ def unpadded_attention(drafter, layer, x, positions, ring, context):
     q = project("q", F.heads, True)
     k = project("k", F.kv_heads, True)
     v = project("v", F.kv_heads, False)
-    live = torch.arange(max(0, context-F.window), context, device=x.device) % F.window
+    held = torch.arange(max(0, context-F.window), context, device=x.device)
+    live = held % F.window
     k = torch.cat((ring[layer, 0, live], k)).repeat_interleave(F.heads//F.kv_heads, 1)
     v = torch.cat((ring[layer, 1, live], v)).repeat_interleave(F.heads//F.kv_heads, 1)
+    # DFlash's sliding window is per query (z-lab/dflash _attention_mask): block row j, at context + j, sees a
+    # context position while their distance is under the window; the block's own keys are always visible
+    rows = torch.arange(x.shape[0], device=x.device)[:, None]
+    mask = torch.cat((context + rows - held[None, :] < F.window,
+                      torch.ones(x.shape[0], x.shape[0], dtype=torch.bool, device=x.device)), 1)
     out = fn.scaled_dot_product_attention(q.transpose(0, 1).double(),
-                                          k.transpose(0, 1).double(), v.transpose(0, 1).double())
+                                          k.transpose(0, 1).double(), v.transpose(0, 1).double(), attn_mask=mask)
     return fn.linear(out.transpose(0, 1).reshape(x.shape[0], -1).to(x.dtype), p[prefix+"o_proj.weight"])
 
 
