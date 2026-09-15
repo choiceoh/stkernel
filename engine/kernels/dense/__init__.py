@@ -15,7 +15,9 @@ from engine.kernels.cells import DENSE_ALIGN, DENSE_KMAX, dense_glue_refusal
 
 
 @cache
-def extension():
+def build():
+    """Compile the dense lane's module when its key is new, and load it. No device is touched, so the fleet boot
+    builds it before its first collective (profiles/glm53/natives); `extension` probes the device at first use."""
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_cuda_sources
     source = Path(__file__).with_name("kernels.cu")
@@ -25,8 +27,13 @@ def extension():
              "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
     root = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))
     key, directory, sources = prepare_cuda_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
-    ext = load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
-               build_directory=str(directory), verbose=False)
+    return load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,
+                build_directory=str(directory), verbose=False)
+
+
+@cache
+def extension():
+    ext = build()
     from engine.base.kernel_shape import bound
     device = bound().device
     if tuple(ext.probe_device())[:3] != (*device.capability, device.sms):

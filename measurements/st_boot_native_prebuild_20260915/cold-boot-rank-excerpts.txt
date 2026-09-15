@@ -1,0 +1,73 @@
+# docker logs -t st-glm53 on the four nodes, main 3acae017 first (cold) boot, 2026-09-15 UTC; followed live from this session
+# lines: rendezvous, megakernel arm, kernel warmup, one-shot STALL / WC error, death; cut at 230 chars
+== rank 0
+2026-09-15T03:25:07.174606054Z   fleet reserved by production/deploy/manual-3104431
+2026-09-15T03:25:14.902811072Z boot rendezvous draft-calibration: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.917123707Z boot rendezvous draft-tuning: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.925162090Z boot rendezvous draft-fc-bias-auto: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:15.343312287Z boot rendezvous arena-admission: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:58.834912419Z boot rendezvous weights-loaded: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:28:44.644904993Z   kernel warmup returned 4.70 GiB of inactive allocator cache
+2026-09-15T03:27:15.547761169Z [megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-15T03:28:27.266465831Z [oneshot] STALL rank=0 phase=wait(peer-flags) seq=828 slot=0 missing_peer_mask=0x7 tx_seq=828 ack_seq=828 rxf[slot]={824,824,824} beat=103821852161
+2026-09-15T03:29:25.496041327Z [oneshot] STALL rank=0 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x6 tx_seq=1093 ack_seq=1093 rxf[slot]={1093,1089,1093} beat=134384870401
+2026-09-15T03:29:30.000986398Z [oneshot] STALL rank=0 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x6 tx_seq=1093 ack_seq=1093 rxf[slot]={1093,1089,1093} beat=136702558465
+2026-09-15T03:31:38.527942983Z [oneshot] STALL rank=0 phase=wait(peer-flags) seq=2797 slot=1 missing_peer_mask=0x1 tx_seq=2797 ack_seq=2795 rxf[slot]={2793,2797,2797} beat=202840919297
+2026-09-15T03:31:39.239948060Z [oneshot] WC error 12 on rail 1; proxy exiting
+2026-09-15T03:32:06.438243247Z [serve] death rank=0 kind=local phase='boot': RuntimeError: Triton Error [CUDA]: unspecified launch failure
+2026-09-15T03:32:06.441851862Z terminate called after throwing an instance of 'c10::AcceleratorError'
+== rank 1
+2026-09-15T03:25:01.558700172Z   fleet reserved by production/deploy/manual-3104431
+2026-09-15T03:25:14.255944763Z boot rendezvous draft-calibration: rank 1 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.926545190Z boot rendezvous draft-tuning: rank 1 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.934699745Z boot rendezvous draft-fc-bias-auto: rank 1 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:15.332245860Z boot rendezvous arena-admission: rank 1 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:26:07.655878345Z boot rendezvous weights-loaded: rank 1 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:28:44.655377903Z   kernel warmup returned 4.79 GiB of inactive allocator cache
+2026-09-15T03:27:32.888790881Z [megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-15T03:29:26.129676666Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x6 tx_seq=1093 ack_seq=1093 rxf[slot]={1093,1089,1093} beat=135282479873
+2026-09-15T03:29:31.001431730Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x6 tx_seq=1093 ack_seq=1093 rxf[slot]={1093,1089,1093} beat=137787265793
+2026-09-15T03:29:38.297395295Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=1101 slot=1 missing_peer_mask=0x7 tx_seq=1101 ack_seq=1101 rxf[slot]={1097,1101,1097} beat=141605481473
+2026-09-15T03:29:52.128274819Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=1920 slot=0 missing_peer_mask=0x7 tx_seq=1920 ack_seq=1920 rxf[slot]={1916,1920,1916} beat=148829668097
+2026-09-15T03:31:04.658066925Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2792,2792} beat=186931828481
+2026-09-15T03:31:09.002066429Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2792,2792} beat=189166096897
+2026-09-15T03:31:14.001748552Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2792,2792} beat=191737398017
+2026-09-15T03:31:19.001802369Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2792,2792} beat=194309585921
+2026-09-15T03:31:24.001743700Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2792,2792} beat=196885442049
+2026-09-15T03:31:29.001452288Z [oneshot] STALL rank=1 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2796,2796} beat=199456434945
+2026-09-15T03:31:32.844187134Z [serve] death rank=1 kind=local phase='boot': RuntimeError: Triton Error [CUDA]: unspecified launch failure
+2026-09-15T03:31:32.847377626Z terminate called after throwing an instance of 'c10::AcceleratorError'
+== rank 2
+2026-09-15T03:25:01.341928578Z   fleet reserved by production/deploy/manual-3104431
+2026-09-15T03:25:14.558823317Z boot rendezvous draft-calibration: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.916940434Z boot rendezvous draft-tuning: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.926764532Z boot rendezvous draft-fc-bias-auto: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:15.141563671Z boot rendezvous arena-admission: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:26:03.719311354Z boot rendezvous weights-loaded: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:28:44.645756392Z   kernel warmup returned 4.70 GiB of inactive allocator cache
+2026-09-15T03:27:21.690727505Z [megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-15T03:29:38.210625084Z [oneshot] STALL rank=2 phase=wait(peer-flags) seq=1101 slot=1 missing_peer_mask=0x7 tx_seq=1101 ack_seq=1101 rxf[slot]={1097,1101,1097} beat=141848680193
+2026-09-15T03:29:52.033095779Z [oneshot] STALL rank=2 phase=wait(peer-flags) seq=1920 slot=0 missing_peer_mask=0x7 tx_seq=1920 ack_seq=1920 rxf[slot]={1916,1920,1916} beat=149053414401
+2026-09-15T03:31:31.548916341Z [oneshot] STALL rank=2 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2796,2796} beat=201533742081
+2026-09-15T03:31:38.523800746Z [oneshot] STALL rank=2 phase=wait(peer-flags) seq=2797 slot=1 missing_peer_mask=0x2 tx_seq=2797 ack_seq=2796 rxf[slot]={2797,2793,2797} beat=203863606529
+2026-09-15T03:31:39.129506007Z [oneshot] WC error 12 on rail 0; proxy exiting
+2026-09-15T03:32:06.412738349Z [serve] death rank=2 kind=local phase='boot': RuntimeError: Triton Error [CUDA]: unspecified launch failure
+2026-09-15T03:32:06.416045917Z terminate called after throwing an instance of 'c10::AcceleratorError'
+== rank 3
+2026-09-15T03:25:04.385457385Z   fleet reserved by production/deploy/manual-3104431
+2026-09-15T03:25:14.042977289Z boot rendezvous draft-calibration: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.915691404Z boot rendezvous draft-tuning: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:14.923625006Z boot rendezvous draft-fc-bias-auto: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:25:15.339204167Z boot rendezvous arena-admission: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:26:10.010264277Z boot rendezvous weights-loaded: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-15T03:27:34.827784129Z [megakernel] selftest mla rel=3.13e-03 prefill32=True -> ARM
+2026-09-15T03:28:44.643356394Z   kernel warmup returned 4.70 GiB of inactive allocator cache
+2026-09-15T03:29:16.865630417Z [oneshot] STALL rank=3 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x7 tx_seq=1093 ack_seq=1093 rxf[slot]={1089,1089,1089} beat=129795100417
+2026-09-15T03:29:21.001836478Z [oneshot] STALL rank=3 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x7 tx_seq=1093 ack_seq=1093 rxf[slot]={1089,1089,1089} beat=131925952769
+2026-09-15T03:29:26.001851062Z [oneshot] STALL rank=3 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x7 tx_seq=1093 ack_seq=1093 rxf[slot]={1093,1093,1089} beat=134502532097
+2026-09-15T03:29:31.001857669Z [oneshot] STALL rank=3 phase=wait(peer-flags) seq=1093 slot=1 missing_peer_mask=0x7 tx_seq=1093 ack_seq=1093 rxf[slot]={1093,1093,1089} beat=137079318529
+2026-09-15T03:31:31.745717061Z [oneshot] STALL rank=3 phase=wait(peer-flags) seq=2796 slot=0 missing_peer_mask=0x7 tx_seq=2796 ack_seq=2796 rxf[slot]={2792,2796,2796} beat=200451842817
+2026-09-15T03:31:38.558028907Z [oneshot] STALL rank=3 phase=wait(peer-flags) seq=2797 slot=1 missing_peer_mask=0x2 tx_seq=2797 ack_seq=2796 rxf[slot]={2797,2793,2797} beat=202668434433
+2026-09-15T03:31:39.196811189Z [oneshot] WC error 12 on rail 0; proxy exiting
+2026-09-15T03:32:06.691584869Z [serve] death rank=3 kind=local phase='boot': RuntimeError: Triton Error [CUDA]: unspecified launch failure
+2026-09-15T03:32:06.696311148Z terminate called after throwing an instance of 'c10::AcceleratorError'

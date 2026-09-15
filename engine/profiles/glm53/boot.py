@@ -52,6 +52,7 @@ from engine.profiles.glm53.adapter import Glm53Engine, NullDrafter             #
 from engine.profiles.glm53.net import Glm53Net                   # noqa: E402
 from engine.profiles.glm53.weights import rank_loader            # noqa: E402
 from engine.profiles.glm53 import vision as vision_mod           # noqa: E402
+from engine.profiles.glm53 import natives                        # noqa: E402
 
 GIB = 1 << 30
 KV_GIB = 24.0                       # production parity (vLLM's 24.02 GiB/rank, 28차 §8); the ST budget table leaves 41.6 GiB, 45차 §23
@@ -1314,6 +1315,11 @@ def fleet(a) -> int:
     # The rendezvous and the kernel imports are boot time too: 15.6 s of a measured 90.2 s boot sat
     # outside this table (boot-time study, 2026-09-11), so the recorder opens before them.
     rec = Recorder("boot")
+    # Every native extension this boot loads starts building now, one thread each, while the comm initialises; the
+    # ranks meet below, before the one-shot transport's first sum. A native built at its first use left a rank's
+    # peers waiting in a collective for its compile, and main's first cold boot died of it (profiles/glm53/natives).
+    builds_started = time.perf_counter()
+    builds = natives.NativeBuilds(natives.builds(cfg["oneshot_rails"], bool(cfg["oneshot_inline"])))
     with rec.phase("comm"):
         comm = Comm.init()
     rec.root.name = f"rank{comm.rank}"
@@ -1323,6 +1329,20 @@ def fleet(a) -> int:
         if comm.rank == 0:
             print(cfg.table())
             print(f"  kernel shape ({shape_source}): {shape.describe()}")
+        with rec.phase("native builds"):
+            try:
+                seconds = builds.wait()
+            except BaseException as exc:
+                # The peers wait at the rendezvous below for up to 1800 s; a failed phase ends their wait now.
+                try:
+                    comm.wait_prepared(f"failed: rank {comm.rank}: {type(exc).__name__}: {str(exc)[:200]}", timeout_s=60.)
+                except BaseException:                 # noqa: BLE001 -- it raises by design; `exc` is the cause
+                    pass
+                raise
+            comm.wait_prepared("native-builds")
+            for name, value in seconds.items():
+                rec.gauge(f"native_{name}_s", value)
+            print(natives.line(comm.rank, seconds, time.perf_counter() - builds_started), flush=True)
         with rec.phase("prepare one-shot"):
             if cfg["oneshot_rails"] not in (1, 2):
                 raise ValueError("one-shot rails must be 1 or 2")
