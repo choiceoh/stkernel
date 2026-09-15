@@ -24,15 +24,14 @@ from types import SimpleNamespace
 import torch
 
 from engine.base.graphs import DecodeGraphs
-from engine.profiles.qwen38.net import DeviceStep, Segment
-
-FIRST_BUCKET = 4096
+from engine.profiles.qwen38.net import FIRST_BUCKET, DeviceStep, Segment
 
 
 def bucket_ladder(block: int, pool_blocks: int, ceiling: int, tokens: int) -> "list[int]":
-    """Page-table widths in blocks to capture, smallest first. The last row a door admits starts at ceiling-1 and a
-    padded step writes `tokens` positions from there, so the top bucket covers ceiling-1+tokens positions -- and no
-    more than the pool holds. Every bucket above the ceiling would be a graph for a request that cannot arrive."""
+    """Page-table widths in blocks to capture, smallest first -- net.bucket_blocks' rungs, which prefill addresses too,
+    so both compile the paged kernels at the same widths. The last row a door admits starts at ceiling-1 and a padded
+    step writes `tokens` positions from there, so the top bucket covers ceiling-1+tokens positions -- and no more than
+    the pool holds. Every bucket above the ceiling would be a graph for a request that cannot arrive."""
     if block <= 0 or pool_blocks <= 0 or ceiling <= 0 or tokens <= 0:
         raise ValueError("block, pool, ceiling and width must be positive")
     top = min(pool_blocks, -(-(ceiling - 1 + tokens) // block))
@@ -201,4 +200,4 @@ class DraftGraphs(_Rows):
         return self.graphs.run(shape, fill).tolist()
 
 
-__all__ = ["FIRST_BUCKET", "bucket_ladder", "TargetGraphs", "DraftGraphs"]
+__all__ = ["bucket_ladder", "TargetGraphs", "DraftGraphs"]

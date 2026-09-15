@@ -65,7 +65,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     from engine.base.runner import STEP_RECORD, Runner
     from engine.base.runtime_memory import RuntimeMemory, reclaim_preparation_pages
     from engine.kernels.dense.store import PackStore
-    from engine.profiles.qwen38.adapter import build_model, capture
+    from engine.profiles.qwen38.adapter import build_model, capture, close
     from engine.profiles.qwen38.boot import eos_ids, generation_defaults
     from engine.profiles.qwen38.caches import Qwen38Caches, cache_capacity, layout, snapshot_layout
     from engine.profiles.qwen38.net import Qwen38Net
@@ -101,6 +101,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         if memory is not None:
             memory.close()
         raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient free memory'}") from failure
+    model = None
     try:
         with recorder.phase("arena"):
             arena = Arena(arena_bytes)
@@ -147,6 +148,11 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                                    final=True)
             except BaseException:                                      # noqa: BLE001 -- it raises by design
                 pass
+        if model is not None:
+            # a failure after capture (the "ready" vote a failed peer casts) must not leave captured NCCL graphs alive
+            # past the process group
+            from engine.base.graphs import cleanup_after_error
+            cleanup_after_error(exc, lambda: close(model), "close decode graphs after a failed build")
         if memory is not None:
             memory.close()
         raise
