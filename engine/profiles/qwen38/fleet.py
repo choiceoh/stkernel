@@ -56,7 +56,7 @@ def rank_loader(path, *, expected_layout: str):
 
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
-          temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB):
+          temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False):
     from engine.base import scheduler as sched
     from engine.base.arena import Arena, host_reclaim, prepare_allocation
     from engine.base.params import total_bytes
@@ -71,7 +71,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     from engine.profiles.qwen38.net import Qwen38Net
 
     F = facts.load(ckpt_meta)
-    net = Qwen38Net(F, comm, lanes, mtp=drafter)
+    net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, SNAPSHOT_GIB, mtp=drafter)
     if nb < 2:
@@ -177,6 +177,8 @@ def main(argv=None) -> int:
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-drafter", action="store_true", help="serve without the MTP head")
+    ap.add_argument("--hc-fp8", action="store_true",
+                    help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them; the mixer's numbers change, so a quality bracket judges it)")
     a = ap.parse_args(argv)
 
     started = time.perf_counter()
@@ -194,7 +196,7 @@ def main(argv=None) -> int:
         print(f"  lanes qualified: {lane_tables.qualify(torch.device('cuda'), F)}", flush=True)
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
-                                              drafter=not a.no_drafter)
+                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8)
         tok = tokenizer(Path(a.ckpt_meta))
         chat = chat_renderer(Path(a.ckpt_meta)) if comm.rank == 0 else None
         end, tail = reasoning_marks(tok, chat) if chat is not None else (None, ())

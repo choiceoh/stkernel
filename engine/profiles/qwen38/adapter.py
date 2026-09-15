@@ -252,15 +252,111 @@ class ServedMTP:
                 self._waiting.pop(seq)
 
 
+def _served_model_class():
+    from engine.base import draws
+    from engine.base.composed import ComposedModel
+    from engine.base.composition import Segment as BaseSegment, Step as BaseStep
+    from engine.base.sampler import sample
+
+    class ServedModel(ComposedModel):
+        """base/composed.ComposedModel with a verify step that reads the host once for its picks.
+
+        The base verify picks one position at a time -- a device read, and for a sampled row four small uploads, per
+        position -- because a rich row's pick reads the tokens the picks before it committed. A plain row's pick does
+        not: it reads its logits row, its temperature, top-p and top-k, and the uniform keyed at its generation count,
+        and at position j that count is the row's count now plus j (the picks before j commit before the pick at j is
+        read). So every position of every plain row is drawn in one call with those keys, and the base loop consumes
+        them in its own order -- the same tokens, commits, accepts and observations; a position after the first
+        rejection is drawn and never read (a draw is a pure function of its key). A row that is rich at its first
+        position (options, a grammar, logprobs, min_tokens still holding its end) keeps the base's per-position pick.
+        The step's ids go up in one upload rather than one a row."""
+
+        def _draw_ahead(self, seqs, segments, logits):
+            ahead = [None] * len(seqs)
+            index, temps, top_ps, top_ks, keys, plain = [], [], [], [], [], []
+            for i, (seq, s) in enumerate(zip(seqs, segments)):
+                if self._rich(seq):                 # min_tokens only relaxes as the row grows: rich now or never
+                    continue
+                opts = self.options.get(seq, {})
+                count = self.generated_count(seq)
+                for j in range(s.length):
+                    index.append(s.start + j)
+                    temps.append(self.limits[seq][1])
+                    top_ps.append(float(opts.get("top_p", self.top_p)))
+                    top_ks.append(int(opts.get("top_k") or 0))
+                    keys.append((seq, count + j))
+                plain.append(i)
+            if not index:
+                return ahead
+            dev = logits.device
+            rows = logits.index_select(0, torch.tensor(index, device=dev))
+            if all(t <= 0 for t in temps):
+                drawn = rows[:, :self.vocab].argmax(dim=-1).tolist()
+            else:
+                uniforms = [draws.uniform(draws.row_key(self.seeds.get(seq, self.seed), self.nonces[seq], count),
+                                          draws.PICK, 0) for seq, count in keys]
+                drawn = sample(rows, torch.tensor(temps, dtype=torch.float32, device=dev),
+                               torch.tensor(top_ps, dtype=torch.float32, device=dev),
+                               torch.tensor(uniforms, dtype=torch.float32, device=dev),
+                               top_k=torch.tensor(top_ks, dtype=torch.int32, device=dev), valid=self.vocab).tolist()
+            at = 0
+            for i in plain:
+                n = segments[i].length
+                ahead[i] = [int(t) for t in drawn[at:at + n]]
+                at += n
+            return ahead
+
+        def _verify(self, seqs):
+            proposals = self.drafter.propose(seqs)
+            drafts = []                             # no more drafts than the row can still take after its next token
+            for seq, proposal in zip(seqs, proposals):
+                room = min(self.limits[seq][0] - self.generated_count(seq), self.max_context - self.context(seq)) - 1
+                drafts.append([int(t) for t in proposal[:max(0, min(self.k, room))]])
+            flat, segments = [], []
+            for seq, d in zip(seqs, drafts):
+                segments.append(BaseSegment(seq, self.context(seq), len(flat), 1 + len(d), True))
+                flat += [self.tokens[seq][-1]] + d
+            step = BaseStep(torch.tensor(flat, dtype=torch.int64, device=self.store.device), tuple(segments))
+            logits, hidden = self.composition.forward(step, self.store, logits="all", hidden=True)
+            self.steps += 1
+            ahead = self._draw_ahead(seqs, step.segments, logits)
+            finished = []
+            for seq, d, segment, drawn in zip(seqs, drafts, step.segments, ahead):
+                fed, done, matched = 0, False, 0
+                for j in range(segment.length):
+                    if drawn is not None:
+                        pick = drawn[j]
+                    else:
+                        pick = self._pick([seq], logits[segment.start + j:segment.start + j + 1])[0]
+                    done = self._commit(seq, pick)
+                    fed = j + 1
+                    if j < len(d) and pick == d[j]:
+                        matched += 1
+                    if done or j == len(d) or pick != d[j]:
+                        break
+                self.store.accept(seq, fed)
+                if d:
+                    self.drafts_total += 1
+                    self.drafted_total += len(d)
+                    self.accepted_total += matched
+                self.drafter.observe(seq, segment.ctx, self.tokens[seq][segment.ctx + 1:segment.ctx + fed + 1],
+                                     hidden[segment.start:segment.start + fed])
+                finished.append(done)
+            return finished
+
+    return ServedModel
+
+
 def build_model(net, caches, F, *, eos_ids, max_new: int, temperature: float, top_p: float, seed: int = 0,
                 drafter: bool = True, grammars=None):
-    """ComposedModel over the served net and caches (and the MTP drafter when `drafter`)."""
-    from engine.base.composed import ComposedModel
+    """The served model (ServedModel: base/composed.ComposedModel with the one-read verify) over the served net and
+    caches, and the MTP drafter when `drafter`."""
     store = ServedStore(caches)
     composition = ServedComposition(net, caches)
     mtp = ServedMTP(net, caches, store, F.spec_k) if drafter and F.spec_k else None
-    model = ComposedModel(composition, store, vocab=F.vocab, eos_ids=eos_ids, max_new=max_new, temperature=temperature,
-                          top_p=top_p, seed=seed, max_context=F.max_position, drafter=mtp, grammars=grammars)
+    model = _served_model_class()(composition, store, vocab=F.vocab, eos_ids=eos_ids, max_new=max_new,
+                                  temperature=temperature, top_p=top_p, seed=seed, max_context=F.max_position,
+                                  drafter=mtp, grammars=grammars)
     return model, store
 
 

@@ -281,16 +281,66 @@ def _b12x_ep_zero_weight_micro_expert_id(
         and swiglu_limit == _B12X_EP_ZERO_WEIGHT_MICRO_SWIGLU_LIMIT
         and routed_rows <= int(state_E)
     )
-    if enabled and exact_shape and forced_backend is not None:
+    # The bound expert-parallel cell (configure_ep_zero_weight_micro): the same bound on the map, at the cell's
+    # geometry, for every decode-sized launch the skip compiles for (the kernel refuses a single token).
+    cell_shape = False
+    if _EP_ZERO_WEIGHT_MICRO_CELL:
+        cell = _admitted_moe()
+        cell_shape = (
+            activation_precision == "fp4"
+            and quant_mode == cell.quant == "nvfp4"
+            and int(state_E) == int(weight_E) == cell.experts_local < cell.experts
+            and 2 <= int(num_tokens) <= _MICRO_MAX_TOKENS
+            and int(num_topk) == cell.topk
+            and int(k) == cell.hidden
+            and int(n) == cell.inter_local
+            and activation == cell.activation
+            and swiglu_limit == cell.swiglu_limit
+            and routed_rows <= int(state_E)
+        )
+    if ((enabled and exact_shape) or cell_shape) and forced_backend is not None:
         raise RuntimeError(
-            "VLLM_B12X_EP_ZERO_WEIGHT_MICRO=1 cannot run with forced MoE "
+            "the zero-weight EP micro lane cannot run with forced MoE "
             f"backend {forced_backend!r}"
         )
-    if not enabled or not exact_shape:
+    if not ((enabled and exact_shape) or cell_shape):
         return None
     # The local-only wrapper remaps every remote route to sentinel E at weight
     # zero. The micro kernel verifies both fields before suppressing the row.
     return int(state_E)
+
+
+_EP_ZERO_WEIGHT_MICRO_CELL = False          # configure_ep_zero_weight_micro(): the bound EP cell's decode skip
+
+
+def configure_ep_zero_weight_micro(enabled: bool) -> None:
+    """An expert-parallel profile (the bound MoE cell holds fewer experts a rank than the model) sends its captured
+    decode steps' routes to another rank's experts to sentinel E at weight zero, and the micro kernel drops those pairs
+    before they claim a row: no rows, no quantisation, no expert weights read for them. Call before any launch, after
+    the kernel shape is bound. `ep_zero_weight_sentinel` tells the caller, per launch shape, whether it may send E."""
+    global _EP_ZERO_WEIGHT_MICRO_CELL
+    if enabled:
+        cell = _admitted_moe()
+        if not cell.experts_local < cell.experts or cell.quant != "nvfp4":
+            raise ValueError("the zero-weight micro skip serves an expert-parallel NVFP4 cell")
+    _EP_ZERO_WEIGHT_MICRO_CELL = bool(enabled)
+
+
+def ep_zero_weight_sentinel(*, num_tokens: int, num_topk: int, experts: int, hidden_size: int,
+                            intermediate_size: int, activation: str, swiglu_limit: float | None) -> "int | None":
+    """The sentinel id (E) a launch of this shape may carry for routes this rank does not hold, or None: the launch
+    must then name one of its own experts (weight zero). Exactly the static dispatcher's decision for the shape --
+    the static backend, and the micro skip admitted for it -- so a caller never hands E to a kernel that indexes
+    with it."""
+    if select_sm120_moe_backend(num_tokens=num_tokens, num_topk=num_topk, quant_mode="nvfp4", num_experts=experts,
+                                num_local_experts=experts, hidden_size=hidden_size,
+                                intermediate_size=intermediate_size, activation=activation,
+                                swiglu_limit=swiglu_limit) != "static":
+        return None
+    return _b12x_ep_zero_weight_micro_expert_id(
+        enabled=_B12X_EP_ZERO_WEIGHT_MICRO, state_E=experts, weight_E=experts, num_tokens=num_tokens,
+        k=hidden_size, n=intermediate_size, num_topk=num_topk, activation_precision="fp4", quant_mode="nvfp4",
+        activation=activation, swiglu_limit=swiglu_limit, forced_backend=_FORCED_BACKEND)
 
 # MAC (max active clusters) tuning ladders from b12x decode profiling.
 # Each entry is (max_routed_rows, optimal_mac).

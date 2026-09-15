@@ -13,6 +13,8 @@ names several (what the served lanes fuse; nothing is repacked at boot, D1):
     attn.in_proj       query+gate | k | v | index   one input, the rank's heads, its KV head    [4224, 2560] a rank
     hc.<site>.down_inject   down | block_inject     both read the normalised streams            [324, 10240]
     moe.sh_gate_up     gate | up                    the shared expert's first projection         [320, 2560]
+    moe.gates          router | shared gate         the router's 512 rows and the shared gate's one [513, 2560]
+    ple.kv_proj        key | value                  PLE's two projections of its looked-up rows  [12800, 2560]
 
 Merged rows keep each part's own row order, so a slice of the merged matrix is the part exactly. The routed experts
 are ModelOpt's lossless layout (engine/profiles/glm53/modelopt_weights.quant_specs, whole experts instead of an
@@ -254,9 +256,11 @@ def _mtp_routed_specs(n: str, m: str, F: Facts) -> "list[Spec]":
 def _moe_common_specs(n: str, m: str, F: Facts) -> "list[Spec]":
     H, Is = F.hidden, F.shared_inter_local
     gu = (m + "shared_expert.gate_proj.weight", m + "shared_expert.up_proj.weight")
+    gates = (m + "gate.weight", m + "shared_expert_gate.weight")
     return [
-        Spec(n + "moe.gate", (F.experts, H), BF, (m + "gate.weight",), _whole(m + "gate.weight")),
-        Spec(n + "moe.shared_gate", (1, H), BF, (m + "shared_expert_gate.weight",), _whole(m + "shared_expert_gate.weight")),
+        # the router's rows and the shared expert's gate row read the same input: one matmul, rows [experts; shared]
+        Spec(n + "moe.gates", (F.experts + 1, H), BF, gates,
+             lambda s, r, W, k=gates: torch.cat([s[k[0]], s[k[1]]], 0).contiguous()),
         Spec(n + "moe.sh_gate_up", (2 * Is, H), BF, gu,
              lambda s, r, W, k=gu: torch.cat([_split(s[k[0]], 0, r, W), _split(s[k[1]], 0, r, W)], 0).contiguous()),
         Spec(n + "moe.sh_down", (H, Is), BF, (m + "shared_expert.down_proj.weight",),
@@ -288,8 +292,9 @@ def ple_specs(F: Facts, L: int) -> "list[Spec]":
     e = p + "ple_embedding."
     return [
         Spec(n + "scale", (1,), F32, (e + "ngram_embedding.weight_scale",), _whole(e + "ngram_embedding.weight_scale", F32)),
-        Spec(n + "key_proj", (width, F.ple_dim), BF, (p + "key_proj.weight",), _whole(p + "key_proj.weight")),
-        Spec(n + "value_proj", (F.hidden, F.ple_dim), BF, (p + "value_proj.weight",), _whole(p + "value_proj.weight")),
+        # key [hc*H] and value [H] read the same looked-up rows: one matmul, rows [key; value] (NGramInjection's "kv")
+        Spec(n + "kv_proj", (width + F.hidden, F.ple_dim), BF, (p + "key_proj.weight", p + "value_proj.weight"),
+             lambda s, r, W, k=(p + "key_proj.weight", p + "value_proj.weight"): torch.cat([s[k[0]], s[k[1]]], 0).contiguous()),
         Spec(n + "conv", (width, F.ple_conv), F32, (p + "conv1d.weight",),
              lambda s, r, W, k=p + "conv1d.weight": s[k][:, 0, :].to(F32).contiguous()),
         Spec(n + "norm_conv", (width,), BF, (p + "norm_conv.weight",), _whole(p + "norm_conv.weight")),

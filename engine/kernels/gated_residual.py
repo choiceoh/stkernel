@@ -177,9 +177,11 @@ def _leave(h, out, inject, w, eps, hc, *, norm):
 
 
 def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
-        inject: bool = True) -> "tuple[torch.Tensor, torch.Tensor | None]":
+        inject: bool = True, project_down=None, project_up=None) -> "tuple[torch.Tensor, torch.Tensor | None]":
     """The site's mixer over the normalised streams: (mixed [N, H], injection [N, hc] or None for the closing mixer).
-    `down_inject` is pack_down_inject's weight; `up` [hc*H, r]."""
+    `down_inject` is pack_down_inject's weight; `up` [hc*H, r]. `project_down` / `project_up`, when given, compute the
+    two matmuls instead of BF16 torch.mm over those weights -- (normed [N, hc*H]) -> [N, r(+hc)] and (gates [N, r]) ->
+    [N, hc*H] BF16, rows packed along their columns (a quantised dense lane); the weights still name the shapes."""
     hid = _check_streams(normed, hc)
     rank = up.shape[1]
     if up.shape != (normed.shape[1], rank) or down_inject.shape != (rank + (hc if inject else 0), normed.shape[1]):
@@ -188,13 +190,16 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
     if down_inject.dtype != normed.dtype or up.dtype != normed.dtype:
         raise ValueError("the hyper-connection weights are held in the activations' dtype (BF16 in the checkpoint)")
     if not normed.is_cuda:
-        di = torch.nn.functional.linear(normed, down_inject)
+        di = torch.nn.functional.linear(normed, down_inject) if project_down is None else project_down(normed)
         gates = torch.nn.functional.silu(di[:, :rank] / hc)
-        weights = torch.sigmoid(torch.nn.functional.linear(gates, up)).unflatten(-1, (hc, hid))
+        up_rows = torch.nn.functional.linear(gates, up) if project_up is None else project_up(gates)
+        weights = torch.sigmoid(up_rows).unflatten(-1, (hc, hid))
         mixed = (weights * normed.unflatten(-1, (hc, hid))).mean(dim=-2)
         return mixed, (2 * torch.sigmoid(di[:, rank:] / hc) if inject else None)
     rows = normed.shape[0]
-    di = torch.mm(normed, down_inject.t())
+    di = torch.mm(normed, down_inject.t()) if project_down is None else project_down(normed)
+    if di.shape != (rows, down_inject.shape[0]) or di.dtype != normed.dtype or di.stride(1) != 1:
+        raise ValueError("the down projection returns packed [N, r(+hc)] rows in the streams' dtype")
     gates = torch.empty(rows, rank, device=normed.device, dtype=normed.dtype)
     injection = torch.empty(rows, hc, device=normed.device, dtype=normed.dtype) if inject else None
     mixed = torch.empty(rows, hid, device=normed.device, dtype=normed.dtype)
@@ -203,7 +208,9 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
                         (gates if injection is None else injection).stride(0), float(hc), R=rank,
                         BR=triton.next_power_of_2(rank), HC=hc, BH=triton.next_power_of_2(hc), WITH_INJECT=inject,
                         num_warps=4)
-    weights = torch.mm(gates, up.t())
+    weights = torch.mm(gates, up.t()) if project_up is None else project_up(gates)
+    if weights.shape != (rows, normed.shape[1]) or weights.dtype != normed.dtype or weights.stride(1) != 1:
+        raise ValueError("the up projection returns packed [N, hc*H] rows in the streams' dtype")
     if rows:
         _mix_mean[(rows,)](weights, normed, mixed, weights.stride(0), normed.stride(0), mixed.stride(0), float(hc),
                            HID=hid, BD=triton.next_power_of_2(hid), HC=hc, num_warps=_warps(hid))
