@@ -116,6 +116,7 @@ class Glm53Engine:
         self.calibration_root = None               # the pack store's root the blobs are filed under
         self.steps = 0
         self.decode_graphs = None
+        self.jit_windows = None                             # base/jit_writes: capture_decode's windows, walked once at its end
         self.sampling_graphs = None
         self.pipeline = None                                # pipeline.AsyncDecode once the graphs are captured (45차 §23 B3)
         self._ids_stage = None                              # pinned host ids for the captured decode: an asynchronous upload, not a pageable one
@@ -144,10 +145,15 @@ class Glm53Engine:
             raise ValueError("capture must finish before requests are admitted")
         if self.decode_graphs is not None:
             raise ValueError("decode graphs are already prepared")
+        from engine.base import jit_writes
+        # Every window of this phase is timed here and walked once at the end: the phase is the boot's
+        # largest and the question it keeps raising is which of its passes compiled (base/jit_writes).
+        self.jit_windows = jit_writes.Windows()
         try:
             if self.memory is not None:
                 self._warmup_prefill_memory()
             self._warmup_serving_kernels()
+            graphs_began = time.time()
             if self.execution_plan.early_observe:
                 projection = getattr(self.drafter, "dense", {}).get("fc.weight")
                 if projection is None or not hasattr(projection, "isolate_workspace"):
@@ -181,9 +187,17 @@ class Glm53Engine:
                     self.pipeline = BurstDecode(self, self.execution_plan.decode_iterations)
                 else:
                     self.pipeline = AsyncDecode(self)
+            self.jit_windows.mark("capture", graphs_began, time.time())
             if self.memory is not None:
                 self.memory.checkpoint("ready")
                 self.memory.ready = True
+            # After the vote, never before it: the walk is bounded but it is still this rank's alone, and
+            # a straggler ahead of a collective is skew the peers pay for. An instrument that can fail the
+            # boot it measures is worse than no instrument, so its own failure is a line, not a raise.
+            try:
+                print(self.jit_windows.line(self.net.comm.rank, self.jit_windows.scan()), flush=True)
+            except Exception as exc:                  # noqa: BLE001 -- the engine is ready; only the walk failed
+                print(f"  jit writes: not walked -- {type(exc).__name__}: {exc}", flush=True)
         except BaseException as exc:
             # The peers are at a ledger vote of this phase (a warm-up's, a capture's, "ready"); a rank
             # that leaves without casting one is heard of only when NCCL's deadline runs out on them.
@@ -364,9 +378,16 @@ class Glm53Engine:
         slot = caches.slots.take(0)
         record = getattr(self, "prefill_record", None)
 
+        def settle():
+            """This rank's own device work, done -- so the stamp taken next is its own and not a peer's."""
+            if str(caches.device).startswith("cuda"):
+                torch.cuda.synchronize()
+
         def run(length, context):
+            phase = f"prefill/{length}/{context}"
             caches.reset_slot(slot)
-            self.memory.checkpoint(f"prefill/{length}/{context}/before")
+            self.memory.checkpoint(f"{phase}/before")
+            began, opened = time.perf_counter(), time.time()
             ids = torch.zeros(length, device=caches.device, dtype=torch.int64)
             # Prefix-enabled serving requests save interior block boundaries.
             # Qualify those kernels and their side-output memory before opening
@@ -380,12 +401,28 @@ class Glm53Engine:
             if aux is not None:
                 valid &= torch.isfinite(aux).all()
             bad = (~valid).to(torch.int32).reshape(1)
+            # The three stamps this row carries are cut here. Everything above is this rank's own device
+            # work; the collective below is the fleet's, and its wait is the slowest peer's skew, not this
+            # pass's cost. Without the sync the `.item()` would collect both into one number and the row
+            # could not tell a slow forward from a late peer.
+            settle()
+            forward = time.perf_counter() - began
             if self.net.comm.all_reduce_max(bad).item():
-                raise FloatingPointError(f"prefill/{length}/{context}: non-finite model output during qualification")
+                raise FloatingPointError(f"{phase}: non-finite model output during qualification")
+            voted = time.perf_counter()
             if aux is not None:
                 self._observe_prefill(slot, context, aux, cuts)
+                settle()
+            observed = time.perf_counter()
             del h, aux, logits, valid, bad, step, ids
-            return self.memory.checkpoint(f"prefill/{length}/{context}/prepared", release_cache=True)
+            row = self.memory.checkpoint(f"{phase}/prepared", release_cache=True, stamps={
+                "forward_seconds": round(forward, 4),
+                "vote_seconds": round(voted - began - forward, 4),
+                "observe_seconds": round(observed - voted, 4)})
+            windows = getattr(self, "jit_windows", None)          # absent on a partially built engine (tests)
+            if windows is not None:
+                windows.mark(phase, opened, time.time())
+            return row
 
         try:
             caches.pool.reserve(0, capacity)
@@ -459,6 +496,7 @@ class Glm53Engine:
         if not widths:
             return
         slot = caches.slots.take(0)
+        opened = time.time()
         try:
             caches.pool.reserve(0, max(widths))
             for width in widths:
@@ -476,6 +514,9 @@ class Glm53Engine:
             row = self.memory.checkpoint(f"warm kernels {widths}", release_cache=True)
             returned = row["allocator_reclaimed_bytes"]
             print(f"  kernel warmup returned {returned / (1 << 30):.2f} GiB of inactive allocator cache", flush=True)
+        windows = getattr(self, "jit_windows", None)
+        if windows is not None:
+            windows.mark("warm kernels", opened, time.time())
 
     def close_decode(self):
         pipeline = getattr(self, "pipeline", None)

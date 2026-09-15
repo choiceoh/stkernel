@@ -174,7 +174,7 @@ class RuntimeMemory:
         cuda.set_per_process_memory_fraction(self.allocator_limit_bytes / total)
         cuda.reset_peak_memory_stats()
 
-    def checkpoint(self, phase, failed: "str | None" = None, *, release_cache: bool = False):
+    def checkpoint(self, phase, failed: "str | None" = None, *, release_cache: bool = False, stamps=None):
         """Boot only: retain transient peaks and require every TP rank to pass.
 
         The vote at the end is a device collective every rank must reach: a rank that raised on
@@ -186,11 +186,18 @@ class RuntimeMemory:
         Warmup boundaries return inactive allocator blocks before grading physical
         headroom. Other phases do so only when that floor is threatened. Live tensors
         and graph pools remain owned; cumulative peaks are never reset by reclamation.
+
+        `stamps`: what the caller timed inside the row. The row's own `seconds` is the whole interval
+        since the last row, which for a prefill qualification pass is forward, fleet vote and reclaim in
+        one number -- 15.41 s for 128 tokens and 2.07 s for 1,024 on the same boot, with nothing to say
+        why the shorter pass was the longer one. The caller knows the boundaries; it writes them here so
+        the ledger carries them boot to boot instead of a log line nobody diffs.
         """
         cuda = self.cuda
         error = failed or None
         reclaimed = allocator_reclaimed = 0
         row = dict(phase=phase, release_cache=release_cache)
+        row.update(stamps or {})
         try:
             cuda.synchronize()                      # the row's peaks and its clock read the same instant
             host_free = self.host_free()
