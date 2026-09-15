@@ -3337,7 +3337,8 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                  int64_t lr_r, float* private_partial = nullptr, unsigned int* private_arrive = nullptr,
                  const int64_t* out_address = nullptr, bool wide_input = false, bool bound_input = false,
                  const uint8_t* packed_q = nullptr, const float* packed_s = nullptr,
-                 bool local_query = false, bool forward_pipeline = false) {
+                 bool local_query = false, bool forward_pipeline = false,
+                 const uint8_t* producer_q = nullptr, const float* producer_s = nullptr) {
   set_kernel_attrs();
   if constexpr (DIRECT) set_direct_kernel_attrs();
   MKGemm2Ctx c2{};
@@ -3440,14 +3441,22 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   } else if (input_reuse) {
     const int qbytes = (c2.k / KSTEP) * 1024;
     const int sbytes = (c2.k / KSTEP) * 8 * sizeof(float);
-    // PyTorch owns this allocation on the current stream. CUDA graph capture
-    // retains its pool; later consumers on this stream wait before reuse.
-    auto packed = torch::empty({qbytes + sbytes}, x.options().dtype(torch::kUInt8));
-    auto* q = packed.data_ptr<uint8_t>();
-    auto* scales = reinterpret_cast<float*>(q + qbytes);
-    c2.input_q = q; c2.input_s = scales;
-    mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
-              MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
+    torch::Tensor packed;
+    if (producer_q) {
+      // The producer of x already wrote this cell's pack in the same layout, from x's
+      // own BF16 bytes: no pack launch and no second PDL level before the consumer.
+      TORCH_CHECK(bound_c1 && producer_s, "a producer pack is only a bound C1 cell's input");
+      c2.input_q = producer_q; c2.input_s = producer_s;
+    } else {
+      // PyTorch owns this allocation on the current stream. CUDA graph capture
+      // retains its pool; later consumers on this stream wait before reuse.
+      packed = torch::empty({qbytes + sbytes}, x.options().dtype(torch::kUInt8));
+      auto* q = packed.data_ptr<uint8_t>();
+      auto* scales = reinterpret_cast<float*>(q + qbytes);
+      c2.input_q = q; c2.input_s = scales;
+      mk_launch(mk_input_pack_kernel, c2.k / KSTEP, 0, stream,
+                MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
+    }
     const int cta=bound_c1 ? 4 : mk_gemm_input_cta_mode();
     if (bound_c1 && forward_pipeline && c2.n_orig!=6416) {
       if (c2.k==2048)
@@ -3603,12 +3612,34 @@ void mk_run_gemm_to_slot(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                          partial, arrive, address.data_ptr<int64_t>());
 }
 
+// Probe-only: a C1 bound cell's input quantization alone, into caller storage laid
+// out exactly as that cell's own pack ([k/128 x 1024] FP8 words, then [k/128 x 8]
+// scales). It sizes what a producer-side pack could remove from the cell.
+void mk_run_input_pack(torch::Tensor x, torch::Tensor packed) {
+  TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2 && x.size(0) == 8
+                  && x.size(1) % KSTEP == 0 && x.size(1) <= KBLK_LIMIT * KSTEP && x.stride(1) == 1
+                  && x.stride(0) >= x.size(1) && x.stride(0) % 4 == 0 && ((uintptr_t)x.data_ptr() & 7) == 0,
+              "input pack requires aligned BF16 [8, k] rows");
+  const int k = (int)x.size(1), kblk = k / KSTEP;
+  TORCH_CHECK(packed.device() == x.device() && packed.scalar_type() == torch::kUInt8
+                  && packed.is_contiguous() && ((uintptr_t)packed.data_ptr() & 7) == 0
+                  && packed.numel() == (int64_t)kblk * 1024 + (int64_t)kblk * 8 * (int64_t)sizeof(float),
+              "input pack storage must hold the cell's FP8 words and row scales");
+  set_kernel_attrs();
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  auto* q = packed.data_ptr<uint8_t>();
+  mk_launch(mk_input_pack_kernel, kblk, 0, stream,
+            MKInputPackCtx{(const __nv_bfloat16*)x.data_ptr(), q,
+                           reinterpret_cast<float*>(q + (size_t)kblk * 1024), 8, k, x.stride(0)});
+}
+
 // A model-owned declaration reaches this entry point directly; no process-wide
 // probe setter changes neighboring models, ordinary GEMMs or already captured graphs.
 void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
                             torch::Tensor out, int64_t n_orig, int64_t rgs_ptr,
                             c10::optional<torch::Tensor> workspace,
-                            c10::optional<torch::Tensor> address, bool forward_pipeline = true) {
+                            c10::optional<torch::Tensor> address, bool forward_pipeline = true,
+                            c10::optional<torch::Tensor> producer_pack = c10::nullopt) {
   TORCH_CHECK(x.is_cuda() && x.scalar_type() == torch::kBFloat16 && x.dim() == 2,
               "bound input requires CUDA BF16 matrix rows");
   const int64_t m = x.size(0), k = x.size(1), n = n_orig;
@@ -3623,6 +3654,19 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
               "bound input requires a declared W4 cell and row scales");
   TORCH_CHECK(wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128,
               "bound input pack rows must match the declared output");
+  const uint8_t* producer_q = nullptr;
+  const float* producer_s = nullptr;
+  if (producer_pack.has_value()) {
+    // Written by x's producer from x's own BF16 bytes, in mk_input_pack_kernel's layout.
+    auto pk = *producer_pack;
+    const int64_t kblk = k / KSTEP;
+    TORCH_CHECK(c1 && pk.device() == x.device() && pk.scalar_type() == torch::kUInt8 && pk.is_contiguous()
+                    && ((uintptr_t)pk.data_ptr() & 7) == 0
+                    && pk.numel() == kblk * 1024 + kblk * 8 * (int64_t)sizeof(float),
+                "a producer pack is an aligned C1 cell pack: [k/128 x 1024] FP8 words, then [k/128 x 8] scales");
+    producer_q = pk.data_ptr<uint8_t>();
+    producer_s = reinterpret_cast<float*>(pk.data_ptr<uint8_t>() + kblk * 1024);
+  }
   float* partial = nullptr;
   unsigned int* arrive = nullptr;
   if (workspace.has_value()) {
@@ -3639,13 +3683,14 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
                 a.is_contiguous() && a.numel() >= 1, "bound input requires its reserved TX descriptor");
     mk_run_gemm_impl<true>(x, wq4, ws4, a, n, 1., 0, rgs_ptr, 0, 0, 0,
                            partial, arrive, a.data_ptr<int64_t>(), wide, true,
-                           nullptr, nullptr, false, forward_pipeline);
+                           nullptr, nullptr, false, forward_pipeline, producer_q, producer_s);
   } else {
     TORCH_CHECK(out.device() == x.device() && out.scalar_type() == torch::kBFloat16 &&
                 out.dim() == 2 && out.size(0) == m && out.size(1) == n && out.is_contiguous(),
                 "bound input output must match its BF16 matrix");
     mk_run_gemm_impl(x, wq4, ws4, out, n, 1., 0, rgs_ptr, 0, 0, 0,
-                     partial, arrive, nullptr, wide, true, nullptr, nullptr, false, forward_pipeline);
+                     partial, arrive, nullptr, wide, true, nullptr, nullptr, false, forward_pipeline,
+                     producer_q, producer_s);
   }
 }
 
@@ -4492,8 +4537,11 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_gemm_bound_input", &mk_run_gemm_bound_input, "bound K=7 input reuse with owned scratch and optional TX output",
         pybind11::arg("x"),pybind11::arg("wq4"),pybind11::arg("ws4"),pybind11::arg("out"),
         pybind11::arg("n_orig"),pybind11::arg("rgs_ptr"),pybind11::arg("workspace"),
-        pybind11::arg("address"),pybind11::arg("forward_pipeline")=true);
+        pybind11::arg("address"),pybind11::arg("forward_pipeline")=true,
+        pybind11::arg("producer_pack")=pybind11::none());
   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
+  m.def("run_input_pack", &mk_run_input_pack, "probe: a C1 bound cell's input pack alone",
+        pybind11::arg("x"), pybind11::arg("packed"));
   m.def("probe_device", &mk_probe_device, "device geometry probe");
   m.def("read_ts", &mk_read_ts, "phase timestamps (MK_PHASE_TS builds)");
   m.def("read_mhc_ts", &mk_read_mhc_ts, "mhc phase timestamps");

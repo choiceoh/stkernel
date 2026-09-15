@@ -35,7 +35,18 @@ def main():
                         help="8 for bounded smoke; 288 for GLM's full TP4 expert geometry")
     parser.add_argument("--moe-static", default="stock", help="served b12x static-lane spec (STK_moe_static): stock | t,r,sf6[,q0]")
     parser.add_argument("--mla-prefill", default="stock", help="served MLA prefill mode (STK_mla_prefill): stock | tile32 | pair | pair4")
+    parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
+    parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'producer_pack':
+        from probes.engine_producer_pack import main as producer_pack_check
+        producer_pack_check(args.ranks, samples=args.samples, output=args.output)
+        return
+    if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
+        from probes.engine_dense_cells import main as dense_cells_check
+        dense_cells_check(args.ranks, cells=args.lanes.split(':')[1:], seqs=args.seqs, samples=args.samples,
+                          output=args.output)
+        return
     if args.lanes == 'forward_pipeline':
         from probes.engine_forward_pipeline import main as forward_pipeline_check
         forward_pipeline_check(args.ranks)
@@ -80,7 +91,7 @@ def main():
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     torch.manual_seed(29)
     selected = set(args.lanes.split(","))
-    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch"}, selected
+    assert selected <= {"conv", "kda", "kda-storage", "mhc", "indexer", "kpool", "mla", "moe", "moe_route_scatter", "moe_direct_scatter", "moe_route_direct", "moe_fc1_reuse", "moe_compact_staging", "moe_register_scales", "moe_sync_cleanup", "paired_projection", "indexer_boundary", "wide_input", "direct_producer", "calibration", "pointwise", "residency", "latency", "shared_mlp", "kda_ring", "decode7", "decode_rows", "kda_ring_bench", "decode_k7", "moe_output", "moe_pair", "moe_pair_serial", "moe_pair_overlap", "moe_pair_direct", "moe_pair_reuse", "moe_pair_prefetch"}, selected
 
     if 'moe_pair_prefetch' in selected:
         from probes.engine_moe_pair_check import check as moe_pair_check
@@ -119,7 +130,7 @@ def main():
         from probes.engine_decode_k7 import check as k7_check
         k7_check(report, args.ranks)
 
-    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'paired_projection', 'indexer_boundary', 'wide_input', 'direct_producer'}:
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup', 'paired_projection', 'indexer_boundary', 'wide_input', 'direct_producer'}:
         from probes.engine_decode_bundle import require_current_probe
         require_current_probe()
     if 'direct_producer' in selected:
@@ -136,9 +147,9 @@ def main():
     if 'wide_input' in selected:
         from probes.engine_decode_batch import wide_check
         wide_check(report, args.ranks)
-    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales'}:
+    if selected & {'moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup'}:
         from probes.engine_decode_scatter_check import moe_check
-        for lane in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales'):
+        for lane in ('moe_route_scatter', 'moe_direct_scatter', 'moe_route_direct', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup'):
             if lane in selected:
                 moe_check(report, args.ranks, lane)
 

@@ -244,6 +244,7 @@ class DenseLinear:
         self.workspace = None  # optional private W4 scratch for independent execution
         self.decode_input_rows = ()  # immutable candidate cells bound before capture
         self.bound_input_executed = set()
+        self.producer_pack_executed = set()
         packs = []
         if decode_precision == 'fp8':
             pass  # No W4 invocation exists: skip its packing, factorisation and resident bytes.
@@ -353,14 +354,23 @@ class DenseLinear:
             return None
         return self._write_slot
 
-    def _write_slot(self, x, address):
+    def producer_pack_rows(self, rows):
+        """Rows at which this direct writer reads a pack its input's producer wrote: a bound C1 cell only."""
+        return (rows == 8 and self.slot_writer(rows) is not None and self._bound_input(rows, self.packs[0]))
+
+    def _write_slot(self, x, address, pack=None):
         if self.slot_writer(x.shape[0]) is None or x.ndim != 2 or x.shape[1] != self.cols:
             raise ValueError("unsupported direct W4 producer")
         p = self.packs[0]
+        if pack is not None and not self.producer_pack_rows(x.shape[0]):
+            raise ValueError("a producer pack is only a bound C1 cell's input")
         if self._bound_input(x.shape[0], p):
             extension().run_gemm_bound_input(x, p.data, p.scale, address, p.rows,
-                                             p.rowscale.data_ptr(), self.workspace, address)
+                                             p.rowscale.data_ptr(), self.workspace, address,
+                                             producer_pack=pack)
             self.bound_input_executed.add(x.shape[0])
+            if pack is not None:
+                self.producer_pack_executed.add(x.shape[0])
         else:
             extension().run_gemm_to_slot(x, p.data, p.scale, address, p.rows, p.rowscale.data_ptr(), self.workspace)
         self.executed |= 1
