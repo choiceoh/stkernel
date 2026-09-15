@@ -65,6 +65,23 @@ def __getattr__(name):
     return globals()[name]
 
 DRAFTER = Path("/home/choiceoh/models/GLM-5.3-Flash-DFlash2")
+
+# debug (never merge): a paired A/B inside one boot. A sampled request at temperature 0.999999 draws its drafts from
+# the calibrated walk -- per-position alpha on the edge and a per-position temperature factor on the draft
+# distribution, fit offline on 89,609 recorded positions -- while temperature 1.0 keeps today's walk. The target's own
+# distribution moves by 1e-6 relative between the two, so acceptance differences are the draft's.
+DEBUG_ALPHA_B = (0.25, 0.75, 0.75, 0.75, 0.75, 0.75, 0.75)
+DEBUG_TAU_B = (0.7, 0.7, 0.6, 0.6, 0.5, 0.4, 0.4)
+
+
+def debug_arm_b(temperature):
+    """debug (never merge): the calibrated arm is a sampled temperature just under one (tensor or float)."""
+    return (temperature > 0.5) & (temperature < 1.0 - 5e-7)
+
+
+def debug_table(values, k):
+    """debug (never merge): a per-position table at the drafter's width (the last value repeats past seven)."""
+    return tuple(values[:k]) + (values[-1],) * max(0, k - len(values))
 BF16, F32 = torch.bfloat16, torch.float32
 
 
@@ -701,6 +718,11 @@ class Drafter:
         edge = torch.einsum("nkpr,nkcr->nkpc", pred * proj[:, :, None, :], succ)
         if any(a != 1. for a in self.selector_alpha):
             edge *= torch.tensor(self.selector_alpha, device=dev).view(1, K, 1, 1)
+        arm_b = debug_arm_b(temps).view(n, 1)                                           # debug (never merge)
+        edge = torch.where(arm_b.view(n, 1, 1, 1),
+                           edge * torch.tensor(debug_table(DEBUG_ALPHA_B, K), device=dev, dtype=edge.dtype).view(1, K, 1, 1),
+                           edge)
+        tau_b = torch.tensor(debug_table(DEBUG_TAU_B, K), device=dev, dtype=torch.float32)
         scores = unary[:, :, None, :] + edge   # [n, K, prev, cur]
         rows = torch.arange(n, device=dev)
         prev = torch.zeros(n, dtype=torch.int64, device=dev)
@@ -723,7 +745,7 @@ class Drafter:
         for s in range(K):
             sel = scores[rows, s, prev]                                                                    # [n, 16]
             best = sel.argmax(-1)
-            probs = torch.softmax(sel / heat, dim=-1)
+            probs = torch.softmax(sel / torch.where(arm_b, heat * tau_b[s], heat), dim=-1)   # debug: arm B's factor
             probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
             pick = torch.where(stochastic.view(n), _inverse_cdf(probs, uniforms[:, s]), best)
             qprob[:, s] = probs
@@ -826,6 +848,9 @@ class Drafter:
         edge = torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
         if any(a != 1. for a in self.selector_alpha):
             edge *= torch.tensor(self.selector_alpha, device=dev).view(K, 1, 1)
+        arm_b = bool(debug_arm_b(float(temperature)))                                  # debug (never merge)
+        if arm_b:
+            edge = edge * torch.tensor(debug_table(DEBUG_ALPHA_B, K), device=dev, dtype=edge.dtype).view(K, 1, 1)
         scores = unary[:, None, :] + edge
         # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
         # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
@@ -836,7 +861,8 @@ class Drafter:
         drafts, probabilities = [], []
         prev = torch.zeros(1, dtype=torch.int64, device=dev)
         for s in range(K):
-            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
+            heat = max(temperature, 1e-5) * (debug_table(DEBUG_TAU_B, K)[s] if arm_b else 1.0)   # debug: arm B's factor
+            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / heat, dim=-1)   # over the 16 candidates
             walk = probs.cumsum(0)
             pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
                 .clamp_max(probs.numel() - 1)
