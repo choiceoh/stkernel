@@ -181,7 +181,8 @@ GPU 쪽에서 행 수에 비례하는 일(소스 기준):
 
 | 항목 | 소스 | 결과 | 파일 |
 |---|---|---|---|
-| 프로덕션 확장 4변형 컴파일·로드와 관련 20 모듈 시험 | `ebbfa814`(#971·#972 병합 뒤, 머지한 트리) | 컴파일 PASS, 123 개 중 115 통과, 8 skip(GB10), 실패 0. one-shot 소스는 `a4b9787e` 와 같다 | `compile-ebbfa814.json`·`cpu-ebbfa814.log` |
+| 프로덕션 확장 4변형 컴파일·로드와 관련 20 모듈 시험 | `9d42a4e3`(#969 병합 뒤, 머지한 트리) | 컴파일·오라클 PASS, 123 개 중 115 통과, 8 skip(GB10), 실패 0. one-shot 소스는 `a4b9787e` 와 같다 | `compile-9d42a4e3.json`·`cpu-9d42a4e3.log` |
+| 같은 게이트 | `ebbfa814`(#971·#972 병합 뒤) | 같은 결과 | `compile-ebbfa814.json`·`cpu-ebbfa814.log` |
 | 프로덕션 확장 4변형(rails 1/2 × inline 0/1) 컴파일·로드 | `a4b9787e`(main 병합 뒤) | PASS. torch 2.13.0+cu132, nvcc 13.2.78. 확장 이름이 #957 기록과 같다(소스가 같다) | `compile-a4b9787e.json` |
 | 단일 GPU 오라클 컴파일·로드 | `a4b9787e` | PASS. `oneshot_ar`·`oneshot_ar_consumer`·`staged_copy`·`land_ahead` 바인딩 | `oracle-a4b9787e.json` |
 | 관련 CPU 시험 19 모듈 | `a4b9787e` | 118 개 중 110 통과, 8 skip(전부 GB10 필요), 실패 0 | `cpu-a4b9787e.log` |
@@ -248,7 +249,7 @@ python3 overlap_trace.py <run>/diagnostic-c4-2000 13 14 15 16
 
 ## 파일
 
-- `compile-ebbfa814.json`·`cpu-ebbfa814.log`: 머지한 트리의 CPU 게이트.
+- `compile-9d42a4e3.json`·`cpu-9d42a4e3.log`: 머지한 트리의 CPU 게이트. `compile-ebbfa814.json`·`cpu-ebbfa814.log`: 그 직전 병합의 같은 게이트.
 - `compile-a4b9787e.json`·`oracle-a4b9787e.json`·`cpu-a4b9787e.log`: 단일 GPU 로 판정한 소스의 CPU 게이트.
 - `compile.json`·`compile.log`·`toolchain.log`·`oracle.json`·`oracle.log`·`oracle-land-ahead.json`·`cpu.log`: 첫 판(`4d50fd37`, `39a5dc3c`)의 CPU 게이트.
 - `mutation.log`: g++ 오라클 요약 줄과 변이 4종. `mutation-watchdog.log`: 감시 배치 변이.
