@@ -768,16 +768,17 @@ class Glm53Net:
         takes the top-k, pads the misses with -1 and finalizes against the row's block row -- some twenty
         launches a row a layer. Here the lengths are shared across this batch's layers, the candidate keys
         and scales one gather (`lanes.decode_rows`), the horizon a mask written in place and the finalize
-        one launch over the rows' block rows. The logits kernel and the top-k run on the row's own tensors
-        (the row's own keys, the row's own queries, the row's own horizon), so every row's ids are the ones
-        the loop computes: one row keeps them per row, and joined rows (C=2) score every query over its own
-        row's window of the candidates laid end to end, in one launch whose column c is that row's candidate c
-        (`lengths` with the candidate width: the same values at the same columns), then mask and select the
-        [rows*t, n_cand] block in one launch each -- the top-k's slices keep their size, and its selection
-        algorithm, which torch picks from the slice count and size, is one rule for every size up to
-        JOINED_SLICES slices. `joined=False` is the probe's same-build control. The loop's -1 for a
-        winner past the horizon is left to the finalize, which masks `id >= length // pool` itself (kernel and
-        oracle alike) -- the slots and counts it writes are the same. `contexts` [rows], `t` tokens a row."""
+        one launch over the rows' block rows. One row keeps the logits kernel and the top-k as the loop runs
+        them, on the row's own tensors. Joined rows (C=2) run each once for the step: every query is scored over
+        its own row's window of the candidates laid end to end (`lengths` with the candidate width), and column
+        c of a row's logits is that row's candidate c, as in the row's own launch. DeepGEMM scores queries four a
+        block from the block's first window start rounded down to four, so with t and n_cand multiples of four a
+        block holds one row and starts where that row's window starts -- where the row's launch starts, at 0.
+        The mask and the top-k then take the [rows*t, n_cand] block whole: its slices keep their size, and up to
+        JOINED_SLICES slices torch selects the way it does for a row's t. `joined=False` is the probe's same-build
+        control. The loop's -1 for a winner past the horizon is left to the finalize, which masks
+        `id >= length // pool` itself (kernel and oracle alike) -- the slots and counts it writes are the same.
+        `contexts` [rows], `t` tokens a row."""
         from engine.base.constants import zeros
         F = self.F
         kp, k = F.kpool, F.topk // F.kpool
@@ -786,19 +787,20 @@ class Glm53Net:
         if n_cand < k:
             raise ValueError(f"a captured step's candidate capacity ({n_cand} pools) is below the selection width ({k})")
         glue = self.lanes.decode_rows
+        joined = joined and 1 < rows and rows * t <= JOINED_SLICES and t % 4 == 0 and n_cand % 4 == 0
+        # [rows*t] i32 each, read-only across this forward's DSA layers: lengths, horizons and, joined, the query windows
+        lengths = caches.row_lengths(contexts, t, kp, glue.lengths, width=n_cand if joined else 0)
+        seq_lens, ke = lengths[:2]
+        keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
         values = torch.empty((rows * t, k), dtype=torch.float32, device=dev)
         winners = torch.empty((rows * t, k), dtype=torch.int64, device=dev)
-        if joined and 1 < rows and rows * t <= JOINED_SLICES:
-            # [rows*t] i32 each, read-only across this forward's DSA layers: lengths, horizons, the joined windows
-            seq_lens, ke, starts, ends = caches.row_lengths(contexts, t, kp, glue.lengths, width=n_cand)
-            keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
+        if joined:
+            starts, ends = lengths[2:]
             logits = self.lanes.indexer_logits(q8, keys_all.view(rows * n_cand, -1), scales_all.view(-1), w_eff, ends,
                                                ks=starts, width=n_cand)
             glue.horizon(logits, ke)                                                      # -inf past each query's pools, in place
             torch.topk(logits, k, dim=-1, sorted=False, out=(values, winners))
         else:
-            seq_lens, ke = caches.row_lengths(contexts, t, kp, glue.lengths)           # [rows*t] i32, read-only across this forward's DSA layers
-            keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
             ks = zeros(t, dev)
             for r in range(rows):
                 sl = slice(r * t, (r + 1) * t)

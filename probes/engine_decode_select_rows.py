@@ -242,7 +242,8 @@ def check(report):
     served = lanes.served(moe_static='stock')
     gen = torch.Generator(device=DEVICE).manual_seed(915)
     failures = []
-    # numerics: every capacity bucket, one row (the loop both ways) and two rows (every arm), K=7 verify rows
+    # numerics: every capacity bucket, one row (the loop both ways) and two rows (every arm), K=7 verify rows; one-token
+    # rows keep the loop in `_select_rows` (a DeepGEMM query block would span rows), the alternatives still join them
     for rows, t, capacities in ((2, 8, NUMERIC_CAPACITIES), (1, 8, (4096, 32768, 131072)), (2, 1, (4096, 32768))):
         for capacity in capacities:
             fx = Fixture(rows, t, capacity, gen)
