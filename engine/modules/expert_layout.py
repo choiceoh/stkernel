@@ -53,7 +53,7 @@ def _selfcheck() -> None:
     for e in range(E):
         assert torch.equal(row_major_expert(tiled, e, W13_K_IN_BYTES), w[e])
         assert row_major_expert(w, e, W13_K_IN_BYTES).data_ptr() == w[e].data_ptr()
-    for chunk_bytes in (64, 128):
+    for chunk_bytes in (128,):
         tiled = w.reshape(E, rows, kb // chunk_bytes, chunk_bytes).permute(0, 2, 1, 3).contiguous().view(E, rows, kb)
         setattr(tiled, TILE_MAJOR_ATTR, f"plain{chunk_bytes * 2}")
         assert w13_chunk_bytes(tiled) == chunk_bytes

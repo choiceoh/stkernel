@@ -19,7 +19,7 @@ spread is calibrated so one 8-row request reads the fleet's 41.9 distinct expert
 one graph, each with its own weights and routes, which no L2 holds at once. Timing is B/A/A/B brackets, warm
 (64 replays per sample) and evicted (a 128 MiB flush before every replay, outside the events).
 
-Sections (engine_kernel_check.py --lanes moe_c2_cells[:section...][:layers=3,4,5][:chunks=512,256,128]):
+Sections (engine_kernel_check.py --lanes moe_c2_cells[:section...][:layers=3,4,5][:chunks=512,256]):
   chunk    noise-controlled exactness and timing of every chunk against 512: C=2 two requests, C=1 one request,
            16 independent rows
   depth    the C=2 tile's FC2 prefetch ring (three slots, #962) against two slots: does a deeper ring stream
@@ -29,7 +29,7 @@ Sections (engine_kernel_check.py --lanes moe_c2_cells[:section...][:layers=3,4,5
   prefill  noise-controlled exactness and eager timing of the served prefill kernels per chunk (m=2304 Q0 words,
            m=9216 SF6 words)
   shapes   short-prefill static row counts (12, 32): the t tile over a 256 chunk, and the M16 reform tile for
-           every static row count (probe config reform_every_static) over 512 and 256
+           every static row count (probe config reform_every_static, not served) over 512 and 256
   price    what the FC1 input (A + SFA) and scale (SF6) boxes cost the served 16-row tile: the probe-only timing
            cells xa / xs skip those TMA issues (their numerics are garbage and are not compared)
 """
@@ -48,7 +48,7 @@ from probes.engine_decode_fusions import _capture, _time
 
 TARGET_U8 = 41.9      # distinct experts per layer an 8-row C=1 verify reads on the fleet
 LAYERS = (3, 4, 5)
-CHUNKS = (512, 256, 128)
+CHUNKS = (512, 256)
 SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price')
 RANKS = '/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors'
 # bytes a unique expert streams per layer: w13 + w2 + SF6 FC1 (128 x 1552) + SF6 FC2 (64 x 1552)
@@ -336,8 +336,8 @@ def chunk_cells(report, layers, chunks, spread, brackets):
 
 def shape_cells(report, layers, spread, brackets):
     """The static row counts outside C=1 (1..8) and C=2 (16): a short prefill of 9..15 or 17..80 tokens takes the
-    t tile, whose K512 FC1 box spans two 256 w13 chunks. Arms against the served t over 512: t over 256, the M16
-    reform tile for every static row count over 512 (the geometry alone) and over 256 (geometry and chunk)."""
+    t tile, whose K512 FC1 box spans two 256 w13 chunks. Arms against t over 512: t over 256 (what a 256 chunk
+    serves), the M16 reform tile for every static row count over 512 (the geometry alone) and over 256."""
     from engine.kernels.b12x import moe_dispatch as md
     every = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), reform_every_static=True)
     arms = [('t512', 512, None), ('t256', 256, None), ('reform512', 512, every), ('reform256', 256, every),
@@ -355,14 +355,14 @@ def shape_cells(report, layers, spread, brackets):
                 failures += [f'{label}@{rows}/{scope}' for label in failed]
                 for fixture in fixtures:
                     uniques = fx.load(fixture, 7)[:len(group)]
-                    for label in (c for c in ('reform512', 'reform256') if c not in failed):
+                    for label in (c for c in ('t256', 'reform512', 'reform256') if c not in failed):
                         bracket(report, graphs, 't512', label, brackets=brackets, fixture=fixture[0], rows=rows,
                                 scope=scope, layers=len(group), unique_experts=uniques)
             finally:
                 for graph in graphs.values():
                     graph.reset()
-    report('shape_verdict', failed=failures, expected_failures='t256 (a K512 box over two 256 chunks)')
-    if [f for f in failures if not f.startswith('t256@')]:
+    report('shape_verdict', failed=failures)
+    if failures:
         raise RuntimeError(f'shape cells beyond the ulp bound: {failures}')
 
 

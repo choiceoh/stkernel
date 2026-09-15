@@ -49,7 +49,7 @@ class NVFP4Weights:
                        for t in (self.w13, self.w2, self.sf13, self.sf2))):
             raise ValueError("NVFP4 dataflow needs a single dense expert's packed bytes and scale planes")
         h, i = self.hidden, self.intermediate
-        if h % 16 or i % 16 or self.tile13 not in (0, 64, 128, 256) or self.tile2 not in (0, 64):
+        if h % 16 or i % 16 or self.tile13 not in (0, 128, 256) or self.tile2 not in (0, 64):
             raise ValueError("invalid group-16 or tile-major NVFP4 geometry")
         if (self.tile13 and h//2 % self.tile13) or (self.tile2 and i//2 % self.tile2):
             raise ValueError("packed weight tile does not divide its input dimension")

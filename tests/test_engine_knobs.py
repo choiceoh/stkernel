@@ -174,7 +174,7 @@ class MoeStaticSpecTests(unittest.TestCase):
             self.skipTest(f"b12x dispatcher unavailable here: {exc}")
         from engine.modules.expert_layout import W2_K_IN_BYTES, row_major_expert, w13_chunk_bytes
         torch.manual_seed(1)
-        for chunk in (None, 512, 256, 128):                                # the served chunk, then every named one
+        for chunk in (None, 512, 256):                                     # the served chunk, then every named one
             w13 = torch.randint(0, 256, (2, 1024, 2048), dtype=torch.uint8)   # GLM TP4: [E, 2I, H/2]
             w2 = torch.randint(0, 256, (2, 4096, 256), dtype=torch.uint8)     # [E, H, I/2]
             keep13, keep2 = w13.clone(), w2.clone()
@@ -188,7 +188,7 @@ class MoeStaticSpecTests(unittest.TestCase):
                 self.assertTrue(torch.equal(row_major_expert(w2, e, W2_K_IN_BYTES), keep2[e]))
             md.tile_expert_weights_inplace(w13, w2, w13_chunk=chunk)       # idempotent: a second call is a no-op
             self.assertTrue(torch.equal(row_major_expert(w13, 1, w13_chunk_bytes(w13)), keep13[1]))
-            other = 256 if served != 256 else 128
+            other = 256 if served != 256 else 512
             with self.assertRaisesRegex(ValueError, "already tile-major"):  # another chunk never re-lays tiled bytes
                 md.tile_expert_weights_inplace(w13, w2, w13_chunk=other)
 

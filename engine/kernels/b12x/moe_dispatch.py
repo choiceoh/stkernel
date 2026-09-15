@@ -1261,8 +1261,12 @@ def static_v2_weights_sf_pack(**geometry) -> bool:
 
 
 _TILE_MAJOR_ATTR = "_b12x_tile_major"   # False / "plain" / "plain<chunk>" on a weight tensor
-# The w13 chunk of the served tile-major relayout, in fp4 elements per row.
-_W13_TILE_CHUNK = TILED_W13_K_IN
+# The w13 chunk of the served tile-major relayout, in fp4 elements per row. 256: the M16
+# reform's K256 FC1 box (C=1 and C=2 decode) is one chunk, a contiguous 16 KB run, and the
+# gated prefill kernels' K128 box half of one; over 512 both read part of every row's chunk.
+# The t tile's K512 box reads two chunks and stays exact. Same-build control: a view naming
+# TILED_W13_K_IN (measurements/st_c2_moe_chunk_20260915).
+_W13_TILE_CHUNK = 256
 
 
 def _w13_tile_chunk(chunk: "int | None" = None) -> int:

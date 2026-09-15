@@ -34,7 +34,7 @@ SOURCES = ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_stati
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--chunks', default='512,256,128')
+    parser.add_argument('--chunks', default='512,256')
     parser.add_argument('--only', default='static,dynamic')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
