@@ -40,6 +40,7 @@ PREFILL_MODES = ("stock", "tile32")
 # in measurements/st_fixed_k_cost_followup_20260917; consumer proof separate).
 ENABLE_MLA_QREG = True
 ENABLE_MLA_SYNC_CLEAN = False  # private same-build candidate until measured
+ENABLE_MLA_BF16_TILE = False
 ENABLE_MLA_CLUSTER = True
 ENABLE_MLA_PREFILL32 = False
 
@@ -266,8 +267,8 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
          ws["barrier_mla"].data_ptr()] + extra,
         [float(sm_scale), float(ckv_scale)],
         [int(T), int(slots.shape[1]), int(splits), int(probe),
-         ((2 if ENABLE_MLA_QREG and T == 16 and slots.shape[1] >= 128 else 0)
-          | (4 if ENABLE_MLA_SYNC_CLEAN and T in (8, 16) else 0))
+         (8 if ENABLE_MLA_BF16_TILE and T in (8, 16) else ((2 if ENABLE_MLA_QREG and T == 16 and slots.shape[1] >= 128 else 0)
+          | (4 if ENABLE_MLA_SYNC_CLEAN and T in (8, 16) else 0)))
          if branch is None and probe == 0 else 0],
     )
     if branch is not None:

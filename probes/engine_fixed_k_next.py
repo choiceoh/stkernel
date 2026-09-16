@@ -181,11 +181,12 @@ def run(output, ranks, *, compile_only=False, sections=()):
             compile_check(report)
         else:
             torch.manual_seed(91718)
-            wanted = set(sections) or {'mla', 'mhc', 'moe'}
-            if wanted - {'mla', 'mhc', 'moe'}:
+            wanted = set(sections) or {'mla', 'mhc', 'moe', 'mla_bf16'}
+            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16'}:
                 raise ValueError(f'unknown component: {wanted}')
             for name, fn in (('mla', lambda: mla_check(report)), ('mhc', lambda: mhc_check(report, ranks)),
-                             ('moe', lambda: moe_check(report, ranks))):
+                             ('moe', lambda: moe_check(report, ranks)),
+                             ('mla_bf16', lambda: __import__('probes.engine_fixed_k_cost', fromlist=['mla_check']).mla_check(report, bf16_tile=True))):
                 if name in wanted:
                     try:
                         fn()
