@@ -528,6 +528,63 @@ class PrefixCacheTests(unittest.TestCase):
         run_to_end(r, 0)
         self.assertEqual(r.flush_prefix(), {"spilled": 0, "left": 0, "failed": 0})
 
+    def test_the_boundary_conversations_share_reaches_the_tier_once_one_has_started_from_it(self):
+        """A shared prefix stops being a leaf the moment anyone writes past it.
+
+        Leaves alone were the rule until 2026-09-16, so the most-adopted boundary in the cache was
+        the one thing that could never reach the disk -- and a chain that DIVERGES from the leaf's
+        cannot use the leaf at all: it needs the state where the two part. `_victim` already keeps
+        the shared boundary longest in memory, and then a relaunch took it anyway.
+        """
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=64, snapshots=8)
+        r.kv.attach_storage(Storage(64 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0
+        shared = list(range(8))                              # two blocks every conversation begins with
+        first = shared + list(range(100, 112))
+        r.submit(0, len(first), now=0, ids=first)
+        run_to_end(r, 0)
+        r.flush_prefix()
+        chain = cache.chain(first)
+        h8, h20 = chain[8], chain[20]
+        self.assertEqual(sorted(t for t in chain if chain[t] in cache.tier_keys), [20],
+                         "nobody has started from 8 yet: it is the leaf's blocks again")
+
+        second = shared + list(range(200, 212))              # a second conversation adopts 8
+        r.submit(1, len(second), now=0, ids=second)
+        run_to_end(r, 1)
+        self.assertEqual(cache.entries[h8].hits, 1)
+        self.assertFalse(cache.is_leaf(h8), "it is nobody's leaf, and never will be again")
+        r.flush_prefix()
+        self.assertIn(h8, cache.tier_keys, "an adopted inner boundary is worth its blocks twice")
+        self.assertIn(h20, cache.tier_keys)
+
+        # and it is what a third conversation gets once memory has lost it -- a relaunch, an eviction
+        cache.drop(h8)
+        self.assertFalse(cache.has(h8))
+        third = shared + list(range(300, 312))
+        self.assertEqual(cache.tier_lookup_chain(cache.chain(third), len(third)), (8, h8))
+
+    def test_an_inner_boundary_nobody_has_started_from_is_still_the_leaf_s_blocks_again(self):
+        """The old rule's reason stands where it applies: this one would restore what the leaf does."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=64, snapshots=8)
+        r.kv.attach_storage(Storage(64 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0
+        ids = list(range(20))
+        r.submit(0, 20, now=0, ids=ids)
+        run_to_end(r, 0)
+        r.flush_prefix()
+        chain = cache.chain(ids)
+        self.assertEqual(sorted(t for t in chain if chain[t] in cache.tier_keys), [20])
+        for tokens in (4, 8, 12, 16):
+            self.assertEqual(cache.entries[chain[tokens]].hits, 0, tokens)
+            self.assertNotIn(chain[tokens], cache.tier_keys, tokens)
+
     def test_two_boundaries_cannot_share_a_tier_slot(self):
         """The tier indexes by 56 bits of the hash. Two boundaries naming one slot must not be served from it --
         the loser would get the winner's KV, quietly, across the tenant separation the salt exists to draw."""

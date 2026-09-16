@@ -484,6 +484,62 @@ print('{}')
     def launches(self):
         return self.events.read_text().splitlines() if self.events.exists() else []
 
+    def warm_file(self, lines=('{"prompt": "a shared system prompt"}',)):
+        path = self.home / "st-warm.jsonl"
+        path.write_text("".join(l + "\n" for l in lines))
+        probes = self.repo / "probes"
+        probes.mkdir(parents=True, exist_ok=True)
+        (probes / "st_prefix_warm.py").write_text(
+            'import json, os, pathlib, sys\n'
+            'h = pathlib.Path(os.environ["FAKE_HOME"])\n'
+            'if os.environ.get("FAKE_WARM_FAIL"): sys.exit(3)\n'
+            'n = sum(1 for l in open(sys.argv[1]) if l.strip())\n'
+            '(h / "warm-argv").write_text(json.dumps(sys.argv[1:]))\n'
+            'print(f"  warmed {n} prompts")\n')
+        self.env["ST_WARM_FILE"] = str(path)
+        return path
+
+    def test_a_healthy_boot_warms_the_prefix_cache_it_started_empty(self):
+        """`/v1/prefix/warm` and probes/st_prefix_warm.py existed all along with no caller.
+
+        A boot begins with nothing cached, so every relaunch -- three on 2026-09-16 -- made the first
+        conversation prefill the prompt every conversation shares. And the shared boundary is the one
+        the tier could not keep either until PR #1045: it stops being a leaf as soon as anyone writes
+        past it.
+        """
+        self.warm_file()
+        out = self.loop(FAKE_DOOR_DOWN_CALLS=0)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("prefix cache warmed -- warmed 1 prompts", out.stdout)
+        argv = json.loads((self.home / "warm-argv").read_text())
+        self.assertIn("--pin", argv, "pinned, so _victim keeps them behind everything else")
+        self.assertIn("--url", argv)
+        self.assertEqual(argv[0], str(self.home / "st-warm.jsonl"))
+
+    def test_a_warm_that_fails_is_not_a_failed_boot(self):
+        """The fleet is already healthy when this runs. A cache that did not warm is slower, not broken."""
+        self.warm_file()
+        out = self.loop(FAKE_DOOR_DOWN_CALLS=0, FAKE_WARM_FAIL="1")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("prefix warm did not finish (rc=3)", out.stdout)
+        self.assertIn("healthy after", out.stdout)
+        self.assertNotIn("health check failed", out.stdout)
+
+    def test_no_warm_file_is_no_warm_and_no_complaint(self):
+        """And an EMPTY ST_WARM_FILE is off, not the default: `${x-d}`, never `${x:-d}`.
+
+        The tier learned the same lesson the same day (PR #1042) -- an operator who writes
+        `ST_WARM_FILE=` means off, and a `:-` reads that as "unset" and hands back the default.
+        """
+        self.warm_file()                                     # the default path exists and would warm
+        for value in (str(self.home / "absent.jsonl"), ""):
+            with self.subTest(ST_WARM_FILE=value):
+                (self.home / "warm-argv").unlink(missing_ok=True)
+                out = self.loop(FAKE_DOOR_DOWN_CALLS=0, ST_WARM_FILE=value)
+                self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+                self.assertNotIn("prefix", out.stdout)
+                self.assertFalse((self.home / "warm-argv").exists(), "the probe must not have run")
+
     def test_a_taken_fleet_is_waited_for_once_with_nothing_dumped_and_no_crash(self):
         self.lock.write_text("st-replay-other-session")
         out = self.loop(FAKE_DOOR_DOWN_CALLS=99)                 # production is down: no door, no chat
