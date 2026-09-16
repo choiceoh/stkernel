@@ -10,6 +10,38 @@ from engine.profiles.glm53.adapter import Glm53Engine
 from engine.profiles.glm53.boot import native_execution_report
 
 
+class CalibratingBootTests(unittest.TestCase):
+    def test_the_proof_does_not_require_the_lane_calibration_switches_off(self):
+        """A calibrating boot cannot run the packet projection, so the door must not demand it.
+
+        `DenseLinear.packet_projector` refuses outright while an observer is attached -- the packet path
+        bypasses the BF16 storage the observer reads. Requiring `fp8_packet_projection` regardless killed every
+        recalibration at the door (2026-09-16: rank 0 died with the other three collectives present and nothing
+        else missing), which is why production's calibration stayed at 17,189 tokens. Everything calibration
+        does NOT switch off is still required of it.
+        """
+        def net(observer):
+            return NS(layers=[0, 1], dense={'a': NS(executed=3, observer=observer), 'head': NS(executed=True)},
+                      mhc=NS(executed={'a', 'b', 'c'}), shared_mlp={1: NS(executed=True)},
+                      shared_overlap=NS(executed=True),
+                      _router_layers={1}, _router_weights={1: object()}, _router_fp32={1},
+                      prefill_transport=NS(project_tiles=True, executed={
+                          'fp8_all_gather', 'fp8_reduce_scatter', 'fp8_tiled_projection'}))
+        drafter = NS(dense={'fc.weight': NS(executed=3), 'q': NS(executed=1)})
+
+        with self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
+            native_execution_report(net(observer=None), drafter)          # serving: the lane is owed
+        report = native_execution_report(net(observer=object()), drafter)  # calibrating: it is not
+        self.assertNotIn('fp8_packet_projection', report['prefill_collectives'])
+
+        # The relaxation is exactly one lane: a calibrating boot still owes the gather and reduce-scatter.
+        for missing in ('fp8_all_gather', 'fp8_reduce_scatter', 'fp8_tiled_projection'):
+            n = net(observer=object())
+            n.prefill_transport.executed = n.prefill_transport.executed - {missing}
+            with self.subTest(missing=missing), self.assertRaisesRegex(RuntimeError, 'proof is incomplete'):
+                native_execution_report(n, drafter)
+
+
 class NativeQualificationTests(unittest.TestCase):
     def test_missing_native_implementation_cannot_pass_coverage(self):
         net = NS(layers=[0, 1], dense={'a': NS(executed=3), 'head': NS(executed=True)},
