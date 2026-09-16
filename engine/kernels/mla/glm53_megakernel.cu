@@ -2702,8 +2702,10 @@ union MlaUnionTemp {
 constexpr int MLA_UNION_SMEM = sizeof(MlaUnionTemp) + 2 * MLA_UNION_CAP * sizeof(unsigned int);
 static_assert(MLA_UNION_CAP >= 2 * 2176 && MLA_UNION_SMEM <= 99 * 1024);
 __global__ __launch_bounds__(MK_THREADS) void mk_mla_decode_pair_prepare(const MKMlaPairArgs p) {
-  __shared__ MlaUnionTemp temp;
-  __shared__ unsigned int sorted[MLA_UNION_CAP], prefix[MLA_UNION_CAP];
+  extern __shared__ __align__(16) unsigned char storage[];
+  auto& temp = *reinterpret_cast<MlaUnionTemp*>(storage);
+  auto sorted = reinterpret_cast<unsigned int*>(storage + sizeof(MlaUnionTemp));
+  auto prefix = sorted + MLA_UNION_CAP;
   const int group = blockIdx.x, t = group * 2;
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
@@ -4105,6 +4107,8 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
     cudaStreamCaptureStatus status;
     MK_CHECK_CUDA(cudaStreamIsCapturing(c10::cuda::getCurrentCUDAStream(), &status));
     TORCH_CHECK(status == cudaStreamCaptureStatusNone, "warm decode pair before capture");
+    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_decode_pair_prepare,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_UNION_SMEM));
     MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_decode_pair_kernel,
         cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_DECODE_PAIR_SMEM));
     prepared[device] = 1;
@@ -4118,7 +4122,7 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
   p.a.T = (int)ints[0]; p.a.W = (int)ints[1]; p.a.splits = (int)ints[2];
   p.groups = p.a.T / 2; p.a.sm_scale = scalars[0]; p.a.ckv_scale = scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_launch(mk_mla_decode_pair_prepare, p.groups, 0, stream, p);
+  mk_launch(mk_mla_decode_pair_prepare, p.groups, MLA_UNION_SMEM, stream, p);
   mk_launch<2 * MK_THREADS>(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_DECODE_PAIR_SMEM, stream, p);
   mk_mla_decode_pair_merge<<<dim3(p.a.T, MLA_H / MLA_WARPS), MK_THREADS, 0, stream>>>(p.a);
   MK_CHECK_CUDA(cudaGetLastError());

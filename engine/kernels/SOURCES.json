@@ -356,7 +356,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "d5b92d5fd4d11ba9144ca6d8ac5f0bb9a50cb4aace6312745a0462843d6a3d2e",
+      "local_sha256": "a371e60aacaa816b0f6d04f3893df810fb12ba0c66d6aceef3c0fa59bd554420",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
