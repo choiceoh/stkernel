@@ -807,4 +807,6 @@ class KernelBudgetTests(unittest.TestCase):
                              capture_output=True, text=True, timeout=120)
         self.assertEqual(out.returncode, 0)
         self.assertIn("범용 서빙 성분: MoE 전문가", out.stdout)
-        self.assertIn("신뢰도 74%", out.stdout)
+        # k=7 로 오면서 73% 로 내려갔다: 오라클의 결측 계수 판단이고, 측정 계수는
+        # k 가 6 이던 때 모은 것이다(신뢰도는 예측 정확도가 아니라 계수 충족률).
+        self.assertIn("신뢰도 73%", out.stdout)

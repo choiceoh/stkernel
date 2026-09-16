@@ -102,7 +102,7 @@ class EngineBytes:
     experts: int = 288
     topk: int = 8
     moe_layers: int = 42
-    spec_k: int = 6
+    spec_k: int = 7
     tp: int = 4
     bw_bytes_s: float = 273e9                  # GB10 통합메모리 공칭(도달률은 --eff)
     # ---- PR #838(c4_scaling_20260913) 실측 정정: 바이트는 맞았으나 셋이 틀렸다 ----
