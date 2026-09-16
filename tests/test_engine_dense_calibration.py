@@ -301,6 +301,30 @@ class Fp8GptqTests(unittest.TestCase):
             self.assertTrue(torch.equal(q.view(torch.uint8), q2.view(torch.uint8)))
 
 
+class BudgetTests(unittest.TestCase):
+    def test_one_boot_can_sum_every_target_hessian_a_glm53_rank_needs(self):
+        """A full recalibration must not need four fleet windows.
+
+        Each boot sums what fits BUDGET_BYTES and defers the rest, so the budget decides how many boots a
+        recalibration costs -- and every one of them is a window, a production outage, and a chance to die on
+        the path 33차 recorded dying repeatedly. These are the target weights a GLM-5.3 rank packs (the shapes
+        rank3of4 carries, TP=4), by the K each one is calibrated over; the drafter's blobs are extra and are
+        not moved aside for a target recalibration.
+        """
+        from engine.kernels.dense.calibration import BUDGET_BYTES
+        rank = ((4096, 34 + 11 + 42 + 11 + 3 + 1),   # kda.in_proj, mla.o_proj, moe.sh_gate_up, mla.qkv_a, mlp.gate_up, head
+                (2048, 34),                          # kda.o_proj
+                (1536, 11 + 11),                     # idx.wq_b, mla.q_b
+                (3072, 3),                           # mlp.down
+                (512, 42))                           # moe.sh_down
+        plan = sum(Calibration.nbytes(PackStore.tiles("x", k)) * n for k, n in rank)
+        self.assertLess(plan, BUDGET_BYTES,
+                        f"a rank's target Hessians are {plan / 2**30:.2f} GiB but the budget is "
+                        f"{BUDGET_BYTES / 2**30:.2f} GiB: a full recalibration would take "
+                        f"{-(-plan // BUDGET_BYTES)} boots, not one")
+        self.assertLess(BUDGET_BYTES, 16 << 30, "the budget lands in arena_bytes; it cannot be free")
+
+
 class CalibrationProvenanceTests(unittest.TestCase):
     """A Hessian belongs to the weights that made the activations it summed.
 

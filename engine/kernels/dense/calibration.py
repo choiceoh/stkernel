@@ -22,7 +22,20 @@ import torch
 
 ROWS_TARGET = 32768        # rows per blob before the sums are filed on their own (33차: 33K tokens)
 ROWS_FLOOR = 4096          # fewer than this at shutdown is not filed: a starved Hessian would pack worse than none
-BUDGET_BYTES = 2 << 30     # per rank, from the arena; the rest waits for a later boot
+BUDGET_BYTES = 8 << 30     # per rank, from the arena; the rest waits for a later boot -- see below
+# Every target Hessian a GLM-5.3 rank needs sums to 7.25 GiB (102 blobs at K=4096, 34 at 2048, 22 at 1536,
+# 3 at 3072, 42 at 512), so at 2 GiB a full recalibration took FOUR boots, each one a fleet window and each
+# one a chance to die on the path 33차 recorded dying repeatedly. Eight covers a rank in one pass with room
+# to spare. This is a CAP, not an allocation: `calib_bytes` only grows for blobs a boot actually lacks, so a
+# steady-state boot with a few missing sites is unchanged, and the sum lands in `arena_bytes`, which
+# `prepare_allocation` judges -- a budget that does not fit refuses the boot at the memory gate instead of
+# taking the room from serving.
+#
+# Why a full recalibration is worth the window at all (measured 2026-09-16, measurements/st_site_lane_table_20260916):
+# production's blobs are a thin sum -- ntok 17,189, and `_gptq_inverse_factor` steps its damping ladder to 10%
+# on them -- and against a 19x thicker calibration they cost a median 33% of the W4 decode lane's error. On
+# three of sixteen sites the thin blob made GPTQ WORSE THAN RTN, which is the packer compensating for a
+# distribution it does not have.
 GRAM_ROWS = 256           # small calls share one Gram update; bounded staging is part of the same budget
 
 
