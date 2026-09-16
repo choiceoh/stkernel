@@ -2359,7 +2359,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                     and not direct_scatter and not config.get("probe_direct_scatter", False)
                     and not config.get("probe_route_scatter", False)
                     and bool(config.get("scatter_vec4", True)))
-    return dict(config, resident_waves=bool(reform and m == 8 and config.get("resident_waves", True)),
+    return dict(config, resident_waves=bool(reform and m == 8 and config.get("resident_waves", False)),
                 decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,

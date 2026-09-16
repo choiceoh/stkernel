@@ -145,7 +145,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "87c0683eecfbd9d52f69a6c2584bfd481ad34444ec05939d0cfa17dde14b0fa8",
+      "local_sha256": "63e83f537e1b05d5e12f9a319b4d610d1df48c6d89ac014a5eecce0a75e8b372",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -376,7 +376,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "bc114c3efaff816021b1a012ecf3d1d1785352a1065c908ca465b9c4b67c1697",
+      "local_sha256": "e7cde9f181f77b8256cb3e17fa957ece17e96451a560e1d36c804ea13581e441",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",

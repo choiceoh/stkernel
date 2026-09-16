@@ -211,7 +211,7 @@ class Glm53Net:
         # A producer writes its bound C1 consumer's input pack (KDA o_proj from the output norm). False is the
         # same-build control for component probes; serving binds it before capture.
         self.producer_packs = True
-        self.mhc_input_packs = True
+        self.mhc_input_packs = False
 
     # -- binding ----------------------------------------------------------------
     def specs(self):

@@ -37,7 +37,7 @@ PREFILL_MODES = ("stock", "tile32")
 # not an env switch -- an A/B flips this module attribute before maybe_arm().
 ENABLE_MLA_CLUSTER = True
 ENABLE_MLA_PREFILL32 = False
-ENABLE_MLA_DECODE_PAIR = True  # same-build control, set before graph capture
+ENABLE_MLA_DECODE_PAIR = False  # same-build control, set before graph capture
 
 
 def configure_prefill(mode: str) -> None:
