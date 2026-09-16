@@ -56,7 +56,7 @@ from probes.engine_decode_fusions import _capture, _time
 TARGET_U8 = 41.9      # distinct experts per layer an 8-row C=1 verify reads on the fleet
 LAYERS = (3, 4, 5)
 CHUNKS = (512, 256)
-SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price', 'prefetch', 'bulk')
+SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price', 'prefetch', 'bulk', 'input')
 PREFETCH_CELLS = ('l2', 'lf2', 'lf4', 'lf8')   # l2 repeats the first ticket's control arm beside the FC2-only cells
 RANKS = '/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors'
 # bytes a unique expert streams per layer: w13 + w2 + SF6 FC1 (128 x 1552) + SF6 FC2 (64 x 1552)
@@ -81,7 +81,7 @@ def _sample_sha(t):
 class Layer:
     """One MoE layer's rank bytes, served views (in place) and the other chunks' w13 copies."""
 
-    def __init__(self, loader, keys, L, lane, chunks):
+    def __init__(self, loader, keys, L, lane, chunks, *, bulk=False):
         from engine.kernels.b12x import moe_dispatch as md
         from engine.modules.nvfp4_sf import mma_sf_view
         from engine.profiles.glm53.modelopt_scales import ModelOptScales
@@ -115,12 +115,14 @@ class Layer:
             self.views[chunk] = dataclasses.replace(
                 views, w13_fp4=w13_t.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
                 w13_tiled_storage=w13_t, w13_chunk=chunk)
-        if served == 256:
+        if served == 256 and bulk:
             # cell z: a permuted copy of BOTH tile-major storages (w13 over the served 256 chunk, w2) per
             # permutation kind, so the served view's bytes are untouched and every other arm keeps reading
             # them. Three kinds ride the same bulk_b kernel: the one whose bytes the MMA reads exactly is the
             # smem order the TMA writes (the first z ticket, c2z-0917, failed the byte kind by 3e7 ulps)
-            w13_t, w2_t = md._tile_expert_weights(self.w13, self.w2, w13_chunk=served)
+            # moe_prepare already rewrites these tensors in place. Applying
+            # the row-major-to-tile transform again corrupts every z variant.
+            w13_t, w2_t = views.w13_tiled_storage, views.w2_tiled_storage
             for label, kind in (('z', 'byte'), ('zn', 'nibble'), ('zp', 'plain')):
                 w13_z, w2_z = md._swizzle_tile_boxes(w13_t, w2_t, kind=kind)
                 self.views[label] = dataclasses.replace(
@@ -446,6 +448,39 @@ def prefetch_cells(report, layers, spread, brackets):
                                  ('lf4', served, md._parse_glm53_static_v2('t,r,sf6,batch,lf4'))], spread)
 
 
+def input_cells(report, layers, spread, brackets):
+    """Same quantizer and exact BF16 inputs, scalar versus two aligned vector loads."""
+    from engine.kernels.b12x import moe_dispatch as md
+    served = md._w13_tile_chunk()
+    base = md._parse_glm53_static_v2('t,r,sf6,batch')
+    arms = [(name, served, dict(base, input_vec16=enabled))
+            for name, enabled in (('scalar', False), ('vector', True), ('scalar_b', False))]
+    failed_all = []
+    for rows in (8, 16):
+        fixtures = [(f'c{rows//8}_requests', rows, rows//8, spread),
+                    (f'm{rows}_independent', rows, rows, 1.),
+                    (f'm{rows}_shared', rows, 1, 0.)]
+        fx = Fixtures(layers, rows)
+        fx.load(fixtures[0], 1)
+        for scope, group in (('single', layers[:1]), ('chain', layers)):
+            graphs, accs = capture_arms(group, fx, arms)
+            try:
+                failed = exact_arms(report, group, fx, fixtures, graphs, accs,
+                                    'scalar', 'scalar_b', ['vector'], scope=scope)
+                failed_all.extend(failed)
+                if not failed:
+                    uniques = fx.load(fixtures[0], 7)[:len(group)]
+                    bracket(report, graphs, 'scalar', 'vector', brackets=brackets,
+                            fixture=fixtures[0][0], rows=rows, scope=scope,
+                            layers=len(group), unique_experts=uniques)
+            finally:
+                for graph in graphs.values():
+                    graph.reset()
+        stamp_cells(report, layers, arms[:2], spread, rows=rows)
+    if failed_all:
+        raise RuntimeError(f'vector input loads failed: {failed_all}')
+
+
 def bulk_cells(report, layers, spread, brackets):
     """cell z against the served tile: the same bytes through one bulk copy per B stage."""
     from engine.kernels.b12x import moe_dispatch as md
@@ -478,7 +513,9 @@ def bulk_cells(report, layers, spread, brackets):
                     graph.reset()
     report('bulk_verdict', exact_kinds=sorted(passed), failed_kinds=sorted(set(kinds) - passed))
     if passed:
-        stamp_cells(report, layers, [('served', served, None)] + [(k, k, z) for k in sorted(passed)], spread)
+        stamp_cells(report, layers, [('served', served, None)] + [
+            (k, k, z)
+            for k in sorted(passed)], spread)
     if not passed:
         raise RuntimeError('bulk cells: no storage order reproduced the served bytes (byte, nibble, plain all beyond the ulp bound)')
 
@@ -681,7 +718,7 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
         lane = served(moe_static='t,r,sf6,batch,q0')
         loader = rank_loader(path)
         keys = set(loader.keys())
-        layers = [Layer(loader, keys, L, lane, chunks) for L in layer_ids]
+        layers = [Layer(loader, keys, L, lane, chunks, bulk='bulk' in wanted) for L in layer_ids]
         report('weights', layers=[layer.identity for layer in layers],
                allocated_bytes=torch.cuda.memory_allocated())
         spread = calibrate(layers, report)
@@ -694,6 +731,7 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
                             ('shapes', lambda: shape_cells(report, layers, spread, brackets)),
                             ('prefetch', lambda: prefetch_cells(report, layers, spread, brackets)),
                             ('bulk', lambda: bulk_cells(report, layers, spread, brackets)),
+                            ('input', lambda: input_cells(report, layers, spread, brackets)),
                             # last: the timing cells read garbage scales/inputs, a fault would poison the context
                             ('price', lambda: price_cells(report, layers, spread, brackets))):
             if section not in wanted:

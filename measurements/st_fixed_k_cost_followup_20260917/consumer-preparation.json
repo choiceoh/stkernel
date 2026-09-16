@@ -1,0 +1,1925 @@
+{
+  "scope": "Observed counters; late compile/load is not waived",
+  "records": [
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c1/server.json",
+      "source_sha256": "ab246e7009e970141f8934ab9be3675f8002bcecc481c6406f5ade00cfed654b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c1/server.json",
+      "source_sha256": "ab246e7009e970141f8934ab9be3675f8002bcecc481c6406f5ade00cfed654b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c1/server.json",
+      "source_sha256": "ab246e7009e970141f8934ab9be3675f8002bcecc481c6406f5ade00cfed654b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c1/server.json",
+      "source_sha256": "ab246e7009e970141f8934ab9be3675f8002bcecc481c6406f5ade00cfed654b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q0",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q0/server.json",
+      "source_sha256": "54a77078b9ba20450211b9af13c279723b527fde5590f59011abc0c8769f1272",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q0",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q0/server.json",
+      "source_sha256": "54a77078b9ba20450211b9af13c279723b527fde5590f59011abc0c8769f1272",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q0",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q0/server.json",
+      "source_sha256": "54a77078b9ba20450211b9af13c279723b527fde5590f59011abc0c8769f1272",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q0",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q0/server.json",
+      "source_sha256": "54a77078b9ba20450211b9af13c279723b527fde5590f59011abc0c8769f1272",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q1/server.json",
+      "source_sha256": "34f36cd934433b98fc83f85158a07aa77a07e35c83190681ead7125792d1d7fb",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q1/server.json",
+      "source_sha256": "34f36cd934433b98fc83f85158a07aa77a07e35c83190681ead7125792d1d7fb",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q1/server.json",
+      "source_sha256": "34f36cd934433b98fc83f85158a07aa77a07e35c83190681ead7125792d1d7fb",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q1/server.json",
+      "source_sha256": "34f36cd934433b98fc83f85158a07aa77a07e35c83190681ead7125792d1d7fb",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q2",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q2/server.json",
+      "source_sha256": "a9a9f542de60f44b8fb15dd8d8b99d346421822cd93e814a8614e89710cf15a0",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q2",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q2/server.json",
+      "source_sha256": "a9a9f542de60f44b8fb15dd8d8b99d346421822cd93e814a8614e89710cf15a0",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q2",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q2/server.json",
+      "source_sha256": "a9a9f542de60f44b8fb15dd8d8b99d346421822cd93e814a8614e89710cf15a0",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-2000-q2",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-2000-q2/server.json",
+      "source_sha256": "a9a9f542de60f44b8fb15dd8d8b99d346421822cd93e814a8614e89710cf15a0",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-32000-qall",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-32000-qall/server.json",
+      "source_sha256": "045815a92edcdb31fc63eaabdc8997620e0f8d3839f69517d2b87aefce2fa0c8",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-32000-qall",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-32000-qall/server.json",
+      "source_sha256": "045815a92edcdb31fc63eaabdc8997620e0f8d3839f69517d2b87aefce2fa0c8",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-32000-qall",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-32000-qall/server.json",
+      "source_sha256": "045815a92edcdb31fc63eaabdc8997620e0f8d3839f69517d2b87aefce2fa0c8",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-c2-32000-qall",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-c2-32000-qall/server.json",
+      "source_sha256": "045815a92edcdb31fc63eaabdc8997620e0f8d3839f69517d2b87aefce2fa0c8",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c1/server.json",
+      "source_sha256": "4b1ebbfc51a027ba7a6de90a09a78784e4bfd4e4fe764653dc1c2b140ed87e66",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c1/server.json",
+      "source_sha256": "4b1ebbfc51a027ba7a6de90a09a78784e4bfd4e4fe764653dc1c2b140ed87e66",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c1/server.json",
+      "source_sha256": "4b1ebbfc51a027ba7a6de90a09a78784e4bfd4e4fe764653dc1c2b140ed87e66",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c1/server.json",
+      "source_sha256": "4b1ebbfc51a027ba7a6de90a09a78784e4bfd4e4fe764653dc1c2b140ed87e66",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c2",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c2/server.json",
+      "source_sha256": "16ef4ff21b8ea4b8b9bffe0d611090086ca5141c1b464524505e596a4521edaf",
+      "preparation_changed": true,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c2",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c2/server.json",
+      "source_sha256": "16ef4ff21b8ea4b8b9bffe0d611090086ca5141c1b464524505e596a4521edaf",
+      "preparation_changed": true,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c2",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c2/server.json",
+      "source_sha256": "16ef4ff21b8ea4b8b9bffe0d611090086ca5141c1b464524505e596a4521edaf",
+      "preparation_changed": true,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "phase": "measure-fixed-c2",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T193902-5298c80181e9/measure-fixed-c2/server.json",
+      "source_sha256": "16ef4ff21b8ea4b8b9bffe0d611090086ca5141c1b464524505e596a4521edaf",
+      "preparation_changed": true,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260916T200044-8c4c25c83e98",
+      "phase": "measure-c1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T200044-8c4c25c83e98/measure-c1/server.json",
+      "source_sha256": "05c17ad85d8522f35658399c486ccec6b6137a07f45f5a33cfd3fa9aec2fb0b6",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260916T200044-8c4c25c83e98",
+      "phase": "measure-c1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T200044-8c4c25c83e98/measure-c1/server.json",
+      "source_sha256": "05c17ad85d8522f35658399c486ccec6b6137a07f45f5a33cfd3fa9aec2fb0b6",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260916T200044-8c4c25c83e98",
+      "phase": "measure-c1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T200044-8c4c25c83e98/measure-c1/server.json",
+      "source_sha256": "05c17ad85d8522f35658399c486ccec6b6137a07f45f5a33cfd3fa9aec2fb0b6",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260916T200044-8c4c25c83e98",
+      "phase": "measure-c1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T200044-8c4c25c83e98/measure-c1/server.json",
+      "source_sha256": "05c17ad85d8522f35658399c486ccec6b6137a07f45f5a33cfd3fa9aec2fb0b6",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 63,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c1/server.json",
+      "source_sha256": "cf6e420b906a498ce4d88b360fae2e39c5baf5331e0a8d47b8a87ebd48685ced",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c1/server.json",
+      "source_sha256": "cf6e420b906a498ce4d88b360fae2e39c5baf5331e0a8d47b8a87ebd48685ced",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c1/server.json",
+      "source_sha256": "cf6e420b906a498ce4d88b360fae2e39c5baf5331e0a8d47b8a87ebd48685ced",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c1/server.json",
+      "source_sha256": "cf6e420b906a498ce4d88b360fae2e39c5baf5331e0a8d47b8a87ebd48685ced",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 27,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q0",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q0/server.json",
+      "source_sha256": "648c98f961eca435deba74020411130f8615c3d7da086488637f44f5710047f2",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q0",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q0/server.json",
+      "source_sha256": "648c98f961eca435deba74020411130f8615c3d7da086488637f44f5710047f2",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q0",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q0/server.json",
+      "source_sha256": "648c98f961eca435deba74020411130f8615c3d7da086488637f44f5710047f2",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q0",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q0/server.json",
+      "source_sha256": "648c98f961eca435deba74020411130f8615c3d7da086488637f44f5710047f2",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 44,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q1/server.json",
+      "source_sha256": "3c455b9b1aebe922630de1c9464f9ec543726f750b8f7fbecfadf8922866e4e1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q1/server.json",
+      "source_sha256": "3c455b9b1aebe922630de1c9464f9ec543726f750b8f7fbecfadf8922866e4e1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q1/server.json",
+      "source_sha256": "3c455b9b1aebe922630de1c9464f9ec543726f750b8f7fbecfadf8922866e4e1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q1/server.json",
+      "source_sha256": "3c455b9b1aebe922630de1c9464f9ec543726f750b8f7fbecfadf8922866e4e1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 46,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q2",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q2/server.json",
+      "source_sha256": "f583b77a28def2e67cc1173fa2da30ec2722fd952b76c5bdf06569ec0965a76b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q2",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q2/server.json",
+      "source_sha256": "f583b77a28def2e67cc1173fa2da30ec2722fd952b76c5bdf06569ec0965a76b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q2",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q2/server.json",
+      "source_sha256": "f583b77a28def2e67cc1173fa2da30ec2722fd952b76c5bdf06569ec0965a76b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-2000-q2",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-2000-q2/server.json",
+      "source_sha256": "f583b77a28def2e67cc1173fa2da30ec2722fd952b76c5bdf06569ec0965a76b",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 48,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-32000-qall",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-32000-qall/server.json",
+      "source_sha256": "3d852306bb884cf346c41af061878d2f64c79a40433a57afd8c0d535f4625901",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-32000-qall",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-32000-qall/server.json",
+      "source_sha256": "3d852306bb884cf346c41af061878d2f64c79a40433a57afd8c0d535f4625901",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-32000-qall",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-32000-qall/server.json",
+      "source_sha256": "3d852306bb884cf346c41af061878d2f64c79a40433a57afd8c0d535f4625901",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-c2-32000-qall",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-c2-32000-qall/server.json",
+      "source_sha256": "3d852306bb884cf346c41af061878d2f64c79a40433a57afd8c0d535f4625901",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 49,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c1/server.json",
+      "source_sha256": "77c0aecb636ab6c2ff7b1f1588cbb50e5fad25cd0849c022465b770b2ca135da",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c1/server.json",
+      "source_sha256": "77c0aecb636ab6c2ff7b1f1588cbb50e5fad25cd0849c022465b770b2ca135da",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c1/server.json",
+      "source_sha256": "77c0aecb636ab6c2ff7b1f1588cbb50e5fad25cd0849c022465b770b2ca135da",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c1/server.json",
+      "source_sha256": "77c0aecb636ab6c2ff7b1f1588cbb50e5fad25cd0849c022465b770b2ca135da",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c2",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c2/server.json",
+      "source_sha256": "cafe35f7549c9d00e4219e40dfb2e633011f2e372ea2140521724840dd33f4a3",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c2",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c2/server.json",
+      "source_sha256": "cafe35f7549c9d00e4219e40dfb2e633011f2e372ea2140521724840dd33f4a3",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c2",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c2/server.json",
+      "source_sha256": "cafe35f7549c9d00e4219e40dfb2e633011f2e372ea2140521724840dd33f4a3",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "phase": "measure-fixed-c2",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T201737-991323be333c/measure-fixed-c2/server.json",
+      "source_sha256": "cafe35f7549c9d00e4219e40dfb2e633011f2e372ea2140521724840dd33f4a3",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 2,
+      "run_id": "20260916T204209-c940c8bebf7d",
+      "phase": "measure-c1",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T204209-c940c8bebf7d/measure-c1/server.json",
+      "source_sha256": "d0c969d73063105e16a261fafddfa42a77ac3f3406eaea1f1cf69ea96a10eca1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 2,
+      "run_id": "20260916T204209-c940c8bebf7d",
+      "phase": "measure-c1",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T204209-c940c8bebf7d/measure-c1/server.json",
+      "source_sha256": "d0c969d73063105e16a261fafddfa42a77ac3f3406eaea1f1cf69ea96a10eca1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 2,
+      "run_id": "20260916T204209-c940c8bebf7d",
+      "phase": "measure-c1",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T204209-c940c8bebf7d/measure-c1/server.json",
+      "source_sha256": "d0c969d73063105e16a261fafddfa42a77ac3f3406eaea1f1cf69ea96a10eca1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    },
+    {
+      "arm": "A",
+      "run": 2,
+      "run_id": "20260916T204209-c940c8bebf7d",
+      "phase": "measure-c1",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T204209-c940c8bebf7d/measure-c1/server.json",
+      "source_sha256": "d0c969d73063105e16a261fafddfa42a77ac3f3406eaea1f1cf69ea96a10eca1",
+      "preparation_changed": false,
+      "before": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "after": {
+        "specializations": 61,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      }
+    }
+  ]
+}

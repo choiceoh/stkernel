@@ -38,6 +38,10 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes in ('fixed_k_compile', 'fixed_k_cost'):
+        from probes.engine_fixed_k_cost import run
+        run(args.output, args.ranks, compile_only=args.lanes == 'fixed_k_compile')
+        return
     if args.lanes == 'boundary_stage':
         from probes.engine_boundary_stage import run as boundary_stage_check
         boundary_stage_check(args.output)

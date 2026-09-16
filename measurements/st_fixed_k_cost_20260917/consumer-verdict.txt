@@ -1,0 +1,14 @@
+                             cand 69c5420c     base ffd19b44
+boots (warm samples)                     0                 0
+decode step/s                            -                 -
+tokens/step                              -                 -
+decode tok/s                             -                 -
+warm prefill 2K tok/s                    -                 -
+warm prefill 32K tok/s                   -                 -
+cold TTFT 2K s                        1.13              1.14
+cold TTFT 32K s                       9.61              9.66
+quality                                  -                 -
+korean dirty                             -                 -
+invalid: A: C=1 quality or Korean corruption gate failed, quality 7/9, no finite decode window
+verdict: NO EVIDENCE: the candidate has no valid warm sample (its records failed gates)
+verdict written to measurements/st_fixed_k_cost_20260917/verdicts.jsonl
