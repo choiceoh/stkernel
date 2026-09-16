@@ -2550,7 +2550,9 @@ constexpr int MLA_PAIR_MAX_W = 2176;
 constexpr int MLA_PAIR_PREP_SMEM = (2 * MLA_PAIR_HASH + 3) * 4;
 constexpr int MLA_PAIR_SMEM = MLA_SMEM_RING + 2 * MLA_SMEM_S
                              + 2 * MLA_SMEM_P + 2 * MLA_SMEM_C;
-constexpr int MLA_DECODE_PAIR_SMEM = MLA_PAIR_SMEM + 2 * MLA_SMEM_Q;
+constexpr int MLA_PAIR_MAP_BYTES = MLA_NSTAGE * MLA_TILE * sizeof(int);
+constexpr int MLA_DECODE_PAIR_SMEM = 2 * MLA_SMEM + MLA_PAIR_MAP_BYTES;
+static_assert(MLA_DECODE_PAIR_SMEM <= 99 * 1024);
 constexpr int MLA_GROUP4_THREADS = 2 * MK_THREADS;
 constexpr int MLA_GROUP4_PREP_SMEM = MLA_PAIR_HASH * 12 + 12;
 // Weak-overlap groups process two independent rows at a time in two
@@ -2775,24 +2777,25 @@ __device__ __forceinline__ void mla_group_sync() {
   }
 }
 
-// Keep the only KV copy as FP8, as v5 does. Two shared Q tiles would force
-// one CTA/SM; Q fragments instead use the read-only cache. This adds ~T*16KB
-// of unique Q traffic versus T*W*512B of original KV traffic. ROWS is static
-// so the two output accumulator arrays stay register-indexed.
+// Prefill union pairs keep Q in the read-only cache. Decode pairs instead
+// use one warp group and one shared Q tile per query, with independently
+// indexed FP8 rows in a shared ring; all accumulators stay register-indexed.
 template <int ROWS, int GROUP_ROWS = ROWS, bool SUBGROUP = false, bool PARTIAL = false>
 __device__ __forceinline__ void mla_pair_attention(
     const MKMlaPairArgs& p, int t, int length, const int* selected,
     const int* bits, unsigned char* smem, int split = 0) {
   const MKMlaArgs& a = p.a;
+  constexpr bool parallel_pair = PARTIAL && ROWS == 1 && GROUP_ROWS == 2;
   constexpr int shared_rows = GROUP_ROWS == 4 ? 4 : 2;
   constexpr int load_warps = GROUP_ROWS == 4 ? 16 : MLA_WARPS;
+  constexpr int ring_bytes = (parallel_pair ? 2 : 1) * MLA_SMEM_RING;
   uint8_t* ring = smem;
-  float* ss = (float*)(ring + MLA_SMEM_RING);
+  float* ss = (float*)(ring + ring_bytes);
   __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + shared_rows * MLA_SMEM_S);
   float* scorr = (float*)((uint8_t*)sp + shared_rows * MLA_SMEM_P);
   const int lane = threadIdx.x & 31, cta_warp = threadIdx.x >> 5;
   const int warp = cta_warp % MLA_WARPS;
-  const int row_base = GROUP_ROWS == 4 ? (cta_warp / MLA_WARPS) * ROWS : 0;
+  const int row_base = (GROUP_ROWS == 4 || parallel_pair) ? (cta_warp / MLA_WARPS) * ROWS : 0;
   const int load_warp = GROUP_ROWS == 4 ? cta_warp : warp;
   const int g = lane >> 2, q4 = lane & 3;
   float acc[ROWS][8][4];
@@ -2805,11 +2808,25 @@ __device__ __forceinline__ void mla_pair_attention(
     for (int nt = 0; nt < 8; ++nt)
       acc[row][nt][0] = acc[row][nt][1] = acc[row][nt][2] = acc[row][nt][3] = 0.f;
   }
-  const int ntile = (length + MLA_TILE - 1) / MLA_TILE;
-  __nv_bfloat16* sq = (__nv_bfloat16*)(smem + MLA_PAIR_SMEM);
+  int first0 = 0, count0 = 0, count1 = 0;
+  if constexpr (parallel_pair) {
+    const int len0 = a.lens[t], len1 = a.lens[t+1];
+    const int per0 = (len0 + a.splits - 1) / a.splits;
+    const int per1 = (len1 + a.splits - 1) / a.splits;
+    first0 = min(len0, split * per0);
+    const int first1 = min(len1, split * per1);
+    count0 = min(len0-first0, per0); count1 = min(len1-first1, per1);
+    length = row_base ? count1 : count0;
+    selected = a.slots + (size_t)(t+row_base) * a.W + (row_base ? first1 : first0);
+  }
+  const int ntile = ((parallel_pair ? max(count0,count1) : length) + MLA_TILE - 1) / MLA_TILE;
+  int* maps = reinterpret_cast<int*>(smem + 2 * MLA_SMEM - 2 * MLA_SMEM_Q);
+  __nv_bfloat16* sq = (__nv_bfloat16*)(smem + (parallel_pair ?
+      MLA_DECODE_PAIR_SMEM - 2 * MLA_SMEM_Q : MLA_PAIR_SMEM));
   if constexpr (PARTIAL) {
-    if (length > 0) {
-      for (int i = threadIdx.x; i < ROWS * MLA_H * (MLA_D / 8); i += MK_THREADS) {
+    if ((parallel_pair ? ntile : length) > 0) {
+      for (int i = threadIdx.x; i < (parallel_pair ? 2 : ROWS) * MLA_H * (MLA_D / 8);
+           i += (parallel_pair ? 2 : 1) * MK_THREADS) {
         const int h = i / (MLA_D / 8), col = (i % (MLA_D / 8)) * 8;
         const uint32_t dst = static_cast<uint32_t>(__cvta_generic_to_shared(sq + h * MLA_CP + col));
         const __nv_bfloat16* src = a.q + ((size_t)t * MLA_H + h) * MLA_D + col;
@@ -2818,14 +2835,31 @@ __device__ __forceinline__ void mla_pair_attention(
     }
   }
   auto issue = [&](int ti) {
-    uint8_t* dst = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_RP;
+    uint8_t* dst = ring + (size_t)(ti % MLA_NSTAGE) * (parallel_pair ? 2 : 1) * MLA_TILE * MLA_RP;
 #pragma unroll
     for (int r = 0; r < MLA_TILE / load_warps; ++r) {
       const int k = r * load_warps + load_warp;
       const int j = ti * MLA_TILE + k;
-      const int slot = selected[j < length ? j : 0];
-      mk_cp_async16(dst + (size_t)k * MLA_RP + lane * 16,
-                    a.ckv + (size_t)slot * MLA_D + lane * 16);
+      const int slot = length > 0 ? selected[j < length ? j : 0] : 0;
+      int at = k;
+      bool copy = true;
+      if constexpr (parallel_pair) {
+        if (row_base) {
+          // Each lane tests one candidate from the other query's current
+          // 16-slot tile. A matching slot uses that exact FP8 row. Repeated
+          // selections retain their own score and probability mass.
+          const int other_j = ti * MLA_TILE + lane;
+          const bool valid = lane < MLA_TILE && other_j < count0 && j < length;
+          const int other = valid ? a.slots[(size_t)t * a.W + first0 + other_j] : -1;
+          const unsigned int hit = __ballot_sync(0xffffffff, valid && slot == other);
+          const int shared = __ffs(hit)-1;
+          at = shared >= 0 ? shared : MLA_TILE+k;
+          if (lane == 0) maps[(ti % MLA_NSTAGE) * MLA_TILE + k] = at;
+          copy = shared < 0;
+        }
+      }
+      if (copy) mk_cp_async16(dst + (size_t)at * MLA_RP + lane * 16,
+                              a.ckv + (size_t)slot * MLA_D + lane * 16);
     }
     mk_cp_commit();
   };
@@ -2839,21 +2873,27 @@ __device__ __forceinline__ void mla_pair_attention(
     mla_group_sync<SUBGROUP>();
     if (ti + MLA_NSTAGE - 1 < ntile) issue(ti + MLA_NSTAGE - 1);
     else mk_cp_commit();
-    const uint8_t* tile8 = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_RP;
-    const int kmax = min(MLA_TILE, length - ti * MLA_TILE);
+    const uint8_t* tile8 = ring + (size_t)(ti % MLA_NSTAGE) * (parallel_pair ? 2 : 1) * MLA_TILE * MLA_RP;
+    const int kmax = max(0, min(MLA_TILE, length - ti * MLA_TILE));
+    auto kv_row = [&](int k) {
+      if constexpr (parallel_pair) {
+        if (row_base) return maps[(ti % MLA_NSTAGE) * MLA_TILE + k];
+      }
+      return k;
+    };
 #pragma unroll
     for (int row = 0; row < ROWS; ++row) {
       const int n0 = (warp % MLA_NG) * 8, kq = warp / MLA_NG;
       float c0 = 0.f, c1 = 0.f, c2 = 0.f, c3 = 0.f;
       const __nv_bfloat16* qa = a.q + ((size_t)(t + row_base + row) * MLA_H + g) * MLA_D;
-      const uint8_t* cb = tile8 + (size_t)(n0 + g) * MLA_RP;
+      const uint8_t* cb = tile8 + (size_t)kv_row(n0 + g) * MLA_RP;
 #pragma unroll
       for (int ks = 0; ks < (MLA_D / 16) / MLA_KQ; ++ks) {
         const int k0 = kq * (MLA_D / MLA_KQ) + ks * 16 + q4 * 2;
         uint32_t a0, a1, a2, a3;
         if constexpr (PARTIAL) {
           const uint32_t addr = static_cast<uint32_t>(__cvta_generic_to_shared(
-              sq + (row * MLA_H + (lane & 15)) * MLA_CP
+              sq + ((row_base + row) * MLA_H + (lane & 15)) * MLA_CP
                  + kq * (MLA_D / MLA_KQ) + ks * 16 + (lane >> 4) * 8));
           asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
                        : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(addr));
@@ -2872,7 +2912,7 @@ __device__ __forceinline__ void mla_pair_attention(
       sh[(g + 8) * MLA_TILE + n0 + q4 * 2] = c2;
       sh[(g + 8) * MLA_TILE + n0 + q4 * 2 + 1] = c3;
     }
-    mla_group_sync<SUBGROUP>();
+    mla_group_sync<SUBGROUP || parallel_pair>();
 #pragma unroll
     for (int row = 0; row < ROWS; ++row) {
       const int h0 = warp * 2;
@@ -2909,7 +2949,7 @@ __device__ __forceinline__ void mla_pair_attention(
       }
       if (lane == 0) { scorr[(row_base + row) * MLA_H + h0] = cr0; scorr[(row_base + row) * MLA_H + h0 + 1] = cr1; }
     }
-    mla_group_sync<SUBGROUP>();
+    mla_group_sync<SUBGROUP || parallel_pair>();
 #pragma unroll
     for (int row = 0; row < ROWS; ++row) {
       const float crg = scorr[(row_base + row) * MLA_H + g], crg8 = scorr[(row_base + row) * MLA_H + g + 8];
@@ -2921,14 +2961,14 @@ __device__ __forceinline__ void mla_pair_attention(
         }
         uint32_t a0, a1, a2, a3;
         const uint32_t pa = static_cast<uint32_t>(__cvta_generic_to_shared(
-            sp + row * (MLA_SMEM_P / sizeof(__nv_bfloat16)) + (lane & 15) * MLA_PP + (lane >> 4) * 8));
+            sp + (row_base + row) * (MLA_SMEM_P / sizeof(__nv_bfloat16)) + (lane & 15) * MLA_PP + (lane >> 4) * 8));
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
                      : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(pa));
 #if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 1210
         const int rr = lane & 15;
         const int krow = (rr >> 2) * 2 + (rr & 1) + ((rr >> 1) & 1) * 8;
         const uint32_t cb = static_cast<uint32_t>(__cvta_generic_to_shared(
-            tile8 + (size_t)krow * MLA_RP + warp * 64));
+            tile8 + (size_t)kv_row(krow) * MLA_RP + warp * 64));
 #pragma unroll
         for (int nt = 0; nt < 8; nt += 2) {
           uint32_t v0, v1;
@@ -2940,12 +2980,16 @@ __device__ __forceinline__ void mla_pair_attention(
                        mla_e4m3x2_value(v1), mla_e4m3x2_value(v1 >> 16));
         }
 #else
-        const uint8_t* cb = tile8 + (size_t)(q4 * 2) * MLA_RP + warp * 64;
 #pragma unroll
         for (int nt = 0; nt < 8; ++nt) {
-          const int col = nt * 8 + g;
+          const int col = warp * 64 + nt * 8 + g;
+          auto pair_value = [&](int k) {
+            const uint32_t packed = tile8[(size_t)kv_row(k) * MLA_RP + col]
+                | (uint32_t(tile8[(size_t)kv_row(k+1) * MLA_RP + col]) << 8);
+            return mla_e4m3x2_value(packed);
+          };
           mla_mma_bf16(acc[row][nt][0], acc[row][nt][1], acc[row][nt][2], acc[row][nt][3], a0, a1, a2, a3,
-                       mla_e4m3x2_strided(cb + col, MLA_RP), mla_e4m3x2_strided(cb + 8 * MLA_RP + col, MLA_RP));
+                       pair_value(q4*2), pair_value(q4*2+8));
         }
 #endif
       } else {
@@ -2966,14 +3010,14 @@ __device__ __forceinline__ void mla_pair_attention(
       }
       }
     }
-    mla_group_sync<SUBGROUP>();
+    mla_group_sync<SUBGROUP || parallel_pair>();
   }
   mk_cp_wait<0>();
-  mla_group_sync<SUBGROUP>();
+  mla_group_sync<SUBGROUP || parallel_pair>();
   if constexpr (PARTIAL) {
 #pragma unroll
     for (int row = 0; row < ROWS; ++row) {
-      const size_t base = ((size_t)(t + row) * a.splits + split) * MLA_H;
+      const size_t base = ((size_t)(t + row_base + row) * a.splits + split) * MLA_H;
       if (lane == 0) {
         float* ml = a.pml + (base + warp * 2) * 2;
         ml[0] = m0[row]; ml[1] = l0[row]; ml[2] = m1[row]; ml[3] = l1[row];
@@ -2994,7 +3038,7 @@ __device__ __forceinline__ void mla_pair_attention(
   for (int row = 0; row < ROWS; ++row) {
     if (lane == 0) { sl[(row_base + row) * MLA_H + warp * 2] = l0[row]; sl[(row_base + row) * MLA_H + warp * 2 + 1] = l1[row]; }
   }
-  mla_group_sync<SUBGROUP>();
+  mla_group_sync<SUBGROUP || parallel_pair>();
 #pragma unroll
   for (int row = 0; row < ROWS; ++row) {
     const float ig = sl[(row_base + row) * MLA_H + g] > 0.f ? __frcp_rn(sl[(row_base + row) * MLA_H + g]) : 0.f;
@@ -3008,55 +3052,40 @@ __device__ __forceinline__ void mla_pair_attention(
       *(__nv_bfloat162*)(o8 + col) = __floats2bfloat162_rn(acc[row][nt][2] * ig8, acc[row][nt][3] * ig8);
     }
   }
-  mla_group_sync<SUBGROUP>();
+  mla_group_sync<SUBGROUP || parallel_pair>();
 }
 
-// Decode needs many context shards even for four query pairs. Each shard
-// writes FP32 unnormalized accumulators; only the final merge rounds BF16.
-__global__ __launch_bounds__(MK_THREADS) void mk_mla_decode_pair_kernel(const MKMlaPairArgs p) {
+// One resident launch: query pairs share only equal KV rows inside each
+// current tile. There is no union build, changed selection or extra launch.
+__global__ __launch_bounds__(2 * MK_THREADS) void mk_mla_decode_pair_kernel(const MKMlaPairArgs p) {
   extern __shared__ __align__(16) unsigned char smem[];
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
   const int group = blockIdx.x / p.a.splits, split = blockIdx.x % p.a.splits;
-  const int t = group * 2, n = p.pair_lens[group];
-  if (n >= 0) {
-    const int tiles = (n + MLA_TILE - 1) / MLA_TILE;
-    const int first = tiles * split / p.a.splits * MLA_TILE;
-    const int end = min(n, tiles * (split + 1) / p.a.splits * MLA_TILE);
-    const size_t base = (size_t)group * (2 * p.a.W) + first;
-    mla_pair_attention<2, 2, false, true>(p, t, max(0, end-first),
-        p.pair_slots + base, p.membership + base, smem, split);
-  } else {
-    for (int row = t; row < t + 2; ++row) {
-      const int length = p.a.lens[row], tiles = (length + MLA_TILE - 1) / MLA_TILE;
-      const int first = tiles * split / p.a.splits * MLA_TILE;
-      const int end = min(length, tiles * (split + 1) / p.a.splits * MLA_TILE);
-      mla_pair_attention<1, 1, false, true>(p, row, max(0, end-first),
-          p.a.slots + (size_t)row * p.a.W + first, nullptr, smem, split);
-    }
-  }
-}
-
-__global__ void mk_mla_decode_pair_merge(const MKMlaArgs a) {
+  mla_pair_attention<1, 2, false, true>(p, group*2, 0, nullptr, nullptr, smem, split);
+  mk_grid_barrier(p.a.barrier_ctr, p.a.grid);
   const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
-  const int t = blockIdx.x, h = blockIdx.y * MLA_WARPS + warp;
-  float mm = -INFINITY, den = 0.f, value[MLA_VD] = {};
-  for (int s = 0; s < a.splits; ++s)
-    mm = fmaxf(mm, a.pml[(((size_t)t * a.splits + s) * MLA_H + h) * 2]);
-  for (int s = 0; s < a.splits; ++s) {
-    const size_t base = ((size_t)t * a.splits + s) * MLA_H + h;
-    const float* ml = a.pml + base * 2;
-    if (!(ml[1] > 0.f)) continue;
-    const float weight = __expf(ml[0] - mm);
-    den = fmaf(ml[1], weight, den);
+  // Spread the output heads over the whole resident grid for the merge.
+  for (int pair = blockIdx.x + warp*p.a.grid; pair < p.a.T*MLA_H; pair += 16*p.a.grid) {
+    const int t = pair / MLA_H, h = pair % MLA_H;
+    float mm = -INFINITY, den = 0.f, value[MLA_VD] = {};
+    for (int s = 0; s < p.a.splits; ++s)
+      mm = fmaxf(mm, p.a.pml[(((size_t)t * p.a.splits + s) * MLA_H + h) * 2]);
+    for (int s = 0; s < p.a.splits; ++s) {
+      const size_t base = ((size_t)t * p.a.splits + s) * MLA_H + h;
+      const float* ml = p.a.pml + base * 2;
+      if (!(ml[1] > 0.f)) continue;
+      const float weight = __expf(ml[0] - mm);
+      den = fmaf(ml[1], weight, den);
+#pragma unroll
+      for (int e = 0; e < MLA_VD; ++e)
+        value[e] = fmaf(p.a.part[base * MLA_D + e * 32 + lane], weight, value[e]);
+    }
+    const float inv = den > 0.f ? __frcp_rn(den) : 0.f;
 #pragma unroll
     for (int e = 0; e < MLA_VD; ++e)
-      value[e] = fmaf(a.part[base * MLA_D + e * 32 + lane], weight, value[e]);
+      p.a.out[((size_t)t * MLA_H + h) * MLA_D + e * 32 + lane] = __float2bfloat16(value[e] * inv);
   }
-  const float inv = den > 0.f ? __frcp_rn(den) : 0.f;
-#pragma unroll
-  for (int e = 0; e < MLA_VD; ++e)
-    a.out[((size_t)t * MLA_H + h) * MLA_D + e * 32 + lane] = __float2bfloat16(value[e] * inv);
 }
 
 __global__ __launch_bounds__(MK_THREADS) void mk_mla_pair_kernel(const MKMlaPairArgs p) {
@@ -3943,7 +3972,7 @@ void mk_run_mla_prefill32(std::vector<int64_t> ptrs, std::vector<double> scalars
 
 void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scalars,
                            std::vector<int64_t> ints) {
-  TORCH_CHECK(ptrs.size() == 10 && scalars.size() == 2 && ints.size() == 3,
+  TORCH_CHECK(ptrs.size() == 8 && scalars.size() == 2 && ints.size() == 3,
               "run_mla_decode_pair arg contract");
   TORCH_CHECK((ints[0] == 8 || ints[0] == 16) && ints[1] > 0 && ints[1] <= MLA_PAIR_MAX_W
               && ints[2] > 0 && ints[2] <= 64, "decode pair requires K7 C1/C2 and bounded splits");
@@ -3958,24 +3987,25 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
     cudaStreamCaptureStatus status;
     MK_CHECK_CUDA(cudaStreamIsCapturing(c10::cuda::getCurrentCUDAStream(), &status));
     TORCH_CHECK(status == cudaStreamCaptureStatusNone, "warm decode pair before capture");
-    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_pair_prepare,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_PAIR_PREP_SMEM));
     MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_decode_pair_kernel,
         cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_DECODE_PAIR_SMEM));
-    prepared[device] = 1;
+    int per_sm = 0, sms = 0;
+    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &per_sm, mk_mla_decode_pair_kernel, 2*MK_THREADS, MLA_DECODE_PAIR_SMEM));
+    MK_CHECK_CUDA(cudaDeviceGetAttribute(&sms, cudaDevAttrMultiProcessorCount, device));
+    prepared[device] = per_sm*sms;
   }
   MKMlaPairArgs p{};
   p.a.q = (const __nv_bfloat16*)ptrs[0]; p.a.ckv = (const uint8_t*)ptrs[1];
   p.a.slots = (const int*)ptrs[2]; p.a.lens = (const int*)ptrs[3];
-  p.a.out = (__nv_bfloat16*)ptrs[4]; p.pair_slots = (int*)ptrs[5];
-  p.membership = (int*)ptrs[6]; p.pair_lens = (int*)ptrs[7];
-  p.a.part = (float*)ptrs[8]; p.a.pml = (float*)ptrs[9];
+  p.a.out = (__nv_bfloat16*)ptrs[4]; p.a.part = (float*)ptrs[5]; p.a.pml = (float*)ptrs[6];
+  p.a.barrier_ctr = (unsigned long long*)ptrs[7];
   p.a.T = (int)ints[0]; p.a.W = (int)ints[1]; p.a.splits = (int)ints[2];
   p.groups = p.a.T / 2; p.a.sm_scale = scalars[0]; p.a.ckv_scale = scalars[1];
+  p.a.grid = p.groups * p.a.splits;
+  TORCH_CHECK(p.a.grid <= prepared[device], "tile-pair resident barrier exceeds kernel occupancy");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_launch(mk_mla_pair_prepare, p.groups, MLA_PAIR_PREP_SMEM, stream, p);
-  mk_launch(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_DECODE_PAIR_SMEM, stream, p);
-  mk_mla_decode_pair_merge<<<dim3(p.a.T, MLA_H / MLA_WARPS), MK_THREADS, 0, stream>>>(p.a);
+  mk_launch<2 * MK_THREADS>(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_DECODE_PAIR_SMEM, stream, p);
   MK_CHECK_CUDA(cudaGetLastError());
 }
 

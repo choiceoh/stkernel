@@ -356,7 +356,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "2ea54d780758277930d38019a6712f6161d7e0357c5cb2e6101dc4130f7bd68c",
+      "local_sha256": "7841eaa054dd0931224ecf0732eb79abbff2caa25097828e36efed78e22bdc9d",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -373,14 +373,18 @@
         "2026-09-15 sm_120 check build: mk_add_u8x4 and the ldmatrix.trans.b8 site each gain an #else for __CUDA_ARCH__ < 1210 -- __vadd4 for the first, the file's own mla_e4m3x2_strided form for the second. The sm_121a branch is untouched and its PTX is byte-identical to before; the layouts are measured against a CPU reference in probes/sm120_b_fragment_check.cu.",
         "2026-09-16 K=7 eight-row admission: mk_input_shape and mk_use_compact_m8 take m == 8 as well as the k=5-era m == 6, so C=1 reaches the routes it used to. Same instantiation (c2.m <= 8) and partial clamp; unmeasured, operator request.",
         "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately.",
-        "2026-09-17 fixed K7 second candidate: shared Q and SM121 matrix loads replace scalar pair reads after the first pair schedule regressed; GPU recheck pending."
+        "2026-09-17 fixed K7 second candidate: shared Q and SM121 matrix loads replace scalar pair reads after the first pair schedule regressed; GPU recheck pending.",
+        "2026-09-17 decode pair assigns separate warp groups to each query while sharing one KV ring; scalar-list cells use a bounded 256-thread subgroup.",
+        "2026-09-17 decode union reserves output once per warp; paired decode widens KV once in shared memory and weak-overlap rows run concurrently in disjoint shared regions.",
+        "2026-09-17 decode union uses bounded radix sorting and prefix counts to remove shared hash contention; all duplicate multiplicities retained.",
+        "2026-09-17 remove decode union preparation: compare the current 16-slot tiles, reuse equal FP8 rows, preserve each original selection and split, and merge in the same resident launch."
       ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "e7cde9f181f77b8256cb3e17fa957ece17e96451a560e1d36c804ea13581e441",
+      "local_sha256": "60bbed5a7c0d9d6e5b637b907474c4b1a81dfd71f22fe33300af608bf2e5b179",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -393,7 +397,8 @@
         "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged.",
         "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change.",
         "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured.",
-        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately."
+        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately.",
+        "2026-09-17 remove decode union preparation: compare the current 16-slot tiles, reuse equal FP8 rows, preserve each original selection and split, and merge in the same resident launch."
       ]
     },
     "qsa.py": {

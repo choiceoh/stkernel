@@ -83,6 +83,30 @@ def mhc_check(report, ranks):
             finally:
                 for graph in graphs:
                     graph.reset()
+    # Distinct real coefficients exceed L2 and expose the production weight
+    # stream. Single-layer hot replay alone cannot judge this boundary.
+    from probes.engine_decode_fusions import _time
+    for packets in (False, True):
+        pack = torch.empty(producer_pack_nbytes(8, 4096), dtype=torch.uint8, device='cuda')
+        def chain(fused):
+            for key in keys:
+                values = owner(key, data.meta if packets else data.x, data.res, data.post, data.comb,
+                               *coeff[key], *SCALARS, packets=data.descriptor if packets else None,
+                               output_pack=pack if fused else None)
+                if not fused:
+                    owner.ext.run_input_pack(values[-1], pack)
+            return values
+        graphs, outputs = zip(*[_capture(lambda fused=fused: chain(fused)) for fused in (False, True)])
+        try:
+            samples = []
+            for _ in range(3):
+                for arm in (0, 1, 1, 0):
+                    samples.append(dict(arm=arm, us=_time(graphs[arm], iterations=8)*1000))
+            report('timing', component='mhc_model_chain', packets=packets, boundaries=len(keys),
+                   samples=samples, weights_sha256=digest, scope='distinct real coefficients; component only')
+        finally:
+            for graph in graphs:
+                graph.reset()
 
 
 def mla_check(report):
@@ -99,13 +123,19 @@ def mla_check(report):
             candidate = lambda: mla.mla_decode_pair(q, cache, slots, lens, 512**-.5, 1.)
             graphs, outputs = zip(*[_capture(fn) for fn in (control, candidate)])
             try:
-                for case in ('identical', 'partial', 'disjoint', 'duplicates', 'empty_tail'):
+                for case in ('identical', 'partial', 'disjoint', 'duplicates', 'empty_tail', 'permuted', 'uneven'):
                     q.normal_()
                     slots.copy_(torch.randint(32768, (rows, width), device='cuda', dtype=torch.int32))
                     lens.fill_(width)
                     if case in ('identical', 'partial', 'duplicates'):
                         shared = width if case != 'partial' else width * 3 // 4
                         slots[1::2, :shared].copy_(slots[::2, :shared])
+                    if case == 'permuted':
+                        full = width // 16 * 16
+                        slots[1::2, :full].copy_(slots[::2, :full].reshape(rows//2, -1, 16).flip(-1).reshape(rows//2, full))
+                    if case == 'uneven':
+                        slots[1::2].copy_(slots[::2])
+                        lens.sub_(torch.arange(rows, device='cuda', dtype=torch.int32) % 8)
                     if case == 'duplicates':
                         slots[:, :width//2].copy_(slots[:, :1].expand(-1, width//2))
                     if case == 'empty_tail':
@@ -126,6 +156,33 @@ def mla_check(report):
             finally:
                 for graph in graphs:
                     graph.reset()
+
+
+def mla_profile(report):
+    """Diagnostic attribution only, after all unprofiled comparison intervals."""
+    from engine.kernels import mla
+    from probes.engine_decode_fusions import _capture
+    q = torch.randn(8, 16, 512, device='cuda', dtype=torch.bfloat16)
+    cache = torch.randn(32768, 512, device='cuda').to(torch.float8_e4m3fn)
+    slots = torch.randint(32768, (8, 2048), device='cuda', dtype=torch.int32)
+    lens = torch.full((8,), 2048, device='cuda', dtype=torch.int32)
+    for case in ('identical', 'partial', 'disjoint'):
+        slots.random_(32768)
+        shared = {'identical': 2048, 'partial': 1536, 'disjoint': 0}[case]
+        slots[1::2, :shared].copy_(slots[::2, :shared])
+        graph, output = _capture(lambda: mla.mla_decode_pair(q, cache, slots, lens, 512**-.5, 1.))
+        try:
+            with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+                for _ in range(4):
+                    graph.replay()
+                torch.cuda.synchronize()
+            for event in prof.key_averages():
+                total = getattr(event, 'self_device_time_total', 0.) or 0.
+                if total > 0:
+                    report('profile', component='mla', case=case, kernel=event.key,
+                           calls=event.count, total_us=total, diagnostic_only=True)
+        finally:
+            graph.reset()
 
 
 def run(output=None, ranks=None, *, compile_only=False):
@@ -149,4 +206,5 @@ def run(output=None, ranks=None, *, compile_only=False):
         mla_check(report)
         from probes.engine_decode_scatter_check import moe_check
         moe_check(report, ranks, 'moe_resident_waves')
+        mla_profile(report)
     report('complete', passed=True, scope='compile only' if compile_only else 'components only; consumer pending')

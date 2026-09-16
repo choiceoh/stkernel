@@ -1,0 +1,294 @@
+{
+ "source_sha256": "c58fbd6396f5c832dd99ccbebf24caaca6ea245dba6b34871c00bd4ba0d5bfc9",
+ "binary": "/out/build/d93622069a84667cee046cea/st_dense_d93622069a84667cee046cea.so",
+ "binary_sha256": "2905c841462a4ce93cdb8bc4ad1300f1e88c99334239647276587066f7fb8803",
+ "torch": "2.13.0+cu132",
+ "cuda": "13.2",
+ "compile_seconds": 40.8,
+ "nvcc": [
+  "Cuda compilation tools, release 13.2, V13.2.78",
+  "Build cuda_13.2.r13.2/compiler.37668154_0"
+ ],
+ "kernels": [
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi32ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 70,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi32ELi2ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 70,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi24ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 68,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi16ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 70,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi32ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 68,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi32ELi2ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 68,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi24ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 66,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi16ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 68,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi24ELi3ELi3EEEvNS_10MKGemm2CtxE:",
+   "registers": 63,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb1ELi32ELi3ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 66,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb1ELi24ELi3ELi3EEEvNS_10MKGemm2CtxE:",
+   "registers": 66,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb1ELi16ELi3ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 70,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi32ELi6ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 63,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi32ELi2ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 63,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi32ELi8ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 72,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi1ELb1ELb0ELi32ELi8ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 80,
+   "stack": 176,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi1ELb0ELb0ELi32ELi8ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 80,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi32ELi3ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 67,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi32ELi3ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 66,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi32ELi2ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 67,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi32ELi2ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 66,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi24ELi3ELi3EEEvNS_10MKGemm2CtxE:",
+   "registers": 67,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi24ELi3ELi3EEEvNS_10MKGemm2CtxE:",
+   "registers": 66,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb1ELi16ELi3ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 68,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb1ELi16ELi3ELi2EEEvNS_10MKGemm2CtxE:",
+   "registers": 66,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi24ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 68,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb1ELi32ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 74,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb1ELi24ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 70,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb1ELi16ELi3ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 74,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi32ELi6ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 72,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi32ELi2ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 72,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85321mk_gemm_rows16_kernelILb0ELi32ELi8ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 80,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi2ELb1ELb0ELi32ELi8ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 64,
+   "stack": 176,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi1ELb1ELb0ELi32ELi8ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 80,
+   "stack": 184,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb1ELb0ELi32ELi8ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 80,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi2ELb0ELb0ELi32ELi8ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 64,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi1ELb0ELb0ELi32ELi8ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 80,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85324mk_gemm_input_cta_kernelILi0ELb0ELb0ELi32ELi8ELi1EEEvNS_10MKGemm2CtxE:",
+   "registers": 79,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85325mk_query_pair_deep_kernelENS_14MKQueryPairCtxE:",
+   "registers": 76,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  },
+  {
+   "symbol": "_ZN43_GLOBAL__N__a432cc69_10_kernels_cu_d64ed85320mk_query_pair_kernelENS_14MKQueryPairCtxE:",
+   "registers": 75,
+   "stack": 0,
+   "shared": 1024,
+   "local": 0
+  }
+ ]
+}

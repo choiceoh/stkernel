@@ -1,0 +1,619 @@
+diff --git a/engine/kernels/dense/kernels.cu b/engine/kernels/dense/kernels.cu
+index a1a8a096..0beca1e0 100644
+--- a/engine/kernels/dense/kernels.cu
++++ b/engine/kernels/dense/kernels.cu
+@@ -309,16 +309,6 @@ template <int N>
+ __device__ __forceinline__ void mk_cp_wait() {
+   asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
+ }
+-// One bulk L2 prefetch of a contiguous global run (sm_90+): no smem, no
+-// completion. A bench knob (g_mk2_l2_prefetch, 2026-09-16): the v2 GEMM's CTA
+-// asks for its whole k slice of W and scales at entry, before the PDL wait,
+-// so the ring's later records find their lines in L2 instead of DRAM -- the
+-// ring keeps DIST x 8 KB in flight, ~2.7 GB/s a CTA over DRAM latency, and a
+-// slice of four k-blocks never leaves the fill.
+-__device__ __forceinline__ void mk_prefetch_l2(const void* p, unsigned bytes) {
+-  asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(p), "r"(bytes) : "memory");
+-}
+-
+ __device__ __forceinline__ void mk_cp_commit() {
+   asm volatile("cp.async.commit_group;\n");
+ }
+@@ -471,7 +461,6 @@ static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");
+ // below are the only per-tile state, 320 x 4 B each.
+ constexpr int MK2_TILES_MAX = 320;
+ constexpr int MK2_KSR_MAX = 8;
+-constexpr int MK2_L2_PREFETCH_KB = 16;   // k-blocks a CTA prefetches at most: 128 KB of W, 16 KB of scales
+ // fp32 partials [ksr][m][n]: the widest per-rank linear (in_proj, 6528)
+ // at m = 32 and ksr = 4; the host lowers ksr for anything wider.
+ constexpr int MK2_PART_ELEMS = 32 * KDA_INPROJ_N_PAD * 4;
+@@ -546,7 +535,6 @@ struct MKGemm2Ctx {
+   int lr_slot = 0;
+   int m, n, k, n_orig;
+   int ksr;                 // k-slices per tile; grid = (n / 128) * ksr
+-  int l2_prefetch = 0;     // bench knob: the CTA prefetches its k slice into L2 at entry
+   // MK_SEG_SMLP2 (the shared-expert MLP as two PDL-chained v2 launches, no
+   // grid barrier): the gate_up launch runs with pair_act -- whichever block
+   // stores the SECOND final tile of a (gate, up) pair computes the clamped
+@@ -958,15 +946,6 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
+   // ---- prologue: the W ring first (independent of the previous kernel,
+   // so it flies during that kernel's tail under PDL), then the wait, then
+   // x(kb0) -> A buffer 0.
+-  if (c.l2_prefetch && threadIdx.x == 0) {
+-    // the slice's records are consecutive (tile-major [n/128][k/128] pack):
+-    // one bulk request for W and one for the scales, before the PDL wait
+-    const int nkb = min(kbn - kb0, MK2_L2_PREFETCH_KB);
+-    mk_prefetch_l2(c.wq4 + ((size_t)nt * kblk + kb0) * (SMEM_W_ROWS * 64),
+-                   (unsigned)nkb * (SMEM_W_ROWS * 64));
+-    mk_prefetch_l2((const uint8_t*)c.ws4 + ((size_t)nt * kblk + kb0) * (SMEM_W_ROWS * 8),
+-                   (unsigned)nkb * (SMEM_W_ROWS * 8));
+-  }
+ #pragma unroll
+   for (int d = 0; d < DIST; ++d)
+     if (kb0 + d < kbn) stage_raw(kb0 + d, (kb0 + d) % NB);
+@@ -1381,14 +1360,27 @@ mk_gemm_input_kernel(MKGemm2Ctx c) {
+   }
+ }
+ 
++// Ring stages for a warp that owns `kpw` k-blocks and keeps `deep` loads in
++// flight: every k-block has its own stage when they all fit at once, else a
++// ring one deeper than the flight. A stage is never reused under a k-block
++// that is still being folded: at most deep + 1 consecutive k-blocks are live.
++constexpr int mk_ring_nb(int kpw, int deep) { return deep >= kpw ? kpw : deep + 1; }
++
+ // C=1 opt-in: one CTA per 16 output columns, one warp per original K slice.
+ // W4 packs, FP8 preparation, per-slice arithmetic and reduction order are unchanged.
+ // Exact route only: M6 or M7 / N6416 / K4096 and split8; two W staging buffers.
+ // MODE 0 retains runtime geometry; MODE 1/2 specialize it, with 3/4 blocks per SM.
+-template <int MODE, bool DIRECT = false, bool ORDERED=false, int KBLKS=32, int SLICES=8>
++template <int MODE, bool DIRECT = false, bool ORDERED=false, int KBLKS=32, int SLICES=8, int DEEP=1>
+ __global__ void __launch_bounds__(MK_THREADS,ORDERED?2:MODE==2?4:3)
+ mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
+-  constexpr int NB=2;
++  // DEEP = k-block loads a warp keeps in flight. 1 is the served ring: two
++  // stages, each load issued after the previous one landed. A deeper ring
++  // issues a warp's k-blocks together (bench knob set_c1_deep, 2026-09-17);
++  // the arithmetic and its order are the same in every instantiation.
++  constexpr int KPW=ORDERED?KBLKS/8:4;   // k-blocks per warp; MODE 0 without ORDERED is runtime geometry
++  static_assert(DEEP==1 || ORDERED || MODE, "the runtime-geometry kernel keeps the served ring");
++  constexpr int NB=mk_ring_nb(KPW,DEEP);
++  static_assert(NB>=2 && NB<=4, "ring stages");
+   const int m=c.m;
+   asm volatile("griddepcontrol.launch_dependents;");
+   extern __shared__ uint8_t smem[];
+@@ -1400,7 +1392,7 @@ mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
+   const int kblk=ORDERED?KBLKS:MODE?32:c.k/KSTEP, nt=blockIdx.x, slice=warp;
+   const int kb0=ORDERED?KBLKS*warp/8:MODE?warp*4:kblk*slice/c.ksr;
+   const int kbn=ORDERED?KBLKS*(warp+1)/8:MODE?kb0+4:kblk*(slice+1)/c.ksr;
+-  constexpr int DIST=NB-1;
++  constexpr int DIST=DEEP;
+   auto stage_raw=[&](int kb,int buf) {
+     const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
+     const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+@@ -1474,7 +1466,7 @@ mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
+       const int kb=kb0+offset;
+       if(offset+DIST<4)stage_raw(kb+DIST,(kb+DIST)%NB);
+       mma_fold(kb);
+-      if(offset+1<4) {mk_cp_wait_upto(0);__syncwarp();}
++      if(offset+1<4) {mk_cp_wait_upto(min(DIST-1,4-offset-2));__syncwarp();}
+     }
+   } else {
+   for(int kb=kb0;;++kb) {
+@@ -1608,7 +1600,7 @@ __device__ __forceinline__ void mk_gemm_input_cta3_body(MKGemm2Ctx c,int block)
+       const int kb=kb0+offset;
+       if(offset+DIST<4)stage_raw(kb+DIST,(kb+DIST)%NB);
+       mma_fold(kb);
+-      if(offset+1<4) {mk_cp_wait_upto(0);__syncwarp();}
++      if(offset+1<4) {mk_cp_wait_upto(min(DIST-1,4-offset-2));__syncwarp();}
+     }
+   } else {
+   for(int kb=kb0;;++kb) {
+@@ -1656,6 +1648,17 @@ mk_query_pair_kernel(MKQueryPairCtx pair) {
+   else
+     mk_gemm_input_cta3_body<2,2,3,false,12>(pair.readers[1],block-first_blocks);
+ }
++// The same joined query with a four-stage ring: each warp's four k-blocks of
++// its K=1536 slice in flight together (bench knob set_c1_deep).
++__global__ void __launch_bounds__(192,3)
++mk_query_pair_deep_kernel(MKQueryPairCtx pair) {
++  const int first_blocks=pair.readers[0].n_orig/32;
++  const int block=blockIdx.x;
++  if(block<first_blocks)
++    mk_gemm_input_cta3_body<2,4,3,false,12>(pair.readers[0],block);
++  else
++    mk_gemm_input_cta3_body<2,4,3,false,12>(pair.readers[1],block-first_blocks);
++}
+ 
+ // C=2 (K=7, sixteen rows): the bound W4 cells. A CTA owns eight output columns
+ // and runs the ordinary 16-row lane's MMA, X[16] @ W[8], with mk_gemm2_kernel<2>'s
+@@ -1667,12 +1670,14 @@ mk_query_pair_kernel(MKQueryPairCtx pair) {
+ // of distinct layers with evicted caches (measurements/st_c2_dense_cells_20260915);
+ // a joined query grid in this form measured neutral and is not built.
+ constexpr int ROWS16_RAW_NIB=64*W4_RAW_PITCH, ROWS16_RAW_BYTES=ROWS16_RAW_NIB+64*8;
+-template <bool DIRECT=false, int KBLKS=32, int SLICES=3>
++template <bool DIRECT=false, int KBLKS=32, int SLICES=3, int DEEP=1>
+ __device__ __forceinline__ void mk_gemm_rows16_body(MKGemm2Ctx c,int block) {
+   static_assert(KBLKS==16 || KBLKS==24 || KBLKS==32);
+   static_assert(SLICES==2 || SLICES==3 || SLICES==6 || (SLICES==8 && KBLKS==32 && !DIRECT));
+   constexpr bool SLICED=SLICES==8;
+-  constexpr int NB=2,DIST=NB-1;
++  // DEEP as in mk_gemm_input_cta_kernel: the loads a warp keeps in flight (1 = served).
++  constexpr int KPW=KBLKS/8, NB=mk_ring_nb(KPW,DEEP), DIST=DEEP;
++  static_assert(NB>=2 && NB<=4, "ring stages");
+   asm volatile("griddepcontrol.launch_dependents;");
+   extern __shared__ uint8_t smem[];
+   uint8_t* sraw=smem;
+@@ -1762,10 +1767,10 @@ __device__ __forceinline__ void mk_gemm_rows16_body(MKGemm2Ctx c,int block) {
+   if constexpr (DIRECT) __threadfence_system();
+ }
+ 
+-template <bool DIRECT=false, int KBLKS=32, int SLICES=3>
++template <bool DIRECT=false, int KBLKS=32, int SLICES=3, int DEEP=1>
+ __global__ void __launch_bounds__(MK_THREADS,3)
+ mk_gemm_rows16_kernel(MKGemm2Ctx c) {
+-  mk_gemm_rows16_body<DIRECT,KBLKS,SLICES>(c,blockIdx.x);
++  mk_gemm_rows16_body<DIRECT,KBLKS,SLICES,DEEP>(c,blockIdx.x);
+ }
+ 
+ // ===========================================================================
+@@ -3165,6 +3170,24 @@ constexpr int INPUT_CTA2_SMEM=MK_SMEM_ALIGN+2*2*32*72+2*2*8*16*sizeof(float);
+ constexpr int ORDERED16_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+16*128*sizeof(float);
+ constexpr int ORDERED24_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+24*128*sizeof(float);
+ constexpr int ORDERED32_SMEM=MK_SMEM_ALIGN+2*W4_RAW_BYTES+32*128*sizeof(float);
++// Deep rings (bench knob set_c1_deep, 2026-09-17): every k-block load of a warp
++// in flight where the ring keeps the served residency (K 2048: no extra stage;
++// K 3072: three stages), two of four for the K 4096 cells and the MODE 1 KDA
++// input (a four-stage ring would drop a block per SM). Same arithmetic.
++constexpr int input_cta_smem(int nb) { return MK_SMEM_ALIGN+nb*W4_RAW_BYTES+8*8*16*(int)sizeof(float); }
++constexpr int ordered_smem(int kblks,int nb) { return MK_SMEM_ALIGN+nb*W4_RAW_BYTES+kblks*128*(int)sizeof(float); }
++constexpr int DEEP16=2, DEEP24=3, DEEP32=2, DEEP_MODE=2;
++constexpr int ORDERED16_DEEP_SMEM=ordered_smem(16,mk_ring_nb(2,DEEP16));
++constexpr int ORDERED24_DEEP_SMEM=ordered_smem(24,mk_ring_nb(3,DEEP24));
++constexpr int ORDERED32_DEEP_SMEM=ordered_smem(32,mk_ring_nb(4,DEEP32));
++constexpr int INPUT_CTA_DEEP_SMEM=input_cta_smem(mk_ring_nb(4,DEEP_MODE));
++constexpr int INPUT_CTA3_DEEP_SMEM=MK_SMEM_ALIGN+4*2*48*72+2*3*8*16*sizeof(float);
++static_assert(ORDERED16_DEEP_SMEM==ORDERED16_SMEM, "K 2048 keeps its two stages");
++static_assert(2*(ORDERED32_DEEP_SMEM+1024)<=102400 && 2*(ORDERED24_DEEP_SMEM+1024)<=102400,
++              "deep ordered rings must fit twice per SM");
++static_assert(3*(INPUT_CTA_DEEP_SMEM+1024)<=102400, "the deep MODE 1 ring must fit three times per SM");
++static_assert(3*(INPUT_CTA3_DEEP_SMEM+1024)<=102400, "the deep joined query must fit three times per SM");
++int g_c1_deep = 0;  // bench knob: the C1, sixteen-row and joined-query kernels take their deep rings
+ int g_input_cta3_bps=0;
+ int g_input_cta2_bps=0;
+ int g_mk_sms = 0;  // multiprocessors, from the device (48 on GB10)
+@@ -3354,7 +3377,6 @@ bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
+       (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
+ }
+ int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
+-int g_mk2_l2_prefetch = 0;  // bench knob: v2 CTAs prefetch their k slice into L2 (0 = the served path)
+ // k-slices per tile for one v2 launch, from the 30차 sweeps (srv2, ksr 1/2/3/
+ // 4/6/8 on every production shape, single and back-to-back): what wins is
+ // ONE exact wave of the resident slots (blocks/SM x SMs = 96 on GB10) --
+@@ -3454,6 +3476,7 @@ void mk_launch_gemm2(const MKGemm2Ctx& c2, cudaStream_t stream) {
+ }
+ 
+ }  // namespace
++void mk_c1_deep_attrs();   // defined beside mk_rows16_attrs (bench knob set_c1_deep)
+ 
+ // Geometry probe -- the driver refuses to arm unless the device is exactly
+ // the part this kernel was drawn for (mirrors the osar init gate: cc 12.1
+@@ -3557,7 +3580,6 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+   c2.lr_slot = bg != 0 ? 1 : 0;
+   const int nblk = c2.n / SMEM_W_ROWS;
+   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
+-  c2.l2_prefetch = g_mk2_l2_prefetch;   // captured by value: a graph keeps the knob it was captured with
+   const bool bound_c1 = bound_input && c2.m == 8;
+   TORCH_CHECK(!bound_c1 || ((c2.k == 4096 && (c2.n_orig == 6416 ||
+               ((c2.n_orig == 4096 || c2.n_orig == 6144) && (c2.ksr == 2 || c2.ksr == 3)))) ||
+@@ -3633,15 +3655,22 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+                 MKInputPackCtx{c2.x, q, scales, c2.m, c2.k, c2.x_stride});
+     }
+     const int cta=bound_c1 ? 4 : mk_gemm_input_cta_mode();
++    const bool deep=g_c1_deep!=0;   // bench knob: the launch it picks is what a capture keeps
++    if (deep) mk_c1_deep_attrs();
+     if (bound_c1 && forward_pipeline && c2.n_orig!=6416) {
+-      if (c2.k==2048)
+-        mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,16,3>,c2.n_orig/16,ORDERED16_SMEM,stream,c2);
+-      else if (c2.k==3072)
+-        mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,24,3>,c2.n_orig/16,ORDERED24_SMEM,stream,c2);
+-      else if (c2.ksr==2)
+-        mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,32,2>,c2.n_orig/16,ORDERED32_SMEM,stream,c2);
+-      else
+-        mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,32,3>,c2.n_orig/16,ORDERED32_SMEM,stream,c2);
++      if (c2.k==2048) {
++        if (deep) mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,16,3,DEEP16>,c2.n_orig/16,ORDERED16_DEEP_SMEM,stream,c2);
++        else mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,16,3>,c2.n_orig/16,ORDERED16_SMEM,stream,c2);
++      } else if (c2.k==3072) {
++        if (deep) mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,24,3,DEEP24>,c2.n_orig/16,ORDERED24_DEEP_SMEM,stream,c2);
++        else mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,24,3>,c2.n_orig/16,ORDERED24_SMEM,stream,c2);
++      } else if (c2.ksr==2) {
++        if (deep) mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,32,2,DEEP32>,c2.n_orig/16,ORDERED32_DEEP_SMEM,stream,c2);
++        else mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,32,2>,c2.n_orig/16,ORDERED32_SMEM,stream,c2);
++      } else {
++        if (deep) mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,32,3,DEEP32>,c2.n_orig/16,ORDERED32_DEEP_SMEM,stream,c2);
++        else mk_launch(mk_gemm_input_cta_kernel<0,DIRECT,true,32,3>,c2.n_orig/16,ORDERED32_SMEM,stream,c2);
++      }
+     } else if (bound_c1 && c2.k == 2048) {
+       mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT,16>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
+     } else if (bound_c1 && c2.k == 3072) {
+@@ -3653,6 +3682,8 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
+     } else if (cta && c2.ksr==8) {
+       if (cta==1)
+         mk_launch(mk_gemm_input_cta_kernel<0,DIRECT>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
++      else if ((cta==2 || cta==4) && deep)
++        mk_launch(mk_gemm_input_cta_kernel<1,DIRECT,false,32,8,DEEP_MODE>,c2.n_orig/16,INPUT_CTA_DEEP_SMEM,stream,c2);
+       else if (cta==2 || cta==4)
+         mk_launch(mk_gemm_input_cta_kernel<1,DIRECT>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+       else
+@@ -3721,7 +3752,12 @@ void mk_run_query_pair(torch::Tensor x, std::vector<torch::Tensor> weights,
+       TORCH_CHECK(mk_choose_ksr2(8,c.n,1536,false)==3,
+                   "joined query requires each owner's original three K slices");
+     }
+-    mk_launch<192>(mk_query_pair_kernel,(pair.readers[0].n+pair.readers[1].n)/32,INPUT_CTA3_SMEM,stream,pair);
++    if (g_c1_deep) {
++      mk_c1_deep_attrs();
++      mk_launch<192>(mk_query_pair_deep_kernel,(pair.readers[0].n+pair.readers[1].n)/32,INPUT_CTA3_DEEP_SMEM,stream,pair);
++    } else {
++      mk_launch<192>(mk_query_pair_kernel,(pair.readers[0].n+pair.readers[1].n)/32,INPUT_CTA3_SMEM,stream,pair);
++    }
+     return;
+   }
+   // Serial on the existing compute stream: each GEMM rearms its original
+@@ -3900,10 +3936,17 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
+ // qkv_a 6, outputs and MLP down 3); a changed plan is refused, not re-sliced.
+ // Nothing global: pack and partials are owned by the invocation, so private
+ // workspaces do not apply.
+-constexpr int ROWS16_SMEM_BASE=MK_SMEM_ALIGN+2*ROWS16_RAW_BYTES;
+-constexpr int rows16_smem(int kblks,int slices) {
+-  return ROWS16_SMEM_BASE+(slices==8?8:kblks)*128*(int)sizeof(float);
++constexpr int rows16_smem(int kblks,int slices,int nb=2) {
++  return MK_SMEM_ALIGN+nb*ROWS16_RAW_BYTES+(slices==8?8:kblks)*128*(int)sizeof(float);
+ }
++// The sixteen-row deep rings: K 3072 all three k-blocks of a warp, K 2048 both
++// without an extra stage, K 4096 two of four -- every one keeps three blocks per SM.
++constexpr int rows16_deep(int kblks) { return kblks==24 ? 3 : 2; }
++constexpr int rows16_deep_smem(int kblks,int slices) {
++  return rows16_smem(kblks,slices,mk_ring_nb(kblks/8,rows16_deep(kblks)));
++}
++static_assert(3*(rows16_deep_smem(32,8)+1024)<=102400 && 3*(rows16_deep_smem(24,3)+1024)<=102400
++              && 3*(rows16_deep_smem(32,3)+1024)<=102400, "deep sixteen-row rings must fit three times per SM");
+ static void mk_rows16_attrs() {
+   static bool ready=false;
+   if(ready) return;
+@@ -3920,6 +3963,34 @@ static void mk_rows16_attrs() {
+   ready=true;
+ }
+ 
++// Dynamic shared memory of every deep-ring instantiation (bench knob set_c1_deep).
++void mk_c1_deep_attrs() {
++  static bool ready=false;
++  if(ready) return;
++  auto set=[](auto kernel,int bytes) {
++    MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,cudaFuncAttributeMaxDynamicSharedMemorySize,bytes));
++  };
++  set(mk_gemm_input_cta_kernel<0,false,true,16,3,DEEP16>,ORDERED16_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<0,true,true,16,3,DEEP16>,ORDERED16_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<0,false,true,24,3,DEEP24>,ORDERED24_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<0,true,true,24,3,DEEP24>,ORDERED24_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<0,false,true,32,2,DEEP32>,ORDERED32_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<0,true,true,32,2,DEEP32>,ORDERED32_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<0,false,true,32,3,DEEP32>,ORDERED32_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<0,true,true,32,3,DEEP32>,ORDERED32_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<1,false,false,32,8,DEEP_MODE>,INPUT_CTA_DEEP_SMEM);
++  set(mk_gemm_input_cta_kernel<1,true,false,32,8,DEEP_MODE>,INPUT_CTA_DEEP_SMEM);
++  set(mk_query_pair_deep_kernel,INPUT_CTA3_DEEP_SMEM);
++  set(mk_gemm_rows16_kernel<false,32,8,rows16_deep(32)>,rows16_deep_smem(32,8));
++  set(mk_gemm_rows16_kernel<false,32,2,rows16_deep(32)>,rows16_deep_smem(32,2));
++  set(mk_gemm_rows16_kernel<false,32,6,rows16_deep(32)>,rows16_deep_smem(32,6));
++  set(mk_gemm_rows16_kernel<true,16,3,rows16_deep(16)>,rows16_deep_smem(16,3));
++  set(mk_gemm_rows16_kernel<true,24,3,rows16_deep(24)>,rows16_deep_smem(24,3));
++  set(mk_gemm_rows16_kernel<true,32,3,rows16_deep(32)>,rows16_deep_smem(32,3));
++  set(mk_gemm_rows16_kernel<false,24,3,rows16_deep(24)>,rows16_deep_smem(24,3));
++  ready=true;
++}
++
+ static torch::Tensor mk_rows16_pack(torch::Tensor x, int k, const uint8_t*& q, const float*& s) {
+   const int kblk=k/KSTEP, qbytes=kblk*32*KSTEP;
+   auto packed=torch::empty({qbytes+kblk*32*(int)sizeof(float)}, x.options().dtype(torch::kUInt8));
+@@ -3985,6 +4056,24 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
+   }
+   auto stream = c10::cuda::getCurrentCUDAStream();
+   const int grid = (int)n / 8;
++  if (g_c1_deep) {   // bench knob: the deep rings, captured with the launch
++    mk_c1_deep_attrs();
++    if (n == 6416)
++      mk_launch(mk_gemm_rows16_kernel<false,32,8,rows16_deep(32)>, grid, rows16_deep_smem(32,8), stream, c);
++    else if (n == 6144)
++      mk_launch(mk_gemm_rows16_kernel<false,32,2,rows16_deep(32)>, grid, rows16_deep_smem(32,2), stream, c);
++    else if (n == 2048)
++      mk_launch(mk_gemm_rows16_kernel<false,32,6,rows16_deep(32)>, grid, rows16_deep_smem(32,6), stream, c);
++    else if (k == 2048)
++      mk_launch(mk_gemm_rows16_kernel<true,16,3,rows16_deep(16)>, grid, rows16_deep_smem(16,3), stream, c);
++    else if (k == 3072 && direct)
++      mk_launch(mk_gemm_rows16_kernel<true,24,3,rows16_deep(24)>, grid, rows16_deep_smem(24,3), stream, c);
++    else if (k == 3072)
++      mk_launch(mk_gemm_rows16_kernel<false,24,3,rows16_deep(24)>, grid, rows16_deep_smem(24,3), stream, c);
++    else
++      mk_launch(mk_gemm_rows16_kernel<true,32,3,rows16_deep(32)>, grid, rows16_deep_smem(32,3), stream, c);
++    return;
++  }
+   if (n == 6416)
+     mk_launch(mk_gemm_rows16_kernel<false,32,8>, grid, rows16_smem(32,8), stream, c);
+   else if (n == 6144)
+@@ -4024,6 +4113,40 @@ std::vector<int64_t> mk_rows16_info() {
+   return out;
+ }
+ 
++// {registers, local bytes, resident blocks per SM, dynamic shared bytes} of each
++// deep-ring instantiation, in the order mk_c1_deep_attrs sets them.
++std::vector<int64_t> mk_c1_deep_info() {
++  set_kernel_attrs();
++  mk_c1_deep_attrs();
++  std::vector<int64_t> out;
++  auto note = [&](auto kernel, int threads, int smem) {
++    cudaFuncAttributes a{};
++    int bps = 0;
++    MK_CHECK_CUDA(cudaFuncGetAttributes(&a, kernel));
++    MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&bps, kernel, threads, smem));
++    out.insert(out.end(), {a.numRegs, (int64_t)a.localSizeBytes, bps, smem});
++  };
++  note(mk_gemm_input_cta_kernel<0,false,true,16,3,DEEP16>, MK_THREADS, ORDERED16_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<0,true,true,16,3,DEEP16>, MK_THREADS, ORDERED16_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<0,false,true,24,3,DEEP24>, MK_THREADS, ORDERED24_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<0,true,true,24,3,DEEP24>, MK_THREADS, ORDERED24_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<0,false,true,32,2,DEEP32>, MK_THREADS, ORDERED32_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<0,true,true,32,2,DEEP32>, MK_THREADS, ORDERED32_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<0,false,true,32,3,DEEP32>, MK_THREADS, ORDERED32_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<0,true,true,32,3,DEEP32>, MK_THREADS, ORDERED32_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<1,false,false,32,8,DEEP_MODE>, MK_THREADS, INPUT_CTA_DEEP_SMEM);
++  note(mk_gemm_input_cta_kernel<1,true,false,32,8,DEEP_MODE>, MK_THREADS, INPUT_CTA_DEEP_SMEM);
++  note(mk_query_pair_deep_kernel, 192, INPUT_CTA3_DEEP_SMEM);
++  note(mk_gemm_rows16_kernel<false,32,8,rows16_deep(32)>, MK_THREADS, rows16_deep_smem(32,8));
++  note(mk_gemm_rows16_kernel<false,32,2,rows16_deep(32)>, MK_THREADS, rows16_deep_smem(32,2));
++  note(mk_gemm_rows16_kernel<false,32,6,rows16_deep(32)>, MK_THREADS, rows16_deep_smem(32,6));
++  note(mk_gemm_rows16_kernel<true,16,3,rows16_deep(16)>, MK_THREADS, rows16_deep_smem(16,3));
++  note(mk_gemm_rows16_kernel<true,24,3,rows16_deep(24)>, MK_THREADS, rows16_deep_smem(24,3));
++  note(mk_gemm_rows16_kernel<true,32,3,rows16_deep(32)>, MK_THREADS, rows16_deep_smem(32,3));
++  note(mk_gemm_rows16_kernel<false,24,3,rows16_deep(24)>, MK_THREADS, rows16_deep_smem(24,3));
++  return out;
++}
++
+ // ptrs: x, res_in, pm_in, cm_in, fn, hc_scale, hc_base, norm_w, res_out,
+ //       pm_out, cm_out, layer_in, yp, rp, sq, pmix, ol_stash, barrier
+ // ints: num_tokens, sinkhorn_repeat
+@@ -4881,6 +5004,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+         pybind11::arg("producer_pack")=pybind11::none());
+   m.def("run_gemm_wide_input", &mk_run_gemm_wide_input, "private wide-row input reuse qualification");
+   m.def("rows16_info", &mk_rows16_info, "{registers, local bytes, blocks/SM, smem} of the sixteen-row kernels");
++  m.def("set_c1_deep", [](int64_t v) { g_c1_deep = v ? 1 : 0; },
++        "bench: the C1 CTA, sixteen-row and joined-query kernels keep every k-block load of a warp in flight (0 = the served rings)");
++  m.def("c1_deep", []() { return (int64_t)g_c1_deep; }, "bench: the deep-ring knob");
++  m.def("c1_deep_info", &mk_c1_deep_info, "{registers, local bytes, blocks/SM, smem} of the deep-ring kernels");
+   m.def("run_input_pack", &mk_run_input_pack, "probe: a C1 bound cell's input pack alone",
+         pybind11::arg("x"), pybind11::arg("packed"));
+   m.def("probe_device", &mk_probe_device, "device geometry probe");
+@@ -4922,9 +5049,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+   m.def("gemm_workspace_elements", []() { return MK2_PART_ELEMS + MK2_TILES_MAX; });
+   m.def("gemm2_plan", &mk_gemm2_plan, "bench: {ksr, units, blocks/SM} of (m, n, k)");
+   m.def("set_gemm2", &mk_set_gemm2, "bench: force the GEMM's ksr (-1 = keep)");
+-  m.def("set_gemm2_l2_prefetch", [](int64_t v) { g_mk2_l2_prefetch = v ? 1 : 0; },
+-        "bench: v2 CTAs prefetch their k slice into L2 at entry (0 = the served path)");
+-  m.def("gemm2_l2_prefetch", []() { return (int64_t)g_mk2_l2_prefetch; }, "bench: the l2 prefetch knob");
+   m.def("probe_state", &mk_probe_state, "snapshot the raw GEMM probe knob");
+   m.def("restore_probe_state", &mk_restore_probe_state, "restore the raw GEMM probe knob");
+   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
+diff --git a/probes/engine_dense_cells.py b/probes/engine_dense_cells.py
+index 490e51f1..98079ec9 100644
+--- a/probes/engine_dense_cells.py
++++ b/probes/engine_dense_cells.py
+@@ -21,15 +21,10 @@ Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
+   pair_wide     run_query_pair(local_c1=False): wide pack + two packed mk_gemm2_kernel launches
+   pack          run_input_pack: the C1 cell's own input pack alone (8 rows), timed against the whole cell
+                 to size a producer-side pack; it has no projection output, so the exactness gate skips it
+-  *_l2          the same route with the bench knob set_gemm2_l2_prefetch(1) held while its graph is captured:
+-                every v2 CTA asks L2 for its whole k slice of W and scales at entry (2026-09-16). A hint,
+-                so the exactness gate holds it to the route's own bytes
+-  *_ksr<n>      the same route with the bench knob set_gemm2(n) held while its graph is captured: every v2 launch
+-                takes n k-slices per tile instead of mk_choose_ksr2's one-wave rule (30차 swept it at m=8; this is
+-                the m=16 sweep, 2026-09-17). A different fold order may move a BF16 output by its last bit, so these
+-                arms are held to KSR_MAX_ULPS of the reference (1 ulp of the larger of the element and the tensor
+-                RMS -- an add order, not wrong bytes) and the largest distance is reported. 16 rows only: the 8-row
+-                C1 cells declare their own geometry
++  *_deep        the same route with the bench knob set_c1_deep(1) held while its graph is captured: the C1
++                CTA, sixteen-row and joined-query kernels keep every k-block load of a warp in flight
++                instead of issuing each after the previous landed (2026-09-17). Same arithmetic, same
++                order: the exactness gate holds it to the route's own bytes
+ 
+ To add an arm: put a route in ROUTES and a (control, candidate) pair in the cell's
+ row plan below. Scope `single` is one layer; `chain` calls every listed layer in
+@@ -64,32 +59,32 @@ DRAFTER_RANK, DRAFTER_WORLD = 3, 4
+ # name, weight keys per layer, layers, direct TX output, input width, {rows: ((control, candidate), ...)}
+ CELLS = (
+     ('kda.in_proj', ('kda.in_proj',), KDA_LAYERS, False, 4096,
+-     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+-      16: (('bound', 'generic'), ('bound', 'wide_control'), ('bound', 'bound_l2'))}),
++     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_deep')),
++      16: (('bound', 'generic'), ('bound', 'wide_control'), ('bound', 'bound_deep'))}),
+     ('kda.o_proj', ('kda.o_proj',), KDA_LAYERS, True, 2048,
+-     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+-      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
++     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_deep')),
++      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_deep'))}),
+     ('mla.o_proj', ('mla.o_proj',), DSA_LAYERS, True, 4096,
+-     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+-      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
++     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_deep')),
++      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_deep'))}),
+     ('mla.query', ('mla.q_b', 'idx.wq_b'), DSA_LAYERS, False, 1536,
+-     {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack'), ('pair', 'pair_l2')),
+-      16: (('pair', 'pair_generic'), ('pair', 'pair_l2'))}),
++     {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack'), ('pair', 'pair_deep')),
++      16: (('pair', 'pair_generic'),)}),
+     ('mla.qkv_a', ('mla.qkv_a',), DSA_LAYERS, False, 4096,
+-     {16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
++     {16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_deep'))}),
+     ('mlp.gate_up', ('mlp.gate_up',), DENSE_LAYERS, False, 4096,
+-     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+-      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
++     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_deep')),
++      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_deep'))}),
+     ('mlp.down', ('mlp.down',), DENSE_LAYERS, True, 3072,
+-     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+-      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
++     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_deep')),
++      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_deep'))}),
+     # The drafter's block MLP calls both projections to a matrix; at 16 rows it serves the generic route.
+     ('drafter.gate_up', ('mlp.gate_up',), DRAFTER_LAYERS, False, 4096,
+-     {8: (('bound', 'generic'), ('bound', 'bound_l2')),
+-      16: (('generic', 'bound'), ('generic', 'wide_control'), ('generic', 'generic_l2'))}),
++     {8: (('bound', 'generic'), ('bound', 'bound_deep')),
++      16: (('generic', 'bound'), ('generic', 'wide_control'), ('bound', 'bound_deep'))}),
+     ('drafter.down', ('mlp.down',), DRAFTER_LAYERS, False, 3072,
+-     {8: (('bound', 'generic'), ('bound', 'bound_l2')),
+-      16: (('generic', 'bound'), ('generic', 'wide_control'), ('generic', 'generic_l2'))}),
++     {8: (('bound', 'generic'), ('bound', 'bound_deep')),
++      16: (('generic', 'bound'), ('generic', 'wide_control'), ('bound', 'bound_deep'))}),
+ )
+ SHAPES = {'kda.in_proj': (6416, 4096), 'kda.o_proj': (4096, 2048), 'mla.o_proj': (4096, 4096),
+           'mla.q_b': (4096, 1536), 'idx.wq_b': (4096, 1536), 'mla.qkv_a': (2048, 4096),
+@@ -135,33 +130,6 @@ def _pack(ext, x):
+ 
+ 
+ PACK_ARMS = ('pack',)
+-KSR_ARMS = (1, 2, 4, 8)
+-KSR_MAX_ULPS = 1.0
+-
+-
+-def _ksr(ext, n, fn):
+-    """Run `fn` with the v2 split-K bench knob held at n slices: a capture inside bakes it into its graph."""
+-    ext.set_gemm2(n)
+-    try:
+-        return fn()
+-    finally:
+-        ext.set_gemm2(0)          # 0 = mk_choose_ksr2's rule
+-
+-
+-def _gate(name, arm, got, want, tolerant):
+-    """The zero-tolerance byte gate, except the ksr arms: those may differ from the reference by a fold order,
+-    held to KSR_MAX_ULPS bf16 ulps of the larger of the element and the tensor RMS, largest distance kept."""
+-    if '_ksr' not in arm:
+-        torch.testing.assert_close(got, want, rtol=0, atol=0)
+-        return
+-    a, b = got.float(), want.float()
+-    rms = b.pow(2).mean().sqrt().clamp_min(2.0 ** -126)
+-    scale = torch.maximum(torch.maximum(a.abs(), b.abs()), rms)
+-    ulp = torch.exp2(torch.floor(torch.log2(scale)) - 7)
+-    ulps = ((a - b).abs() / ulp).max().item()
+-    tolerant[arm] = max(tolerant.get(arm, 0.0), ulps)
+-    if ulps > KSR_MAX_ULPS:
+-        raise RuntimeError(f'{name} {arm}: {ulps:.2f} bf16 ulps from the reference (gate {KSR_MAX_ULPS})')
+ 
+ def _wide_control(ext, owner, x, destination):
+     p = owner.packs[0]
+@@ -174,29 +142,19 @@ def _wide_control(ext, owner, x, destination):
+     return y
+ 
+ 
+-def _l2(ext, fn):
+-    """Run `fn` with the v2 L2-prefetch bench knob held: a capture inside bakes the knob into its graph."""
+-    ext.set_gemm2_l2_prefetch(1)
++def _deep(ext, fn):
++    """Run `fn` with the deep-ring bench knob held: a capture inside bakes the deep kernels into its graph."""
++    ext.set_c1_deep(1)
+     try:
+         return fn()
+     finally:
+-        ext.set_gemm2_l2_prefetch(0)
+-
+-
+-def _ksr_routes():
+-    routes = {}
+-    for n in KSR_ARMS:
+-        routes[f'bound_ksr{n}'] = (lambda n: lambda ext, owners, x, d: _ksr(ext, n, lambda: _dense(owners[0], x, d, BOUND)))(n)
+-        routes[f'generic_ksr{n}'] = (lambda n: lambda ext, owners, x, d: _ksr(ext, n, lambda: _dense(owners[0], x, d, ())))(n)
+-        routes[f'pair_ksr{n}'] = (lambda n: lambda ext, owners, x, d: _ksr(ext, n, lambda: _pair(owners, x)))(n)
+-    return routes
++        ext.set_c1_deep(0)
+ 
+ 
+ ROUTES = {
+     'bound': lambda ext, owners, x, d: _dense(owners[0], x, d, BOUND),
+-    'bound_l2': lambda ext, owners, x, d: _l2(ext, lambda: _dense(owners[0], x, d, BOUND)),
+-    'generic_l2': lambda ext, owners, x, d: _l2(ext, lambda: _dense(owners[0], x, d, ())),
+-    'pair_l2': lambda ext, owners, x, d: _l2(ext, lambda: _pair(owners, x)),
++    'bound_deep': lambda ext, owners, x, d: _deep(ext, lambda: _dense(owners[0], x, d, BOUND)),
++    'pair_deep': lambda ext, owners, x, d: _deep(ext, lambda: _pair(owners, x)),
+     'generic': lambda ext, owners, x, d: _dense(owners[0], x, d, ()),
+     'wide': lambda ext, owners, x, d: _wide(ext, owners[0], x),
+     'pair': lambda ext, owners, x, d: _pair(owners, x),
+@@ -204,23 +162,9 @@ ROUTES = {
+     'pair_wide': lambda ext, owners, x, d: _pair_wide(ext, owners, x),
+     'pack': lambda ext, owners, x, d: _pack(ext, x),
+     'wide_control': lambda ext, owners, x, d: _wide_control(ext, owners[0], x, d),
+-    **_ksr_routes(),
+ }
+ 
+ 
+-def _with_ksr(cell):
+-    """Every 16-row plan also pairs its served route with that route at each KSR_ARMS slice count."""
+-    name, keys, layers, direct, width, plan = cell
+-    if 16 not in plan:
+-        return cell
+-    served = plan[16][0][0]
+-    extra = tuple((served, f'{served}_ksr{n}') for n in KSR_ARMS)
+-    return (name, keys, layers, direct, width, {**plan, 16: plan[16] + extra})
+-
+-
+-CELLS = tuple(_with_ksr(cell) for cell in CELLS)
+-
+-
+ def _stats(values):
+     return dict(mean=sum(values) / len(values), min=min(values))
+ 
+@@ -267,7 +211,6 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
+         addresses = {a: [torch.tensor([g[0, 1].data_ptr()], device='cuda', dtype=torch.int64) for g in guards[a]]
+                      for a in arms} if direct else {}
+         graphs, outputs = {}, {}
+-        tolerant = {}
+         try:
+             for arm in arms:
+                 def run(arm=arm):
+@@ -296,7 +239,7 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
+                                 inner = g[step % 2, 1:-1]
+                                 if not inner.isfinite().all().item():
+                                     raise RuntimeError(f'{name} {arm} left a non-finite direct output')
+-                                _gate(name, arm, inner, want[step % 2, 1:-1], tolerant)
++                                torch.testing.assert_close(inner, want[step % 2, 1:-1], rtol=0, atol=0)
+                                 if not (g[step % 2, (0, -1)].eq(-123.).all().item()
+                                         and g[1 - step % 2].eq(-123.).all().item()):
+                                     raise RuntimeError(f'{name} {arm} wrote outside its rebound destination')
+@@ -305,9 +248,8 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
+                                 for a, b in zip(_values(got), _values(want)):
+                                     if not a.isfinite().all().item():
+                                         raise RuntimeError(f'{name} {arm} left a non-finite output')
+-                                    _gate(name, arm, a, b, tolerant)
++                                    torch.testing.assert_close(a, b, rtol=0, atol=0)
+             report('exact', cell=name, rows=rows, scope=scope, layers=list(layers[:len(group)]), arms=arms,
+-                   tolerant_max_ulps=tolerant, tolerant_gate=KSR_MAX_ULPS,
+                    reference=arms[0], not_projections=[a for a in arms if a in PACK_ARMS], magnitudes=magnitudes, replay_orders='forward/reverse', direct_output=direct,
+                    rebound_descriptor=direct, input_stride=x.stride(0),
+                    plan=[ext.gemm2_plan(rows, o.rows, o.cols) for o in owners[0]])
+@@ -387,6 +329,18 @@ def check(report, ranks=None, *, cells=(), rows=(8, 16), brackets=2, timing=True
+         report('rows16_resources', kernels={n: dict(registers=info[4*i], local_bytes=info[4*i+1],
+                                                      blocks_per_sm=info[4*i+2], smem=info[4*i+3])
+                                             for i, n in enumerate(names)})
++    if any(a.endswith('_deep') for cell, m in plan for pair in cell[5][m] for a in pair):
++        info = ext.c1_deep_info()
++        names = ('ordered<16,3> deep 2', 'ordered<16,3> direct deep 2', 'ordered<24,3> deep 3',
++                 'ordered<24,3> direct deep 3', 'ordered<32,2> deep 2', 'ordered<32,2> direct deep 2',
++                 'ordered<32,3> deep 2', 'ordered<32,3> direct deep 2', 'input_cta<1> deep 2',
++                 'input_cta<1> direct deep 2', 'query_pair deep (4 stages)',
++                 'rows16<false,32,8> deep 2', 'rows16<false,32,2> deep 2', 'rows16<false,32,6> deep 2',
++                 'rows16<true,16,3> deep 2', 'rows16<true,24,3> deep 3', 'rows16<true,32,3> deep 2',
++                 'rows16<false,24,3> deep 3')
++        report('c1_deep_resources', kernels={n: dict(registers=info[4*i], local_bytes=info[4*i+1],
++                                                      blocks_per_sm=info[4*i+2], smem=info[4*i+3])
++                                             for i, n in enumerate(names)})
+     return failures
+ 
+ 

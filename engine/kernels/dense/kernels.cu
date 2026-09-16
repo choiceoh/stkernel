@@ -1982,6 +1982,7 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
                                    const MhcTailRegs<HID>& r) {
   constexpr int MHC_EPT_ = HID / MK_THREADS;
   __shared__ float sqred[MK_WARPS];
+  __shared__ __align__(16) __nv_bfloat16 pack_values[PACK_INPUT ? HID : 1];
   float pre[HC];
 #pragma unroll
   for (int j = 0; j < HC; ++j) pre[j] = s_pmix[j];
@@ -2016,37 +2017,27 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
     const int h = i * MK_THREADS + threadIdx.x;
     const __nv_bfloat16 rounded = __float2bfloat16(vals[i] * rsq * r.nw[i]);
     a.layer_input[t * HID + h] = rounded;
-    if constexpr (PACK_INPUT) vals[i] = __bfloat162float(rounded);
+    if constexpr (PACK_INPUT) pack_values[h] = rounded;
   }
   __syncthreads();  // sqred reuse
   if constexpr (PACK_INPUT) {
-    // Quantize the rounded BF16 value the standalone input pack would read.
-    // Four warps own a 128-column scale group; retain all sixteen groups in
-    // registers and publish their maxima in one block synchronization.
-    __shared__ float maxima[MHC_EPT_][MK_WARPS];
+    // Keep the original normalization reduction and BF16 rounding. Transpose
+    // only the completed values in shared memory: a warp now owns all 128
+    // columns of a scale group, four adjacent values per lane. This removes
+    // cross-warp maxima, four value shuffles and the 16-pass pack loop.
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
 #pragma unroll
-    for (int i = 0; i < MHC_EPT_; ++i) {
-      const float mx = __uint_as_float(__reduce_max_sync(~0u, __float_as_uint(fabsf(vals[i]))));
-      if ((threadIdx.x & 31) == 0) maxima[i][threadIdx.x >> 5] = mx;
-    }
-    __syncthreads();
-#pragma unroll
-    for (int i = 0; i < MHC_EPT_; ++i) {
-      const int half = threadIdx.x / 128, first = half * 4;
-      const float mx = fmaxf(fmaxf(maxima[i][first], maxima[i][first+1]),
-                             fmaxf(maxima[i][first+2], maxima[i][first+3]));
+    for (int kb = warp; kb < HID / 128; kb += MK_WARPS) {
+      const __nv_bfloat16* values = pack_values + kb * 128 + lane * 4;
+      const float v0 = __bfloat162float(values[0]), v1 = __bfloat162float(values[1]);
+      const float v2 = __bfloat162float(values[2]), v3 = __bfloat162float(values[3]);
+      const float local = fmaxf(fmaxf(fabsf(v0), fabsf(v1)), fmaxf(fabsf(v2), fabsf(v3)));
+      const float mx = __uint_as_float(__reduce_max_sync(~0u, __float_as_uint(local)));
       const float scale = mk_act_scale(mx), inv = mk_act_rcp(scale);
-      const float v = vals[i] * inv;
-      const int leader = (threadIdx.x & 31) & ~3;
-      const float v0 = __shfl_sync(~0u, v, leader), v1 = __shfl_sync(~0u, v, leader+1);
-      const float v2 = __shfl_sync(~0u, v, leader+2), v3 = __shfl_sync(~0u, v, leader+3);
-      const int kb = i * 2 + half, lane = (threadIdx.x % 128) / 4;
-      if ((threadIdx.x & 3) == 0) {
-        const int q = lane >> 3, word = lane & 7, ks = ((word >> 1) - q) & 3;
-        const size_t offset = (size_t)kb * 1024 + ks * 256 + (t * 4 + q) * 8 + (word & 1) * 4;
-        *(uint32_t*)(a.input_pack + offset) = mk_f32x4_to_e4m3(v0, v1, v2, v3);
-      }
-      if (threadIdx.x % 128 == 0)
+      const int q = lane >> 3, word = lane & 7, ks = ((word >> 1) - q) & 3;
+      const size_t offset = (size_t)kb * 1024 + ks * 256 + (t * 4 + q) * 8 + (word & 1) * 4;
+      *(uint32_t*)(a.input_pack + offset) = mk_f32x4_to_e4m3(v0 * inv, v1 * inv, v2 * inv, v3 * inv);
+      if (lane == 0)
         ((float*)(a.input_pack + (HID / 128) * 1024))[kb * 8 + t] = scale;
     }
     __syncthreads();

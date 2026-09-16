@@ -68,3 +68,40 @@ clear win (U40 evicted 679.47 -> 679.21 us). These are component intervals,
 not consumer tok/s. The second candidate removes repeated mHC conversion,
 specializes pack-writing consumers, and adopts the stock decode kernel's
 shared-Q and matrix-load instructions for MLA. Its qualification is pending.
+
+## Second GPU verdict (`a236b5fa`)
+
+`gpu-v2.jsonl` passes every numerical/replay gate. Revised C1 MLA improves
+from 142.99 to 85.49 us for identical selections, but its matched control
+is 43.17 us; it is still rejected for speed. C2 is 61.72 -> 107.15 us.
+Packet mHC is 19.40 -> 20.50 us (+5.66%). The third candidate assigns one
+warp group to each MLA query and transposes completed mHC values for
+warp-local packing. The MLA profiler runs only after all unprofiled timings.
+
+## Third GPU verdict (`03cb3652`)
+
+`gpu-v3.jsonl` passes all numerical/replay gates. Warp-local mHC packing
+reaches parity without packets (18.57 -> 18.56 us), but packet mode still
+regresses (19.63 -> 20.17 us, +2.73%). MLA remains slower: C1 identical
+43.07 -> 87.40 us. Diagnostic profiling identifies substantial union
+preparation; overlapping PDL kernel durations must not be added as latency.
+The fourth candidate removes per-stripe output-counter contention, widens
+shared KV once for both queries, and executes weak-overlap rows concurrently.
+
+## Fourth GPU verdict (`8f3fe48a`)
+
+All correctness gates pass. C1 identical MLA is 43.00 -> 84.08 us, disjoint
+43.05 -> 74.11 us. Hash preparation remains substantial despite compact
+reservations. The next candidate uses bounded radix grouping and prefix
+counts for the exact multiset union. mHC moves packing onto the 32 finished
+projection CTAs; each row is published and rearmed before graph completion.
+
+## Fifth GPU verdict (`2715eda1`)
+
+All correctness gates pass; both changes are rejected for performance.
+Packet mHC rises 19.56 -> 22.65 us, and C1 identical MLA is 43.05 -> 92.33 us.
+Ready-row helper fences/counters and radix preparation are removed. The sixth
+candidate shares only matching KV rows within the current 16-slot tiles,
+retains each original sparse list/split, and merges in the same resident launch.
+No union, sorting, separate merge launch or per-replay barrier reset is needed.
+Changed tile order and asymmetric lengths join the existing numerical gates.
