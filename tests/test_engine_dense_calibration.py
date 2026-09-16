@@ -394,6 +394,21 @@ class CalibrationProvenanceTests(unittest.TestCase):
             self.assertEqual(store.foreign, set())
             self.assertTrue(PackStore(tmp, 0).calibrated(self.NAME), "a store that names no weights takes any blob")
 
+    def test_both_paths_that_file_a_blob_stamp_it(self):
+        """A boot files its sums from two places and only one of them was stamping.
+
+        `adapter.file_calibration` runs on the door's POST and at shutdown; `adapter.housekeeping` runs on its
+        own the moment the rows reach ROWS_TARGET -- which is the usual way a calibration ends. An unstamped
+        blob claims nothing and `store.fits_weights` waves it through, so the hole sat exactly where the guard
+        was most needed. Measured 2026-09-16: the recalibration's head blob hit the target first and landed with
+        weights_id None while the 202 the door filed carried it.
+        """
+        import inspect
+        from engine.profiles.glm53 import adapter
+        for name in ('housekeeping', 'file_calibration'):
+            src = inspect.getsource(getattr(adapter.Glm53Engine, name))
+            self.assertIn('weights_id=', src, f'{name} files a calibration without naming the weights it summed')
+
     def test_the_sums_id_travels_with_the_hessian_not_with_the_boot_that_files_it(self):
         from engine.kernels.dense.calibration import Calibration
         with tempfile.TemporaryDirectory() as tmp:

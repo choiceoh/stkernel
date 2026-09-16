@@ -250,7 +250,12 @@ class Glm53Engine:
         if c is None or c.filed is not None or steps % 256:
             return
         if c.complete():
-            written = c.save(self.calibration_root, self.net.comm.rank)
+            # Stamped like the door's path: an auto-filed blob that claims nothing is a blob
+            # `store.fits_weights` has to wave through, so the guard would have a hole exactly where
+            # calibration usually files. Measured 2026-09-16: the recalibration's head blob reached
+            # ROWS_TARGET first and landed with weights_id None while the 202 the door filed were stamped.
+            written = c.save(self.calibration_root, self.net.comm.rank,
+                             weights_id=getattr(self.net, 'weight_layout', None))
             self.lane_info["calibration"] = "filed"
             print(f"  calibration: rank {self.net.comm.rank} filed {len(written)} blobs under {self.calibration_root}/mkcalib/rank{self.net.comm.rank}/ "
                   f"({c.status()}); the next boot packs GPTQ from them", flush=True)

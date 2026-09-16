@@ -1078,9 +1078,17 @@ def native_execution_report(net, drafter):
     decode_fp8 = getattr(drafter.dense['fc.weight'], 'decode_fp8', None)
     required_draft_w4 = sum(getattr(p, 'decode_precision', 'w4') == 'w4' for p in draft)
     expected_mhc = 2*len(net.layers)-1  # first attn pre has no preceding post
+    # A calibrating boot cannot run the packet projection: it bypasses the BF16 storage the observer reads, so
+    # `DenseLinear.packet_projector` refuses outright while one is attached. Requiring the lane anyway killed
+    # every recalibration at the door -- 2026-09-16, rank 0 died with prefill_collectives holding the other
+    # three and nothing else missing -- which is why production's blobs stayed at the 17,189 tokens a boot
+    # manages before something else files them. Everything calibration does NOT disable is still required.
+    calibrating = any(getattr(layer, 'observer', None) is not None for layer in net.dense.values())
     required_prefill = {'fp8_all_gather', 'fp8_reduce_scatter'}
     if net.prefill_transport.project_tiles:
-        required_prefill.update(('fp8_tiled_projection', 'fp8_packet_projection'))
+        required_prefill.add('fp8_tiled_projection')
+        if not calibrating:
+            required_prefill.add('fp8_packet_projection')
     proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
