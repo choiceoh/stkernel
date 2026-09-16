@@ -6,14 +6,17 @@
 // torch.topk (gatherTopK + bitonicSortKVInPlace), `_weights`. Forty-two layers a step, so about
 // 300 launches whose bytes are one 4.7 MB FP32 gate read per layer.
 //
-// Here 48 CTAs stream the resident FP32 gate once -- six experts a CTA, one 16 KB row per expert,
-// evict-first -- and take the IEEE FP32 products against every row (BF16 promoted exactly) in a
-// FIXED order: a lane's sequential fmaf chain over its k, a shuffle tree across the warp (lane 0's
-// association kept), the eight warps in order. The last CTA to arrive (a ticket, like the mHC
-// tails) selects for every row: score = div_rn(1, 1 + exp(-logit)) + bias, top-k descending by
-// score with an exact tie to the LOWER expert id, weight = s / (sum s + 1e-20) * scale from the
-// RAW sigmoid with the sum taken in column order. The ticket resets itself, so a captured graph
-// replays without host work.
+// Here 48 CTAs stream the resident FP32 gate once -- six experts a CTA, one 16 KB row per expert --
+// as six bulk async copies into shared memory completing on one mbarrier (the way the MoE kernel's
+// B stages land): the whole 4.7 MB is in flight at once without a register or an LSU slot per
+// request. Plain loads could not do that: the first two cuts (c2rt2-0917, c2rt3-0917) streamed at
+// ~100 GB/s whether the loads were issued per chunk or hoisted, with 255 registers and no spills.
+// The products are IEEE FP32 (BF16 promoted exactly) in a FIXED order: a lane's sequential fmaf
+// chain over its k, a shuffle tree across the warp (lane 0's association kept), the eight warps in
+// order. The last CTA to arrive (a ticket, like the mHC tails) selects for every row: score =
+// div_rn(1, 1 + exp(-logit)) + bias, top-k descending by score with an exact tie to the LOWER
+// expert id, weight = s / (sum s + 1e-20) * scale from the RAW sigmoid with the sum taken in column
+// order. The ticket resets itself, so a captured graph replays without host work.
 //
 // Same products, same formulas, another add order: a logit moves by a few ulps and a near-tied
 // top-8 boundary can flip. That is a serving-numerics change, so adoption is a bracket; this cell
@@ -40,6 +43,8 @@
 #define ST_RT_SLOTS 9        // 288 / 32: the experts one lane owns at selection
 #define ST_RT_TOPK 8
 #define ST_RT_MAX_ROWS 16
+#define ST_RT_ROW_BYTES (ST_RT_HIDDEN * 4)                    // one expert's FP32 gate row, 16 KB
+#define ST_RT_STAGE_BYTES (ST_RT_PER_CTA * ST_RT_ROW_BYTES)   // the CTA's six rows, 96 KB of the 99 KB budget
 
 template <typename X>
 __device__ __forceinline__ void st_rt_load4(const X* p, float& a, float& b, float& c, float& d);
@@ -63,35 +68,80 @@ __device__ __forceinline__ void st_rt_load4<__nv_bfloat16>(const __nv_bfloat16* 
 // tl.div_rn(1., 1. + libdevice.exp(-x)): the same libdevice exp, an IEEE division
 __device__ __forceinline__ float st_rt_sigmoid(float v) { return __fdiv_rn(1.0f, 1.0f + expf(-v)); }
 
+// -- the bulk async copies and their mbarrier (sm_90+ PTX, as the MoE kernel's _bulk_g2s) --------------
+__device__ __forceinline__ unsigned st_rt_smem_u32(const void* p) {
+  return static_cast<unsigned>(__cvta_generic_to_shared(p));
+}
+
+__device__ __forceinline__ void st_rt_mbar_init(uint64_t* bar, unsigned count) {
+  asm volatile("mbarrier.init.shared::cta.b64 [%0], %1;" ::"r"(st_rt_smem_u32(bar)), "r"(count) : "memory");
+  asm volatile("fence.mbarrier_init.release.cluster;" ::: "memory");
+}
+
+__device__ __forceinline__ void st_rt_mbar_expect_tx(uint64_t* bar, unsigned bytes) {
+  asm volatile("mbarrier.arrive.expect_tx.shared::cta.b64 _, [%0], %1;" ::"r"(st_rt_smem_u32(bar)), "r"(bytes)
+               : "memory");
+}
+
+__device__ __forceinline__ void st_rt_bulk_g2s(void* dst, const void* src, unsigned bytes, uint64_t* bar) {
+  asm volatile("cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes [%0], [%1], %2, [%3];" ::"r"(
+                   st_rt_smem_u32(dst)),
+               "l"(src), "r"(bytes), "r"(st_rt_smem_u32(bar))
+               : "memory");
+}
+
+__device__ __forceinline__ void st_rt_mbar_wait(uint64_t* bar, unsigned parity) {
+  asm volatile(
+      "{\n\t"
+      ".reg .pred P1;\n\t"
+      "LAB_WAIT:\n\t"
+      "mbarrier.try_wait.parity.shared::cta.b64 P1, [%0], %1;\n\t"
+      "@P1 bra DONE;\n\t"
+      "bra LAB_WAIT;\n\t"
+      "DONE:\n\t"
+      "}" ::"r"(st_rt_smem_u32(bar)),
+      "r"(parity)
+      : "memory");
+}
+
 template <typename X, int ROWS>
 __global__ void __launch_bounds__(ST_RT_THREADS, 1)
 st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const float* __restrict__ bias,
                 unsigned int* ticket, float* __restrict__ logits, int* __restrict__ ids,
                 float* __restrict__ weights, int rows, float scale) {
-  __shared__ float partial[ST_RT_WARPS][ST_RT_PER_CTA][ROWS];
+  extern __shared__ __align__(128) unsigned char st_rt_smem[];  // the CTA's six gate rows
+  __shared__ __align__(8) uint64_t bar;
   __shared__ int last;
   const int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31;
   const int e0 = blockIdx.x * ST_RT_PER_CTA;
 
-  // phase 1: this CTA's six experts against every row, over the warp's k slice
+  // phase 0: six bulk copies, one arrival that expects their bytes; every thread waits on phase parity 0
+  if (tid == 0) {
+    st_rt_mbar_init(&bar, 1u);
+  }
+  __syncthreads();
+  if (tid == 0) {
+    st_rt_mbar_expect_tx(&bar, ST_RT_STAGE_BYTES);
+#pragma unroll
+    for (int e = 0; e < ST_RT_PER_CTA; ++e)
+      st_rt_bulk_g2s(st_rt_smem + e * ST_RT_ROW_BYTES, gate + (size_t)(e0 + e) * ST_RT_HIDDEN, ST_RT_ROW_BYTES, &bar);
+  }
+  st_rt_mbar_wait(&bar, 0u);
+
+  // phase 1: this CTA's six experts against every row, over the warp's k slice, from shared memory
   float acc[ST_RT_PER_CTA][ROWS];
 #pragma unroll
   for (int e = 0; e < ST_RT_PER_CTA; ++e)
 #pragma unroll
     for (int t = 0; t < ROWS; ++t) acc[e][t] = 0.f;
   const int kbase = warp * ST_RT_KSLICE + lane * 4;
-  // the warp's whole 12 KB of gate first (24 float4 a lane, evict-first), so every DRAM request of the
-  // launch is in flight before the first product: the first cut (c2rt2-0917) issued them a chunk at a time
-  // behind each chunk's products and streamed at ~100 GB/s
-  float4 g[ST_RT_LANE_CHUNKS][ST_RT_PER_CTA];
-#pragma unroll
-  for (int j = 0; j < ST_RT_LANE_CHUNKS; ++j)
-#pragma unroll
-    for (int e = 0; e < ST_RT_PER_CTA; ++e)
-      g[j][e] = __ldcs(reinterpret_cast<const float4*>(gate + (size_t)(e0 + e) * ST_RT_HIDDEN + kbase + j * 128));
 #pragma unroll
   for (int j = 0; j < ST_RT_LANE_CHUNKS; ++j) {
     const int k = kbase + j * 128;
+    float4 g[ST_RT_PER_CTA];
+#pragma unroll
+    for (int e = 0; e < ST_RT_PER_CTA; ++e)
+      g[e] = *reinterpret_cast<const float4*>(st_rt_smem + e * ST_RT_ROW_BYTES + k * 4);
 #pragma unroll
     for (int t = 0; t < ROWS; ++t) {
       float a = 0.f, b = 0.f, c = 0.f, d = 0.f;
@@ -99,15 +149,18 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
 #pragma unroll
       for (int e = 0; e < ST_RT_PER_CTA; ++e) {
         float s = acc[e][t];
-        s = fmaf(g[j][e].x, a, s);
-        s = fmaf(g[j][e].y, b, s);
-        s = fmaf(g[j][e].z, c, s);
-        s = fmaf(g[j][e].w, d, s);
+        s = fmaf(g[e].x, a, s);
+        s = fmaf(g[e].y, b, s);
+        s = fmaf(g[e].z, c, s);
+        s = fmaf(g[e].w, d, s);
         acc[e][t] = s;
       }
     }
   }
-  // the warp's tree (lane 0's association is the one kept), then the eight warps in order
+  // the warp's tree (lane 0's association is the one kept), then the eight warps in order. The partials
+  // reuse the stage: every warp has finished reading the gate rows before the barrier below.
+  __syncthreads();
+  float* partial = reinterpret_cast<float*>(st_rt_smem);  // [ST_RT_WARPS][ST_RT_PER_CTA][ROWS]
 #pragma unroll
   for (int e = 0; e < ST_RT_PER_CTA; ++e)
 #pragma unroll
@@ -115,7 +168,7 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
       float v = acc[e][t];
 #pragma unroll
       for (int off = 16; off > 0; off >>= 1) v += __shfl_xor_sync(0xffffffffu, v, off);
-      if (lane == 0) partial[warp][e][t] = v;
+      if (lane == 0) partial[(warp * ST_RT_PER_CTA + e) * ROWS + t] = v;
     }
   __syncthreads();
   if (tid < ST_RT_PER_CTA * ROWS) {
@@ -123,7 +176,7 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
     if (t < rows) {
       float v = 0.f;
 #pragma unroll
-      for (int w = 0; w < ST_RT_WARPS; ++w) v += partial[w][e][t];
+      for (int w = 0; w < ST_RT_WARPS; ++w) v += partial[(w * ST_RT_PER_CTA + e) * ROWS + t];
       logits[t * ST_RT_EXPERTS + e0 + e] = v;
     }
   }
@@ -186,21 +239,25 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
   if (tid == 0) *ticket = 0u;
 }
 
+template <typename X, int ROWS>
+static void launch_rows(const at::Tensor& x, const at::Tensor& gate, const at::Tensor& bias, const at::Tensor& ticket,
+                        at::Tensor& logits, at::Tensor& ids, at::Tensor& weights, float scale, cudaStream_t stream) {
+  C10_CUDA_CHECK(cudaFuncSetAttribute(st_router_fused<X, ROWS>, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                                      ST_RT_STAGE_BYTES));
+  st_router_fused<X, ROWS><<<ST_RT_CTAS, ST_RT_THREADS, ST_RT_STAGE_BYTES, stream>>>(
+      reinterpret_cast<const X*>(x.data_ptr()), gate.data_ptr<float>(), bias.data_ptr<float>(),
+      reinterpret_cast<unsigned int*>(ticket.data_ptr<int>()), logits.data_ptr<float>(), ids.data_ptr<int>(),
+      weights.data_ptr<float>(), (int)x.size(0), scale);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+}
+
 template <typename X>
 static void launch(const at::Tensor& x, const at::Tensor& gate, const at::Tensor& bias, const at::Tensor& ticket,
                    at::Tensor& logits, at::Tensor& ids, at::Tensor& weights, float scale, cudaStream_t stream) {
-  const int rows = (int)x.size(0);
-  const X* xp = reinterpret_cast<const X*>(x.data_ptr());
-  unsigned int* tk = reinterpret_cast<unsigned int*>(ticket.data_ptr<int>());
-  if (rows <= 8)
-    st_router_fused<X, 8><<<ST_RT_CTAS, ST_RT_THREADS, 0, stream>>>(
-        xp, gate.data_ptr<float>(), bias.data_ptr<float>(), tk, logits.data_ptr<float>(), ids.data_ptr<int>(),
-        weights.data_ptr<float>(), rows, scale);
+  if (x.size(0) <= 8)
+    launch_rows<X, 8>(x, gate, bias, ticket, logits, ids, weights, scale, stream);
   else
-    st_router_fused<X, ST_RT_MAX_ROWS><<<ST_RT_CTAS, ST_RT_THREADS, 0, stream>>>(
-        xp, gate.data_ptr<float>(), bias.data_ptr<float>(), tk, logits.data_ptr<float>(), ids.data_ptr<int>(),
-        weights.data_ptr<float>(), rows, scale);
-  C10_CUDA_KERNEL_LAUNCH_CHECK();
+    launch_rows<X, ST_RT_MAX_ROWS>(x, gate, bias, ticket, logits, ids, weights, scale, stream);
 }
 
 void run(const at::Tensor& x, const at::Tensor& gate, const at::Tensor& bias, const at::Tensor& ticket,
