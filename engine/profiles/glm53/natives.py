@@ -33,7 +33,8 @@ ONESHOT = ("one-shot", "engine.kernels.oneshot", "build")        # its sources t
 # Natives that exist under engine/kernels but that no serving module binds: a probe's own cell. A cell never runs
 # inside a boot, so it cannot make one rank wait for another's compile, and building it here would only lengthen
 # every cold boot. Binding one from a lane means moving it into MODULES above.
-PROBE_MODULES = (("router-fused", "engine.kernels.router_fused", "build"),)
+# router_fused is now connected to the decode consumer and belongs in MODULES.
+PROBE_MODULES = ()
 
 
 def builds(oneshot_rails: int, oneshot_inline: bool):
