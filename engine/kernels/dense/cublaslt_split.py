@@ -34,6 +34,12 @@ def _reduce(X, Y, SIZE: tl.constexpr, P: tl.constexpr):
     tl.store(Y + i, value.to(tl.bfloat16), i < SIZE)
 
 
+def _versions(weight):
+    # Inference tensors intentionally have no version counter. They can be
+    # repacked, but cannot participate in a mutation-aware shared cache.
+    return tuple(None if t.is_inference() else t._version for t in weight)
+
+
 class PackedWeight:
     """Retain original tensors and versions so shared repacks cannot go stale."""
     def __init__(self, weight, parts):
@@ -42,7 +48,7 @@ class PackedWeight:
         if type(parts) is not int or not 2 <= parts <= 16 or k % (parts*128):
             raise ValueError('split weights require 2..16 aligned K partitions')
         self.source = weight
-        self.versions = tuple(t._version for t in weight)
+        self.versions = _versions(weight)
         self.parts, self.shape = parts, (n, k)
         kp = k//parts
         self.q = q.reshape(n, parts, kp).permute(1, 0, 2).contiguous()
@@ -50,7 +56,7 @@ class PackedWeight:
         self.scales = torch.stack([mxfp8.pack_weight_scales(source_scales[p], n, kp) for p in range(parts)])
 
     def require_current(self):
-        if tuple(t._version for t in self.source) != self.versions:
+        if _versions(self.source) != self.versions:
             raise RuntimeError('split weight was modified after preparation')
 
     @property
@@ -128,11 +134,14 @@ def prepare(prepared, producer):
     if not isinstance(producer, BF16Producer) or prepared.key[:3] not in ((8, 4096, 20480), (16, 4096, 20480)):
         return None, None
     owner = prepared.owner
-    packed_key = tuple((id(t), t._version) for t in prepared.weight), 5
-    packed = owner.split_weights.get(packed_key)
+    versions = _versions(prepared.weight)
+    packed_key = (tuple((id(t), version) for t, version in zip(prepared.weight, versions)), 5)
+    cacheable = all(version is not None for version in versions)
+    packed = owner.split_weights.get(packed_key) if cacheable else None
     if packed is None:
         packed = PackedWeight(prepared.weight, 5)
-        owner.split_weights[packed_key] = packed
+        if cacheable:
+            owner.split_weights[packed_key] = packed
     baseline = prepared.bind(producer)
     plan = SplitPlan(owner, packed, prepared.rows, producer.source)
     candidates = plan.native.candidates()

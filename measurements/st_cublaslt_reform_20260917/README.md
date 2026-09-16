@@ -16,10 +16,10 @@ weight repacking and algorithm search are outside the warm captured interval.
 
 | FC rows | Baseline | Baseline ms | Split cuBLAS ms | Latency change |
 |---|---|---:|---:|---:|
-| 8 | Direct cuBLAS | 0.358056 | 0.315628 | −11.85% |
-| 8 | DeepGEMM | 0.346873 | 0.315433 | −9.06% |
-| 16 | Direct cuBLAS | 0.361208 | 0.322289 | −10.77% |
-| 16 | DeepGEMM | 0.352303 | 0.322301 | −8.52% |
+| 8 | Direct cuBLAS | 0.357364 | 0.317250 | −11.23% |
+| 8 | DeepGEMM | 0.343601 | 0.315649 | −8.13% |
+| 16 | Direct cuBLAS | 0.362264 | 0.324279 | −10.49% |
+| 16 | DeepGEMM | 0.351604 | 0.322747 | −8.21% |
 
 [Raw FC receipt](rtx5050/split-fc.json), [summary](rtx5050/summary.json).
 The direct baseline is the best full-K finalist from the same preparation;
@@ -28,8 +28,8 @@ same original FP8 weight bytes. Input values are seeded synthetic BF16 and are
 changed before holdout; these are not captured live model activations.
 
 The four head shapes remain on direct cuBLAS and pass the same final C++ binding:
-M=7/8/14/16 latency is 0.593344 / 0.594336 / 0.598272 / 0.598976 ms, respectively,
-12.38–13.09% below their paired DeepGEMM baselines. [Head receipt](rtx5050/split-head.json).
+M=7/8/14/16 latency is 0.593152 / 0.593888 / 0.598240 / 0.599008 ms, respectively,
+12.63–13.07% below their paired DeepGEMM baselines. [Head receipt](rtx5050/split-head.json).
 These are selected preparation brackets, not the additional FC holdout brackets.
 
 ## Implementation and cost
@@ -54,7 +54,9 @@ while the original DeepGEMM weight remains resident. Private FP32 partials are
 and output buffers. A weak cache shares the 82.5 MiB repack across prepared row
 shapes while owners exist; original tensor references and version counters
 prevent address reuse or an in-place update from retrieving a stale repack.
-Bindings require immutable weight and buffer storage for graph lifetime.
+Inference-mode tensors have no version counter and are repacked without shared
+cache lookup; all bindings require immutable weight and buffer storage for graph
+lifetime. The final native regression also exercises inference-mode weights.
 
 ## Validation and limitations
 
@@ -78,6 +80,10 @@ check; that record omitted the signed delta, so it does not identify whether the
 allocator observation was allocation or reclamation. The final check uses the
 monotonic `allocated_bytes.all.allocated` counter and records zero for every cell.
 The failed receipt/log are retained as `allocation-counter-error.*`.
+An earlier complete FC run is retained as `split-fc-before-inference.json`;
+it showed 10.77–11.85% versus direct cuBLAS and 8.52–9.06% versus DeepGEMM.
+The table above uses the later complete run after inference-weight support;
+all four pairs still clear 2%, with the unchanged kernels.
 
 Hardware/runtime, image and DeepGEMM dependency identity, and the two actual pack
 hashes are inherited unchanged from the [initial comparison](../st_cublaslt_compare_20260917/README.md).

@@ -259,6 +259,15 @@ class NativePreparationTests(unittest.TestCase):
         finally:
             for graph in graphs:
                 graph.reset()
+        with torch.inference_mode():
+            inference_weight = tuple(t.clone() for t in weight)
+            inference_pack = PackedWeight(inference_weight, 5)
+            self.assertEqual(inference_pack.versions, (None, None))
+            inference_plan = SplitPlan(owner, inference_pack, 8, source)
+            c = inference_plan.native.candidates()[0]
+            inference_plan.index, inference_plan.workspace_bytes = c['index'], c['workspace']
+            execution = inference_plan.bind(BF16Producer(source))
+            torch.testing.assert_close(execution(), torch.full_like(execution.out, 640*3*2), rtol=0, atol=0)
 
 
 @unittest.skipUnless(TORCH and TRITON, 'requires torch and triton')
