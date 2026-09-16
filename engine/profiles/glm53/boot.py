@@ -108,6 +108,13 @@ TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem
 # A commit that sets it is booted by a fleet hold and fed a corpus through the door; main keeps it False, and with it
 # False nothing here runs. Carried over from the arm branch it was written on, which was never merged.
 EXPERT_CAPTURE = False
+# Collect the decode FC pairs `bench/draft_tune.py fc-bias` fits. The bias the boot binds from
+# `draft-fc-bias.json` has never been produced -- the fitter existed with no collector -- so
+# production runs with draft_fc_bias_status="missing". A collecting boot serves normally and
+# writes one bundle per rank; `reader_identity` pins the executed pack, so it cannot be fitted
+# anywhere but inside the boot that will be corrected.
+DRAFT_FC_CAPTURE = False
+DRAFT_FC_CAPTURE_ROWS = 4096
 CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
 CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
 # The dense pack store's root: calibration blobs under <root>/mkcalib/rank<r>/, GPTQ packs cached under
@@ -1733,6 +1740,13 @@ def fleet(a) -> int:
                                                        sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS)
             print(f"  expert capture: rank {comm.rank} armed; rows and stats under {Path(a.dump_dir) / 'expert-capture'} "
                   f"on rank {capture_mod.CAPTURE_RANK}", flush=True)
+        if DRAFT_FC_CAPTURE:                                # the drafter is prepared and calibrated by here
+            from engine.profiles.glm53 import draft_fc_capture as draft_fc_mod
+            engine.draft_fc_capture = draft_fc_mod.attach(
+                engine, Path(a.dump_dir) / "draft-fc-pairs", rows=DRAFT_FC_CAPTURE_ROWS,
+                salt=str(engine.drafter.tuning.digest))
+            print(f"  draft FC capture: rank {comm.rank} armed for {DRAFT_FC_CAPTURE_ROWS} committed rows "
+                  f"under {Path(a.dump_dir) / 'draft-fc-pairs'}", flush=True)
         if CALIBRATION_CAPTURE and engine.calibration is not None:
             from engine.profiles.glm53 import capture as capture_mod
             capture_mod.arm_calibration_phases(engine)
@@ -1778,6 +1792,12 @@ def fleet(a) -> int:
                             engine.expert_capture.close()
                         except Exception as exc:              # noqa: BLE001 -- a shutdown never fails a shutdown
                             print(f"  expert capture: rank {comm.rank} could not close: {type(exc).__name__}: {exc}", flush=True)
+                    if getattr(engine, "draft_fc_capture", None) is not None:
+                        try:
+                            report = engine.draft_fc_capture.close()
+                            print(f"  draft FC capture: rank {comm.rank} {report}", flush=True)
+                        except Exception as exc:              # noqa: BLE001 -- a shutdown never fails a shutdown
+                            print(f"  draft FC capture: rank {comm.rank} could not close: {type(exc).__name__}: {exc}", flush=True)
                     if getattr(engine, "calibration", None) is not None:
                         written = engine.file_calibration()
                         if written:
