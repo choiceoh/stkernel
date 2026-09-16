@@ -119,6 +119,7 @@ class MoEStaticKernelV4:
         fc1_stages: int = 2,
         fc2_stages: int = 2,
         l2_prefetch: int = 0,
+        l2_prefetch_fc1: bool = True,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -193,6 +194,10 @@ class MoEStaticKernelV4:
             raise ValueError("l2 prefetch depth must be 0..16 stages")
         if self.l2_prefetch and not decode_reform:
             raise ValueError("l2 prefetch is declared for the M16 reform tile (t,r) only")
+        # lf<n>: the FC1 boxes are left alone (the first ticket, c2l2prefetch2-0916, measured FC1 slower
+        # under its own prefetch and FC2 faster), only the item's FC2 boxes -- across the seam and inside
+        # the FC2 loop -- are asked for ahead.
+        self.l2_prefetch_fc1 = bool(l2_prefetch_fc1)
         self.stamps = bool(stamps)
         self.decode_reform = bool(decode_reform)
         # One integrated C=1 tile: halve padded M work, consume both FC1
@@ -2552,12 +2557,13 @@ class MoEStaticKernelV4:
                                 if is_dma_lane0:
                                     ahead = k_tile + prefetch_ahead
                                     if ahead < k_tile_cnt1:
-                                        w13_at = (w13_base + Int64(weight_expert_idx) * w13_expert_bytes
-                                                  + Int64(ahead) * w13_ktile_bytes)
-                                        _bulk_prefetch_l2(w13_at + Int64(gate_tile) * fc1_box_i64,
-                                                          fc1_box_bytes)
-                                        _bulk_prefetch_l2(w13_at + Int64(up_tile) * fc1_box_i64,
-                                                          fc1_box_bytes)
+                                        if cutlass.const_expr(self.l2_prefetch_fc1):
+                                            w13_at = (w13_base + Int64(weight_expert_idx) * w13_expert_bytes
+                                                      + Int64(ahead) * w13_ktile_bytes)
+                                            _bulk_prefetch_l2(w13_at + Int64(gate_tile) * fc1_box_i64,
+                                                              fc1_box_bytes)
+                                            _bulk_prefetch_l2(w13_at + Int64(up_tile) * fc1_box_i64,
+                                                              fc1_box_bytes)
                                     else:
                                         down_tile = ahead - k_tile_cnt1
                                         if down_tile < output_tile_cnt:

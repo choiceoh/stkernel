@@ -21,6 +21,9 @@ Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
   pair_wide     run_query_pair(local_c1=False): wide pack + two packed mk_gemm2_kernel launches
   pack          run_input_pack: the C1 cell's own input pack alone (8 rows), timed against the whole cell
                 to size a producer-side pack; it has no projection output, so the exactness gate skips it
+  *_l2          the same route with the bench knob set_gemm2_l2_prefetch(1) held while its graph is captured:
+                every v2 CTA asks L2 for its whole k slice of W and scales at entry (2026-09-16). A hint,
+                so the exactness gate holds it to the route's own bytes
 
 To add an arm: put a route in ROUTES and a (control, candidate) pair in the cell's
 row plan below. Scope `single` is one layer; `chain` calls every listed layer in
@@ -55,24 +58,32 @@ DRAFTER_RANK, DRAFTER_WORLD = 3, 4
 # name, weight keys per layer, layers, direct TX output, input width, {rows: ((control, candidate), ...)}
 CELLS = (
     ('kda.in_proj', ('kda.in_proj',), KDA_LAYERS, False, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'generic'), ('bound', 'wide_control'))}),
+     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+      16: (('bound', 'generic'), ('bound', 'wide_control'), ('bound', 'bound_l2'))}),
     ('kda.o_proj', ('kda.o_proj',), KDA_LAYERS, True, 2048,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
+     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
     ('mla.o_proj', ('mla.o_proj',), DSA_LAYERS, True, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
+     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
     ('mla.query', ('mla.q_b', 'idx.wq_b'), DSA_LAYERS, False, 1536,
-     {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack')), 16: (('pair', 'pair_generic'),)}),
+     {8: (('pair', 'pair_generic'), ('pair', 'pair_wide'), ('pair', 'pack'), ('pair', 'pair_l2')),
+      16: (('pair', 'pair_generic'), ('pair', 'pair_l2'))}),
     ('mla.qkv_a', ('mla.qkv_a',), DSA_LAYERS, False, 4096,
-     {16: (('bound', 'wide_control'), ('bound', 'generic'))}),
+     {16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
     ('mlp.gate_up', ('mlp.gate_up',), DENSE_LAYERS, False, 4096,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
+     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
     ('mlp.down', ('mlp.down',), DENSE_LAYERS, True, 3072,
-     {8: (('bound', 'generic'), ('bound', 'pack')), 16: (('bound', 'wide_control'), ('bound', 'generic'))}),
+     {8: (('bound', 'generic'), ('bound', 'pack'), ('bound', 'bound_l2')),
+      16: (('bound', 'wide_control'), ('bound', 'generic'), ('bound', 'bound_l2'))}),
     # The drafter's block MLP calls both projections to a matrix; at 16 rows it serves the generic route.
     ('drafter.gate_up', ('mlp.gate_up',), DRAFTER_LAYERS, False, 4096,
-     {8: (('bound', 'generic'),), 16: (('generic', 'bound'), ('generic', 'wide_control'))}),
+     {8: (('bound', 'generic'), ('bound', 'bound_l2')),
+      16: (('generic', 'bound'), ('generic', 'wide_control'), ('generic', 'generic_l2'))}),
     ('drafter.down', ('mlp.down',), DRAFTER_LAYERS, False, 3072,
-     {8: (('bound', 'generic'),), 16: (('generic', 'bound'), ('generic', 'wide_control'))}),
+     {8: (('bound', 'generic'), ('bound', 'bound_l2')),
+      16: (('generic', 'bound'), ('generic', 'wide_control'), ('generic', 'generic_l2'))}),
 )
 SHAPES = {'kda.in_proj': (6416, 4096), 'kda.o_proj': (4096, 2048), 'mla.o_proj': (4096, 4096),
           'mla.q_b': (4096, 1536), 'idx.wq_b': (4096, 1536), 'mla.qkv_a': (2048, 4096),
@@ -130,8 +141,20 @@ def _wide_control(ext, owner, x, destination):
     return y
 
 
+def _l2(ext, fn):
+    """Run `fn` with the v2 L2-prefetch bench knob held: a capture inside bakes the knob into its graph."""
+    ext.set_gemm2_l2_prefetch(1)
+    try:
+        return fn()
+    finally:
+        ext.set_gemm2_l2_prefetch(0)
+
+
 ROUTES = {
     'bound': lambda ext, owners, x, d: _dense(owners[0], x, d, BOUND),
+    'bound_l2': lambda ext, owners, x, d: _l2(ext, lambda: _dense(owners[0], x, d, BOUND)),
+    'generic_l2': lambda ext, owners, x, d: _l2(ext, lambda: _dense(owners[0], x, d, ())),
+    'pair_l2': lambda ext, owners, x, d: _l2(ext, lambda: _pair(owners, x)),
     'generic': lambda ext, owners, x, d: _dense(owners[0], x, d, ()),
     'wide': lambda ext, owners, x, d: _wide(ext, owners[0], x),
     'pair': lambda ext, owners, x, d: _pair(owners, x),

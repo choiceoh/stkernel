@@ -23,11 +23,16 @@ class L2PrefetchCellTests(unittest.TestCase):
             cfg = parse(f't,r,sf6,batch,l{depth}')
             self.assertEqual(cfg['l2_prefetch'], depth)
             self.assertTrue(cfg['tiled'] and cfg['decode_reform'])
-        for spec in ('u,l4', 't,l4', 'v,l2'):
+        for spec in ('u,l4', 't,l4', 'v,l2', 't,lf4'):
             with self.assertRaisesRegex(ValueError, 'l<n> requires t,r'):
                 parse(spec)
         with self.assertRaises(ValueError):
             parse('t,r,sf6,lx')
+        # lf<n>: the FC2-only variant (the first ticket measured FC1 slower under its own prefetch)
+        both, fc2 = parse('t,r,sf6,batch,l4'), parse('t,r,sf6,batch,lf4')
+        self.assertEqual((both['l2_prefetch'], both['l2_prefetch_fc1']), (4, True))
+        self.assertEqual((fc2['l2_prefetch'], fc2['l2_prefetch_fc1']), (4, False))
+        self.assertNotEqual(ns['_static_v2_cache_key'](both, m=16), ns['_static_v2_cache_key'](fc2, m=16))
 
     def test_cache_key_tells_depths_apart_and_zero_is_the_served_key(self):
         ns = namespace()
@@ -51,6 +56,9 @@ class L2PrefetchCellTests(unittest.TestCase):
             above = "\n".join(lines[max(0, call.lineno - 24):call.lineno])
             self.assertIn('if is_dma_lane0:', above, f'line {call.lineno}: the prefetch must be one lane')
             self.assertIn('self.l2_prefetch > 0', above, f'line {call.lineno}: the prefetch must be a compile-time cell')
+        # the two FC1 boxes sit under the FC1 switch; the seam and FC2 boxes do not
+        fc1_gated = [c for c in calls if 'self.l2_prefetch_fc1' in '\n'.join(lines[max(0, c.lineno - 8):c.lineno])]
+        self.assertEqual(len(fc1_gated), 2)
         common = (ROOT / 'engine/kernels/b12x/moe_static_common.py').read_text()
         self.assertIn('"cp.async.bulk.prefetch.L2.global [$0], $1;"', common)
         # the raw storage tensors ride the kernel signature and both launch sites hand them over

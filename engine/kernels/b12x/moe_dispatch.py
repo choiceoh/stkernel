@@ -409,8 +409,8 @@ _STATIC_V2_DEFAULT = {
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
     "tiled": False, "sf_pack": False, "decode_reform": False,
     "reform_sf_pack": False,
-    # l<n>: B stages prefetched into L2 n stages ahead by the DMA warp (0 = off)
-    "l2_prefetch": 0,
+    # l<n>: B stages prefetched into L2 n stages ahead by the DMA warp (0 = off); lf<n>: FC2's only
+    "l2_prefetch": 0, "l2_prefetch_fc1": True,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -489,6 +489,12 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             # ahead (cp.async.bulk.prefetch.L2, one request per contiguous 16 KB run, no smem).
             # A hint: the MMA reads the same bytes, so the numerics are the kernel's own.
             cfg["l2_prefetch"] = int(token[1:])
+            cfg["l2_prefetch_fc1"] = True
+            continue
+        if len(token) >= 3 and token[:2] == "lf" and token[2:].isdigit():
+            # lf<n>: the same, for the item's FC2 boxes only (FC1's own prefetch measured slower)
+            cfg["l2_prefetch"] = int(token[2:])
+            cfg["l2_prefetch_fc1"] = False
             continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
@@ -2301,6 +2307,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("compact_staging", False)),
         bool(config.get("sf6_registers", False)),
         int(config.get("l2_prefetch", 0)),
+        bool(config.get("l2_prefetch_fc1", True)),
         bool(config.get("sync_cleanup", False)),
     )
     # Expanded output and register scatter never alias a served handle.
@@ -2504,6 +2511,7 @@ def _get_static_kernel_v2(
         fc1_stages=int(config["fc1"]),
         fc2_stages=int(config["fc2"]),
         l2_prefetch=l2_prefetch,
+        l2_prefetch_fc1=bool(config.get("l2_prefetch_fc1", True)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),

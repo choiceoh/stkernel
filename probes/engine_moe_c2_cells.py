@@ -54,7 +54,7 @@ TARGET_U8 = 41.9      # distinct experts per layer an 8-row C=1 verify reads on 
 LAYERS = (3, 4, 5)
 CHUNKS = (512, 256)
 SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price', 'prefetch')
-PREFETCH_DEPTHS = (2, 4, 8)
+PREFETCH_CELLS = ('l2', 'lf2', 'lf4', 'lf8')   # l2 repeats the first ticket's control arm beside the FC2-only cells
 RANKS = '/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors'
 # bytes a unique expert streams per layer: w13 + w2 + SF6 FC1 (128 x 1552) + SF6 FC2 (64 x 1552)
 EXPERT_BYTES = 1024 * 2048 + 4096 * 256 + (128 + 64) * 1552
@@ -399,9 +399,9 @@ def prefetch_cells(report, layers, spread, brackets):
     """l<n> against the served tile over the served chunk: C=2 two requests and C=1 one request."""
     from engine.kernels.b12x import moe_dispatch as md
     served = md._w13_tile_chunk()
-    labels = [f'l{d}' for d in PREFETCH_DEPTHS]
+    labels = list(PREFETCH_CELLS)
     arms = ([('served', served, None)]
-            + [(f'l{d}', served, md._parse_glm53_static_v2(f't,r,sf6,batch,l{d}')) for d in PREFETCH_DEPTHS]
+            + [(cell, served, md._parse_glm53_static_v2(f't,r,sf6,batch,{cell}')) for cell in PREFETCH_CELLS]
             + [('served_b', served, None)])
     failures = []
     for fixture in (('c2_two_requests', 16, 2, spread), ('c1_one_request', 8, 1, spread)):
@@ -427,7 +427,7 @@ def prefetch_cells(report, layers, spread, brackets):
     if failures:
         raise RuntimeError(f'prefetch cells beyond the ulp bound: {failures}')
     stamp_cells(report, layers, [('served', served, None),
-                                 ('l4', served, md._parse_glm53_static_v2('t,r,sf6,batch,l4'))], spread)
+                                 ('lf4', served, md._parse_glm53_static_v2('t,r,sf6,batch,lf4'))], spread)
 
 
 def price_cells(report, layers, spread, brackets):
