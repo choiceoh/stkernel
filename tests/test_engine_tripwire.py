@@ -203,6 +203,23 @@ class TripwireTests(unittest.TestCase):
 
 
 class DeathNoteTests(unittest.TestCase):
+    def test_the_original_trace_survives_cuda_cleanup_failures(self):
+        def first_failure():
+            raise RuntimeError("first device failure")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                first_failure()
+            except RuntimeError as original:
+                try:
+                    raise ValueError("cleanup failed")
+                except ValueError:
+                    note = death_note(tmp, 1, original, phase="boot", say=lambda *a, **k: None)
+            saved = json.loads(Path(note["path"]).read_text())
+            self.assertIn("first_failure", saved["traceback"])
+            self.assertIn("first device failure", saved["traceback"])
+            self.assertNotIn("cleanup failed", saved["traceback"])
+
     def test_a_death_is_classified_and_written_where_the_container_cannot_erase_it(self):
         self.assertEqual(classify(CollectiveDivergence("x")), "divergence")
         self.assertEqual(classify(RuntimeError("[c10d] recvValue failed ... Connection closed by peer")), "peer-left")

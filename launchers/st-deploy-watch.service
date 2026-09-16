@@ -8,6 +8,9 @@ After=st-glm53.service
 
 [Service]
 Type=oneshot
+# Match the supervisor's model shards and memory/production settings. Without
+# this, deploy() inherits the launcher's defaults while recovery uses this file.
+EnvironmentFile=-/home/choiceoh/.config/st-glm53.env
 # The D17 probe ticket a cycle queues (fleet.sh st-probe --detach) is a waiter process in this
 # unit's cgroup. A oneshot's cgroup is killed the moment the cycle ends, so the waiter died 0.25 s
 # after enqueue on the first armed cycle (srv2, 2026-09-13 02:49) and cancelled its own ticket.

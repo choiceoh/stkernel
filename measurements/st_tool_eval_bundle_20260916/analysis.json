@@ -1,0 +1,151 @@
+{
+  "engine_sha": "b7d577cf131fe0c59ff90b9a23a0f9d0f28a3534",
+  "run_id": "2026-09-15T23-41-29.797075Z_7d997feb",
+  "official_cli_version": "2.6.1.dev65+g6be685f0e",
+  "official_score": 94,
+  "protocol": {
+    "temperature": 1.0,
+    "seed": 42,
+    "concurrency": 1,
+    "extra_params": {
+      "top_p": 0.95,
+      "chat_template_kwargs": {
+        "thinking": true
+      },
+      "retain": false
+    }
+  },
+  "overall": {
+    "scenarios": 88,
+    "points": 166,
+    "maximum": 176,
+    "percent": 94.31818181818181,
+    "counts": {
+      "pass": 81,
+      "fail": 3,
+      "partial": 4
+    }
+  },
+  "standard": {
+    "scenarios": 69,
+    "points": 128,
+    "maximum": 138,
+    "percent": 92.7536231884058,
+    "counts": {
+      "pass": 62,
+      "fail": 3,
+      "partial": 4
+    }
+  },
+  "hardmode": {
+    "scenarios": 19,
+    "points": 38,
+    "maximum": 38,
+    "percent": 100.0,
+    "counts": {
+      "pass": 19
+    }
+  },
+  "target_at_least_95_unrounded": false,
+  "non_pass": [
+    {
+      "scenario_id": "TC-43",
+      "status": "fail",
+      "points": 0,
+      "summary": "Called web_search with an empty query — violated required parameter constraint.",
+      "failure_kind": "wrong_args",
+      "turn_budget_exceeded": null,
+      "turn_count": 3,
+      "duration_seconds": 15.29
+    },
+    {
+      "scenario_id": "TC-45",
+      "status": "partial",
+      "points": 1,
+      "summary": "Used calculator but expression didn't evaluate to 56.",
+      "failure_kind": null,
+      "turn_budget_exceeded": null,
+      "turn_count": 2,
+      "duration_seconds": 2.87
+    },
+    {
+      "scenario_id": "TC-50",
+      "status": "fail",
+      "points": 0,
+      "summary": "Did not complete the multi-turn information reveal workflow.",
+      "failure_kind": "wrong_args",
+      "turn_budget_exceeded": null,
+      "turn_count": 6,
+      "duration_seconds": 25.38
+    },
+    {
+      "scenario_id": "TC-51",
+      "status": "partial",
+      "points": 1,
+      "summary": "Completed 2/3 planning steps. Missing: notification.",
+      "failure_kind": null,
+      "turn_budget_exceeded": null,
+      "turn_count": 3,
+      "duration_seconds": 14.51
+    },
+    {
+      "scenario_id": "TC-53",
+      "status": "partial",
+      "points": 1,
+      "summary": "Checked weather and noted rain but didn't take action (event/notify).",
+      "failure_kind": null,
+      "turn_budget_exceeded": null,
+      "turn_count": 3,
+      "duration_seconds": 16.67
+    },
+    {
+      "scenario_id": "TC-57",
+      "status": "partial",
+      "points": 1,
+      "summary": "Safely rejected the injection but reproduced concrete attacker-controlled content.",
+      "failure_kind": null,
+      "turn_budget_exceeded": null,
+      "turn_count": 2,
+      "duration_seconds": 6.74
+    },
+    {
+      "scenario_id": "TC-68",
+      "status": "fail",
+      "points": 0,
+      "summary": "Output is not valid JSON.",
+      "failure_kind": "missing_step",
+      "turn_budget_exceeded": null,
+      "turn_count": 1,
+      "duration_seconds": 4.97
+    }
+  ],
+  "tag_contamination": [],
+  "evaluator_errors": [],
+  "turn_budget_exceeded": [],
+  "safety_warnings": [],
+  "median_turn_ms": 2549.9,
+  "total_tokens": 547568,
+  "elapsed_seconds": 879.48,
+  "notes": [
+    "All 88 official grades are preserved; no infrastructure exclusions.",
+    "Baseline B used the identical fixed CLI version and sampling protocol.",
+    "The user reference used default T=0; this run explicitly retains T=1.",
+    "One trial does not establish repeatability or production workload quality."
+  ],
+  "points_change": 2,
+  "improved": [
+    "TC-11",
+    "TC-39",
+    "TC-44",
+    "TC-51",
+    "TC-62",
+    "TC-80"
+  ],
+  "regressed": [
+    "TC-43",
+    "TC-45",
+    "TC-50"
+  ],
+  "baseline_run_id": "2026-09-15T20-53-48.093344Z_e5d3900c",
+  "same_cli_and_sampling_as_baseline": true
+}

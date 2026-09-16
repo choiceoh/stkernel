@@ -21,6 +21,15 @@ spec.loader.exec_module(watch)
 
 
 class WantedTests(unittest.TestCase):
+    def test_auto_deploy_and_recovery_inherit_the_same_production_environment(self):
+        root = Path(__file__).resolve().parents[1] / 'launchers'
+        def files(unit):
+            return [line.split('=', 1)[1] for line in (root / unit).read_text().splitlines()
+                    if line.startswith('EnvironmentFile=')]
+        recovery = files('st-glm53.service')
+        self.assertTrue(recovery, 'production configuration must be explicit')
+        self.assertEqual(files('st-deploy-watch.service'), recovery)
+
     def test_the_deployed_sha_is_not_a_candidate(self):
         self.assertIsNone(watch.wanted("abc123", {"deployed": "abc123"}))
 

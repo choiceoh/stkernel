@@ -153,6 +153,7 @@ class Glm53Engine:
             if self.memory is not None:
                 self._warmup_prefill_memory()
             self._warmup_serving_kernels()
+            self._warmup_decode_experts(max_seqs)
             graphs_began = time.time()
             if self.execution_plan.early_observe:
                 projection = getattr(self.drafter, "dense", {}).get("fc.weight")
@@ -517,6 +518,23 @@ class Glm53Engine:
         windows = getattr(self, "jit_windows", None)
         if windows is not None:
             windows.mark("warm kernels", opened, time.time())
+
+    def _warmup_decode_experts(self, max_seqs):
+        """Finish rank-local module loading before the first captured TP forward."""
+        opened = time.time()
+        cuda = str(self.caches.device).startswith("cuda")
+        if cuda:
+            torch.cuda.synchronize()  # drain the preceding warmup's collectives first
+        rows = tuple(n * (self.drafter.k + 1) for n in range(max_seqs, 0, -1))
+        self.net.warmup_decode_experts(rows, self.caches.device)
+        if cuda:
+            torch.cuda.synchronize()
+        # A slow compile/load must be waited for on the host, without leaving a
+        # one-shot kernel running on an otherwise prepared peer's GPU.
+        self.net.comm.wait_prepared("decode-experts", final=True)
+        if self.memory is not None:
+            self.memory.checkpoint("decode experts", release_cache=True)
+        self.jit_windows.mark("decode experts", opened, time.time())
 
     def close_decode(self):
         pipeline = getattr(self, "pipeline", None)

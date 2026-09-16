@@ -1,0 +1,92 @@
+{
+  "source": "Unmodified official llama-benchy JSON captured before temporary-file deletion",
+  "engine_sha": "8eff05b4c55c9fab0a6ef42013bf248b1db5feae",
+  "benchy_version": "0.4.0",
+  "completed_cells": 6,
+  "runs_per_cell": 3,
+  "measured_requests": 27,
+  "cells": [
+    {
+      "depth": 0,
+      "concurrency": 1,
+      "raw_pp_tokens_per_second": 642949.515288476,
+      "decode_aggregate_tokens_per_second": 66.13144101933862,
+      "decode_per_request_tokens_per_second": 66.13144101933862,
+      "e2e_ttft_ms": 1108.5628550111626,
+      "first_response_ms": 6.137881680236508,
+      "raw_estimated_prompt_processing_ms": 3.69292200775817
+    },
+    {
+      "depth": 0,
+      "concurrency": 2,
+      "raw_pp_tokens_per_second": 2053.083711154598,
+      "decode_aggregate_tokens_per_second": 80.80722196790951,
+      "decode_per_request_tokens_per_second": 45.43032236713423,
+      "e2e_ttft_ms": 1528.3489768432144,
+      "first_response_ms": 11.009585849630335,
+      "raw_estimated_prompt_processing_ms": 8.564626177151997
+    },
+    {
+      "depth": 4096,
+      "concurrency": 1,
+      "raw_pp_tokens_per_second": 621917.7238632534,
+      "decode_aggregate_tokens_per_second": 64.27661958114129,
+      "decode_per_request_tokens_per_second": 64.27661958114129,
+      "e2e_ttft_ms": 2382.257251010742,
+      "first_response_ms": 12.699118679544577,
+      "raw_estimated_prompt_processing_ms": 10.25415900706624
+    },
+    {
+      "depth": 4096,
+      "concurrency": 2,
+      "raw_pp_tokens_per_second": 2315.055516069109,
+      "decode_aggregate_tokens_per_second": 66.28802080166352,
+      "decode_per_request_tokens_per_second": 38.81372213934542,
+      "e2e_ttft_ms": 3789.150133835695,
+      "first_response_ms": 21.997115506868187,
+      "raw_estimated_prompt_processing_ms": 19.552155834389854
+    },
+    {
+      "depth": 8192,
+      "concurrency": 1,
+      "raw_pp_tokens_per_second": 793822.2198842089,
+      "decode_aggregate_tokens_per_second": 62.73276834339688,
+      "decode_per_request_tokens_per_second": 62.73276834339688,
+      "e2e_ttft_ms": 3071.4300249819644,
+      "first_response_ms": 16.122864986148972,
+      "raw_estimated_prompt_processing_ms": 13.677905313670635
+    },
+    {
+      "depth": 8192,
+      "concurrency": 2,
+      "raw_pp_tokens_per_second": 2531.182977034308,
+      "decode_aggregate_tokens_per_second": 57.678760858211696,
+      "decode_per_request_tokens_per_second": 35.487793188397845,
+      "e2e_ttft_ms": 5575.401122157928,
+      "first_response_ms": 38.59402016193295,
+      "raw_estimated_prompt_processing_ms": 36.14906048945461
+    }
+  ],
+  "scaling": [
+    {
+      "depth": 0,
+      "c2_to_c1_decode_aggregate_ratio": 1.2219183601984311
+    },
+    {
+      "depth": 4096,
+      "c2_to_c1_decode_aggregate_ratio": 1.0312928905351515
+    },
+    {
+      "depth": 8192,
+      "c2_to_c1_decode_aggregate_ratio": 0.9194359244993027
+    }
+  ],
+  "limits": [
+    "C1 raw pp throughput and C2 per-request pp throughput use an empty role chunk and are invalid prefill speeds.",
+    "C2 aggregate pp uses first-content-token time; do not divide it by faulty C1 pp.",
+    "TTFT includes queueing, prefill and the first generation step.",
+    "Decode is official client-observed streaming throughput; this is a different prompt and temperature from D17.",
+    "Response length 512 was requested with --exact-tg; aggregate JSON does not retain individual usage records.",
+    "Per-concurrency speculative acceptance counters were not captured by this CLI."
+  ]
+}

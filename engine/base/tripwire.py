@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import time
+import traceback
 import zlib
 from pathlib import Path
 
@@ -118,6 +119,7 @@ def death_note(directory, rank: int, exc: BaseException, *, phase=None, calls=No
     kind = classify(exc)
     note = dict(rank=int(rank), kind=kind, phase=phase, calls=calls, t=time.strftime("%F %T"), pid=os.getpid(),
                 error=f"{type(exc).__name__}: {str(exc)[:1500]}",
+                traceback="".join(traceback.format_exception(type(exc), exc, exc.__traceback__))[-16000:],
                 meaning={"divergence": "this rank and its peers reached different collectives; every rank has this note",
                          "peer-left": "a peer died or stalled first; the cause is in that rank's log and note",
                          "local": "this rank's own failure; peers will report peer-left"}[kind])

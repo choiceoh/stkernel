@@ -247,6 +247,30 @@ class Glm53Net:
                 self._packet_experts[L] = partial(self.lanes.moe_packets, **args)
                 self._packet_capabilities[L] = partial(self.lanes.moe_packets_supported, **args)
 
+    def warmup_decode_experts(self, rows, device):
+        """Load every bound expert variant without tensor-parallel collectives.
+
+        Packed-scale admission is per layer and rank. A rank with a raw-scale
+        fallback may load a different CUDA module partway through the first
+        decode forward while its peers are already waiting in one-shot. Module
+        loading can synchronize the context, so prepare these local calls before
+        any rank enters that forward. Use the bound calls themselves to cover
+        both packed and fallback weights, including dense NVFP4 layers.
+        """
+        rows = tuple(rows)
+        if any(type(n) is not int or n <= 0 for n in rows):
+            raise ValueError("decode expert warmup requires positive row counts")
+        for count in rows:
+            x = torch.zeros(count, self.F.hidden, device=device, dtype=BF16)
+            routes = {}
+            for layer, expert in self._experts.items():
+                topk = self.F.topk_experts if self.F.is_moe(layer) else 1
+                if topk not in routes:
+                    ids = torch.arange(topk, device=device, dtype=torch.int32).repeat(count, 1)
+                    weights = torch.full((count, topk), 1. / topk, device=device, dtype=F32)
+                    routes[topk] = ids, weights
+                expert(x, *routes[topk])
+
     def router_nbytes(self):
         """Replicated FP32 gates, read by every native decode and prefill router."""
         return sum(self.F.experts * self.F.hidden * 4 for L in self.layers if self.F.is_moe(L))
