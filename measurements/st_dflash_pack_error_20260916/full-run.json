@@ -1,0 +1,24 @@
+{
+  "torch": "2.13.0+cu132",
+  "machine": "aarch64",
+  "rank": 0,
+  "world": 4,
+  "rows": 0,
+  "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+  "checks": {
+    "fp8_reference": true,
+    "w4_tile_reference": true,
+    "gram_vs_explicit_rows": true
+  },
+  "prefix": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.",
+  "cuda_initialized": false,
+  "cache_entries": 96,
+  "source_hashes": {
+    "probe.py": "ce0fa3432831a7083f9d6ca34765513640294af71aa072a43752aa26263272e9",
+    "packing.py": "a35a1792df2d99720b7e618d3a3fc11ac9c24570791cd6f6ea49898ea3eef4fe",
+    "smoothing.py": "5830eb8c2387d663c09a89fa990839a2da5a226e6ea4054ec65f2f500b3db7a7",
+    "dense_init.py": "bce2631587030e36aee722124461059401c75cb0a0084d805827d5286063063d"
+  },
+  "model_config_sha256": "c4aeac0101196a6e26705b34c45230bcd0c7c68ee2d2d1efdb242087f3712573",
+  "measurement": "in_sample_weight_only_gram_relative_rms"
+}

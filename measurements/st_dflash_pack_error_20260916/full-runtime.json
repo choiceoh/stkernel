@@ -1,0 +1,53 @@
+{
+  "image": "sha256:1b2b41d014c59caa52d81d73bf9d359f8047f51284da2b9da88b7fc801397040",
+  "command": [
+    "-u",
+    "/work/probe.py",
+    "--out",
+    "/work/full",
+    "--rows",
+    "0",
+    "--threads",
+    "4"
+  ],
+  "entrypoint": [
+    "python3"
+  ],
+  "mounts": [
+    {
+      "Type": "bind",
+      "Source": "/home/choiceoh/glm53-cache",
+      "Destination": "/cache",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/home/choiceoh/models/GLM-5.3-Flash-DFlash2",
+      "Destination": "/model",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+    },
+    {
+      "Type": "bind",
+      "Source": "/home/choiceoh/expert-capture/dflash-pack-error-0916-7e62",
+      "Destination": "/work",
+      "Mode": "",
+      "RW": true,
+      "Propagation": "rprivate"
+    }
+  ],
+  "started": "2026-09-16T13:37:13.544047506Z",
+  "memory": 6442450944,
+  "nano_cpus": 4000000000,
+  "device_requests": null,
+  "network": "none",
+  "probe_env": [
+    "NVIDIA_VISIBLE_DEVICES=void",
+    "CUDA_VISIBLE_DEVICES=",
+    "OMP_NUM_THREADS=4",
+    "OPENBLAS_NUM_THREADS=4"
+  ]
+}

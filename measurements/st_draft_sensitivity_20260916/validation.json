@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-16T14:10:39.324409+00:00",
+  "base_commit": "a40046f42954e8cc6cb04a5cc0cc3fd9ce755ab1",
+  "image": "sha256:1b2b41d014c59caa52d81d73bf9d359f8047f51284da2b9da88b7fc801397040",
+  "host": "srv2",
+  "cpus": 2,
+  "memory_gib": 4,
+  "network": "none",
+  "gpu_devices_exposed": false,
+  "engine_booted": false,
+  "tests_passed": 18,
+  "cuda_initialized": false,
+  "real_capture_executed": false,
+  "native_replay_executed": false,
+  "source_sha256": {
+    "engine/profiles/glm53/boot.py": "a5f8b3d2e7533a279a47f437ff0533d68d042239155ba2f03cd04c5ce2fa7611",
+    "engine/profiles/glm53/draft_replay.py": "f54980959e9cbdf9c776f63b2e7672469884779725c978abeeda4bbf703cdd32",
+    "probes/draft_sensitivity.py": "31ec79e098e78a96648fefe401f57e0de0b1f882478ebe7c1eb4d593b149e625",
+    "tests/test_draft_sensitivity.py": "cfe9b42ac0c6b0075b00a46191d66f5e06af62bcda73f0fe492ce9b08182e01f"
+  },
+  "test_log_sha256": "dea444e50e61b6f890e67fe1cb6a44787c4e41daab5f552786028adff4b0531c"
+}

@@ -108,6 +108,8 @@ TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem
 # A commit that sets it is booted by a fleet hold and fed a corpus through the door; main keeps it False, and with it
 # False nothing here runs. Carried over from the arm branch it was written on, which was never merged.
 EXPERT_CAPTURE = False
+DRAFT_REPLAY_CASES = 16                         # measurement only: bounded C1 greedy state capture; never production timing
+DRAFT_REPLAY_EVERY = 16
 CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
 CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
 # The dense pack store's root: calibration blobs under <root>/mkcalib/rank<r>/, GPTQ packs cached under
@@ -1733,6 +1735,13 @@ def fleet(a) -> int:
                                                        sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS)
             print(f"  expert capture: rank {comm.rank} armed; rows and stats under {Path(a.dump_dir) / 'expert-capture'} "
                   f"on rank {capture_mod.CAPTURE_RANK}", flush=True)
+        if DRAFT_REPLAY_CASES:
+            from engine.profiles.glm53.draft_replay import attach as attach_draft_replay
+            engine.draft_replay_capture = attach_draft_replay(
+                engine, Path(a.dump_dir) / 'draft-replay', Path(a.drafter_dir) / 'model.safetensors',
+                max_cases=DRAFT_REPLAY_CASES, every=DRAFT_REPLAY_EVERY)
+            print(f"  draft replay capture: up to {DRAFT_REPLAY_CASES} C1 greedy cases per rank; "
+                  "synchronous measurement traffic, not a performance baseline", flush=True)
         if CALIBRATION_CAPTURE and engine.calibration is not None:
             from engine.profiles.glm53 import capture as capture_mod
             capture_mod.arm_calibration_phases(engine)

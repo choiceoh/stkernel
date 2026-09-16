@@ -1,0 +1,1538 @@
+[
+  {
+    "path": "/cache/st-dense-packs/0c4cd5106823e2104bcb3aa0d265834c491b9c5e3f4ae13187c04a9808ffcf00.pt",
+    "identity": {
+      "version": 2,
+      "weight": "3af6558cc80f3230eeafbbebc912a15eba2b2e4ec8b2a0b8fd4e03cdca55f449",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp.down_proj",
+      "calibration": "d6543a19641ec80cbd0e6b912bd101f15726362ad2daf29b72bfc33d659352d3",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/0cba942a9694fe1be8e6b6bc523b384c6c464287b8ec2bb78b0ca73330979769.pt",
+    "identity": {
+      "version": 2,
+      "weight": "83a734379facf64d107e1497e7c626f1d10c3801ad1cc23fa9baab0307d5a78d",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.attention_conv.kernel_projection",
+      "calibration": "01244a2337327a1362860f981d190a3be404e232c97f4532d0d84e99e136fdee",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "d719233c141e793cc8d69fe18123e0b752cabca812b9f4bed976277561f60cca"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/0e6a64fddf417b7d371b1d832f7c8e550d18f07452838ba916c1dab764149c45.pt",
+    "identity": {
+      "version": 2,
+      "weight": "3eb66baf78cfbdbfb140ac801faa7bf79df648542753a8085d2d2194d4d2f106",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp.gate_up_proj",
+      "calibration": "f984b7c78c3c24c9d44b2f9ec90571335d081aface56b10db6f4173f0fae05d4",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "2f113864b003e1b6ccc08e26c5a5ac5263e88ed829c950ccef78dcdef6b4aa81"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/0f515374b584782097551d282b8143573590cf401c240a1b1029dc232cbc03d9.pt",
+    "identity": {
+      "version": 2,
+      "weight": "3f5f740100031de59fff799fcdc16e375b134d665303317df4eb56a959793611",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.self_attn.qkv_proj",
+      "calibration": "cd11e9631cc14119ac5dcab4537ff2f7957e56334380a323f6c7e4b11167355e",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "d6ed6a557bd44223fb3ae0dafc65309f5edf45abfdc7564025fddc9dc082a862"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/17980245fcf096205cdde0f0689054c87415f08677f8acd3f60f83b63505ad18.pt",
+    "identity": {
+      "version": 2,
+      "weight": "d4899d9b8d4e68026097b4dc0c2a9921eba649b95bd407248624d8a85c5428c3",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp.down_proj",
+      "calibration": "57226d622b92b6b12504d86472bf0794a023d4ce77c1da16e09a8d35084d00e1",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/1c2f31db968fca8e6ebba219f691a48ec93d01d95f90e0abee12b358c7a03e8b.pt",
+    "identity": {
+      "version": 2,
+      "weight": "d4899d9b8d4e68026097b4dc0c2a9921eba649b95bd407248624d8a85c5428c3",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp.down_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/1c6561816e788af7064e53999802f61f6c55e81861fd21761329b120005732b1.pt",
+    "identity": {
+      "version": 2,
+      "weight": "0530136fc173b35c89d26a6bbacdf6a6e521d6b5f250d31bce149dddd92c02ea",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp.gate_up_proj",
+      "calibration": "2255c9649925efd7d758281db5ae539ef81316ef0b5c86910124839468e25dfb",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "f0305ea62a9088c8b50c924196c3be8f574999890b486e7017d0e3dd50c97017"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/1d9818bc15cbb3256ab159797551b0794fbbd91515becef503c3b281f577985b.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f57ee74f7c3287be3b64630ba8fe25b9f001a4579b7ae3c286a626fc1c366b6a",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.self_attn.qkv_proj",
+      "calibration": "2991639f817f60744d7c66d0e772564653f647ab9c5be7d8fdea364f7f35661b",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "0006b6b824f32f709842aa9be518b423b548b7a01aa96d35852189df6b92d2e8"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/1e713a00559f81f990cc7cd0a521a98269ff4beabad7ccda15f5f6874d397202.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f5f5b0a56f360b852a2b6bc31e1ea8c9476536a857dc240a58892e794fcbee0c",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp_conv.kernel_projection",
+      "calibration": "95aaf93946da76c023be6b76c28486fb7788e8e94171a5326ab52b2f4f9b5437",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "6353799fa3e8f562420e83ecca4fb9df368b04560ad404784619cc7c3641a048"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/21827ef7745e74b30a44c540db31e50fe1b54e632b3119ac480ddb6c32955cb2.pt",
+    "identity": {
+      "version": 2,
+      "weight": "3e216a1d86b62b50f6c3d21768e138064d081317ee738ba7681c6edf2e666fd3",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp_conv.kernel_projection",
+      "calibration": "5b333a35a04c0f0d14f7e49ad3e87ac9fbdaa6b72a0b88d87dbd6eaef78858bb",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "a8858e4b86ed5f29f1dc4a1946946134031a98d247d27bcff9384e918dbf49a6"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/29fce43484020deac165d191b973a56b90379b546d3eb9330b182b9ea1114778.pt",
+    "identity": {
+      "version": 2,
+      "weight": "799ad71201a3cdf58cd378c5b1d168a22497d1f0bee8dfe0217d7ac7e6594990",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.self_attn.o_proj",
+      "calibration": "ce4d63537f1a244dd634453e5bbbd11a930097430067d18cfb7689c4a3494d18",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/2b39ef8dc5384a29c34938a64ada1ca21f2517c444c534d6382dd584e5d743d2.pt",
+    "identity": {
+      "version": 2,
+      "weight": "3af6558cc80f3230eeafbbebc912a15eba2b2e4ec8b2a0b8fd4e03cdca55f449",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp.down_proj",
+      "calibration": "dc03c0079dc296b2d50016bdde6e0d01038f35a03ac1e28048456cc8f31b86b9",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/2b4f0087adc18cb31f90557d2753aa9f385cd3b6904236a3ab1169bd549db6ae.pt",
+    "identity": {
+      "version": 2,
+      "weight": "ac705a7ae0c994e10274b920be5aa1b45f1b18ba8f1d46c7f8233cdef8190d4b",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp.gate_up_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/2dc6ffc3de9eb4edb33bb99e96bd55bb5d6016b4f6ae68dd6e03989a2941a8d6.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b7927d47c87206ab0b2065f99193f9b83848915e39f0007d0b4baa1658cc4635",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp.down_proj",
+      "calibration": "134f6e04a5bfa9f1f7cb16608ca00c1bc2486ab2e65ec2744b65d3056fec5134",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/317d3190e8f0fbefdbb14467fa9c074e0dda1b5c87bbdddebaf7a8b66e4b14ca.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f5f5b0a56f360b852a2b6bc31e1ea8c9476536a857dc240a58892e794fcbee0c",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "6353799fa3e8f562420e83ecca4fb9df368b04560ad404784619cc7c3641a048"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/33830f93185ff4536e72bafcd0609cc7dde5fd27f29b4687a647c6f3dff8c9f8.pt",
+    "identity": {
+      "version": 2,
+      "weight": "11a8b72d04fb0682e41b11d87e6ab06f651dc37193084b692235b600e682cbb4",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.attention_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "b7649130bfb6eea07adbd0a7330655fd5bb0fed5d8160724f5e3d5abd67aea3f"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/39443a512e865f79e149526f2ac62c1a2768485ac17e5c5f44e18f9ab34c7003.pt",
+    "identity": {
+      "version": 2,
+      "weight": "059cea63ab4e1c49e7a32fc55b41ec54be27268c3b37276624fa2aaf925a7284",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp_conv.kernel_projection",
+      "calibration": "a57de4ff2b67385473de4e302f813d571f3070359d588fcbb72348ae1a941eac",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "5d96cfcc2374f9fba67c280a890d4962ee3f922dce6eba0bfc9b8218c52e7c7c"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/39a2187c11ccd02070baa80ecea8540200b353d22b69338c87ecc0eabb470397.pt",
+    "identity": {
+      "version": 2,
+      "weight": "da76f25dfe9a817f2f4afd75a1fd5ece27f18287b513283fcdeeae1e421abd54",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp.down_proj",
+      "calibration": "757c2bb2556992a982516fc10de4a8389f411fd0bc0cf6980b73af31c6f1920c",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/3f4fdae6ee00c3000a63bcc233a08ca99fc9c9baabc8d03a1f9344df838faaa5.pt",
+    "identity": {
+      "version": 2,
+      "weight": "6f9319eeeb553c9d742b6734c6bc373f9412f964e5351f7a6c03cc6bc4b766f4",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.attention_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/401efe6e4fcfb3bdb31946be7311a604a9e9d888ea96b0709ed68b078c06a641.pt",
+    "identity": {
+      "version": 2,
+      "weight": "79a348a776205f3c192c91269ca659fb97d964ea56dbb3b2858c0d6d74d7b4bc",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.self_attn.qkv_proj",
+      "calibration": "69b10fb700c2d85092f4307efaff6fc9ebf05c96c574f9dc1f09247f808eab7f",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "617d60e72218ac71a92dc242b17bc00e4e593eaa14f36ce0396d97c8a7ca579e"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/42efd22bd2795a8f3a2335d585f9bbec06a8f8a5e5509a29aa8f153854792eeb.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b7927d47c87206ab0b2065f99193f9b83848915e39f0007d0b4baa1658cc4635",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp.down_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/4472a27cb2243de3a8226361d4f0a9034c04d68530b5eee057579578a1a14fae.pt",
+    "identity": {
+      "version": 2,
+      "weight": "7c2cf128f586c5244e1dad58b3cb402ecc3b41d51d5491820f8c9a0e4da09798",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.self_attn.qkv_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/46d86e676301a7c2544f5f2f84af5ae65ffc5124b8fd59727044dbc226bc41bb.pt",
+    "identity": {
+      "version": 2,
+      "weight": "57dae49db64130d04f86f2f67424af5ee3786fd1b2f8442977c00c1a806dc8b1",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.self_attn.o_proj",
+      "calibration": "61d2e931194e5244a3353d1e840e6e7b76e40fa917f00fed9c767f1ecaf4863d",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/486d843bda146df3f33f94bff3fb113a26999568f4ee84f55419369bf2cb4023.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b7927d47c87206ab0b2065f99193f9b83848915e39f0007d0b4baa1658cc4635",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp.down_proj",
+      "calibration": "a387063dc630a4ad26703ee655f38708523439924570a1b9b20df2a4a02373fe",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/4960a16731f42b7064f433e3950d0b17d86f281b1e423ed67cdeaed367f4995e.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b2199573d0a289d01bae75fec65005a450ea7598c60ef3c2e078bb9ce5d0dacc",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.self_attn.o_proj",
+      "calibration": "bf7149d7268d108d71795ac044070b58dd8be3221f0c25d0db47ea4b831605d6",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/49d06af6128f461ef9a8daf70e0f448a2e8609131a5c7512052cd71a8a032535.pt",
+    "identity": {
+      "version": 2,
+      "weight": "cc49d9499a919b4308ef9f9f9de7a1270272f6623ff65d3ef456b9e809acca61",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.attention_conv.kernel_projection",
+      "calibration": "b8037ab81273d5422f0d448be9ce093fb44e12d14b22af784447e9e380300eea",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "d6ed6a557bd44223fb3ae0dafc65309f5edf45abfdc7564025fddc9dc082a862"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/4d4cb08dcd3b67b3ac92faa275984735f8e8d913d2bcbcf9d53fe89a4eecf4f0.pt",
+    "identity": {
+      "version": 2,
+      "weight": "9907a7df5944383fb83a3b11b64c5460e6e6618ee6ebd55629eb3bae34e51948",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp.gate_up_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/4f928b42cfd43e05adf1f18c53552fcf3d5b5a1973a2f0958eeb27fcad3ceabd.pt",
+    "identity": {
+      "version": 2,
+      "weight": "d557b56959eef21f711f2a6f266325a302e19172d74a9041e1e98ff1894387c8",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.attention_conv.kernel_projection",
+      "calibration": "f2c5d333541845edd47ba2ff8790683312f7a9f60cb5abcd93da2ccac745448b",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "ca26748ad9272e53ecbd02e1f92acfb39e345b440bdfd19a9ab55773dd23406f"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/50374b038fac9629a5df6332eb0a1f14e3d19af829279364de7a78f3a1da4c0c.pt",
+    "identity": {
+      "version": 2,
+      "weight": "3af6558cc80f3230eeafbbebc912a15eba2b2e4ec8b2a0b8fd4e03cdca55f449",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp.down_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/516fea81cfa15d5fb5045eef191404b40282df6ee3697b2f3ba765c3fdcc63be.pt",
+    "identity": {
+      "version": 2,
+      "weight": "7708081bcdeb653411d086281e910213606acfcdf3cc9bdfff3d738894ebc2fc",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.attention_conv.kernel_projection",
+      "calibration": "eeb37c1c363207afff2a66a70f42bdaa1fd60c4f8ac22218b30f9c74e31fddb8",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "373bdf6159d0ab160855d4021098909034b8be3aa5ff316fc1425ea000bc0f72"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/54bd32a706354a47ebba0dd610c95594e16f7349e58946b1515b83d3c0588253.pt",
+    "identity": {
+      "version": 2,
+      "weight": "0563fa2b7e22a01a7ddffbd202514151304c9a3b61ad9e95346e3f5d14c86886",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp.gate_up_proj",
+      "calibration": "2f932c6d2ca891dcd22b0b3086220b1d8b1fc6cd404101005a9099f4428a4770",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "fe4cd5c0d5c77ad16d430f72268b71705039990ebc451281655c526fec31fc61"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/58427f37e7f388164d51ea62194cf516942b92b45ac910ce7e6b034ff6babeb0.pt",
+    "identity": {
+      "version": 2,
+      "weight": "e67abfb6f0cc320d72b0f931b53e27e856a9ad06a9d58186efcb81f0faad7a96",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp.gate_up_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/5854e2cd1afc4d0211b551d77a91e40c4506010b9f54d586c8cb9be6ebd2ec6d.pt",
+    "identity": {
+      "version": 2,
+      "weight": "da76f25dfe9a817f2f4afd75a1fd5ece27f18287b513283fcdeeae1e421abd54",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp.down_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/5e3a17c80c4dd63baa933b3a4872294581cf4f943e25341ff0ed1087d6821ed8.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b1694296ab4dfd7f33187f225fcb384f576bf1165963d2f119c0ae39e0e88160",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp.down_proj",
+      "calibration": "83638137eef12f8752c061fa1e502f9c81c63ce166a5045f371f418497448c59",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/5f3d6d48622ee0829af9a100b1e63fc7ccedbf17f15bc7e79f39ae87d8da16af.pt",
+    "identity": {
+      "version": 2,
+      "weight": "6698819309fc0fecee599ef52c7fd812bf5a45cdefa1de7bcf6394fe8086eb4b",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.attention_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/6328cb1775c57e4e2fa76f0c85d6a796780eb321f2a4f47c1f58568b3d343e49.pt",
+    "identity": {
+      "version": 2,
+      "weight": "c50fcc9fcfa36bc108d6956f5056d6bc13ce15eb891aec884c937bb829cea047",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp.gate_up_proj",
+      "calibration": "63d1adada2e5e954d660127e64476a7086423586788bf4e257776f73e2a718e9",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "3f76bd84dc047f34a0a0dbb44538da6dd17147ee23af47120e88981e8f603c4f"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/65cd806304d53787b984ea653041671becc9d652f0d11e90f0fafab6aed99105.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f1c56c4c29a1f4855f6ee85ff5473a6d4333ed2676c23de5c0f7ab3b9603a0ba",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.self_attn.qkv_proj",
+      "calibration": "81b9c3ec2a9a3993d43ece0758d77d6303a1b1f5a2e8a30625c3e8865681e2ca",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "b7649130bfb6eea07adbd0a7330655fd5bb0fed5d8160724f5e3d5abd67aea3f"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/6a1d76428bc182aec7222836e90a132c949b4393d5534c32197988fb7be9e4a6.pt",
+    "identity": {
+      "version": 2,
+      "weight": "88fbcee2c5fc481c96d5ddfb9c8c31187910645c719799dae1b92b4417533cc4",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp.gate_up_proj",
+      "calibration": "f07f48c6449f9b8378e4181d63b6f7a18351f2d9704757e5176ad6af813d4b11",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "6353799fa3e8f562420e83ecca4fb9df368b04560ad404784619cc7c3641a048"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/6bef508a191a9ff7bc4d3f3945f7b56bfbbbf64ba2b5493fb0c15741d5455bd1.pt",
+    "identity": {
+      "version": 2,
+      "weight": "d7312c9e0eadae6d22539640e30e4c889c5bb8d62c841c37005836dba40a3ea8",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp.gate_up_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/711ec505cd5fcb60670fb3ef75bdd245a99bc68e0a3cb3cba9885f6466956dcd.pt",
+    "identity": {
+      "version": 2,
+      "weight": "ff59c2bf25676b9b3a85d0d8d762b32e832ff140bcfe790cf2adb5f4374af718",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.self_attn.qkv_proj",
+      "calibration": "fb4eb6369b194d7618f9914fd7efa06f15bb7f99513226c869661d07d98989b5",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "ca26748ad9272e53ecbd02e1f92acfb39e345b440bdfd19a9ab55773dd23406f"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/71e80974187e1b0941db71e86e6752c700791aca06c688f9d71c6fca02bcd8e1.pt",
+    "identity": {
+      "version": 2,
+      "weight": "9ff1f6aab6b2aba4fb33a59bc5088f7c7d06c3ec5b117a4c7bbe91dccb49f36c",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.attention_conv.kernel_projection",
+      "calibration": "63bf0e50d59f858eb9bc38e5a2d57ba620b3dcf419813e761e054f902b4c35cb",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "617d60e72218ac71a92dc242b17bc00e4e593eaa14f36ce0396d97c8a7ca579e"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/74e4ccfc3348e4a65fc14a8271183b7c268b3104d142cfa9324b4b087254f90f.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f994454e3281865207e5fa470151ff20f38fcf75f58b70514a886d871fed04f1",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.self_attn.qkv_proj",
+      "calibration": "8dbc4bbe9215bc4da27cdc8f99b0068def0f30d14899be20e007e459e84090ce",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "d719233c141e793cc8d69fe18123e0b752cabca812b9f4bed976277561f60cca"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/79f3b15b09ba6edacbd7fd3e1b3b5d864a8b84bd063658365e4c9bfe41e74464.pt",
+    "identity": {
+      "version": 2,
+      "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+      "shape": [
+        4096,
+        20480
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc",
+      "kind": "fp8",
+      "calibration": "bb671bb3a1c7f68d495ce034e64cd6501e24ffa6a406caeffc037678d27b0e97",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/7a7b99a0919cc2501604f7a8a13346608a526cc3b2831ecf3959bf804705ef68.pt",
+    "identity": {
+      "version": 2,
+      "weight": "11a8b72d04fb0682e41b11d87e6ab06f651dc37193084b692235b600e682cbb4",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.attention_conv.kernel_projection",
+      "calibration": "760d14fd418d9e1a551dcfd09c7cb271eb0c85668047d1901b2b40a13b08a015",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "b7649130bfb6eea07adbd0a7330655fd5bb0fed5d8160724f5e3d5abd67aea3f"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/7a82ac6c61a6afeebb71c13cbbaebf5d0882280dbfe5d95f3e38b86282951562.pt",
+    "identity": {
+      "version": 2,
+      "weight": "68242454c845bc559bd1c8998ffb50b7256720bf10904405868238a2ffe448a1",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/813ac474fcc460807732002c3571efca301101a0acbfa27f087a345cc29ec801.pt",
+    "identity": {
+      "version": 2,
+      "weight": "d4899d9b8d4e68026097b4dc0c2a9921eba649b95bd407248624d8a85c5428c3",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp.down_proj",
+      "calibration": "a05b3c1148845eaab36028360feeeb1026a03d59d30dd971e465674497b6c78e",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/82c4b813492816bf3597295b2f5fa8797be07050504451126b9279ab3686e555.pt",
+    "identity": {
+      "version": 2,
+      "weight": "febc911fad9d0f021a0f4a0a386b89288ec0cf28b88749abf7daee64900c56c4",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.self_attn.o_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/8359f8075957581beb1c0c8fbabf7154566d5436cec19503da86f29b3f41dd1b.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b4aaf64856e46a42562025d11f2c71447d33e47e7defda31426fe6587e60cee8",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.self_attn.qkv_proj",
+      "calibration": "83562b1c05db68ca25b2d9008c1164836d2cf6725d0dc70c30b3a008a2787412",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "373bdf6159d0ab160855d4021098909034b8be3aa5ff316fc1425ea000bc0f72"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/87f28d2b2ea9e66750be0d748fa09bad4095ff6aa299dc08592901f05b97c578.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b1694296ab4dfd7f33187f225fcb384f576bf1165963d2f119c0ae39e0e88160",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp.down_proj",
+      "calibration": "52d8558756c678f5a17f1e1ca87408be6ed30efca667247fc845cc16deefb45c",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/8a653515b322ad27b25d44aff3773524144a8b553e0d4178241301b7717d9caf.pt",
+    "identity": {
+      "version": 2,
+      "weight": "25a92625061005d7bc42319bebb6ff42c7884830384c8134b5cd670e1241012e",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp_conv.kernel_projection",
+      "calibration": "3175691ed882fee981afd640d2961034c2a9c88e1b3e029d0d29163f00e0d3e2",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "2f113864b003e1b6ccc08e26c5a5ac5263e88ed829c950ccef78dcdef6b4aa81"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/8a98d9f6efc0b5daeca3b6a0e43f8aec4e8502c5e239515f06b214885a4e63e4.pt",
+    "identity": {
+      "version": 2,
+      "weight": "fb2f5935084f2f29fd4fd67796b2bc85ccf31f51df484a9e5c23a87e7c9886aa",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.self_attn.o_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/8b370b2877569a14d7982a314630580287e89b8341f998f3cb189d2d2eb6716f.pt",
+    "identity": {
+      "version": 2,
+      "weight": "7778c374a2cb6b2183adc3617df710d57a4ca018981dda4988b7cc0af84a5c97",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp.gate_up_proj",
+      "calibration": "9b2adbca0f2c0377ac830821d0074b3d7e5e24bbf941d86c0ceac13b6f728340",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "5d96cfcc2374f9fba67c280a890d4962ee3f922dce6eba0bfc9b8218c52e7c7c"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/8d0e32edab1022e22e2bb5614b74ec62743fc7c9b53e872055315f0d4527aa09.pt",
+    "identity": {
+      "version": 2,
+      "weight": "6839d2fe1923062d3e18e63c2a1f59c0b66f5080c6e04f01c52f2cb0829a27fe",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.self_attn.qkv_proj",
+      "calibration": "59b560278877318ec874e69829309ff5123585e717154bedd8dae1f32bbd2850",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "3472a7b7b789fd7bb00a68782037b81ef4c57400781b5c85030ab08fcf6be0db"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/90d839b123a4f1ad0a968ff054531a7ff5c440354a15a66408d95d1000cb3a74.pt",
+    "identity": {
+      "version": 2,
+      "weight": "57dae49db64130d04f86f2f67424af5ee3786fd1b2f8442977c00c1a806dc8b1",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.self_attn.o_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/9f6a714f6d222775e97d10bca1b4eba94ba3c06482e97ead88f82e5669faf3a0.pt",
+    "identity": {
+      "version": 2,
+      "weight": "fc02e7969f8c11befc313300f0b9e87f452c3017daa9f9d56f5b3f43f3289dda",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.self_attn.qkv_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/a48a1644299f245c43c044c6e365992aeb11e88a197e39cbf2a5f439b758ae14.pt",
+    "identity": {
+      "version": 2,
+      "weight": "d02e63557cc96170110c97a3adf889a1210fbf6a83960f0a15c4efb989ae46fe",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.self_attn.qkv_proj",
+      "calibration": "64739adc1bb27b3812b61c091cfad728aa15769a71f581d299fb8e8c0781fb64",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "efdbc2fec24f93c58f3e3e034b0ba6598c36be3551cc413e00c8655e61196b02"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/a8f6a738da01a398f005b5232807a6ab483ed2b367b7c3f1ed777f867bc3ac9a.pt",
+    "identity": {
+      "version": 2,
+      "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+      "shape": [
+        4096,
+        20480
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+      "kind": "fp8",
+      "calibration": "8a7913397c6749e722e18c3ed0d848f7cab6073899027faf2938ebec1e1f8e24",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/b06f72af887d725c7f3acef8e06ac2c00fb02b32af75f1f68d3e57b5e2b5f0cc.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b2199573d0a289d01bae75fec65005a450ea7598c60ef3c2e078bb9ce5d0dacc",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.self_attn.o_proj",
+      "calibration": "868ec44c648e7ccc9365eb6470892dff4f94ade69a94b675bad89f3ae1760b09",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/b18e125e5f49fccdbc6fa0b38ee7e4478db8d21fdbbd7a03ffbca74e49dd8b11.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f0cbc190bb4c29f9e6f50b0e766576f8352288bd247e065fef38bb7e15af7fca",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/b256974dbcacefc6cbfb7039236b38c8df01bd975c7b8f26f497056603ec56ca.pt",
+    "identity": {
+      "version": 2,
+      "weight": "e7c82a5bed2a3818cb2f6bc3d8264c506040d9c03f22895ff216f91e7dae07c8",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.self_attn.qkv_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/b4d4f7d2c3e7d23217127f78527a10a4b65eab6b7d7f9d76aa231c321e50609d.pt",
+    "identity": {
+      "version": 2,
+      "weight": "424457a51a02e3c85a33f9a77b064f2d6d0101ab0e75966799babf1561b4d505",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp_conv.kernel_projection",
+      "calibration": "d6bd010dc97cd9c3cbb366415e50a6969d6c05c00762ad4fc5000ecc1a5e4be1",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "fe4cd5c0d5c77ad16d430f72268b71705039990ebc451281655c526fec31fc61"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/b515c19b9ab77d45b51ac6ee2d68bb440bf7fca9d6305df2f52dca65a442af67.pt",
+    "identity": {
+      "version": 2,
+      "weight": "860374cbadcce86c5d3c9ad7a7131ca9fb4354bd44f250411b0a8cc9d312de85",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/b73b2be446c05e56d37306163c02992b07faacb9f2896f52151bf7b43499de8d.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f5ff859a38adfab0be5355cd732f543ea4a9866feae852671ed50c2c85159acb",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp_conv.kernel_projection",
+      "calibration": "65ee9f82635ee31b36562fceea2cf8e459b500217a416ce2d3a12315c93f6ccc",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "3f76bd84dc047f34a0a0dbb44538da6dd17147ee23af47120e88981e8f603c4f"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/b95035580fbc1215413edb47f5874ec5827c1664e90218c5a38f2d607f978242.pt",
+    "identity": {
+      "version": 2,
+      "weight": "d677e9f3d0a88c0852de1559619bf673d2b912bb41ebda1e296136e383b3d928",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.mlp_conv.kernel_projection",
+      "calibration": "adadd73c6f3b1ddb36ac5750d9bcefd65a0995d43e7672e71a5edfaae7c666b8",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "f0305ea62a9088c8b50c924196c3be8f574999890b486e7017d0e3dd50c97017"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/ba7d223157eefbe24e208860f8a5a379f88f62e4ceff909a3e5ed386e6e5b6e7.pt",
+    "identity": {
+      "version": 2,
+      "weight": "ae6ed334b37a1b1f91517965fbbeb092fea4cfcb2976007b33638e38473a5781",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.self_attn.qkv_proj",
+      "calibration": "5053c4bac384bfcd486458535a1dac7a2e2e6373daab46d29b1f5a7347c22c61",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "4123e98bd87f0cefe9f018d80e3f7d809e6dcf29263a6c5513e7055dbd3ccb29"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/bcb2996c8a1b8a619ea35e0ca0281136575ced709959aa599622f762a646941f.pt",
+    "identity": {
+      "version": 2,
+      "weight": "1efe6de2a46aec841528629c0139e41f38b1f6e2576b07f40c3cf0b31ae83f82",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.self_attn.qkv_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/be7db94a476603feb1defb71cc0699a0f3065ba48591344d00ba1db41b9d6ee1.pt",
+    "identity": {
+      "version": 2,
+      "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+      "shape": [
+        4096,
+        20480
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc",
+      "kind": "fp8",
+      "calibration": "ce8cbf4ba5f278a5953f7e9ec5256b56a75d435fbf203b76de566c3c9e0e2c8f",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/bf97caadfd28b5d835e98826e01c960b915dba799c7e115610a8d259b18fd95f.pt",
+    "identity": {
+      "version": 2,
+      "weight": "febc911fad9d0f021a0f4a0a386b89288ec0cf28b88749abf7daee64900c56c4",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.self_attn.o_proj",
+      "calibration": "adad7835352db548bbaedd6f8404cc7c11b4658d1e45137648d721d5d9d16335",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/c086423da1b521eeb8083b586a72dc89dfa6b4eba028b3d884733bfa4594908e.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b6fed6f947cddb59d53a96e32d87f4ed1edbd04ebcedf2eecf578c064bf280cb",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp.gate_up_proj",
+      "calibration": "5bf6bb63e66bc67f7526eadee27cd81e4777db6b19da1b5c1693af043905a6b1",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "df2d167283244453dc0acb57736387a7fde1c13098898d4973702fa5d0f0ddec"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/c1cdf91cfa647fa7b88e2c5a584b09606289aee003d9eee770578320cf367c33.pt",
+    "identity": {
+      "version": 2,
+      "weight": "ecb68213735aa6477acc8b58ea2f7351316b18bf9aeeca6f0e6d68ccc6f5ffc9",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.attention_conv.kernel_projection",
+      "calibration": "2208a9ab6575188654886fe9ce2b91ebed8a0e9b14d17af6a037788b9b897df0",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "efdbc2fec24f93c58f3e3e034b0ba6598c36be3551cc413e00c8655e61196b02"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/c45a89147360f00db8864cda7f52fd6c3b4b98e4eb6d816489700da181bfa6fc.pt",
+    "identity": {
+      "version": 2,
+      "weight": "6171a93502561aee731431252a08b72becf40ee5a4597e26bfa136d39193c2f4",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp.gate_up_proj",
+      "calibration": "3e4c633c6d62c09d3b53317de4ae32d9f014a5fe6d221f2dddb39ce68a6e39bd",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "0b8e1aa08cdbbee270e147e5f44b909a5845860653a08aee2b0732910eaea0e9"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/c74c70ffb937d02a7c69eb1fab352d19af6073d2c4b292cd1945feb04853c9a0.pt",
+    "identity": {
+      "version": 2,
+      "weight": "ff70670a3057ab04b3bb3e56fd47e14defb11e49d997acf27a4f1b07c7cf734d",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.attention_conv.kernel_projection",
+      "calibration": "9fc239d2639d40ffb36f210b16d5e3e4650f427f30f4178ec7f10581cad88aa4",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "4123e98bd87f0cefe9f018d80e3f7d809e6dcf29263a6c5513e7055dbd3ccb29"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/c78377b4c07b81fd1666e776b3539e040ca4d601417e23d5d0fcc63953b318af.pt",
+    "identity": {
+      "version": 2,
+      "weight": "6b85faed402b10d25dd16fa86ab495244366729deaf2ab9681e3f7a43965c04b",
+      "shape": [
+        1536,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.self_attn.qkv_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/c9e3cc24abec3428d49fca9f470db3b47bf914a7c1cb6e901421c5fabb5faf26.pt",
+    "identity": {
+      "version": 2,
+      "weight": "57dae49db64130d04f86f2f67424af5ee3786fd1b2f8442977c00c1a806dc8b1",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.self_attn.o_proj",
+      "calibration": "e824e6be4492c14b89c32835568c4c68ba9e10ac3c7d56156c217378d0869fe8",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/cf5641204b418b09962389ec8ca753ce3bbacd5f7555e4a9471dde1f622c72b5.pt",
+    "identity": {
+      "version": 2,
+      "weight": "da76f25dfe9a817f2f4afd75a1fd5ece27f18287b513283fcdeeae1e421abd54",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp.down_proj",
+      "calibration": "242f2b62ce3f9d13ee9b57ae93e03bb059e758aea3bc3959c6a0bc21423097d6",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/d03e7128de50eb8879ae3cfd272d179131953aafbb0c2c7e9447c3160eab160b.pt",
+    "identity": {
+      "version": 2,
+      "weight": "fb2f5935084f2f29fd4fd67796b2bc85ccf31f51df484a9e5c23a87e7c9886aa",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.self_attn.o_proj",
+      "calibration": "8977d42efe4213cd495767dd90b812a4f7616e708cd9fec5fe0cc7b76f66d370",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/d2fb6e4f520264fed345ddbed0722effdd074cd2e0d3a26226203663791dc9ef.pt",
+    "identity": {
+      "version": 2,
+      "weight": "403c8d8b2aede6e21628a1d719489c894fb92f373df233e334434ebf52dce481",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp.gate_up_proj",
+      "calibration": "b11d35c2bb8a4a457289b2e659de25bbb295a0a5f0071026e934a7971ff7c11f",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "a8858e4b86ed5f29f1dc4a1946946134031a98d247d27bcff9384e918dbf49a6"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/d72a3116615bde1eb78028d7e230c5aa6813cffa8650fa5d4dda928e539a273b.pt",
+    "identity": {
+      "version": 2,
+      "weight": "4afc2e6849f5b3e2d025c8875e9cbdbf7dabc3a048f2cbd73303fecf0dad93f6",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.mlp_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/d8c6776f3b6fe5c8090072440bb2cafc6cd7bb79b0b93fc04a080d98d6500a64.pt",
+    "identity": {
+      "version": 2,
+      "weight": "febc911fad9d0f021a0f4a0a386b89288ec0cf28b88749abf7daee64900c56c4",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.self_attn.o_proj",
+      "calibration": "ead336a347eba2850852de5b678db30cc25d99346ab7d5d9ae4fdf9a197ae2fe",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/d8edfeee19a3ab326e80a1215cbc10b788f5b87b0687494547d872f9f42bf7a1.pt",
+    "identity": {
+      "version": 2,
+      "weight": "4af8dd3fcae25b9c8ca2485b722d51b2f2bf7c4a4de6e846a3df79d8319e9599",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp.gate_up_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/ddfeef59dad1c44f1756bfa9eb8d24d1d5cdf288ac2ca9ecac7ba6a72be8fd9b.pt",
+    "identity": {
+      "version": 2,
+      "weight": "4619d257d8942db012e88cc046f08c375d87358e6278b8408186c52743b3d49f",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.attention_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/e2282e93e7f3bea338370adfbdc45ccb8c206335dac4317315bed84b9372d1e5.pt",
+    "identity": {
+      "version": 2,
+      "weight": "e6fb3682d7aec566af09f54b35a43126a4f967cedce0eed70d038035aa34f96b",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.attention_conv.kernel_projection",
+      "calibration": "71b3e4a8388c8b540017a75c95760ecf5331a5ad48b2d2fd8da483198deae454",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "3472a7b7b789fd7bb00a68782037b81ef4c57400781b5c85030ab08fcf6be0db"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt",
+    "identity": {
+      "version": 2,
+      "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+      "shape": [
+        4096,
+        20480
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+      "kind": "fp8",
+      "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/e725394208bf0685d3bd979c47ae78f399ee814cb342338918a5bae895094bb6.pt",
+    "identity": {
+      "version": 2,
+      "weight": "7f1a0c110ceffe514d4f95e3243ea1dc4c94b1b5072666a7fee1106734d0705d",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.mlp_conv.kernel_projection",
+      "calibration": "73144a583d1831b0cdd1c340f31382378cbd1baa94d9672a4d88ca9b9064e84f",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "0b8e1aa08cdbbee270e147e5f44b909a5845860653a08aee2b0732910eaea0e9"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/ea3d697872c8761d89917b17beaff242d22140146922f2d898e36af98e850262.pt",
+    "identity": {
+      "version": 2,
+      "weight": "799ad71201a3cdf58cd378c5b1d168a22497d1f0bee8dfe0217d7ac7e6594990",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.self_attn.o_proj",
+      "calibration": "9b7f162c9560aacca4a7a27c48c554eeb09fe9aeb6c24ad7bbe86a4d57df06bf",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/ebb6ac61f5b54a06cc9fc3118a7bd619c0d08d4f5a993bf6ed5f63d1dc82f427.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b2199573d0a289d01bae75fec65005a450ea7598c60ef3c2e078bb9ce5d0dacc",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.2.self_attn.o_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/edd7c40e455d7c4199d3ed59ae0dcb21724a3ed6b080bbce6d3f08a38895de02.pt",
+    "identity": {
+      "version": 2,
+      "weight": "cfc7ec93002822f47da6be753c21da0c2a726813ef0467602ca0a803f046e676",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp_conv.kernel_projection",
+      "calibration": "9b0ab3aa98be04b79bd72bc6180d75c8a61d22442516d49820159351d0070d35",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "df2d167283244453dc0acb57736387a7fde1c13098898d4973702fa5d0f0ddec"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/ee02887be27d9beb77c8fb6e82c2746311b97570eaf7f5d0eaff88dd1447a298.pt",
+    "identity": {
+      "version": 2,
+      "weight": "fbc92af2fe91a6c6c9372bd2ef1123979d666db4b8648763207e20e57d85603a",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/ef51b50570c6ee15337b8995e4d6ee745680ef57775a93a5a382eef23ebef8c7.pt",
+    "identity": {
+      "version": 2,
+      "weight": "799ad71201a3cdf58cd378c5b1d168a22497d1f0bee8dfe0217d7ac7e6594990",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.self_attn.o_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/ef6e5ef9e29c76371c1f4045a787a918b4c8a4fd6206cee1ee8a658da69dc486.pt",
+    "identity": {
+      "version": 2,
+      "weight": "320b08757c30753f43033097e4e179ee01fa8bd59253cd3c0e8d719eebf41774",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp_conv.kernel_projection",
+      "calibration": "0ce006d6d9c670d27c30d5d08c3b1423c256f4f77cc86160737eaa6e4e7d19ba",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "a61ec4a0d62831cd343b6c0c42568665038fa25a95ad1d92a45858b30da6cc74"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/f11d8b4b8134bec61a6bc0840aa605d0120abb269b15d8be600676cec022d69a.pt",
+    "identity": {
+      "version": 2,
+      "weight": "7c941590c3e7d35fa675f56e09a60438fdad591f6a99e524e7f3e7224a54f46c",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.attention_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/f1cc87f9c84dc6479dd25552068575ef1310adb77794da841833165e26a2a37d.pt",
+    "identity": {
+      "version": 2,
+      "weight": "fb2f5935084f2f29fd4fd67796b2bc85ccf31f51df484a9e5c23a87e7c9886aa",
+      "shape": [
+        4096,
+        1024
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.self_attn.o_proj",
+      "calibration": "569a0a21749b52a37386036547b42335c6926e6af62bccddec99925b02f509c1",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/f712bbbfca49ba9fc1676f272ccc05d1eb5f6a3ce27ebc8b5f900c8f38b473d3.pt",
+    "identity": {
+      "version": 2,
+      "weight": "b1694296ab4dfd7f33187f225fcb384f576bf1165963d2f119c0ae39e0e88160",
+      "shape": [
+        4096,
+        3072
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.3.mlp.down_proj",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/f71973db5b53d7e90592a9e7306b7270f772c91488a824a6371ccbec5695ff8c.pt",
+    "identity": {
+      "version": 2,
+      "weight": "f2e2b87c6d3b35b4a9ce123883cd9f574002d71517fdcd89f27aa902c794d0ce",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.0.attention_conv.kernel_projection",
+      "calibration": "rtn",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/fbe27b847267e4a12db30eb361379bbd6b84da0d27059cad88c4efddbb747581.pt",
+    "identity": {
+      "version": 2,
+      "weight": "247d83007ca7b94b22a650c22afb11aa257910daf8c9ca1bf4f35243e3e55f35",
+      "shape": [
+        1024,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.4.attention_conv.kernel_projection",
+      "calibration": "dca8b00d134bbc5c1a9e293a6e5b960c0f02b3a93c95faa605f9d0c054a50427",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "0006b6b824f32f709842aa9be518b423b548b7a01aa96d35852189df6b92d2e8"
+    }
+  },
+  {
+    "path": "/cache/st-dense-packs/fe54d4ef8edc97c21ccb529b625cd74e93c3c54d7fff6de975ba70daf2fc05a4.pt",
+    "identity": {
+      "version": 2,
+      "weight": "83855131e6f112873b64dc186a6802165fa20968899e9c790bc9cfe3b1bdb247",
+      "shape": [
+        6144,
+        4096
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.layers.1.mlp.gate_up_proj",
+      "calibration": "b319ae6234131c6b3182f998d448ae1138e4319fa7a572cda777e1ec5a579dc8",
+      "per_row": false,
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "a61ec4a0d62831cd343b6c0c42568665038fa25a95ad1d92a45858b30da6cc74"
+    }
+  }
+]
