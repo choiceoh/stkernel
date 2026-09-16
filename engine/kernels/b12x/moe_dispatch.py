@@ -2338,7 +2338,15 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                    and bool(config.get("fc1_reuse_a", True)))
     compact_staging = (fc1_reuse_a and separate and int(config.get("fc1", 2)) % 2 == 0
                        and bool(config.get("compact_staging", True)))
+    # The kernel's own contract: private scatter needs the packed FP32 output, so it needs sf6.
+    # A checkpoint whose experts do not all carry 6-bit-packable scales (a mixed-provenance arm)
+    # builds a companion lane with reform_sf_pack off beside every sf6 lane; at m=16, and only
+    # there, `batch` used to turn direct scatter on for that companion too, and
+    # moe_static_kernel_v4.__init__ refused the pair -- the boot died in warmup_decode_experts
+    # (measurements/st_hybrid_boot_block_20260916). Production serves sf6 on every lane, so this
+    # conjunct is true there and the measured m=16 cell (st_c2_dense_cells_20260915) is unchanged.
     direct_scatter = bool(reform and m == 16 and config.get("batch_reform")
+                          and config.get("reform_sf_pack", False)
                           and config.get("c2_direct_scatter", True))
     sf6_registers = compact_staging and bool(config.get("sf6_registers", True))
     scatter_reuse = bool(direct_scatter and sf6_registers and config.get("c2_scatter_reuse", True))
