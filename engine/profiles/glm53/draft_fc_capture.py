@@ -11,7 +11,15 @@ is rejected at the next boot. Nothing here is offline.
 
 What it takes is already on the hot path: `observe_rows` receives `aux [n*t, A]`, `positions [n, t]`
 and `valid [n]`, and the committed-row mask is `arange(t) < valid` exactly as the projection's own
-observer builds it. The request family per row comes from `note_sync`, which the adapter already
+observer builds it.
+
+Where it hooks matters. A production boot captures the observation into a CUDA graph, so
+`drafter.observe_rows` runs once at capture and never again -- the pipeline calls
+`drafter.decode_graphs.observe_rows` (or `observe_prepared_rows` when the plan observes early),
+which fills the graph's input buffers and replays. Wrapping only the drafter's own method is how
+the first armed production boot collected 0 rows. So all three seams are wrapped; the graph ones
+are what fire on a served step, and `drafter.observe_rows` covers the graphless path (tree decode,
+a boot with no decode graphs). The request family per row comes from `note_sync`, which the adapter already
 calls per slot with its sequence -- wrapping it keeps the sequence map current without touching the
 decode path. Splitting by family (not by row) is what `fit_fc_bias` requires: it refuses train and
 validation sets that share a request.
@@ -69,25 +77,44 @@ class DraftFcCapture:
         self.kept = {'train': 0, 'validation': 0}
         self.slot_family: dict[int, str] = {}
         self.stopped = None
+        self.seams: list[str] = []
+        self.calls, self.calls_budget = 0, max(8 * rows, 4096)
         self._attached = False
 
     # -- attachment ------------------------------------------------------
 
     def attach(self):
-        """Wrap `observe_rows` and `note_sync`. Both wrappers are pure additions."""
+        """Wrap the observation seams and `note_sync`. Every wrapper is a pure addition."""
         if self._attached:
             raise ValueError('draft FC capture is already attached')
         drafter = self.drafter
         inner_rows = drafter.observe_rows
 
         def observe_rows(field, slots, positions, aux, valid):
-            try:
-                self._record(slots, positions, aux, valid)
-            except Exception as exc:                       # capture never breaks the step
-                self.stopped = self.stopped or f'{type(exc).__name__}: {exc}'
+            self._try_record(slots, positions, aux, valid)
             return inner_rows(field, slots, positions, aux, valid)
 
         drafter.observe_rows = observe_rows
+        self.seams = ['drafter.observe_rows']
+        graphs = getattr(drafter, 'decode_graphs', None)
+        if graphs is not None:
+            # the served seam: these run on the host every step and fill the graph's inputs
+            inner_graph_rows = getattr(graphs, 'observe_rows', None)
+            if inner_graph_rows is not None:
+                def graph_rows(slots, positions, aux, valid):
+                    self._try_record(slots, positions, aux, valid)
+                    return inner_graph_rows(slots, positions, aux, valid)
+
+                graphs.observe_rows = graph_rows
+                self.seams.append('decode_graphs.observe_rows')
+            inner_prepared = getattr(graphs, 'observe_prepared_rows', None)
+            if inner_prepared is not None:
+                def graph_prepared(slots, positions, context, valid, aux):
+                    self._try_record(slots, positions, aux, valid)
+                    return inner_prepared(slots, positions, context, valid, aux)
+
+                graphs.observe_prepared_rows = graph_prepared
+                self.seams.append('decode_graphs.observe_prepared_rows')
         diagnostics = getattr(drafter, 'diagnostics', None)
         if diagnostics is not None and hasattr(diagnostics, 'note_sync'):
             inner_sync = diagnostics.note_sync
@@ -105,12 +132,26 @@ class DraftFcCapture:
 
     # -- recording -------------------------------------------------------
 
+    def _try_record(self, slots, positions, aux, valid):
+        try:
+            self._record(slots, positions, aux, valid)
+        except Exception as exc:                           # capture never breaks the step
+            self.stopped = self.stopped or f'{type(exc).__name__}: {exc}'
+
     def full(self) -> bool:
+        """Recording is over: both splits are fed and the budget is met, or the door ran out of chances.
+
+        The budget matters because a step that records pays a device sync (`mask.sum()`). On a door
+        that never serves a second request family, `min(kept) > 0` would never come true and every
+        step would keep paying it; after `calls_budget` observations the capture stops looking."""
+        if self.calls >= self.calls_budget:
+            return True
         return min(self.kept.values()) > 0 and sum(self.kept.values()) >= self.rows
 
     def _record(self, slots, positions, aux, valid):
         if self.stopped is not None or self.full():
             return
+        self.calls += 1
         n, t = positions.shape
         cols = self.drafter.dense['fc.weight'].cols
         flat = aux.reshape(-1, cols)
@@ -140,7 +181,8 @@ class DraftFcCapture:
 
     def status(self) -> dict:
         return dict(kept=dict(self.kept), batches=len(self.batches), rows=self.rows,
-                    families=len(set(b['ids'][0] for b in self.batches)), stopped=self.stopped)
+                    families=len(set(b['ids'][0] for b in self.batches)), stopped=self.stopped,
+                    seams=list(self.seams), calls=self.calls)
 
     def close(self):
         """Run the collector against the live reader and write this rank's bundle."""

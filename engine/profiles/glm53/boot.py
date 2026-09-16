@@ -1788,7 +1788,8 @@ def fleet(a) -> int:
                 engine, Path(a.dump_dir) / "draft-fc-pairs", rows=DRAFT_FC_CAPTURE_ROWS,
                 salt=str(engine.drafter.tuning.digest))
             print(f"  draft FC capture: rank {comm.rank} armed for {DRAFT_FC_CAPTURE_ROWS} committed rows "
-                  f"under {Path(a.dump_dir) / 'draft-fc-pairs'}", flush=True)
+                  f"under {Path(a.dump_dir) / 'draft-fc-pairs'} at "
+                  f"{', '.join(engine.draft_fc_capture.seams)}", flush=True)
         if CALIBRATION_CAPTURE and engine.calibration is not None:
             from engine.profiles.glm53 import capture as capture_mod
             capture_mod.arm_calibration_phases(engine)

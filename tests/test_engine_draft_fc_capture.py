@@ -10,9 +10,19 @@ from engine.profiles.glm53.draft_fc_capture import DraftFcCapture, _family_split
 COLS = 64
 
 
-def fake_drafter(*, source=True, observer=None, rank=0):
+def fake_graphs():
+    """What a captured boot exposes: the pipeline calls these, never the drafter's own method."""
+    graphs = types.SimpleNamespace(replayed=[])
+    graphs.observe_rows = lambda slots, positions, aux, valid: graphs.replayed.append('rows')
+    graphs.observe_prepared_rows = (
+        lambda slots, positions, context, valid, aux: graphs.replayed.append('prepared'))
+    return graphs
+
+
+def fake_drafter(*, source=True, observer=None, rank=0, graphs=None):
     layer = types.SimpleNamespace(cols=COLS, observer=observer)
     drafter = types.SimpleNamespace(
+        decode_graphs=graphs,
         dense={'fc.weight': layer},
         p={'fc.weight': torch.zeros(4, COLS, dtype=torch.bfloat16) if source else None},
         target=types.SimpleNamespace(comm=types.SimpleNamespace(rank=rank)),
@@ -45,6 +55,53 @@ class FamilySplitTests(unittest.TestCase):
         low = sum(_family_split(n, .05, 's') == 'validation' for n in names) / len(names)
         high = sum(_family_split(n, .80, 's') == 'validation' for n in names) / len(names)
         self.assertTrue(low < .12 and high > .70, (low, high))
+
+
+class GraphSeamTests(unittest.TestCase):
+    """The first armed production boot collected 0 rows: it had wrapped the one seam a captured boot never calls."""
+
+    def _rows(self, cap, call):
+        positions = torch.arange(16).reshape(2, 8)
+        aux = torch.randn(16, COLS, dtype=torch.bfloat16)
+        call(torch.tensor([0, 1]), positions, aux, torch.tensor([8, 8]))
+
+    def test_the_replayed_seam_is_what_records(self):
+        graphs = fake_graphs()
+        cap = DraftFcCapture(fake_drafter(graphs=graphs), '/tmp/unused', rows=64, salt='s')
+        cap.attach()
+        self.assertIn('decode_graphs.observe_rows', cap.seams)
+        self.assertIn('decode_graphs.observe_prepared_rows', cap.seams)
+        self._rows(cap, cap.drafter.decode_graphs.observe_rows)
+        self.assertEqual(sum(cap.kept.values()), 16)
+        self.assertEqual(graphs.replayed, ['rows'], 'the replay still happens, unchanged')
+
+    def test_the_early_observe_seam_records_too(self):
+        graphs = fake_graphs()
+        cap = DraftFcCapture(fake_drafter(graphs=graphs), '/tmp/unused', rows=64, salt='s')
+        cap.attach()
+        context = torch.zeros(2, 8, 1)
+        cap.drafter.decode_graphs.observe_prepared_rows(
+            torch.tensor([0, 1]), torch.arange(16).reshape(2, 8), context, torch.tensor([8, 8]),
+            torch.randn(16, COLS, dtype=torch.bfloat16))
+        self.assertEqual(sum(cap.kept.values()), 16)
+        self.assertEqual(graphs.replayed, ['prepared'])
+
+    def test_a_graphless_boot_still_has_the_drafter_seam(self):
+        cap = DraftFcCapture(fake_drafter(), '/tmp/unused', rows=64, salt='s')
+        cap.attach()
+        self.assertEqual(cap.seams, ['drafter.observe_rows'])
+
+    def test_a_door_that_never_fills_both_splits_stops_syncing(self):
+        """Recording costs a device sync a step; without a budget a one-family door would pay it forever."""
+        graphs = fake_graphs()
+        cap = DraftFcCapture(fake_drafter(graphs=graphs), '/tmp/unused', rows=8, salt='s')
+        cap.attach()
+        cap.kept['train'] = 8                                  # budget met on one side, the other never fed
+        for _ in range(cap.calls_budget + 50):
+            self._rows(cap, cap.drafter.decode_graphs.observe_rows)
+        self.assertTrue(cap.full())
+        self.assertEqual(cap.calls, cap.calls_budget)
+        self.assertEqual(len(graphs.replayed), cap.calls_budget + 50, 'every step still replayed')
 
 
 class CaptureTests(unittest.TestCase):
