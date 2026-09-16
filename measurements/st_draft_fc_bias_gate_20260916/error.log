@@ -1,0 +1,12 @@
+# probes/draft_fc_fp8_error.py -- GLM-5.3-Flash-DFlash2 fc.weight [4096, 20480] BF16, FP8_BLOCK=128
+# CPU only inside the probe container (PROBE_CACHE=1, MK_PROBE_NO_GPU=1); no CUDA context.
+
+per-output-row relative FP8 error  ||dW|| / ||W||
+   median 2.6564e-02   p90 2.6819e-02   p99 2.7024e-02   max 2.7335e-02
+   frobenius 2.6507e-02
+
+DC coupling  |sum_j dW_ij| / |sum_j W_ij|   (what a uniform mean input would see)
+   median 2.1092e-02   p90 1.2717e-01   p99 1.2405e+00   max 1.0614e+02
+   isotropic expectation for contrast: median 1.8562e-04
+
+aligned worst case 2.66e-02   DC coupling 2.11e-02   isotropic 1.86e-04
