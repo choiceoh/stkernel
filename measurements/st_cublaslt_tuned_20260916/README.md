@@ -35,17 +35,30 @@ compile cost. Adoption requires a measured cell and the normal boot build barrie
   excluded. C and D use the same descriptor and address with beta zero.
 * **Bounded algorithm search.** Heuristics at 0/1/8/32/64 MiB workspace plus tile,
   stage, swizzle, custom and FP32 SplitK variants are deduplicated and checked,
-  capped at 96. Numeric rejects are recorded. Three finalists receive B/A/A/B
+  capped at 192. Distinct implementations are seeded first; seeds and mutation
+  families are interleaved so the first tile list cannot exhaust the candidate
+  budget. Tile/stage cross-products and tile/SplitK combinations (up to 16-way)
+  are checked, and the number of checked/admitted configurations is recorded. Numeric rejects are recorded. Three finalists receive B/A/A/B
   CUDA-graph brackets of the complete producer-to-BF16-output pipeline. Both
   candidate samples must beat their paired baseline by >2%; otherwise the
   explicit prepared choice remains DeepGEMM. Search is GB10-only. SM120 is allowed
   for numerical checks with no timing.
-* **Prepared execution.** Native run has no allocation, algorithm lookup or matrix
-  transpose. A prepared Python projection never searches. Workspaces are isolated
+* **Prepared execution.** The bound native run owns an immutable operation descriptor and
+  tensor references. It performs one cuBLAS call without repeated pointer/shape
+  checks or scale-pointer descriptor mutation, allocation, algorithm lookup or
+  matrix transpose. A prepared Python projection never searches. `PreparedProjection.bind()`
+  also fixes the activation, scale and output buffers, eliminating repeated
+  allocation in the producer and Python execution wrapper. Workspaces are isolated
   by CUDA stream and grow geometrically; old generations remain owned for graph
   lifetime. Scratch allocation may happen at warmup/capture, never graph replay.
   Preparation scratch is temporary; retained workspace is below twice the largest
   rounded allocation per stream (at most 64 MiB each), not 64 MiB per layer or per shape.
+
+Each bound execution owns its chosen workspace by default, independently of
+which stream was used to warm it. Independent captures therefore cannot alias
+through the same warmup stream's scratch. Callers can explicitly share a workspace
+only for serial execution. Bound outputs are reused; consume them before calling
+the binding again, and retain the binding for the whole captured graph lifetime.
 
 ## Cost and limits
 
@@ -61,6 +74,9 @@ verdict. The paired timings are warm component-pipeline evidence, **not** cold
 weights, TP4 serving throughput or acceptance. Weight-format equality is not proof
 of identical accumulation: real cuBLAS numerics, changed-input graph replay,
 actual packed model weights and matched serving measurements remain GPU gates.
+The GPU probe checks allocation peaks on bound cuBLAS calls and replaces FP8
+values on replay, rather than only multiplying by powers of two (which would
+leave quantized values unchanged and fail to catch stale input buffers).
 The W4A8 decode products are not replaced or inflated to FP8.
 
 ## Reproduction
@@ -112,3 +128,11 @@ The default probe uses synthetic weights and cannot establish model acceptance.
 * `focused.log`: **36 tests PASS, 3 GPU/interpreter skips**, including the package,
   native-cache and boot-builder integration checks after fixing the two findings
   from the first full CPU run.
+
+* `focused-bound.log`: **38 tests PASS** with the CPU interpreter, covering the
+  bound execution's fixed storage, independent scratch ownership, one-time native
+  binding, buffer-replacement rejection and all package/native-cache checks.
+* First CI also exposed a pre-existing onepass fixture mismatch from #1059: the
+  fixed workload now warms four prompts at C=1 as well as C=N. Its integration
+  assertion is updated to require both phases before measurement; no benchmark
+  execution or workload policy was changed here.

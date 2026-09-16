@@ -123,6 +123,66 @@ class ProducerContracts(unittest.TestCase):
             require_disjoint(arena[:128], arena[127:256])
 
 
+@unittest.skipUnless(TORCH and TRITON, 'requires torch and triton')
+class BoundExecutionTests(unittest.TestCase):
+    def prepared(self):
+        import torch
+        from engine.kernels.dense.cublaslt import Choice, PreparedProjection
+        p = PreparedProjection.__new__(PreparedProjection)
+        p.rows, p.key = 8, (8, 128, 128, 'bf16')
+        p.weight = torch.empty(128, 128, dtype=torch.float8_e4m3fn), torch.ones(1, 1)
+        p.mx_weight = torch.empty(512, dtype=torch.uint8)
+        p.choice = Choice(0, 1024, 'test')
+        calls = []
+        def bind(index, q, weight, scales, weight_scales, out, workspace):
+            calls.append((q, scales, out, workspace))
+            # This stub exercises Python ownership/dispatch, not GEMM numerics.
+            return SimpleNamespace(run=lambda: out.fill_(len(calls)))
+        p.owner = SimpleNamespace(plans={p.key[:3]: SimpleNamespace(bind=bind)})
+        return p, calls
+
+    @staticmethod
+    def producer(mx, out):
+        import torch
+        if out is None:
+            return torch.empty(8, 128, dtype=torch.float8_e4m3fn), torch.empty(512, dtype=torch.uint8)
+        return out
+
+    def test_bound_calls_allocate_nothing_and_independent_bindings_own_distinct_scratch(self):
+        import torch
+        p, calls = self.prepared()
+        with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=False):
+            first, second = p.bind(self.producer), p.bind(self.producer)
+        self.assertNotEqual(first.workspace.data_ptr(), second.workspace.data_ptr())
+        self.assertNotEqual(first.buffers[0].data_ptr(), second.buffers[0].data_ptr())
+        self.assertNotEqual(first.out.data_ptr(), second.out.data_ptr())
+        with patch.object(torch, 'empty', side_effect=AssertionError('allocation after binding')):
+            for _ in range(3):
+                self.assertIs(first(), first.out)
+                self.assertIs(second(), second.out)
+        self.assertEqual(len(calls), 2)  # descriptors bind once, never per execution
+        self.assertIs(calls[0][3], first.workspace)
+
+    def test_replacing_bound_buffers_fails_before_matmul_and_capture_cannot_bind(self):
+        import torch
+        p, calls = self.prepared()
+        with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=True):
+            with self.assertRaisesRegex(RuntimeError, 'before capture'):
+                p.bind(self.producer)
+        with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=False):
+            bound = p.bind(self.producer)
+        executed = []
+        bound.matmul = lambda: executed.append(True)
+        bound.producer = lambda mx, out: self.producer(mx, None)
+        with self.assertRaisesRegex(RuntimeError, 'replaced'):
+            bound()
+        bound.producer = lambda mx, out: ()
+        with self.assertRaisesRegex(RuntimeError, 'replaced'):
+            bound()
+        self.assertEqual(executed, [])
+
+
+
 @unittest.skipUnless(TORCH and TRITON and INTERPRET, 'explicit no-GPU Triton interpreter check')
 class InterpreterTests(unittest.TestCase):
     def setUp(self):

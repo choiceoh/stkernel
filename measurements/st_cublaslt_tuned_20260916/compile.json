@@ -1,12 +1,12 @@
 {
   "status": "PASS",
   "gpu_used": false,
-  "seconds": 1.9506502040312625,
+  "seconds": 2.124351595004555,
   "torch": "2.13.0+cu132",
   "cuda": "13.2",
   "cublaslt": 130400,
-  "binary": "/out/cache/cublaslt/f5adcd7d02e037a50c569e22/st_cublaslt_f5adcd7d02e037a50c569e22.so",
-  "binary_sha256": "0ecf03ea99c89bdbc59b00ac16843cdbfff8491301484565a59ed4d187a6439c",
+  "binary": "/out/cache/cublaslt/989dafb3412bcd094ff257b6/st_cublaslt_989dafb3412bcd094ff257b6.so",
+  "binary_sha256": "8005c9f1ccdb05d1359079daf41850ae5a814fc0b5c16d100ede637339026690",
   "triton": "3.7.1",
   "kernels": [
     {
@@ -72,8 +72,8 @@
   ],
   "scope": "host binding compile/dlopen and SM121 producer compilation; no cuBLAS GPU execution",
   "source_sha256": {
-    "engine/kernels/dense/cublaslt.cpp": "02d3e9336293ff8421bd072936084815f0eed4622817d44b8c8045c02a5093aa",
-    "engine/kernels/dense/cublaslt.py": "ef60b0753180ce0e1f0d8625be8652e993df24e939610e650d59c042db371066",
+    "engine/kernels/dense/cublaslt.cpp": "cac3392683b0573a75e4b83bce1f8d59776aa58963fb21930b31a64dae241029",
+    "engine/kernels/dense/cublaslt.py": "dbcdf6db5d808e21b8192cf7d0f929d89dcfba0a742550fa5e541b47effaef17",
     "engine/kernels/dense/mxfp8.py": "a970b5772dde38454e598885a3307bb642f8341f65a118a6f3c55b9edf913d5b",
     "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
     "engine/kernels/prefill_collectives/consumer.py": "4048a26f2a81e722af5edad8b22bb2a166be0f6a04d5ec0c2fac9c3ea83df84e",

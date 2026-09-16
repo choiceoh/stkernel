@@ -5,6 +5,7 @@
 #include <cublasLt.h>
 #include <algorithm>
 #include <array>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <set>
@@ -44,13 +45,14 @@ struct Descriptors {
   }
 };
 
-class Plan {
+class Plan : public std::enable_shared_from_this<Plan> {
   std::shared_ptr<Context> context;
   Descriptors desc;
   int64_t m, n, k;
   size_t workspace_limit;
   std::vector<cublasLtMatmulHeuristicResult_t> choices;
-  std::set<std::string> seen;
+  std::set<std::string> visited;
+  static constexpr size_t MAX_CHOICES = 192;
 
   template <class T> static T config(const cublasLtMatmulAlgo_t& algo,
                                      cublasLtMatmulAlgoConfigAttributes_t key) {
@@ -88,7 +90,9 @@ class Plan {
   }
 
   void admit(const cublasLtMatmulAlgo_t& algo) {
-    if (choices.size() >= 96) return;
+    if (choices.size() >= MAX_CHOICES) return;
+    std::string key(reinterpret_cast<const char*>(&algo), sizeof(algo));
+    if (!visited.insert(key).second) return;
     cublasLtMatmulHeuristicResult_t result{};
     auto status = cublasLtMatmulAlgoCheck(context->handle, desc.operation, desc.a, desc.b, desc.d, desc.d, &algo, &result);
     if (status == CUBLAS_STATUS_NOT_SUPPORTED || status == CUBLAS_STATUS_INVALID_VALUE
@@ -103,47 +107,71 @@ class Plan {
       auto values = capability(algo, attr);
       if (values.size() != 1 || values[0] > 16) return;
     }
-    // Preserve the complete opaque configuration, including library-private
-    // fields. A copied algorithm object is the documented execution token.
-    std::string key(reinterpret_cast<const char*>(&algo), sizeof(algo));
-    if (seen.insert(key).second) {
-      result.algo = algo;
-      choices.push_back(result);
-    }
+    result.algo = algo;
+    choices.push_back(result);
   }
 
-  void variants(const cublasLtMatmulAlgo_t& seed) {
-    for (const auto& item : std::array<std::pair<cublasLtMatmulAlgoCapAttributes_t,
-                                               cublasLtMatmulAlgoConfigAttributes_t>, 2>{{
-          {CUBLASLT_ALGO_CAP_TILE_IDS, CUBLASLT_ALGO_CONFIG_TILE_ID},
-          {CUBLASLT_ALGO_CAP_STAGES_IDS, CUBLASLT_ALGO_CONFIG_STAGES_ID}}}) {
-      auto values = capability(seed, item.first);
-      for (size_t i = 0; i < std::min<size_t>(values.size(), 8); ++i) {
+  static std::vector<uint32_t> spread(const std::vector<uint32_t>& values, size_t count) {
+    if (values.size() <= count) return values;
+    std::vector<uint32_t> result;
+    for (size_t i = 0; i < count; ++i) result.push_back(values[i * (values.size() - 1) / (count - 1)]);
+    return result;
+  }
+
+  std::vector<cublasLtMatmulAlgo_t> variants(const cublasLtMatmulAlgo_t& seed) {
+    // Interleave families as well as seeds. A global cap must not spend every
+    // slot on the first algorithm's smallest tile IDs before trying SplitK.
+    std::array<std::vector<cublasLtMatmulAlgo_t>, 5> families;
+    auto tiles = spread(capability(seed, CUBLASLT_ALGO_CAP_TILE_IDS), 8);
+    auto stages = spread(capability(seed, CUBLASLT_ALGO_CAP_STAGES_IDS), 8);
+    for (auto tile : tiles) {
+      auto algo = seed;
+      if (set(algo, CUBLASLT_ALGO_CONFIG_TILE_ID, tile)) families[0].push_back(algo);
+    }
+    for (auto stage : stages) {
+      auto algo = seed;
+      if (set(algo, CUBLASLT_ALGO_CONFIG_STAGES_ID, stage)) families[1].push_back(algo);
+    }
+    for (auto tile : spread(tiles, 4)) for (auto stage : spread(stages, 4)) {
+      auto algo = seed;
+      if (set(algo, CUBLASLT_ALGO_CONFIG_TILE_ID, tile)
+          && set(algo, CUBLASLT_ALGO_CONFIG_STAGES_ID, stage)) families[2].push_back(algo);
+    }
+    auto split = capability(seed, CUBLASLT_ALGO_CAP_SPLITK_SUPPORT);
+    auto reduction = capability(seed, CUBLASLT_ALGO_CAP_REDUCTION_SCHEME_MASK);
+    if (split.size() == 1 && split[0] && reduction.size() == 1
+        && (reduction[0] & CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE)) {
+      auto split_tiles = spread(tiles, 3);
+      split_tiles.insert(split_tiles.begin(), config<uint32_t>(seed, CUBLASLT_ALGO_CONFIG_TILE_ID));
+      for (uint32_t count : {2, 4, 8, 16}) for (auto tile : split_tiles) {
+        if (k < int64_t(count) * 128) continue;
         auto algo = seed;
-        if (set(algo, item.second, values[i])) admit(algo);
+        if (set(algo, CUBLASLT_ALGO_CONFIG_TILE_ID, tile)
+            && set(algo, CUBLASLT_ALGO_CONFIG_SPLITK_NUM, count)
+            && set(algo, CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME, CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE))
+          families[3].push_back(algo);
       }
     }
     auto swizzle = capability(seed, CUBLASLT_ALGO_CAP_CTA_SWIZZLING_SUPPORT);
     if (swizzle.size() == 1 && swizzle[0] == 1) {
       auto algo = seed;
       if (set(algo, CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING,
-              1 - config<uint32_t>(seed, CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING))) admit(algo);
+              1 - config<uint32_t>(seed, CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING))) families[4].push_back(algo);
     }
     auto custom = capability(seed, CUBLASLT_ALGO_CAP_CUSTOM_OPTION_MAX);
-    if (custom.size() == 1) for (uint32_t option = 0; option <= std::min(custom[0], 2u); ++option) {
+    if (custom.size() == 1) for (uint32_t option = 0; option <= std::min(custom[0], 4u); ++option) {
       auto algo = seed;
-      if (set(algo, CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION, option)) admit(algo);
+      if (set(algo, CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION, option)) families[4].push_back(algo);
     }
-    auto split = capability(seed, CUBLASLT_ALGO_CAP_SPLITK_SUPPORT);
-    auto reduction = capability(seed, CUBLASLT_ALGO_CAP_REDUCTION_SCHEME_MASK);
-    if (split.size() == 1 && split[0] && reduction.size() == 1
-        && (reduction[0] & CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE)) {
-      for (uint32_t count : {2, 4, 8}) {
-        auto algo = seed;
-        if (set(algo, CUBLASLT_ALGO_CONFIG_SPLITK_NUM, count)
-            && set(algo, CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME, CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE)) admit(algo);
+    std::vector<cublasLtMatmulAlgo_t> result;
+    for (size_t round = 0;; ++round) {
+      bool more = false;
+      for (const auto& family : families) if (round < family.size()) {
+        result.push_back(family[round]); more = true;
       }
+      if (!more) break;
     }
+    return result;
   }
 
   void tensor(const torch::Tensor& value, at::ScalarType type, const char* name) const {
@@ -158,21 +186,25 @@ class Plan {
     return a0 < b0 + b.nbytes() && b0 < a0 + a.nbytes();
   }
 
+  static void setup_operation(cublasLtMatmulDesc_t& op) {
+    check(cublasLtMatmulDescCreate(&op, CUBLAS_COMPUTE_32F, CUDA_R_32F), "matmul descriptor");
+    cublasOperation_t ta = CUBLAS_OP_T, tb = CUBLAS_OP_N;
+    int8_t fast = 0;
+    auto scaling = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
+    check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_TRANSA, &ta, sizeof(ta)), "transpose A");
+    check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_TRANSB, &tb, sizeof(tb)), "transpose B");
+    check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_FAST_ACCUM, &fast, sizeof(fast)), "FP32 accumulation");
+    check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_A_SCALE_MODE, &scaling, sizeof(scaling)), "MX scale A");
+    check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_B_SCALE_MODE, &scaling, sizeof(scaling)), "MX scale B");
+  }
+
  public:
   Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit)
       : context(std::move(context_)), m(m_), n(n_), k(k_), workspace_limit(limit) {
     TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
                 && m <= INT32_MAX && n <= INT32_MAX && k <= INT32_MAX, "invalid ST MXFP8 shape");
     c10::cuda::CUDAGuard guard(context->device);
-    check(cublasLtMatmulDescCreate(&desc.operation, CUBLAS_COMPUTE_32F, CUDA_R_32F), "matmul descriptor");
-    cublasOperation_t ta = CUBLAS_OP_T, tb = CUBLAS_OP_N;
-    int8_t fast = 0;
-    auto scaling = CUBLASLT_MATMUL_MATRIX_SCALE_VEC32_UE8M0;
-    check(cublasLtMatmulDescSetAttribute(desc.operation, CUBLASLT_MATMUL_DESC_TRANSA, &ta, sizeof(ta)), "transpose A");
-    check(cublasLtMatmulDescSetAttribute(desc.operation, CUBLASLT_MATMUL_DESC_TRANSB, &tb, sizeof(tb)), "transpose B");
-    check(cublasLtMatmulDescSetAttribute(desc.operation, CUBLASLT_MATMUL_DESC_FAST_ACCUM, &fast, sizeof(fast)), "FP32 accumulation");
-    check(cublasLtMatmulDescSetAttribute(desc.operation, CUBLASLT_MATMUL_DESC_A_SCALE_MODE, &scaling, sizeof(scaling)), "MX scale A");
-    check(cublasLtMatmulDescSetAttribute(desc.operation, CUBLASLT_MATMUL_DESC_B_SCALE_MODE, &scaling, sizeof(scaling)), "MX scale B");
+    setup_operation(desc.operation);
     // Column-major TN computes Y^T from the existing row-major W and X.
     check(cublasLtMatrixLayoutCreate(&desc.a, CUDA_R_8F_E4M3, k, n, k), "W layout");
     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
@@ -197,7 +229,26 @@ class Plan {
       for (int i = 0; i < count; ++i) if (result[i].state == CUBLAS_STATUS_SUCCESS) admit(result[i].algo);
     }
     auto seeds = choices;
-    for (size_t i = 0; i < std::min<size_t>(seeds.size(), 8); ++i) variants(seeds[i].algo);
+    std::vector<cublasLtMatmulAlgo_t> selected;
+    std::set<int32_t> ids;
+    // Cover distinct implementations first, then alternate heuristic configs.
+    for (const auto& seed : seeds)
+      if (selected.size() < 16 && ids.insert(config<int32_t>(seed.algo, CUBLASLT_ALGO_CONFIG_ID)).second)
+        selected.push_back(seed.algo);
+    for (const auto& seed : seeds) {
+      if (selected.size() >= 16) break;
+      if (std::none_of(selected.begin(), selected.end(), [&](const auto& a) {
+            return std::memcmp(&a, &seed.algo, sizeof(a)) == 0; })) selected.push_back(seed.algo);
+    }
+    std::vector<std::vector<cublasLtMatmulAlgo_t>> proposals;
+    for (const auto& seed : selected) proposals.push_back(variants(seed));
+    for (size_t round = 0; choices.size() < MAX_CHOICES; ++round) {
+      bool more = false;
+      for (const auto& family : proposals) if (round < family.size()) {
+        admit(family[round]); more = true;
+      }
+      if (!more) break;
+    }
   }
 
   py::list candidates() const {
@@ -218,9 +269,9 @@ class Plan {
     return result;
   }
 
-  void run(size_t index, const torch::Tensor& q, const torch::Tensor& weight,
-           const torch::Tensor& s_q, const torch::Tensor& s_weight,
-           const torch::Tensor& out, const torch::Tensor& workspace) {
+  void validate(size_t index, const torch::Tensor& q, const torch::Tensor& weight,
+                const torch::Tensor& s_q, const torch::Tensor& s_weight,
+                const torch::Tensor& out, const torch::Tensor& workspace) const {
     TORCH_CHECK(index < choices.size(), "unknown cuBLAS algorithm");
     tensor(q, at::ScalarType::Float8_e4m3fn, "Q"); tensor(weight, at::ScalarType::Float8_e4m3fn, "W");
     tensor(s_q, at::kByte, "activation scales"); tensor(s_weight, at::kByte, "weight scales");
@@ -237,22 +288,71 @@ class Plan {
       TORCH_CHECK(!overlaps(input, out) && !overlaps(input, workspace), "cuBLAS write buffer overlaps an input");
     }
     TORCH_CHECK(!overlaps(out, workspace), "cuBLAS workspace overlaps output");
-    c10::cuda::CUDAGuard guard(context->device);
+  }
+
+  static void set_scales(cublasLtMatmulDesc_t op, const torch::Tensor& s_q, const torch::Tensor& s_weight) {
     const void* a_scale = s_weight.data_ptr(); const void* b_scale = s_q.data_ptr();
-    check(cublasLtMatmulDescSetAttribute(desc.operation, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &a_scale, sizeof(a_scale)), "scale pointer A");
-    check(cublasLtMatmulDescSetAttribute(desc.operation, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &b_scale, sizeof(b_scale)), "scale pointer B");
+    check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &a_scale, sizeof(a_scale)), "scale pointer A");
+    check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &b_scale, sizeof(b_scale)), "scale pointer B");
+  }
+
+  void launch(cublasLtMatmulDesc_t op, size_t index, const torch::Tensor& q,
+              const torch::Tensor& weight, const torch::Tensor& out, const torch::Tensor& workspace) {
+    c10::cuda::CUDAGuard guard(context->device);
+    const auto& choice = choices[index];
     const float alpha = 1.f, beta = 0.f;
-    check(cublasLtMatmul(context->handle, desc.operation, &alpha, weight.data_ptr(), desc.a,
+    check(cublasLtMatmul(context->handle, op, &alpha, weight.data_ptr(), desc.a,
                         q.data_ptr(), desc.b, &beta, out.data_ptr(), desc.d, out.data_ptr(), desc.d,
                         &choice.algo, workspace.data_ptr(), choice.workspaceSize,
                         at::cuda::getCurrentCUDAStream(context->device)), "MXFP8 matmul");
   }
+
+  void run(size_t index, const torch::Tensor& q, const torch::Tensor& weight,
+           const torch::Tensor& s_q, const torch::Tensor& s_weight,
+           const torch::Tensor& out, const torch::Tensor& workspace) {
+    validate(index, q, weight, s_q, s_weight, out, workspace);
+    set_scales(desc.operation, s_q, s_weight);
+    launch(desc.operation, index, q, weight, out, workspace);
+  }
+
+  struct Bound {
+    std::shared_ptr<Plan> plan;
+    Descriptors desc;  // own operation; matrix layouts remain owned by plan
+    size_t index;
+    torch::Tensor q, weight, s_q, s_weight, out, workspace;
+    Bound(std::shared_ptr<Plan> owner, size_t selected, torch::Tensor q_, torch::Tensor weight_,
+          torch::Tensor s_q_, torch::Tensor s_weight_, torch::Tensor out_, torch::Tensor workspace_)
+        : plan(std::move(owner)), index(selected), q(q_), weight(weight_), s_q(s_q_),
+          s_weight(s_weight_), out(out_), workspace(workspace_) {
+      plan->validate(index, q, weight, s_q, s_weight, out, workspace);
+      setup_operation(desc.operation);
+      set_scales(desc.operation, s_q, s_weight);
+    }
+    void run() { plan->launch(desc.operation, index, q, weight, out, workspace); }
+  };
+
+  std::shared_ptr<Bound> bind(size_t index, const torch::Tensor& q, const torch::Tensor& weight,
+                              const torch::Tensor& s_q, const torch::Tensor& s_weight,
+                              const torch::Tensor& out, const torch::Tensor& workspace) {
+    return std::make_shared<Bound>(shared_from_this(), index, q, weight, s_q, s_weight, out, workspace);
+  }
+
+  py::dict statistics() const {
+    py::dict result;
+    result["checked_configurations"] = visited.size();
+    result["admitted_configurations"] = choices.size();
+    result["candidate_limit"] = MAX_CHOICES;
+    return result;
+  }
+
 };
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def("version", [] { return cublasLtGetVersion(); });
   py::class_<Context, std::shared_ptr<Context>>(module, "Context").def(py::init<int, int, int>());
-  py::class_<Plan>(module, "Plan")
+  py::class_<Plan::Bound, std::shared_ptr<Plan::Bound>>(module, "BoundMatmul").def("run", &Plan::Bound::run);
+  py::class_<Plan, std::shared_ptr<Plan>>(module, "Plan")
       .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t>())
-      .def("candidates", &Plan::candidates).def("run", &Plan::run);
+      .def("candidates", &Plan::candidates).def("run", &Plan::run)
+      .def("bind", &Plan::bind).def("statistics", &Plan::statistics);
 }

@@ -129,6 +129,7 @@ class Bank:
             plan = self.plans[geometry]
             candidates = plan.candidates()
             record = dict(self.identity, shape=(m, n, k), producer=key[3], candidates=len(candidates),
+                          search=plan.statistics(),
                           screened=[], brackets=[], scope='warm captured component pipeline; not serving throughput')
             if not candidates:
                 choice = Choice(reason='no_supported_algorithm')
@@ -178,7 +179,7 @@ class Bank:
         if not bool(torch.isfinite(baseline).all()):
             raise RuntimeError('FP8 baseline is nonfinite during algorithm preparation')
         ranked = []
-        # All admitted candidates are bounded at 96. One captured screening
+        # All admitted candidates are bounded at 192. One captured screening
         # sample narrows to three; only these pay for the full paired bracket.
         for c in candidates:
             fn = lambda: trial(c['index'])
@@ -234,6 +235,16 @@ class PreparedProjection:
         self.key = rows, *q.shape, producer_key
         self.choice, self.record = self.owner.prepare(self.key, weight, self.mx_weight, producer)
 
+    def bind(self, producer, *, out=None, workspace=None):
+        """Own fixed buffers and a private descriptor before capture/execution.
+
+        Each binding owns its scratch by default, so independently replayed
+        graphs cannot race through a warmup stream's shared workspace. A caller
+        may supply shared scratch only when those bindings execute serially.
+        Retain the binding for graph lifetime; storage addresses are immutable.
+        """
+        return BoundProjection(self, producer, out=out, workspace=workspace)
+
     def __call__(self, producer, *, out=None):
         q_weight = self.weight[0]
         shape = self.rows, q_weight.shape[0]
@@ -261,3 +272,49 @@ class PreparedProjection:
             self.owner.plans[self.key[:3]].run(self.choice.index, q, q_weight, scales, self.mx_weight,
                                               out, self.owner.workspace(self.choice.workspace))
         return out
+
+
+class BoundProjection:
+    """No allocation, shape search or descriptor mutation in repeated calls."""
+    def __init__(self, prepared, producer, *, out=None, workspace=None):
+        if torch.cuda.is_current_stream_capturing():
+            raise RuntimeError('projection buffers must be bound before capture')
+        self.prepared, self.producer = prepared, producer
+        self.mx = prepared.choice.index is not None
+        self.buffers = producer(self.mx, None)
+        weight = prepared.weight[0]
+        shape = prepared.rows, weight.shape[0]
+        self.out = torch.empty(shape, device=weight.device, dtype=torch.bfloat16) if out is None else out
+        if (self.out.shape != shape or self.out.dtype != torch.bfloat16 or self.out.device != weight.device
+                or not self.out.is_contiguous() or self.out.data_ptr() % 16):
+            raise ValueError('bound projection requires its exact aligned BF16 output shape')
+        q, scales = self.buffers
+        from .mxfp8 import scale_bytes
+        scale_shape = (scale_bytes(prepared.rows, weight.shape[1]),) if self.mx else (prepared.rows, weight.shape[1]//128)
+        if (q.shape != (prepared.rows, weight.shape[1]) or q.dtype != torch.float8_e4m3fn
+                or scales.shape != scale_shape or scales.dtype != (torch.uint8 if self.mx else torch.float32)
+                or q.device != weight.device or scales.device != weight.device
+                or not q.is_contiguous() or not scales.is_contiguous()):
+            raise ValueError('bound producer does not match its prepared ABI')
+        from .fp8 import require_disjoint
+        for tensor in (*self.buffers, *prepared.weight, prepared.mx_weight):
+            require_disjoint(self.out, tensor)
+        if self.mx:
+            self.workspace = (torch.empty(prepared.choice.workspace, device=weight.device, dtype=torch.uint8)
+                              if workspace is None else workspace)
+            self.native = prepared.owner.plans[prepared.key[:3]].bind(
+                prepared.choice.index, q, weight, scales, prepared.mx_weight, self.out, self.workspace)
+            self.matmul = self.native.run
+        else:
+            from deep_gemm import fp8_gemm_nt
+            from engine.kernels.deep_gemm import _initialize
+            _initialize()
+            self.workspace = None
+            self.matmul = lambda: fp8_gemm_nt(self.buffers, prepared.weight, self.out)
+
+    def __call__(self):
+        actual = self.producer(self.mx, self.buffers)
+        if len(actual) != 2 or any(a.data_ptr() != b.data_ptr() for a, b in zip(actual, self.buffers)):
+            raise RuntimeError('bound producer replaced its fixed output storage')
+        self.matmul()
+        return self.out

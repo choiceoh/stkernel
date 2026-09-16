@@ -98,45 +98,60 @@ def main():
                 scratch = torch.empty(max((c['workspace'] for c in algorithms), default=0), device='cuda', dtype=torch.uint8)
                 checked = []
                 for c in algorithms:
-                    plan.run(c['index'], q1, weight[0], s1, mx_weight, candidate, scratch)
+                    bound = plan.bind(c['index'], q1, weight[0], s1, mx_weight, candidate, scratch)
+                    bound.run()
                     relative = ((candidate.float()-baseline.float()).norm()/baseline.float().norm().clamp_min(1e-30)).item()
                     checked.append(dict(c, relative_l2=relative,
                                         numerics=bool(torch.allclose(candidate, baseline, rtol=.01, atol=.001))))
-                record = dict(shape=(m, n, k), producer=args.producer, checked=checked,
+                record = dict(shape=(m, n, k), producer=args.producer, checked=checked, search=plan.statistics(),
                               status='PASS' if any(c['numerics'] for c in checked) else 'NO_QUALIFIED_ALGORITHM')
             else:
                 prepared = PreparedProjection(weight, m, producer, args.producer, mx_weight=mx_weight)
-                prepared(producer, out=candidate)
+                execution = prepared.bind(producer, out=candidate)
+                execution()
+                torch.cuda.synchronize()
+                resident = torch.cuda.memory_allocated()
+                torch.cuda.reset_peak_memory_stats()
+                execution()
+                torch.cuda.synchronize()
+                allocation_delta = torch.cuda.max_memory_allocated() - resident
+                if prepared.choice.index is not None and allocation_delta:
+                    raise RuntimeError('bound cuBLAS execution allocated additional Torch GPU storage')
                 if not torch.allclose(candidate, baseline, rtol=.01, atol=.001):
                     raise RuntimeError('prepared output differs from the matched DeepGEMM baseline')
-                # Capture on a separate stream: scratch must be owned by that
-                # stream and stay alive across changed-input graph replays.
+                # Capture on a separate stream. The binding owns private
+                # scratch and immutable descriptors across graph replays.
                 stream = torch.cuda.Stream()
                 stream.wait_stream(torch.cuda.current_stream())
                 graph = torch.cuda.CUDAGraph()
                 with torch.cuda.stream(stream):
-                    prepared(producer, out=candidate)
+                    execution()
                 torch.cuda.current_stream().wait_stream(stream)
                 with torch.cuda.graph(graph, stream=stream):
-                    prepared(producer, out=candidate)
+                    execution()
                 try:
                     for multiplier in (.5, 2.):
                         if args.producer == 'bf16':
-                            source.mul_(multiplier)
+                            # Power-of-two rescaling alone leaves FP8 values
+                            # unchanged. Replace values to catch a stale Q as
+                            # well as stale scale pointers on graph replay.
+                            source.normal_().mul_(multiplier)
                         else:
                             # Vary valid packet values without touching the
                             # padding or transport scales.
                             stride = source.numel()//4
                             for rank in range(4):
                                 view = source[rank*stride:rank*stride+local*k].view(torch.float8_e4m3fn)
-                                view.copy_((view.float()*multiplier).to(torch.float8_e4m3fn))
+                                fresh = torch.randn(view.numel(), device=view.device)*(multiplier+rank)
+                                view.copy_(fresh.to(torch.float8_e4m3fn))
                         graph.replay()
                         fp8_gemm_nt(producer(False, None), weight, baseline)
                         if not torch.allclose(candidate, baseline, rtol=.01, atol=.001):
                             raise RuntimeError('changed-input graph replay differs from matched baseline')
                 finally:
                     graph.reset()
-                record = dict(prepared.record, status='PASS', graph_replays=2)
+                record = dict(prepared.record, status='PASS', graph_replays=2, bound_allocation_delta=allocation_delta,
+                              bound_workspace_bytes=0 if execution.workspace is None else execution.workspace.numel())
             record['extra_weight_scale_bytes'] = mx_weight.numel()
             record['activation_scale_bytes'] = s1.numel()
             report['cells'].append(record)
