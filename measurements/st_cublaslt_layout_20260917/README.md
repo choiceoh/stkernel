@@ -128,3 +128,14 @@ in an isolated scratch, with the corresponding native patch. Source hashes
 identify the exact version used; `rejected-strided-weight.patch` applies to
 `b41efc7d:engine/kernels/dense/cublaslt.cpp`. The maintained final check is
 `probes/engine_cublaslt_reform_check.py` and requires the frozen baseline explicitly.
+
+## Main integration validation
+
+GPU receipts remain tied to `d35047b4`. Integration with #1068 at `d855cbc4`
+preserves W4 `producer_pack` and FP8 `normalization` in `DenseLinear`. The
+related CPU suite passed 97 tests with 14 skips (111 total), and GitHub engine
+CI passed on that integration commit. The subsequent #1075 merge adds router
+research and resolves an appended measurement-record conflict.
+`integration-audit.json` verifies the cuBLAS source files and `FP8Linear` AST
+are unchanged from the GPU-tested source; this is source evidence, not another
+GPU run. Raw receipts retain their original identities.
