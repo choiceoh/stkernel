@@ -1993,8 +1993,9 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
 #pragma unroll
   for (int i = 0; i < MHC_EPT_; ++i) {
     const int h = i * MK_THREADS + threadIdx.x;
-    a.layer_input[t * HID + h] =
-        __float2bfloat16(vals[i] * rsq * r.nw[i]);
+    const __nv_bfloat16 rounded = __float2bfloat16(vals[i] * rsq * r.nw[i]);
+    a.layer_input[t * HID + h] = rounded;
+    vals[i] = __bfloat162float(rounded);
   }
   __syncthreads();  // sqred reuse
   if (a.input_pack) {
@@ -2004,7 +2005,6 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
     __shared__ float maxima[MHC_EPT_][MK_WARPS];
 #pragma unroll
     for (int i = 0; i < MHC_EPT_; ++i) {
-      vals[i] = __bfloat162float(__float2bfloat16(vals[i] * rsq * r.nw[i]));
       const float mx = __uint_as_float(__reduce_max_sync(~0u, __float_as_uint(fabsf(vals[i]))));
       if ((threadIdx.x & 31) == 0) maxima[i][threadIdx.x >> 5] = mx;
     }
