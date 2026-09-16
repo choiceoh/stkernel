@@ -1,6 +1,6 @@
 # Fixed K7 verification cost
 
-Base: `da917a4d`. K remains 7, verification remains 8 rows per request,
+Original base: `da917a4d`; integrated main: `53019ef8`. K remains 7, verification remains 8 rows per request,
 and KDA state remains FP32. Three independently controlled changes:
 
 * C1 resident MoE waves choose 48/44/40/36/32 active CTAs only when the
@@ -42,13 +42,13 @@ skipped); the separate execution/fastpath gate ran 16 (15 passed, 1 GPU
 test skipped). The added serving-proof gate passes locally. Full dense/MLA
 and both MoE handles built in Torch 2.13.0+cu132,
 CUDA 13.2. Native C1 packet mHC uses 128 registers and 29,232 shared bytes.
-GPU numerical, graph replay, component performance and TP4 consumer
-32K/128K quality, acceptance, TTFT and tok/s are pending. C1/C2 is the
+The first GPU component verdict is recorded below; the revised candidate
+and TP4 consumer 32K/128K quality, acceptance, TTFT and tok/s are pending. C1/C2 is the
 current serving shape; any C4 consumer comparison needs a matching declared
 four-request capacity in both arms.
 
 The GPU component reservation is `fixedkgpu-0917`, pinned to `18e14162`.
-It waits in the shared fleet queue; no GPU result is inferred from admission.
+It completed successfully; numerical qualification and performance are separate below.
 The subsequent proof-only changes expose and require actual target execution
 in `ST_NATIVE_EXECUTION.fixed_k_cost`. The compile artifact records its own
 source and native binary hashes.

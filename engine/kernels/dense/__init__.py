@@ -14,6 +14,16 @@ import torch
 from engine.kernels.cells import DENSE_ALIGN, DENSE_KMAX, dense_glue_refusal
 
 
+def flags_for(target=None):
+    """The dense module's nvcc flags for a (major, minor) capability, the fleet's when unset: what `build`
+    compiles with, and what a compile gate without a device reports (probes/engine_decode_native_compile.py)."""
+    from engine.kernels import arch
+    return ["-O2", *arch.gencode(target or arch.FLEET),
+            "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
+            "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
+            "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
+
+
 @cache
 def build(target=None):
     """Compile the dense lane's module when its key is new, and load it. No device is touched, so the fleet boot
@@ -25,12 +35,8 @@ def build(target=None):
     already reads the shape to judge what it probed, so the decision belongs there."""
     from torch.utils.cpp_extension import load
     from engine.kernels.common.native_cache import prepare_cuda_sources
-    from engine.kernels import arch
     source = Path(__file__).with_name("kernels.cu")
-    flags = ["-O2", *arch.gencode(target or arch.FLEET),
-             "-DMK_GRID_DEF=96", "-DMK_MHC_GRID_DEF=144", "-DMK_NBUF2_DEF=3",
-             "-DMK_FP8_PACK2_DEF=1", "-DMK_GEMM_TRANSPOSE_M8_DEF=1",
-             "-DMK_GEMM_COMPACT_M8_DEF=1", "-DMK_M8_FASTPATH_DEF=1"]
+    flags = flags_for(target)
     root = Path(os.environ.get("ST_DENSE_BUILD_ROOT", str(Path.home()/".cache/st/dense")))
     key, directory, sources = prepare_cuda_sources(root, [source], (flags, torch.__version__, torch.version.cuda))
     return load(name="st_dense_"+key, sources=list(sources), extra_cuda_cflags=flags,

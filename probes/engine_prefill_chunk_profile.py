@@ -12,6 +12,15 @@ the kernels:
      size says which kernel carries it.
   2. decode: the captured graph replayed at 1..4 rows of K+1 tokens, and one eager step per width with the
      router counted, so the step time can be read against the unique experts it streams.
+  3. threads (2026-09-16, the C=2 architecture question): the same C=2 step as one 16-row batch against the same
+     step run as two 8-row request threads on one stream -- `execution.decode_overlap` with (0,1),(1,2) groups
+     (attention and FFN sides both split) and a variant that splits the attention side only (the FFN side stays
+     one batch: one gate/up pass, one MoE over the union, one exchange). On one rank the exchanges are the
+     identity, so what these arms price is the PENALTY side of the split: dense weights read once per group
+     (whether L2 keeps them between the two groups' same GEMM), the MoE run per group (each group's own union of
+     experts against the batch's), the launches doubled. What the split would HIDE -- the packet flight, ~35 us
+     of wire per 128 KiB exchange -- is the fleet's number, not this rank's. The 8-row step alone is timed beside
+     them: twice it, against the 16-row batch, is what two step-decoupled threads pay before hiding anything.
 
     bash probes/run_engine_probe.sh probes/engine_prefill_chunk_profile.py
     bash probes/run_engine_probe.sh probes/engine_prefill_chunk_profile.py --chunk 2304,9216 --tokens 18432
@@ -23,6 +32,7 @@ mHC/norm lanes run on every row instead of a quarter of them. Shapes and bytes m
 attributes kernel cost, it is not consumer throughput (rule 6 of the ledger).
 """
 import argparse
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import statistics
@@ -33,6 +43,7 @@ from engine.base.instruments import Recorder
 from engine.profiles.glm53 import facts
 from engine.profiles.glm53.boot import build
 from engine.profiles.glm53.decode_graphs import Glm53DecodeGraphs
+from engine.profiles.glm53.execution import Carry, ExecutionPlan, SerialStreams, auxiliary, begin, finish, local, prepare
 from engine.profiles.glm53.lanes import MOE_STATIC_PRODUCTION, served
 from engine.profiles.glm53.net import Step
 from probes.engine_graph_profile import lane_of
@@ -403,6 +414,154 @@ def coexist(net, caches, graphs, ids, ctx0, slots, chunk, lo, hi, samples, dev):
     return out
 
 
+# -- 3. threads: the C=2 step as two request threads (the 2026-09-16 C=2 architecture question) ----------------
+@dataclass(frozen=True)
+class ThreadPlan(ExecutionPlan):
+    """Two requests of K+1 rows as two groups; every other width keeps its batch (C=1 stays C=1)."""
+    def groups(self, sequences):
+        if sequences <= 0:
+            raise ValueError("a decode group must contain a request")
+        return ((0, 1), (1, 2)) if self.overlap and sequences == 2 else ((0, sequences),)
+
+
+def _slice_carry(c, a, b, t):
+    """Rows [a*t, b*t) of a joint carry as one group's carry: row views of its tensors, the group's step and caches."""
+    lo, hi = a * t, b * t
+    for name in ("x", "res", "post", "comb"):
+        v = getattr(c, name)
+        if v is not None and v.shape[0] != c.x.shape[0]:
+            raise ValueError(f"carry.{name} is not row-major over the batch: {tuple(v.shape)}")
+    return Carry(c.step.subset(a, b), c.caches.subset(a, b), c.x[lo:hi], c.res[lo:hi], None,
+                 None if c.post is None else c.post[lo:hi], None if c.comb is None else c.comb[lo:hi])
+
+
+def decode_overlap_attn(net, step, caches, plan, streams, aux_layers=(), aux_ready=None):
+    """S1 with the attention side only split: each request's attention runs and exchanges as its own group, in the
+    fixed group order, and the FFN side stays one batch -- one gate/up pass, one MoE over the union of experts, one
+    exchange. Only the attention-side GEMMs are read per group, back to back, where L2 may still hold them; between
+    the two groups' FFN GEMMs a layer's routed experts would stream (~145 MB/layer at C=2), which no L2 survives.
+    Same signature as execution.decode_overlap; the target graph captures it in its place."""
+    groups = plan.groups(len(step.segments))
+    if len(groups) == 1:
+        return net.forward(step, caches, aux_layers=aux_layers, aux_ready=aux_ready)
+    t = step.segments[0].length                      # the verify width; every decode segment has it
+    j = begin(net, step, caches)
+    aux, features = {}, None
+    try:
+        for layer in net.layers:
+            parts = [_slice_carry(j, a, b, t) for a, b in groups]
+            for c in parts:
+                prepare(net, layer, c, "attn")
+                c.x, c.ready = streams.reduce(net.comm, local(net, layer, c, "attn"))
+            for c in parts:
+                streams.wait(c.ready)
+            j.x, j.res, j.post, j.comb = (torch.cat([getattr(c, k) for c in parts], dim=0)
+                                          for k in ("x", "res", "post", "comb"))
+            prepare(net, layer, j, "ffn")
+            j.x, j.ready = streams.reduce(net.comm, local(net, layer, j, "ffn"))
+            streams.wait(j.ready)
+            if layer in aux_layers:
+                aux[layer] = auxiliary(net, j)
+                if aux_ready is not None and layer == max(aux_layers):
+                    features = torch.cat([aux[l] for l in aux_layers], dim=-1)
+                    aux_ready(features)
+        h = finish(net, j)
+        if aux_layers:
+            return h, features if features is not None else torch.cat([aux[l] for l in aux_layers], dim=-1)
+        return h
+    finally:
+        streams.join()
+
+
+def capture_threads(net, caches, t, aux_layers, variant):
+    """Target graphs (widths 1 and 2) whose 2-row forward runs as two request groups on ONE stream, the exchanges
+    the identity of this rank: 'both' is execution.decode_overlap (attention and FFN sides split), 'attn' is
+    decode_overlap_attn. One stream, as the served packet path would order it -- the reduction side stream that
+    the served overlap arm uses has nothing to carry here."""
+    from engine.profiles.glm53 import execution
+    saved = (execution.CudaStreams, execution.decode_overlap)
+    execution.CudaStreams = SerialStreams
+    if variant == "attn":
+        execution.decode_overlap = decode_overlap_attn
+    elif variant != "both":
+        raise ValueError(f"thread variant is 'both' or 'attn': {variant!r}")
+    try:
+        return Glm53DecodeGraphs(net, caches, 2, t, aux_layers=aux_layers, ceiling=4096,
+                                 execution_plan=ThreadPlan(overlap=True))
+    finally:
+        execution.CudaStreams, execution.decode_overlap = saved
+
+
+def threads(net, caches, control, arms, ids, ctx0, slots, t, samples, output):
+    """The C=2 step: one 16-row batch (the served shape), the same step as two 8-row threads (both sides split,
+    attention side only), and the 8-row step alone -- replay medians, CUPTI tables, chrome-trace exposure, and the
+    routing the batch and each thread stream."""
+    two = Step.decode([(ids[i], ctx0, i, slots[i]) for i in range(2)])
+    one = Step.decode([(ids[0], ctx0, 0, slots[0])])
+    start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+    rows = {}
+    for label, graphs, step in ([("joint16", control, two), ("solo8", control, one)]
+                                + [(name, graphs, two) for name, graphs in arms.items()]):
+        caches.prepare(step)
+        for _ in range(3):
+            graphs.run(step)
+        torch.cuda.synchronize()
+        times = []
+        for _ in range(samples):
+            start.record()
+            graphs.run(step)
+            end.record()
+            end.synchronize()
+            times.append(start.elapsed_time(end))
+        with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+            for _ in range(samples):
+                graphs.run(step)
+            torch.cuda.synchronize()
+        table = kernel_table(prof, samples)
+        trace = Path(output).with_name(f"decode-timeline-{label}.json")
+        trace.parent.mkdir(parents=True, exist_ok=True)
+        prof.export_chrome_trace(str(trace))
+        exposure = trace_exposure(trace_kernels(trace), samples)
+        rows[label] = dict(arm=label, rows=len(step.segments), tokens=step.ids.numel(),
+                           replay_ms_median=statistics.median(times), replay_ms_min=min(times),
+                           kernels=table, timeline=exposure)
+        print(f"threads {label}: {rows[label]['replay_ms_median']:.2f} ms/step (min {rows[label]['replay_ms_min']:.2f})",
+              flush=True)
+        print_table(f"threads {label} kernels", table)
+        print_exposure(f"threads {label} timeline", exposure)
+    # the routing: the union the 16-row batch streams once, against each thread's own union (what a split MoE
+    # streams: the two unions' sum, the shared experts read twice)
+    sels = {}
+    original = net.route
+
+    def counted(L, x, _route=original):
+        sel, w = _route(L, x)
+        sels[L] = sel.detach().clone()
+        return sel, w
+    net.route = counted
+    try:
+        caches.prepare(two)
+        net.forward(two, caches)
+        torch.cuda.synchronize()
+    finally:
+        net.route = original
+    uniq = lambda sel: int(torch.unique(sel).numel())
+    experts = dict(joint=statistics.mean(uniq(s) for s in sels.values()),
+                   thread_a=statistics.mean(uniq(s[:t]) for s in sels.values()),
+                   thread_b=statistics.mean(uniq(s[t:]) for s in sels.values()))
+    experts["threads_sum"] = experts["thread_a"] + experts["thread_b"]
+    T1, T2 = rows["solo8"]["replay_ms_median"], rows["joint16"]["replay_ms_median"]
+    verdict = dict(T1_solo8_ms=T1, T2_joint16_ms=T2,
+                   s1_both_penalty_ms=rows["split_both"]["replay_ms_median"] - T2,
+                   s1_attn_penalty_ms=rows["split_attn"]["replay_ms_median"] - T2,
+                   s2_dense_penalty_ms=2 * T1 - T2,
+                   joint16_gaps_ms=rows["joint16"]["timeline"]["idle_ms"],
+                   launches={k: sum(v["launches"] for v in r["timeline"]["lanes"].values()) for k, r in rows.items()},
+                   unique_experts_per_layer=experts)
+    print("\n  threads verdict: " + json.dumps(verdict), flush=True)
+    return dict(rows=list(rows.values()), verdict=verdict)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     # The queue invokes this with no arguments (bench/fleet_onepass.ST_FLAGS admits --ranks, --ckpt-meta,
@@ -421,14 +580,16 @@ def main():
                     help="sections: decode (rows 1..4), prefill (the chunk sweep), coexist (a chunk beside four decoding rows, "
                          "two streams), moe (one MoE layer's routed experts alone: tokens x resident CTAs, against the traffic model), "
                          "timeline (with decode: the 1- and 4-row replays' chrome traces read for exposed vs hidden time per lane, "
-                         "and every kernel class alone at 7 and 28 rows against its bytes)")
+                         "and every kernel class alone at 7 and 28 rows against its bytes), "
+                         "threads (with decode: the 16-row C=2 step as one batch against two 8-row request threads on one "
+                         "stream, both sides split and attention side only, with the 8-row step alone beside them)")
     ap.add_argument("--output", default="/cache/prefill-chunk-profile.json")
     a = ap.parse_args()
     lanes = {x.strip() for x in a.lanes.split(",") if x.strip()}
-    if not lanes or lanes - {"decode", "prefill", "coexist", "moe", "timeline"}:
-        raise SystemExit(f"--lanes takes decode, prefill, coexist, moe and/or timeline: {a.lanes!r}")
-    if "timeline" in lanes:
-        lanes.add("decode")                          # the timeline reads the decode replays
+    if not lanes or lanes - {"decode", "prefill", "coexist", "moe", "timeline", "threads"}:
+        raise SystemExit(f"--lanes takes decode, prefill, coexist, moe, timeline and/or threads: {a.lanes!r}")
+    if "timeline" in lanes or "threads" in lanes:
+        lanes.add("decode")                          # the timeline and the thread arms read the decode replays
 
     F = facts.load(a.ckpt_meta)
     layers = list(range(F.layers))
@@ -480,6 +641,11 @@ def main():
     aux_layers = tuple(L for L in (5, 14, 24, 33, 42) if L in layers)
     graphs = Glm53DecodeGraphs(net, caches, rows_max, t, aux_layers=aux_layers, ceiling=4096)
     print("decode graphs captured", flush=True)
+    arms = {}
+    if "threads" in lanes:                           # captured now: capture requires no live state slots
+        arms["split_both"] = capture_threads(net, caches, t, aux_layers, "both")
+        arms["split_attn"] = capture_threads(net, caches, t, aux_layers, "attn")
+        print("thread graphs captured: split_both, split_attn", flush=True)
     slots = [caches.slots.take(i) for i in range(rows_max)]
     ctx0 = F.chunk_align
     for i in range(rows_max):
@@ -521,7 +687,7 @@ def main():
         finally:
             net.route = original
         table = None
-        if n in (1, 4):
+        if n in (1, 4) or (n == 2 and "threads" in lanes):
             with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
                 for _ in range(a.samples):
                     graphs.run(step)
@@ -549,6 +715,10 @@ def main():
         result["isolated"] = isolated_kernels(net, F, dev, (t, rows_max * t), a.samples)
     if "coexist" in lanes:
         result["coexist"] = coexist(net, caches, graphs, ids, ctx0, slots, chunks[0], lo, hi, a.samples, dev)
+    if "threads" in lanes:
+        result["threads"] = threads(net, caches, graphs, arms, ids, ctx0, slots, t, a.samples, a.output)
+        for arm in arms.values():
+            arm.graphs.close()
     graphs.graphs.close()                            # its pools go back to the allocator before the long prefills
     for i in range(rows_max):
         caches.pool.release(i)
@@ -627,7 +797,8 @@ def main():
                                       fit=fit,
                                       coexist={k: v for k, v in result["coexist"].items() if k not in ("windows",)}
                                       if "coexist" in result else None,
-                                      isolated=result.get("isolated"))), flush=True)
+                                      isolated=result.get("isolated"),
+                                      threads=result["threads"]["verdict"] if "threads" in result else None)), flush=True)
 
 
 if __name__ == "__main__":

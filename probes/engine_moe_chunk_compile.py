@@ -68,6 +68,9 @@ def main():
             for rows, extra in ((16, dict(c2_fc2_prefetch=False)), (16, dict(c2_fc2_prefetch=False, stamps=True)),
                                 (8, dict(stamps=True)), (16, dict(spec='xa')), (16, dict(spec='xs'))):
                 cases.append(('static', rows, 512, extra))
+            # the l<n> prefetch cells over the 256 chunk, the only storage whose reform box is one contiguous run
+            for rows, cell in ((16, 'l2'), (16, 'l4'), (16, 'l8'), (8, 'l4'), (16, 'lf4'), (8, 'lf4'), (16, 'z'), (8, 'z')):
+                cases.append(('static', rows, 256, dict(spec=cell)))
             # short-prefill static row counts: the t tile at 12 rows, and the M16 reform for every row count
             for chunk in chunks:
                 cases.append(('static', 12, chunk, dict(stamps=False)))
