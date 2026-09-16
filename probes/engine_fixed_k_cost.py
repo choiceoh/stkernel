@@ -29,8 +29,8 @@ def compile_check(report):
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', side_effect=lambda module, name, build, **kw: build()):
             for rows in (8, 16):
-                for cell in ('z', 'zl'):
-                    cfg = md._parse_glm53_static_v2('t,r,sf6,batch,' + cell)
+                for cell in ('scalar', 'vector'):
+                    cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=cell == 'vector')
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8, config=cfg,
                                             mac_override=48, w13_chunk=256,
                                             activation='swigluoai_uninterleave',

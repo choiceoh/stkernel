@@ -58,6 +58,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
 )
 from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_w4a16_fp4_helpers import add_u8x4
+from ._moe_dynamic.gated import load_global_bf16x16_to_f32x16
 from .moe_static_common import (
     _bulk_g2s,
     _bulk_prefetch_l2,
@@ -122,6 +123,7 @@ class MoEStaticKernelV4:
         l2_prefetch_fc1: bool = True,
         bulk_b: bool = False,
         bulk_b_linear: bool = False,
+        input_vec16: bool = False,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -284,6 +286,9 @@ class MoEStaticKernelV4:
         # No expanded shared writes or cross-warp publication are needed.
         self.sf6_registers = bool(sf6_registers and self.compact_staging)
         self.scatter_reuse = bool(scatter_reuse)
+        self.input_vec16 = bool(input_vec16)
+        if self.input_vec16 and sf_vec_size != 16:
+            raise ValueError("vector input loads require complete BF16x16 scale groups")
         if self.scatter_reuse and not (self.direct_scatter and self.sf6_registers
                                        and self.decode_reform and not self.route_scatter):
             raise ValueError("scatter reuse requires the M16 register SF6 atomic output path")
@@ -1477,10 +1482,14 @@ class MoEStaticKernelV4:
                 block_start = sf_idx * Int32(self.sf_vec_size)
                 values = cute.make_rmem_tensor((self.sf_vec_size,), cutlass.Float32)
                 block_max = cutlass.Float32(0.0)
+                if cutlass.const_expr(self.input_vec16):
+                    loaded = load_global_bf16x16_to_f32x16(
+                        get_ptr_as_int64(a_input, token_idx * cols + block_start))
                 for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
-                    value = cutlass.Float32(
-                        a_input[token_idx, block_start + Int32(elem_idx)]
-                    )
+                    if cutlass.const_expr(self.input_vec16):
+                        value = loaded[elem_idx]
+                    else:
+                        value = cutlass.Float32(a_input[token_idx, block_start + Int32(elem_idx)])
                     values[elem_idx] = value
                     block_max = fmax_f32(block_max, fabs_f32(value))
                 scale_byte = Uint8(0)

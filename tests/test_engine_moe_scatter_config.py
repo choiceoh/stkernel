@@ -19,6 +19,19 @@ def namespace():
 
 
 class ScatterConfigTests(unittest.TestCase):
+    def test_vector_input_scope_rollback_and_cache_identity(self):
+        ns = namespace()
+        parse, select, key = (ns[n] for n in ('_parse_glm53_static_v2', '_static_v2_decode_config', '_static_v2_cache_key'))
+        for recipe in ('t,r,sf6,batch', 't,r,sf6', 't'):
+            for rows in (1, 6, 7, 8, 12, 16, 24, 32):
+                cfg = select(parse(recipe), rows)
+                enabled = cfg['decode_reform'] and rows in (8, 16)
+                self.assertEqual(cfg['input_vec16'], enabled)
+                self.assertEqual(select(cfg, rows), cfg)
+                control = select(dict(parse(recipe), input_vec16=False), rows)
+                self.assertFalse(control['input_vec16'])
+                self.assertEqual(key(cfg, m=rows) != key(control, m=rows), enabled)
+
     def test_cache_abi_and_parser_isolation(self):
         ns = namespace()
         base = ns['_parse_glm53_static_v2']('t,r,sf6')
