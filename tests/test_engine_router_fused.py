@@ -44,7 +44,8 @@ class RouterFusedTests(unittest.TestCase):
         for needle in ('#define ST_RT_CTAS 48', '#define ST_RT_PER_CTA 6', '#define ST_RT_TOPK 8',
                        'atomicAdd(ticket, 1u) == gridDim.x - 1', '*ticket = 0u;', '__threadfence();',
                        '__fdiv_rn(1.0f, 1.0f + expf(-v))', '__fdiv_rn(s, sum + 1e-20f) * scale', '__ldcs(',
-                       'ob > best || (ob == best && oe < be)', 'fmaf(g[e].x, a, s)'):
+                       'ob > best || (ob == best && oe < be)', 'fmaf(g[j][e].x, a, s)',
+                       'float4 g[ST_RT_LANE_CHUNKS][ST_RT_PER_CTA];'):
             self.assertIn(needle, src)
         self.assertNotIn('__expf', src)          # the accurate libdevice exp, as Triton's libdevice.exp
         self.assertNotIn('__fdividef', src)

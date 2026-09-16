@@ -80,13 +80,18 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
 #pragma unroll
     for (int t = 0; t < ROWS; ++t) acc[e][t] = 0.f;
   const int kbase = warp * ST_RT_KSLICE + lane * 4;
+  // the warp's whole 12 KB of gate first (24 float4 a lane, evict-first), so every DRAM request of the
+  // launch is in flight before the first product: the first cut (c2rt2-0917) issued them a chunk at a time
+  // behind each chunk's products and streamed at ~100 GB/s
+  float4 g[ST_RT_LANE_CHUNKS][ST_RT_PER_CTA];
+#pragma unroll
+  for (int j = 0; j < ST_RT_LANE_CHUNKS; ++j)
+#pragma unroll
+    for (int e = 0; e < ST_RT_PER_CTA; ++e)
+      g[j][e] = __ldcs(reinterpret_cast<const float4*>(gate + (size_t)(e0 + e) * ST_RT_HIDDEN + kbase + j * 128));
 #pragma unroll
   for (int j = 0; j < ST_RT_LANE_CHUNKS; ++j) {
     const int k = kbase + j * 128;
-    float4 g[ST_RT_PER_CTA];
-#pragma unroll
-    for (int e = 0; e < ST_RT_PER_CTA; ++e)
-      g[e] = __ldcs(reinterpret_cast<const float4*>(gate + (size_t)(e0 + e) * ST_RT_HIDDEN + k));
 #pragma unroll
     for (int t = 0; t < ROWS; ++t) {
       float a = 0.f, b = 0.f, c = 0.f, d = 0.f;
@@ -94,10 +99,10 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
 #pragma unroll
       for (int e = 0; e < ST_RT_PER_CTA; ++e) {
         float s = acc[e][t];
-        s = fmaf(g[e].x, a, s);
-        s = fmaf(g[e].y, b, s);
-        s = fmaf(g[e].z, c, s);
-        s = fmaf(g[e].w, d, s);
+        s = fmaf(g[j][e].x, a, s);
+        s = fmaf(g[j][e].y, b, s);
+        s = fmaf(g[j][e].z, c, s);
+        s = fmaf(g[j][e].w, d, s);
         acc[e][t] = s;
       }
     }
