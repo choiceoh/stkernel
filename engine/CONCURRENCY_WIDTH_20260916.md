@@ -115,6 +115,39 @@ MoE 1.30 과 잘 상각되는 나머지의 가중 평균이 전체 1.72 다. **C
 **이것은 추론이다.** 확정하려면 MoE 캡처를 켠 부팅으로 라우팅 id 를 세야 한다 — 오늘 캠페인은
 head 채널만 켰다(`stats.jsonl`: `"on": {"moe": false, …, "head": true}`), 그래서 `ids/` 가 비었다.
 
+## §4.2 이 기계는 인오더 단일 스트림이다 — 그리고 듀얼 이슈는 C=2 에 없다
+
+CPU 로 치면 상주 CTA 48 이 발행 폭이고, 작업 항목이 μop 이며, 웨이브가 발행 그룹이다(C=1 항목
+≈115 → 3 웨이브, C=2 ≈207 → 5). 부분 발행 낭비도 그대로 있다 — 115/48 = 2.4 인데 3 을 낸다.
+그러나 **이 기계는 발행 폭에 막힌 것이 아니라 채움에 막혀 있다**: 항목 하나가 전문가 가중치 타일을
+HBM 에서 통째로 끌어와 1행을 계산한다(§2). 모든 μop 이 L1 을 놓치고 DRAM 까지 가는 루프를 발행
+폭으로 고칠 수 없는 것과 같다.
+
+중첩은 어떤가. `engine/profiles/glm53/execution.py` 가 첫 문장에서 못박는다:
+
+> *Compute kernels share one stream and their existing workspaces. **Only the TP reduction stream
+> overlaps them**: two C=4 groups execute in the same fixed order on every rank. This is operation
+> scheduling, not concurrent model replays.*
+
+연산 커널은 **스트림 하나에 인오더**다. 듀얼 이슈에 해당하는 장치는 `ExecutionPlan.overlap` 하나뿐이고:
+
+```python
+def groups(self, sequences):
+    return ((0, 2), (2, 4)) if self.overlap and sequences == 4 else ((0, sequences),)
+```
+
+배치를 둘로 쪼개 한 그룹의 집합통신을 다른 그룹의 연산 밑에 숨긴다. 세 가지가 걸린다:
+
+1. **`sequences == 4` 에서만 정의된다.** C=2 에는 경로 자체가 없다.
+2. **꺼져 있다** (`tp_overlap=0`).
+3. **이미 채택한 둘과 상호배타다** — `direct_mhc`(프로덕션 1)와 `deferred_kda`(#937 기본값 on,
+   `deferred_kda_workspace_bytes` 가 비어 있지 않다)가 각각 `overlap` 과 함께 `ValueError` 를 낸다:
+   전자는 쪼개지 않은 같은 스트림 집합통신을, 후자는 쪼개지 않은 타깃 행과 단일 커밋을 요구한다.
+
+**그리고 C=2 에서는 이 수법이 원리적으로 손해다.** 그룹이 (0,1),(1,2) 로 갈리면 각 그룹이 자기
+전문가 집합을 따로 적재하므로, §2 의 비용식에서 distinct 가 두 번 계산된다. C=2 가 안 늘어나는 바로
+그 성질이 **중첩도 막는다.** 통신을 숨겨 버는 것보다 전문가를 두 번 읽어 잃는 것이 크다.
+
 ## §5 남는 것 — 무엇을 바꿔야 폭이 값을 하는가
 
 전부 **라우팅을 바꾸는** 쪽이다. 순서는 값/비용이다.
