@@ -32,6 +32,13 @@ FORENSICS=${ST_FORENSICS:-/home/choiceoh/glm53-logs/st-forensics}
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}   # the queue's files; its activity clock lives here (bench/fleet_idle.py)
 RESTORE_GRACE=${ST_RESTORE_GRACE_S:-}      # set: a constant grace. Unset: the queue's own pace (restore-grace.json + window.json), floor 300
 LOOP_SLEEP=${ST_SUPERVISOR_SLEEP:-30}; BOOT_POLL=${ST_BOOT_POLL:-15}; MAX_LOOPS=${ST_SUPERVISOR_LOOPS:-0}   # tests shorten and bound the loop
+# A boot starts with an empty prefix cache, and nothing has ever filled it: `/v1/prefix/warm` and
+# probes/st_prefix_warm.py have existed all along with no caller. Every relaunch -- three on
+# 2026-09-16 -- made the first conversation prefill the prompt every conversation shares.
+# One JSONL line per request body ({"messages": [...]}, {"prompt": ...} or {"ids": [...]}).
+# Pinned, so `_victim` keeps them behind everything else until /v1/prefix/unpin. Missing file: skip.
+WARM_FILE=${ST_WARM_FILE-/home/choiceoh/glm53-logs/st-warm.jsonl}   # `:-` would read ST_WARM_FILE= as unset; empty is off
+WARM_TIMEOUT=${ST_WARM_TIMEOUT:-600}
 log(){ echo "$(date '+%F %T') $*"; }
 SELF_IPS=" $(hostname -I 2>/dev/null) "                 # this loop runs on rank 0's node, which cannot ssh to itself
 node_sh(){ local ip=$1; shift
@@ -110,12 +117,27 @@ except Exception:
 print(max(grace, window, 300))
 PY
 }
+warm_cache(){  # <what>: fill the prefix cache the boot started empty, after health and never before it
+  [ -n "$WARM_FILE" ] && [ -f "$WARM_FILE" ] || return 0
+  local what=$1 out rc=0
+  # Never a boot failure. The fleet is already healthy by the time this runs; a cache that did not
+  # warm is slower, not broken, and a warm that hangs must not hold the supervisor's loop.
+  out=$(timeout "$WARM_TIMEOUT" python3 "$REPO/probes/st_prefix_warm.py" "$WARM_FILE" --url "$BASE" --pin --timeout "$WARM_TIMEOUT" 2>&1) || rc=$?
+  out=$(echo "$out" | tail -1 | sed 's/^ *//')
+  if [ "$rc" = 0 ]; then
+    log "$what: prefix cache warmed -- $out"
+  else
+    log "$what: prefix warm did not finish (rc=$rc): $out"
+  fi
+  return 0
+}
+
 wait_for_health(){  # <what>: the door, then a real chat -- a listening door is not health (the file's first line)
   local what=$1 waited=0 door_seen=0
   while [ "$waited" -lt "$BOOT_GRACE" ]; do
     if door_up; then
       [ "$door_seen" = 1 ] || { door_seen=1; log "$what: door up after ${waited}s"; }
-      if chat_ok; then log "$what: healthy after ${waited}s (a chat answered)"; fails=0; return 0; fi
+      if chat_ok; then log "$what: healthy after ${waited}s (a chat answered)"; fails=0; warm_cache "$what"; return 0; fi
     fi
     containers_up || { log "$what: a rank died during boot"; forensics; return 1; }
     sleep "$BOOT_POLL"; waited=$((waited+BOOT_POLL))

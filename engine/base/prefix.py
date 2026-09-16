@@ -209,19 +209,38 @@ class PrefixCache:
         return self.tier_lookup_chain(self.chain(ids, salts), len(ids), above)
 
     def is_leaf(self, h: bytes) -> bool:
-        """No cached boundary one block longer extends this one. Only leaves go to the tier -- a restored leaf brings
-        every block of its chain back, an inner boundary would bring the same ones. Kept as a count at insert/evict:
-        the runner asks every step, and a scan of 96 entries' block lists per step is a decode-step's worth of host time."""
+        """No cached boundary one block longer extends this one. Kept as a count at insert/evict: the runner asks
+        every step, and a scan of 96 entries' block lists per step is a decode-step's worth of host time."""
         return self.entries[h].children == 0
 
     def spill_candidates(self, count: int) -> "list[bytes]":
-        """Up to `count` leaves in eviction order that have no copy on the tier yet: what to write ahead of need."""
+        """Up to `count` boundaries in eviction order that have no copy on the tier yet: what to write ahead of need.
+
+        A LEAF, or an inner boundary SOMETHING ELSE HAS ADOPTED. Leaves alone were the rule until
+        2026-09-16, and the reason given was blocks: a restored leaf brings every block of its chain
+        back and an inner boundary would bring the same ones. True, and beside the point -- the
+        scarce thing is the snapshot (production: `snapshot_denials` 0, `kv_blocks_cached` 111 of
+        1,398, `snapshot_self_evicts` 258), and a chain that DIVERGES from this one cannot use the
+        leaf at all. It needs the state where the two part, which is an inner boundary.
+
+        The boundary every conversation shares is exactly that: a system prompt stops being a leaf
+        the moment anyone writes past it, so under the old rule the most-adopted boundary in the
+        cache was the one thing that could never reach the disk. `_victim` already keeps it longest
+        in memory ("one long prompt's forty fresh boundaries cannot flush the system prompt every
+        conversation shares") -- and then a relaunch took it anyway, three times on 09-16.
+
+        `hits` is the test because it is the one the cache already keeps: an entry is adopted by
+        `lookup_chain`, so hits > 0 means another prompt really did start here. That bounds the
+        duplication to boundaries that have paid for it.
+        """
         order = sorted(self.entries, key=lambda h: (self.entries[h].pinned, self.entries[h].hits > 0, self.entries[h].used))
         out = []
         for h in order:
             e = self.entries[h]
-            if e.spilled or e.spilling or e.spill_failed or e.transient or not self.is_leaf(h):
+            if e.spilled or e.spilling or e.spill_failed or e.transient:
                 continue
+            if not self.is_leaf(h) and not e.hits:
+                continue                            # an inner boundary nobody has started from yet is the leaf's blocks again
             out.append(h)
             if len(out) >= count:
                 break
