@@ -4006,7 +4006,8 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
   torch::Tensor packed;
   if (producer_q) {
     // The KDA output norm wrote this CTA's wide pack beside x (mk_run_gemm_bound_input checked its layout).
-    TORCH_CHECK(direct && k == 2048 && producer_s, "only the sixteen-row KDA output reads a producer pack");
+    TORCH_CHECK(producer_s && ((direct && k == 2048) || (!direct && k == 4096 && n == 6416)),
+                "only the sixteen-row KDA input or output reads a producer pack");
     c.input_q = producer_q;
     c.input_s = producer_s;
   } else {

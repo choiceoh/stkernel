@@ -215,6 +215,37 @@ def mla_check(report):
                 for graph in graphs:
                     graph.reset()
 
+    # The wider tile has a different register/latency balance. Compare bounded
+    # split plans before selecting one from the shape, never from host-read lengths.
+    rows = 8
+    for rows in (8, 16):
+        q = torch.randn(rows, 16, 512, device='cuda', dtype=torch.bfloat16)
+        slots = torch.randint(32768, (rows, 2048), device='cuda', dtype=torch.int32)
+        lens = torch.full((rows,), 2048, device='cuda', dtype=torch.int32)
+        base = mla.mla_splits(rows)
+        graphs, outputs = [], []
+        plans = [(False, 16, base)] + [(True, 32, splits) for splits in (3, 6, 8, 12, 16, 24)]
+        try:
+            for enabled, tile, splits in plans:
+                def plan_call():
+                    with patch.object(mla, 'MLA_DECODE_TILE', tile):
+                        return call(enabled, q, cache, slots, lens, 512**-.5, 1., splits=splits)
+                graph, out = _capture(plan_call)
+                graphs.append(graph); outputs.append(out)
+            for case in ('full', 'short'):
+                lens.fill_(2048 if case == 'full' else 33)
+                ref = mla.mla_decode_ref(q, cache, slots, lens, 512**-.5, 1.)
+                for out, graph in zip(outputs, graphs):
+                    out.fill_(float('nan')); graph.replay()
+                    if not out.isfinite().all().item() or mla._rel_err(out, ref) > .02:
+                        raise AssertionError('MLA split plan failed the independent reference')
+                for i, (_, tile, splits) in enumerate(plans[1:], 1):
+                    timings(report, 'mla_split_plan', [graphs[0], graphs[i]], rows=rows, case=case,
+                            tile=tile, splits=splits, control_splits=base)
+        finally:
+            for graph in graphs:
+                graph.reset()
+
 
 def run(output=None, ranks=None, *, compile_only=False):
     records = []
