@@ -821,7 +821,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
                     if DRAFT_FC_CAPTURE or DRAFT_FC_CAPTURE_WHEN_MISSING:
-                        from .draft_fc_capture import retain_source
+                        from engine.profiles.glm53.draft_fc_capture import retain_source
                         retain_source(drafter)
                     with recorder.phase("drafter packs"):
                         drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena,
