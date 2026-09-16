@@ -41,11 +41,15 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 IMAGE=${ST_IMAGE:-${IMAGE:-st-engine:glm53}}
 PORT=${PORT:-8000}
-KV_ARG=""
-if [ -n "${ST_KV_GIB:-}" ]; then
-  [[ "$ST_KV_GIB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "ST_KV_GIB must be a positive GiB byte budget" >&2; exit 2; }
-  KV_ARG="--kv-gib $ST_KV_GIB"
-fi
+# The paged KV budget this fleet serves on. boot.py's own default is 24.0 -- vLLM parity for a
+# single-box comparison (28th) -- and production had been running 7.0 from a hand-edited env file
+# with no ledger entry behind it. 14.0 is the value measured on 2026-09-16: 2,987 blocks, declared
+# paged KV 13.16 GiB, unassigned +19.59 GiB, booted in 135 s on the first attempt. It is here and
+# not in that env file because production shape that lives only on the box does not survive --
+# the deploy relaunches from the tree, and the tree is this.
+KV_GIB=${ST_KV_GIB:-14.0}
+[[ "$KV_GIB" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "ST_KV_GIB must be a positive GiB byte budget" >&2; exit 2; }
+KV_ARG="--kv-gib $KV_GIB"
 # The runtime workspace ceiling (engine/profiles/glm53/budget.WORKSPACE_GIB) is what admission asks each node for on
 # top of the arena. A shape that spends more than the profile's ceiling raises it here, and says so in its ledger.
 WORKSPACE_ARG=""

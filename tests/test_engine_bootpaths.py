@@ -169,6 +169,21 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(self._tier_arg(env), want, env)
         self.assertIn("--drafter-dir $DRAFTER $TIER_ARG --dump-dir $DUMP_DIR", self.text)
 
+    def test_the_kv_budget_production_serves_on_is_in_the_tree_not_on_the_box(self):
+        """Production's KV came from a hand-edited env file. The deploy relaunches from the tree.
+
+        14.0 is what 2026-09-16 measured: 2,987 blocks, declared paged KV 13.16 GiB, unassigned
+        +19.59 GiB, door up in 135 s on the first attempt (PR #1042). boot.py's own 24.0 is the
+        vLLM-parity default for a single box, not this fleet's shape.
+        """
+        self.assertIn("KV_GIB=${ST_KV_GIB:-14.0}", self.text)
+        kv = '$KV_GIB"'
+        for env, want in (({}, "--kv-gib 14.0"), ({"ST_KV_GIB": "7.0"}, "--kv-gib 7.0")):
+            self.assertEqual(self._launcher_var("KV_ARG", "KV_GIB=${ST_KV_GIB", kv, env), want, env)
+        # a budget that is not a number is a refusal, not a `--kv-gib` the boot has to parse
+        self.assertEqual(self._launcher_var("KV_ARG", "KV_GIB=${ST_KV_GIB", kv,
+                                            {"ST_KV_GIB": "lots"}, check=False), ("", 2))
+
     def test_a_tier_off_the_one_mounted_directory_is_refused_not_quietly_made_ephemeral(self):
         """A tier the containers cannot see boots fine and throws everything away with the container.
 
@@ -203,21 +218,25 @@ class LauncherTests(unittest.TestCase):
                                stdout=run.stdout.decode(errors="replace"),
                                stderr=run.stderr.decode(errors="replace"))
 
-    def _tier_arg(self, env, check=True):
+    def _launcher_var(self, var, first, last, env, check=True):
+        """Run the launcher block from `first` through `last`, and print what it set `var` to."""
         # A `bash` that does not inherit the environment cannot answer these (Windows resolves the
         # name to WSL's, which starts a fresh Linux environment). Skip rather than read its default
-        # as an answer -- every case would come back as the default and two of them would "pass".
-        if self._bash('printf %s "$ST_TIER_DIR"\n', {**os.environ, "ST_TIER_DIR": "reached"}).stdout \
+        # as an answer -- every case would come back as the default and some would "pass".
+        if self._bash('printf %s "$ST_PROBE"\n', {**os.environ, "ST_PROBE": "reached"}).stdout \
                 != "reached":
             self.skipTest("this box's `bash` does not inherit the environment")
-        start = self.text.index("MOUNTED_ROOT=")
-        block = self.text[start:self.text.index("esac", start) + len("esac")]
-        run = self._bash(block + '\nprintf %s "$TIER_ARG"\n',
-                         {**os.environ, **{"ST_TIER_DIR": ""}, **env})
+        start = self.text.index(first)
+        block = self.text[start:self.text.index(last, start) + len(last)]
+        blank = {name: "" for name in ("ST_TIER_DIR", "ST_KV_GIB")}  # unset, whatever ran the suite
+        run = self._bash(block + '\nprintf %%s "$%s"\n' % var, {**os.environ, **blank, **env})
         if not check:
             return run.stdout, run.returncode
         self.assertEqual(run.returncode, 0, run.stderr)
         return run.stdout
+
+    def _tier_arg(self, env, check=True):
+        return self._launcher_var("TIER_ARG", "MOUNTED_ROOT=", "esac", env, check)
 
     def test_a_node_that_fails_stops_the_rest(self):
         self.assertIn('failed="$failed $r"', self.text)

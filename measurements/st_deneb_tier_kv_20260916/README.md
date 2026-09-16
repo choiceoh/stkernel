@@ -77,13 +77,32 @@ absent on the host -- it only ever existed inside the container
 그리고 컨테이너와 함께 전부 버려진다. 실패가 아니라 조용한 무효다. 플릿 리스도
 `~/st-fleet.lock` 에서 같은 것을 한 번 겪었다(런처 주석).
 
-## 5. 조치 2 — 리포로 옮기고, 마운트 밖은 거부한다 (이 PR)
+## 5. 조치 2 — 리포에 고정한다 (이 PR)
 
-- `launchers/start-st-glm53.sh` 의 기본값을 `off` → **`$MOUNTED_ROOT/st-tier`** 로.
-  프로덕션 env 파일은 더 이상 티어를 켜는 유일한 스위치가 아니다.
-- `MOUNTED_ROOT=/home/choiceoh/glm53-logs` 를 두고, `off` 도 아니고 그 아래도 아닌
-  `ST_TIER_DIR` 는 **거부한다**(exit 2). 위 4 절을 두 번 겪지 않기 위해서다.
+운영자: "고정해야지."
+
+프로덕션의 모양이 **상자 위에만** 있으면 살아남지 못한다. 오늘 하루에 세 번 그랬다 —
+09-15 에 손으로 고친 배포 트리의 런처, 6 절의 낡은 env 를 든 배포 사이클, 그리고 4 절의
+잘못된 경로. 배포는 트리에서 다시 올리고, 트리는 이 리포다.
+
+- **티어.** `launchers/start-st-glm53.sh` 기본값 `off` → **`$MOUNTED_ROOT/st-tier`**.
+  `off` 는 이제 끄는 말이지 기본값이 아니다.
+- **마운트 가드.** `MOUNTED_ROOT=/home/choiceoh/glm53-logs` 를 두고, `off` 도 아니고 그
+  아래도 아닌 `ST_TIER_DIR` 는 **거부한다**(exit 2). 4 절을 두 번 겪지 않기 위해서다.
+- **KV.** `KV_GIB=${ST_KV_GIB:-14.0}`. 전에는 env 에 값이 없으면 `--kv-gib` 를 아예 안
+  넘겨 boot.py 의 24.0(vLLM 동수 비교용 단일 상자 기본값)으로 갔다. 프로덕션이 쓰던
+  7.0 은 **원장 항목 없이 env 에 손으로 박혀 있던 값**이다. 14.0 은 3 절에서 실제로 잰
+  값이다. 숫자가 아닌 `ST_KV_GIB` 는 이제 거부한다(전에는 빈 값과 구분이 없었다).
 - `bench/st_bracket.sh` 의 팔별 티어는 `$LOGD/st-bracket-tier/...` 로 이미 그 아래다.
+
+Git Bash 로 직접 확인한 경우들:
+
+| `ST_TIER_DIR` | | `ST_KV_GIB` | |
+|---|---|---|---|
+| (없음) | `--tier-dir $LOGD/st-tier` | (없음/빈 값) | `--kv-gib 14.0` |
+| `off` | `--tier-dir=` | `7.0` / `24` | 그대로 통과 |
+| `$LOGD/st-bracket-tier/x-base` | 통과 | `lots` / `-3` | exit 2 |
+| `~/st-tier`, `$LOGD` 자신, `/tmp/tier`, `off2`, `relative/tier` | exit 2 | | |
 
 ## 6. 지금 프로덕션의 상태 — 다시 티어 off 다
 
@@ -95,10 +114,19 @@ absent on the host -- it only ever existed inside the container
 ```
 
 그래서 11:09:52 부터 프로덕션은 **KV 7.0 · 티어 off** 다. 3 절의 상태는 약 3 분
-살았다. env 파일에는 지금도 `ST_KV_GIB=14.0` 이 있고 `ST_TIER_DIR` 는 **4 절의 잘못된
-경로**(`/home/choiceoh/st-tier`)라, 이 PR 이 배포되기 전에 다음 런치가 일어나면 그
-런치는 새 가드에 걸려 거부된다 — env 의 값을 `/home/choiceoh/glm53-logs/st-tier` 로
-고치거나 아예 지워야 한다(지우면 리포 기본값이 답이 된다).
+살았다.
+
+env 파일의 두 줄은 이 PR 이 배포되면 **없어도 되는 값**이다. 그리고 `ST_TIER_DIR` 는
+아직 4 절의 잘못된 경로라 **그대로 두면 새 가드에 걸려 런치가 거부된다.** 지우는 것이
+맞다:
+
+```bash
+cp ~/.config/st-glm53.env ~/.config/st-glm53.env.bak-20260916-pin   && sed -i '/^ST_TIER_DIR=/d; /^ST_KV_GIB=/d' ~/.config/st-glm53.env
+```
+
+지우는 순간부터, 배포된 트리가 아직 옛 런처라면 티어 off · KV 24.0 이고(옛 런처는
+`--kv-gib` 를 안 넘긴다), 이 PR 이 배포된 뒤라면 티어 on · KV 14.0 이다. 그러니 **이
+PR 이 배포된 뒤에** 지우는 편이 낫다.
 
 ## 7. 미측정
 
