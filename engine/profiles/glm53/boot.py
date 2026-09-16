@@ -611,7 +611,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if execution == "native":
         from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration
         from engine.kernels.dense.store import PackStore
-        store = PackStore("/cache", comm.rank)
+        store = PackStore("/cache", comm.rank, weights_id=F.weight_layout)
         calib_plan = []                                   # (module, weight key, missing tiles, small rows, committed decode rows only)
         if D:
             recorder.gauge('draft_policy_requested', draft_policy.label())
@@ -852,6 +852,14 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 dense_layers = list(net.dense.values()) + (list(drafter.dense.values()) if D else [])
                 engine.pack_stats["fp8_gptq"] = sum(1 for layer in dense_layers if getattr(getattr(layer, "fp8", layer), "calibrated", False))
                 engine.pack_stats["smoothed"] = sum(1 for layer in dense_layers if getattr(layer, "smooth", None) is not None)
+                # Blobs whose Hessian was summed under other weights: refused, so those packs rounded to nearest
+                # (kernels/dense/store.fits_weights). Not an error -- a boot that changed checkpoints must re-sum --
+                # but it must be visible, because the alternative is a silently worse pack than RTN.
+                engine.pack_stats["calibration_foreign"] = len(store.foreign)
+                if store.foreign:
+                    print(f"  calibration: rank {comm.rank} refused {len(store.foreign)} blob(s) summed under other "
+                          f"weights (this boot serves {F.weight_layout}) -- those packs are RTN until it re-sums",
+                          flush=True)
             engine.prefill_chunk = sched.chunk_for(contract.chunk_align, contract.token_budget, contract.draft_slots)
         # Per-rank GPTQ/calibration caches can take very different times to
         # prepare. A fast rank used to enqueue the memory vote while a peer
@@ -1596,6 +1604,7 @@ def fleet(a) -> int:
                             "packs": f"gptq {engine.pack_stats.get('gptq', 0)} rtn {engine.pack_stats.get('rtn', 0)}",   # what the store built or read
                             "fp8_gptq": str(engine.pack_stats.get("fp8_gptq", 0)),                             # FP8 lane weights GPTQ'd on their grid
                             "smoothed": str(engine.pack_stats.get("smoothed", 0)),                             # inputs' channel smoothing folded into their norms
+                            "calibration_foreign": str(engine.pack_stats.get("calibration_foreign", 0)),       # blobs refused: summed under other weights
                             "calibration": engine.calibration.status() if engine.calibration is not None else "complete",
                             "dense_w4a16_guard_rows": str(cfg["GLM53_DENSE_W4A16_GUARD_ROWS"])}
         # A stale tier under one rank diverges the ranks (45th 21), and a fleet that split mid-step leaves

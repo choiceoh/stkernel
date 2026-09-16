@@ -266,7 +266,8 @@ class Glm53Engine:
         if c.progress() < ROWS_FLOOR:
             print(f"  calibration: rank {self.net.comm.rank} not filed -- {c.status()} (fewer than {ROWS_FLOOR} rows)", flush=True)
             return None
-        written = c.save(root or self.calibration_root, self.net.comm.rank)
+        written = c.save(root or self.calibration_root, self.net.comm.rank,
+                         weights_id=getattr(self.net, 'weight_layout', None))
         self.lane_info["calibration"] = "filed"
         return written
 

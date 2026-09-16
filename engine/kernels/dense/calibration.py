@@ -176,10 +176,14 @@ class Calibration:
     def complete(self, target: int = ROWS_TARGET) -> bool:
         return bool(self.rows) and self.progress() >= target
 
-    def save(self, root: "str | Path", rank: int) -> "list[Path]":
+    def save(self, root: "str | Path", rank: int, weights_id=None) -> "list[Path]":
         """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack
         left, through a temporary file. A tile summed for its peaks alone keeps the Hessian the store already had,
-        and its token count with it: only the peaks are this boot's."""
+        and its token count with it: only the peaks are this boot's.
+
+        `weights_id` names the weights this boot served, and travels with the Hessian so a later boot can tell
+        whether the sum describes its own inputs (`store.fits_weights`). A tile that keeps an older Hessian keeps
+        that Hessian's id too -- the field describes the sum, not the boot that last touched the file."""
         self.flush()
         written = []
         back = {}                                                          # blob key -> the s to undo (H -> s H s, amax -> amax * s)
@@ -200,16 +204,20 @@ class Calibration:
                     continue                                               # its blob went away under us: a later boot sums the whole thing
                 blob = torch.load(path, map_location="cpu", weights_only=True)
                 H, ntok = blob["H"].float(), int(blob["ntok"])
+                sum_id = blob.get("weights_id")            # the retained Hessian's own provenance, not this boot's
             else:
                 H, ntok = H.detach().float(), int(self.rows[key])
                 if s is not None:
                     H = (H * s[:, None]) * s[None, :]
+                sum_id = weights_id
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = path.with_suffix(f".{os.getpid()}.tmp")            # a boot that dies mid-write leaves the old blob, not a truncated one
             try:
                 blob = {"H": H.cpu().contiguous(), "amax": amax.cpu().contiguous(), "ntok": ntok, "name": key}
                 if key in self.input_scopes:
                     blob['input_scope'] = self.input_scopes[key]
+                if sum_id is not None:
+                    blob['weights_id'] = sum_id
                 torch.save(blob, temporary)
                 os.replace(temporary, path)
             finally:
