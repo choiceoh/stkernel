@@ -3707,3 +3707,18 @@ onepass·수용률·step/s·품질은 재지 않았다. D17 대로 속도 주장
 - **값.** 루틴 측정에서 128K 문맥 하나와 C=N 팔 하나가 빠진다. 09-16 프로브가 문을 잡고 돈 구간이 C1 → C2-2000 → C2-32000 이었고, 그중 뒤의 둘이 사라진다.
 - **검증.** CPU 14 테스트(프로필 둘, 모르는 이름의 거절, round-trip 과 `custom`, 정체성에 든 C=N, 기록의 이름, 판사의 같음·다름·이름 없음, 프로필별 세기, `NO BASE`, 그리고 onepass·bracket 배선). `test_fleet_st_bracket` 의 기록 픽스처에 프로필을 넣었다 — 그 시험들은 floor 와 delta 를 보는 것이지 워크로드 정체성을 보는 것이 아니다.
 - **미측정.** 실제 브래킷·프로브. 첫 `default` 샘플이 쌓이기까지 base 부팅 한 번씩.
+### 접두사 적중 17/100 은 용량이 아니었다 — 둘 곳이 없었다 (2026-09-16, srv2 프로덕션, PR #1042)
+
+- **실측(라이브 카운터, 티어 off · `ST_KV_GIB=7.0`).** `prefix_cache_queries_total` **100**, `prefix_cache_hits_total` **17**, `prefix_cache_evictions_total` **1,144**, `prefix_tier_entries` **0**, `gpu_cache_usage_perc` **3.0 %**. 그때까지 처리한 요청 91.
+  - **블록의 97 % 가 비어 있는데 축출이 1,144 번**이다. 용량 문제가 아니다. 요청당 1,144 ÷ 91 ≈ **12.6 개의 경계**가 버려졌다.
+- **원인.** `engine/base/serve.py:2711` — `if self.runner.tiered is None: self._idle_order[row] = None; return`. 티어가 없으면 끝난 턴은 대화로 등록되지 않고, 그 행이 회수될 때 경계가 같이 사라진다. 계산은 다 해 놓고 둘 곳이 없어서 버린다.
+  - 티어는 09-15 에 랭크 간 발산으로 껐다(그날의 항목). 그 발산의 원인인 key 단위 화해(`Server._reconcile_parked`, #837)는 그 뒤 main 에 들어와 있고, 네 노드의 `~/glm53-logs/st-tier` 는 비어 있다(발산 사본은 옆에 `st-tier.diverged-0915`, 769M).
+- **조치 1 — 프로덕션 env(리포 밖).** `ST_TIER_DIR` 를 주고 `ST_KV_GIB` 7.0 → **14.0**(백업 `~/.config/st-glm53.env.bak-20260916-tier`). 11:04 부팅이 **한 번에** 붙었다 — `door up after 135s`, `healthy after 135s (a chat answered)`.
+  - `kv_blocks_total` 1,398 → **2,987**, declared paged KV 6.16 → **13.16 GiB**, unassigned +27.10 → +19.59 GiB, prefix 스냅샷 예산 4.25(untiered) → 2.12 GiB(tiered).
+  - 티어도 살아서 보고했다: `0 conversations parked from before, 0.0 GiB of 64 GiB` / `0 prefix boundaries parked from before, 0.0 GiB of 16 GiB`. 약 3,000 토큰짜리 공유 접두사로 `hits` **0 → 1**, `evictions` 0.
+- **그런데 그 티어는 컨테이너 안에 있었다.** 준 경로는 `~/st-tier` 인데 랭크 컨테이너가 바인드하는 호스트 디렉터리는 **`/home/choiceoh/glm53-logs` 하나뿐**이다. 그 밖의 경로는 컨테이너의 writable layer 에 생긴다 — **부팅은 성공하고, 티어는 살아 있다고 보고하고, 그 부팅 안에서는 재사용까지 되고**, 컨테이너와 함께 전부 사라진다. 호스트 네 노드 어디에도 `~/st-tier` 는 없다. 실패가 아니라 조용한 무효다. 플릿 리스가 `~/st-fleet.lock` 에서 이미 겪었다.
+- **조치 2 — 리포로(이 PR).** 런처 기본값 `off` → `$MOUNTED_ROOT/st-tier`(`MOUNTED_ROOT=/home/choiceoh/glm53-logs`). `off` 는 이제 끄는 말이지 기본값이 아니다. 그리고 `off` 도 아니고 그 아래도 아닌 `ST_TIER_DIR` 는 **거부한다**(exit 2). 브래킷의 팔별 티어(`$LOGD/st-bracket-tier/...`)는 그 아래라 그대로다.
+- **지금 프로덕션.** 11:09:34 에 `st-deploy-watch` 가 4347fe9d 를 배포하며 플릿을 다시 올렸고, 그 사이클은 env 를 고치기 전에 시작했으므로 배포 트리의 기본값(`--kv-gib 7.0 ... --tier-dir=`)으로 갔다. **11:09:52 부터 다시 티어 off · KV 7.0** 이다. 조치 1 의 상태는 약 3 분 살았다.
+  - env 파일의 `ST_TIER_DIR` 는 아직 잘못된 경로라, 이 PR 이 배포되기 전의 다음 런치는 새 가드에 걸린다. `/home/choiceoh/glm53-logs/st-tier` 로 고치거나 지워야 한다(지우면 리포 기본값이 답이 된다).
+- **검증.** 런처 스니펫 여덟 경우(기본·`off`·브래킷 경로·마운트 밖 다섯)를 Git Bash 로 직접 확인. 스니펫 테스트는 환경을 상속하지 않는 `bash` 에서는 **스킵**한다 — 윈도우의 `bash` 는 WSL 이라 여덟 경우가 전부 기본값으로 돌아오고 그중 둘은 그대로 "통과"했을 것이다. `test_engine_bootpaths` 8 통과(2 스킵); `test_st_bracket_tier_drop` 의 실패 집합은 이 상자에서 손대기 전과 같다.
+- **미측정.** **티어를 켠 채로 받은 실제 데네브 트래픽의 적중률.** 위 확인은 내가 만든 공유 접두사 한 쌍이고 기준선 100/17 은 티어가 꺼진 상태다. 접두사 적중은 **768 토큰 블록 경계**에서만 나므로 한 블록보다 짧은 공유 접두사는 어느 쪽이든 적중하지 않는다(이걸 모르고 잰 첫 시험이 0 적중이었다). KV 두 배의 효과도 미측정이다 — 축출의 원인이 용량이 아니었으므로 그 자체가 적중률을 올린다는 근거는 없다. 기록: `measurements/st_deneb_tier_kv_20260916/`.

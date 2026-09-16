@@ -160,7 +160,7 @@ class LauncherTests(unittest.TestCase):
 
         With no tier a finished turn is never registered as a conversation, so its prefix boundaries
         are dropped when the row is reclaimed -- production measured 17 hits in 100 queries against
-        1,144 evictions with 97% of the blocks free (MEASUREMENTS.md, PR #1041).
+        1,144 evictions with 97% of the blocks free (MEASUREMENTS.md, PR #1042).
         """
         for env, want in (({}, "--tier-dir /home/choiceoh/glm53-logs/st-tier"),
                           ({"ST_TIER_DIR": "off"}, "--tier-dir="),
