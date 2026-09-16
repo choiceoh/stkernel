@@ -31,3 +31,13 @@ split                docs positions     nll A     nll B       B-A               
 fit                   108     27631   2.83855   2.84694  +0.00839 [ +0.00273, +0.01479]     0.492 |   2.84057   2.84909  +0.00852 [ +0.00290, +0.01473] |  6.76e-04  4.91e-04
 heldout                25      6400   3.12427   3.13285  +0.00858 [ -0.00136, +0.02006]     0.485 |   3.12664   3.13617  +0.00954 [ -0.00022, +0.02026] |  7.17e-04  5.09e-04
 heldout-no-onepass     22      5632   3.09698   3.09967  +0.00269 [ -0.00544, +0.01106]     0.493 |   3.09901   3.10296  +0.00394 [ -0.00435, +0.01243] |  7.31e-04  5.22e-04
+
+## OLD vs NEW   -- production before today's recalibration (eval-A, 2026-09-13 23:03, 17,189-row blobs)
+##                against production today (arm A, 131K recalibration). Only positions BOTH boots
+##                scored with the same target count, and the two boots sampled different positions:
+##                4,171 of the 27,631 today's A-vs-B comparison had. The two boots also differ by two
+##                days of engine commits, not only by their blobs.
+split                docs positions   nll OLD   nll NEW   NEW-OLD                95% CI NEW better |  bf16 OLD  bf16 NEW      diff                95% CI |    kl OLD    kl NEW
+fit                   108      4171   3.22092   3.22892  +0.00800 [ -0.02014, +0.03569]     0.514 |   3.22248   3.23159  +0.00912 [ -0.01884, +0.03643] |  6.84e-04  6.34e-04
+heldout                25      1192   4.00316   3.97816  -0.02500 [ -0.06834, +0.02061]     0.518 |   4.00471   3.98153  -0.02318 [ -0.06806, +0.02460] |  8.16e-04  7.41e-04
+heldout-no-onepass     22      1128   3.88948   3.86641  -0.02307 [ -0.05921, +0.01312]     0.516 |   3.89114   3.86950  -0.02164 [ -0.05855, +0.01730] |  8.23e-04  7.51e-04
