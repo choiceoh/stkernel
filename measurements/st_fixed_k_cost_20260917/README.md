@@ -77,3 +77,13 @@ is 43.17 us; it is still rejected for speed. C2 is 61.72 -> 107.15 us.
 Packet mHC is 19.40 -> 20.50 us (+5.66%). The third candidate assigns one
 warp group to each MLA query and transposes completed mHC values for
 warp-local packing. The MLA profiler runs only after all unprofiled timings.
+
+## Third GPU verdict (`03cb3652`)
+
+`gpu-v3.jsonl` passes all numerical/replay gates. Warp-local mHC packing
+reaches parity without packets (18.57 -> 18.56 us), but packet mode still
+regresses (19.63 -> 20.17 us, +2.73%). MLA remains slower: C1 identical
+43.07 -> 87.40 us. Diagnostic profiling identifies substantial union
+preparation; overlapping PDL kernel durations must not be added as latency.
+The fourth candidate removes per-stripe output-counter contention, widens
+shared KV once for both queries, and executes weak-overlap rows concurrently.
