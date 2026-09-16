@@ -142,6 +142,33 @@ class RunWidthTests(unittest.TestCase):
         self.assertIn("self.runs(keys, max_run=max_run)", source)
 
 
+class ModuleLoadingTests(unittest.TestCase):
+    """The one env var that decides the 14.3 s, and the two places it has to be known."""
+
+    NL = chr(10)
+
+    def snippet(self):
+        launcher = (ROOT / "launchers/start-st-glm53.sh").read_text(encoding="utf-8")
+        self.assertIn("set -euo pipefail", launcher)
+        body = launcher[launcher.index('if [ -n "${CUDA_MODULE_LOADING:-}" ]; then'):]
+        return body[:body.index(self.NL + "fi" + self.NL) + 4]
+
+    def test_the_launcher_names_it_with_an_if_and_not_a_one_liner(self):
+        """`[ -n "$X" ] && ...` is false when X is unset, and a false last command ends a `set -e`
+        script. That is every production launch, since production never names this variable."""
+        launcher = (ROOT / "launchers/start-st-glm53.sh").read_text(encoding="utf-8")
+        self.assertIn("set -euo pipefail", launcher)
+        snippet = self.snippet()
+        self.assertTrue(snippet.startswith('if [ -n "${CUDA_MODULE_LOADING:-}" ]; then'), snippet)
+        self.assertIn('NCCL_ENV="$NCCL_ENV -e CUDA_MODULE_LOADING=$CUDA_MODULE_LOADING"', snippet)
+        self.assertNotIn("&&", snippet)
+        self.assertEqual(snippet.count("fi"), 1)
+    def test_the_gate_record_keys_on_it(self):
+        """A record taken under LAZY must not be reused under EAGER: the bytes move in time."""
+        boot = (ROOT / "engine/profiles/glm53/boot.py").read_text(encoding="utf-8")
+        head = boot.index("environment={name: value for name, value")
+        self.assertIn('name == "CUDA_MODULE_LOADING"', boot[head:head + 300])
+
 class WiringTests(unittest.TestCase):
     """Where the three go in the boot -- and that the loader now says which path it read by."""
 
@@ -150,8 +177,12 @@ class WiringTests(unittest.TestCase):
         self.fleet = source[source.index("def fleet(a)"):]
         self.loader = (ROOT / "engine/base/loader.py").read_text(encoding="utf-8")
 
+    def test_the_front_row_names_the_four_things_above_the_recorder(self):
+        for counter in ("import_s=", "lease_s=", "box_s=", "shape_s="):
+            self.assertIn(counter, self.fleet[self.fleet.index('rec.mark("front"'):][:400])
+
     def test_the_front_row_is_marked_before_the_first_phase_and_names_its_imports(self):
-        self.assertLess(self.fleet.index('rec.mark("front", front, import_s=round(_IMPORT_SECONDS, 3))'),
+        self.assertLess(self.fleet.index('rec.mark("front", front, import_s=round(_IMPORT_SECONDS, 3),'),
                         self.fleet.index('with rec.phase("comm")'))
         source = (ROOT / "engine/profiles/glm53/boot.py").read_text(encoding="utf-8")
         began = source.index("_IMPORTS_BEGAN = ")

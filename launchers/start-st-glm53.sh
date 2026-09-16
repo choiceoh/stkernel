@@ -301,6 +301,17 @@ NCCL_ENV="-e NCCL_P2P_LEVEL=SYS -e TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=${ST_NCCL_HE
 -e ST_NATIVE_BUILD_ROOT=/cache/cu132/st-native -e MAX_JOBS=2"
 # the profile's declared D11 knobs (STK_*, boot.declared) travel from this shell into every rank; an undeclared one kills the boot
 for v in $(compgen -v STK_ || true); do NCCL_ENV="$NCCL_ENV -e $v=${!v}"; done
+# CUDA_MODULE_LOADING, when this shell names it. The 2026-09-16 boot put 14.3 s of one-time cost inside
+# the memory gate's FIRST forward -- not compile (the walk saw no artifact), not the fleet vote (1.8 ms),
+# not reclaim (58 ms) -- and the container leaves this unset, which is LAZY on CUDA 13.2. So the leading
+# candidate is a cuModuleLoad per first launch, and EAGER is the one boot that decides it. It is not a
+# declared knob: nothing reads it but the driver, and the prefill gate record keys on it so an EAGER
+# boot cannot reuse a LAZY one's record.
+# An `[ -n ... ] && ...` one-liner would be the last command of a `set -e` script's line and take the
+# boot down every time the variable is NOT set, which is every production launch. `if`, then.
+if [ -n "${CUDA_MODULE_LOADING:-}" ]; then
+  NCCL_ENV="$NCCL_ENV -e CUDA_MODULE_LOADING=$CUDA_MODULE_LOADING"
+fi
 
 # the checkpoint's metadata travels with the engine tree: a node needs its rank file, the drafter and these few files,
 # not the full HF checkpoint
