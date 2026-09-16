@@ -2553,7 +2553,8 @@ constexpr int MLA_PAIR_SMEM = MLA_SMEM_RING + 2 * MLA_SMEM_S
 // Pair decode widens each KV tile once, then both query groups reuse BF16.
 constexpr int MLA_PAIR_BF16_RING = MLA_NSTAGE * MLA_TILE * MLA_CP * 2;
 constexpr int MLA_PAIR_BF16_META = MLA_PAIR_BF16_RING + 2 * (MLA_SMEM_S + MLA_SMEM_P + MLA_SMEM_C);
-constexpr int MLA_DECODE_PAIR_SMEM = MLA_PAIR_BF16_META + 2 * MLA_SMEM_Q;
+constexpr int MLA_DECODE_PAIR_SMEM = (MLA_PAIR_BF16_META + 2 * MLA_SMEM_Q > 2 * MLA_SMEM)
+    ? MLA_PAIR_BF16_META + 2 * MLA_SMEM_Q : 2 * MLA_SMEM;
 static_assert(MLA_DECODE_PAIR_SMEM >= 2 * MLA_SMEM && MLA_DECODE_PAIR_SMEM <= 99 * 1024);
 constexpr int MLA_GROUP4_THREADS = 2 * MK_THREADS;
 constexpr int MLA_GROUP4_PREP_SMEM = MLA_PAIR_HASH * 12 + 12;
