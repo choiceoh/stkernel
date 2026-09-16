@@ -1,0 +1,2485 @@
+{
+  "runs": [
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T193902-5298c80181e9",
+      "sha": "0e949d11d0421784f2681aa21f5ba7465662a776",
+      "engine_source_sha256": "547a1c54364d45f9b835b24d84ff4b3067386dd54cd627de619e7e41fbd98fb6",
+      "image": "st-engine:bracket-0e949d11d042",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed",
+        "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 7,
+        "total": 18,
+        "score": 63,
+        "max_score": 114,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 18
+          },
+          "completion": {
+            "ok": 18,
+            "total": 18
+          },
+          "result": {
+            "ok": 9,
+            "total": 18
+          },
+          "derivation": {
+            "ok": 7,
+            "total": 18
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 18
+          },
+          "counterfactual": {
+            "ok": 9,
+            "total": 18
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 6
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5188314769209914,
+      "step_s": null,
+      "observed_step_s": 19.913073004512295,
+      "request_decode_tok_s": 86.13088470153286,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 87.15995286909276,
+          "ttft_s": [
+            1.1285228119813837,
+            1.1161767119774595,
+            1.1409807349555194,
+            1.351973191020079,
+            1.3569043829920702,
+            1.3579666090081446
+          ],
+          "completion_tokens": [
+            2938,
+            3588,
+            5638,
+            1024,
+            1024,
+            1024
+          ],
+          "output_sha256": [
+            "bf620f4dde341a48e662f3d5942d7162d1c6627d467de762b652aa01f40ac7fc",
+            "e8dd53cf792e0a1635152f96f49eb43358ba8c9baf2554aaf7a5491fce113103",
+            "afbe532ef6fe647c80ac7d49b3f66d10a5e4377c38dcb70aab67401cde6de5e0",
+            "a2353fb541c853757ccc78be9d85c9629c2a4cedd7b6632cbfe7d7f12b9d8293",
+            "143fa6939125038c031b45c74040a2887b2e4b326fd7071db5b2db16572bd30a",
+            "f2ff474d3d07f5466eff87da92f9d35f561f6477d82d3b69aee1090d08f34712"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 84.12013009424597,
+          "ttft_s": [
+            9.663178779999726
+          ],
+          "completion_tokens": [
+            7188
+          ],
+          "output_sha256": [
+            "210eae3d2ab86e15f5d3e39b02e106b6a6c074bcb398f7025c672042d3f55578"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 86.03042880884891,
+          "ttft_s": [
+            37.552082620037254
+          ],
+          "completion_tokens": [
+            6871
+          ],
+          "output_sha256": [
+            "250db04b19016c5b7af555e7e31e4a98154411e81b45531b2739d961a3c5e4f2"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1,
+          2
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": [
+            2000,
+            32000
+          ]
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "measured"
+      },
+      "quality_concurrent": {
+        "version": "ko-reasoning-v2",
+        "ok": 10,
+        "total": 12,
+        "score": 72,
+        "max_score": 76,
+        "dimensions": {
+          "format": {
+            "ok": 12,
+            "total": 12
+          },
+          "completion": {
+            "ok": 12,
+            "total": 12
+          },
+          "result": {
+            "ok": 12,
+            "total": 12
+          },
+          "derivation": {
+            "ok": 10,
+            "total": 12
+          },
+          "evidence": {
+            "ok": 12,
+            "total": 12
+          },
+          "counterfactual": {
+            "ok": 12,
+            "total": 12
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 4
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "fixed_concurrency": {
+        "tokens": 1024,
+        "clients": 4,
+        "concurrency": 2,
+        "c1_tok_s": 89.65860310299314,
+        "many_tok_s": 114.0778358156762,
+        "c1_decode_tok_s": 107.03736292682453,
+        "many_decode_tok_s_sum": 133.54530908626342,
+        "valid": false,
+        "issues": [
+          "C=2: rank 0: preparation changed or unknown",
+          "C=2: rank 1: preparation changed or unknown",
+          "C=2: rank 2: preparation changed or unknown",
+          "C=2: rank 3: preparation changed or unknown"
+        ]
+      },
+      "concurrent": [
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 120.84697569314618,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 126.53561428336661,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 99.52224348364832,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 32000,
+          "aggregate_output_tok_s": 89.97901057530102,
+          "valid": false,
+          "issues": [
+            "C=2 quality or Korean corruption gate failed"
+          ]
+        }
+      ],
+      "fixed_pooled_step_s": 19.716830768895463,
+      "fixed_window_count": 25,
+      "request_groups": {
+        "normal_c1": {
+          "count": 5,
+          "quality": {
+            "ok": 7,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 32000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation"
+                ]
+              },
+              {
+                "ctx": 128000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 85.31347937891886
+        },
+        "fixed_decode_c1": {
+          "count": 3,
+          "quality": {
+            "ok": 0,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 93.80923790037674
+        },
+        "fixed_concurrency_c1": {
+          "count": 4,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": 101.50684127069566
+        },
+        "fixed_concurrency_many": {
+          "count": 4,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": 66.6281535965021
+        },
+        "normal_many": {
+          "count": 8,
+          "quality": {
+            "ok": 10,
+            "total": 12,
+            "failures": [
+              {
+                "ctx": 32000,
+                "question": "all",
+                "client": 0,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 32000,
+                "question": "all",
+                "client": 1,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 60.311068757975654
+        }
+      }
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260916T200044-8c4c25c83e98",
+      "sha": "0e949d11d0421784f2681aa21f5ba7465662a776",
+      "engine_source_sha256": "547a1c54364d45f9b835b24d84ff4b3067386dd54cd627de619e7e41fbd98fb6",
+      "image": "st-engine:bracket-0e949d11d042",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 6,
+        "total": 18,
+        "score": 61,
+        "max_score": 114,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 18
+          },
+          "completion": {
+            "ok": 18,
+            "total": 18
+          },
+          "result": {
+            "ok": 9,
+            "total": 18
+          },
+          "derivation": {
+            "ok": 7,
+            "total": 18
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 18
+          },
+          "counterfactual": {
+            "ok": 7,
+            "total": 18
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 6
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5410882842865075,
+      "step_s": null,
+      "observed_step_s": 19.90335913576623,
+      "request_decode_tok_s": 88.16273001932578,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 90.12323284553385,
+          "ttft_s": [
+            1.1228218370233662,
+            1.1177937500178814,
+            1.1167534610140137,
+            1.3589219140121713,
+            1.354358610988129,
+            1.349065053043887
+          ],
+          "completion_tokens": [
+            2444,
+            3832,
+            3925,
+            1024,
+            1024,
+            1024
+          ],
+          "output_sha256": [
+            "8d3fca168ab74bf7d31b59fda93bc401e7d2f459b5ee07b14020a15828add22e",
+            "29d3ef50ba8c80fce1cfffc57f7979aa8dd277b8c4608456d990a0367fec8370",
+            "c3858316f75c81f3671b9d457a733413a2b90568b5c2369d2b8005eb9626c992",
+            "ba2128614a4909dc3991f2294346b4ecf98a1689936c135973e03f907cb83070",
+            "143fa6939125038c031b45c74040a2887b2e4b326fd7071db5b2db16572bd30a",
+            "c42945f2579e470f681fba9027c04071d55fb31318be2b0cdcae41a278e5858c"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 87.77487293882939,
+          "ttft_s": [
+            9.588483726023696
+          ],
+          "completion_tokens": [
+            6855
+          ],
+          "output_sha256": [
+            "6fc53990611d8d16760e2dc0eb333ea9f954f3457f99433aa4be5615ab18d9d6"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 86.60577605734706,
+          "ttft_s": [
+            37.56560647900915
+          ],
+          "completion_tokens": [
+            14370
+          ],
+          "output_sha256": [
+            "9788728a10f6cb23eb18429c9e915751bee0798ff1af60f2cea6241511af5d15"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": []
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "omitted_after_run_1"
+      },
+      "quality_concurrent": null,
+      "fixed_concurrency": null,
+      "concurrent": [],
+      "fixed_pooled_step_s": 19.716809598493768,
+      "fixed_window_count": 26,
+      "request_groups": {
+        "normal_c1": {
+          "count": 5,
+          "quality": {
+            "ok": 6,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": 1,
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "derivation",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 32000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 128000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "counterfactual"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 87.85956519593887
+        },
+        "fixed_decode_c1": {
+          "count": 3,
+          "quality": {
+            "ok": 0,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 91.39135797791245
+        },
+        "fixed_concurrency_c1": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        },
+        "fixed_concurrency_many": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        },
+        "normal_many": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        }
+      }
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T201737-991323be333c",
+      "sha": "3c3c3260ba8a26929d0f466a90db9e9589c2f278",
+      "engine_source_sha256": "34d894b1dd90c42b0c6acb2750c75720144a8b20fa28d3d49cb39d7cc020162a",
+      "image": "st-engine:bracket-3c3c3260ba8a",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed",
+        "C=2 ctx=2000: C=2 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 8,
+        "total": 18,
+        "score": 64,
+        "max_score": 114,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 18
+          },
+          "completion": {
+            "ok": 18,
+            "total": 18
+          },
+          "result": {
+            "ok": 9,
+            "total": 18
+          },
+          "derivation": {
+            "ok": 8,
+            "total": 18
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 18
+          },
+          "counterfactual": {
+            "ok": 9,
+            "total": 18
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 6
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.521515220874342,
+      "step_s": null,
+      "observed_step_s": 19.91344532251392,
+      "request_decode_tok_s": 85.8888484738401,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 87.60863078190637,
+          "ttft_s": [
+            1.1230246989871375,
+            1.1162291840300895,
+            1.100884663988836,
+            1.3607060289941728,
+            1.3529280339716934,
+            1.3526496650301851
+          ],
+          "completion_tokens": [
+            2405,
+            3638,
+            5852,
+            1024,
+            1024,
+            1024
+          ],
+          "output_sha256": [
+            "ab22b43606d23ce53939df62b3404776d92d42be1b55a9813751b9c097319ed5",
+            "ab20e7ee69a735e2eac1a093c527df9971510fe1ff26f04431d6cdd859d069eb",
+            "7f3cebb456e863eb14c21574a1a9359e6aa1b57c84e22c211214f1d408174707",
+            "44845dd88dd876c5c63d882ea7a3b9bebc84dc7d9c1bde3f75a0571a2173643d",
+            "143fa6939125038c031b45c74040a2887b2e4b326fd7071db5b2db16572bd30a",
+            "ba2128614a4909dc3991f2294346b4ecf98a1689936c135973e03f907cb83070"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 86.5551025373378,
+          "ttft_s": [
+            9.606762718991376
+          ],
+          "completion_tokens": [
+            8351
+          ],
+          "output_sha256": [
+            "c9f1fd96f7e0d2ab6fbaf03c1d8e15761b070a49f16808aebe393ad0ba319f88"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 84.15026859338246,
+          "ttft_s": [
+            37.79413692903472
+          ],
+          "completion_tokens": [
+            17327
+          ],
+          "output_sha256": [
+            "5cbd2a9988c6a8d55a3349a7882b5a3d3258b636dfb53b10251fe2fc85864e1f"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1,
+          2
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": [
+            2000,
+            32000
+          ]
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "measured"
+      },
+      "quality_concurrent": {
+        "version": "ko-reasoning-v2",
+        "ok": 11,
+        "total": 12,
+        "score": 75,
+        "max_score": 76,
+        "dimensions": {
+          "format": {
+            "ok": 12,
+            "total": 12
+          },
+          "completion": {
+            "ok": 12,
+            "total": 12
+          },
+          "result": {
+            "ok": 12,
+            "total": 12
+          },
+          "derivation": {
+            "ok": 12,
+            "total": 12
+          },
+          "evidence": {
+            "ok": 12,
+            "total": 12
+          },
+          "counterfactual": {
+            "ok": 11,
+            "total": 12
+          },
+          "witnesses": {
+            "ok": 4,
+            "total": 4
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "fixed_concurrency": {
+        "tokens": 1024,
+        "clients": 4,
+        "concurrency": 2,
+        "c1_tok_s": 89.8846493685013,
+        "many_tok_s": 112.68201822809469,
+        "c1_decode_tok_s": 106.79756374548262,
+        "many_decode_tok_s_sum": 132.46315062702155,
+        "valid": true,
+        "issues": []
+      },
+      "concurrent": [
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 116.93515935108739,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 120.67571288119419,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 85.31221157979738,
+          "valid": false,
+          "issues": [
+            "C=2 quality or Korean corruption gate failed"
+          ]
+        },
+        {
+          "concurrency": 2,
+          "ctx": 32000,
+          "aggregate_output_tok_s": 95.84122901833975,
+          "valid": true,
+          "issues": []
+        }
+      ],
+      "fixed_pooled_step_s": 19.769482409244407,
+      "fixed_window_count": 28,
+      "request_groups": {
+        "normal_c1": {
+          "count": 5,
+          "quality": {
+            "ok": 8,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 128000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 85.4294873622111
+        },
+        "fixed_decode_c1": {
+          "count": 3,
+          "quality": {
+            "ok": 0,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 91.94050838136474
+        },
+        "fixed_concurrency_c1": {
+          "count": 4,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": 101.76035302105767
+        },
+        "fixed_concurrency_many": {
+          "count": 4,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": 66.16500797323022
+        },
+        "normal_many": {
+          "count": 8,
+          "quality": {
+            "ok": 11,
+            "total": 12,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": 2,
+                "client": 0,
+                "case": "logic",
+                "dimensions": [
+                  "counterfactual"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 62.67121616703224
+        }
+      }
+    },
+    {
+      "arm": "A",
+      "run": 2,
+      "run_id": "20260916T204209-c940c8bebf7d",
+      "sha": "3c3c3260ba8a26929d0f466a90db9e9589c2f278",
+      "engine_source_sha256": "34d894b1dd90c42b0c6acb2750c75720144a8b20fa28d3d49cb39d7cc020162a",
+      "image": "st-engine:bracket-3c3c3260ba8a",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 6,
+        "total": 18,
+        "score": 61,
+        "max_score": 114,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 18
+          },
+          "completion": {
+            "ok": 18,
+            "total": 18
+          },
+          "result": {
+            "ok": 9,
+            "total": 18
+          },
+          "derivation": {
+            "ok": 6,
+            "total": 18
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 18
+          },
+          "counterfactual": {
+            "ok": 8,
+            "total": 18
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 6
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5304114825363514,
+      "step_s": null,
+      "observed_step_s": 19.910567940047486,
+      "request_decode_tok_s": 86.91708106511159,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 91.61430567069833,
+          "ttft_s": [
+            1.1211617369554006,
+            1.1125420540338382,
+            1.1013275069999509,
+            1.3583054359769449,
+            1.3499782209983096,
+            1.3557132079731673
+          ],
+          "completion_tokens": [
+            1864,
+            3352,
+            4238,
+            1024,
+            1024,
+            1024
+          ],
+          "output_sha256": [
+            "1751967d100ec74aa09941d522b54071f8d27e9532619c7841dbac3baccbed77",
+            "202684f4bc167af0768b9fda3684a316f9f3c282dd711397fab4709360cc1689",
+            "4f5b3af9953fe660dc39e5683d25843790d7a14b97b65ee8fc9c0ca1465f18e0",
+            "2fcc614d9fb3ec52c7f8455f72df856657863f74f79212deaf46d7ceb20a56b6",
+            "680983b4a68be61e13ece3a27cfb86ced2c585b24c44b1b8e385f23131c4a797",
+            "ba2128614a4909dc3991f2294346b4ecf98a1689936c135973e03f907cb83070"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 83.67538827642505,
+          "ttft_s": [
+            9.561410686001182
+          ],
+          "completion_tokens": [
+            9859
+          ],
+          "output_sha256": [
+            "e8867308b3178dfd7244d25c3a0e66affb6f7a639e087ad099597c533b10e55f"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 85.28098937060388,
+          "ttft_s": [
+            37.24327863502549
+          ],
+          "completion_tokens": [
+            13554
+          ],
+          "output_sha256": [
+            "c7e3fb4fc5f96b71100cc07993f14511e0379a36c1d566489d011dc87e3ecad9"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": []
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "omitted_after_run_1"
+      },
+      "quality_concurrent": null,
+      "fixed_concurrency": null,
+      "concurrent": [],
+      "fixed_pooled_step_s": 19.83226744480047,
+      "fixed_window_count": 25,
+      "request_groups": {
+        "normal_c1": {
+          "count": 5,
+          "quality": {
+            "ok": 6,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 32000,
+                "question": "all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "derivation",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 128000,
+                "question": "all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "derivation"
+                ]
+              },
+              {
+                "ctx": 128000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 86.25116916615028
+        },
+        "fixed_decode_c1": {
+          "count": 3,
+          "quality": {
+            "ok": 0,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 94.750087965705
+        },
+        "fixed_concurrency_c1": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        },
+        "fixed_concurrency_many": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        },
+        "normal_many": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        }
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "run": 1,
+      "all_outputs_equal": false,
+      "consumer_gates_pass": false,
+      "base_request_tok_s": 86.13088470153286,
+      "candidate_request_tok_s": 85.8888484738401,
+      "observed_request_tok_s_change_pct": -0.28100980099239337,
+      "requests": [
+        {
+          "case": [
+            2000,
+            "0",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 91.15301882518297,
+          "candidate_tok_s": 91.4177639897055,
+          "base_ttft_s": 1.1285228119813837,
+          "candidate_ttft_s": 1.1230246989871375
+        },
+        {
+          "case": [
+            2000,
+            "1",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 95.82079905001264,
+          "candidate_tok_s": 100.16929654403025,
+          "base_ttft_s": 1.1161767119774595,
+          "candidate_ttft_s": 1.1162291840300895
+        },
+        {
+          "case": [
+            2000,
+            "2",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 77.89582941530372,
+          "candidate_tok_s": 78.23743064394174,
+          "base_ttft_s": 1.1409807349555194,
+          "candidate_ttft_s": 1.100884663988836
+        },
+        {
+          "case": [
+            32000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 84.12013009424597,
+          "candidate_tok_s": 86.5551025373378,
+          "base_ttft_s": 9.663178779999726,
+          "candidate_ttft_s": 9.606762718991376
+        },
+        {
+          "case": [
+            128000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 86.03042880884891,
+          "candidate_tok_s": 84.15026859338246,
+          "base_ttft_s": 37.552082620037254,
+          "candidate_ttft_s": 37.79413692903472
+        },
+        {
+          "case": [
+            2000,
+            "fixed-all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": true,
+          "base_tok_s": 95.67979686303124,
+          "candidate_tok_s": 99.19352003911476,
+          "base_ttft_s": 1.351973191020079,
+          "candidate_ttft_s": 1.3607060289941728
+        },
+        {
+          "case": [
+            2000,
+            "fixed-all",
+            1
+          ],
+          "output_equal": true,
+          "tokens_equal": true,
+          "base_tok_s": 87.82385962108215,
+          "candidate_tok_s": 88.28124466543798,
+          "base_ttft_s": 1.3569043829920702,
+          "candidate_ttft_s": 1.3529280339716934
+        },
+        {
+          "case": [
+            2000,
+            "fixed-all",
+            2
+          ],
+          "output_equal": false,
+          "tokens_equal": true,
+          "base_tok_s": 98.60145364650074,
+          "candidate_tok_s": 89.11815911055842,
+          "base_ttft_s": 1.3579666090081446,
+          "candidate_ttft_s": 1.3526496650301851
+        }
+      ],
+      "fixed_length_requests": [
+        {
+          "question": "fixed-concurrency-0",
+          "output_equal": true,
+          "base_tok_s": 106.42976580678187,
+          "candidate_tok_s": 106.37819780032369,
+          "observed_change_pct": -0.048452616678495986
+        },
+        {
+          "question": "fixed-concurrency-1",
+          "output_equal": false,
+          "base_tok_s": 87.48304111197228,
+          "candidate_tok_s": 88.78244322347386,
+          "observed_change_pct": 1.485318862930729
+        },
+        {
+          "question": "fixed-concurrency-2",
+          "output_equal": false,
+          "base_tok_s": 107.64543366081224,
+          "candidate_tok_s": 107.21692969064155,
+          "observed_change_pct": -0.39806980714193196
+        },
+        {
+          "question": "fixed-concurrency-3",
+          "output_equal": false,
+          "base_tok_s": 107.6449600468672,
+          "candidate_tok_s": 107.32787687994588,
+          "observed_change_pct": -0.29456387626811686
+        }
+      ],
+      "evidence_issues": {
+        "base": [
+          "C=1 quality or Korean corruption gate failed",
+          "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+        ],
+        "candidate": [
+          "C=1 quality or Korean corruption gate failed",
+          "C=2 ctx=2000: C=2 quality or Korean corruption gate failed"
+        ]
+      },
+      "request_groups": {
+        "normal_c1": {
+          "requests": [
+            {
+              "case": [
+                2000,
+                "0",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 2938,
+              "candidate_tokens": 2405,
+              "base_tok_s": 91.15301882518297,
+              "candidate_tok_s": 91.4177639897055,
+              "base_ttft_s": 1.1285228119813837,
+              "candidate_ttft_s": 1.1230246989871375
+            },
+            {
+              "case": [
+                2000,
+                "1",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 3588,
+              "candidate_tokens": 3638,
+              "base_tok_s": 95.82079905001264,
+              "candidate_tok_s": 100.16929654403025,
+              "base_ttft_s": 1.1161767119774595,
+              "candidate_ttft_s": 1.1162291840300895
+            },
+            {
+              "case": [
+                2000,
+                "2",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 5638,
+              "candidate_tokens": 5852,
+              "base_tok_s": 77.89582941530372,
+              "candidate_tok_s": 78.23743064394174,
+              "base_ttft_s": 1.1409807349555194,
+              "candidate_ttft_s": 1.100884663988836
+            },
+            {
+              "case": [
+                32000,
+                "all",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 7188,
+              "candidate_tokens": 8351,
+              "base_tok_s": 84.12013009424597,
+              "candidate_tok_s": 86.5551025373378,
+              "base_ttft_s": 9.663178779999726,
+              "candidate_ttft_s": 9.606762718991376
+            },
+            {
+              "case": [
+                128000,
+                "all",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 6871,
+              "candidate_tokens": 17327,
+              "base_tok_s": 86.03042880884891,
+              "candidate_tok_s": 84.15026859338246,
+              "base_ttft_s": 37.552082620037254,
+              "candidate_ttft_s": 37.79413692903472
+            }
+          ],
+          "base_pooled_tok_s": 85.31347937891886,
+          "candidate_pooled_tok_s": 85.4294873622111,
+          "observed_change_pct": 0.13597849265647444,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "fixed_decode_c1": {
+          "requests": [
+            {
+              "case": [
+                2000,
+                "fixed-all",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 95.67979686303124,
+              "candidate_tok_s": 99.19352003911476,
+              "base_ttft_s": 1.351973191020079,
+              "candidate_ttft_s": 1.3607060289941728
+            },
+            {
+              "case": [
+                2000,
+                "fixed-all",
+                1,
+                null
+              ],
+              "output_equal": true,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 87.82385962108215,
+              "candidate_tok_s": 88.28124466543798,
+              "base_ttft_s": 1.3569043829920702,
+              "candidate_ttft_s": 1.3529280339716934
+            },
+            {
+              "case": [
+                2000,
+                "fixed-all",
+                2,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 98.60145364650074,
+              "candidate_tok_s": 89.11815911055842,
+              "base_ttft_s": 1.3579666090081446,
+              "candidate_ttft_s": 1.3526496650301851
+            }
+          ],
+          "base_pooled_tok_s": 93.80923790037674,
+          "candidate_pooled_tok_s": 91.94050838136474,
+          "observed_change_pct": -1.9920527666971943,
+          "equal_output_count": 1,
+          "equal_output_base_tok_s": 87.82385962108215,
+          "equal_output_candidate_tok_s": 88.28124466543798,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "fixed_concurrency_c1": {
+          "requests": [
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-0",
+                0,
+                0
+              ],
+              "output_equal": true,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 106.42976580678187,
+              "candidate_tok_s": 106.37819780032369,
+              "base_ttft_s": 1.3436200579744764,
+              "candidate_ttft_s": 1.343875843042042
+            },
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-1",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 87.48304111197228,
+              "candidate_tok_s": 88.78244322347386,
+              "base_ttft_s": 1.3430324260261841,
+              "candidate_ttft_s": 1.338743627013173
+            },
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-2",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 107.64543366081224,
+              "candidate_tok_s": 107.21692969064155,
+              "base_ttft_s": 1.354002378997393,
+              "candidate_ttft_s": 1.3493054520222358
+            },
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-3",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 107.6449600468672,
+              "candidate_tok_s": 107.32787687994588,
+              "base_ttft_s": 1.3311970499926247,
+              "candidate_ttft_s": 1.325466790003702
+            }
+          ],
+          "base_pooled_tok_s": 101.50684127069566,
+          "candidate_pooled_tok_s": 101.76035302105767,
+          "observed_change_pct": 0.24974843782790135,
+          "equal_output_count": 1,
+          "equal_output_base_tok_s": 106.42976580678187,
+          "equal_output_candidate_tok_s": 106.37819780032369,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "fixed_concurrency_many": {
+          "requests": [
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-0",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 64.19319464984838,
+              "candidate_tok_s": 64.24280734092847,
+              "base_ttft_s": 1.3385877929977141,
+              "candidate_ttft_s": 1.349790773994755
+            },
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-1",
+                0,
+                1
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 65.91389086256355,
+              "candidate_tok_s": 65.94708054391802,
+              "base_ttft_s": 3.091256070008967,
+              "candidate_ttft_s": 3.080472112982534
+            },
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-2",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 72.17754872992346,
+              "candidate_tok_s": 64.96892959480573,
+              "base_ttft_s": 3.1196779449819587,
+              "candidate_ttft_s": 1.3616929419804364
+            },
+            {
+              "case": [
+                2000,
+                "fixed-concurrency-3",
+                0,
+                1
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 64.80598393019145,
+              "candidate_tok_s": 69.76748377439091,
+              "base_ttft_s": 1.3524202249827795,
+              "candidate_ttft_s": 3.093929034017492
+            }
+          ],
+          "base_pooled_tok_s": 66.6281535965021,
+          "candidate_pooled_tok_s": 66.16500797323022,
+          "observed_change_pct": -0.6951200029895466,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "normal_many": {
+          "requests": [
+            {
+              "case": [
+                2000,
+                "0",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 2402,
+              "candidate_tokens": 2746,
+              "base_tok_s": 64.23665465995983,
+              "candidate_tok_s": 64.18881265785895,
+              "base_ttft_s": 1.1292297249892727,
+              "candidate_ttft_s": 2.833370234002359
+            },
+            {
+              "case": [
+                2000,
+                "0",
+                0,
+                1
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 2558,
+              "candidate_tokens": 2586,
+              "base_tok_s": 66.91226016505027,
+              "candidate_tok_s": 60.28233855862436,
+              "base_ttft_s": 2.829081153962761,
+              "candidate_ttft_s": 1.136411358951591
+            },
+            {
+              "case": [
+                2000,
+                "1",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 2753,
+              "candidate_tokens": 2175,
+              "base_tok_s": 70.67349795926896,
+              "candidate_tok_s": 64.9835555021622,
+              "base_ttft_s": 1.1281389080104418,
+              "candidate_ttft_s": 2.7751752310432494
+            },
+            {
+              "case": [
+                2000,
+                "1",
+                0,
+                1
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 2317,
+              "candidate_tokens": 3150,
+              "base_tok_s": 74.86091623337875,
+              "candidate_tok_s": 73.22765103890569,
+              "base_ttft_s": 2.7979366569779813,
+              "candidate_ttft_s": 1.1236446510301903
+            },
+            {
+              "case": [
+                2000,
+                "2",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 3697,
+              "candidate_tokens": 8388,
+              "base_tok_s": 63.26956336689609,
+              "candidate_tok_s": 67.27709405820413,
+              "base_ttft_s": 1.1277634340221994,
+              "candidate_ttft_s": 1.109789478010498
+            },
+            {
+              "case": [
+                2000,
+                "2",
+                0,
+                1
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 2229,
+              "candidate_tokens": 2342,
+              "base_tok_s": 57.6063710458787,
+              "candidate_tok_s": 58.216206730583245,
+              "base_ttft_s": 2.792055015976075,
+              "candidate_ttft_s": 2.765509937016759
+            },
+            {
+              "case": [
+                32000,
+                "all",
+                0,
+                0
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 9758,
+              "candidate_tokens": 13426,
+              "base_tok_s": 53.8928165105213,
+              "candidate_tok_s": 61.174069353222116,
+              "base_ttft_s": 9.67517569399206,
+              "candidate_ttft_s": 9.599711834976915
+            },
+            {
+              "case": [
+                32000,
+                "all",
+                0,
+                1
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 14265,
+              "candidate_tokens": 8527,
+              "base_tok_s": 59.64677804692277,
+              "candidate_tok_s": 58.806914076504945,
+              "base_ttft_s": 27.84332207404077,
+              "candidate_ttft_s": 27.794717385957483
+            }
+          ],
+          "base_pooled_tok_s": 60.311068757975654,
+          "candidate_pooled_tok_s": 62.67121616703224,
+          "observed_change_pct": 3.9132906407739254,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        }
+      }
+    },
+    {
+      "run": 2,
+      "all_outputs_equal": false,
+      "consumer_gates_pass": false,
+      "base_request_tok_s": 88.16273001932578,
+      "candidate_request_tok_s": 86.91708106511159,
+      "observed_request_tok_s_change_pct": -1.4128974385674509,
+      "requests": [
+        {
+          "case": [
+            2000,
+            "0",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 94.86940191608535,
+          "candidate_tok_s": 102.25308988558439,
+          "base_ttft_s": 1.1228218370233662,
+          "candidate_ttft_s": 1.1211617369554006
+        },
+        {
+          "case": [
+            2000,
+            "1",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 97.78753715402115,
+          "candidate_tok_s": 101.81191703417535,
+          "base_ttft_s": 1.1177937500178814,
+          "candidate_ttft_s": 1.1125420540338382
+        },
+        {
+          "case": [
+            2000,
+            "2",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 80.57374643050676,
+          "candidate_tok_s": 79.73836643022398,
+          "base_ttft_s": 1.1167534610140137,
+          "candidate_ttft_s": 1.1013275069999509
+        },
+        {
+          "case": [
+            32000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 87.77487293882939,
+          "candidate_tok_s": 83.67538827642505,
+          "base_ttft_s": 9.588483726023696,
+          "candidate_ttft_s": 9.561410686001182
+        },
+        {
+          "case": [
+            128000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 86.60577605734706,
+          "candidate_tok_s": 85.28098937060388,
+          "base_ttft_s": 37.56560647900915,
+          "candidate_ttft_s": 37.24327863502549
+        },
+        {
+          "case": [
+            2000,
+            "fixed-all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": true,
+          "base_tok_s": 89.1049607791685,
+          "candidate_tok_s": 98.48600256275499,
+          "base_ttft_s": 1.3589219140121713,
+          "candidate_ttft_s": 1.3583054359769449
+        },
+        {
+          "case": [
+            2000,
+            "fixed-all",
+            1
+          ],
+          "output_equal": false,
+          "tokens_equal": true,
+          "base_tok_s": 87.89490745777992,
+          "candidate_tok_s": 98.58309632165381,
+          "base_ttft_s": 1.354358610988129,
+          "candidate_ttft_s": 1.3499782209983096
+        },
+        {
+          "case": [
+            2000,
+            "fixed-all",
+            2
+          ],
+          "output_equal": false,
+          "tokens_equal": true,
+          "base_tok_s": 97.79073410397542,
+          "candidate_tok_s": 87.99110023565059,
+          "base_ttft_s": 1.349065053043887,
+          "candidate_ttft_s": 1.3557132079731673
+        }
+      ],
+      "fixed_length_requests": [],
+      "evidence_issues": {
+        "base": [
+          "C=1 quality or Korean corruption gate failed"
+        ],
+        "candidate": [
+          "C=1 quality or Korean corruption gate failed"
+        ]
+      },
+      "request_groups": {
+        "normal_c1": {
+          "requests": [
+            {
+              "case": [
+                2000,
+                "0",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 2444,
+              "candidate_tokens": 1864,
+              "base_tok_s": 94.86940191608535,
+              "candidate_tok_s": 102.25308988558439,
+              "base_ttft_s": 1.1228218370233662,
+              "candidate_ttft_s": 1.1211617369554006
+            },
+            {
+              "case": [
+                2000,
+                "1",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 3832,
+              "candidate_tokens": 3352,
+              "base_tok_s": 97.78753715402115,
+              "candidate_tok_s": 101.81191703417535,
+              "base_ttft_s": 1.1177937500178814,
+              "candidate_ttft_s": 1.1125420540338382
+            },
+            {
+              "case": [
+                2000,
+                "2",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 3925,
+              "candidate_tokens": 4238,
+              "base_tok_s": 80.57374643050676,
+              "candidate_tok_s": 79.73836643022398,
+              "base_ttft_s": 1.1167534610140137,
+              "candidate_ttft_s": 1.1013275069999509
+            },
+            {
+              "case": [
+                32000,
+                "all",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 6855,
+              "candidate_tokens": 9859,
+              "base_tok_s": 87.77487293882939,
+              "candidate_tok_s": 83.67538827642505,
+              "base_ttft_s": 9.588483726023696,
+              "candidate_ttft_s": 9.561410686001182
+            },
+            {
+              "case": [
+                128000,
+                "all",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": false,
+              "base_tokens": 14370,
+              "candidate_tokens": 13554,
+              "base_tok_s": 86.60577605734706,
+              "candidate_tok_s": 85.28098937060388,
+              "base_ttft_s": 37.56560647900915,
+              "candidate_ttft_s": 37.24327863502549
+            }
+          ],
+          "base_pooled_tok_s": 87.85956519593887,
+          "candidate_pooled_tok_s": 86.25116916615028,
+          "observed_change_pct": -1.8306441947460672,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "fixed_decode_c1": {
+          "requests": [
+            {
+              "case": [
+                2000,
+                "fixed-all",
+                0,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 89.1049607791685,
+              "candidate_tok_s": 98.48600256275499,
+              "base_ttft_s": 1.3589219140121713,
+              "candidate_ttft_s": 1.3583054359769449
+            },
+            {
+              "case": [
+                2000,
+                "fixed-all",
+                1,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 87.89490745777992,
+              "candidate_tok_s": 98.58309632165381,
+              "base_ttft_s": 1.354358610988129,
+              "candidate_ttft_s": 1.3499782209983096
+            },
+            {
+              "case": [
+                2000,
+                "fixed-all",
+                2,
+                null
+              ],
+              "output_equal": false,
+              "tokens_equal": true,
+              "base_tokens": 1024,
+              "candidate_tokens": 1024,
+              "base_tok_s": 97.79073410397542,
+              "candidate_tok_s": 87.99110023565059,
+              "base_ttft_s": 1.349065053043887,
+              "candidate_ttft_s": 1.3557132079731673
+            }
+          ],
+          "base_pooled_tok_s": 91.39135797791245,
+          "candidate_pooled_tok_s": 94.750087965705,
+          "observed_change_pct": 3.6751067738858945,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "fixed_concurrency_c1": {
+          "requests": [],
+          "base_pooled_tok_s": null,
+          "candidate_pooled_tok_s": null,
+          "observed_change_pct": null,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "fixed_concurrency_many": {
+          "requests": [],
+          "base_pooled_tok_s": null,
+          "candidate_pooled_tok_s": null,
+          "observed_change_pct": null,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        },
+        "normal_many": {
+          "requests": [],
+          "base_pooled_tok_s": null,
+          "candidate_pooled_tok_s": null,
+          "observed_change_pct": null,
+          "equal_output_count": 0,
+          "equal_output_base_tok_s": null,
+          "equal_output_candidate_tok_s": null,
+          "rate_scope": "sum(tokens - 1) / sum(request decode seconds); not aggregate concurrency throughput"
+        }
+      }
+    }
+  ],
+  "complete": true,
+  "scope": "Observations only; failed quality/preparation gates are retained, not waived"
+}

@@ -1,10 +1,11 @@
 """The draft FC pair collector: families stay whole, the budget holds, and it never breaks a step."""
 import types
+import tempfile
 import unittest
 
 import torch
 
-from engine.profiles.glm53.draft_fc_capture import DraftFcCapture, _family_split, attach
+from engine.profiles.glm53.draft_fc_capture import DraftFcCapture, _family_split, attach, retain_source
 
 COLS = 64
 
@@ -47,6 +48,26 @@ class FamilySplitTests(unittest.TestCase):
 
 
 class CaptureTests(unittest.TestCase):
+    def test_compaction_can_retire_the_device_source_without_breaking_collection(self):
+        from bench.draft_fc_bias import collect_fc_pairs
+        from tests.test_engine_draft_precision import fixture
+        drafter, batches = fixture()
+        expected = collect_fc_pairs(drafter, batches)
+        retain_source(drafter)
+        source = drafter.p.pop('fc.weight')
+        source.zero_()  # compaction can reuse the original storage
+        self.assertEqual(drafter.fc_capture_source.device.type, 'cpu')
+        drafter.observe_rows = lambda *args: None
+        with tempfile.TemporaryDirectory() as root:
+            cap = attach(types.SimpleNamespace(drafter=drafter), root, rows=2)
+            cap.batches, cap.kept = batches, dict(train=1, validation=1)
+            result = torch.load(cap.close()['path'], weights_only=True)
+        self.assertNotIn('fc.weight', drafter.p)
+        self.assertEqual(result['reader_sha256'], expected['reader_sha256'])
+        for split in ('train', 'validation'):
+            for field in ('actual', 'reference'):
+                torch.testing.assert_close(result[split][field], expected[split][field], rtol=0, atol=0)
+
     def test_it_wraps_without_replacing_and_keeps_families_whole(self):
         cap = DraftFcCapture(fake_drafter(), '/tmp/unused', rows=64, salt='s')
         cap.attach()

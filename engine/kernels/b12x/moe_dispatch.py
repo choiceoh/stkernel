@@ -2377,6 +2377,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("bulk_b", False)),
         bool(config.get("sync_cleanup", False)),
     )
+    if config.get("input_vec16", False):
+        cfg += ("input_vec16_v1",)
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2443,6 +2445,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                     and not config.get("probe_route_scatter", False)
                     and bool(config.get("scatter_vec4", True)))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
+                input_vec16=bool(reform and m in (8, 16) and config.get("input_vec16", True)),
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
                 compact_staging=compact_staging,
@@ -2583,6 +2586,7 @@ def _get_static_kernel_v2(
         l2_prefetch=l2_prefetch,
         l2_prefetch_fc1=bool(config.get("l2_prefetch_fc1", True)),
         bulk_b=bulk_b,
+        input_vec16=bool(config.get("input_vec16", False)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
@@ -2744,6 +2748,7 @@ def _get_static_kernel_v2(
         f"{'reuse' if config.get('c2_scatter_reuse') else ''}"
         f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
         f"{'sync' if config.get('sync_cleanup') else ''}"
+        f"{'inputv16' if config.get('input_vec16') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )

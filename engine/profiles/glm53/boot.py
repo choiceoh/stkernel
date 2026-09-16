@@ -822,9 +822,14 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
+                    if DRAFT_FC_CAPTURE or DRAFT_FC_CAPTURE_WHEN_MISSING:
+                        from engine.profiles.glm53.draft_fc_capture import retain_source
+                        retain_source(drafter)
                     with recorder.phase("drafter packs"):
                         drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena,
                                              policy=draft_policy, tuning=tuning)
+                    if not DRAFT_FC_CAPTURE and drafter.fc_bias is not None:
+                        drafter.fc_capture_source = None
                     if capture_rows is not None:
                         recorder.gauge('drafter_decode_cells', len(drafter.bind_decode_cells(capture_rows)))
                     recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
@@ -1052,7 +1057,25 @@ def decode_fastpath_report(net):
             missing.extend((name, m) for m in sorted(expected - actual))
     if pairs != expected_pairs or missing or not dense:
         raise RuntimeError(f'bound decode fastpaths were not executed: pairs={sorted(expected_pairs - pairs)}, dense={missing}')
-    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense)
+    input_packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+                   if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs)
+
+
+def fixed_k_cost_report(net):
+    """Require target consumers, not a native self-test's launch, before opening the door."""
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows:
+        return {}
+    packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+             if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    if getattr(net, 'producer_packs', False) and getattr(net, 'mhc_input_packs', False):
+        for row_count in rows:
+            eligible = [name for name, layer in net.dense.items() if name.endswith('kda.in_proj')
+                        and getattr(layer, 'input_pack_rows', lambda rows: False)(row_count)]
+            if len(eligible) > 1 and not any(row_count in packs.get(name, ()) for name in eligible):
+                raise RuntimeError(f'fixed K7 mHC input packs did not reach a target projection at {row_count} rows')
+    return dict(mhc_input_packs=packs)
 
 
 def decode_dsa_report(net):
@@ -1133,6 +1156,7 @@ def native_execution_report(net, drafter):
     from engine.profiles.glm53.cublas import execution_report as cublas_execution_report
     cublas_proof = cublas_execution_report(net) if hasattr(net, 'cublas_readers') else {}
     proof = dict(cublas=cublas_proof, decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+                 fixed_k_cost=fixed_k_cost_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
                  drafter_decode_cells=drafter_decode_cell_report(drafter),

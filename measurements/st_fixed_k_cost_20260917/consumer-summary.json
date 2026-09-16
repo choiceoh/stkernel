@@ -1,0 +1,959 @@
+{
+  "runs": [
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260916T164447-d65117f1ea5b",
+      "sha": "ffd19b44630b905f0c68db5e8f060bc78680012e",
+      "engine_source_sha256": "8038bc1ae677936e582791703f13cb7f2653341dad410b0feb9f4d8ba370086f",
+      "image": "st-engine:bracket-ffd19b44630b",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed",
+        "C=2 ctx=2000: C=2 quality or Korean corruption gate failed",
+        "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 6,
+        "total": 9,
+        "score": 51,
+        "max_score": 57,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 9
+          },
+          "completion": {
+            "ok": 9,
+            "total": 9
+          },
+          "result": {
+            "ok": 9,
+            "total": 9
+          },
+          "derivation": {
+            "ok": 6,
+            "total": 9
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 9
+          },
+          "counterfactual": {
+            "ok": 8,
+            "total": 9
+          },
+          "witnesses": {
+            "ok": 1,
+            "total": 3
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 5,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5367282559711581,
+      "step_s": null,
+      "observed_step_s": 19.887089093321986,
+      "request_decode_tok_s": 87.3047314920689,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 87.75420654530583,
+          "ttft_s": [
+            1.1391855149995536,
+            1.1147175529622473,
+            1.1039274060167372
+          ],
+          "completion_tokens": [
+            2176,
+            3611,
+            4671
+          ],
+          "output_sha256": [
+            "731243ffad13ac6f5261b6af9a1c93b95629acf2acf7997033b5a21631767752",
+            "a85b72a881f6ccf671b458b76416ea2836942b2ec07e5cae3ae3313cb2a6c9cc",
+            "35813413afe7ca9ce0fd97ad42e01f04445c8a579ddc3460a6dd18ead2cfb834"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 85.28233779377618,
+          "ttft_s": [
+            9.65949076396646
+          ],
+          "completion_tokens": [
+            10712
+          ],
+          "output_sha256": [
+            "ff67122157c81b9b4c0bac99af7e131775e5e738748a8f4b57d53570143a5f9c"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 88.37616787324222,
+          "ttft_s": [
+            37.49610275297891
+          ],
+          "completion_tokens": [
+            16535
+          ],
+          "output_sha256": [
+            "38dea3585528dcc9facabfc530c67c1fac9682c1691c6cd5bcea91df78db2861"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1,
+          2
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": [
+            2000,
+            32000
+          ]
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "measured"
+      },
+      "quality_concurrent": {
+        "version": "ko-reasoning-v2",
+        "ok": 8,
+        "total": 12,
+        "score": 68,
+        "max_score": 76,
+        "dimensions": {
+          "format": {
+            "ok": 12,
+            "total": 12
+          },
+          "completion": {
+            "ok": 12,
+            "total": 12
+          },
+          "result": {
+            "ok": 11,
+            "total": 12
+          },
+          "derivation": {
+            "ok": 8,
+            "total": 12
+          },
+          "evidence": {
+            "ok": 12,
+            "total": 12
+          },
+          "counterfactual": {
+            "ok": 11,
+            "total": 12
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 4
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "fixed_concurrency": {
+        "tokens": 1024,
+        "clients": 4,
+        "concurrency": 2,
+        "c1_tok_s": 89.75315692144585,
+        "many_tok_s": 110.67030340311085,
+        "c1_decode_tok_s": 107.01550117311938,
+        "many_decode_tok_s_sum": 132.25548355519607,
+        "valid": false,
+        "issues": [
+          "C=2: rank 0: preparation changed or unknown",
+          "C=2: rank 1: preparation changed or unknown",
+          "C=2: rank 2: preparation changed or unknown",
+          "C=2: rank 3: preparation changed or unknown"
+        ]
+      },
+      "concurrent": [
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 101.3504234280048,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 122.67658465685135,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 108.67264442970068,
+          "valid": false,
+          "issues": [
+            "C=2 quality or Korean corruption gate failed"
+          ]
+        },
+        {
+          "concurrency": 2,
+          "ctx": 32000,
+          "aggregate_output_tok_s": 96.5148008783381,
+          "valid": false,
+          "issues": [
+            "C=2 quality or Korean corruption gate failed"
+          ]
+        }
+      ]
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260916T170637-f17823d27900",
+      "sha": "ffd19b44630b905f0c68db5e8f060bc78680012e",
+      "engine_source_sha256": "8038bc1ae677936e582791703f13cb7f2653341dad410b0feb9f4d8ba370086f",
+      "image": "st-engine:bracket-ffd19b44630b",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 7,
+        "total": 9,
+        "score": 53,
+        "max_score": 57,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 9
+          },
+          "completion": {
+            "ok": 9,
+            "total": 9
+          },
+          "result": {
+            "ok": 9,
+            "total": 9
+          },
+          "derivation": {
+            "ok": 7,
+            "total": 9
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 9
+          },
+          "counterfactual": {
+            "ok": 9,
+            "total": 9
+          },
+          "witnesses": {
+            "ok": 1,
+            "total": 3
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 5,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5043088449020531,
+      "step_s": null,
+      "observed_step_s": 19.891678481039442,
+      "request_decode_tok_s": 83.34853906985516,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 80.97260159722222,
+          "ttft_s": [
+            1.136090875021182,
+            1.1178043149993755,
+            1.1267852749442682
+          ],
+          "completion_tokens": [
+            2313,
+            3967,
+            8391
+          ],
+          "output_sha256": [
+            "b98deaf031ae7fa4857ccb4c220dbe7214d3937d076355cecbdb5ee9d5bd57dc",
+            "27240a92ab066e6b894b972138e965d85563bcb0718430856931110c5fbe953d",
+            "61a576add94e8fadd349306bed338a15325febea112d6446de8307b3e0b2e5e7"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 86.8082077930122,
+          "ttft_s": [
+            9.628923090989701
+          ],
+          "completion_tokens": [
+            8063
+          ],
+          "output_sha256": [
+            "35c5be2f1d8496629d80ebf505e3168e281d1bf2151e97ab974705e7284ae6e4"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 84.38450757837356,
+          "ttft_s": [
+            37.43528446397977
+          ],
+          "completion_tokens": [
+            8887
+          ],
+          "output_sha256": [
+            "9872825c7234af36409bdc4b1f4dae31824c72a71f21aeb702c464db4f2205cc"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": []
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "omitted_after_run_1"
+      },
+      "quality_concurrent": null,
+      "fixed_concurrency": null,
+      "concurrent": []
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260916T172031-e1218c7b8c70",
+      "sha": "69c5420cf497992184842308990a1f6d90613a5b",
+      "engine_source_sha256": "ae77bb8d341ec1a9585202f09c4990f8467e6803db2fca40bf1bec056a11887e",
+      "image": "st-engine:bracket-69c5420cf497",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed",
+        "C=2 ctx=2000: C=2 quality or Korean corruption gate failed",
+        "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 7,
+        "total": 9,
+        "score": 53,
+        "max_score": 57,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 9
+          },
+          "completion": {
+            "ok": 9,
+            "total": 9
+          },
+          "result": {
+            "ok": 9,
+            "total": 9
+          },
+          "derivation": {
+            "ok": 7,
+            "total": 9
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 9
+          },
+          "counterfactual": {
+            "ok": 9,
+            "total": 9
+          },
+          "witnesses": {
+            "ok": 1,
+            "total": 3
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 5,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5203295905024802,
+      "step_s": null,
+      "observed_step_s": 19.885537766489442,
+      "request_decode_tok_s": 85.25271062357625,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 85.02694651781792,
+          "ttft_s": [
+            1.1263753399834968,
+            1.1152883140021004,
+            1.1272532290313393
+          ],
+          "completion_tokens": [
+            2302,
+            3747,
+            6160
+          ],
+          "output_sha256": [
+            "27c7385f1ce9beadb0d9b053002ddc2eae3dd76120093e2c38992b740977506f",
+            "91a73aacaac385a881f63673c59b96fc5fe1a092c5db452b39732f27212c3e4f",
+            "968bd0074f4cc9b68b7cad1ae057a9f6633562ff848cfdc50c45a27199f9c0b1"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 87.91528180769934,
+          "ttft_s": [
+            9.613490281975828
+          ],
+          "completion_tokens": [
+            9873
+          ],
+          "output_sha256": [
+            "a67a25d5786c4015400f825f8ee7ae0f39773b35caecb1afbc62bc2a38dbefd5"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 83.01184921253476,
+          "ttft_s": [
+            37.65221292304341
+          ],
+          "completion_tokens": [
+            9876
+          ],
+          "output_sha256": [
+            "dc1318aa8f1c23026b523ad7eec63f1a560591d3e5d130a2c736385246096a00"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1,
+          2
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": [
+            2000,
+            32000
+          ]
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "measured"
+      },
+      "quality_concurrent": {
+        "version": "ko-reasoning-v2",
+        "ok": 10,
+        "total": 12,
+        "score": 72,
+        "max_score": 76,
+        "dimensions": {
+          "format": {
+            "ok": 12,
+            "total": 12
+          },
+          "completion": {
+            "ok": 12,
+            "total": 12
+          },
+          "result": {
+            "ok": 12,
+            "total": 12
+          },
+          "derivation": {
+            "ok": 10,
+            "total": 12
+          },
+          "evidence": {
+            "ok": 12,
+            "total": 12
+          },
+          "counterfactual": {
+            "ok": 12,
+            "total": 12
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 4
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "fixed_concurrency": {
+        "tokens": 1024,
+        "clients": 4,
+        "concurrency": 2,
+        "c1_tok_s": 88.70823409854042,
+        "many_tok_s": 112.06770030434667,
+        "c1_decode_tok_s": 106.42323084855477,
+        "many_decode_tok_s_sum": 131.25306346826162,
+        "valid": false,
+        "issues": [
+          "C=2: rank 0: preparation changed or unknown",
+          "C=2: rank 1: preparation changed or unknown",
+          "C=2: rank 2: preparation changed or unknown",
+          "C=2: rank 3: preparation changed or unknown"
+        ]
+      },
+      "concurrent": [
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 103.56826044791963,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 120.56338906231984,
+          "valid": false,
+          "issues": [
+            "C=2 quality or Korean corruption gate failed"
+          ]
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 106.11493525934885,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 32000,
+          "aggregate_output_tok_s": 94.26039452542965,
+          "valid": false,
+          "issues": [
+            "C=2 quality or Korean corruption gate failed"
+          ]
+        }
+      ]
+    },
+    {
+      "arm": "A",
+      "run": 2,
+      "run_id": "20260916T174238-db5db1a94bf5",
+      "sha": "69c5420cf497992184842308990a1f6d90613a5b",
+      "engine_source_sha256": "ae77bb8d341ec1a9585202f09c4990f8467e6803db2fca40bf1bec056a11887e",
+      "image": "st-engine:bracket-69c5420cf497",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 7,
+        "total": 9,
+        "score": 53,
+        "max_score": 57,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 9
+          },
+          "completion": {
+            "ok": 9,
+            "total": 9
+          },
+          "result": {
+            "ok": 9,
+            "total": 9
+          },
+          "derivation": {
+            "ok": 7,
+            "total": 9
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 9
+          },
+          "counterfactual": {
+            "ok": 9,
+            "total": 9
+          },
+          "witnesses": {
+            "ok": 1,
+            "total": 3
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 5,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5332091188075405,
+      "step_s": null,
+      "observed_step_s": 19.882239427438915,
+      "request_decode_tok_s": 86.16208980371289,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 87.14844914791973,
+          "ttft_s": [
+            1.1316938700038008,
+            1.1274872869835235,
+            1.120639851957094
+          ],
+          "completion_tokens": [
+            2175,
+            3755,
+            5290
+          ],
+          "output_sha256": [
+            "f121f6e5264e4b8a90906cd64d15bc789801affe00a2a135e7f7b55f85f3bad0",
+            "124b2d29e399399fabac16e4ece33538710b4de89a3fb162a623ced41b3f1cb2",
+            "f1737d63d64578c51ec386662f10e13d4095ea5ed51a692800c0a0eb9e1bb1f2"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 81.07188705165831,
+          "ttft_s": [
+            9.651937087008264
+          ],
+          "completion_tokens": [
+            9733
+          ],
+          "output_sha256": [
+            "6badf40a8ff350f3a402188df25ac6043ee6e2ccb85ea6cbab7ca8890e7ceea1"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 88.08012238468885,
+          "ttft_s": [
+            37.265277395024896
+          ],
+          "completion_tokens": [
+            22231
+          ],
+          "output_sha256": [
+            "9cd2731ecc4345dca31fe247fc884ec8729b384b794b94ba951999c297c2db6b"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": []
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "omitted_after_run_1"
+      },
+      "quality_concurrent": null,
+      "fixed_concurrency": null,
+      "concurrent": []
+    }
+  ],
+  "pairs": [
+    {
+      "run": 1,
+      "all_outputs_equal": false,
+      "consumer_gates_pass": false,
+      "base_request_tok_s": 87.3047314920689,
+      "candidate_request_tok_s": 85.25271062357625,
+      "observed_request_tok_s_change_pct": -2.350411980453848,
+      "requests": [
+        {
+          "case": [
+            2000,
+            "0",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 95.67650353239952,
+          "candidate_tok_s": 96.4603724386781,
+          "base_ttft_s": 1.1391855149995536,
+          "candidate_ttft_s": 1.1263753399834968
+        },
+        {
+          "case": [
+            2000,
+            "1",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 100.74596948718892,
+          "candidate_tok_s": 97.05025948092154,
+          "base_ttft_s": 1.1147175529622473,
+          "candidate_ttft_s": 1.1152883140021004
+        },
+        {
+          "case": [
+            2000,
+            "2",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 77.09573949740755,
+          "candidate_tok_s": 75.94180222650176,
+          "base_ttft_s": 1.1039274060167372,
+          "candidate_ttft_s": 1.1272532290313393
+        },
+        {
+          "case": [
+            32000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 85.28233779377618,
+          "candidate_tok_s": 87.91528180769934,
+          "base_ttft_s": 9.65949076396646,
+          "candidate_ttft_s": 9.613490281975828
+        },
+        {
+          "case": [
+            128000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 88.37616787324222,
+          "candidate_tok_s": 83.01184921253476,
+          "base_ttft_s": 37.49610275297891,
+          "candidate_ttft_s": 37.65221292304341
+        }
+      ],
+      "fixed_length_requests": [
+        {
+          "question": "fixed-concurrency-0",
+          "output_equal": true,
+          "base_tok_s": 106.42392066814106,
+          "candidate_tok_s": 106.28058723309681,
+          "observed_change_pct": -0.13468159615280806
+        },
+        {
+          "question": "fixed-concurrency-1",
+          "output_equal": false,
+          "base_tok_s": 87.57009568090662,
+          "candidate_tok_s": 84.87303742311887,
+          "observed_change_pct": -3.079885018757378
+        },
+        {
+          "question": "fixed-concurrency-2",
+          "output_equal": false,
+          "base_tok_s": 108.06066911158557,
+          "candidate_tok_s": 106.56587446401271,
+          "observed_change_pct": -1.383292052383378
+        },
+        {
+          "question": "fixed-concurrency-3",
+          "output_equal": true,
+          "base_tok_s": 107.60708167809769,
+          "candidate_tok_s": 107.484931799163,
+          "observed_change_pct": -0.11351472136387208
+        }
+      ],
+      "evidence_issues": {
+        "base": [
+          "C=1 quality or Korean corruption gate failed",
+          "C=2 ctx=2000: C=2 quality or Korean corruption gate failed",
+          "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+        ],
+        "candidate": [
+          "C=1 quality or Korean corruption gate failed",
+          "C=2 ctx=2000: C=2 quality or Korean corruption gate failed",
+          "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+        ]
+      }
+    },
+    {
+      "run": 2,
+      "all_outputs_equal": false,
+      "consumer_gates_pass": false,
+      "base_request_tok_s": 83.34853906985516,
+      "candidate_request_tok_s": 86.16208980371289,
+      "observed_request_tok_s_change_pct": 3.3756449306203917,
+      "requests": [
+        {
+          "case": [
+            2000,
+            "0",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 93.90311601537877,
+          "candidate_tok_s": 95.13714338434481,
+          "base_ttft_s": 1.136090875021182,
+          "candidate_ttft_s": 1.1316938700038008
+        },
+        {
+          "case": [
+            2000,
+            "1",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 97.21210972011889,
+          "candidate_tok_s": 96.60837728032634,
+          "base_ttft_s": 1.1178043149993755,
+          "candidate_ttft_s": 1.1274872869835235
+        },
+        {
+          "case": [
+            2000,
+            "2",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 72.49683773799994,
+          "candidate_tok_s": 78.93761622372068,
+          "base_ttft_s": 1.1267852749442682,
+          "candidate_ttft_s": 1.120639851957094
+        },
+        {
+          "case": [
+            32000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 86.8082077930122,
+          "candidate_tok_s": 81.07188705165831,
+          "base_ttft_s": 9.628923090989701,
+          "candidate_ttft_s": 9.651937087008264
+        },
+        {
+          "case": [
+            128000,
+            "all",
+            0
+          ],
+          "output_equal": false,
+          "tokens_equal": false,
+          "base_tok_s": 84.38450757837356,
+          "candidate_tok_s": 88.08012238468885,
+          "base_ttft_s": 37.43528446397977,
+          "candidate_ttft_s": 37.265277395024896
+        }
+      ],
+      "fixed_length_requests": [],
+      "evidence_issues": {
+        "base": [
+          "C=1 quality or Korean corruption gate failed"
+        ],
+        "candidate": [
+          "C=1 quality or Korean corruption gate failed"
+        ]
+      }
+    }
+  ],
+  "complete": true,
+  "scope": "measured consumer intervals; adoption also requires quality and valid evidence"
+}

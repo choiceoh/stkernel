@@ -1,0 +1,80 @@
+{
+  "scope": "shared native cache identity; same key in both boots; file mtimes precede both measured boots",
+  "ranks": [
+    {
+      "rank": 0,
+      "node": "10.10.10.2",
+      "files": [
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/src/kernels.cu",
+          "sha256": "8d3bd8a91b1d81b3de92c00ef9d250e4a0e24915f3ff5602df0ae13ebda71154",
+          "bytes": 245916,
+          "mtime": 1789576258.5716379
+        },
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/st_dense_350283036157c48725e8dc7c.so",
+          "sha256": "af18ab2db4d2bf3786ef601155e44e0c11d5456ce6a4a9152ae699bb39864386",
+          "bytes": 3793880,
+          "mtime": 1789576342.4464529
+        }
+      ]
+    },
+    {
+      "rank": 1,
+      "node": "10.10.10.1",
+      "files": [
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/src/kernels.cu",
+          "sha256": "8d3bd8a91b1d81b3de92c00ef9d250e4a0e24915f3ff5602df0ae13ebda71154",
+          "bytes": 245916,
+          "mtime": 1789576257.8032918
+        },
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/st_dense_350283036157c48725e8dc7c.so",
+          "sha256": "50f9c90837e3045156c490b74e5858078a24912f590d2b9df4a9d68b3b13bafc",
+          "bytes": 3793880,
+          "mtime": 1789576307.3747265
+        }
+      ]
+    },
+    {
+      "rank": 2,
+      "node": "10.10.10.3",
+      "files": [
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/src/kernels.cu",
+          "sha256": "8d3bd8a91b1d81b3de92c00ef9d250e4a0e24915f3ff5602df0ae13ebda71154",
+          "bytes": 245916,
+          "mtime": 1789576257.991414
+        },
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/st_dense_350283036157c48725e8dc7c.so",
+          "sha256": "94caf585257f8cab260c1a7d5d5347aca31e1bd171c336c3ab6f2f50badfaddc",
+          "bytes": 3793880,
+          "mtime": 1789576319.751429
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "node": "10.10.10.4",
+      "files": [
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/src/kernels.cu",
+          "sha256": "8d3bd8a91b1d81b3de92c00ef9d250e4a0e24915f3ff5602df0ae13ebda71154",
+          "bytes": 245916,
+          "mtime": 1789576260.0915246
+        },
+        {
+          "path": "/cache/cu132/st-dense/350283036157c48725e8dc7c/st_dense_350283036157c48725e8dc7c.so",
+          "sha256": "68f901aed945c35904b216eadf0f509cb7b136307ca58f173f9566085062f306",
+          "bytes": 3793880,
+          "mtime": 1789576333.1928391
+        }
+      ]
+    }
+  ],
+  "baseline_boot_started_utc": "2026-09-16T16:42:12+00:00",
+  "candidate_boot_started_utc": "2026-09-16T17:17:56+00:00",
+  "builds_are_per_rank": true
+}

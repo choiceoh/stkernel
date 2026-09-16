@@ -1,0 +1,6 @@
+{"kind": "identity", "gpu_used": false, "torch": "2.13.0+cu132", "cuda": "13.2", "sources": {"engine/kernels/dense/kernels.cu": "bf3217887f608b7269dbd8ae72641c210d6c303ba21d7243f43c8797ce5a38d5", "engine/kernels/mla/glm53_megakernel.cu": "a371e60aacaa816b0f6d04f3893df810fb12ba0c66d6aceef3c0fa59bd554420", "engine/kernels/b12x/moe_static_kernel_v4.py": "04c149b4eac2b9ed532baaa5ac1cd73cf42073a622cce670c40265b2b85c11f5", "engine/kernels/b12x/moe_dispatch.py": "46d5052d2b8c4fdeace2b54329982382dec0c503df8144b2e27a961d2c89d221"}}
+{"kind": "compile", "component": "dense", "module": "/cache/fixed-k-0917/dense/ab76bbe876abdfaa6d311cfb/st_dense_ab76bbe876abdfaa6d311cfb.so", "binary_sha256": "3d552d0dc3bc875de3d199b52f1d63ebc751d5b9f041be24adf76c9f3fcb6959"}
+{"kind": "compile", "component": "mla", "module": "/cache/fixed-k-0917/mla/c3a756b027705e5b50690291/st_mla_c3a756b027705e5b50690291.so", "binary_sha256": "9044642da1e6281c414716e104ec15b4a63eed779717f243f9b95fceefaefd7d"}
+{"kind": "compile", "component": "moe", "resident_waves": false}
+{"kind": "compile", "component": "moe", "resident_waves": true}
+{"kind": "complete", "passed": true, "scope": "compile only"}

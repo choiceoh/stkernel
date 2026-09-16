@@ -1,0 +1,39 @@
+diff --git a/engine/kernels/b12x/moe_dispatch.py b/engine/kernels/b12x/moe_dispatch.py
+index d0534ca3..cce5eb48 100644
+--- a/engine/kernels/b12x/moe_dispatch.py
++++ b/engine/kernels/b12x/moe_dispatch.py
+@@ -2445,7 +2445,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
+                     and not config.get("probe_route_scatter", False)
+                     and bool(config.get("scatter_vec4", True)))
+     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
+-                input_vec16=bool(reform and m in (8, 16) and config.get("input_vec16", True)),
++                input_vec16=bool(reform and m in (8, 16) and config.get("input_vec16", False)),
+                 sf6_fc2_word_expand=fc2_word_expand,
+                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
+                 compact_staging=compact_staging,
+diff --git a/engine/kernels/mla/__init__.py b/engine/kernels/mla/__init__.py
+index 20a18962..1498cc9d 100644
+--- a/engine/kernels/mla/__init__.py
++++ b/engine/kernels/mla/__init__.py
+@@ -38,7 +38,7 @@ PREFILL_MODES = ("stock", "tile32")
+ # C2 only: wider tiles save 3.6..7.3% over full sparse selections. C1 and
+ # short selection widths keep their old cell (same-build component records
+ # in measurements/st_fixed_k_cost_followup_20260917; consumer proof separate).
+-ENABLE_MLA_QREG = True
++ENABLE_MLA_QREG = False
+ ENABLE_MLA_CLUSTER = True
+ ENABLE_MLA_PREFILL32 = False
+ 
+diff --git a/engine/profiles/glm53/net.py b/engine/profiles/glm53/net.py
+index 129254d1..7fe6b169 100644
+--- a/engine/profiles/glm53/net.py
++++ b/engine/profiles/glm53/net.py
+@@ -210,7 +210,7 @@ class Glm53Net:
+         # A producer writes its bound C1 consumer's input pack (KDA o_proj from the output norm). False is the
+         # same-build control for component probes; serving binds it before capture.
+         self.producer_packs = True
+-        self.mhc_input_packs = True
++        self.mhc_input_packs = False
+ 
+     # -- binding ----------------------------------------------------------------
+     def specs(self):
