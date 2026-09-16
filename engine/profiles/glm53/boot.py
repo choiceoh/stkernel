@@ -151,8 +151,12 @@ def prefill_record_components(a, cfg, engine, caches, lanes, comm) -> dict:
                      vision=record.optional_identity(ranks / vision_mod.FILE)),
         meta={path.name: record.file_identity(path) for path in sorted(meta.iterdir()) if path.is_file()},
         config=dict(values={name: repr(value) for name, value in cfg.values.items() if name != "port"},
+                    # CUDA_MODULE_LOADING belongs here with the STK_ and allocator knobs: it decides
+                    # whether the driver loads a module at context creation or at its first launch, so
+                    # two boots that differ in it do not put their bytes in the same places at the same
+                    # times. A record taken under one must not be reused under the other.
                     environment={name: value for name, value in sorted(os.environ.items())
-                                 if name.startswith(("STK_", "PYTORCH_"))},
+                                 if name.startswith(("STK_", "PYTORCH_")) or name == "CUDA_MODULE_LOADING"},
                     rank=comm.rank, world=comm.world_size, kv_gib=float(a.kv_gib), tier=bool(a.tier_dir),
                     arena_bytes=memory.arena_bytes, workspace_bytes=memory.workspace_bytes,
                     os_reserve_bytes=memory.os_reserve_bytes, host_budget_bytes=memory.host_budget_bytes,
@@ -1432,9 +1436,12 @@ def fleet(a) -> int:
     """One rank per node, inside the glm53 image: served lanes (D3: all or nothing), every layer, then serve."""
     # Before the 67 GiB, not after it: a boot with no reservation must cost nothing. `local` is exempt --
     # it does not take the fleet.
+    opened = time.perf_counter()
     lease = fleet_lease_of()
+    leased = time.perf_counter()
     print(f"  fleet reserved by {lease['owner']}")
     print(f"  box: {facts.check_box()}")
+    checked = time.perf_counter()
     cfg = declared(a, facts.TP)
     # The checkpoint's kernel shape, bound before any transport or lane reads it (base/kernel_shape):
     # the geometry every kernel is admitted for. The record the shape wizard wrote beside the rank
@@ -1450,9 +1457,15 @@ def fleet(a) -> int:
     # And what is above even this line -- python's startup, torch, the kernel modules, the lease, the
     # facts, the shape -- is the rest of that 15.6 (9.17 on the 3acae017 boots, both read off container
     # timestamps by hand). The process knows when it started; the table says so as its first row.
+    # The 2026-09-16 boot put that row at 5.922 s with `import_s` 2.668 -- so the imports are not even
+    # half of it, and the other 3.25 had no name at all. These four are the rest of this function above
+    # this line: the lease file, the box check (which shells out), the declaration, and the shape.
     front = instruments.process_seconds()
     if front is not None:
-        rec.mark("front", front, import_s=round(_IMPORT_SECONDS, 3))
+        shaped = time.perf_counter()
+        rec.mark("front", front, import_s=round(_IMPORT_SECONDS, 3),
+                 lease_s=round(leased - opened, 3), box_s=round(checked - leased, 3),
+                 shape_s=round(shaped - checked, 3))
     # Every native extension this boot loads starts building now, one thread each, while the comm initialises; the
     # ranks meet below, before the one-shot transport's first sum. A native built at its first use left a rank's
     # peers waiting in a collective for its compile, and main's first cold boot died of it (profiles/glm53/natives).
