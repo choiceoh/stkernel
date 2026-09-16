@@ -547,6 +547,20 @@ class FP8Linear:
         q, scale = quantize(flat)
         return self.project_quantized(q, scale, out=out).reshape(*shape, self.rows)
 
+    def project_mx(self, hidden, q, scale, *, out=None):
+        """Consume the head producer, retaining the BF16 calibration boundary."""
+        if self.cublas is None:
+            raise RuntimeError('native MX input requires a prepared cuBLAS reader')
+        if (hidden.shape != q.shape or hidden.ndim != 2 or hidden.shape[1] != self.cols
+                or hidden.dtype != torch.bfloat16 or hidden.device != q.device
+                or not hidden.is_contiguous()):
+            raise ValueError('head producer hidden rows must match its FP8 input')
+        if self.observer is not None:
+            self.observer(hidden, None)
+        result = self.cublas.project_mx(q, scale, out=out)
+        self.executed = True
+        return result[:, :self.rows]
+
     def project_quantized(self, q, scale, *, out=None):
         """Consume the existing FP8 recipe; `out` owns the full padded GEMM output."""
         if self.cublas is not None:

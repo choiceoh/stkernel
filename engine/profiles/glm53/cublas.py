@@ -33,6 +33,7 @@ def prepare(net, drafter, arena, policy):
         count = weight_nbytes(*layer.weight[0].shape, split_decode=split)
         layer.prepare_cublas(split_decode=split, storage=arena.carve(count, 'cublas/'+name))
     net.cublas_readers = {name: layer for name, (layer, _) in readers.items()}
+    net.cublas_head_producer_required = drafter is not None
     expected = resident_bytes(net.F, None if drafter is None else drafter.F, policy)
     actual = sum(layer.cublas.resident_bytes for layer in net.cublas_readers.values())
     if actual != expected:
@@ -47,6 +48,8 @@ def execution_report(net):
     for name, layer in net.cublas_readers.items():
         reader = layer.cublas
         required = {'split_decode'} if name == 'fc_decode' else {'direct'}
+        if name == 'head' and getattr(net, 'cublas_head_producer_required', False):
+            required.add('producer_mx')
         if reader is not None and reader.split_decode:
             required.add('split_decode')
             required.add('split_decode_norm')
