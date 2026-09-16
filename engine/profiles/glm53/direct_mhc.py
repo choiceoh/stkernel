@@ -16,8 +16,7 @@ def consume(net, layer, carry, side, packet):
             getattr(dense, "input_pack_rows", lambda rows: False)(carry.x.shape[0])):
         import torch
         from engine.kernels.dense import producer_pack_nbytes
-        carry.input_pack = torch.empty(producer_pack_nbytes(carry.x.shape[0], f.hidden),
-                                       device=carry.x.device, dtype=torch.uint8)
+        carry.input_pack = torch.empty(producer_pack_nbytes(8, f.hidden), device=carry.x.device, dtype=torch.uint8)
     def mhc(source, descriptor):
         return net.mhc(n+f"hc.{side}_fn", source, carry.res, carry.post, carry.comb,
                        p[n+f"hc.{side}_scale"], p[n+f"hc.{side}_base"],

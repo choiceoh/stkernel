@@ -1063,11 +1063,12 @@ def fixed_k_cost_report(net):
         return {}
     packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
              if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
-    eligible = [name for name, layer in net.dense.items() if name.endswith('kda.in_proj')
-                and getattr(layer, 'input_pack_rows', lambda rows: False)(8)]
-    if (8 in rows and getattr(net, 'producer_packs', False) and getattr(net, 'mhc_input_packs', False)
-            and len(eligible) > 1 and not packs):
-        raise RuntimeError('fixed K7 mHC producer input packs did not reach a target projection')
+    if getattr(net, 'producer_packs', False) and getattr(net, 'mhc_input_packs', False):
+        for row_count in rows:
+            eligible = [name for name, layer in net.dense.items() if name.endswith('kda.in_proj')
+                        and getattr(layer, 'input_pack_rows', lambda rows: False)(row_count)]
+            if len(eligible) > 1 and not any(row_count in packs.get(name, ()) for name in eligible):
+                raise RuntimeError(f'fixed K7 mHC input packs did not reach a target projection at {row_count} rows')
     return dict(mhc_input_packs=packs)
 
 

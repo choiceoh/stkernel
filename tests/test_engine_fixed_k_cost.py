@@ -26,6 +26,13 @@ class InputPackTests(unittest.TestCase):
                  producer_packs=True, mhc_input_packs=True)
         self.assertEqual(len(report(net)['mhc_input_packs']), 2)
         for value in net.dense.values():
+            value.input_pack_rows = lambda rows: rows in (8, 16)
+        with self.assertRaisesRegex(RuntimeError, '16 rows'):
+            report(net)
+        for value in net.dense.values():
+            value.producer_pack_executed.add(16)
+        self.assertEqual(len(report(net)['mhc_input_packs']), 2)
+        for value in net.dense.values():
             value.producer_pack_executed.clear()
         with self.assertRaisesRegex(RuntimeError, 'mHC'):
             report(net)
@@ -47,23 +54,6 @@ class InputPackTests(unittest.TestCase):
                     layer(x, producer_pack=pack)
         with self.assertRaises(ValueError):
             layer(x.repeat(2, 1), producer_pack=pack)
-
-    def test_c2_pack_is_owned_only_by_the_bound_kda_input(self):
-        layer = writer(4096)
-        layer.rows = layer.packs[0].rows = 6416
-        x = torch.zeros(16, 4096, dtype=torch.bfloat16)
-        pack = torch.empty(dense.producer_pack_nbytes(16, 4096), dtype=torch.uint8)
-        ext = Mock()
-        with patch.object(dense, 'extension', return_value=ext):
-            layer(x, producer_pack=pack)
-        self.assertIs(ext.run_gemm_bound_input.call_args.kwargs['producer_pack'], pack)
-        self.assertEqual(layer.producer_pack_executed, {16})
-        for changed in (dict(observer=Mock()), dict(decode_precision='fp8'), dict(decode_input_rows=(8,))):
-            with patch.multiple(layer, create=True, **changed):
-                with self.assertRaises(ValueError):
-                    layer(x, producer_pack=pack)
-        for rows in (1, 7, 24, 32):
-            self.assertFalse(layer.input_pack_rows(rows))
 
 if __name__ == '__main__':
     unittest.main()

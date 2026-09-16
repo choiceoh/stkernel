@@ -81,7 +81,7 @@ def _sample_sha(t):
 class Layer:
     """One MoE layer's rank bytes, served views (in place) and the other chunks' w13 copies."""
 
-    def __init__(self, loader, keys, L, lane, chunks):
+    def __init__(self, loader, keys, L, lane, chunks, *, bulk=False):
         from engine.kernels.b12x import moe_dispatch as md
         from engine.modules.nvfp4_sf import mma_sf_view
         from engine.profiles.glm53.modelopt_scales import ModelOptScales
@@ -115,7 +115,7 @@ class Layer:
             self.views[chunk] = dataclasses.replace(
                 views, w13_fp4=w13_t.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
                 w13_tiled_storage=w13_t, w13_chunk=chunk)
-        if served == 256:
+        if served == 256 and bulk:
             # cell z: a permuted copy of BOTH tile-major storages (w13 over the served 256 chunk, w2) per
             # permutation kind, so the served view's bytes are untouched and every other arm keeps reading
             # them. Three kinds ride the same bulk_b kernel: the one whose bytes the MMA reads exactly is the
@@ -490,8 +490,6 @@ def bulk_cells(report, layers, spread, brackets):
     z = md._parse_glm53_static_v2('t,r,sf6,batch,z')
     kinds = ('z', 'zn', 'zp')               # one kernel, three storage orders: byte swizzle, nibble swizzle, plain
     arms = [('served', served, None)] + [(k, k, z) for k in kinds] + [('served_b', served, None)]
-    arms.insert(-1, ('zl', served, dict(z, bulk_b_linear=True)))
-    kinds = (*kinds, 'zl')
     passed = set(kinds)
     for fixture in (('c2_two_requests', 16, 2, spread), ('c1_one_request', 8, 1, spread)):
         fx = Fixtures(layers, fixture[1])
@@ -516,7 +514,7 @@ def bulk_cells(report, layers, spread, brackets):
     report('bulk_verdict', exact_kinds=sorted(passed), failed_kinds=sorted(set(kinds) - passed))
     if passed:
         stamp_cells(report, layers, [('served', served, None)] + [
-            (k, served if k == 'zl' else k, dict(z, bulk_b_linear=True) if k == 'zl' else z)
+            (k, k, z)
             for k in sorted(passed)], spread)
     if not passed:
         raise RuntimeError('bulk cells: no storage order reproduced the served bytes (byte, nibble, plain all beyond the ulp bound)')
@@ -720,7 +718,7 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
         lane = served(moe_static='t,r,sf6,batch,q0')
         loader = rank_loader(path)
         keys = set(loader.keys())
-        layers = [Layer(loader, keys, L, lane, chunks) for L in layer_ids]
+        layers = [Layer(loader, keys, L, lane, chunks, bulk='bulk' in wanted) for L in layer_ids]
         report('weights', layers=[layer.identity for layer in layers],
                allocated_bytes=torch.cuda.memory_allocated())
         spread = calibrate(layers, report)

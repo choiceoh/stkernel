@@ -3598,7 +3598,7 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
   a.probe = ints.size() > 3 ? (int)ints[3] : 0;
   const int qreg = ints.size() == 5 ? (int)ints[4] : 0;
-  TORCH_CHECK(qreg >= 0 && qreg <= 2, "MLA query-register cell must be 0, 1 or 2");
+  TORCH_CHECK((qreg == 0 || qreg == 2), "MLA query-register cell must be 0 or 2");
   TORCH_CHECK(!qreg || (ptrs.size() == 8 && (a.T == 8 || a.T == 16) && a.probe == 0),
               "MLA query registers require the bound 8/16-row ordinary decode cell");
   auto stream = c10::cuda::getCurrentCUDAStream();
@@ -3610,13 +3610,6 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
         cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
     a.grid = mk_resident_grid(mk_mla_kernel<false, false, true, 32>, tile32_grid, smem, MLA_GRID_CAP);
     mk_launch(mk_mla_kernel<false, false, true, 32>, a.grid, smem, stream, a);
-  } else if (qreg == 1) {
-    static int qreg_grid = 0;
-    constexpr int smem = MLA_SMEM - MLA_SMEM_Q;
-    if (!qreg_grid) MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<false, false, true>,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
-    a.grid = mk_resident_grid(mk_mla_kernel<false, false, true>, qreg_grid, smem, MLA_GRID_CAP);
-    mk_launch(mk_mla_kernel<false, false, true>, a.grid, smem, stream, a);
   } else if (ptrs.size() == 9) {
     TORCH_CHECK(ptrs[8] && (ptrs[8] & 15) == 0 && a.T >= 1 && a.T <= 32 && a.probe == 0,
                 "tree MLA requires aligned private rows and bounded exact decode");

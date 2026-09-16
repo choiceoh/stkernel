@@ -97,10 +97,10 @@ class MHC:
         tensors = [x,res,post,comb,weight,scale,base,norm,rc,pm,cm,li,*self.workspace]
         if output_pack is not None:
             from engine.kernels.dense import producer_pack_nbytes
-            if (n not in (8, 16) or self.hidden != 4096 or output_pack.device != x.device
+            if (n != 8 or self.hidden != 4096 or output_pack.device != x.device
                     or output_pack.dtype != torch.uint8 or not output_pack.is_contiguous()
                     or output_pack.numel() != producer_pack_nbytes(n, self.hidden)):
-                raise ValueError("MHC input pack requires same-device byte storage for 8 or 16 rows of width 4096")
+                raise ValueError("MHC input pack requires same-device byte storage for eight 4096-wide rows")
             tensors.append(output_pack)
         args = ([t.data_ptr() for t in tensors], [eps,hc_eps,hc_eps,post_mult,eps], [n, sinkhorn, self.hidden])
         if packets is None:

@@ -399,8 +399,7 @@ class DenseLinear:
         return rows in getattr(self, 'decode_input_rows', ()) and bound_input_cell(rows, pack.rows, pack.cols)
 
     def input_pack_rows(self, rows):
-        return ((rows == 8 or (rows == 16 and (self.rows, self.cols) == (6416, 4096)))
-                and self.observer is None and len(self.packs) == 1
+        return (rows == 8 and self.observer is None and len(self.packs) == 1
                 and getattr(self, 'decode_precision', 'w4') == 'w4'
                 and self._bound_input(rows, self.packs[0]))
 
