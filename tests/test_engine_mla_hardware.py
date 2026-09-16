@@ -124,6 +124,28 @@ class MlaHardwareTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.mla.mla_decode(q,cache,slots,lens,.0625,1.,out,branch=bad)
 
+    def test_decode_experiments_never_capture_tree_or_probe_dispatch(self):
+        self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
+        self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
+        self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
+        torch = SimpleNamespace(int32='i32', bfloat16='bf16', float8_e4m3fn='fp8',
+                                cuda=SimpleNamespace(is_current_stream_capturing=lambda: False))
+        for materialize in (False, True):
+            self.mla.ENABLE_MLA_SYNC_CLEAN = True
+            self.mla.ENABLE_MLA_BF16_TILE = materialize
+            for rows in (1, 7, 8, 16, 24):
+                q = Tensor((rows,16,512), 'bf16', 16)
+                for mode in ('ordinary', 'tree', 'probe'):
+                    kwargs = ({'branch': Tensor((rows,512), 'fp8', 96)} if mode == 'tree'
+                              else {'probe': 1} if mode == 'probe' else {})
+                    with patch.dict(sys.modules, torch=torch):
+                        self.mla.mla_decode(q, Tensor((4096,512),'u8',32),
+                            Tensor((rows,2048),'i32',48), Tensor((rows,),'i32',64),
+                            .0625, 1., Tensor(q.shape,'bf16',80), **kwargs)
+                    cell = self.calls[-1][2][-1]
+                    expected = (8 if materialize else 4 if rows == 8 else 6) if rows in (8, 16) and mode == 'ordinary' else 0
+                    self.assertEqual(cell, expected, (materialize, rows, mode))
+
     def test_tree_uses_own_capacity_before_selecting_cluster(self):
         self.mla._EXT.mla_tree_cluster_max = lambda: 2
         self.mla._EXT.run_mla = lambda *args: self.calls.append(args)

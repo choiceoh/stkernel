@@ -19,6 +19,17 @@ def namespace():
 
 
 class ScatterConfigTests(unittest.TestCase):
+    def test_frontend_experiments_cannot_reuse_another_graph_handle(self):
+        ns = namespace()
+        base = ns['_parse_glm53_static_v2']('t,r,sf6,batch')
+        select, key = ns['_static_v2_decode_config'], ns['_static_v2_cache_key']
+        for rows in (8, 16):
+            keys = {key(select(dict(base, input_amax_tree=tree, input_pair_reuse=paired), rows), m=rows)
+                    for tree in (False, True) for paired in (False, True)}
+            self.assertEqual(len(keys), 4)
+            self.assertEqual(key(select(base, rows), m=rows),
+                             key(select(dict(base, input_amax_tree=False, input_pair_reuse=False), rows), m=rows))
+
     def test_vector_input_scope_rollback_and_cache_identity(self):
         ns = namespace()
         parse, select, key = (ns[n] for n in ('_parse_glm53_static_v2', '_static_v2_decode_config', '_static_v2_cache_key'))
