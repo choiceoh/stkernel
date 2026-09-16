@@ -121,3 +121,46 @@ C1 identical MLA is 43.20 -> 47.50 us (+9.96%); C2 is 59.62 -> 71.18 us
 tile search and empty-query arithmetic, MLA sharing is rejected.
 Resident MoE waves remain without a reproducible gain. Final source removes
 both unsuccessful experiments and retains the qualified warp-local mHC pack.
+
+## Consumer admission and source-lifetime repair
+
+The first full bracket (`fixedkfull-0917`, control `40272da2`) stopped before
+serving: all four ranks raised `draft FC capture needs the retained BF16 source`.
+`boot-failure.json` pins the logs. Automatic FC collection inherited from main
+was armed after compact drafter storage had retired its reference weight.
+
+Both arms now retain an independent host copy before compaction and move it
+back to the reader device only when collecting the shutdown bundle. The live
+reader and compact arena are unchanged. A regression test overwrites the original
+storage and checks the collected reference, actual output and reader identity.
+The focused Linux gate runs 40 tests: 39 passed, one GPU-only skip. The prior
+55-test gate (52 passed, three GPU skips) and full CI also passed. One retry
+caught a script-mode relative import; commit `69c5420c` uses the absolute import.
+No consumer speed claim is taken from either failed boot.
+
+The matched full bracket is `fixedkfull3-0917`: baseline `ffd19b44630b`,
+candidate `69c5420c`. The entire tree difference is one boolean assignment,
+`net.mhc_input_packs=False/True`. The canonical command is:
+
+```
+ST_BRACKET_VALIDATION=full ONEPASS_PROFILE=extended REPO=/home/choiceoh/st-worktrees/fixed-k-cost-0917 bash /home/choiceoh/stkernel/bench/fleet.sh st-chain fixedkfull3-0917 50   "fixed K7 mHC pack same-build B/A with compact source preserved"   -- B=ffd19b44 A=69c5420c
+```
+
+Each `NAME=sha` already adds one arm to the order; no extra names are needed
+for a single B/A pair. Consumer results follow when the run completes.
+
+The first baseline C1 pass completed with quality 6/9 and no Korean corruption;
+its raw measured request rate is 87.30 tok/s (32K: 85.28, 128K: 88.38).
+These are observations, not an eligible speed baseline: the harness correctly
+clears `decode.windows_med` when quality fails. The baseline ticket retains
+its second C1 pass, then returns the failure before the candidate arm. Candidate
+`69c5420c` is separately queued as `fixedkcandidate-0917` with the same extended
+profile and two runs, so the matched output/acceptance comparison can still be
+completed without rerunning the failed baseline a third time.
+
+The same baseline boot is already non-identical across C1 repetitions:
+the three 2K outputs contain 2176/3611/4671 tokens in run 1 and
+2313/3967/8391 in run 2. Prompt workloads and temperature (0) are unchanged.
+Therefore request-rate deltas cannot by themselves establish the small
+mHC speed effect. `summarize.py` retains actual request timings and hashes,
+and refuses an eligible speed claim when outputs differ or evidence fails.
