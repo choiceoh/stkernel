@@ -120,6 +120,7 @@ class MoEStaticKernelV4:
         fc2_stages: int = 2,
         l2_prefetch: int = 0,
         l2_prefetch_fc1: bool = True,
+        bulk_b: bool = False,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -198,6 +199,15 @@ class MoEStaticKernelV4:
         # under its own prefetch and FC2 faster), only the item's FC2 boxes -- across the seam and inside
         # the FC2 loop -- are asked for ahead.
         self.l2_prefetch_fc1 = bool(l2_prefetch_fc1)
+        # z (2026-09-17): the B stages arrive as one 1-D cp.async.bulk each (16 KB) from storage whose
+        # boxes are pre-swizzled into the stage's own byte order, instead of a 2-D TMA box of 128 (FC1)
+        # or 256 (FC2) row segments -- the fewest requests a stage can be (38차 §8 read the path as
+        # L2-request-rate bound; the original z on the t tile measured -2.5% with a permutation bug).
+        # The mbarrier accounting is the TMA's: the same bytes complete on the same barrier. Declared
+        # for the reform tile over tile-major storage whose chunk is the FC1 K tile (the dispatcher checks).
+        self.bulk_b = bool(bulk_b)
+        if self.bulk_b and not decode_reform:
+            raise ValueError("bulk B stages are declared for the M16 reform tile (t,r) only")
         self.stamps = bool(stamps)
         self.decode_reform = bool(decode_reform)
         # One integrated C=1 tile: halve padded M work, consume both FC1
@@ -1328,6 +1338,8 @@ class MoEStaticKernelV4:
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
+        sb1_base_addr = shared_ptr_to_u32(storage.sB1.data_ptr())     # bulk_b: the FC1 stage ring's byte base
+        sb2_base_addr = shared_ptr_to_u32(storage.sB2.data_ptr())     # bulk_b: the FC2 stage ring's byte base
         sfb2_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())
@@ -2479,7 +2491,7 @@ class MoEStaticKernelV4:
             sf_blocks_per_expert = Int64(cute.size(sfb1_packed.shape[1]))
             sfb2_packed_base = get_ptr_as_int64(sfb2_packed, Int32(0))
             sf2_blocks_per_expert = Int64(cute.size(sfb2_packed.shape[1]))
-            if cutlass.const_expr(self.l2_prefetch > 0):
+            if cutlass.const_expr(self.l2_prefetch > 0 or self.bulk_b):
                 # Tile-major storage (rows, K_in, K_tiles, E), K-major within the chunk, K_in == the
                 # kernel's K tile (the dispatcher checks): a (tile rows x K_in) box is one contiguous run
                 # at base + e * expert + k_tile * ktile + n_tile * box bytes. Row and box bytes are the
@@ -2600,7 +2612,20 @@ class MoEStaticKernelV4:
                                         tma_a, tAgA_mk[(None, k_tile)],
                                         tAsA[(None, self._fc1_input_slot(fc1_prod_state.index))], tma_bar_ptr=bar,
                                     )
-                                if cutlass.const_expr(gu == 0):
+                                if cutlass.const_expr(self.bulk_b):
+                                    # one bulk copy of the pre-swizzled 16 KB box; the bytes and the barrier
+                                    # transaction are exactly the TMA box's
+                                    if is_dma_lane0:
+                                        if cutlass.const_expr(gu == 0):
+                                            b_tile = gate_tile
+                                        else:
+                                            b_tile = up_tile
+                                        _bulk_g2s(
+                                            sb1_base_addr + fc1_prod_state.index * fc1_box_bytes,
+                                            w13_base + Int64(weight_expert_idx) * w13_expert_bytes
+                                            + Int64(k_tile) * w13_ktile_bytes + Int64(b_tile) * fc1_box_i64,
+                                            fc1_box_bytes, shared_ptr_to_u32(bar))
+                                elif cutlass.const_expr(gu == 0):
                                     cute.copy(
                                         tma_b_w13, tBgB_gate_nk[(None, k_tile)],
                                         tBsB1[(None, fc1_prod_state.index)], tma_bar_ptr=bar,
@@ -2696,13 +2721,22 @@ class MoEStaticKernelV4:
                                     fc2_box_bytes)
                     fc2_pipeline.producer_acquire(fc2_prod_state)
                     bar2 = fc2_pipeline.producer_get_barrier(fc2_prod_state)
-                    cute.copy(
-                        tma_b_down,
-                        tBgB_down[(None, output_tile_idx, intermediate_slice,
-                                   weight_expert_idx)],
-                        tBsB2[(None, fc2_prod_state.index)],
-                        tma_bar_ptr=bar2,
-                    )
+                    if cutlass.const_expr(self.bulk_b):
+                        if is_dma_lane0:
+                            _bulk_g2s(
+                                sb2_base_addr + fc2_prod_state.index * fc2_box_bytes,
+                                w2_base + Int64(weight_expert_idx) * w2_expert_bytes
+                                + Int64(intermediate_slice) * w2_ktile_bytes
+                                + Int64(output_tile_idx) * fc2_box_i64,
+                                fc2_box_bytes, shared_ptr_to_u32(bar2))
+                    else:
+                        cute.copy(
+                            tma_b_down,
+                            tBgB_down[(None, output_tile_idx, intermediate_slice,
+                                       weight_expert_idx)],
+                            tBsB2[(None, fc2_prod_state.index)],
+                            tma_bar_ptr=bar2,
+                        )
                     if cutlass.const_expr(self.reform_sf_pack):
                         if is_dma_lane0:
                             if cutlass.const_expr(self.decode_reform):
