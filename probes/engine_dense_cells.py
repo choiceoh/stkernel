@@ -24,6 +24,12 @@ Routes (ROUTES), each `(ext, owners, x, destination) -> outputs`:
   *_l2          the same route with the bench knob set_gemm2_l2_prefetch(1) held while its graph is captured:
                 every v2 CTA asks L2 for its whole k slice of W and scales at entry (2026-09-16). A hint,
                 so the exactness gate holds it to the route's own bytes
+  *_ksr<n>      the same route with the bench knob set_gemm2(n) held while its graph is captured: every v2 launch
+                takes n k-slices per tile instead of mk_choose_ksr2's one-wave rule (30차 swept it at m=8; this is
+                the m=16 sweep, 2026-09-17). A different fold order may move a BF16 output by its last bit, so these
+                arms are held to KSR_MAX_ULPS of the reference (1 ulp of the larger of the element and the tensor
+                RMS -- an add order, not wrong bytes) and the largest distance is reported. 16 rows only: the 8-row
+                C1 cells declare their own geometry
 
 To add an arm: put a route in ROUTES and a (control, candidate) pair in the cell's
 row plan below. Scope `single` is one layer; `chain` calls every listed layer in
@@ -129,6 +135,33 @@ def _pack(ext, x):
 
 
 PACK_ARMS = ('pack',)
+KSR_ARMS = (1, 2, 4, 8)
+KSR_MAX_ULPS = 1.0
+
+
+def _ksr(ext, n, fn):
+    """Run `fn` with the v2 split-K bench knob held at n slices: a capture inside bakes it into its graph."""
+    ext.set_gemm2(n)
+    try:
+        return fn()
+    finally:
+        ext.set_gemm2(0)          # 0 = mk_choose_ksr2's rule
+
+
+def _gate(name, arm, got, want, tolerant):
+    """The zero-tolerance byte gate, except the ksr arms: those may differ from the reference by a fold order,
+    held to KSR_MAX_ULPS bf16 ulps of the larger of the element and the tensor RMS, largest distance kept."""
+    if '_ksr' not in arm:
+        torch.testing.assert_close(got, want, rtol=0, atol=0)
+        return
+    a, b = got.float(), want.float()
+    rms = b.pow(2).mean().sqrt().clamp_min(2.0 ** -126)
+    scale = torch.maximum(torch.maximum(a.abs(), b.abs()), rms)
+    ulp = torch.exp2(torch.floor(torch.log2(scale)) - 7)
+    ulps = ((a - b).abs() / ulp).max().item()
+    tolerant[arm] = max(tolerant.get(arm, 0.0), ulps)
+    if ulps > KSR_MAX_ULPS:
+        raise RuntimeError(f'{name} {arm}: {ulps:.2f} bf16 ulps from the reference (gate {KSR_MAX_ULPS})')
 
 def _wide_control(ext, owner, x, destination):
     p = owner.packs[0]
@@ -150,6 +183,15 @@ def _l2(ext, fn):
         ext.set_gemm2_l2_prefetch(0)
 
 
+def _ksr_routes():
+    routes = {}
+    for n in KSR_ARMS:
+        routes[f'bound_ksr{n}'] = (lambda n: lambda ext, owners, x, d: _ksr(ext, n, lambda: _dense(owners[0], x, d, BOUND)))(n)
+        routes[f'generic_ksr{n}'] = (lambda n: lambda ext, owners, x, d: _ksr(ext, n, lambda: _dense(owners[0], x, d, ())))(n)
+        routes[f'pair_ksr{n}'] = (lambda n: lambda ext, owners, x, d: _ksr(ext, n, lambda: _pair(owners, x)))(n)
+    return routes
+
+
 ROUTES = {
     'bound': lambda ext, owners, x, d: _dense(owners[0], x, d, BOUND),
     'bound_l2': lambda ext, owners, x, d: _l2(ext, lambda: _dense(owners[0], x, d, BOUND)),
@@ -162,7 +204,21 @@ ROUTES = {
     'pair_wide': lambda ext, owners, x, d: _pair_wide(ext, owners, x),
     'pack': lambda ext, owners, x, d: _pack(ext, x),
     'wide_control': lambda ext, owners, x, d: _wide_control(ext, owners[0], x, d),
+    **_ksr_routes(),
 }
+
+
+def _with_ksr(cell):
+    """Every 16-row plan also pairs its served route with that route at each KSR_ARMS slice count."""
+    name, keys, layers, direct, width, plan = cell
+    if 16 not in plan:
+        return cell
+    served = plan[16][0][0]
+    extra = tuple((served, f'{served}_ksr{n}') for n in KSR_ARMS)
+    return (name, keys, layers, direct, width, {**plan, 16: plan[16] + extra})
+
+
+CELLS = tuple(_with_ksr(cell) for cell in CELLS)
 
 
 def _stats(values):
@@ -211,6 +267,7 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
         addresses = {a: [torch.tensor([g[0, 1].data_ptr()], device='cuda', dtype=torch.int64) for g in guards[a]]
                      for a in arms} if direct else {}
         graphs, outputs = {}, {}
+        tolerant = {}
         try:
             for arm in arms:
                 def run(arm=arm):
@@ -239,7 +296,7 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
                                 inner = g[step % 2, 1:-1]
                                 if not inner.isfinite().all().item():
                                     raise RuntimeError(f'{name} {arm} left a non-finite direct output')
-                                torch.testing.assert_close(inner, want[step % 2, 1:-1], rtol=0, atol=0)
+                                _gate(name, arm, inner, want[step % 2, 1:-1], tolerant)
                                 if not (g[step % 2, (0, -1)].eq(-123.).all().item()
                                         and g[1 - step % 2].eq(-123.).all().item()):
                                     raise RuntimeError(f'{name} {arm} wrote outside its rebound destination')
@@ -248,8 +305,9 @@ def cell_check(report, ext, cell, owners, rows, *, brackets, timing=True):
                                 for a, b in zip(_values(got), _values(want)):
                                     if not a.isfinite().all().item():
                                         raise RuntimeError(f'{name} {arm} left a non-finite output')
-                                    torch.testing.assert_close(a, b, rtol=0, atol=0)
+                                    _gate(name, arm, a, b, tolerant)
             report('exact', cell=name, rows=rows, scope=scope, layers=list(layers[:len(group)]), arms=arms,
+                   tolerant_max_ulps=tolerant, tolerant_gate=KSR_MAX_ULPS,
                    reference=arms[0], not_projections=[a for a in arms if a in PACK_ARMS], magnitudes=magnitudes, replay_orders='forward/reverse', direct_output=direct,
                    rebound_descriptor=direct, input_stride=x.stride(0),
                    plan=[ext.gemm2_plan(rows, o.rows, o.cols) for o in owners[0]])
