@@ -41,9 +41,14 @@ def main():
                   dict(Packed='*fp8e4nv', Scales='*fp32', Q='*fp8e4nv', S='*i32'),
                   dict(M=m, LOCAL_N=local*4096, PAYLOAD_BYTES=((local*4096 + local*8 + 127)//128)*128, PACK_BLOCK=2048))
                  for m, local in ((128, 32), (129, 33))]
-    for name, fn, signature, constants in variants:
+    configurations = [(name, fn, signature, constants, warps)
+                      for name, fn, signature, constants in variants
+                      for warps in ((4,) if name == 'weight-scales' else (1, 2, 4))]
+    for name, fn, signature, constants, warps in configurations:
+        if name != 'weight-scales':
+            constants = dict(constants, SCALAR_SCALE=warps == 1)
         kernel = triton.compile(ASTSource(fn, signature, constexprs=constants),
-                                target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
+                                target=GPUTarget('cuda', 121, 32), options=dict(num_warps=warps))
         ptx = kernel.asm['ptx']
         expensive = re.findall(r'\b(?:lg2|ex2|div|rcp)\.[\w.]*f32', ptx)
         if name != 'weight-scales' and expensive:
@@ -51,7 +56,11 @@ def main():
         integer_divisions = re.findall(r'\b(?:div|rem)\.[su]32', ptx)
         if name.startswith('bound-') and integer_divisions:
             raise RuntimeError(f'{name} kept dynamic integer division: {integer_divisions}')
-        kernels.append(dict(name=name, shared_bytes=kernel.metadata.shared, expensive_arithmetic=expensive,
+        barriers = re.findall(r'\bbar\.(?:warp\.)?sync\b', ptx)
+        if warps == 1 and (kernel.metadata.shared or barriers):
+            raise RuntimeError(f'{name} retained shared storage or a CTA barrier with one warp')
+        kernels.append(dict(name=name, num_warps=warps, shared_bytes=kernel.metadata.shared,
+                            cta_barriers=len(barriers), expensive_arithmetic=expensive,
                             integer_divisions=integer_divisions,
                             ptx_sha256=hashlib.sha256(kernel.asm['ptx'].encode()).hexdigest(),
                             cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest()))

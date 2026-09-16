@@ -1,0 +1,551 @@
+{
+  "status": "PASS",
+  "gpu_used": true,
+  "numerics_only": false,
+  "scope": "packed model weight; synthetic inputs; no serving or acceptance verdict",
+  "device": "NVIDIA GeForce RTX 5050",
+  "capability": [
+    12,
+    0
+  ],
+  "sms": 20,
+  "timing_target": "sm120-probe",
+  "gb10_admission": false,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "cells": [
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.35774698853492737,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.3582080006599426,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 2097408,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.36006098985671997,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 2097408,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.35971599817276,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          0,
+          0,
+          4,
+          0.3453289866447449,
+          0.3580799996852875,
+          0.35846400260925293,
+          0.3454970121383667
+        ],
+        [
+          1,
+          0,
+          4,
+          0.3449915051460266,
+          0.35785600543022156,
+          0.35793599486351013,
+          0.3447740077972412
+        ],
+        [
+          3,
+          2097408,
+          4,
+          0.34509098529815674,
+          0.36024200916290283,
+          0.3600045144557953,
+          0.3452639877796173
+        ],
+        [
+          0,
+          0,
+          1,
+          0.3488995134830475,
+          0.3579840064048767,
+          0.3580160140991211,
+          0.3447810113430023
+        ],
+        [
+          1,
+          0,
+          1,
+          0.3445329964160919,
+          0.35819199681282043,
+          0.3575040102005005,
+          0.34502649307250977
+        ],
+        [
+          3,
+          2097408,
+          1,
+          0.34482601284980774,
+          0.3604919910430908,
+          0.3604215085506439,
+          0.345537006855011
+        ],
+        [
+          0,
+          0,
+          2,
+          0.34529298543930054,
+          0.3575519919395447,
+          0.3582240045070648,
+          0.34529149532318115
+        ],
+        [
+          1,
+          0,
+          2,
+          0.34466099739074707,
+          0.3578239977359772,
+          0.35814398527145386,
+          0.34513700008392334
+        ],
+        [
+          3,
+          2097408,
+          2,
+          0.3480904996395111,
+          0.3594079911708832,
+          0.3596999943256378,
+          0.3451065123081207
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": null,
+        "workspace": 0,
+        "reason": "no_consistent_gain",
+        "producer_warps": 4
+      },
+      "status": "PASS",
+      "graph_replays": 2,
+      "bound_allocation_delta": 3276800,
+      "bound_workspace_bytes": 0,
+      "extra_weight_scale_bytes": 2621440,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+          "shape": [
+            4096,
+            20480
+          ],
+          "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+          "kind": "fp8",
+          "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+        "path": "/work/packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1907
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 81920
+    },
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.3734079897403717,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.37862399220466614,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 2097408,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.37845999002456665,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 2097408,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.37834399938583374,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          0,
+          0,
+          4,
+          0.3560830056667328,
+          0.37595200538635254,
+          0.3739039897918701,
+          0.3601920008659363
+        ],
+        [
+          3,
+          2097408,
+          4,
+          0.36009299755096436,
+          0.368025004863739,
+          0.36306649446487427,
+          0.34921351075172424
+        ],
+        [
+          2,
+          2097408,
+          4,
+          0.34918099641799927,
+          0.3688960075378418,
+          0.3632349967956543,
+          0.3496429920196533
+        ],
+        [
+          0,
+          0,
+          1,
+          0.3493979871273041,
+          0.36111998558044434,
+          0.36208000779151917,
+          0.34862399101257324
+        ],
+        [
+          3,
+          2097408,
+          1,
+          0.35379350185394287,
+          0.36741501092910767,
+          0.3626289963722229,
+          0.3488270044326782
+        ],
+        [
+          2,
+          2097408,
+          1,
+          0.3501785099506378,
+          0.36303550004959106,
+          0.36343100666999817,
+          0.34943950176239014
+        ],
+        [
+          0,
+          0,
+          2,
+          0.3497619926929474,
+          0.3614875078201294,
+          0.361407995223999,
+          0.3496769964694977
+        ],
+        [
+          3,
+          2097408,
+          2,
+          0.3488155007362366,
+          0.3629879951477051,
+          0.3632034957408905,
+          0.34907200932502747
+        ],
+        [
+          2,
+          2097408,
+          2,
+          0.3504374921321869,
+          0.3625720143318176,
+          0.36336550116539,
+          0.34873199462890625
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": null,
+        "workspace": 0,
+        "reason": "no_consistent_gain",
+        "producer_warps": 4
+      },
+      "status": "PASS",
+      "graph_replays": 2,
+      "bound_allocation_delta": 3276800,
+      "bound_workspace_bytes": 0,
+      "extra_weight_scale_bytes": 2621440,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+          "shape": [
+            4096,
+            20480
+          ],
+          "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+          "kind": "fp8",
+          "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+        "path": "/work/packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1908
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 81920
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "ada91b1fd3409612537e9528fb9fb224bfe750f2ea1a5ae32a1b43b2a592e3a0",
+    "engine/kernels/dense/cublaslt.py": "ada6a09cf8f4378d48b28b4fe0ba5b73db26913efa03fb7a5c53efec08e09293",
+    "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/prefill_collectives/consumer.py": "3cabd1112ff9f91cb4455692366d975857ab82cf055b9f4ae58d3faaae8a55eb",
+    "probes/engine_cublaslt_check.py": "780f7c950312a665dabb651c0fdf316cd220ac8b54c4aaf15245ee82ea8b7611"
+  }
+}

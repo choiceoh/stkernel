@@ -233,12 +233,22 @@ class Plan : public std::enable_shared_from_this<Plan> {
   }
 
  public:
-  Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit)
+  Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit,
+       const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight)
       : context(std::move(context_)), m(m_), n(n_), k(k_), workspace_limit(limit) {
     TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
                 && m <= INT32_MAX && n <= INT32_MAX && k <= INT32_MAX, "invalid ST MXFP8 shape");
     c10::cuda::CUDAGuard guard(context->device);
     setup_operation(desc.operation);
+    // MX heuristics validate non-null scale pointers before enumerating any
+    // algorithms. Borrow real, validated storage for this host-only query;
+    // execution/bind supplies its own scale addresses below.
+    tensor(query_s_q, at::kByte, "query activation scales");
+    tensor(query_s_weight, at::kByte, "query weight scales");
+    TORCH_CHECK(query_s_q.dim() == 1 && query_s_q.numel() == ((m + 127) / 128) * (k / 128) * 512
+                && query_s_weight.dim() == 1 && query_s_weight.numel() == n * (k / 32),
+                "MXFP8 query scale shape mismatch");
+    set_scales(desc.operation, query_s_q, query_s_weight);
     // Column-major TN computes Y^T from the existing row-major W and X.
     check(cublasLtMatrixLayoutCreate(&desc.a, CUDA_R_8F_E4M3, k, n, k), "W layout");
     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
@@ -295,6 +305,9 @@ class Plan : public std::enable_shared_from_this<Plan> {
       }
       if (!more) break;
     }
+    // Geometry plans outlive the tensors borrowed by preparation. Never leave
+    // their addresses in the reusable descriptor after the query completes.
+    set_scale_pointers(desc.operation, nullptr, nullptr);
   }
 
   py::list candidates() const {
@@ -344,10 +357,13 @@ class Plan : public std::enable_shared_from_this<Plan> {
     TORCH_CHECK(!overlaps(out, workspace), "cuBLAS workspace overlaps output");
   }
 
-  static void set_scales(cublasLtMatmulDesc_t op, const torch::Tensor& s_q, const torch::Tensor& s_weight) {
-    const void* a_scale = s_weight.data_ptr(); const void* b_scale = s_q.data_ptr();
+  static void set_scale_pointers(cublasLtMatmulDesc_t op, const void* a_scale, const void* b_scale) {
     check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &a_scale, sizeof(a_scale)), "scale pointer A");
     check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &b_scale, sizeof(b_scale)), "scale pointer B");
+  }
+
+  static void set_scales(cublasLtMatmulDesc_t op, const torch::Tensor& s_q, const torch::Tensor& s_weight) {
+    set_scale_pointers(op, s_weight.data_ptr(), s_q.data_ptr());
   }
 
   void launch(cublasLtMatmulDesc_t op, size_t index, const torch::Tensor& q,
@@ -408,7 +424,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   py::class_<Context, std::shared_ptr<Context>>(module, "Context").def(py::init<int, int, int>());
   py::class_<Plan::Bound, std::shared_ptr<Plan::Bound>>(module, "BoundMatmul").def("run", &Plan::Bound::run);
   py::class_<Plan, std::shared_ptr<Plan>>(module, "Plan")
-      .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t>())
+      .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t,
+                    const torch::Tensor&, const torch::Tensor&>())
       .def("candidates", &Plan::candidates).def("run", &Plan::run)
       .def("bind", &Plan::bind).def("statistics", &Plan::statistics);
 }
