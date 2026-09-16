@@ -3,7 +3,19 @@
 import json
 import math
 
-HARNESS = 45
+HARNESS = 46
+# Harness 46: onepass has two named workloads (`PROFILES`) and `default` is the cheap one -- two
+# contexts and no C=N arm. The full set is `extended`, asked for by name. Two things made this
+# necessary at once: a D17 probe reserves the live door for its whole run and answers 409 to every
+# other request (2026-09-16, it reached a user as `API error 409`), and `fixed_concurrency_tokens`
+# was NOT part of the recorded workload, so two records could differ in whether they ran the C=N arm
+# and nothing said so. It is in the identity now, and `st_judge` compares like with like.
+#
+# What this costs, plainly: no record written before harness 46 carries a profile, and the judge will
+# not read one against the other. The first bracket of each commit after this boots its own base
+# instead of reusing a probe's sample, until samples accumulate in the new profile. That is what a
+# harness number is for -- a measurement that changed is a new generation, not a continuation.
+#
 # Harness 45: onepass requests say `retain: false`, so the server no longer parks each finished
 # request to the NVMe tier (the park overlapped the next request; on the live door a D17 probe filled
 # production's tier). The questions and budgets are harness 44's.
@@ -14,7 +26,34 @@ MAX_TOKENS = 16384
 COMBINED_MAX_TOKENS = 49152
 COMBINED_REASONING_BUDGET = 24576
 DEFAULTS = dict(ctx=[2000, 32000, 128000], seed=7, max_tokens=MAX_TOKENS, combine_min_ctx=32000,
-                fixed_decode_tokens=0, fixed_decode_reps=0, require_exclusive=False)
+                fixed_decode_tokens=0, fixed_decode_reps=0, fixed_concurrency_tokens=1024,
+                require_exclusive=False)
+
+# The two workloads a run can be. `default` is what every routine measurement uses -- the D17 probe
+# after a deploy and both arms of a bracket -- so base and candidate always measure the same thing.
+# `extended` is the full set, asked for by name when the question needs 128K or the C=N multiplier.
+PROFILES = {
+    "default": dict(ctx=[2000, 32000], fixed_concurrency_tokens=0),
+    "extended": dict(ctx=[2000, 32000, 128000], fixed_concurrency_tokens=1024),
+}
+DEFAULT_PROFILE = "default"
+
+
+def profile(name=None):
+    """A named workload, complete. An unknown name is a refusal, not a silent default."""
+    name = DEFAULT_PROFILE if name in (None, "") else str(name)
+    if name not in PROFILES:
+        raise ValueError(f"unknown workload profile {name!r}: " + ", ".join(sorted(PROFILES)))
+    return workload(dict(PROFILES[name]))
+
+
+def profile_of(value):
+    """The profile this workload IS, or 'custom' -- what a record is compared within."""
+    value = workload(value)
+    for name in PROFILES:
+        if profile(name) == value:
+            return name
+    return "custom"
 
 
 def workload(raw=None):
@@ -26,7 +65,8 @@ def workload(raw=None):
             or any(type(c) is not int or not 1 <= c <= 1000000 for c in value['ctx'])
             or len(set(value['ctx'])) != len(value['ctx'])):
         raise ValueError("ctx must list distinct positive context sizes")
-    for key in ('seed', 'max_tokens', 'combine_min_ctx', 'fixed_decode_tokens', 'fixed_decode_reps'):
+    for key in ('seed', 'max_tokens', 'combine_min_ctx', 'fixed_decode_tokens', 'fixed_decode_reps',
+                'fixed_concurrency_tokens'):
         if type(value[key]) is not int or not 0 <= value[key] <= 1000000:
             raise ValueError("invalid workload " + key)
     if value['max_tokens'] < 1 or type(value['require_exclusive']) is not bool:
@@ -44,11 +84,15 @@ def from_args(args):
     return workload(dict(ctx=[int(c) for c in args.ctx.split(',')], seed=args.seed,
                          max_tokens=args.max_tokens, combine_min_ctx=args.combine_min_ctx,
                          fixed_decode_tokens=args.fixed_decode_tokens,
-                         fixed_decode_reps=args.fixed_decode_reps, require_exclusive=args.require_exclusive))
+                         fixed_decode_reps=args.fixed_decode_reps,
+                         fixed_concurrency_tokens=getattr(args, 'fixed_concurrency_tokens', 0),
+                         require_exclusive=args.require_exclusive))
 
 
 def metadata(value=None):
-    return dict(harness=HARNESS, doc_lang='ko', thinking=True, window_s=1.0, workload=workload(value))
+    value = workload(value)
+    return dict(harness=HARNESS, doc_lang='ko', thinking=True, window_s=1.0,
+                workload=value, workload_profile=profile_of(value))
 
 
 def objective(raw=None):

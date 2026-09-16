@@ -41,6 +41,7 @@ import urllib.request
 import uuid
 
 from onepass_recording import CURRENT, Run, group, steady_errors
+import measurement_contract as contract
 import onepass_quality as quality
 
 _RUN = None
@@ -624,7 +625,15 @@ def _main() -> int:
     global _RUN
     ap = argparse.ArgumentParser()
     ap.add_argument("--name", default="onepass")
-    ap.add_argument("--ctx", default=os.environ.get("QUALITY_CTX", "2000,32000,128000"))
+    # The workload this run IS, by name (bench/measurement_contract.PROFILES). `default` is the cheap
+    # one every routine measurement uses -- the D17 probe after a deploy and both arms of a bracket --
+    # so base and candidate always measure the same thing. `extended` is the full set, by name. An
+    # explicit --ctx or --fixed-concurrency-tokens still wins; the record then says `custom` and the
+    # judge keeps it out of the profiles' comparisons.
+    ap.add_argument("--profile", default=os.environ.get("ONEPASS_PROFILE", contract.DEFAULT_PROFILE),
+                    choices=sorted(contract.PROFILES), help="the named workload this run measures")
+    chosen = contract.profile(os.environ.get("ONEPASS_PROFILE", contract.DEFAULT_PROFILE))
+    ap.add_argument("--ctx", default=os.environ.get("QUALITY_CTX", ",".join(map(str, chosen["ctx"]))))
     ap.add_argument("--max-tokens", type=int, default=quality.MAX_TOKENS)
     ap.add_argument("--combined-max-tokens", type=int,
                     default=int(os.environ.get("ONEPASS_COMBINED_MAX_TOKENS",
@@ -644,7 +653,8 @@ def _main() -> int:
     ap.add_argument("--fixed-decode-tokens", type=int, default=int(os.environ.get("ONEPASS_FIXED_DECODE_TOKENS", "0")))
     ap.add_argument("--fixed-decode-reps", type=int, default=int(os.environ.get("ONEPASS_FIXED_DECODE_REPS", "3")))
     ap.add_argument("--fixed-concurrency-tokens", type=int,
-                    default=int(os.environ.get("ONEPASS_FIXED_CONCURRENCY_TOKENS", str(DEFAULT_FIXED_CONCURRENCY_TOKENS))),
+                    default=int(os.environ.get("ONEPASS_FIXED_CONCURRENCY_TOKENS",
+                                               str(chosen["fixed_concurrency_tokens"]))),
                     help="run 1: four different 2K prompts forced to exactly this many output tokens, one at a time "
                          "and then N at a time -- bench-dec's C=N/C=1 multiplier. 0 = skip")
     ap.add_argument("--require-exclusive", action="store_true", default=os.environ.get("ONEPASS_REQUIRE_EXCLUSIVE") == "1")

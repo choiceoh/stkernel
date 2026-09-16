@@ -283,7 +283,9 @@ pair() {
   say "pair: candidate ${cs:0:12} against base ${bs:0:12} (session $S, rehearse=$REHEARSE)"
   leg "ST-${cs:0:12}" "$cand" || return $?
   local have
-  have=$(python3 "$REPO/bench/st_judge.py" samples --sha "$bs" $(tree_args "$base") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
+  # Only samples of the workload this bracket measures count as its base: a record of another
+  # profile answered another question (harness 46, bench/measurement_contract.PROFILES).
+  have=$(python3 "$REPO/bench/st_judge.py" samples --sha "$bs" --profile "${ONEPASS_PROFILE:-default}"          $(tree_args "$base") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
   if [ "${have:-0}" -lt "$FLOOR_N" ]; then
     say "base ${bs:0:12} has ${have:-0} warm sample(s), $FLOOR_N wanted: booting it"
     leg "ST-${bs:0:12}" "$base" || return $?

@@ -199,8 +199,8 @@ class GraderTests(unittest.TestCase):
 
 
 class IntegrationTests(unittest.TestCase):
-    def fixture(self):
-        return SimpleNamespace(ctx='2000,32000,128000', seed=7, combine_min_ctx=32000,
+    def fixture(self, ctx='2000,32000,128000'):
+        return SimpleNamespace(ctx=ctx, seed=7, combine_min_ctx=32000,
             max_tokens=q.MAX_TOKENS, combined_max_tokens=q.COMBINED_MAX_TOKENS,
             combined_reasoning_budget=q.COMBINED_REASONING_BUDGET)
 
@@ -315,11 +315,28 @@ class IntegrationTests(unittest.TestCase):
         self.assertGreater(grade.lineno, windows.end_lineno)
         self.assertGreater(grade.lineno, end.end_lineno)
 
-    def _check_canonical_coverage(self, run_index=None, width=4):
+    def test_the_default_workload_is_the_cheap_one_and_extended_is_what_this_pins(self):
+        """The routine measurement drops the 128K context and the fixed-concurrency multiplier; the
+        canonical coverage above is `extended`, which is what onepass measured before it was named."""
+        import measurement_contract as contract
+        default, extended = contract.profile('default'), contract.profile('extended')
+        self.assertEqual(default['ctx'], [2000, 32000])
+        self.assertEqual(default['fixed_concurrency_tokens'], 0)
+        self.assertEqual(extended['ctx'], [2000, 32000, 128000])
+        self.assertEqual(extended['fixed_concurrency_tokens'], 1024)
+        self.assertEqual(contract.DEFAULT_PROFILE, 'default')
+
+    def _check_canonical_coverage(self, run_index=None, width=4, profile='extended'):
+        # The canonical coverage this pins -- three contexts, the C=N pass, 128K at C=1 only -- IS the
+        # `extended` workload (harness 46), byte for byte what onepass measured before it was named.
+        # The cheap `default` is pinned by its own test below, from the contract rather than a run.
+        import measurement_contract as contract
+        chosen = contract.profile(profile)
+        graded = 3 * len(chosen['ctx'])
         self.addCleanup(setattr, onepass, '_RUN', None)
         from tests.test_onepass_channel_diagnostics import scanner
         cq = SimpleNamespace(MODEL='fixture', filler=lambda n, r: '')
-        items = onepass.workload_requests(self.fixture(), cq)
+        items = onepass.workload_requests(self.fixture(','.join(map(str, chosen['ctx']))), cq)
         answers = {item['content']: json.dumps({c['id']: c['answer'] for c in item['quality_cases']})
                    for item in items}
         completed = 0
@@ -349,6 +366,7 @@ class IntegrationTests(unittest.TestCase):
                    'bracket.py': SimpleNamespace(_git_sha=lambda: 'fixture', _StepWindows=Windows,
                        _spec_delta=lambda a, b: (0, 0), spec_k_eff=lambda a, b: 6)}
         environment = {'ONEPASS_RUN_INDEX': str(run_index)} if run_index is not None else {}
+        environment['ONEPASS_PROFILE'] = profile
         include_c4 = run_index in (None, 1)
         with TemporaryDirectory() as root, patch.dict(os.environ, environment, clear=True), \
              patch.object(sys, 'argv', ['onepass.py', '--out', str(Path(root) / 'ledger.jsonl')]), \
@@ -361,7 +379,8 @@ class IntegrationTests(unittest.TestCase):
             # Lack of real GPU/compile evidence must still invalidate acceptance.
             self.assertEqual(onepass.main(), 2)
             record = json.loads((Path(root) / 'ledger.jsonl').read_text())
-            self.assertEqual((record['quality']['ok'], record['quality']['total']), (9, 9))
+            self.assertEqual((record['quality']['ok'], record['quality']['total']), (graded, graded))
+            self.assertEqual(record['workload_profile'], profile)
             if include_c4:
                 self.assertEqual((record['quality_c4']['ok'], record['quality_c4']['total']), (6 * width, 6 * width))
             else:
