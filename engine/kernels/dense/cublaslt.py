@@ -23,6 +23,55 @@ def _build():
 
 
 WORKSPACE_LIMIT = 64 << 20  # search ceiling; only a winner's demand stays resident
+GRAPH_UNROLL = 16  # keep Python replay submission gaps out of small-GEMM timing
+
+
+class BF16Producer:
+    """The same source for baseline and MX, with an explicitly bound fast path."""
+    def __init__(self, source):
+        self.source = source
+
+    def __call__(self, mx, out):
+        from . import fp8, mxfp8
+        return (mxfp8 if mx else fp8).quantize(self.source, out=out)
+
+    def bind(self, mx):
+        if mx:
+            from .mxfp8 import bind_quantize
+            return bind_quantize(self.source)
+        outputs = self(False, None)
+        return lambda: self(False, outputs)
+
+
+class PacketProducer:
+    def __init__(self, source, local_rows, *, real_rows, routed=False):
+        self.source, self.local_rows = source, local_rows
+        self.real_rows, self.routed = real_rows, routed
+
+    def __call__(self, mx, out):
+        from engine.kernels.prefill_collectives.consumer import quantize_gather
+        return quantize_gather(self.source, self.local_rows, real_rows=self.real_rows,
+                               routed=self.routed, mx=mx, out=out)
+
+    def bind(self, mx):
+        if mx:
+            from engine.kernels.prefill_collectives.consumer import bind_quantize_gather
+            return bind_quantize_gather(self.source, self.local_rows,
+                                        real_rows=self.real_rows, routed=self.routed)
+        outputs = self(False, None)
+        return lambda: self(False, outputs)
+
+
+def _bind_producer(producer, mx):
+    if isinstance(producer, (BF16Producer, PacketProducer)):
+        return producer.bind(mx)
+    outputs = producer(mx, None)
+    return lambda: producer(mx, outputs)
+
+
+def _aligned(candidate, weight, activation, output):
+    return all(tensor.data_ptr() % candidate['alignment_' + operand] == 0
+               for operand, tensor in zip('abcd', (weight, activation, output, output)))
 
 
 @dataclass(frozen=True)
@@ -52,14 +101,15 @@ def select_winner(brackets):
 
 
 def _measure(fn, pool, *, repeats=4):
-    """Warm and time graph replay on the caller's non-default tuning stream."""
+    """Time a chain of GPU operations, amortizing host graph-submission gaps."""
     fn()
     graph = torch.cuda.CUDAGraph()
     started = False
     try:
         graph.capture_begin(pool, capture_error_mode='thread_local')
         started = True
-        fn()
+        for _ in range(GRAPH_UNROLL):
+            fn()
         graph.capture_end()
         started = False
         graph.replay()
@@ -69,7 +119,7 @@ def _measure(fn, pool, *, repeats=4):
             graph.replay()
         end.record()
         end.synchronize()
-        milliseconds = start.elapsed_time(end) / repeats
+        milliseconds = start.elapsed_time(end) / (repeats * GRAPH_UNROLL)
     except BaseException as error:
         from engine.base.graphs import cleanup_after_error
         if started:
@@ -130,6 +180,7 @@ class Bank:
             candidates = plan.candidates()
             record = dict(self.identity, shape=(m, n, k), producer=key[3], candidates=len(candidates),
                           search=plan.statistics(),
+                          graph_unroll=GRAPH_UNROLL,
                           screened=[], brackets=[], scope='warm captured component pipeline; not serving throughput')
             if not candidates:
                 choice = Choice(reason='no_supported_algorithm')
@@ -149,8 +200,9 @@ class Bank:
         from deep_gemm import fp8_gemm_nt
         from engine.kernels.deep_gemm import _initialize
         _initialize()
-        q_base, s_base = producer(False, None)
-        q_mx, s_mx = producer(True, None)
+        base_producer, mx_producer = _bind_producer(producer, False), _bind_producer(producer, True)
+        q_base, s_base = base_producer()
+        q_mx, s_mx = mx_producer()
         from .mxfp8 import scale_bytes
         m, _, k = record['shape']
         for q, s, dtype, shape in ((q_base, s_base, torch.float32, (m, k//128)),
@@ -168,11 +220,11 @@ class Bank:
         pool = torch.cuda.graph_pool_handle()
 
         def base():
-            producer(False, (q_base, s_base))
+            base_producer()
             fp8_gemm_nt((q_base, s_base), weight, baseline)
 
         def trial(index):
-            producer(True, (q_mx, s_mx))
+            mx_producer()
             plan.run(index, q_mx, weight[0], s_mx, mx_weight, candidate, scratch)
 
         base()
@@ -182,6 +234,9 @@ class Bank:
         # All admitted candidates are bounded at 192. One captured screening
         # sample narrows to three; only these pay for the full paired bracket.
         for c in candidates:
+            if not _aligned(c, weight[0], q_mx, candidate):
+                record['screened'].append(dict(c, milliseconds=None, numerics=False, status='alignment_mismatch'))
+                continue
             fn = lambda: trial(c['index'])
             milliseconds = _measure(fn, pool, repeats=2)
             numerics = torch.allclose(candidate, baseline, rtol=.01, atol=.001)
@@ -279,9 +334,10 @@ class BoundProjection:
     def __init__(self, prepared, producer, *, out=None, workspace=None):
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError('projection buffers must be bound before capture')
-        self.prepared, self.producer = prepared, producer
+        self.prepared = prepared
         self.mx = prepared.choice.index is not None
-        self.buffers = producer(self.mx, None)
+        self.producer = _bind_producer(producer, self.mx)
+        self.buffers = self.producer()
         weight = prepared.weight[0]
         shape = prepared.rows, weight.shape[0]
         self.out = torch.empty(shape, device=weight.device, dtype=torch.bfloat16) if out is None else out
@@ -313,7 +369,7 @@ class BoundProjection:
             self.matmul = lambda: fp8_gemm_nt(self.buffers, prepared.weight, self.out)
 
     def __call__(self):
-        actual = self.producer(self.mx, self.buffers)
+        actual = self.producer()
         if len(actual) != 2 or any(a.data_ptr() != b.data_ptr() for a, b in zip(actual, self.buffers)):
             raise RuntimeError('bound producer replaced its fixed output storage')
         self.matmul()

@@ -51,7 +51,9 @@ class Plan : public std::enable_shared_from_this<Plan> {
   int64_t m, n, k;
   size_t workspace_limit;
   std::vector<cublasLtMatmulHeuristicResult_t> choices;
+  std::vector<std::array<uint32_t, 4>> alignments;
   std::set<std::string> visited;
+  size_t catalog_ids = 0, catalog_seeds = 0;
   static constexpr size_t MAX_CHOICES = 192;
 
   template <class T> static T config(const cublasLtMatmulAlgo_t& algo,
@@ -102,13 +104,17 @@ class Plan : public std::enable_shared_from_this<Plan> {
     // BF16 partial reductions would change the requested FP32 accumulation.
     auto reduction = config<uint32_t>(algo, CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME);
     if (reduction != CUBLASLT_REDUCTION_SCHEME_NONE && reduction != CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE) return;
+    std::array<uint32_t, 4> required{};
+    size_t operand = 0;
     for (auto attr : {CUBLASLT_ALGO_CAP_MIN_ALIGNMENT_A_BYTES, CUBLASLT_ALGO_CAP_MIN_ALIGNMENT_B_BYTES,
                       CUBLASLT_ALGO_CAP_MIN_ALIGNMENT_C_BYTES, CUBLASLT_ALGO_CAP_MIN_ALIGNMENT_D_BYTES}) {
       auto values = capability(algo, attr);
-      if (values.size() != 1 || values[0] > 16) return;
+      if (values.size() != 1 || !values[0] || values[0] > 256) return;
+      required[operand++] = values[0];
     }
     result.algo = algo;
     choices.push_back(result);
+    alignments.push_back(required);
   }
 
   static std::vector<uint32_t> spread(const std::vector<uint32_t>& values, size_t count) {
@@ -143,7 +149,7 @@ class Plan : public std::enable_shared_from_this<Plan> {
         && (reduction[0] & CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE)) {
       auto split_tiles = spread(tiles, 3);
       split_tiles.insert(split_tiles.begin(), config<uint32_t>(seed, CUBLASLT_ALGO_CONFIG_TILE_ID));
-      for (uint32_t count : {2, 4, 8, 16}) for (auto tile : split_tiles) {
+      for (uint32_t count : {2, 3, 4, 6, 8, 12, 16}) for (auto tile : split_tiles) {
         if (k < int64_t(count) * 128) continue;
         auto algo = seed;
         if (set(algo, CUBLASLT_ALGO_CONFIG_TILE_ID, tile)
@@ -171,6 +177,34 @@ class Plan : public std::enable_shared_from_this<Plan> {
       }
       if (!more) break;
     }
+    return result;
+  }
+
+  std::vector<cublasLtMatmulAlgo_t> catalog(const std::set<int32_t>& known) {
+    // Heuristics are a shortlist, not the algorithm catalog. A valid MX
+    // implementation can be absent from all five workspace shortlists.
+    std::vector<int> ids(64);
+    int count = 0;
+    for (;;) {
+      check(cublasLtMatmulAlgoGetIds(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
+              CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF,
+              ids.size(), ids.data(), &count), "cuBLAS algorithm catalog");
+      if (size_t(count) < ids.size()) break;
+      TORCH_CHECK(ids.size() < 4096, "cuBLAS algorithm catalog exceeds the preparation bound");
+      ids.resize(ids.size() * 2);
+    }
+    catalog_ids = count;
+    std::vector<cublasLtMatmulAlgo_t> result;
+    for (int i = 0; i < count; ++i) {
+      if (known.count(ids[i])) continue;
+      cublasLtMatmulAlgo_t algo{};
+      auto status = cublasLtMatmulAlgoInit(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
+          CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF, ids[i], &algo);
+      if (status == CUBLAS_STATUS_NOT_SUPPORTED) continue;
+      check(status, "initialize catalog algorithm");
+      result.push_back(algo);
+    }
+    catalog_seeds = result.size();
     return result;
   }
 
@@ -210,23 +244,28 @@ class Plan : public std::enable_shared_from_this<Plan> {
     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
     check(cublasLtMatrixLayoutCreate(&desc.d, CUDA_R_16BF, n, m, n), "Y layout");
     check(cublasLtMatmulPreferenceCreate(&desc.preference), "matmul preference");
-    uint32_t alignment = 16, reduction = CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE;
-    for (auto attr : {CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_B_BYTES,
-                      CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_C_BYTES, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_D_BYTES})
-      check(cublasLtMatmulPreferenceSetAttribute(desc.preference, attr, &alignment, sizeof(alignment)), "pointer alignment");
+    uint32_t reduction = CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE;
     check(cublasLtMatmulPreferenceSetAttribute(desc.preference, CUBLASLT_MATMUL_PREF_REDUCTION_SCHEME_MASK,
                                               &reduction, sizeof(reduction)), "reduction precision");
-    for (size_t budget : {size_t(0), size_t(1) << 20, size_t(8) << 20, size_t(32) << 20, size_t(64) << 20}) {
-      if (budget > workspace_limit) continue;
-      check(cublasLtMatmulPreferenceSetAttribute(desc.preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
-                                                &budget, sizeof(budget)), "workspace bound");
-      std::array<cublasLtMatmulHeuristicResult_t, 16> result{};
-      int count = 0;
-      auto status = cublasLtMatmulAlgoGetHeuristic(context->handle, desc.operation, desc.a, desc.b,
-                       desc.d, desc.d, desc.preference, result.size(), result.data(), &count);
-      if (status == CUBLAS_STATUS_NOT_SUPPORTED) continue;
-      check(status, "cuBLAS heuristics");
-      for (int i = 0; i < count; ++i) if (result[i].state == CUBLAS_STATUS_SUCCESS) admit(result[i].algo);
+    // Fresh Torch storage is typically 256-byte aligned; do not discard
+    // kernels requiring more than the public 16-byte view minimum. Each
+    // candidate carries its own requirements, checked again at binding.
+    for (uint32_t alignment : {16u, 256u}) {
+      for (auto attr : {CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_A_BYTES, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_B_BYTES,
+                        CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_C_BYTES, CUBLASLT_MATMUL_PREF_MIN_ALIGNMENT_D_BYTES})
+        check(cublasLtMatmulPreferenceSetAttribute(desc.preference, attr, &alignment, sizeof(alignment)), "pointer alignment");
+      for (size_t budget : {size_t(0), size_t(1) << 20, size_t(8) << 20, size_t(32) << 20, size_t(64) << 20}) {
+        if (budget > workspace_limit) continue;
+        check(cublasLtMatmulPreferenceSetAttribute(desc.preference, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+                                                  &budget, sizeof(budget)), "workspace bound");
+        std::array<cublasLtMatmulHeuristicResult_t, 16> result{};
+        int count = 0;
+        auto status = cublasLtMatmulAlgoGetHeuristic(context->handle, desc.operation, desc.a, desc.b,
+                         desc.d, desc.d, desc.preference, result.size(), result.data(), &count);
+        if (status == CUBLAS_STATUS_NOT_SUPPORTED) continue;
+        check(status, "cuBLAS heuristics");
+        for (int i = 0; i < count; ++i) if (result[i].state == CUBLAS_STATUS_SUCCESS) admit(result[i].algo);
+      }
     }
     auto seeds = choices;
     std::vector<cublasLtMatmulAlgo_t> selected;
@@ -239,6 +278,13 @@ class Plan : public std::enable_shared_from_this<Plan> {
       if (selected.size() >= 16) break;
       if (std::none_of(selected.begin(), selected.end(), [&](const auto& a) {
             return std::memcmp(&a, &seed.algo, sizeof(a)) == 0; })) selected.push_back(seed.algo);
+    }
+    // Try catalog seeds even when their default tile fails AlgoCheck: a
+    // supported explicit tile/stage combination can still qualify. The same
+    // 192 admitted-candidate ceiling bounds GPU work; enumeration is host-only.
+    for (const auto& seed : catalog(ids)) {
+      admit(seed);
+      selected.push_back(seed);
     }
     std::vector<std::vector<cublasLtMatmulAlgo_t>> proposals;
     for (const auto& seed : selected) proposals.push_back(variants(seed));
@@ -264,6 +310,8 @@ class Plan : public std::enable_shared_from_this<Plan> {
       row["reduction"] = config<uint32_t>(c.algo, CUBLASLT_ALGO_CONFIG_REDUCTION_SCHEME);
       row["swizzle"] = config<uint32_t>(c.algo, CUBLASLT_ALGO_CONFIG_CTA_SWIZZLING);
       row["custom"] = config<uint32_t>(c.algo, CUBLASLT_ALGO_CONFIG_CUSTOM_OPTION);
+      row["alignment_a"] = alignments[i][0]; row["alignment_b"] = alignments[i][1];
+      row["alignment_c"] = alignments[i][2]; row["alignment_d"] = alignments[i][3];
       result.append(row);
     }
     return result;
@@ -276,6 +324,12 @@ class Plan : public std::enable_shared_from_this<Plan> {
     tensor(q, at::ScalarType::Float8_e4m3fn, "Q"); tensor(weight, at::ScalarType::Float8_e4m3fn, "W");
     tensor(s_q, at::kByte, "activation scales"); tensor(s_weight, at::kByte, "weight scales");
     tensor(out, at::kBFloat16, "output"); tensor(workspace, at::kByte, "workspace");
+    const auto& alignment = alignments[index];
+    TORCH_CHECK(reinterpret_cast<uintptr_t>(weight.data_ptr()) % alignment[0] == 0
+                && reinterpret_cast<uintptr_t>(q.data_ptr()) % alignment[1] == 0
+                && reinterpret_cast<uintptr_t>(out.data_ptr()) % alignment[2] == 0
+                && reinterpret_cast<uintptr_t>(out.data_ptr()) % alignment[3] == 0,
+                "storage does not satisfy the selected cuBLAS algorithm alignment");
     TORCH_CHECK(q.dim() == 2 && q.size(0) == m && q.size(1) == k
                 && weight.dim() == 2 && weight.size(0) == n && weight.size(1) == k
                 && out.dim() == 2 && out.size(0) == m && out.size(1) == n
@@ -342,6 +396,8 @@ class Plan : public std::enable_shared_from_this<Plan> {
     result["checked_configurations"] = visited.size();
     result["admitted_configurations"] = choices.size();
     result["candidate_limit"] = MAX_CHOICES;
+    result["catalog_ids"] = catalog_ids;
+    result["additional_catalog_seeds"] = catalog_seeds;
     return result;
   }
 

@@ -26,6 +26,21 @@ def _scale_word(scale):
     return ((scale.to(tl.uint32, bitcast=True) >> 23) & 255) * 0x01010101
 
 
+@triton.jit
+def _power2_scale(amax):
+    # amax is a BF16 magnitude, clamped to 1e-4. For x = m * 2**e,
+    # ceil(log2(x / 448)) = e - 8 + (m > 1.75). The BF16 domain has
+    # no values close enough to this boundary for log2 rounding to matter.
+    # Construct both powers of two directly: no log/exp or elementwise divide.
+    bits = amax.to(tl.uint32, bitcast=True)
+    exponent = (bits >> 23) - 8 + ((bits & 0x7FFFFF) > 0x600000).to(tl.uint32)
+    scale_bits = tl.where(bits >= 0x7F800000, bits, exponent << 23)
+    inverse_bits = tl.where(bits >= 0x7F800000,
+                            tl.where(bits == 0x7F800000, 0, 0x7FC00000),
+                            (254 - exponent) << 23)
+    return scale_bits.to(tl.float32, bitcast=True), inverse_bits.to(tl.float32, bitcast=True)
+
+
 def row_programs(rows):
     return triton.cdiv(rows, 4)
 
@@ -44,28 +59,35 @@ def _rows(M, TILED: tl.constexpr):
 
 
 @triton.jit
-def _publish(S, scale, row, group, M, G: tl.constexpr):
+def _publish(S, scale, row, group, M, G: tl.constexpr, PAD: tl.constexpr = True):
     tl.store(S + _word_offset(row, group, G), _scale_word(scale), row < M)
     # The last four-row producer initializes all missing rows of the last
     # 128-row scale tile. Padding is metadata only: Q and D keep real M.
-    if tl.program_id(0) == tl.num_programs(0) - 1:
-        padding = (M // 128) * 128 + tl.arange(0, 128)
-        tl.store(S + _word_offset(padding, group, G), 0x7F7F7F7F,
-                 (padding >= M) & (padding < tl.cdiv(M, 128) * 128))
+    if PAD:
+        if tl.program_id(0) == tl.num_programs(0) - 1:
+            padding = (M // 128) * 128 + tl.arange(0, 128)
+            tl.store(S + _word_offset(padding, group, G), 0x7F7F7F7F,
+                     (padding >= M) & (padding < tl.cdiv(M, 128) * 128))
 
 
 @triton.jit(do_not_specialize=['M'])
-def _quantize(X, Q, S, M, K: tl.constexpr, G: tl.constexpr, TILED: tl.constexpr):
+def _quantize(X, Q, S, M, K: tl.constexpr, G: tl.constexpr, TILED: tl.constexpr,
+              PAD: tl.constexpr = True):
     row = _rows(M, TILED)
     group = tl.program_id(1)
     col = group * 128 + tl.arange(0, 128)
     x = tl.load(X + row[:, None] * K + col[None, :], row[:, None] < M,
                 other=0.).to(tl.float32)
     amax = tl.maximum(tl.max(tl.abs(x), 1), 1e-4)
-    scale = tl.exp2(tl.ceil(tl.log2(amax / 448.)))
+    scale, inverse = _power2_scale(amax)
     tl.store(Q + row[:, None] * K + col[None, :],
-             (x / scale[:, None]).to(tl.float8e4nv), row[:, None] < M)
-    _publish(S, scale, row, group, M, G)
+             (x * inverse[:, None]).to(tl.float8e4nv), row[:, None] < M)
+    _publish(S, scale, row, group, M, G, PAD)
+
+
+@triton.jit
+def _quantize_bound(X, Q, S, M: tl.constexpr, K: tl.constexpr):
+    _quantize(X, Q, S, M, K, K // 128, M >= 128, False)
 
 
 @triton.jit
@@ -94,8 +116,28 @@ def quantize(x, *, out=None):
     if out is not None:
         from .fp8 import require_disjoint
         require_disjoint(x, q, scales)
-    _quantize[(row_programs(m), k // 128)](x, q, scales.view(torch.int32), m, k, k // 128, m >= 128, num_warps=4)
+    _quantize[(row_programs(m), k // 128)](x, q, scales.view(torch.int32), m, k, k // 128,
+                                        m >= 128, bool(m % 128), num_warps=4)
     return q, scales
+
+
+def bind_quantize(x):
+    """Initialize private padding once; graph replay updates only real rows.
+
+    The returned closure owns its source and outputs for graph lifetime. Input
+    values may change; their shape and storage must remain fixed.
+    """
+    if torch.cuda.is_current_stream_capturing():
+        raise RuntimeError('MX quantizer must be bound before capture')
+    outputs = quantize(x)
+    q, scales = outputs
+    words = scales.view(torch.int32)
+    m, k = x.shape
+    def run():
+        _quantize_bound[(row_programs(m), k // 128)](x, q, words, m, k, num_warps=4)
+        return outputs
+    run()  # compile the fixed geometry before any caller can capture it
+    return run
 
 
 def pack_weight_scales(scales, rows, cols):
