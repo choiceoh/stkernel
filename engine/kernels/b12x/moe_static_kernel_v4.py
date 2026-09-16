@@ -121,6 +121,7 @@ class MoEStaticKernelV4:
         l2_prefetch: int = 0,
         l2_prefetch_fc1: bool = True,
         bulk_b: bool = False,
+        bulk_b_linear: bool = False,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -205,6 +206,9 @@ class MoEStaticKernelV4:
         # L2-request-rate bound; the original z on the t tile measured -2.5% with a permutation bug).
         # The mbarrier accounting is the TMA's: the same bytes complete on the same barrier. Declared
         # for the reform tile over tile-major storage whose chunk is the FC1 K tile (the dispatcher checks).
+        self.bulk_b_linear = bool(bulk_b_linear)
+        if self.bulk_b_linear and not bulk_b:
+            raise ValueError("linear bulk B requires bulk_b")
         self.bulk_b = bool(bulk_b)
         if self.bulk_b and not decode_reform:
             raise ValueError("bulk B stages are declared for the M16 reform tile (t,r) only")
@@ -810,6 +814,13 @@ class MoEStaticKernelV4:
         ) = self._staged_layouts(
             self.tile_shape_mnk, self.epi_tile, self.tiled_mma, self.fc2_stages
         )
+        if self.bulk_b_linear:
+            # Keep the served global tile-major bytes for decode AND prefill.
+            # The fragment copy uses this plain stage layout; no host permutation.
+            self.b1_smem_layout_staged = cute.make_composed_layout(
+                cute.make_swizzle(0, 4, 3), 0, self.b1_smem_layout_staged.outer)
+            self.b2_smem_layout_staged = cute.make_composed_layout(
+                cute.make_swizzle(0, 4, 3), 0, self.b2_smem_layout_staged.outer)
         self.a2_smem_layout = self._make_a_smem_layout(self.tile_m, self.fc2_tile_k, 1)
         if self.direct_scatter:
             self._validate_direct_scatter_layout()

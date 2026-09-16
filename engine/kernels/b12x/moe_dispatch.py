@@ -412,7 +412,7 @@ _STATIC_V2_DEFAULT = {
     # l<n>: B stages prefetched into L2 n stages ahead by the DMA warp (0 = off); lf<n>: FC2's only
     "l2_prefetch": 0, "l2_prefetch_fc1": True,
     # z: the B stages land as ONE cp.async.bulk each from pre-swizzled tile-major boxes (bulk_b)
-    "bulk_b": False,
+    "bulk_b": False, "bulk_b_linear": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -493,13 +493,14 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             cfg["l2_prefetch"] = int(token[1:])
             cfg["l2_prefetch_fc1"] = True
             continue
-        if token == "z":
+        if token in ("z", "zl"):
             # z (2026-09-17, the reform tile): the tile-major boxes are stored in the smem stage's own byte
             # order (the canonical Swizzle<3,4,3> over 128 B rows for FC1, <2,4,3> over 64 B rows for FC2,
             # probes/b12x_reform_layout_print.py), and the DMA lane lands each B stage with one 1-D
             # cp.async.bulk instead of a TMA box of 128 / 256 row segments. The bytes the MMA reads are
             # the same; the storage must carry the swizzled kind (the launch checks).
             cfg["bulk_b"] = True
+            cfg["bulk_b_linear"] = token == "zl"
             continue
         if len(token) >= 3 and token[:2] == "lf" and token[2:].isdigit():
             # lf<n>: the same, for the item's FC2 boxes only (FC1's own prefetch measured slower)
@@ -2354,6 +2355,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("bulk_b", False)),
         bool(config.get("sync_cleanup", False)),
     )
+    if config.get("bulk_b_linear", False):
+        cfg += ("bulk_b_linear_v1",)
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2560,6 +2563,7 @@ def _get_static_kernel_v2(
         l2_prefetch=l2_prefetch,
         l2_prefetch_fc1=bool(config.get("l2_prefetch_fc1", True)),
         bulk_b=bulk_b,
+        bulk_b_linear=bool(config.get("bulk_b_linear", False)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
@@ -3764,7 +3768,7 @@ def launch_sm120_static_moe(
                     raise RuntimeError("sf6 layer has no prepared immutable scale owner")
                 if not weights.reform_scales.enabled:
                     static_v2_config = dict(static_v2_config, reform_sf_pack=False)
-            if bool(static_v2_config.get("bulk_b")) != bool(getattr(weights, "swizzled", False)):
+            if bool(static_v2_config.get("bulk_b") and not static_v2_config.get("bulk_b_linear")) != bool(getattr(weights, "swizzled", False)):
                 raise RuntimeError(
                     "cell z and pre-swizzled expert storage must agree: lane bulk_b="
                     f"{bool(static_v2_config.get('bulk_b'))}, views swizzled={bool(getattr(weights, 'swizzled', False))}")

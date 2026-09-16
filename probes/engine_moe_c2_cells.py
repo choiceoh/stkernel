@@ -118,9 +118,10 @@ class Layer:
         if served == 256:
             # cell z: a pre-swizzled copy of BOTH tile-major storages (w13 over the served 256 chunk, w2), so
             # the served view's bytes are untouched and every other arm keeps reading them
-            w13_t, w2_t = md._tile_expert_weights(self.w13, self.w2, w13_chunk=served)
-            w13_z, w2_z = md._swizzle_tile_boxes(w13_t, w2_t)
-            del w13_t, w2_t
+            # moe_prepare re-lays these tensors IN PLACE. Re-tiling self.w13
+            # here interprets tile-major bytes as row-major and corrupts z.
+            w13_z, w2_z = md._swizzle_tile_boxes(
+                views.w13_tiled_storage, views.w2_tiled_storage)
             self.views['z'] = dataclasses.replace(
                 views, w13_fp4=w13_z.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
                 down_fp4=w2_z.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
@@ -450,7 +451,8 @@ def bulk_cells(report, layers, spread, brackets):
     if any('z' not in layer.views for layer in layers):
         raise RuntimeError('cell z needs the served 256 chunk (its boxes are the reform stages)')
     z = md._parse_glm53_static_v2('t,r,sf6,batch,z')
-    arms = [('served', served, None), ('z', 'z', z), ('served_b', served, None)]
+    arms = [('served', served, None), ('z', 'z', z),
+            ('zl', served, dict(z, bulk_b_linear=True)), ('served_b', served, None)]
     failures = []
     for fixture in (('c2_two_requests', 16, 2, spread), ('c1_one_request', 8, 1, spread)):
         fx = Fixtures(layers, fixture[1])
@@ -458,18 +460,19 @@ def bulk_cells(report, layers, spread, brackets):
         for scope, group in (('single', layers[:1]), ('chain', layers)):
             graphs, accs = capture_arms(group, fx, arms)
             try:
-                failed = exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', ['z'], scope=scope)
+                failed = exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', ['z', 'zl'], scope=scope)
                 failures += [f'{label}@{fixture[1]}/{scope}' for label in failed]
-                if failed:
-                    continue
                 uniques = fx.load(fixture, 7)[:len(group)]
-                res = bracket(report, graphs, 'served', 'z', brackets=brackets, fixture=fixture[0] + '_bulk',
-                              rows=fixture[1], scope=scope, layers=len(group), unique_experts=uniques)
-                stream_bytes = sum(uniques) * EXPERT_BYTES
-                report('rate', fixture=fixture[0] + '_bulk', rows=fixture[1], scope=scope, unique_experts=uniques,
-                       expert_bytes=stream_bytes, candidate='z',
-                       control_gbps_evicted=stream_bytes / res['evicted']['control_us']['mean'] * 1e6 / 1e9,
-                       candidate_gbps_evicted=stream_bytes / res['evicted']['candidate_us']['mean'] * 1e6 / 1e9)
+                for candidate in ('z', 'zl'):
+                    if candidate in failed:
+                        continue
+                    res = bracket(report, graphs, 'served', candidate, brackets=brackets, fixture=fixture[0] + '_bulk',
+                                  rows=fixture[1], scope=scope, layers=len(group), unique_experts=uniques)
+                    stream_bytes = sum(uniques) * EXPERT_BYTES
+                    report('rate', fixture=fixture[0] + '_bulk', rows=fixture[1], scope=scope, unique_experts=uniques,
+                           expert_bytes=stream_bytes, candidate=candidate,
+                           control_gbps_evicted=stream_bytes / res['evicted']['control_us']['mean'] * 1e6 / 1e9,
+                           candidate_gbps_evicted=stream_bytes / res['evicted']['candidate_us']['mean'] * 1e6 / 1e9)
             finally:
                 for graph in graphs.values():
                     graph.reset()
