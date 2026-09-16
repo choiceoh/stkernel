@@ -48,10 +48,6 @@ def moe_check(report, ranks, lane_name):
         candidate = dict(base,
                          probe_route_scatter=lane_name != 'moe_direct_scatter',
                          probe_direct_scatter=lane_name != 'moe_route_scatter')
-    elif lane_name == 'moe_resident_waves':
-        row_cases = (8,)
-        base = dict(base, resident_waves=False)
-        candidate = dict(base, resident_waves=True)
     elif lane_name == 'moe_fc1_reuse':
         row_cases = (1, 6, 7, 8)
         base = dict(base, fc1_reuse_a=False, compact_staging=False, sf6_registers=False, sync_cleanup=False)
@@ -91,7 +87,7 @@ def moe_check(report, ranks, lane_name):
                     graphs.append(graph)
                     resources.extend(lane.graph_resources())
             unique_counts = {8, 16, 32, 40, 56, 112, rows*8}
-            if lane_name in ('moe_resident_waves', 'moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup'):
+            if lane_name in ('moe_fc1_reuse', 'moe_compact_staging', 'moe_register_scales', 'moe_sync_cleanup'):
                 unique_counts.update((1, 2, 4))  # duplicate routes span multiple M16 tiles
             unique_cases = sorted({min(u, rows*8) for u in unique_counts})
             for unique in unique_cases + [8]:

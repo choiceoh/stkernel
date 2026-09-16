@@ -1,4 +1,4 @@
-"""Same-build fixed-K7 gates: resident waves, mHC input pack and split pair MLA.
+"""Same-build fixed-K7 gate for the selected mHC input-pack fusion.
 
 Use the canonical engine_kernel_check lane fixed_k_compile without GPUs or
 fixed_k_cost with a fleet reservation. Component timings are not tok/s proof.
@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from unittest.mock import patch
 
 import torch
 
@@ -17,24 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 def compile_check(report):
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '' or torch.cuda.is_initialized():
         raise RuntimeError('compile gate requires CUDA_VISIBLE_DEVICES= and no CUDA context')
-    from engine.kernels import dense, mla
-    for name, module in (('dense', dense.build()), ('mla', mla._build())):
-        report('compile', component=name, module=module.__file__,
-               binary_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest())
-    os.environ['CUTE_DSL_ARCH'] = 'sm_121a'
-    with patch.object(torch.cuda, 'is_available', return_value=True), \
-            patch.object(torch.cuda, 'get_device_capability', return_value=(12, 1)):
-        from engine.kernels.b12x import moe_dispatch as md
-        with patch.object(md, 'get_num_sm', return_value=48), \
-                patch.object(md, 'get_max_active_clusters', return_value=48), \
-                patch.object(md, 'build_and_load_cute_dsl_kernel', side_effect=lambda module, name, build, **kw: build()):
-            for enabled in (False, True):
-                cfg = md._static_v2_decode_config(dict(md._parse_glm53_static_v2('t,r,sf6,batch'),
-                                                       resident_waves=enabled), 8)
-                md._get_static_kernel_v2(288, 288, 8, 4096, 512, 8, 64, config=cfg,
-                                        mac_override=48, activation='swigluoai_uninterleave',
-                                        swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
-                report('compile', component='moe', resident_waves=enabled)
+    from engine.kernels import dense
+    module = dense.build()
+    report('compile', component='dense', module=module.__file__,
+           binary_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest())
     if torch.cuda.is_initialized():
         raise RuntimeError('compile gate touched a GPU')
 
@@ -109,82 +94,6 @@ def mhc_check(report, ranks):
                 graph.reset()
 
 
-def mla_check(report):
-    from engine.kernels import mla
-    from probes.engine_decode_fusions import _capture
-    mla._build()
-    cache = torch.randn(32768, 512, device='cuda').to(torch.float8_e4m3fn)
-    for rows in (8, 16):
-        for width in (33, 2048, 2176):
-            q = torch.randn(rows, 16, 512, device='cuda', dtype=torch.bfloat16)
-            slots = torch.zeros(rows, width, device='cuda', dtype=torch.int32)
-            lens = torch.full((rows,), width, device='cuda', dtype=torch.int32)
-            control = lambda: mla.mla_decode(q, cache, slots, lens, 512**-.5, 1., splits=mla.mla_splits(rows))
-            candidate = lambda: mla.mla_decode_pair(q, cache, slots, lens, 512**-.5, 1.)
-            graphs, outputs = zip(*[_capture(fn) for fn in (control, candidate)])
-            try:
-                for case in ('identical', 'partial', 'disjoint', 'duplicates', 'empty_tail', 'permuted', 'uneven'):
-                    q.normal_()
-                    slots.copy_(torch.randint(32768, (rows, width), device='cuda', dtype=torch.int32))
-                    lens.fill_(width)
-                    if case in ('identical', 'partial', 'duplicates'):
-                        shared = width if case != 'partial' else width * 3 // 4
-                        slots[1::2, :shared].copy_(slots[::2, :shared])
-                    if case == 'permuted':
-                        full = width // 16 * 16
-                        slots[1::2, :full].copy_(slots[::2, :full].reshape(rows//2, -1, 16).flip(-1).reshape(rows//2, full))
-                    if case == 'uneven':
-                        slots[1::2].copy_(slots[::2])
-                        lens.sub_(torch.arange(rows, device='cuda', dtype=torch.int32) % 8)
-                    if case == 'duplicates':
-                        slots[:, :width//2].copy_(slots[:, :1].expand(-1, width//2))
-                    if case == 'empty_tail':
-                        lens[::2] = 0
-                        lens[1::2] = 17
-                    for _ in range(3):
-                        for output, graph in zip(outputs, graphs):
-                            output.fill_(float('nan'))
-                            graph.replay()
-                        # The same independent FP32 reference catches a shared wrong selection.
-                        ref = mla.mla_decode_ref(q, cache, slots, lens, 512**-.5, 1.)
-                        errors = [mla._rel_err(out, ref) for out in outputs]
-                        if max(errors) > .02 or any(not out.isfinite().all().item() for out in outputs):
-                            raise AssertionError(f'MLA {rows=} {width=} {case=}: {errors=}')
-                    report('numerics', component='mla', rows=rows, width=width, case=case, errors=errors)
-                    if width == 2048:
-                        timings(report, 'mla', graphs, rows=rows, width=width, case=case)
-            finally:
-                for graph in graphs:
-                    graph.reset()
-
-
-def mla_profile(report):
-    """Diagnostic attribution only, after all unprofiled comparison intervals."""
-    from engine.kernels import mla
-    from probes.engine_decode_fusions import _capture
-    q = torch.randn(8, 16, 512, device='cuda', dtype=torch.bfloat16)
-    cache = torch.randn(32768, 512, device='cuda').to(torch.float8_e4m3fn)
-    slots = torch.randint(32768, (8, 2048), device='cuda', dtype=torch.int32)
-    lens = torch.full((8,), 2048, device='cuda', dtype=torch.int32)
-    for case in ('identical', 'partial', 'disjoint'):
-        slots.random_(32768)
-        shared = {'identical': 2048, 'partial': 1536, 'disjoint': 0}[case]
-        slots[1::2, :shared].copy_(slots[::2, :shared])
-        graph, output = _capture(lambda: mla.mla_decode_pair(q, cache, slots, lens, 512**-.5, 1.))
-        try:
-            with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
-                for _ in range(4):
-                    graph.replay()
-                torch.cuda.synchronize()
-            for event in prof.key_averages():
-                total = getattr(event, 'self_device_time_total', 0.) or 0.
-                if total > 0:
-                    report('profile', component='mla', case=case, kernel=event.key,
-                           calls=event.count, total_us=total, diagnostic_only=True)
-        finally:
-            graph.reset()
-
-
 def run(output=None, ranks=None, *, compile_only=False):
     records = []
     def report(kind, **values):
@@ -203,8 +112,4 @@ def run(output=None, ranks=None, *, compile_only=False):
     else:
         torch.manual_seed(91717)
         mhc_check(report, ranks)
-        mla_check(report)
-        from probes.engine_decode_scatter_check import moe_check
-        moe_check(report, ranks, 'moe_resident_waves')
-        mla_profile(report)
     report('complete', passed=True, scope='compile only' if compile_only else 'components only; consumer pending')

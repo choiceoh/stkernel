@@ -37,7 +37,6 @@ PREFILL_MODES = ("stock", "tile32")
 # not an env switch -- an A/B flips this module attribute before maybe_arm().
 ENABLE_MLA_CLUSTER = True
 ENABLE_MLA_PREFILL32 = False
-ENABLE_MLA_DECODE_PAIR = False  # same-build control, set before graph capture
 
 
 def configure_prefill(mode: str) -> None:
@@ -90,7 +89,7 @@ def _ensure_workspace(device):
     import torch
     if _WS is None:
         _WS = {name: torch.zeros(8, dtype=torch.int32, device=device)
-               for name in ("barrier", "barrier_mla", "barrier_mla_pair")}
+               for name in ("barrier", "barrier_mla")}
     return _WS
 
 
@@ -214,9 +213,6 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
                 or not branch.is_contiguous() or not ckv.is_contiguous() or not lens.is_contiguous()):
             raise ValueError('tree MLA requires 1..32 BF16 queries and same-device contiguous FP8 banks')
     extra = [] if branch is None else [branch.data_ptr()]
-    if (ENABLE_MLA_DECODE_PAIR and branch is None and T in (8, 16)
-            and splits is None and probe == 0):
-        return mla_decode_pair(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out)
     if (branch is None and ENABLE_MLA_PREFILL32
             and 128 <= T <= 32768 and 1 <= slots.shape[1] <= 2176
             and q_nope.dtype == torch.bfloat16 and ckv.is_contiguous()
@@ -270,36 +266,6 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
         _TREE_MLA_PREPARED.add(tree_key)
     return out
 
-
-
-def mla_decode_pair(q, ckv, slots, lens, sm_scale, ckv_scale, out=None):
-    """Two independent selections share KV loads, with context shards filling the GPU.
-
-    Each query retains its original list and multiplicity. Within a 16-slot
-    tile, equal KV rows are loaded once and read by both warp groups. One
-    resident launch also merges its FP32 partials; no union is prepared.
-    """
-    import torch
-    t, h, d = q.shape
-    if (t not in (8, 16) or (h, d) != (MLA_H, MLA_D) or q.dtype != torch.bfloat16
-            or slots.ndim != 2 or slots.shape[0] != t or not 1 <= slots.shape[1] <= 2176
-            or lens.shape != (t,) or slots.dtype != torch.int32 or lens.dtype != torch.int32
-            or ckv.ndim != 2 or ckv.shape[1] != d or ckv.element_size() != 1
-            or any(not x.is_cuda or not x.is_contiguous() or x.device != q.device for x in (q, ckv, slots, lens))):
-        raise ValueError('decode pair requires same-device contiguous K7 C1/C2 queries and sparse selections')
-    if out is None:
-        out = torch.empty_like(q)
-    elif out.shape != q.shape or out.dtype != q.dtype or out.device != q.device or not out.is_contiguous():
-        raise ValueError('decode pair output must match the query')
-    groups, width = t // 2, slots.shape[1]
-    splits = max(1, _bound().device.sms // groups)
-    splits = min(MLA_SPLITS_MAX, splits)
-    barrier = _ensure_workspace(q.device)["barrier_mla_pair"]
-    partial = torch.empty((t, splits, h, d), dtype=torch.float32, device=q.device)
-    ml = torch.empty((t, splits, h, 2), dtype=torch.float32, device=q.device)
-    _EXT.run_mla_decode_pair([x.data_ptr() for x in (q, ckv, slots, lens, out, partial, ml, barrier)],
-                             [float(sm_scale), float(ckv_scale)], [t, width, splits])
-    return out
 
 
 def _mla_prefill32(q_nope, ckv, slots, lens, sm_scale, ckv_scale, out=None):

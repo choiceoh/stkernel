@@ -1,28 +1,31 @@
-# Fixed K7 verification cost
+# Fixed K7 mHC input packing
 
-Original base: `da917a4d`; integrated main: `53019ef8`. K remains 7, verification remains 8 rows per request,
-and KDA state remains FP32. Three independently controlled changes:
+Original base: `da917a4d`; integrated main: `72b708cd`. K remains 7,
+verification remains 8 rows per request, and KDA state remains FP32.
+The final candidate retains mHC producer packing only. Resident MoE waves
+had no clear gain; seven implementations of adjacent-query MLA sharing
+passed numerics but remained slower, so both changes were removed.
+Their implementations remain in the recorded commits below.
 
-* C1 resident MoE waves choose 48/44/40/36/32 active CTAs only when the
-  choice does not add a wave. Every work item keeps one owner. The control
-  is `resident_waves=False` in the static configuration; kernel keys differ.
-* The direct mHC consumer writes the existing C1 FP8 input pack from its
-  rounded BF16 layer input. The next bound KDA input projection consumes
-  that invocation's pack. Observed/calibrated or unsupported cells cannot
-  consume it. `net.mhc_input_packs=False` disables only this new boundary;
-  existing KDA output producer packs remain enabled.
-* MLA pairs share the multiset union of two selections. Separate membership
-  bits preserve repeated slots and each query's selection. Context shards
-  retain GPU parallelism at 8/16 rows and write FP32 partials, followed by
-  one BF16 merge. Weak overlap uses the two original lists in the same
-  split kernel. `ENABLE_MLA_DECODE_PAIR=False` selects the same-build control.
-  Tree attention and large prefill keep their existing paths.
+The direct mHC consumer writes the existing C1 FP8 input pack from its
+rounded BF16 layer input, using warp-local 128-column packing. The next
+bound KDA input projection consumes that invocation's exact pack.
+Observed/calibrated or unsupported cells cannot consume it.
+`net.mhc_input_packs=False` disables only this new boundary; existing KDA
+output producer packs remain enabled. Ordinary mHC template instantiations
+and occupancy entries retain their original arithmetic and register lifetimes.
+`ST_NATIVE_EXECUTION.fixed_k_cost.mhc_input_packs` requires actual consumption
+by the target projection before serving starts.
 
-The new defaults are enabled per the ST charter D11. This is an adoption
-choice, not a measured speed claim. Temporary controls are for this
-comparison and should be retired after the fleet verdict.
+All 90 real mHC coefficient sets pass bitwise output and FP8 pack equality
+at four magnitudes, with and without changing TP4 packet descriptors.
+The final native mHC bytes were qualified in revisions 3, 4, 6 and 7.
+Two distinct-coefficient chain comparisons reduce the packet boundary
+interval by 19.12% and 19.43%. The graphs contain all 90 coefficient sets
+and include the separate pack in the control. Serving only fuses eligible
+KDA input boundaries: this is not a whole-engine speed claim.
 
-Validation entry points (canonical fleet runner):
+Final validation entry points:
 
 ```
 probes/engine_kernel_check.py --lanes fixed_k_compile --output /cache/fixed-k-0917/compile.jsonl
@@ -30,28 +33,17 @@ probes/engine_kernel_check.py --lanes fixed_k_cost --ranks /home/choiceoh/models
 ```
 
 The compile lane requires `CUDA_VISIBLE_DEVICES=` and a container without
-GPU devices. It builds the complete dense and MLA Torch extensions plus
-both actual MoE kernels. The GPU lane checks every real mHC coefficient
-set, pack bytes, changed packet descriptors, sparse MLA against its FP32
-reference, changed selections/empty rows/duplicates, and real L3 MoE
-weights with changed routing. Captured B/A/A/B component intervals include
-pack/union preparation and the merge.
+GPU devices. The narrowed final probe builds dense and checks real mHC
+coefficients, pack bytes, changed packet descriptors and captured B/A/A/B
+component intervals. Earlier records also contain the removed MLA/MoE
+numerical and timing gates. CUDA source/binary hashes and runtime identity
+are recorded in each artifact (Torch 2.13.0+cu132, CUDA 13.2, SM121).
 
-Current evidence: the Linux CPU gate ran 81 tests (72 passed, 9 GPU tests
-skipped); the separate execution/fastpath gate ran 16 (15 passed, 1 GPU
-test skipped). The added serving-proof gate passes locally. Full dense/MLA
-and both MoE handles built in Torch 2.13.0+cu132,
-CUDA 13.2. Native C1 packet mHC uses 128 registers and 29,232 shared bytes.
-The first GPU component verdict is recorded below; the revised candidate
-and TP4 consumer 32K/128K quality, acceptance, TTFT and tok/s are pending. C1/C2 is the
-current serving shape; any C4 consumer comparison needs a matching declared
-four-request capacity in both arms.
-
-The GPU component reservation is `fixedkgpu-0917`, pinned to `18e14162`.
-It completed successfully; numerical qualification and performance are separate below.
-The subsequent proof-only changes expose and require actual target execution
-in `ST_NATIVE_EXECUTION.fixed_k_cost`. The compile artifact records its own
-source and native binary hashes.
+Matched TP4 consumer validation is pending. It uses the extended onepass
+profile for 2K/32K/128K coverage, C1 twice and the current serving capacity
+(C2) once, without 128K C2. C4 is not measured. Compilation and capture
+precede the consumer measurements. Quality, acceptance, TTFT, output tok/s
+and warm step/s decide adoption; component timings alone do not.
 
 ## First GPU verdict (`18e14162`)
 
@@ -105,3 +97,27 @@ candidate shares only matching KV rows within the current 16-slot tiles,
 retains each original sparse list/split, and merges in the same resident launch.
 No union, sorting, separate merge launch or per-replay barrier reset is needed.
 Changed tile order and asymmetric lengths join the existing numerical gates.
+
+## Sixth GPU verdict (`b631febd`)
+
+All 42 MLA fixtures and prior gates pass. MLA C1 identical improves to
+42.97 -> 61.52 us, still slower. No local-memory spill was found (64 registers,
+0 local bytes). The next iteration removes tile search/ballots and skips empty
+query arithmetic. Native mHC remains the warp-local implementation.
+
+The added distinct-coefficient chain materially changes the mHC result:
+90 packet boundaries take 1592.05 -> 1287.60 us (-19.12%); nonpacket chain
+1522.76 -> 1223.76 us (-19.64%). Each graph contains all 90 real coefficient
+sets, no pack clone. These are component throughputs; serving fuses only
+eligible KDA input boundaries, so they are not a whole-engine speed claim.
+
+## Seventh GPU verdict (`1f049629`)
+
+All correctness/replay gates pass. Distinct-coefficient packet mHC chain
+1601.07 -> 1290.03 us (-19.43%); nonpacket 1520.75 -> 1226.71 us (-19.34%).
+Single-coefficient packet interval remains near parity, 19.57 -> 19.72 us.
+C1 identical MLA is 43.20 -> 47.50 us (+9.96%); C2 is 59.62 -> 71.18 us
+(+19.39%). Even after eliminating union preparation, separate merge,
+tile search and empty-query arithmetic, MLA sharing is rejected.
+Resident MoE waves remain without a reproducible gain. Final source removes
+both unsuccessful experiments and retains the qualified warp-local mHC pack.

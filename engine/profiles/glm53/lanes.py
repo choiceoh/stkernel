@@ -428,8 +428,6 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         # groups still concatenate, and an explicit destination stays owned.
         return _mla_output(parts, out)
 
-    mla.pair_rows = frozenset((8, 16)) if mk.ENABLE_MLA_DECODE_PAIR else frozenset()
-
     if "kda_recurrent" in reference_for:
         kda_recurrent = ref.kda_recurrent
         recurrent_kda_ring = recurrent_kda_ring_rows = None
@@ -601,7 +599,6 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
         def run(*a, **k):
             return tp.on_main(fn, *a, **k)
         run.producer_pack = getattr(fn, "producer_pack", False)
-        run.pair_rows = getattr(fn, "pair_rows", frozenset())
         return run
 
     name = "served" + (f" (reference: {', '.join(reference_for)})" if reference_for else "")
