@@ -1,0 +1,31 @@
+...[W915 23:22:26.739351918 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W915 23:22:26.820256395 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 2 ranks (deadline 3s)
+[rank0]:[E915 23:22:26.869584480 ProcessGroupGloo.cpp:2901] [Rank 0]: Rank 1 failed to pass monitoredBarrier in 3000 ms
+[rank0]:[E915 23:22:26.869604096 ProcessGroupGloo.cpp:67] [Rank 0]: Ranks 1 failed to pass monitoredBarrier in 3000 ms
+.[W915 23:22:28.758262610 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W915 23:22:29.303237509 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous weights-loaded: rank 1 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous decode-experts: rank 0 prepared; waiting for 2 ranks (deadline 1800s)
+boot rendezvous decode-experts: rank 1 prepared; waiting for 2 ranks (deadline 1800s)
+.[W915 23:22:33.383659095 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W915 23:22:33.744745306 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous phase-0: rank 0 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous phase-1: rank 1 prepared; waiting for 2 ranks (deadline 6s)
+.[W915 23:22:35.585125272 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W915 23:22:36.318601122 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 2 ranks (deadline 0.3s)
+[rank0]:[E915 23:22:36.644285304 ProcessGroupGloo.cpp:2901] [Rank 0]: Rank 1 failed to pass monitoredBarrier in 300 ms
+[rank0]:[E915 23:22:36.644308104 ProcessGroupGloo.cpp:67] [Rank 0]: Ranks 1 failed to pass monitoredBarrier in 300 ms
+.[W915 23:22:40.963137983 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+[W915 23:22:40.548467768 ProcessGroupGloo.cpp:524] Warning: Unable to resolve hostname to a (local) address. Using the loopback address as fallback. Manually set the network interface to bind to with GLOO_SOCKET_IFNAME. (function operator())
+boot rendezvous loaded-1: rank 0 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous loaded-1: rank 1 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous loaded-0: rank 1 prepared; waiting for 2 ranks (deadline 6s)
+boot rendezvous loaded-0: rank 0 prepared; waiting for 2 ranks (deadline 6s)
+....................................................sss
+----------------------------------------------------------------------
+Ran 62 tests in 20.933s
+
+OK (skipped=3)

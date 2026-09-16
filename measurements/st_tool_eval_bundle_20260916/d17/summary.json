@@ -1,0 +1,256 @@
+{
+  "run_id": "20260915T231531-96e1eeeb5c16",
+  "sha": "023af8230e80ad061b11f121915419f3abb8d528",
+  "recording": {
+    "schema": 1,
+    "status": "incomplete",
+    "server": {
+      "schema": 1,
+      "boot_id": "6115aa86f4f24a4abdabfc59799c8b0e",
+      "ranks": 4,
+      "policy": "fresh-prefix; observed preparation; profiler-off measurement; separate diagnostic replay"
+    },
+    "phase": "diagnostic-c2-32000",
+    "error": "<urlopen error [Errno 111] Connection refused>",
+    "unfinished_token": "20260915T231531-96e1eeeb5c16-diagnostic-c2-32000"
+  },
+  "quality_c1": {
+    "version": "ko-reasoning-v2",
+    "ok": 7,
+    "total": 9,
+    "score": 53,
+    "max_score": 57,
+    "dimensions": {
+      "format": {
+        "ok": 9,
+        "total": 9
+      },
+      "completion": {
+        "ok": 9,
+        "total": 9
+      },
+      "result": {
+        "ok": 9,
+        "total": 9
+      },
+      "derivation": {
+        "ok": 7,
+        "total": 9
+      },
+      "evidence": {
+        "ok": 9,
+        "total": 9
+      },
+      "counterfactual": {
+        "ok": 9,
+        "total": 9
+      },
+      "witnesses": {
+        "ok": 1,
+        "total": 3
+      }
+    },
+    "scope": "visible final content; deterministic proof certificates"
+  },
+  "quality_c2": {
+    "version": "ko-reasoning-v2",
+    "ok": 9,
+    "total": 12,
+    "score": 69,
+    "max_score": 76,
+    "dimensions": {
+      "format": {
+        "ok": 12,
+        "total": 12
+      },
+      "completion": {
+        "ok": 12,
+        "total": 12
+      },
+      "result": {
+        "ok": 11,
+        "total": 12
+      },
+      "derivation": {
+        "ok": 9,
+        "total": 12
+      },
+      "evidence": {
+        "ok": 12,
+        "total": 12
+      },
+      "counterfactual": {
+        "ok": 12,
+        "total": 12
+      },
+      "witnesses": {
+        "ok": 1,
+        "total": 4
+      }
+    },
+    "scope": "visible final content; deterministic proof certificates"
+  },
+  "prefill": [
+    {
+      "ctx": 2000,
+      "tok": 2627,
+      "cold_s": 1.113910574989859,
+      "warm_s": 1.113910574989859,
+      "cold_tok_s": 2358.358075578837,
+      "warm_tok_s": 2358.358075578837,
+      "ttft_samples_s": [
+        1.113910574989859,
+        1.1134554710006341,
+        1.1260315559920855
+      ],
+      "first_s": 1.113910574989859,
+      "median_s": 1.113910574989859,
+      "state": "prepared fresh-prefix; see steady_state validity",
+      "reused_tok": 0,
+      "reused_frac": 0.0,
+      "cache_hit": false,
+      "combined": false
+    },
+    {
+      "ctx": 32000,
+      "tok": 33826,
+      "cold_s": 9.605482400977053,
+      "warm_s": 9.605482400977053,
+      "cold_tok_s": 3521.5305788868322,
+      "warm_tok_s": 3521.5305788868322,
+      "ttft_samples_s": [
+        9.605482400977053
+      ],
+      "first_s": 9.605482400977053,
+      "median_s": 9.605482400977053,
+      "state": "prepared fresh-prefix; see steady_state validity",
+      "reused_tok": 0,
+      "reused_frac": 0.0,
+      "cache_hit": false,
+      "combined": true
+    },
+    {
+      "ctx": 128000,
+      "tok": 129784,
+      "cold_s": 37.26691825600574,
+      "warm_s": 37.26691825600574,
+      "cold_tok_s": 3482.552517716828,
+      "warm_tok_s": 3482.552517716828,
+      "ttft_samples_s": [
+        37.26691825600574
+      ],
+      "first_s": 37.26691825600574,
+      "median_s": 37.26691825600574,
+      "state": "prepared fresh-prefix; see steady_state validity",
+      "reused_tok": 0,
+      "reused_frac": 0.0,
+      "cache_hit": false,
+      "combined": true
+    }
+  ],
+  "decode": {
+    "acc_raw": 0.5382054148641423,
+    "tokens_per_step": 4.229232489184854,
+    "num_spec": 6,
+    "gen_tokens": 28028,
+    "wall_s": 369.9636149406433
+  },
+  "fixed_decode": {
+    "tokens": 1024,
+    "clients": 4,
+    "concurrency": 2,
+    "definition": "bench-dec: four different 2K prompts with exactly `tokens` output tokens each; C=1 sends them one at a time, C=2 releases them 2 at a time; rate = output tokens / first start to last completion of each release, summed",
+    "c1_tok_s": 95.21887672219702,
+    "many_tok_s": 119.68611721090927,
+    "multiplier": 1.2569578777966044,
+    "c1_decode_tok_s": 108.92005669657772,
+    "many_decode_tok_s_sum": 141.4872295414445,
+    "decode_multiplier": 1.2990006967733247,
+    "issues": [
+      "C=1: rank 0: preparation changed or unknown",
+      "C=1: rank 1: preparation changed or unknown",
+      "C=1: rank 2: preparation changed or unknown",
+      "C=1: rank 3: preparation changed or unknown"
+    ],
+    "valid": false,
+    "latency_artifacts": [
+      "measure-fixed-c1",
+      "measure-fixed-c2"
+    ]
+  },
+  "steady_state": {
+    "valid": true,
+    "issues": [],
+    "profile": "off",
+    "prefix": "fresh",
+    "preparation": "no observed specialization or capture"
+  },
+  "evidence_issues": [
+    "C=1 quality or Korean corruption gate failed",
+    "C=2 ctx=2000: C=2 quality or Korean corruption gate failed",
+    "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+  ],
+  "note": "Legacy c4/quality_c4 keys refer to actual concurrency 2 in this run. Fixed decode is invalid for performance comparison; final diagnostics are incomplete.",
+  "request_decode": [
+    {
+      "ctx": 2000,
+      "question": 0,
+      "concurrency": 1,
+      "completion_tokens": 1578,
+      "ttft_s": 1.113910574989859,
+      "elapsed_s": 16.057583531946875,
+      "decode_s": 14.943672956957016,
+      "decode_tok_s": 105.52961139756667,
+      "tpot_ms": 9.47601328912937,
+      "finish_reason": "stop"
+    },
+    {
+      "ctx": 2000,
+      "question": 1,
+      "concurrency": 1,
+      "completion_tokens": 1968,
+      "ttft_s": 1.1134554710006341,
+      "elapsed_s": 21.065079544961918,
+      "decode_s": 19.951624073961284,
+      "decode_tok_s": 98.58846541556068,
+      "tpot_ms": 10.143174414825259,
+      "finish_reason": "stop"
+    },
+    {
+      "ctx": 2000,
+      "question": 2,
+      "concurrency": 1,
+      "completion_tokens": 2215,
+      "ttft_s": 1.1260315559920855,
+      "elapsed_s": 27.835163820011076,
+      "decode_s": 26.70913226401899,
+      "decode_tok_s": 82.89299622745789,
+      "tpot_ms": 12.063745376702345,
+      "finish_reason": "stop"
+    },
+    {
+      "ctx": 32000,
+      "question": "all",
+      "concurrency": 1,
+      "completion_tokens": 9311,
+      "ttft_s": 9.605482400977053,
+      "elapsed_s": 117.38486926996848,
+      "decode_s": 107.77938686899142,
+      "decode_tok_s": 86.38015366812711,
+      "tpot_ms": 11.576733283457726,
+      "finish_reason": "stop"
+    },
+    {
+      "ctx": 128000,
+      "question": "all",
+      "concurrency": 1,
+      "completion_tokens": 12956,
+      "ttft_s": 37.26691825600574,
+      "elapsed_s": 187.54102318402147,
+      "decode_s": 150.27410492801573,
+      "decode_tok_s": 86.20913101565769,
+      "tpot_ms": 11.599699338326186,
+      "finish_reason": "stop"
+    }
+  ]
+}

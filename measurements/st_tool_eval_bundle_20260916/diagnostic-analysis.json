@@ -1,0 +1,283 @@
+{
+  "diagnostic_only": true,
+  "requests": 16,
+  "checks_passed": 14,
+  "errors": [],
+  "all_raw_and_api_calls_agree": true,
+  "rows": [
+    {
+      "name": "authorized_send-17",
+      "seconds": 1.4548575789667666,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "publish_notice"
+      ],
+      "content": null
+    },
+    {
+      "name": "authorized_send-91",
+      "seconds": 1.1509484380367212,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "publish_notice"
+      ],
+      "content": null
+    },
+    {
+      "name": "completed_notice-17",
+      "seconds": 1.2795485350070521,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "Done — I've sent Nora at nora@example.org a note saying the inspection is at 4 PM."
+    },
+    {
+      "name": "completed_notice-91",
+      "seconds": 1.1804000539705157,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "The note has been sent to nora@example.org letting her know the inspection is at 4 PM."
+    },
+    {
+      "name": "dependent_actions-17",
+      "seconds": 3.6143718489911407,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "check_availability"
+      ],
+      "content": "I'll first check that room G7 is free at that time."
+    },
+    {
+      "name": "dependent_actions-91",
+      "seconds": 1.4390349960303865,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "check_availability"
+      ],
+      "content": null
+    },
+    {
+      "name": "draft_only-17",
+      "seconds": 3.2309188660001382,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "Here's a draft announcement:\n\n---\n\n**Subject: Equipment Inspection Rescheduled to 4 PM**\n\nHi Nora,\n\nQuick heads-up: the equipment inspection has been moved to 4 PM. Please plan accordingly, and let me know if that time doesn't work for you.\n\nThanks!\n\n---\n\nLet me know if you'd like any changes to the wording — and if you'd like me to send it to nora@example.org, just say the word and I'll dispatch it."
+    },
+    {
+      "name": "draft_only-91",
+      "seconds": 2.708086472004652,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "Here's a draft announcement for you:\n\n---\n\n**Subject: Equipment Inspection Rescheduled to 4 PM**\n\nHi Nora,\n\nQuick update: the equipment inspection has been moved to 4:00 PM. Please plan accordingly, and let me know if that time doesn't work for you.\n\nThanks!\n\n---\n\nWould you like me to send this notice to nora@example.org, or would you like any changes first?"
+    },
+    {
+      "name": "json_schema-17",
+      "seconds": 3.491533511027228,
+      "checks_passed": false,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": false,
+        "answer_value": true,
+        "json_value": false
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "search_records"
+      ],
+      "content": null
+    },
+    {
+      "name": "json_schema-91",
+      "seconds": 2.632676368986722,
+      "checks_passed": false,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": false,
+        "answer_value": true,
+        "json_value": false
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "search_records"
+      ],
+      "content": null
+    },
+    {
+      "name": "observed_booking-17",
+      "seconds": 1.7549188150442205,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "publish_notice"
+      ],
+      "content": null
+    },
+    {
+      "name": "observed_booking-91",
+      "seconds": 1.4494531800155528,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [
+        "publish_notice"
+      ],
+      "content": null
+    },
+    {
+      "name": "simple_arithmetic-17",
+      "seconds": 1.1658043109928258,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "12% of 250 is **30** (0.12 × 250 = 30)."
+    },
+    {
+      "name": "simple_arithmetic-91",
+      "seconds": 0.820322395011317,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "12% of 250 is 30."
+    },
+    {
+      "name": "tools_disabled-17",
+      "seconds": 7.537952645041514,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "The chemical symbol for gold is **Au**.\n\nIt comes from the Latin word *aurum*, meaning \"gold\" (or \"shining dawn\"). Gold has atomic number 79 on the periodic table.\n\nA few other element symbols that also come from Latin names:\n- **Ag** (silver) — from *argentum*\n- **Fe** (iron) — from *ferrum*\n- **Pb** (lead) — from *plumbum*\n- **Cu** (copper) — from *cuprum*"
+    },
+    {
+      "name": "tools_disabled-91",
+      "seconds": 1.0754555340390652,
+      "checks_passed": true,
+      "checks": {
+        "forbidden_absent": true,
+        "required_present": true,
+        "tool_needed": true,
+        "no_tools": true,
+        "answer_value": true
+      },
+      "error": null,
+      "raw_and_api_calls_agree": true,
+      "tool_names": [],
+      "content": "The chemical symbol for gold is **Au**, derived from the Latin word *aurum*, meaning \"shining dawn\" or \"gold.\" Gold has the atomic number 79 on the periodic table."
+    }
+  ]
+}

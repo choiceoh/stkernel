@@ -1,0 +1,35 @@
+{
+  "sha": "b7d577cf131fe0c59ff90b9a23a0f9d0f28a3534",
+  "parent": "e3d9ad7b582b721c6a8f56d3c674994da40e1008",
+  "session": "tool-workflow-c2-0916",
+  "engine_files": 337,
+  "engine_sha256": "33193c28d12347db1452b1a8dc56463ab521550b2f21814e314fe49965b6ea10",
+  "baseline_sha": "fad98cf73fe0e670a34beacaffde55d9d7d7ec4f",
+  "baseline_points": 164,
+  "cli_commit": "6be685f0e6b9e0df05ed024848cf7fe1eca48752",
+  "temperature": 1,
+  "top_p": 0.95,
+  "seed": 42,
+  "concurrency": 1,
+  "full_scenarios": 88,
+  "status": "complete",
+  "replaces": "tool-workflow-c-0916",
+  "cuda_fix": "rank-local expert warmup and host rendezvous before TP decode capture",
+  "boot_ready_at": "2026-09-16T08:40:46+09:00",
+  "evaluation_started_at": "2026-09-16T08:41:29.043490+09:00",
+  "diagnostics": {
+    "requests": 16,
+    "passed": 14,
+    "failed": [
+      "json_schema-17",
+      "json_schema-91"
+    ],
+    "infrastructure_errors": 0,
+    "raw_api_agreement": true
+  },
+  "official_score": 94,
+  "points": 166,
+  "maximum": 176,
+  "finished_at": "2026-09-16T08:56:11.429915+09:00",
+  "fleet_released": true
+}

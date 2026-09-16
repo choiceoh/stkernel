@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-16T08:27:02.384238+09:00",
+  "path": "/home/choiceoh/.config/systemd/user/st-deploy-watch.service.d/20-production-env.conf",
+  "previous": null,
+  "installed": "[Service]\nEnvironmentFile=-/home/choiceoh/.config/st-glm53.env\n",
+  "before": "ActiveState=inactive\nDropInPaths=\n",
+  "after": "EnvironmentFiles=/home/choiceoh/.config/st-glm53.env (ignore_errors=yes)\nActiveState=inactive\nDropInPaths=/home/choiceoh/.config/systemd/user/st-deploy-watch.service.d/20-production-env.conf\n",
+  "service_restarted": false
+}

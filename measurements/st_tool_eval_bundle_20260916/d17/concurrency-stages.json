@@ -1,0 +1,232 @@
+{
+  "run": "20260915T231531-96e1eeeb5c16",
+  "comparison_valid": false,
+  "reason": "Fixed C1 recorded new Triton specializations. Stage timing samples are sparse and cannot establish a complete causal decomposition.",
+  "phases": {
+    "measure-fixed-c1": {
+      "preparation_before": {
+        "specializations": 55,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "preparation_after": {
+        "specializations": 59,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "steps": {
+        "prefill": 4,
+        "decode": 746
+      },
+      "operations": [
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "forward",
+          "kernel": null,
+          "samples": 11,
+          "sum_us": 504737.53356933594,
+          "mean_us": 45885.230324485085,
+          "median_us": 46868.0305480957,
+          "min_us": 42218.68896484375,
+          "max_us": 49108.47854614258
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "propose",
+          "kernel": null,
+          "samples": 11,
+          "sum_us": 31959.968328475952,
+          "mean_us": 2905.4516662250867,
+          "median_us": 2903.0721187591553,
+          "min_us": 2887.648105621338,
+          "max_us": 2935.807943344116
+        },
+        {
+          "rank": 0,
+          "phase": "compile_or_load",
+          "kind": "preparation",
+          "operation": "triton.runtime.jit._do_compile",
+          "kernel": null,
+          "samples": 4,
+          "sum_us": 15907.450928352773,
+          "mean_us": 3976.8627320881933,
+          "median_us": 3997.8309941943735,
+          "min_us": 3058.7089713662863,
+          "max_us": 4853.07996859774
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "observe",
+          "kernel": null,
+          "samples": 11,
+          "sum_us": 7786.303997039795,
+          "mean_us": 707.8458179127086,
+          "median_us": 706.5920233726501,
+          "min_us": 695.6160068511963,
+          "max_us": 725.0239849090576
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "boundaries",
+          "kernel": null,
+          "samples": 11,
+          "sum_us": 3582.27202296257,
+          "mean_us": 325.6610929965973,
+          "median_us": 328.73600721359253,
+          "min_us": 308.22399258613586,
+          "max_us": 333.7920010089874
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "sample",
+          "kernel": null,
+          "samples": 11,
+          "sum_us": 603.9999984204769,
+          "mean_us": 54.9090907654979,
+          "median_us": 53.31199988722801,
+          "min_us": 52.319999784231186,
+          "max_us": 69.63200122117996
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "commit",
+          "kernel": null,
+          "samples": 22,
+          "sum_us": 124.19200083240867,
+          "mean_us": 5.645090946927667,
+          "median_us": 5.600000033155084,
+          "min_us": 5.08800009265542,
+          "max_us": 7.007999811321497
+        }
+      ]
+    },
+    "measure-fixed-c2": {
+      "preparation_before": {
+        "specializations": 59,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "preparation_after": {
+        "specializations": 59,
+        "graph_captures": 56,
+        "observers": [
+          "triton.runtime.jit._do_compile",
+          "cutlass.cute.compile",
+          "torch.utils.cpp_extension._jit_compile"
+        ],
+        "scope": "Triton/CuTe/C++ JIT entry and ST graph capture; not arbitrary external compilers"
+      },
+      "steps": {
+        "prefill": 6,
+        "decode": 399
+      },
+      "operations": [
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "forward",
+          "kernel": null,
+          "samples": 6,
+          "sum_us": 396686.5921020508,
+          "mean_us": 66114.43201700847,
+          "median_us": 66187.34359741211,
+          "min_us": 60202.59094238281,
+          "max_us": 70395.68328857422
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "propose",
+          "kernel": null,
+          "samples": 6,
+          "sum_us": 19374.176025390625,
+          "mean_us": 3229.029337565104,
+          "median_us": 3227.984070777893,
+          "min_us": 3221.4720249176025,
+          "max_us": 3241.8880462646484
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "observe",
+          "kernel": null,
+          "samples": 6,
+          "sum_us": 4287.615954875946,
+          "mean_us": 714.602659145991,
+          "median_us": 712.9279971122742,
+          "min_us": 709.9199891090393,
+          "max_us": 726.0479927062988
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "boundaries",
+          "kernel": null,
+          "samples": 6,
+          "sum_us": 4092.832028865814,
+          "mean_us": 682.1386714776357,
+          "median_us": 685.0080192089081,
+          "min_us": 666.5279865264893,
+          "max_us": 695.3279972076416
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "sample",
+          "kernel": null,
+          "samples": 6,
+          "sum_us": 369.4080002605915,
+          "mean_us": 61.568000043431915,
+          "median_us": 61.47199869155884,
+          "min_us": 60.38400158286095,
+          "max_us": 63.104003667831414
+        },
+        {
+          "rank": 0,
+          "phase": "decode",
+          "kind": "device_stage",
+          "operation": "commit",
+          "kernel": null,
+          "samples": 12,
+          "sum_us": 67.74400034919381,
+          "mean_us": 5.645333362432818,
+          "median_us": 5.807999987155199,
+          "min_us": 5.119999870657921,
+          "max_us": 6.175999995321035
+        }
+      ]
+    }
+  }
+}
