@@ -820,9 +820,14 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
+                    if DRAFT_FC_CAPTURE or DRAFT_FC_CAPTURE_WHEN_MISSING:
+                        from .draft_fc_capture import retain_source
+                        retain_source(drafter)
                     with recorder.phase("drafter packs"):
                         drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena,
                                              policy=draft_policy, tuning=tuning)
+                    if not DRAFT_FC_CAPTURE and drafter.fc_bias is not None:
+                        drafter.fc_capture_source = None
                     if capture_rows is not None:
                         recorder.gauge('drafter_decode_cells', len(drafter.bind_decode_cells(capture_rows)))
                     recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
