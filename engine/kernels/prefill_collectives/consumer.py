@@ -11,6 +11,7 @@ import triton
 import triton.language as tl
 
 from engine.kernels.prefill_collectives import BLOCK
+from engine.kernels.dense.mxfp8 import _power2_scale, _publish, _rows, row_programs
 
 
 @triton.jit(do_not_specialize=["LOCAL_N", "PAYLOAD_BYTES"])
@@ -34,12 +35,44 @@ def _quantize_gather(Packed, Scales, Q, S, LOCAL_N, PAYLOAD_BYTES,
     tl.store(S + row*G + group, output_scale, group < G)
 
 
-def quantize_gather(received, local_rows, *, real_rows=None, routed=False):
+@triton.jit(do_not_specialize=['M', 'LOCAL_N', 'PAYLOAD_BYTES'])
+def _quantize_gather_mx(Packed, Scales, Q, S, M, LOCAL_N, PAYLOAD_BYTES,
+                        K: tl.constexpr, G: tl.constexpr, PACK_BLOCK: tl.constexpr, TILED: tl.constexpr,
+                        PAD: tl.constexpr = True, SCALAR_SCALE: tl.constexpr = False):
+    row = _rows(M, TILED)
+    group = tl.program_id(1)
+    col = group*128 + tl.arange(0, 128)
+    rank, local_row = row // (LOCAL_N // K), row % (LOCAL_N // K)
+    values = tl.load(Packed + rank[:, None]*PAYLOAD_BYTES + local_row[:, None]*K + col[None, :],
+                     row[:, None] < M, other=0.).to(tl.float32)
+    scale = tl.load(Scales + rank*(PAYLOAD_BYTES//4) + LOCAL_N//4
+                    + (local_row*K + group*128)//PACK_BLOCK, row < M, other=1.)
+    x = (values*scale[:, None]).to(tl.bfloat16).to(tl.float32)
+    amax = tl.maximum(tl.max(tl.abs(x), 1), 1e-4)
+    output_scale, inverse = _power2_scale(amax)
+    tl.store(Q + row[:, None]*K + col[None, :],
+             (x*inverse[:, None]).to(tl.float8e4nv), row[:, None] < M)
+    _publish(S, output_scale, row, group, M, G, PAD, SCALAR_SCALE, TILED)
+
+
+@triton.jit
+def _quantize_gather_mx_bound(Packed, Scales, Q, S, M: tl.constexpr,
+                              LOCAL_N: tl.constexpr, PAYLOAD_BYTES: tl.constexpr, PACK_BLOCK: tl.constexpr,
+                              SCALAR_SCALE: tl.constexpr = False):
+    # A prepared packet has a fixed rank stride. Compile division/modulo by
+    # local_rows into constant arithmetic instead of general integer division.
+    _quantize_gather_mx(Packed, Scales, Q, S, M, LOCAL_N, PAYLOAD_BYTES,
+                        4096, 32, PACK_BLOCK, M >= 128, False, SCALAR_SCALE)
+
+
+def quantize_gather(received, local_rows, *, real_rows=None, routed=False, mx=False, out=None, num_warps=4):
     """Convert four rank-ordered packets to contiguous FP8 rows and FP32 scales.
 
 `received` is the byte output of the existing FP8-v3 all-gather. Its owner
 guarantees the packet values and scales obey that transport's contract.
 """
+    if type(num_warps) is not int or num_warps not in ((1, 2, 4) if mx else (4,)):
+        raise ValueError('packet producer requires 1/2/4 MX warps or 4 baseline warps')
     if (type(local_rows) is not int or local_rows < 32 or received.ndim != 1
             or not received.is_cuda or received.dtype != torch.uint8 or not received.is_contiguous()):
         raise ValueError("consumer requires CUDA byte packets and at least 32 local rows")
@@ -56,9 +89,49 @@ guarantees the packet values and scales obey that transport's contract.
         stride = PacketGeometry(rows, local_rows, routed=True).stride
     if received.numel() != peers*stride:
         raise ValueError("consumer packet length does not match four rank-ordered packets")
-    q = torch.empty((rows, k), device=received.device, dtype=torch.float8_e4m3fn)
-    scales = torch.empty((rows, k//128), device=received.device, dtype=torch.float32)
-    _quantize_gather[(rows, triton.cdiv(k//128, 4))](
-        received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales,
-        local, stride, k, k//128, BLOCK, num_warps=4)
+    from engine.kernels.dense.mxfp8 import buffers, scale_bytes
+    if type(mx) is not bool:
+        raise ValueError('MX output ABI selection must be a boolean')
+    if out is not None:
+        q, scales = out
+    elif mx:
+        q, scales = buffers(rows, k, received.device)
+    else:
+        q = torch.empty((rows, k), device=received.device, dtype=torch.float8_e4m3fn)
+        scales = torch.empty((rows, k//128), device=received.device, dtype=torch.float32)
+    if (q.shape != (rows, k) or q.dtype != torch.float8_e4m3fn or q.device != received.device
+            or scales.shape != ((scale_bytes(rows, k),) if mx else (rows, k//128))
+            or scales.dtype != (torch.uint8 if mx else torch.float32) or scales.device != received.device
+            or not q.is_contiguous() or not scales.is_contiguous()):
+        raise ValueError('packet producer output buffers do not match their ABI')
+    if out is not None:
+        from engine.kernels.dense.fp8 import require_disjoint
+        require_disjoint(received, q, scales)
+    if mx:
+        _quantize_gather_mx[(row_programs(rows), k//128)](
+            received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales.view(torch.int32),
+            rows, local, stride, k, k//128, BLOCK, rows >= 128, bool(rows % 128), num_warps == 1, num_warps=num_warps)
+    else:
+        _quantize_gather[(rows, triton.cdiv(k//128, 4))](
+            received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales,
+            local, stride, k, k//128, BLOCK, num_warps=4)
     return q, scales
+
+
+def bind_quantize_gather(received, local_rows, *, real_rows=None, routed=False, out=None, num_warps=4):
+    """Freeze the MX packet ABI and initialize private scale padding once."""
+    if torch.cuda.is_current_stream_capturing():
+        raise RuntimeError('MX packet producer must be bound before capture')
+    outputs = quantize_gather(received, local_rows, real_rows=real_rows, routed=routed,
+                              mx=True, out=out, num_warps=num_warps)
+    q, scales = outputs
+    rows, k = q.shape
+    words = scales.view(torch.int32)
+    packed, transport_scales = received.view(torch.float8_e4m3fn), received.view(torch.float32)
+    local, stride = local_rows*k, received.numel()//4
+    def run():
+        _quantize_gather_mx_bound[(row_programs(rows), k//128)](
+            packed, transport_scales, q, words, rows, local, stride, BLOCK, num_warps == 1, num_warps=num_warps)
+        return outputs
+    run()
+    return run

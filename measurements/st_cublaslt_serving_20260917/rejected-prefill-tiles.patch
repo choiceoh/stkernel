@@ -1,0 +1,82 @@
+--- a/engine/kernels/dense/cublaslt_serving.py
++++ b/engine/kernels/dense/cublaslt_serving.py
+@@ -60,6 +60,7 @@
+                 self.split_weight.q, self.split_weight.scales = values[1:]
+         self.seeds, self.plans, self.executed = {}, {}, set()
+         self.workspace = torch.empty(0, device=q.device, dtype=torch.uint8)
++        self.prefill_seed, self.prefill_plans = None, {}
+         for parts in ((1, 5) if split_decode else (1,)):
+             kp = k//parts
+             size = mxfp8.scale_bytes(8, kp)
+@@ -69,6 +70,36 @@
+             selected = _candidate(plan.candidates())
+             self.seeds[parts] = (plan, selected)
+             self.plans[parts, 8] = (plan, selected['index'])
++
++        if (n, k) == (4096, 20480):
++            query = torch.full((mxfp8.scale_bytes(512, k),), 127, device=q.device, dtype=torch.uint8)
++            plan = native.Plan(self.context, 512, n, k, 4 << 20, query, self.mx_weight)
++            choices = [c for c in plan.candidates() if c['split_k'] == -2 and c['reduction'] == 2
++                       and c['workspace'] <= 4 << 20 and max(c['alignment_'+v] for v in 'abcd') <= 16]
++            if choices:
++                choice = min(choices, key=lambda c: (c['workspace'], c['index']))
++                self.prefill_seed = plan, choice
++                self.prefill_plans[512] = plan, choice['index'], choice['workspace']
++
++    def _prefill(self, q, scales, out):
++        # MX metadata has complete 128-row tiles; a 512-row slice needs no
++        # conversion or input/output copy. Small cuBLAS internal split-K calls
++        # avoid the measured large-M full-K scheduling penalty.
++        for start in range(0, q.shape[0], 512):
++            rows = min(512, q.shape[0]-start)
++            offset = start//128 * (self.k//128) * 512
++            local_scales = scales[offset:offset+mxfp8.scale_bytes(rows, self.k)]
++            if rows not in self.prefill_plans:
++                if torch.cuda.is_current_stream_capturing():
++                    raise RuntimeError('cuBLAS prefill tail was not warmed before capture')
++                seed, choice = self.prefill_seed
++                plan = seed.with_rows(rows, choice['index'], local_scales, self.mx_weight)
++                self.prefill_plans[rows] = plan, 0, plan.candidates()[0]['workspace']
++            plan, index, count = self.prefill_plans[rows]
++            scratch = torch.empty(count, dtype=torch.uint8, device=q.device)
++            plan.run(index, q[start:start+rows], self.weight[0], local_scales, self.mx_weight,
++                     out[start:start+rows], scratch)
++        self.executed.add('tiled_prefill')
+ 
+     def _plan(self, m, parts, scales):
+         key = parts, m
+@@ -113,8 +144,11 @@
+             self.executed.add('split_decode')
+         else:
+             q, s = mxfp8.quantize(x, num_warps=1)
+-            plan, index = self._plan(m, 1, s)
+-            plan.run(index, q, self.weight[0], s, self.mx_weight, out, self.workspace)
++            if m >= 512 and self.prefill_seed is not None:
++                self._prefill(q, s, out)
++            else:
++                plan, index = self._plan(m, 1, s)
++                plan.run(index, q, self.weight[0], s, self.mx_weight, out, self.workspace)
+             self.executed.add('direct')
+         return out
+ 
+@@ -128,12 +162,17 @@
+         out = self._out(m, out, q, scales)
+         mx = torch.empty(mxfp8.scale_bytes(m, self.k), device=q.device, dtype=torch.uint8)
+         _activation_scales[(triton.cdiv(m, 4), self.k//128)](scales, mx.view(torch.int32), m, self.k//128, num_warps=1)
+-        plan, index = self._plan(m, 1, mx)
+-        plan.run(index, q, self.weight[0], mx, self.mx_weight, out, self.workspace)
++        if m >= 512 and self.prefill_seed is not None:
++            self._prefill(q, mx, out)
++        else:
++            plan, index = self._plan(m, 1, mx)
++            plan.run(index, q, self.weight[0], mx, self.mx_weight, out, self.workspace)
+         self.executed.add('direct')
+         return out
+ 
+     def report(self):
+         return dict(backend='cublaslt', resident_bytes=self.resident_bytes, executed=sorted(self.executed),
+                     algorithms={str(p): c for p, (_, c) in self.seeds.items()},
+-                    warmed_rows=sorted([p, m] for p, m in self.plans))
++                    warmed_rows=sorted([p, m] for p, m in self.plans),
++                    prefill_tile_rows=512 if self.prefill_seed is not None else None,
++                    prefill_algorithm=None if self.prefill_seed is None else self.prefill_seed[1])

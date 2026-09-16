@@ -108,6 +108,21 @@ TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem
 # A commit that sets it is booted by a fleet hold and fed a corpus through the door; main keeps it False, and with it
 # False nothing here runs. Carried over from the arm branch it was written on, which was never merged.
 EXPERT_CAPTURE = False
+# Collect the decode FC pairs `bench/draft_tune.py fc-bias` fits. The bias the boot binds from
+# `draft-fc-bias.json` has never been produced -- the fitter existed with no collector -- so
+# production runs with draft_fc_bias_status="missing". A collecting boot serves normally and
+# writes one bundle per rank; `reader_identity` pins the executed pack, so it cannot be fitted
+# anywhere but inside the boot that will be corrected.
+DRAFT_FC_CAPTURE = False
+# The correction a boot binds from `draft-fc-bias.json` does not exist until a boot collects the
+# pairs for it, and a boot that HAS the correction has nothing left to collect. So the collector
+# arms exactly when the bias is missing -- the same shape the calibration blobs already have, where
+# a boot without them sums one and files it. It costs the host ~437 MiB and a few seconds at
+# shutdown, and it stops itself at the row budget. Unlike calibration the bundle is not the
+# artifact: a CPU fit (`bench/draft_tune.py fc-bias`) has to turn it into one, so a boot keeps
+# collecting until somebody does. DRAFT_FC_CAPTURE forces it on even when the bias is present.
+DRAFT_FC_CAPTURE_WHEN_MISSING = True
+DRAFT_FC_CAPTURE_ROWS = 4096
 CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
 CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
 # The dense pack store's root: calibration blobs under <root>/mkcalib/rank<r>/, GPTQ packs cached under
@@ -667,6 +682,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 calib_bytes += need
     router_bytes = net.router_nbytes() if execution == "native" else 0
     projection_bytes = net.decode_projection_nbytes() if execution == "native" else 0
+    from engine.profiles.glm53.cublas import resident_bytes as cublas_resident_bytes
+    cublas_bytes = cublas_resident_bytes(F, D, draft_policy) if execution == 'native' else 0
     draft_bytes = total_bytes(dspecs)
     if D and execution == "native":
         from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
@@ -674,7 +691,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
-    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes + cublas_bytes
                    + 256 * (len(specs) + len(dspecs) + len(vspecs) + len(net.layers) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs, draft_shape) + calib_bytes)
     memory = None
@@ -738,7 +755,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
+                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes, cublas_bytes=cublas_bytes,
                             draft_policy=draft_policy, workspace_gib=workspace_gib)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
@@ -805,15 +822,24 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
+                    if DRAFT_FC_CAPTURE or DRAFT_FC_CAPTURE_WHEN_MISSING:
+                        from engine.profiles.glm53.draft_fc_capture import retain_source
+                        retain_source(drafter)
                     with recorder.phase("drafter packs"):
                         drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena,
                                              policy=draft_policy, tuning=tuning)
+                    if not DRAFT_FC_CAPTURE and drafter.fc_bias is not None:
+                        drafter.fc_capture_source = None
                     if capture_rows is not None:
                         recorder.gauge('drafter_decode_cells', len(drafter.bind_decode_cells(capture_rows)))
                     recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
                     recorder.gauge('draft_fc_bias_status', drafter.fc_bias_status)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
+                with recorder.phase('cuBLAS head and FC'):
+                    from engine.profiles.glm53.cublas import prepare as prepare_cublas
+                    cublas = prepare_cublas(net, drafter if D else None, arena, draft_policy)
+                    recorder.gauge('cublas_resident_bytes', cublas['resident_bytes'])
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
                 calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena,
                                           max_decode_rows=max_seqs * (1 + drafter.k))
@@ -1031,7 +1057,25 @@ def decode_fastpath_report(net):
             missing.extend((name, m) for m in sorted(expected - actual))
     if pairs != expected_pairs or missing or not dense:
         raise RuntimeError(f'bound decode fastpaths were not executed: pairs={sorted(expected_pairs - pairs)}, dense={missing}')
-    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense)
+    input_packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+                   if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs)
+
+
+def fixed_k_cost_report(net):
+    """Require target consumers, not a native self-test's launch, before opening the door."""
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows:
+        return {}
+    packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+             if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    if getattr(net, 'producer_packs', False) and getattr(net, 'mhc_input_packs', False):
+        for row_count in rows:
+            eligible = [name for name, layer in net.dense.items() if name.endswith('kda.in_proj')
+                        and getattr(layer, 'input_pack_rows', lambda rows: False)(row_count)]
+            if len(eligible) > 1 and not any(row_count in packs.get(name, ()) for name in eligible):
+                raise RuntimeError(f'fixed K7 mHC input packs did not reach a target projection at {row_count} rows')
+    return dict(mhc_input_packs=packs)
 
 
 def decode_dsa_report(net):
@@ -1109,7 +1153,10 @@ def native_execution_report(net, drafter):
         required_prefill.add('fp8_tiled_projection')
         if not calibrating:
             required_prefill.add('fp8_packet_projection')
-    proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+    from engine.profiles.glm53.cublas import execution_report as cublas_execution_report
+    cublas_proof = cublas_execution_report(net) if hasattr(net, 'cublas_readers') else {}
+    proof = dict(cublas=cublas_proof, decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+                 fixed_k_cost=fixed_k_cost_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
                  drafter_decode_cells=drafter_decode_cell_report(drafter),
@@ -1733,6 +1780,16 @@ def fleet(a) -> int:
                                                        sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS)
             print(f"  expert capture: rank {comm.rank} armed; rows and stats under {Path(a.dump_dir) / 'expert-capture'} "
                   f"on rank {capture_mod.CAPTURE_RANK}", flush=True)
+        collect_fc = DRAFT_FC_CAPTURE or (DRAFT_FC_CAPTURE_WHEN_MISSING
+                                          and getattr(getattr(engine, "drafter", None), "fc_bias", None) is None)
+        if collect_fc:                                      # the drafter is prepared and calibrated by here
+            from engine.profiles.glm53 import draft_fc_capture as draft_fc_mod
+            engine.draft_fc_capture = draft_fc_mod.attach(
+                engine, Path(a.dump_dir) / "draft-fc-pairs", rows=DRAFT_FC_CAPTURE_ROWS,
+                salt=str(engine.drafter.tuning.digest))
+            print(f"  draft FC capture: rank {comm.rank} armed for {DRAFT_FC_CAPTURE_ROWS} committed rows "
+                  f"under {Path(a.dump_dir) / 'draft-fc-pairs'} at "
+                  f"{', '.join(engine.draft_fc_capture.seams)}", flush=True)
         if CALIBRATION_CAPTURE and engine.calibration is not None:
             from engine.profiles.glm53 import capture as capture_mod
             capture_mod.arm_calibration_phases(engine)
@@ -1773,11 +1830,22 @@ def fleet(a) -> int:
                 try:
                     if engine.memory is not None:
                         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
+                    try:
+                        write_boot_counters(engine, Path(a.dump_dir) / f"counters-rank{comm.rank}.json",
+                                            rank=comm.rank)
+                    except Exception as exc:                  # noqa: BLE001 -- a shutdown never fails a shutdown
+                        print(f"  counters: rank {comm.rank} not written: {type(exc).__name__}: {exc}", flush=True)
                     if getattr(engine, "expert_capture", None) is not None:
                         try:
                             engine.expert_capture.close()
                         except Exception as exc:              # noqa: BLE001 -- a shutdown never fails a shutdown
                             print(f"  expert capture: rank {comm.rank} could not close: {type(exc).__name__}: {exc}", flush=True)
+                    if getattr(engine, "draft_fc_capture", None) is not None:
+                        try:
+                            report = engine.draft_fc_capture.close()
+                            print(f"  draft FC capture: rank {comm.rank} {report}", flush=True)
+                        except Exception as exc:              # noqa: BLE001 -- a shutdown never fails a shutdown
+                            print(f"  draft FC capture: rank {comm.rank} could not close: {type(exc).__name__}: {exc}", flush=True)
                     if getattr(engine, "calibration", None) is not None:
                         written = engine.file_calibration()
                         if written:
@@ -1795,6 +1863,34 @@ def fleet(a) -> int:
         finally:
             comm.close()
     return 0
+
+
+def write_boot_counters(engine, path, *, rank):
+    """One boot's decode counters, so a later one can be compared against it.
+
+    A boot's counters die with it: `st:spec_accepted_per_step_total` and the rest reset at every
+    start, so the only way anyone has read real acceptance is to scrape a live door -- which mixes
+    whatever traffic that boot has seen, cannot be differenced across boots, and answers nothing
+    once the boot is gone. Everything written here is already accumulated on the adapter; nothing
+    is computed for the file. Kept as COUNTS, not rates, so two records subtract.
+    """
+    import json as _json
+    counters = {}
+    for name in ("accepted_per_step", "accepted_total", "drafted_total", "steps",
+                 "steps_verified", "ceiling_positions", "reachable_mass", "covered_mass",
+                 "decode_shape_counts"):
+        value = getattr(engine, name, None)
+        if value is None:
+            continue
+        counters[name] = {str(k): v for k, v in value.items()} if isinstance(value, dict) else value
+    drafter = getattr(engine, "drafter", None)
+    record = dict(version=1, rank=int(rank), when=time.time(), counters=counters,
+                  spec_k=getattr(drafter, "k", None),
+                  fc_bias_status=getattr(drafter, "fc_bias_status", None),
+                  lanes=getattr(engine, "lane_info", None))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps(record, sort_keys=True, default=str))
+    return record
 
 
 def main(argv=None) -> int:

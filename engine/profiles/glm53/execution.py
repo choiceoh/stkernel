@@ -87,6 +87,7 @@ class Carry:
     comb: object = None
     ready: object = None
     projection: object = None
+    input_pack: object = None
 
 
 def begin(net, step, caches):
@@ -106,6 +107,7 @@ def begin(net, step, caches):
 
 def prepare(net, layer, carry, side):
     c = carry
+    c.input_pack = None
     if c.post is None:
         c.post, c.comb, c.x = net._hc_pre(layer, c.res, side)
     else:
@@ -124,6 +126,8 @@ def local(net, layer, carry, side, *, project=None):
     if side == "attn":
         if net.F.is_dsa(layer):
             return net._dsa(layer, c.x, c.step, c.caches, reduce=identity, **output)
+        if c.input_pack is not None:
+            output["input_pack"] = c.input_pack
         return net._kda(layer, c.x, c.step, c.caches, reduce=identity, projection=c.projection, **output)
     op = net._moe if net.F.is_moe(layer) else net._dense
     return op(layer, c.x, reduce=identity, **output)

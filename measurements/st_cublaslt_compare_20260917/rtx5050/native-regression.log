@@ -1,0 +1,6 @@
+test_mx_query_uses_real_scales_and_binding_owns_execution_scales (tests.test_engine_cublaslt.NativePreparationTests.test_mx_query_uses_real_scales_and_binding_owns_execution_scales) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 1.549s
+
+OK

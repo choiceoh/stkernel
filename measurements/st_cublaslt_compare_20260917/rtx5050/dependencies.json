@@ -1,0 +1,19 @@
+{
+  "image": "sha256:9f496f0dabe3a7b495d9b97181913cc20be1e4b3d3fcf2694407e34f24b3981b",
+  "deep_gemm_repository": "https://github.com/deepseek-ai/DeepGEMM",
+  "deep_gemm_revision": "572557e7ae9ad5331b81a1c250f141fba2c57962",
+  "submodules": [
+    " f3fde58372d33e9a5650ba7b80fc48b3b49d40c8 third-party/cutlass (f3fde58)",
+    " 553ec11ec06fbe0beebfbb45f9dc3c9eabd83d28 third-party/fmt (553ec11)"
+  ],
+  "source_sha256": {
+    "deep_gemm/__init__.py": "e9f377a613740c06f870ec52ef0a4ed8ce5652f716060ebd1efd966986d58a09",
+    "csrc/python_api.cpp": "d80ce3d5ee9184f797813fedd44026b7e058e10332554fbd336eed1e2fbccd55",
+    "deep_gemm/include/deep_gemm/impls/sm120_fp8_fp4_gemm_1d1d.cuh": "21b18f54b16fdc4903638471ffc7c6185b52d94de3006e984d70749a979d4aef",
+    "deep_gemm/include/deep_gemm/impls/sm120_split_k_reduce.cuh": "523c4ecd1d0935154b9d6101540b4b5c5832ddc327b9c8d6bf79c4c326f72091",
+    "build/lib.linux-x86_64-cpython-312/deep_gemm/_C.cpython-312-x86_64-linux-gnu.so": "ae0a8d398f9527ad20941ddd44915a3d961489040770af28e09cfaeae64322c4"
+  },
+  "source_changes": "",
+  "build": "DG_FORCE_BUILD=1 MAX_JOBS=2 OMP_NUM_THREADS=1 python3 setup.py build; CPU-only container; 2 CPUs; 4 GiB RAM",
+  "comparison_limit": "GPU kernel headers below match ARM production; Python package and host extension are not byte-identical to ARM production"
+}

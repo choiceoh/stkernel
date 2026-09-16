@@ -163,6 +163,7 @@ class Glm53Net:
         self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
         self.dense = {}
+        self.cublas_readers = {}
         self.shared_mlp = {}
         self.shared_overlap = None
         self._router_layers = None                         # None until every native FP32 router is resident
@@ -210,6 +211,7 @@ class Glm53Net:
         # A producer writes its bound C1 consumer's input pack (KDA o_proj from the output norm). False is the
         # same-build control for component probes; serving binds it before capture.
         self.producer_packs = True
+        self.mhc_input_packs = True
 
     # -- binding ----------------------------------------------------------------
     def specs(self):
@@ -468,8 +470,12 @@ class Glm53Net:
             self.shared_overlap = SharedOverlap(self.p["norm"].device)
 
     @operation("linear", name_arg=2)
-    def linear(self, x, name, *, out=None):
+    def linear(self, x, name, *, out=None, producer_pack=None):
         layer = self.dense.get(name)
+        if producer_pack is not None:
+            if out is not None or layer is None:
+                raise ValueError("producer input pack requires its bound dense consumer")
+            return layer(x, producer_pack=producer_pack)
         if out is not None:
             return layer(x, out=out) if layer is not None else torch.mm(x, self.p[name].T, out=out)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
@@ -537,9 +543,9 @@ class Glm53Net:
                         F.rms_eps,F.hc_eps,F.post_mult,F.sinkhorn)
 
     @operation("kda", layer_arg=1)
-    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, projection=None, project=None) -> torch.Tensor:
+    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, projection=None, project=None, input_pack=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.kda."
-        proj = self.linear(x, n + "in_proj") if projection is None else projection
+        proj = self.linear(x, n + "in_proj", **({"producer_pack": input_pack} if input_pack is not None else {})) if projection is None else projection
         N = proj.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
         qkv_all, b_all, f_a, g_a = proj.split([3 * Hl * D, Hl, D, D], dim=-1)
         pair = self._decode_pair(L, step, N)

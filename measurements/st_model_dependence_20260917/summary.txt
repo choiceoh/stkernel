@@ -1,0 +1,69 @@
+items: 398 first-parent main commits touching engine/ (255 squash PRs, 141 merged PRs, 2 direct), 2026-09-11 .. 2026-09-17, newest 3398a72b
+optimizations: 212; status default 187, optin 17, rejected 8
+
+== scope shares
+  all merged optimizations                     n=212  U 74 (34.9%)  S 26 (12.3%)  F 109 (51.4%)  G 2 (0.9%)  O 1 (0.5%)
+  live (rejected dropped)                      n=204  U 74 (36.3%)  S 26 (12.7%)  F 101 (49.5%)  G 2 (1.0%)  O 1 (0.5%)
+  default-on only                              n=187  U 73 (39.0%)  S 23 (12.3%)  F 88 (47.1%)  G 2 (1.1%)  O 1 (0.5%)
+  live, accuracy-only GPTQ dropped             n=200  U 74 (37.0%)  S 22 (11.0%)  F 101 (50.5%)  G 2 (1.0%)  O 1 (0.5%)
+  live, borderline U moved to F                n=204  U 67 (32.8%)  S 26 (12.7%)  F 108 (52.9%)  G 2 (1.0%)  O 1 (0.5%)
+  live, both                                   n=200  U 67 (33.5%)  S 22 (11.0%)  F 108 (54.0%)  G 2 (1.0%)  O 1 (0.5%)
+
+== live: feature x scope
+  moe                U   0  S   0  F  26  G   0  O   0
+  boot_load_compile  U  20  S   0  F   2  G   1  O   0
+  drafter            U   1  S   1  F  20  G   1  O   0
+  dense_gemm         U   1  S  19  F   0  G   0  O   0
+  kda_linear         U   0  S   0  F  18  G   0  O   0
+  indexer            U   0  S   0  F  15  G   0  O   0
+  prefix_kv_cache    U  15  S   0  F   0  G   0  O   0
+  sampler            U  15  S   0  F   0  G   0  O   0
+  mla_dsa            U   0  S   0  F  14  G   0  O   0
+  graphs_host        U  10  S   0  F   0  G   0  O   1
+  comm               U   2  S   4  F   0  G   0  O   0
+  mhc                U   0  S   0  F   6  G   0  O   0
+  scheduler_runtime  U   3  S   1  F   0  G   0  O   0
+  embed_logits       U   3  S   0  F   0  G   0  O   0
+  other              U   3  S   0  F   0  G   0  O   0
+  memory             U   1  S   1  F   0  G   0  O   0
+
+== live: hardware-bound (GB10/SM121/TP4 RoCE) and evidence, within each scope
+  U: n= 74  hw-bound 6 (8.1%)  evidence component 39, none 34, e2e 1
+  S: n= 26  hw-bound 17 (65.4%)  evidence component 16, none 7, e2e 3
+  F: n=101  hw-bound 40 (39.6%)  evidence component 77, none 19, e2e 4, unknown 1
+  G: n=  2  hw-bound 0 (0.0%)  evidence none 2
+  O: n=  1  hw-bound 0 (0.0%)  evidence none 1
+  all: evidence component 132 (64.7%), none 63 (30.9%), e2e 8 (3.9%), unknown 1 (0.5%)
+
+== carry-over: which live GLM-era optimizations serve another model's shape (O items excluded)
+  glm53 lanes: {'admitted': 14, 'unmeasured': 0, 'refused': 0}
+    device admitted, mla admitted/specialized, indexer admitted/specialized, mhc_decode admitted/specialized, mhc_prefill admitted/specialized, oneshot admitted/specialized, prefill_collectives admitted/specialized, dense admitted/specialized, draft admitted/specialized, kda_recurrent admitted/specialized, kda_ring admitted/specialized, kda_chunk admitted/specialized, moe admitted/specialized, universal admitted/generic
+  qwen38 lanes: {'admitted': 2, 'unmeasured': 4, 'refused': 7}
+    device admitted, mla refused/generic, indexer refused/specialized, mhc_decode refused/specialized, mhc_prefill refused/specialized, oneshot unmeasured/specialized, prefill_collectives unmeasured/specialized, dense refused/glue, kda_recurrent unmeasured/glue, kda_ring refused/glue, kda_chunk refused/glue, moe unmeasured/specialized, universal admitted/generic
+  dsv41 lanes: {'admitted': 2, 'unmeasured': 2, 'refused': 6}
+    device admitted, mla refused/generic, indexer refused/none, mhc_decode refused/glue, mhc_prefill refused/glue, oneshot unmeasured/specialized, prefill_collectives unmeasured/specialized, dense refused/glue, moe refused/generic, universal admitted/generic
+  glm53: n=203  as-is 203 (cum 100.0%)  re-measure 0 (cum 100.0%)  glue 0 (cum 100.0%)  no 0 (0.0%)
+    not as-is: 
+  qwen38: n=203  as-is 74 (cum 36.5%)  re-measure 34 (cum 53.2%)  glue 37 (cum 71.4%)  no 58 (28.6%)
+    not as-is: G->no 2, boot_load_compile->re-measure 2, comm->re-measure 4, dense_gemm->glue 19, drafter->no 21, indexer->no 15, kda_linear->glue 18, memory->re-measure 1, mhc->no 6, mla_dsa->no 14, moe->re-measure 26, scheduler_runtime->re-measure 1
+  dsv41: n=203  as-is 74 (cum 36.5%)  re-measure 6 (cum 39.4%)  glue 25 (cum 51.7%)  no 98 (48.3%)
+    not as-is: G->no 2, boot_load_compile->no 2, comm->re-measure 4, dense_gemm->glue 19, drafter->no 21, indexer->no 15, kda_linear->no 18, memory->re-measure 1, mhc->glue 6, mla_dsa->no 14, moe->no 26, scheduler_runtime->re-measure 1
+
+== where the live U items landed (engine code files each changed)
+  model-free layers + GLM profile: 39
+  model-free layers only: 16
+  GLM profile, no model-free layer: 10
+  other kernels only: 9
+  GLM profile only: #1032 #996 #995 #959 #912 #827 #822 #809 #779 #539
+
+== engine/kernels lines by bucket (total 86578; b12x includes vendored CuTe-DSL sources)
+       1662 (1.9%)  model-free (common, bounded_graph, decode_queue, mapped_staging, native_root, token_embedding)
+      8898 (10.3%)  dense GEMM (dense, w4a8_pipeline, decode_inputs, decode_projection, tile_dataflow)
+       2420 (2.8%)  comm (oneshot, prefill_collectives)
+     54143 (62.5%)  MoE (b12x, router_fp32, glm_pointwise, prefill_router, moe_output)
+       7745 (8.9%)  MLA/DSA + indexer (mla, kpool, indexer*, decode/prefill_topk, deep_gemm)
+       7077 (8.2%)  KDA (kda, causal_conv*, state, linear_decay)
+       1612 (1.9%)  mHC (mhc, prefill_mhc, mhc_contract)
+        634 (0.7%)  DFlash drafter (draft_*)
+       1407 (1.6%)  Qwen3.8 only (qsa, gdn, gated_residual)
+        980 (1.1%)  frame (cells, arch, __init__)

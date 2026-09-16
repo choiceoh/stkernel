@@ -18,15 +18,22 @@ import importlib
 import time
 
 # (name, module, zero-argument entry point that compiles a new key and loads the module without touching the device)
-MODULES = (("dense", "engine.kernels.dense", "build"),
+MODULES = (("cublaslt", "engine.kernels.dense.cublaslt", "_build"),
+           ("dense", "engine.kernels.dense", "build"),
            ("mla", "engine.kernels.mla", "_build"),
            ("prefill-topk", "engine.kernels.prefill_topk", "_build"),
            ("router-fp32", "engine.kernels.router_fp32", "build"),
+           ("router-fused", "engine.kernels.router_fused", "build"),
            ("decode-topk", "engine.kernels.decode_topk", "_build"),
            ("mapped-staging", "engine.kernels.mapped_staging", "build"),
            ("bounded-graph", "engine.kernels.bounded_graph", "build"),
            ("decode-queue", "engine.kernels.decode_queue", "build"))
 ONESHOT = ("one-shot", "engine.kernels.oneshot", "build")        # its sources take the served rails and flag mode
+
+# Natives that exist under engine/kernels but that no serving module binds: a probe's own cell. A cell never runs
+# inside a boot, so it cannot make one rank wait for another's compile, and building it here would only lengthen
+# every cold boot. Binding one from a lane means moving it into MODULES above.
+PROBE_MODULES = (("router-fused", "engine.kernels.router_fused", "build"),)
 
 
 def builds(oneshot_rails: int, oneshot_inline: bool):

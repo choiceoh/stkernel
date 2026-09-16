@@ -1,0 +1,103 @@
+{
+  "status": "PASS",
+  "FC": [
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "reason": "measured_split_pipeline_gain",
+        "producer_warps": 1,
+        "split_parts": 5
+      },
+      "comparisons": {
+        "direct_cublas": {
+          "baseline_ms": 0.3573639988899231,
+          "split_ms": 0.3172498717904091,
+          "latency_change_percent": -11.225005099595986,
+          "all_four_pairs_win_2pct": true
+        },
+        "deep_gemm": {
+          "baseline_ms": 0.3436009958386421,
+          "split_ms": 0.31564949452877045,
+          "latency_change_percent": -8.134872031336581,
+          "all_four_pairs_win_2pct": true
+        }
+      }
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "reason": "measured_split_pipeline_gain",
+        "producer_warps": 1,
+        "split_parts": 5
+      },
+      "comparisons": {
+        "direct_cublas": {
+          "baseline_ms": 0.3622639998793602,
+          "split_ms": 0.3242791220545769,
+          "latency_change_percent": -10.485413355296934,
+          "all_four_pairs_win_2pct": true
+        },
+        "deep_gemm": {
+          "baseline_ms": 0.35160374641418457,
+          "split_ms": 0.3227468729019165,
+          "latency_change_percent": -8.207214458481637,
+          "all_four_pairs_win_2pct": true
+        }
+      }
+    }
+  ],
+  "head": [
+    {
+      "shape": [
+        7,
+        38784,
+        4096
+      ],
+      "baseline_ms": 0.6788947582244873,
+      "cublas_ms": 0.5931519865989685,
+      "latency_change_percent": -12.629758970265403
+    },
+    {
+      "shape": [
+        8,
+        38784,
+        4096
+      ],
+      "baseline_ms": 0.6831777691841125,
+      "cublas_ms": 0.5938880145549774,
+      "latency_change_percent": -13.069768756639977
+    },
+    {
+      "shape": [
+        14,
+        38784,
+        4096
+      ],
+      "baseline_ms": 0.6852132678031921,
+      "cublas_ms": 0.5982400178909302,
+      "latency_change_percent": -12.692873007421468
+    },
+    {
+      "shape": [
+        16,
+        38784,
+        4096
+      ],
+      "baseline_ms": 0.6876642405986786,
+      "cublas_ms": 0.5990079939365387,
+      "latency_change_percent": -12.892374130863049
+    }
+  ]
+}

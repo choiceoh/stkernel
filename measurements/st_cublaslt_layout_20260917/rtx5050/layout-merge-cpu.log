@@ -1,0 +1,417 @@
+test_bound_calls_allocate_nothing_and_independent_bindings_own_distinct_scratch (tests.test_engine_cublaslt.BoundExecutionTests.test_bound_calls_allocate_nothing_and_independent_bindings_own_distinct_scratch) ... ok
+test_replacing_bound_buffers_fails_before_matmul_and_capture_cannot_bind (tests.test_engine_cublaslt.BoundExecutionTests.test_replacing_bound_buffers_fails_before_matmul_and_capture_cannot_bind) ... ok
+test_selected_warp_configuration_reaches_bound_execution (tests.test_engine_cublaslt.BoundExecutionTests.test_selected_warp_configuration_reaches_bound_execution) ... ok
+test_packet_conversion_preserves_rounding_rank_stride_and_tail (tests.test_engine_cublaslt.InterpreterTests.test_packet_conversion_preserves_rounding_rank_stride_and_tail) ... skipped 'explicit no-GPU Triton interpreter check'
+test_quantizer_exact_bytes_odd_groups_padding_and_redzones (tests.test_engine_cublaslt.InterpreterTests.test_quantizer_exact_bytes_odd_groups_padding_and_redzones) ... skipped 'explicit no-GPU Triton interpreter check'
+test_scale_and_inverse_for_every_bf16_magnitude (tests.test_engine_cublaslt.InterpreterTests.test_scale_and_inverse_for_every_bf16_magnitude) ... skipped 'explicit no-GPU Triton interpreter check'
+test_split_producer_layout_redzones_and_fp32_reduction (tests.test_engine_cublaslt.InterpreterTests.test_split_producer_layout_redzones_and_fp32_reduction) ... skipped 'explicit no-GPU Triton interpreter check'
+test_weight_scale_replication_covers_every_normal_exponent (tests.test_engine_cublaslt.InterpreterTests.test_weight_scale_replication_covers_every_normal_exponent) ... skipped 'explicit no-GPU Triton interpreter check'
+test_batched_partials_use_each_scale_slice_and_reject_bad_buffers (tests.test_engine_cublaslt.NativePreparationTests.test_batched_partials_use_each_scale_slice_and_reject_bad_buffers) ... skipped 'requires explicit owned-GPU permission'
+test_mx_query_uses_real_scales_and_binding_owns_execution_scales (tests.test_engine_cublaslt.NativePreparationTests.test_mx_query_uses_real_scales_and_binding_owns_execution_scales) ... skipped 'requires explicit owned-GPU permission'
+test_split_bindings_have_private_storage_and_replay_changed_sources (tests.test_engine_cublaslt.NativePreparationTests.test_split_bindings_have_private_storage_and_replay_changed_sources) ... skipped 'requires explicit owned-GPU permission'
+test_algorithm_alignment_uses_actual_storage_for_every_operand (tests.test_engine_cublaslt.PreparationTests.test_algorithm_alignment_uses_actual_storage_for_every_operand) ... ok
+test_both_paired_pipeline_samples_must_win (tests.test_engine_cublaslt.PreparationTests.test_both_paired_pipeline_samples_must_win) ... ok
+test_capture_cannot_prepare_an_algorithm (tests.test_engine_cublaslt.PreparationTests.test_capture_cannot_prepare_an_algorithm) ... ok
+test_custom_producer_cannot_silently_ignore_a_warp_choice (tests.test_engine_cublaslt.PreparationTests.test_custom_producer_cannot_silently_ignore_a_warp_choice) ... ok
+test_graph_reset_runs_on_success_and_capture_failure_preserves_original_error (tests.test_engine_cublaslt.PreparationTests.test_graph_reset_runs_on_success_and_capture_failure_preserves_original_error) ... ok
+test_non_fleet_cards_cannot_enter_timing (tests.test_engine_cublaslt.PreparationTests.test_non_fleet_cards_cannot_enter_timing) ... ok
+test_sm120_timing_requires_explicit_device_probe (tests.test_engine_cublaslt.PreparationTests.test_sm120_timing_requires_explicit_device_probe) ... ok
+test_winner_keeps_the_producer_layout_of_the_complete_pipeline (tests.test_engine_cublaslt.PreparationTests.test_winner_keeps_the_producer_layout_of_the_complete_pipeline) ... ok
+test_workspace_generations_survive_growth_and_streams_do_not_alias (tests.test_engine_cublaslt.PreparationTests.test_workspace_generations_survive_growth_and_streams_do_not_alias) ... ok
+test_preallocated_producer_buffers_cannot_alias (tests.test_engine_cublaslt.ProducerContracts.test_preallocated_producer_buffers_cannot_alias) ... ok
+test_scale_size_is_metadata_padding_only (tests.test_engine_cublaslt.ProducerContracts.test_scale_size_is_metadata_padding_only) ... ok
+test_declared_memory_covers_shared_and_separate_decode_packs (tests.test_engine_cublaslt_serving.ServingContracts.test_declared_memory_covers_shared_and_separate_decode_packs) ... ok
+test_execution_proof_rejects_an_unexecuted_default_reader (tests.test_engine_cublaslt_serving.ServingContracts.test_execution_proof_rejects_an_unexecuted_default_reader) ... ok
+test_fc_normalization_keeps_decode_phase_bias_and_observation (tests.test_engine_cublaslt_serving.ServingContracts.test_fc_normalization_keeps_decode_phase_bias_and_observation) ... ok
+test_fc_phase_reaches_the_shared_cublas_reader (tests.test_engine_cublaslt_serving.ServingContracts.test_fc_phase_reaches_the_shared_cublas_reader) ... ok
+test_fp8_default_reader_bypasses_deep_gemm_and_preserves_head_padding (tests.test_engine_cublaslt_serving.ServingContracts.test_fp8_default_reader_bypasses_deep_gemm_and_preserves_head_padding) ... ok
+test_private_graph_outputs_padding_alias_and_inference_mode (tests.test_engine_cublaslt_serving.ServingGpu.test_private_graph_outputs_padding_alias_and_inference_mode) ... skipped 'owned GPU required'
+test_the_proof_does_not_require_the_lane_calibration_switches_off (tests.test_engine_native_execution.CalibratingBootTests.test_the_proof_does_not_require_the_lane_calibration_switches_off)
+A calibrating boot cannot run the packet projection, so the door must not demand it. ... ok
+test_missing_native_implementation_cannot_pass_coverage (tests.test_engine_native_execution.NativeQualificationTests.test_missing_native_implementation_cannot_pass_coverage) ... ok
+test_nonfinite_prefill_releases_slots_and_refuses_readiness (tests.test_engine_native_execution.NativeQualificationTests.test_nonfinite_prefill_releases_slots_and_refuses_readiness) ... ok
+test_an_empty_tier_directory_reaches_the_fleet_boot_as_no_tier (tests.test_engine_bootpaths.BootPathTests.test_an_empty_tier_directory_reaches_the_fleet_boot_as_no_tier)
+The launcher's `--tier-dir=` (tier off) parses to "", which every tier guard reads as none. ... ok
+test_build_reads_drafter_facts_from_the_selected_directory (tests.test_engine_bootpaths.BootPathTests.test_build_reads_drafter_facts_from_the_selected_directory) ... ok
+test_local_http_and_fleet_forward_both_model_directories (tests.test_engine_bootpaths.BootPathTests.test_local_http_and_fleet_forward_both_model_directories) ...   box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   7                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 2                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      4.25                             [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,batch,q0                 [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    GLM53_DENSE_W4A16_GUARD_ROWS 4096                             until 2026-09-30  measures 'ModelOpt dense prefill activation precision guard; zero measures all-NVFP4', rollback 'STK_GLM53_DENSE_W4A16_GUARD_ROWS=4096'
+    decode_absorb_tiles      1                                until 2026-09-30  measures 'Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending', rollback 'STK_decode_absorb_tiles=0'
+    decode_indexer_gate      1                                until 2026-09-30  measures 'Operator-enabled K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending', rollback 'STK_decode_indexer_gate=0'
+    decode_dsa_inputs        1                                until 2026-09-30  measures 'Operator-enabled K=7 shared queries, latent norm/write and direct pool-cache glue; paired GPU qualification pending', rollback 'STK_decode_dsa_inputs=0'
+    decode_fastpaths         1                                until 2026-09-30  measures 'Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending', rollback 'STK_decode_fastpaths=0'
+    prefill_ffn_packets      1                                until 2026-09-30  measures 'Operator-enabled sender-owned routes and direct FP8 expert/shared inputs; local FFN qualified, fleet serving pending', rollback 'STK_prefill_ffn_packets=0'
+    prefill_absorb_tiles     1                                until 2026-09-30  measures 'Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending', rollback 'STK_prefill_absorb_tiles=0'
+    prefill_dense_prefix     1                                until 2026-09-30  measures 'Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending', rollback 'STK_prefill_dense_prefix=0'
+    prefill_indexer_shards   0                                until 2026-09-30  measures 'Unqualified prefill candidate: shard replicated indexer queries and bypass fully covered selections', rollback 'STK_prefill_indexer_shards=0'
+    draft_tuning                                              until 2026-09-30  measures 'Explicit draft-only selector, boundary and preparation tuning JSON; empty preserves baseline coefficients', rollback 'STK_draft_tuning='
+    draft_fc_precision       fp8                              until 2026-09-30  measures 'DFlash FC decode precision; shared or committed-decode FP8 pack', rollback 'STK_draft_fc_precision=w4'
+    draft_fc_calibration     auto                             until 2026-09-30  measures 'auto collects missing committed decode inputs and consumes GPTQ on a subsequent boot; shared/collect/decode are fixed arms', rollback 'STK_draft_fc_calibration=shared'
+    draft_diagnostics        1                                until 2026-09-30  measures 'Record greedy first rejection as candidate miss, selector miss or output boundary', rollback 'STK_draft_diagnostics=0'
+    terminal_mhc             0                                until 2026-09-30  measures 'Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns', rollback 'STK_terminal_mhc=0'
+    deferred_kda             1                                until 2026-09-30  measures 'Operator-enabled FP32 KDA: verify into update factors, commit accepted states across all layers in one launch; K=7 GPU exactness and paired timing pending', rollback 'STK_deferred_kda=0'
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    oneshot_rails            2                                until 2026-09-30  measures 'Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; boot latency gauge and fleet onepass pending', rollback 'STK_oneshot_rails=1'
+    oneshot_inline           1                                until 2026-09-30  measures 'Inline 8-byte one-shot completion flags; fleet consumer latency and quality pending', rollback 'STK_oneshot_inline=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576); each context bucket captures the declared request widths. The boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   7                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 2                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      4.25                             [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,batch,q0                 [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    GLM53_DENSE_W4A16_GUARD_ROWS 4096                             until 2026-09-30  measures 'ModelOpt dense prefill activation precision guard; zero measures all-NVFP4', rollback 'STK_GLM53_DENSE_W4A16_GUARD_ROWS=4096'
+    decode_absorb_tiles      1                                until 2026-09-30  measures 'Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending', rollback 'STK_decode_absorb_tiles=0'
+    decode_indexer_gate      1                                until 2026-09-30  measures 'Operator-enabled K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending', rollback 'STK_decode_indexer_gate=0'
+    decode_dsa_inputs        1                                until 2026-09-30  measures 'Operator-enabled K=7 shared queries, latent norm/write and direct pool-cache glue; paired GPU qualification pending', rollback 'STK_decode_dsa_inputs=0'
+    decode_fastpaths         1                                until 2026-09-30  measures 'Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending', rollback 'STK_decode_fastpaths=0'
+    prefill_ffn_packets      1                                until 2026-09-30  measures 'Operator-enabled sender-owned routes and direct FP8 expert/shared inputs; local FFN qualified, fleet serving pending', rollback 'STK_prefill_ffn_packets=0'
+    prefill_absorb_tiles     1                                until 2026-09-30  measures 'Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending', rollback 'STK_prefill_absorb_tiles=0'
+    prefill_dense_prefix     1                                until 2026-09-30  measures 'Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending', rollback 'STK_prefill_dense_prefix=0'
+    prefill_indexer_shards   0                                until 2026-09-30  measures 'Unqualified prefill candidate: shard replicated indexer queries and bypass fully covered selections', rollback 'STK_prefill_indexer_shards=0'
+    draft_tuning                                              until 2026-09-30  measures 'Explicit draft-only selector, boundary and preparation tuning JSON; empty preserves baseline coefficients', rollback 'STK_draft_tuning='
+    draft_fc_precision       fp8                              until 2026-09-30  measures 'DFlash FC decode precision; shared or committed-decode FP8 pack', rollback 'STK_draft_fc_precision=w4'
+    draft_fc_calibration     auto                             until 2026-09-30  measures 'auto collects missing committed decode inputs and consumes GPTQ on a subsequent boot; shared/collect/decode are fixed arms', rollback 'STK_draft_fc_calibration=shared'
+    draft_diagnostics        1                                until 2026-09-30  measures 'Record greedy first rejection as candidate miss, selector miss or output boundary', rollback 'STK_draft_diagnostics=0'
+    terminal_mhc             0                                until 2026-09-30  measures 'Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns', rollback 'STK_terminal_mhc=0'
+    deferred_kda             1                                until 2026-09-30  measures 'Operator-enabled FP32 KDA: verify into update factors, commit accepted states across all layers in one launch; K=7 GPU exactness and paired timing pending', rollback 'STK_deferred_kda=0'
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    oneshot_rails            2                                until 2026-09-30  measures 'Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; boot latency gauge and fleet onepass pending', rollback 'STK_oneshot_rails=1'
+    oneshot_inline           1                                until 2026-09-30  measures 'Inline 8-byte one-shot completion flags; fleet consumer latency and quality pending', rollback 'STK_oneshot_inline=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576); each context bucket captures the declared request widths. The boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  fleet reserved by test
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   7                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 2                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      4.25                             [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,batch,q0                 [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    GLM53_DENSE_W4A16_GUARD_ROWS 4096                             until 2026-09-30  measures 'ModelOpt dense prefill activation precision guard; zero measures all-NVFP4', rollback 'STK_GLM53_DENSE_W4A16_GUARD_ROWS=4096'
+    decode_absorb_tiles      1                                until 2026-09-30  measures 'Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending', rollback 'STK_decode_absorb_tiles=0'
+    decode_indexer_gate      1                                until 2026-09-30  measures 'Operator-enabled K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending', rollback 'STK_decode_indexer_gate=0'
+    decode_dsa_inputs        1                                until 2026-09-30  measures 'Operator-enabled K=7 shared queries, latent norm/write and direct pool-cache glue; paired GPU qualification pending', rollback 'STK_decode_dsa_inputs=0'
+    decode_fastpaths         1                                until 2026-09-30  measures 'Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending', rollback 'STK_decode_fastpaths=0'
+    prefill_ffn_packets      1                                until 2026-09-30  measures 'Operator-enabled sender-owned routes and direct FP8 expert/shared inputs; local FFN qualified, fleet serving pending', rollback 'STK_prefill_ffn_packets=0'
+    prefill_absorb_tiles     1                                until 2026-09-30  measures 'Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending', rollback 'STK_prefill_absorb_tiles=0'
+    prefill_dense_prefix     1                                until 2026-09-30  measures 'Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending', rollback 'STK_prefill_dense_prefix=0'
+    prefill_indexer_shards   0                                until 2026-09-30  measures 'Unqualified prefill candidate: shard replicated indexer queries and bypass fully covered selections', rollback 'STK_prefill_indexer_shards=0'
+    draft_tuning                                              until 2026-09-30  measures 'Explicit draft-only selector, boundary and preparation tuning JSON; empty preserves baseline coefficients', rollback 'STK_draft_tuning='
+    draft_fc_precision       fp8                              until 2026-09-30  measures 'DFlash FC decode precision; shared or committed-decode FP8 pack', rollback 'STK_draft_fc_precision=w4'
+    draft_fc_calibration     auto                             until 2026-09-30  measures 'auto collects missing committed decode inputs and consumes GPTQ on a subsequent boot; shared/collect/decode are fixed arms', rollback 'STK_draft_fc_calibration=shared'
+    draft_diagnostics        1                                until 2026-09-30  measures 'Record greedy first rejection as candidate miss, selector miss or output boundary', rollback 'STK_draft_diagnostics=0'
+    terminal_mhc             0                                until 2026-09-30  measures 'Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns', rollback 'STK_terminal_mhc=0'
+    deferred_kda             1                                until 2026-09-30  measures 'Operator-enabled FP32 KDA: verify into update factors, commit accepted states across all layers in one launch; K=7 GPU exactness and paired timing pending', rollback 'STK_deferred_kda=0'
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    oneshot_rails            2                                until 2026-09-30  measures 'Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; boot latency gauge and fleet onepass pending', rollback 'STK_oneshot_rails=1'
+    oneshot_inline           1                                until 2026-09-30  measures 'Inline 8-byte one-shot completion flags; fleet consumer latency and quality pending', rollback 'STK_oneshot_inline=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576); each context bucket captures the declared request widths. The boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  kernel shape (derived): hidden 128 hc 4 mhc tp 4 | mla 1x16 no sink | linear 1/1x8x8 conv 4 decay/channel | indexer kpool 4x128 pool 4 top 8 | moe 4(4 local) I64/16 top2 nvfp4 swigluoai_uninterleave | spec 5
+  rank0: native builds in 0.0 s (dense 0.0s, one-shot 0.0s)
+  rank0: one-shot rails=2 latency µs {}
+[serve] death rank=0 kind=local phase='boot': StopAtBuild: 
+  fleet reserved by test
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   7                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 2                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      4.25                             [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,batch,q0                 [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+    mla_prefill              tile32                           [production default]
+    context_ceiling          0                                [production default]
+    kda_state_dtype          fp32                             [production default]
+    GLM53_DENSE_W4A16_GUARD_ROWS 4096                             [production default]
+    execution_overlap        0                                [production default]
+    early_observe            0                                [production default]
+    prefill_tiles            1                                [production default]
+    terminal_mhc             0                                [production default]
+    draft_fc_precision       fp8                              [production default]
+    draft_fc_calibration     auto                             [production default]
+    draft_diagnostics        1                                [production default]
+    draft_tuning                                              [production default]
+    direct_mhc               1                                [production default]
+    prefill_project_tiles    1                                [production default]
+    nvme_mapped_staging      1                                [production default]
+    decode_iterations        4                                [production default]
+    prefill_indexer_shards   0                                [production default]
+    prefill_dense_prefix     1                                [production default]
+    prefill_absorb_tiles     1                                [production default]
+    decode_fastpaths         1                                [production default]
+    decode_dsa_inputs        1                                [production default]
+    decode_indexer_gate      1                                [production default]
+    decode_absorb_tiles      1                                [production default]
+    deferred_kda             1                                [production default]
+    oneshot_rails            2                                [production default]
+    oneshot_inline           1                                [production default]
+    prefill_ffn_packets      1                                [production default]
+  knobs (every one expires)
+  kernel shape (derived): hidden 128 hc 4 mhc tp 4 | mla 1x16 no sink | linear 1/1x8x8 conv 4 decay/channel | indexer kpool 4x128 pool 4 top 8 | moe 4(4 local) I64/16 top2 nvfp4 swigluoai_uninterleave | spec 5
+  rank0: native builds in 0.0 s (dense 0.0s, one-shot 0.0s)
+  rank0: one-shot rails=2 latency µs {}
+[serve] death rank=0 kind=local phase='boot': StopAtBuild: 
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   7                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 2                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      4.25                             [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,batch,q0                 [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    GLM53_DENSE_W4A16_GUARD_ROWS 4096                             until 2026-09-30  measures 'ModelOpt dense prefill activation precision guard; zero measures all-NVFP4', rollback 'STK_GLM53_DENSE_W4A16_GUARD_ROWS=4096'
+    decode_absorb_tiles      1                                until 2026-09-30  measures 'Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending', rollback 'STK_decode_absorb_tiles=0'
+    decode_indexer_gate      1                                until 2026-09-30  measures 'Operator-enabled K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending', rollback 'STK_decode_indexer_gate=0'
+    decode_dsa_inputs        1                                until 2026-09-30  measures 'Operator-enabled K=7 shared queries, latent norm/write and direct pool-cache glue; paired GPU qualification pending', rollback 'STK_decode_dsa_inputs=0'
+    decode_fastpaths         1                                until 2026-09-30  measures 'Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending', rollback 'STK_decode_fastpaths=0'
+    prefill_ffn_packets      1                                until 2026-09-30  measures 'Operator-enabled sender-owned routes and direct FP8 expert/shared inputs; local FFN qualified, fleet serving pending', rollback 'STK_prefill_ffn_packets=0'
+    prefill_absorb_tiles     1                                until 2026-09-30  measures 'Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending', rollback 'STK_prefill_absorb_tiles=0'
+    prefill_dense_prefix     1                                until 2026-09-30  measures 'Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending', rollback 'STK_prefill_dense_prefix=0'
+    prefill_indexer_shards   0                                until 2026-09-30  measures 'Unqualified prefill candidate: shard replicated indexer queries and bypass fully covered selections', rollback 'STK_prefill_indexer_shards=0'
+    draft_tuning                                              until 2026-09-30  measures 'Explicit draft-only selector, boundary and preparation tuning JSON; empty preserves baseline coefficients', rollback 'STK_draft_tuning='
+    draft_fc_precision       fp8                              until 2026-09-30  measures 'DFlash FC decode precision; shared or committed-decode FP8 pack', rollback 'STK_draft_fc_precision=w4'
+    draft_fc_calibration     auto                             until 2026-09-30  measures 'auto collects missing committed decode inputs and consumes GPTQ on a subsequent boot; shared/collect/decode are fixed arms', rollback 'STK_draft_fc_calibration=shared'
+    draft_diagnostics        1                                until 2026-09-30  measures 'Record greedy first rejection as candidate miss, selector miss or output boundary', rollback 'STK_draft_diagnostics=0'
+    terminal_mhc             0                                until 2026-09-30  measures 'Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns', rollback 'STK_terminal_mhc=0'
+    deferred_kda             1                                until 2026-09-30  measures 'Operator-enabled FP32 KDA: verify into update factors, commit accepted states across all layers in one launch; K=7 GPU exactness and paired timing pending', rollback 'STK_deferred_kda=0'
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    oneshot_rails            2                                until 2026-09-30  measures 'Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; boot latency gauge and fleet onepass pending', rollback 'STK_oneshot_rails=1'
+    oneshot_inline           1                                until 2026-09-30  measures 'Inline 8-byte one-shot completion flags; fleet consumer latency and quality pending', rollback 'STK_oneshot_inline=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576); each context bucket captures the declared request widths. The boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  fleet reserved by test
+  box: test
+  facts
+    model                    /alternate/config                [the checkpoint's config/tokenizer (facts.CKPT or a copy of those files)]
+    ranks                    /alternate/ranks                 [preshard output]
+    world                    4                                [facts.TP: four Sparks]
+    block                    768                              [launcher --block-size]
+    spec_k                   7                                [launcher SPEC_K with DFlash2]
+    kv_gib                   0.25                             [--kv-gib (local)]
+    port                     8000                             [--port]
+    max_seqs                 2                                [resident rows, state slots and captured decode widths]
+    prefix_snapshot_gib      4.25                             [tiered raw block-boundary checkpoints; count follows the shape]
+    prefix_untiered_snapshot_gib 4.25                             [raw checkpoints when no prefix tier is configured]
+    prefix_compressed_bytes  1073741824                       [prefix tier's bounded lossless RAM cache; codec workspace declared separately]
+    moe_static               t,r,sf6,batch,q0                 [native TP4 execution]
+    lanes                    served                           [native TP4 execution]
+    decode_eager             0                                [native TP4 execution]
+    execution                native                           [native TP4 execution]
+  knobs (every one expires)
+    GLM53_DENSE_W4A16_GUARD_ROWS 4096                             until 2026-09-30  measures 'ModelOpt dense prefill activation precision guard; zero measures all-NVFP4', rollback 'STK_GLM53_DENSE_W4A16_GUARD_ROWS=4096'
+    decode_absorb_tiles      1                                until 2026-09-30  measures 'Operator-enabled K=7 token-major MLA contractions; paired GPU qualification pending', rollback 'STK_decode_absorb_tiles=0'
+    decode_indexer_gate      1                                until 2026-09-30  measures 'Operator-enabled K=7 FP32 head-gate partials with fused boundary reduction; paired GPU qualification pending', rollback 'STK_decode_indexer_gate=0'
+    decode_dsa_inputs        1                                until 2026-09-30  measures 'Operator-enabled K=7 shared queries, latent norm/write and direct pool-cache glue; paired GPU qualification pending', rollback 'STK_decode_dsa_inputs=0'
+    decode_fastpaths         1                                until 2026-09-30  measures 'Operator-enabled K=7 input reuse, paired projections and direct TX outputs; GPU qualification pending', rollback 'STK_decode_fastpaths=0'
+    prefill_ffn_packets      1                                until 2026-09-30  measures 'Operator-enabled sender-owned routes and direct FP8 expert/shared inputs; local FFN qualified, fleet serving pending', rollback 'STK_prefill_ffn_packets=0'
+    prefill_absorb_tiles     1                                until 2026-09-30  measures 'Operator-enabled token-major MLA contractions; GPU timing and quality qualification pending', rollback 'STK_prefill_absorb_tiles=0'
+    prefill_dense_prefix     1                                until 2026-09-30  measures 'Operator-enabled causal-prefix KV sharing; GPU timing and quality qualification pending', rollback 'STK_prefill_dense_prefix=0'
+    prefill_indexer_shards   0                                until 2026-09-30  measures 'Unqualified prefill candidate: shard replicated indexer queries and bypass fully covered selections', rollback 'STK_prefill_indexer_shards=0'
+    draft_tuning                                              until 2026-09-30  measures 'Explicit draft-only selector, boundary and preparation tuning JSON; empty preserves baseline coefficients', rollback 'STK_draft_tuning='
+    draft_fc_precision       fp8                              until 2026-09-30  measures 'DFlash FC decode precision; shared or committed-decode FP8 pack', rollback 'STK_draft_fc_precision=w4'
+    draft_fc_calibration     auto                             until 2026-09-30  measures 'auto collects missing committed decode inputs and consumes GPTQ on a subsequent boot; shared/collect/decode are fixed arms', rollback 'STK_draft_fc_calibration=shared'
+    draft_diagnostics        1                                until 2026-09-30  measures 'Record greedy first rejection as candidate miss, selector miss or output boundary', rollback 'STK_draft_diagnostics=0'
+    terminal_mhc             0                                until 2026-09-30  measures 'Decode and prefill: preserve BF16 channel rounding while writing terminal means into final feature columns', rollback 'STK_terminal_mhc=0'
+    deferred_kda             1                                until 2026-09-30  measures 'Operator-enabled FP32 KDA: verify into update factors, commit accepted states across all layers in one launch; K=7 GPU exactness and paired timing pending', rollback 'STK_deferred_kda=0'
+    decode_iterations        4                                until 2026-09-30  measures 'Bounded greedy TP4 decode: reserve/read back 2 or 4 iterations with rank-agreed exits', rollback 'STK_decode_iterations=1'
+    nvme_mapped_staging      1                                until 2026-09-30  measures 'One mapped GB10 staging allocation for NVMe host I/O and GPU gather/scatter', rollback 'STK_nvme_mapped_staging=0'
+    oneshot_rails            2                                until 2026-09-30  measures 'Operator-directed one-shot RDMA over both RoCE PCIe functions, pairs {0,1},{2,3} on the second; boot latency gauge and fleet onepass pending', rollback 'STK_oneshot_rails=1'
+    oneshot_inline           1                                until 2026-09-30  measures 'Inline 8-byte one-shot completion flags; fleet consumer latency and quality pending', rollback 'STK_oneshot_inline=0'
+    prefill_project_tiles    1                                until 2026-09-30  measures 'Overlap TP4 prefill tile arrival with independent KDA input projection', rollback 'STK_prefill_project_tiles=0'
+    direct_mhc               1                                until 2026-09-30  measures 'TP4 rank packets consumed inside native MHC; exact rounding, C=1/C=4 latency and quality', rollback 'STK_direct_mhc=0'
+    execution_overlap        0                                until 2026-09-30  measures 'GB10 C=4 ordered TP/compute overlap: matched onepass C=1/C=4 latency and acceptance', rollback 'STK_execution_overlap=0'
+    early_observe            0                                until 2026-09-30  measures 'DFlash2 context preparation overlaps target tail using private W4 scratch; FP32 state unchanged', rollback 'STK_early_observe=0'
+    prefill_tiles            1                                until 2026-09-30  measures 'layer-major prefill windows of 1/2/4 native tiles, separate from decoding; 32K/128K TTFT and memory', rollback 'STK_prefill_tiles=1'
+    kda_state_dtype          fp32                             until 2026-09-30  measures 'FP16 recurrent storage with FP32 arithmetic: matched C=1/C=4 onepass quality, latency and memory', rollback 'STK_kda_state_dtype=fp32'
+    mla_prefill              tile32                           until 2026-09-30  measures 'large-M MLA prefill: tile32 is the qualified production default, stock the baseline (the pair/pair4 union candidates were measured and retired -- 45차 §23 조사 16차, PR #698)', rollback 'STK_mla_prefill=tile32'
+    context_ceiling          0                                until 2026-09-30  measures "the served context ceiling: the door refuses a longer horizon and the decode ladder captures no bucket above it. 0 = the checkpoint's trained positions (1,048,576); each context bucket captures the declared request widths. The boot's 'target/<shape>/' memory rows carry each bucket's seconds, so a boot pair prices the cut before it is taken", rollback 'STK_context_ceiling=0'
+  kernel shape (derived): hidden 128 hc 4 mhc tp 4 | mla 1x16 no sink | linear 1/1x8x8 conv 4 decay/channel | indexer kpool 4x128 pool 4 top 8 | moe 4(4 local) I64/16 top2 nvfp4 swigluoai_uninterleave | spec 5
+  rank0: native builds in 0.0 s (dense 0.0s, one-shot 0.0s)
+  rank0: one-shot rails=2 latency µs {}
+[serve] death rank=0 kind=local phase='boot': StopAtBuild: 
+ok
+test_the_repo_default_width_is_the_one_production_serves (tests.test_engine_bootpaths.BootPathTests.test_the_repo_default_width_is_the_one_production_serves)
+Current declarations agree; immutable older releases keep their own width. ... ok
+test_a_node_that_fails_stops_the_rest (tests.test_engine_bootpaths.LauncherTests.test_a_node_that_fails_stops_the_rest) ... ok
+test_a_tier_off_the_one_mounted_directory_is_refused_not_quietly_made_ephemeral (tests.test_engine_bootpaths.LauncherTests.test_a_tier_off_the_one_mounted_directory_is_refused_not_quietly_made_ephemeral)
+A tier the containers cannot see boots fine and throws everything away with the container. ... ok
+test_nodes_start_in_parallel_and_report_in_rank_order (tests.test_engine_bootpaths.LauncherTests.test_nodes_start_in_parallel_and_report_in_rank_order) ... ok
+test_the_kv_budget_production_serves_on_is_in_the_tree_not_on_the_box (tests.test_engine_bootpaths.LauncherTests.test_the_kv_budget_production_serves_on_is_in_the_tree_not_on_the_box)
+Production's KV came from a hand-edited env file. The deploy relaunches from the tree. ... ok
+test_the_nvme_tier_is_on_by_default_and_only_the_word_off_takes_it_away (tests.test_engine_bootpaths.LauncherTests.test_the_nvme_tier_is_on_by_default_and_only_the_word_off_takes_it_away)
+Since 2026-09-16 the default is a tier, not none: `off` is a deliberate word, not a fallback. ... ok
+test_combined_fp8_is_declared_and_both_packs_are_sent_to_compaction (tests.test_engine_drafter_storage.DrafterStorageTests.test_combined_fp8_is_declared_and_both_packs_are_sent_to_compaction) ... ok
+test_context_phase_survives_early_projection_and_short_commits (tests.test_engine_drafter_storage.DrafterStorageTests.test_context_phase_survives_early_projection_and_short_commits) ... ok
+test_fused_context_norm_is_owned_by_the_declared_compact_region (tests.test_engine_drafter_storage.DrafterStorageTests.test_fused_context_norm_is_owned_by_the_declared_compact_region) ... ok
+test_layout_removes_raw_projections_and_reserves_only_live_readers (tests.test_engine_drafter_storage.DrafterStorageTests.test_layout_removes_raw_projections_and_reserves_only_live_readers) ... ok
+test_packed_reservation_fits_folded_and_unfolded_metadata (tests.test_engine_drafter_storage.DrafterStorageTests.test_packed_reservation_fits_folded_and_unfolded_metadata) ... ok
+test_precision_selection_covers_supported_rows_and_context_prefill (tests.test_engine_drafter_storage.DrafterStorageTests.test_precision_selection_covers_supported_rows_and_context_prefill) ... ok
+test_prepare_uses_the_declared_precision_and_refuses_oversized_blocks (tests.test_engine_drafter_storage.DrafterStorageTests.test_prepare_uses_the_declared_precision_and_refuses_oversized_blocks) ... ok
+test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads (tests.test_engine_drafter.AuxLayerConventionTests.test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads)
+DFlash's ids are 0-based layers whose completed OUTPUT feeds fc: the reference implementation reads ... ok
+test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar (tests.test_engine_drafter.CommittedCountTests.test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar) ... ok
+test_dense_shapes_name_every_prepared_weight_at_this_tp (tests.test_engine_drafter.DrafterTests.test_dense_shapes_name_every_prepared_weight_at_this_tp) ... ok
+test_device_selector_matches_the_scalar_greedy_walk (tests.test_engine_drafter.DrafterTests.test_device_selector_matches_the_scalar_greedy_walk) ... ok
+test_each_block_row_sees_the_context_through_its_own_sliding_window (tests.test_engine_drafter.DrafterTests.test_each_block_row_sees_the_context_through_its_own_sliding_window)
+DFlash's mask (z-lab/dflash _attention_mask): the query at ctx + j sees context position p while ... ok
+test_long_observation_retains_the_newest_window (tests.test_engine_drafter.DrafterTests.test_long_observation_retains_the_newest_window) ... ok
+test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail (tests.test_engine_drafter.DrafterTests.test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail)
+Exercise the merged batched interface with packed readers and no BF16 sources. ... ok
+test_rows_attention_uses_the_same_per_query_window (tests.test_engine_drafter.DrafterTests.test_rows_attention_uses_the_same_per_query_window)
+`_attn_rows` reads the ring in storage order; each cell's position is the newest one congruent to it. ... ok
+test_rows_observe_writes_the_valid_cells_in_place (tests.test_engine_drafter.DrafterTests.test_rows_observe_writes_the_valid_cells_in_place) ... ok
+test_rows_propose_matches_the_per_row_walk (tests.test_engine_drafter.DrafterTests.test_rows_propose_matches_the_per_row_walk)
+Three rows in three slots -- two with a context shorter than the window, one longer -- at once: the same ... ok
+test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions (tests.test_engine_drafter.DrafterTests.test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions) ... ok
+test_the_host_walk_crosses_once_not_twice_a_position (tests.test_engine_drafter.DrafterTests.test_the_host_walk_crosses_once_not_twice_a_position) ... ok
+test_the_masks_of_the_batched_paths_reach_the_packs (tests.test_engine_drafter.DrafterTests.test_the_masks_of_the_batched_paths_reach_the_packs)
+A calibrating pack sums only the rows the drafter says are real: `observe_rows` passes the kept positions, ... ok
+test_the_sampled_walk_hands_back_the_distribution_it_drew_from (tests.test_engine_drafter.DrafterTests.test_the_sampled_walk_hands_back_the_distribution_it_drew_from)
+The accept test divides by this, so it has to be the one the pick came out of. ... ok
+test_the_compute_phase_does_not_depend_on_the_accepted_count (tests.test_engine_drafter.ObserveOverlapTests.test_the_compute_phase_does_not_depend_on_the_accepted_count)
+The overlap starts observe_kv before the commit decides the count. That is only correct because the ... skipped "observe's write phase is a device kernel"
+test_the_split_is_byte_for_byte_the_single_pass (tests.test_engine_drafter.ObserveOverlapTests.test_the_split_is_byte_for_byte_the_single_pass) ... skipped "observe's write phase is a device kernel"
+test_projection_is_identical_and_only_final_retained_rows_calibrate (tests.test_engine_early_observe.EarlyObserveTests.test_projection_is_identical_and_only_final_retained_rows_calibrate) ... ok
+test_subgroups_preserve_slot_mapping_and_unrounded_capacity (tests.test_engine_early_observe.EarlyObserveTests.test_subgroups_preserve_slot_mapping_and_unrounded_capacity) ... ok
+test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets (tests.test_engine_draft_tuning_integration.WalkTests.test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets) ... skipped 'CUDA selector numerics; CPU CI never launches GPUs'
+test_fc_bias_norm_cuda_graph_reads_the_owned_vector (tests.test_engine_draft_tuning_integration.WalkTests.test_fc_bias_norm_cuda_graph_reads_the_owned_vector) ... skipped 'CUDA fused norm numerics; CPU CI never launches GPUs'
+test_fc_bias_norm_preserves_fp32_addition_and_signed_weight (tests.test_engine_draft_tuning_integration.WalkTests.test_fc_bias_norm_preserves_fp32_addition_and_signed_weight) ... ok
+test_position_alpha_and_forced_predecessor_are_used_in_the_actual_walk (tests.test_engine_draft_tuning_integration.WalkTests.test_position_alpha_and_forced_predecessor_are_used_in_the_actual_walk) ... ok
+test_actual_proposal_masks_before_topk_and_sampled_q_matches_the_forced_pick (tests.test_engine_draft_tuning_integration.WiringTests.test_actual_proposal_masks_before_topk_and_sampled_q_matches_the_forced_pick) ... ok
+test_capture_construction_binds_boundary_input_only_when_enabled (tests.test_engine_draft_tuning_integration.WiringTests.test_capture_construction_binds_boundary_input_only_when_enabled) ... ok
+test_fc_bias_follows_decode_phase_even_with_shared_calibration (tests.test_engine_draft_tuning_integration.WiringTests.test_fc_bias_follows_decode_phase_even_with_shared_calibration) ... ok
+test_packet_reuse_resets_to_empty_on_both_graph_entry_points (tests.test_engine_draft_tuning_integration.WiringTests.test_packet_reuse_resets_to_empty_on_both_graph_entry_points) ... ok
+test_preparation_requires_real_statistics_and_binds_only_draft_names (tests.test_engine_draft_tuning_integration.WiringTests.test_preparation_requires_real_statistics_and_binds_only_draft_names) ... ok
+test_projection_precision_reaches_greedy_sampled_and_batched_paths (tests.test_engine_draft_tuning_integration.WiringTests.test_projection_precision_reaches_greedy_sampled_and_batched_paths) ... ok
+test_trace_collection_cannot_run_ahead_and_overwrite_its_proposal (tests.test_engine_draft_tuning_integration.WiringTests.test_trace_collection_cannot_run_ahead_and_overwrite_its_proposal) ... ok
+test_automatic_bias_does_not_make_an_explicit_w4_policy_fail (tests.test_engine_draft_precision.AutomaticBiasTests.test_automatic_bias_does_not_make_an_explicit_w4_policy_fail) ... ok
+test_corrupt_incomplete_or_unvalidated_cache_never_enables_a_correction (tests.test_engine_draft_precision.AutomaticBiasTests.test_corrupt_incomplete_or_unvalidated_cache_never_enables_a_correction) ... ok
+test_discovery_configuration_cannot_split_preparation_collectives (tests.test_engine_draft_precision.AutomaticBiasTests.test_discovery_configuration_cannot_split_preparation_collectives) ... ok
+test_empty_cache_is_enabled_but_does_not_hash_or_allocate_a_vector (tests.test_engine_draft_precision.AutomaticBiasTests.test_empty_cache_is_enabled_but_does_not_hash_or_allocate_a_vector) ... ok
+test_explicit_profile_wins_and_both_defaults_can_be_disabled (tests.test_engine_draft_precision.AutomaticBiasTests.test_explicit_profile_wins_and_both_defaults_can_be_disabled) ... ok
+test_fitter_artifact_is_bound_to_own_rank_and_changes_runtime_identity (tests.test_engine_draft_precision.AutomaticBiasTests.test_fitter_artifact_is_bound_to_own_rank_and_changes_runtime_identity) ... ok
+test_missing_or_different_peer_artifact_disables_all_ranks_before_hashing (tests.test_engine_draft_precision.AutomaticBiasTests.test_missing_or_different_peer_artifact_disables_all_ranks_before_hashing) ... ok
+test_stale_reader_and_peer_binding_failure_fall_back_without_blocking_boot (tests.test_engine_draft_precision.AutomaticBiasTests.test_stale_reader_and_peer_binding_failure_fall_back_without_blocking_boot) ... ok
+test_collect_masks_ghost_rows_and_fits_the_correction_sign (tests.test_engine_draft_precision.BiasFitTests.test_collect_masks_ghost_rows_and_fits_the_correction_sign) ... ok
+test_cpu_cli_merges_rank_bundles_and_records_input_hashes (tests.test_engine_draft_precision.BiasFitTests.test_cpu_cli_merges_rank_bundles_and_records_input_hashes) ... ok
+test_fit_requires_finite_paired_rows_and_complete_distinct_ranks (tests.test_engine_draft_precision.BiasFitTests.test_fit_requires_finite_paired_rows_and_complete_distinct_ranks) ... ok
+test_normalized_error_can_veto_improved_fc_error (tests.test_engine_draft_precision.BiasFitTests.test_normalized_error_can_veto_improved_fc_error) ... ok
+test_validation_can_veto_but_cannot_fit_the_vector (tests.test_engine_draft_precision.BiasFitTests.test_validation_can_veto_but_cannot_fit_the_vector) ... ok
+test_binding_uses_own_rank_and_peer_errors_are_reported (tests.test_engine_draft_precision.BindingTests.test_binding_uses_own_rank_and_peer_errors_are_reported) ... ok
+test_default_does_no_preparation_and_identity_pins_each_reader_input (tests.test_engine_draft_precision.BindingTests.test_default_does_no_preparation_and_identity_pins_each_reader_input) ... ok
+test_profile_rejects_malformed_corrections (tests.test_engine_draft_precision.BindingTests.test_profile_rejects_malformed_corrections) ... ok
+test_w4_bias_is_refused_even_if_the_vector_is_well_formed (tests.test_engine_draft_precision.BindingTests.test_w4_bias_is_refused_even_if_the_vector_is_well_formed) ... ok
+test_empty_strided_and_invalid_inputs (tests.test_engine_draft_precision.ProjectionTests.test_empty_strided_and_invalid_inputs) ... ok
+test_fp32_projection_graph_replay_preserves_changed_close_scores (tests.test_engine_draft_precision.ProjectionTests.test_fp32_projection_graph_replay_preserves_changed_close_scores) ... skipped 'CUDA graph numerics; no GPU is used in CPU CI'
+test_output_rounding_can_hide_a_real_score_difference (tests.test_engine_draft_precision.ProjectionTests.test_output_rounding_can_hide_a_real_score_difference) ... ok
+test_committed_native_ring_and_calibration_cover_every_k7_capture_length (tests.test_engine_draft_commit.DraftCommitTests.test_committed_native_ring_and_calibration_cover_every_k7_capture_length) ... ok
+test_masked_native_ring_keeps_the_device_count_and_calibration_prefix (tests.test_engine_draft_commit.DraftCommitTests.test_masked_native_ring_keeps_the_device_count_and_calibration_prefix) ... ok
+test_bound_forward_consumes_the_exact_owned_pack (tests.test_engine_fixed_k_cost.InputPackTests.test_bound_forward_consumes_the_exact_owned_pack) ... ok
+test_serving_proof_refuses_each_missing_consumer (tests.test_engine_fixed_k_cost.InputPackTests.test_serving_proof_refuses_each_missing_consumer) ... ok
+test_a_bundle_needs_both_splits (tests.test_engine_draft_fc_capture.CaptureTests.test_a_bundle_needs_both_splits) ... ok
+test_a_failure_stops_the_capture_and_not_the_step (tests.test_engine_draft_fc_capture.CaptureTests.test_a_failure_stops_the_capture_and_not_the_step) ... ok
+test_arming_refuses_what_the_collector_cannot_read (tests.test_engine_draft_fc_capture.CaptureTests.test_arming_refuses_what_the_collector_cannot_read) ... ok
+test_attaching_twice_is_refused (tests.test_engine_draft_fc_capture.CaptureTests.test_attaching_twice_is_refused) ... ok
+test_compaction_can_retire_the_device_source_without_breaking_collection (tests.test_engine_draft_fc_capture.CaptureTests.test_compaction_can_retire_the_device_source_without_breaking_collection) ... ok
+test_it_wraps_without_replacing_and_keeps_families_whole (tests.test_engine_draft_fc_capture.CaptureTests.test_it_wraps_without_replacing_and_keeps_families_whole) ... ok
+test_only_committed_rows_count_and_the_budget_is_never_exceeded (tests.test_engine_draft_fc_capture.CaptureTests.test_only_committed_rows_count_and_the_budget_is_never_exceeded) ... ok
+test_rows_are_held_on_the_host (tests.test_engine_draft_fc_capture.CaptureTests.test_rows_are_held_on_the_host)
+437 MiB of aux on the device would cost a fleet window; on the host it rides a serving boot. ... ok
+test_a_family_lands_in_one_split_and_the_salt_moves_it (tests.test_engine_draft_fc_capture.FamilySplitTests.test_a_family_lands_in_one_split_and_the_salt_moves_it) ... ok
+test_the_share_is_honoured_at_the_ends (tests.test_engine_draft_fc_capture.FamilySplitTests.test_the_share_is_honoured_at_the_ends) ... ok
+test_main_ships_the_collector_switched_off (tests.test_engine_draft_fc_capture.ProfileDefaultTests.test_main_ships_the_collector_switched_off)
+A collecting boot serves normally but writes 160 MiB of pairs; main must not do that. ... ok
+
+----------------------------------------------------------------------
+Ran 111 tests in 2.708s
+
+OK (skipped=14)

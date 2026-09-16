@@ -42,6 +42,7 @@ TP 기준선80.49 tok/s와의 차이 및 프리필 비교 제한은
 | 디코드 스텝이 무슨 커널로 이루어지나 | [`STEP_KERNEL_MAP.md`](STEP_KERNEL_MAP.md) — 개수·소유권·시간 구성·꼬리 |
 | 다음에 무엇을 부팅하나 | [`RUNBOOK_KERNEL_CAMPAIGN2.md`](RUNBOOK_KERNEL_CAMPAIGN2.md) — EXP 상태 표(부팅 필요 여부 포함) |
 | 이 모듈은 무엇을 접수하나 | `overlay/modules/<name>/README.md` + 같은 폴더의 `manifest.tsv` |
+| 최신 논문 중 무엇이 이 스택에 붙나 | [`docs/PAPER_MAP_20260917.html`](docs/PAPER_MAP_20260917.html) — 2026 커널·서빙·스펙 디코딩·양자화 논문을 디코드 스텝 병목별로 배치하고 도입 여부를 판정한 그날의 조사 |
 | 무엇으로 재나, 어디에 함정이 있나 | 이 문서의 `bench/` · `probes/` · `tools/` 절 |
 
 ## 모듈과 프로필

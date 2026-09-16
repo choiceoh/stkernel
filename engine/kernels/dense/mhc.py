@@ -82,7 +82,7 @@ class MHC:
         from engine.kernels.prefill_mhc import post_pre
         return post_pre(x,res,post,comb,packed,scale,base,norm,eps,hc_eps,post_mult,sinkhorn)
 
-    def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn,*,packets=None):
+    def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn,*,packets=None,output_pack=None):
         n = x.shape[0]
         if not 1 <= n <= 64 or res.shape != (n, self.hc, self.hidden):
             raise ValueError("MK MHC decode geometry mismatch")
@@ -95,6 +95,13 @@ class MHC:
         cm = torch.empty((n, self.hc, self.hc), device=x.device, dtype=torch.float32)
         li = torch.empty_like(x)
         tensors = [x,res,post,comb,weight,scale,base,norm,rc,pm,cm,li,*self.workspace]
+        if output_pack is not None:
+            from engine.kernels.dense import producer_pack_nbytes
+            if (n != 8 or self.hidden != 4096 or output_pack.device != x.device
+                    or output_pack.dtype != torch.uint8 or not output_pack.is_contiguous()
+                    or output_pack.numel() != producer_pack_nbytes(n, self.hidden)):
+                raise ValueError("MHC input pack requires same-device byte storage for eight 4096-wide rows")
+            tensors.append(output_pack)
         args = ([t.data_ptr() for t in tensors], [eps,hc_eps,hc_eps,post_mult,eps], [n, sinkhorn, self.hidden])
         if packets is None:
             self.ext.run_mhc(*args,weight is packed,small)

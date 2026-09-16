@@ -385,11 +385,23 @@ class Drafter:
     def context_linear(self, aux, keep=None, *, decode=False, observe=True):
         """Phase is explicit: row count cannot distinguish a short prompt."""
         layer = self.dense.get('fc.weight')
-        if layer is not None and getattr(layer, 'decode_fp8', None) is not None:
+        if layer is not None and (getattr(layer, 'decode_fp8', None) is not None
+                                  or getattr(getattr(layer, 'fp8', None), 'cublas', None) is not None):
             return layer(aux, keep, decode=decode, observe=observe)
         if not observe:
             return layer(aux, observe=False)
         return self.linear(aux, 'fc.weight', keep)
+
+    def context_projected_norm(self, aux, keep=None, *, decode=False, observe=True):
+        """The cuBLAS FC's FP32 sum and the established BF16/RMS boundary share one launch."""
+        layer = self.dense.get('fc.weight')
+        if decode and layer is not None and getattr(layer, 'decode_precision', None) == 'fp8':
+            lane = layer.decode_fp8 if layer.decode_fp8 is not None else layer.fp8
+            if getattr(lane, 'cublas', None) is not None:
+                return layer(aux, keep, decode=True, observe=observe,
+                             normalization=(self.p['hidden_norm.weight'], self.F.rms_eps,
+                                            getattr(self, 'fc_bias', None)))
+        return self.context_normed(self.context_linear(aux, keep, decode=decode, observe=observe), decode=decode)
 
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
         """ring [L, 2, window, kv_heads, D] bf16 (a slot's); positions [n]; aux [n, 5*4096] target states."""
@@ -414,7 +426,7 @@ class Drafter:
         positions, aux = positions[-F.window:], aux[-F.window:]
         keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
         decode = decode or valid is not None
-        c = self.context_normed(self.context_linear(aux, keep, decode=decode), decode=decode)
+        c = self.context_projected_norm(aux, keep, decode=decode)
         idx = positions % F.window
         context = (Fn.linear(c,self.context_kv).reshape(-1,F.layers,2,self.local_kv_heads,F.head_dim)
                    if self.context_kv is not None else None)
@@ -525,8 +537,7 @@ class Drafter:
         F, p = self.F, self.p
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t) if observe else None
-        projected = self.context_linear(aux, keep, decode=True, observe=observe)
-        c = self.context_normed(projected, decode=True)
+        c = self.context_projected_norm(aux, keep, decode=True, observe=observe)
         return Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
 
     def observe_kv(self, positions: torch.Tensor, aux: torch.Tensor, valid: torch.Tensor):
@@ -579,7 +590,7 @@ class Drafter:
             return
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
-        c = self.context_normed(self.context_linear(aux, keep, decode=True), decode=True)
+        c = self.context_projected_norm(aux, keep, decode=True)
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)

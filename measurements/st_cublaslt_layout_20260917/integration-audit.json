@@ -1,0 +1,14 @@
+{
+  "gpu_receipt_commit": "d35047b4",
+  "cpu_integration_commit": "d855cbc4",
+  "main_integrated": "b0dab5c2",
+  "unchanged_gpu_sources": {
+    "engine/kernels/dense/cublaslt.cpp": "7008d86bcd53a91aa269ad9418d621f384590394ec4b73048810291efd1bf6c2",
+    "engine/kernels/dense/cublaslt_serving.py": "c8296fba1dfda08ec8708bfc45949139f9745ca9e9cd19b9a8b63cce19499646",
+    "engine/kernels/dense/cublaslt_split.py": "9c836b568b9417b2356c4625ef6a2e79773070c0615612b3c30461d26ecf36bd",
+    "engine/profiles/glm53/cublas.py": "0cdd4891b60907c083277c2c8bfad977580e4042b3bdef74f6986d25a70f0c37",
+    "engine/profiles/glm53/drafter.py": "95de84f165a077b315187870801e0158e14071edbd792f42375a90983b8196a4"
+  },
+  "FP8Linear_AST_unchanged": true,
+  "scope": "Static source identity audit only; not a new GPU execution. DenseLinear integration preserves producer_pack and normalization."
+}

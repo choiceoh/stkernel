@@ -409,6 +409,10 @@ _STATIC_V2_DEFAULT = {
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
     "tiled": False, "sf_pack": False, "decode_reform": False,
     "reform_sf_pack": False,
+    # l<n>: B stages prefetched into L2 n stages ahead by the DMA warp (0 = off); lf<n>: FC2's only
+    "l2_prefetch": 0, "l2_prefetch_fc1": True,
+    # z: the B stages land as ONE cp.async.bulk each from pre-swizzled tile-major boxes (bulk_b)
+    "bulk_b": False,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -482,10 +486,30 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
                 )
             cfg["skip_sf" if token == "xs" else "skip_a"] = True
             continue
+        if len(token) >= 2 and token[0] == "l" and token[1:].isdigit():
+            # l<n> (2026-09-16): the static kernel's DMA warp asks L2 for the B stage n stages
+            # ahead (cp.async.bulk.prefetch.L2, one request per contiguous 16 KB run, no smem).
+            # A hint: the MMA reads the same bytes, so the numerics are the kernel's own.
+            cfg["l2_prefetch"] = int(token[1:])
+            cfg["l2_prefetch_fc1"] = True
+            continue
+        if token == "z":
+            # z (2026-09-17, the reform tile): the tile-major boxes are stored in the smem stage's own byte
+            # order (the canonical Swizzle<3,4,3> over 128 B rows for FC1, <2,4,3> over 64 B rows for FC2,
+            # probes/b12x_reform_layout_print.py), and the DMA lane lands each B stage with one 1-D
+            # cp.async.bulk instead of a TMA box of 128 / 256 row segments. The bytes the MMA reads are
+            # the same; the storage must carry the swizzled kind (the launch checks).
+            cfg["bulk_b"] = True
+            continue
+        if len(token) >= 3 and token[:2] == "lf" and token[2:].isdigit():
+            # lf<n>: the same, for the item's FC2 boxes only (FC1's own prefetch measured slower)
+            cfg["l2_prefetch"] = int(token[2:])
+            cfg["l2_prefetch_fc1"] = False
+            continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
-                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,q][,r][,sf6] cells (got {raw!r})"
+                f"u|v,f<fc1>,g<fc2>[,l<n>][,m32][,a32][,s][,t][,q][,r][,sf6] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -506,6 +530,10 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: sf6 requires t,r")
     if cfg.get("batch_reform") and not (cfg["decode_reform"] and cfg["reform_sf_pack"]):
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: batch requires t,r,sf6")
+    if cfg.get("l2_prefetch") and not (cfg["tiled"] and cfg["decode_reform"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: l<n> requires t,r (a tile-major M16 box is one contiguous run)")
+    if cfg.get("bulk_b") and not (cfg["tiled"] and cfg["decode_reform"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: z requires t,r (its boxes are the M16 reform stages)")
     return cfg
 
 
@@ -1181,6 +1209,9 @@ class _WeightViews:
     reform_scales: object | None = None
     w13_tiled_storage: torch.Tensor | None = None
     w2_tiled_storage: torch.Tensor | None = None
+    # cell z: the tiled storage's boxes are pre-swizzled into the reform stages' byte order; only a
+    # kernel built with bulk_b may read such a view, and only such a view may reach that kernel
+    swizzled: bool = False
     w1_alpha: torch.Tensor | None = None
     w2_alpha: torch.Tensor | None = None
     w1_storage: torch.Tensor | None = None
@@ -1453,6 +1484,57 @@ def _tile_expert_weights(
         w2_fp4.reshape(e2, hrows, nb // kin2_b, kin2_b).permute(0, 2, 1, 3).contiguous()
     )
     return w13_t, w2_t
+
+
+def _swizzle_tile_boxes(w13_t: torch.Tensor, w2_t: torch.Tensor, *, kind: str = "byte") -> Tuple[torch.Tensor, torch.Tensor]:
+    """Cell z: the reform tile's B stages in the smem byte order, so one cp.async.bulk lands a stage.
+
+    w13_t [E, K/256, N, 128 B] (the 256 chunk): a stage is 128 rows x 128 B under Swizzle<3,4,3>; w2_t
+    [E, I/128, H, 64 B]: a stage is 256 rows x 64 B under Swizzle<2,4,3>. What the swizzle acts on is the
+    question the diagnostics answer -- `kind`:
+      byte    the swizzle on BYTE offsets, the TMA hardware's 128B / 64B modes: row r's 16 B chunk c lands at
+              c ^ (r % 8) (FC1), c ^ ((r // 2) % 4) (FC2)
+      nibble  the swizzle on fp4 ELEMENT offsets, as the DSL's composed layout is written: row r's 8 B unit u
+              (16 per FC1 row, 8 per FC2 row) lands at u ^ ((2 r + (u >> 3)) % 8) (FC1), u ^ (r % 4) (FC2)
+      plain   no permutation (the TMA writing linear rows)
+    Every map is an involution per row, so a second application restores the storage; nothing inside an
+    8 B unit moves (probes/b12x_reform_layout_print.py enumerates the layouts)."""
+    if w13_t.dtype != torch.uint8 or w2_t.dtype != torch.uint8:
+        raise TypeError("swizzled expert weights: tile-major fp4 bytes (uint8) expected")
+    if kind not in ("byte", "nibble", "plain"):
+        raise ValueError(f"unknown swizzle kind {kind!r}")
+    e, kt, rows, kin_b = w13_t.shape
+    if kin_b != 128 or rows % 128:
+        raise ValueError("cell z needs the 256 w13 chunk (128 B rows) and 128-row FC1 stages")
+    e2, kt2, hrows, kin2_b = w2_t.shape
+    if kin2_b != 64 or hrows % 256:
+        raise ValueError("cell z needs the 64 B w2 rows and 256-row FC2 stages")
+    if kind == "plain":
+        return w13_t.contiguous().clone(), w2_t.contiguous().clone()
+    dev = w13_t.device
+    if kind == "byte":
+        r = torch.arange(128, device=dev)[:, None]
+        c = torch.arange(8, device=dev)[None, :]
+        src = c ^ (r % 8)                                            # [128, 8] 16 B chunks
+        boxes = w13_t.reshape(e, kt, rows // 128, 128, 8, 16)
+        w13_z = boxes.gather(4, src.view(1, 1, 1, 128, 8, 1).expand(e, kt, rows // 128, 128, 8, 16))
+        r2 = torch.arange(256, device=dev)[:, None]
+        c2 = torch.arange(4, device=dev)[None, :]
+        src2 = c2 ^ ((r2 // 2) % 4)                                  # [256, 4]
+        boxes2 = w2_t.reshape(e2, kt2, hrows // 256, 256, 4, 16)
+        w2_z = boxes2.gather(4, src2.view(1, 1, 1, 256, 4, 1).expand(e2, kt2, hrows // 256, 256, 4, 16))
+    else:
+        r = torch.arange(128, device=dev)[:, None]
+        u = torch.arange(16, device=dev)[None, :]
+        src = u ^ ((2 * r + (u >> 3)) % 8)                           # [128, 16] 8 B units
+        boxes = w13_t.reshape(e, kt, rows // 128, 128, 16, 8)
+        w13_z = boxes.gather(4, src.view(1, 1, 1, 128, 16, 1).expand(e, kt, rows // 128, 128, 16, 8))
+        r2 = torch.arange(256, device=dev)[:, None]
+        u2 = torch.arange(8, device=dev)[None, :]
+        src2 = u2 ^ (r2 % 4)                                         # [256, 8]
+        boxes2 = w2_t.reshape(e2, kt2, hrows // 256, 256, 8, 8)
+        w2_z = boxes2.gather(4, src2.view(1, 1, 1, 256, 8, 1).expand(e2, kt2, hrows // 256, 256, 8, 8))
+    return w13_z.reshape(w13_t.shape).contiguous(), w2_z.reshape(w2_t.shape).contiguous()
 
 
 def static_v2_weights_layout(**geometry) -> bool:
@@ -2290,8 +2372,13 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("fc1_reuse_a", False)),
         bool(config.get("compact_staging", False)),
         bool(config.get("sf6_registers", False)),
+        int(config.get("l2_prefetch", 0)),
+        bool(config.get("l2_prefetch_fc1", True)),
+        bool(config.get("bulk_b", False)),
         bool(config.get("sync_cleanup", False)),
     )
+    if config.get("input_vec16", False):
+        cfg += ("input_vec16_v1",)
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2338,15 +2425,12 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                    and bool(config.get("fc1_reuse_a", True)))
     compact_staging = (fc1_reuse_a and separate and int(config.get("fc1", 2)) % 2 == 0
                        and bool(config.get("compact_staging", True)))
-    # The kernel's own contract: private scatter needs the packed FP32 output, so it needs sf6.
-    # A checkpoint whose experts do not all carry 6-bit-packable scales (a mixed-provenance arm)
-    # builds a companion lane with reform_sf_pack off beside every sf6 lane; at m=16, and only
-    # there, `batch` used to turn direct scatter on for that companion too, and
-    # moe_static_kernel_v4.__init__ refused the pair -- the boot died in warmup_decode_experts
-    # (measurements/st_hybrid_boot_block_20260916). Production serves sf6 on every lane, so this
-    # conjunct is true there and the measured m=16 cell (st_c2_dense_cells_20260915) is unchanged.
+    # A mixed-provenance checkpoint builds a companion lane with reform_sf_pack off beside every
+    # sf6 lane, and at m=16 `batch` turns direct scatter on for it too. #1056 bought the boot by
+    # refusing that companion the scatter; the kernel now takes it (the scatter reads the epilogue
+    # tile, not the FC1 scales), so the companion keeps the cell instead of dropping to staged
+    # output. `scatter_reuse` below still needs sf6_registers and stays off for it.
     direct_scatter = bool(reform and m == 16 and config.get("batch_reform")
-                          and config.get("reform_sf_pack", False)
                           and config.get("c2_direct_scatter", True))
     sf6_registers = compact_staging and bool(config.get("sf6_registers", True))
     scatter_reuse = bool(direct_scatter and sf6_registers and config.get("c2_scatter_reuse", True))
@@ -2361,6 +2445,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                     and not config.get("probe_route_scatter", False)
                     and bool(config.get("scatter_vec4", True)))
     return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
+                input_vec16=bool(reform and m in (8, 16) and config.get("input_vec16", True)),
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
                 compact_staging=compact_staging,
@@ -2465,6 +2550,14 @@ def _get_static_kernel_v2(
     alpha_dtype = cutlass.Float32
 
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
+    l2_prefetch = int(config.get("l2_prefetch", 0))
+    bulk_b = bool(config.get("bulk_b", False))
+    if bulk_b and (not tiled or not reform or chunk != 256):
+        raise ValueError("z needs t,r over the 256 w13 chunk (its boxes are the reform tile's own stages)")
+    if l2_prefetch and (not tiled or not reform or chunk != 256):
+        # the reform's FC1 box is (128 rows x K256); over the 256 chunk it is one contiguous 16 KB run,
+        # over 512 it is half of every row's chunk -- no run to prefetch as one request
+        raise ValueError("l<n> needs t,r over the 256 w13 chunk (the FC1 box is then one contiguous run)")
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
@@ -2490,6 +2583,10 @@ def _get_static_kernel_v2(
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
         fc2_stages=int(config["fc2"]),
+        l2_prefetch=l2_prefetch,
+        l2_prefetch_fc1=bool(config.get("l2_prefetch_fc1", True)),
+        bulk_b=bulk_b,
+        input_vec16=bool(config.get("input_vec16", False)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
@@ -2651,6 +2748,7 @@ def _get_static_kernel_v2(
         f"{'reuse' if config.get('c2_scatter_reuse') else ''}"
         f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
         f"{'sync' if config.get('sync_cleanup') else ''}"
+        f"{'inputv16' if config.get('input_vec16') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )
@@ -3694,6 +3792,10 @@ def launch_sm120_static_moe(
                     raise RuntimeError("sf6 layer has no prepared immutable scale owner")
                 if not weights.reform_scales.enabled:
                     static_v2_config = dict(static_v2_config, reform_sf_pack=False)
+            if bool(static_v2_config.get("bulk_b")) != bool(getattr(weights, "swizzled", False)):
+                raise RuntimeError(
+                    "cell z and pre-swizzled expert storage must agree: lane bulk_b="
+                    f"{bool(static_v2_config.get('bulk_b'))}, views swizzled={bool(getattr(weights, 'swizzled', False))}")
             compiled, mac = _get_static_kernel_v2(
                 workspace.state_E,
                 num_experts,

@@ -1,0 +1,49 @@
+--- base-cublaslt.cpp
++++ transpose_plan.cpp
+@@ -128,8 +128,8 @@
+     // Interleave families as well as seeds. A global cap must not spend every
+     // slot on the first algorithm's smallest tile IDs before trying SplitK.
+     std::array<std::vector<cublasLtMatmulAlgo_t>, 5> families;
+-    auto tiles = spread(capability(seed, CUBLASLT_ALGO_CAP_TILE_IDS), 8);
+-    auto stages = spread(capability(seed, CUBLASLT_ALGO_CAP_STAGES_IDS), 8);
++    auto tiles = capability(seed, CUBLASLT_ALGO_CAP_TILE_IDS);
++    auto stages = capability(seed, CUBLASLT_ALGO_CAP_STAGES_IDS);
+     for (auto tile : tiles) {
+       auto algo = seed;
+       if (set(algo, CUBLASLT_ALGO_CONFIG_TILE_ID, tile)) families[0].push_back(algo);
+@@ -138,7 +138,7 @@
+       auto algo = seed;
+       if (set(algo, CUBLASLT_ALGO_CONFIG_STAGES_ID, stage)) families[1].push_back(algo);
+     }
+-    for (auto tile : spread(tiles, 4)) for (auto stage : spread(stages, 4)) {
++    for (auto tile : tiles) for (auto stage : stages) {
+       auto algo = seed;
+       if (set(algo, CUBLASLT_ALGO_CONFIG_TILE_ID, tile)
+           && set(algo, CUBLASLT_ALGO_CONFIG_STAGES_ID, stage)) families[2].push_back(algo);
+@@ -236,7 +236,7 @@
+   Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit,
+        const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight)
+       : context(std::move(context_)), m(m_), n(n_), k(k_), workspace_limit(limit) {
+-    TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
++    TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 8 == 0 && k % 128 == 0
+                 && m <= INT32_MAX && n <= INT32_MAX && k <= INT32_MAX, "invalid ST MXFP8 shape");
+     c10::cuda::CUDAGuard guard(context->device);
+     setup_operation(desc.operation);
+@@ -246,7 +246,7 @@
+     tensor(query_s_q, at::kByte, "query activation scales");
+     tensor(query_s_weight, at::kByte, "query weight scales");
+     TORCH_CHECK(query_s_q.dim() == 1 && query_s_q.numel() == ((m + 127) / 128) * (k / 128) * 512
+-                && query_s_weight.dim() == 1 && query_s_weight.numel() == n * (k / 32),
++                && query_s_weight.dim() == 1 && query_s_weight.numel() == ((n + 127) / 128) * (k / 128) * 512,
+                 "MXFP8 query scale shape mismatch");
+     set_scales(desc.operation, query_s_q, query_s_weight);
+     // Column-major TN computes Y^T from the existing row-major W and X.
+@@ -347,7 +347,7 @@
+                 && weight.dim() == 2 && weight.size(0) == n && weight.size(1) == k
+                 && out.dim() == 2 && out.size(0) == m && out.size(1) == n
+                 && s_q.dim() == 1 && s_q.numel() == ((m + 127) / 128) * (k / 128) * 512
+-                && s_weight.dim() == 1 && s_weight.numel() == n * (k / 32), "MXFP8 plan shape mismatch");
++                && s_weight.dim() == 1 && s_weight.numel() == ((n + 127) / 128) * (k / 128) * 512, "MXFP8 plan shape mismatch");
+     const auto& choice = choices[index];
+     TORCH_CHECK(workspace.dim() == 1 && size_t(workspace.numel()) >= choice.workspaceSize
+                 && reinterpret_cast<uintptr_t>(workspace.data_ptr()) % 256 == 0, "insufficient/alignment-invalid cuBLAS workspace");

@@ -1,0 +1,75 @@
+{
+ "steps": 6154,
+ "layers": 42,
+ "rows": 8,
+ "topk": 8,
+ "distinct_per_layer": 41.9083716359472,
+ "uniform_random": 58.11171709902089,
+ "tokens_per_step": 4.724894377640559,
+ "table": null,
+ "points": [
+  {
+   "target": 0.05,
+   "tau": 0.0603768490254879,
+   "skipped": 0.0500000241809431,
+   "distinct_per_layer": 39.79159122212421,
+   "read_reduction": 0.050509727082960754,
+   "reads_per_skipped_slot": 1.0101940531103168,
+   "step_time_upper": 0.023133455003996026
+  },
+  {
+   "target": 0.1,
+   "tau": 0.07012152671813965,
+   "skipped": 0.09999998790952845,
+   "distinct_per_layer": 37.80360044570314,
+   "read_reduction": 0.09794632981452223,
+   "reads_per_skipped_slot": 0.979463416566968,
+   "step_time_upper": 0.04485941905505118
+  },
+  {
+   "target": 0.15,
+   "tau": 0.07679298520088196,
+   "skipped": 0.15000001209047154,
+   "distinct_per_layer": 35.85531671232029,
+   "read_reduction": 0.14443545972649674,
+   "reads_per_skipped_slot": 0.9629029872303039,
+   "step_time_upper": 0.06615144055473551
+  },
+  {
+   "target": 0.2,
+   "tau": 0.08224315941333771,
+   "skipped": 0.1999999758190569,
+   "distinct_per_layer": 33.920195149883156,
+   "read_reduction": 0.19061051943168617,
+   "reads_per_skipped_slot": 0.9530527123869978,
+   "step_time_upper": 0.08729961789971227
+  },
+  {
+   "target": 0.25,
+   "tau": 0.08707484602928162,
+   "skipped": 0.24999993954764227,
+   "distinct_per_layer": 31.982790906417815,
+   "read_reduction": 0.23684004751488952,
+   "reads_per_skipped_slot": 0.9473604191402419,
+   "step_time_upper": 0.1084727417618194
+  },
+  {
+   "target": 0.3,
+   "tau": 0.09158995747566223,
+   "skipped": 0.29999996372858534,
+   "distinct_per_layer": 30.037261866072395,
+   "read_reduction": 0.2832634460961082,
+   "reads_per_skipped_slot": 0.9442116011466624,
+   "step_time_upper": 0.12973465831201755
+  },
+  {
+   "target": 0.4,
+   "tau": 0.10033514350652695,
+   "skipped": 0.39999983073339834,
+   "distinct_per_layer": 26.089218007645048,
+   "read_reduction": 0.37747001400391234,
+   "reads_per_skipped_slot": 0.9436754343416154,
+   "step_time_upper": 0.17288126641379187
+  }
+ ]
+}

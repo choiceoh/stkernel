@@ -38,6 +38,10 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes in ('fixed_k_compile', 'fixed_k_cost'):
+        from probes.engine_fixed_k_cost import run
+        run(args.output, args.ranks, compile_only=args.lanes == 'fixed_k_compile')
+        return
     if args.lanes == 'boundary_stage':
         from probes.engine_boundary_stage import run as boundary_stage_check
         boundary_stage_check(args.output)
@@ -58,6 +62,11 @@ def main():
         # the routed experts' same-build cells: tile-major w13 chunk, stamped timeline, prefill (real rank weights)
         from probes.engine_moe_c2_cells import main as moe_c2_cells
         moe_c2_cells(args.ranks, sections=args.lanes.split(':')[1:], samples=args.samples, output=args.output)
+        return
+    if args.lanes == 'router_cells':
+        # the decode router's launch fold: the served seven-launch chain against one fused launch (real rank gates)
+        from probes.engine_router_cells import main as router_cells
+        router_cells(args.ranks, samples=args.samples, output=args.output)
         return
     if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
         from probes.engine_dense_cells import main as dense_cells_check
@@ -106,6 +115,11 @@ def main():
         consumer_timing(report)
         if args.output:
             args.output.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        return
+    if args.lanes == 'topk_hpcops':
+        # component only: HPC-Ops' exact top-k (vendored, MIT) against st_dsa_select / prefill_topk and a read floor
+        from probes.engine_topk_hpcops import run as topk_hpcops_check
+        topk_hpcops_check(args.output)
         return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
