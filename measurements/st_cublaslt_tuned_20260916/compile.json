@@ -1,0 +1,82 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "seconds": 1.4279695219593123,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "binary": "/out/cache/cublaslt/f5adcd7d02e037a50c569e22/st_cublaslt_f5adcd7d02e037a50c569e22.so",
+  "binary_sha256": "0ecf03ea99c89bdbc59b00ac16843cdbfff8491301484565a59ed4d187a6439c",
+  "triton": "3.7.1",
+  "kernels": [
+    {
+      "name": "quantize-k128-tiled0",
+      "shared_bytes": 64,
+      "ptx_sha256": "3d28ac4cf0988172614bd8e82e43909ce93d37b9126ccdc35c054b226a27f17d",
+      "cubin_sha256": "ffa00557dacb621c479653ba28d614a9ffd394088be1a82cfd97e2840fcac73e"
+    },
+    {
+      "name": "quantize-k128-tiled1",
+      "shared_bytes": 64,
+      "ptx_sha256": "17e66189c87b3180db0d2da7bc1075996d385dfcfbaa1988f4e3dd92a3e9fe2a",
+      "cubin_sha256": "bd327ee788f8b820ee68e953b530862ec47da7185b6cb0e3ae828984b3960888"
+    },
+    {
+      "name": "quantize-k384-tiled0",
+      "shared_bytes": 64,
+      "ptx_sha256": "ebad2b2906baf6889fab1440adcef8906c64c1e8b74bdb6e79db11775eb5f68b",
+      "cubin_sha256": "5fc34f9b73db32b71b49f79056e0a0e0e3d1f1ae41fd5104b5f766fb33e54125"
+    },
+    {
+      "name": "quantize-k384-tiled1",
+      "shared_bytes": 64,
+      "ptx_sha256": "00933c35153bc1f81c2c003faf6a483d2a49922e1d782fb3e42ef52f086b9ff2",
+      "cubin_sha256": "f3095cac00721b92c7c635444515c98004668d0e39b3e3c7bf0e3ec27fd8bffc"
+    },
+    {
+      "name": "quantize-k4096-tiled0",
+      "shared_bytes": 64,
+      "ptx_sha256": "6a172a14b7550d4ef2d83d6ef94a5bac7beb93c899f0e6061f7b1a8f09d95b1c",
+      "cubin_sha256": "1fb6d348ee04d9d81600bb6763529d3785410b5579a1953ca894bae3fead879d"
+    },
+    {
+      "name": "quantize-k4096-tiled1",
+      "shared_bytes": 64,
+      "ptx_sha256": "2361335a163ac30e09a9f610c69cd6113a8cc51dc3becb9ccdaa736bbfe0e172",
+      "cubin_sha256": "78c47815b224d334be70468b48df1853dbad8eb6fe5fe6d5e21054170088bd8d"
+    },
+    {
+      "name": "quantize-k20480-tiled0",
+      "shared_bytes": 64,
+      "ptx_sha256": "58606e6533d01554e79aaf48ab764ceef0a99ad7d954f3a7058630c4243351a1",
+      "cubin_sha256": "a49f383cf86d0f34b35f951e85fe616fccd4da62d4ba7a47e8008e6f32ed6d42"
+    },
+    {
+      "name": "quantize-k20480-tiled1",
+      "shared_bytes": 64,
+      "ptx_sha256": "fdd8617b60857c8159cab1bae20b93b48b0f729b7b7e043c080c3481f5e5850a",
+      "cubin_sha256": "a74db35946d69d2e763bab13ea2e3f8322ce3e501113faebc2a9a2aec9b3620d"
+    },
+    {
+      "name": "weight-scales",
+      "shared_bytes": 0,
+      "ptx_sha256": "373366fc512f643f399356ea38d66e86b05e3868acc091d45b7ce7001d696572",
+      "cubin_sha256": "76391c1de0de80c8254b36beb023a13b910e5c076d1120db7c6816270d9f3c96"
+    },
+    {
+      "name": "packet-mx",
+      "shared_bytes": 64,
+      "ptx_sha256": "df88a6ca1293ec27310b6d3b1e5f4fda6ab90d3fc4e438d65f4984391a0fc154",
+      "cubin_sha256": "a3a6bdca376600d0dc9e0bdc55d3eff273892aa83738d66c76f4faf52c1ce92e"
+    }
+  ],
+  "scope": "host binding compile/dlopen and SM121 producer compilation; no cuBLAS GPU execution",
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "02d3e9336293ff8421bd072936084815f0eed4622817d44b8c8045c02a5093aa",
+    "engine/kernels/dense/cublaslt.py": "d99d6270b2fdfbe98c5d2b72a388dea07a2345f2605cf756b58539b27a057a92",
+    "engine/kernels/dense/mxfp8.py": "884115a9adbbbf5a75b41830e8ad9e0c91a513fb98f1477409fc257edbae4e80",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/prefill_collectives/consumer.py": "ef8b18e1077bab42dfe719d9d06d9f8bd37df87266b8404e2e7044e28f90c883",
+    "probes/engine_cublaslt_compile.py": "a25b1bd4e688cdc83886e8a8b4daea916d3166cb0b4b69eaf121fb7a1f5c50ec"
+  }
+}

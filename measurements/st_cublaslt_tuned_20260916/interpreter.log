@@ -1,0 +1,22 @@
+test_packet_conversion_preserves_rounding_rank_stride_and_tail (tests.test_engine_cublaslt.InterpreterTests.test_packet_conversion_preserves_rounding_rank_stride_and_tail) ... ok
+test_quantizer_exact_bytes_odd_groups_padding_and_redzones (tests.test_engine_cublaslt.InterpreterTests.test_quantizer_exact_bytes_odd_groups_padding_and_redzones) ... ok
+test_weight_scale_replication_covers_every_normal_exponent (tests.test_engine_cublaslt.InterpreterTests.test_weight_scale_replication_covers_every_normal_exponent) ... ok
+test_both_paired_pipeline_samples_must_win (tests.test_engine_cublaslt.PreparationTests.test_both_paired_pipeline_samples_must_win) ... ok
+test_capture_cannot_prepare_an_algorithm (tests.test_engine_cublaslt.PreparationTests.test_capture_cannot_prepare_an_algorithm) ... ok
+test_graph_reset_runs_on_success_and_capture_failure_preserves_original_error (tests.test_engine_cublaslt.PreparationTests.test_graph_reset_runs_on_success_and_capture_failure_preserves_original_error) ... ok
+test_non_fleet_cards_cannot_enter_timing (tests.test_engine_cublaslt.PreparationTests.test_non_fleet_cards_cannot_enter_timing) ... ok
+test_workspace_generations_survive_growth_and_streams_do_not_alias (tests.test_engine_cublaslt.PreparationTests.test_workspace_generations_survive_growth_and_streams_do_not_alias) ... ok
+test_preallocated_producer_buffers_cannot_alias (tests.test_engine_cublaslt.ProducerContracts.test_preallocated_producer_buffers_cannot_alias) ... ok
+test_scale_size_is_metadata_padding_only (tests.test_engine_cublaslt.ProducerContracts.test_scale_size_is_metadata_padding_only) ... ok
+test_a_failed_build_is_named_after_every_build_has_finished (tests.test_engine_glm53_natives.NativeBuildsTests.test_a_failed_build_is_named_after_every_build_has_finished) ... ok
+test_builds_run_at_once_and_report_each_in_order (tests.test_engine_glm53_natives.NativeBuildsTests.test_builds_run_at_once_and_report_each_in_order) ... ok
+test_modules_are_imported_on_the_callers_thread_and_one_shot_gets_the_served_build (tests.test_engine_glm53_natives.NativeBuildsTests.test_modules_are_imported_on_the_callers_thread_and_one_shot_gets_the_served_build) ... W0916 13:47:59.516000 7 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+ok
+test_the_line_names_every_build (tests.test_engine_glm53_natives.NativeBuildsTests.test_the_line_names_every_build) ... ok
+test_every_native_extension_under_kernels_is_built_before_the_first_collective (tests.test_engine_glm53_natives.NativeListTests.test_every_native_extension_under_kernels_is_built_before_the_first_collective) ... ok
+test_the_dense_build_touches_no_device_and_its_lane_probes_after_it (tests.test_engine_glm53_natives.NativeListTests.test_the_dense_build_touches_no_device_and_its_lane_probes_after_it) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 66.307s
+
+OK
