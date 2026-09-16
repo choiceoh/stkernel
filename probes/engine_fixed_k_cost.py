@@ -6,6 +6,7 @@ fixed_k_cost with a fleet reservation. Component timings are not tok/s proof.
 import hashlib
 import json
 import os
+from unittest.mock import patch
 from pathlib import Path
 
 import torch
@@ -16,10 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def compile_check(report):
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '' or torch.cuda.is_initialized():
         raise RuntimeError('compile gate requires CUDA_VISIBLE_DEVICES= and no CUDA context')
-    from engine.kernels import dense
-    module = dense.build()
-    report('compile', component='dense', module=module.__file__,
-           binary_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest())
+    from engine.kernels import dense, mla
+    for name, module in (('dense', dense.build()), ('mla', mla._build())):
+        report('compile', component=name, module=module.__file__,
+               binary_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest())
+    from probes.b12x_reform_layout_print import main as layout_check
+    layout_check()
     if torch.cuda.is_initialized():
         raise RuntimeError('compile gate touched a GPU')
 
@@ -94,6 +97,60 @@ def mhc_check(report, ranks):
                 graph.reset()
 
 
+def mla_check(report):
+    from engine.kernels import mla
+    from probes.engine_decode_fusions import _capture
+    mla._build()
+    def call(enabled, *args, **kwargs):
+        with patch.object(mla, 'ENABLE_MLA_QREG', enabled):
+            return mla.mla_decode(*args, **kwargs)
+    cache = torch.randn(32768, 512, device='cuda').to(torch.float8_e4m3fn)
+    for rows in (8, 16):
+        for width in (33, 2048, 2176):
+            q = torch.randn(rows, 16, 512, device='cuda', dtype=torch.bfloat16)
+            slots = torch.zeros(rows, width, device='cuda', dtype=torch.int32)
+            lens = torch.full((rows,), width, device='cuda', dtype=torch.int32)
+            control = lambda: call(False, q, cache, slots, lens, 512**-.5, 1., splits=mla.mla_splits(rows))
+            candidate = lambda: call(True, q, cache, slots, lens, 512**-.5, 1., splits=mla.mla_splits(rows))
+            graphs, outputs = zip(*[_capture(fn) for fn in (control, candidate)])
+            try:
+                for case in ('identical', 'partial', 'disjoint', 'duplicates', 'empty_tail', 'permuted', 'uneven'):
+                    q.normal_()
+                    slots.copy_(torch.randint(32768, (rows, width), device='cuda', dtype=torch.int32))
+                    lens.fill_(width)
+                    if case in ('identical', 'partial', 'duplicates'):
+                        shared = width if case != 'partial' else width * 3 // 4
+                        slots[1::2, :shared].copy_(slots[::2, :shared])
+                    if case == 'permuted':
+                        full = width // 16 * 16
+                        slots[1::2, :full].copy_(slots[::2, :full].reshape(rows//2, -1, 16).flip(-1).reshape(rows//2, full))
+                    if case == 'uneven':
+                        slots[1::2].copy_(slots[::2])
+                        lens.sub_(torch.arange(rows, device='cuda', dtype=torch.int32) % 8)
+                    if case == 'duplicates':
+                        slots[:, :width//2].copy_(slots[:, :1].expand(-1, width//2))
+                    if case == 'empty_tail':
+                        lens[::2] = 0
+                        lens[1::2] = 17
+                    for _ in range(3):
+                        for output, graph in zip(outputs, graphs):
+                            output.fill_(float('nan'))
+                            graph.replay()
+                        # The same independent FP32 reference catches a shared wrong selection.
+                        ref = mla.mla_decode_ref(q, cache, slots, lens, 512**-.5, 1.)
+                        errors = [mla._rel_err(out, ref) for out in outputs]
+                        if max(errors) > .02 or any(not out.isfinite().all().item() for out in outputs):
+                            raise AssertionError(f'MLA {rows=} {width=} {case=}: {errors=}')
+                    if not torch.equal(outputs[0], outputs[1]):
+                        raise AssertionError(f'MLA query retention changed BF16 bits: {rows=} {width=} {case=}')
+                    report('numerics', component='mla_qreg', bitwise=True, rows=rows, width=width, case=case, errors=errors)
+                    if width == 2048:
+                        timings(report, 'mla_qreg', graphs, rows=rows, width=width, case=case)
+            finally:
+                for graph in graphs:
+                    graph.reset()
+
+
 def run(output=None, ranks=None, *, compile_only=False):
     records = []
     def report(kind, **values):
@@ -111,5 +168,6 @@ def run(output=None, ranks=None, *, compile_only=False):
         compile_check(report)
     else:
         torch.manual_seed(91717)
+        mla_check(report)
         mhc_check(report, ranks)
     report('complete', passed=True, scope='compile only' if compile_only else 'components only; consumer pending')
