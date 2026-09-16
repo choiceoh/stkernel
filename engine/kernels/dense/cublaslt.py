@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 from pathlib import Path
 import threading
+from weakref import WeakValueDictionary
 import torch
 
 
@@ -31,15 +32,21 @@ class BF16Producer:
     def __init__(self, source):
         self.source = source
 
-    def __call__(self, mx, out):
+    def __call__(self, mx, out, *, num_warps=4):
         from . import fp8, mxfp8
-        return (mxfp8 if mx else fp8).quantize(self.source, out=out)
+        if mx:
+            return mxfp8.quantize(self.source, out=out, num_warps=num_warps)
+        if num_warps != 4:
+            raise ValueError('baseline producer requires 4 warps')
+        return fp8.quantize(self.source, out=out)
 
-    def bind(self, mx):
+    def bind(self, mx, *, out=None, num_warps=4):
         if mx:
             from .mxfp8 import bind_quantize
-            return bind_quantize(self.source)
-        outputs = self(False, None)
+            return bind_quantize(self.source, out=out, num_warps=num_warps)
+        if num_warps != 4:
+            raise ValueError('baseline producer requires 4 warps')
+        outputs = self(False, out)
         return lambda: self(False, outputs)
 
 
@@ -48,24 +55,28 @@ class PacketProducer:
         self.source, self.local_rows = source, local_rows
         self.real_rows, self.routed = real_rows, routed
 
-    def __call__(self, mx, out):
+    def __call__(self, mx, out, *, num_warps=4):
         from engine.kernels.prefill_collectives.consumer import quantize_gather
         return quantize_gather(self.source, self.local_rows, real_rows=self.real_rows,
-                               routed=self.routed, mx=mx, out=out)
+                               routed=self.routed, mx=mx, out=out, num_warps=num_warps)
 
-    def bind(self, mx):
+    def bind(self, mx, *, out=None, num_warps=4):
         if mx:
             from engine.kernels.prefill_collectives.consumer import bind_quantize_gather
             return bind_quantize_gather(self.source, self.local_rows,
-                                        real_rows=self.real_rows, routed=self.routed)
-        outputs = self(False, None)
+                                        real_rows=self.real_rows, routed=self.routed, out=out, num_warps=num_warps)
+        if num_warps != 4:
+            raise ValueError('baseline producer requires 4 warps')
+        outputs = self(False, out)
         return lambda: self(False, outputs)
 
 
-def _bind_producer(producer, mx):
+def _bind_producer(producer, mx, *, out=None, num_warps=4):
     if isinstance(producer, (BF16Producer, PacketProducer)):
-        return producer.bind(mx)
-    outputs = producer(mx, None)
+        return producer.bind(mx, out=out, num_warps=num_warps)
+    if num_warps != 4:
+        raise ValueError('custom producers do not expose a warp search')
+    outputs = producer(mx, out)
     return lambda: producer(mx, outputs)
 
 
@@ -79,25 +90,29 @@ class Choice:
     index: int | None = None
     workspace: int = 0
     reason: str = 'deep_gemm'
+    producer_warps: int = 4
+    split_parts: int = 1
 
 
 def select_winner(brackets):
     """Require both A/B pairs to win by 2%; a noisy mean does not switch lanes.
 
-    Rows are (index, workspace, B_before, A_first, A_second, B_after).
+    Rows are (index, workspace, producer_warps, B_before, A_first, A_second, B_after).
     All times include the same producer-to-BF16-output boundary.
     """
     eligible = []
-    for index, workspace, b0, a0, a1, b1 in brackets:
+    for index, workspace, warps, b0, a0, a1, b1 in brackets:
+        if type(warps) is not int or warps not in (1, 2, 4):
+            raise ValueError('invalid producer warp count in timing bracket')
         times = (b0, a0, a1, b1)
         if any(not isinstance(t, (float, int)) or not 0 < t < float('inf') for t in times):
             raise ValueError('timing brackets must contain positive finite times')
         if a0 < .98 * b0 and a1 < .98 * b1:
-            eligible.append(((a0 + a1) / 2, workspace, index))
+            eligible.append(((a0 + a1) / 2, workspace, index, warps))
     if not eligible:
         return Choice(reason='no_consistent_gain')
-    _, workspace, index = min(eligible)
-    return Choice(index, workspace, 'measured_pipeline_gain')
+    _, workspace, index, warps = min(eligible)
+    return Choice(index, workspace, 'measured_pipeline_gain', warps)
 
 
 def _measure(fn, pool, *, repeats=4):
@@ -131,6 +146,14 @@ def _measure(fn, pool, *, repeats=4):
         return milliseconds
 
 
+def require_timing_target(identity, target='gb10'):
+    if target == 'gb10' and identity['capability'] == (12, 1) and identity['sms'] == 48:
+        return
+    if target == 'sm120-probe' and identity['capability'] == (12, 0):
+        return
+    raise RuntimeError('algorithm timing is restricted to GB10 unless an SM120 probe is explicit')
+
+
 class Bank:
     """Geometry plans shared by layers; scratch is isolated by CUDA stream.
 
@@ -138,9 +161,10 @@ class Bank:
     reference them. Growth is geometric, bounded by twice the largest rounded allocation
     per stream, rather than 64 MiB for every layer or every shape.
     """
-    def __init__(self, device):
+    def __init__(self, device, timing_target='gb10'):
         from engine.base.kernel_shape import bound
         self.device = device
+        self.timing_target = timing_target
         self.native = _build()
         capability = tuple(bound().device.capability)
         self.context = self.native.Context(device, *capability)
@@ -148,6 +172,7 @@ class Bank:
         self.identity = dict(device=device, capability=capability, sms=sms, cublaslt=self.native.version(),
                              torch=torch.__version__, cuda=torch.version.cuda)
         self.plans, self.workspaces = {}, {}
+        self.split_weights = WeakValueDictionary()
         self.owners = []
         self.lock = threading.RLock()
         self.tuning_stream = torch.cuda.Stream(device=device)
@@ -169,16 +194,19 @@ class Bank:
     def prepare(self, key, weight, mx_weight, producer):
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError(f'cuBLAS shape {key} was not warmed before capture')
-        if self.identity['capability'] != (12, 1) or self.identity['sms'] != 48:
-            raise RuntimeError('algorithm timing is restricted to GB10; other cards are numerical checks only')
+        target = getattr(self, 'timing_target', 'gb10')
+        require_timing_target(self.identity, target)
         with self.lock, torch.cuda.device(self.device):
             m, n, k, *_ = key
             geometry = m, n, k
             if geometry not in self.plans:
-                self.plans[geometry] = self.native.Plan(self.context, m, n, k, WORKSPACE_LIMIT)
+                _, query_scales = producer(True, None)
+                self.plans[geometry] = self.native.Plan(self.context, m, n, k, WORKSPACE_LIMIT,
+                                                       query_scales, mx_weight)
             plan = self.plans[geometry]
             candidates = plan.candidates()
             record = dict(self.identity, shape=(m, n, k), producer=key[3], candidates=len(candidates),
+                          timing_target=target,
                           search=plan.statistics(),
                           graph_unroll=GRAPH_UNROLL,
                           screened=[], brackets=[], scope='warm captured component pipeline; not serving throughput')
@@ -193,7 +221,8 @@ class Bank:
                 with torch.cuda.stream(self.tuning_stream), frozen_gc():
                     choice = self._search(plan, candidates, weight, mx_weight, producer, record)
                 calling.wait_stream(self.tuning_stream)
-            record['choice'] = dict(index=choice.index, workspace=choice.workspace, reason=choice.reason)
+            record['choice'] = dict(index=choice.index, workspace=choice.workspace, reason=choice.reason,
+                                    producer_warps=choice.producer_warps)
             return choice, record
 
     def _search(self, plan, candidates, weight, mx_weight, producer, record):
@@ -217,14 +246,17 @@ class Bank:
         baseline = torch.empty(shape, dtype=torch.bfloat16, device=q_base.device)
         candidate = torch.empty_like(baseline)
         scratch = torch.empty(max(c['workspace'] for c in candidates), device=q_base.device, dtype=torch.uint8)
-        pool = torch.cuda.graph_pool_handle()
+        # Each timing graph is reset before the next capture. Reusing a pool
+        # token after its last graph dies trips the CUDA allocator's live-pool
+        # assertion in Torch 2.13. Independent captures need no shared storage.
+        pool = None
 
         def base():
             base_producer()
             fp8_gemm_nt((q_base, s_base), weight, baseline)
 
-        def trial(index):
-            mx_producer()
+        def trial(index, produce=mx_producer):
+            produce()
             plan.run(index, q_mx, weight[0], s_mx, mx_weight, candidate, scratch)
 
         base()
@@ -243,18 +275,45 @@ class Bank:
             record['screened'].append(dict(c, milliseconds=milliseconds, numerics=bool(numerics)))
             if numerics:
                 ranked.append((milliseconds, c['workspace'], c['index']))
-        for _, workspace, index in sorted(ranked)[:3]:
-            fn = lambda: trial(index)
-            record['brackets'].append((index, workspace, _measure(base, pool), _measure(fn, pool),
-                                       _measure(fn, pool), _measure(base, pool)))
+        # Rank GEMMs with the existing four-warp producer, then measure the
+        # full pipeline across producer layouts. A producer-only win need not
+        # be a pipeline win: occupancy, stores and subsequent GEMM reads matter.
+        finalists = sorted(ranked)[:3]
+        warps = (4, 1, 2) if isinstance(producer, (BF16Producer, PacketProducer)) else (4,)
+        record['producer_warps_searched'] = []
+        record['bracket_columns'] = ['index', 'workspace', 'producer_warps', 'B_before', 'A_first', 'A_second', 'B_after']
+        record['producer_checks'] = []
+        reference_scales = s_mx.clone() if finalists else None
+        for count in warps:
+            if not finalists:
+                break
+            # Serial tuning reuses the same Q/scale addresses for all variants;
+            # it does not retain three activation buffers on a large prefill.
+            produce = (mx_producer if count == 4 else
+                       _bind_producer(producer, True, out=(q_mx, s_mx), num_warps=count))
+            q, s = produce()
+            record['producer_warps_searched'].append(count)
+            if q.data_ptr() != q_mx.data_ptr() or s.data_ptr() != s_mx.data_ptr():
+                raise RuntimeError('producer search replaced its fixed storage')
+            same = torch.equal(q_base.view(torch.uint8), q.view(torch.uint8))
+            same_scales = torch.equal(reference_scales, s)
+            record['producer_checks'].append(dict(warps=count, identical_fp8=bool(same), identical_scales=bool(same_scales)))
+            if not same or not same_scales:
+                raise RuntimeError('producer warp configuration changed the FP8 activation or scale bytes')
+            for _, workspace, index in finalists:
+                fn = lambda: trial(index, produce)
+                samples = (_measure(base, pool), _measure(fn, pool), _measure(fn, pool), _measure(base, pool))
+                if not torch.allclose(candidate, baseline, rtol=.01, atol=.001):
+                    raise RuntimeError('producer/GEMM finalist failed its numerical gate')
+                record['brackets'].append((index, workspace, count, *samples))
         return select_winner(record['brackets'])
 
 
 @cache
-def bank(device):
+def bank(device, timing_target='gb10'):
     if torch.cuda.is_current_stream_capturing():
         raise RuntimeError('cuBLAS context must be prepared before capture')
-    return Bank(device)
+    return Bank(device, timing_target)
 
 
 class PreparedProjection:
@@ -265,7 +324,7 @@ class PreparedProjection:
     before replacing their existing DeepGEMM reader. There is no first-use
     timing or runtime exception fallback hidden in FP8Linear.
     """
-    def __init__(self, weight, rows, producer, producer_key, *, mx_weight=None):
+    def __init__(self, weight, rows, producer, producer_key, *, mx_weight=None, timing_target='gb10'):
         from .mxfp8 import pack_weight_scales
         if torch.cuda.is_current_stream_capturing():
             raise RuntimeError('cuBLAS projection must be prepared before capture')
@@ -279,7 +338,7 @@ class PreparedProjection:
         if not isinstance(producer_key, str) or not producer_key:
             raise ValueError('cuBLAS preparation requires a named producer ABI')
         self.weight, self.rows, self.producer_key = weight, rows, producer_key
-        self.owner = bank(q.device.index)
+        self.owner = bank(q.device.index, timing_target)
         self.mx_weight = pack_weight_scales(scales, *q.shape) if mx_weight is None else mx_weight
         from .mxfp8 import scale_bytes
         if (self.mx_weight.dtype != torch.uint8 or self.mx_weight.device != q.device
@@ -289,6 +348,22 @@ class PreparedProjection:
         # own numeric decision. Own these tensors for the decision's lifetime.
         self.key = rows, *q.shape, producer_key
         self.choice, self.record = self.owner.prepare(self.key, weight, self.mx_weight, producer)
+        self.split = None
+        from .cublaslt_split import prepare
+        from engine.base.graphs import frozen_gc
+        with self.owner.lock, torch.cuda.device(q.device):
+            calling = torch.cuda.current_stream(q.device)
+            self.owner.tuning_stream.wait_stream(calling)
+            with torch.cuda.stream(self.owner.tuning_stream), frozen_gc():
+                self.split, split_record = prepare(self, producer)
+            calling.wait_stream(self.owner.tuning_stream)
+        if split_record is not None:
+            self.record['split_k'] = split_record
+        if self.split is not None:
+            self.record['direct_choice'] = self.record['choice']
+            self.choice = Choice(self.split.index, self.split.workspace_bytes,
+                                 'measured_split_pipeline_gain', 1, self.split.packed.parts)
+            self.record['choice'] = vars(self.choice)
 
     def bind(self, producer, *, out=None, workspace=None):
         """Own fixed buffers and a private descriptor before capture/execution.
@@ -298,9 +373,13 @@ class PreparedProjection:
         may supply shared scratch only when those bindings execute serially.
         Retain the binding for graph lifetime; storage addresses are immutable.
         """
+        if getattr(self, 'split', None) is not None:
+            return self.split.bind(producer, out=out, workspace=workspace)
         return BoundProjection(self, producer, out=out, workspace=workspace)
 
     def __call__(self, producer, *, out=None):
+        if getattr(self, 'split', None) is not None:
+            return self.bind(producer, out=out)()
         q_weight = self.weight[0]
         shape = self.rows, q_weight.shape[0]
         if out is None:
@@ -323,7 +402,12 @@ class PreparedProjection:
                 require_disjoint(out, tensor)
             fp8_gemm_nt((q, scales), self.weight, out)
         else:
-            q, scales = producer(True, None)
+            if isinstance(producer, (BF16Producer, PacketProducer)):
+                q, scales = producer(True, None, num_warps=self.choice.producer_warps)
+            else:
+                if self.choice.producer_warps != 4:
+                    raise ValueError('custom producers do not expose the selected warp configuration')
+                q, scales = producer(True, None)
             self.owner.plans[self.key[:3]].run(self.choice.index, q, q_weight, scales, self.mx_weight,
                                               out, self.owner.workspace(self.choice.workspace))
         return out
@@ -336,7 +420,7 @@ class BoundProjection:
             raise RuntimeError('projection buffers must be bound before capture')
         self.prepared = prepared
         self.mx = prepared.choice.index is not None
-        self.producer = _bind_producer(producer, self.mx)
+        self.producer = _bind_producer(producer, self.mx, num_warps=prepared.choice.producer_warps)
         self.buffers = self.producer()
         weight = prepared.weight[0]
         shape = prepared.rows, weight.shape[0]

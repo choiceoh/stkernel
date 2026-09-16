@@ -189,5 +189,11 @@ C1/C2 measured phases have unchanged preparation counters in both arms.
 
 The requested decision is to retain all three scoped code defaults and merge
 them. That decision is separate from the still-unproven whole-engine speedup.
-The source after the measured commit changes only provenance metadata;
-subsequent files added here are measurement records and offline readers.
+Through `8c3fd928`, source changes after the measured commit were provenance
+metadata only; the other additions were measurement records and offline readers.
+The final merge integration also incorporates main `b41efc7d` (PR #1071),
+which defaults the GLM head and FC to cuBLAS. The boot-report conflict retains
+both cuBLAS and fixed-K execution proofs, and both measurement histories are
+preserved. The consumer measurements above precede that independent change;
+they do not qualify the integrated head/FC runtime. Integration is checked by
+the final PR CPU CI without another GPU campaign.

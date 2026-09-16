@@ -1,0 +1,812 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "seconds": 10.310093864041846,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "binary": "/work/out/cache/cublaslt/dd2ee6e7edd126aae0c1bbbc/st_cublaslt_dd2ee6e7edd126aae0c1bbbc.so",
+  "binary_sha256": "cc95e7f3e9276705716392340da80303b88c2aa05fa2cb96115adb2f6bcc7680",
+  "triton": "3.7.1",
+  "kernels": [
+    {
+      "name": "quantize-k128-tiled0-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "971c9886f54ccee085b804ce2a1e25d8af960dfbad8549b89e8c10f3d4b91698",
+      "cubin_sha256": "2d47df44509e646ad440f68a1db2fd63987c6fce15957f2316fcbb4fd1753d3c"
+    },
+    {
+      "name": "quantize-k128-tiled0-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "a4d2d3e6ac4a1ec82045f5125fb11a6ffa9382d0f86f1e0d49c49c916762742f",
+      "cubin_sha256": "b288b6ea8856a7d5a82ee206f59b32a9f34579dc2a3a25671807e2a762e11878"
+    },
+    {
+      "name": "quantize-k128-tiled0-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "6dd52bedd6a11734b00de9238c44f4ef4241c6585b0bcbb180ccefd6b65125f2",
+      "cubin_sha256": "fae1e13e78b5d4c0f2b0774f9108cc34426b72c4d68fe8e8549dc902ec332aac"
+    },
+    {
+      "name": "quantize-k128-tiled0-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "10b37db13cb8e5b7bd950a65691fc71880dda6ea9e915e41238a38060ca826a6",
+      "cubin_sha256": "e350355c22e03be18c6cb99c42dbfc18cb0bc43670be3e6207126d78a47d6901"
+    },
+    {
+      "name": "quantize-k128-tiled0-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "ebe988ee1ca8561d8d304ef85bd08dc719f7887c1e2a91ec675512544b0d1394",
+      "cubin_sha256": "688c5317cef5747397d38ef92051ce8144211ad33485fb60cb1fc37c267001f9"
+    },
+    {
+      "name": "quantize-k128-tiled0-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "f4e0808e7327e78bda634520800114e01e6995ecccd6ff4248a54a79364d5c40",
+      "cubin_sha256": "4373e59f45f8ecf6d0babd7d4e8315c42de69647c731565d98aacd331b7c991d"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "d45fcda63eb170b4216cb7823d6ead20a8fdd857b91699729b4dcda179abf7e3",
+      "cubin_sha256": "cd84664eb3585df872813909abcd674194b3b1b9c6df7d346670f5288bb8624f"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "2b5252b3998d0c42fa5e38bfcbf54f4c5b689b072864c05d6bd747d556d49ec2",
+      "cubin_sha256": "ce0bb9e33271a5b25b456ff17e9f15befcd08810d101642ef9b4af90baac6e97"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "e8cce00d377082756fbb0edd2b3960e91bbe5395b7cac3ad263a9a6884511847",
+      "cubin_sha256": "c95a33c26fc32d4cafbe3dd914914df1639c0cc1914285a03ae87ab801a74a98"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "970b8a1bb8307ed1c33275e34cab5037b517c856c5bef5a33c72079c34511149",
+      "cubin_sha256": "7f12ece4a154f2433fbf463d54d6dd15452c790d28a07084c883b4de16ae16b6"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "95cb0ccaf336c2c05728cfb74e0bd12d4a333ce9149da3f82d94b6cff2bb0a33",
+      "cubin_sha256": "c1f4b7f17511a69a7f45f301fd9862fef6285a0d57dc42db91bd31bd1972b823"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "a4e6658b01b18f8ea958d83d3c3cf98ad3e3056c69d46ee7832fb04d3ea3c25c",
+      "cubin_sha256": "caa10cea53ce3837aebeabd71d8fdee17a6eecd1acbe14ad9053dfc84f46bb8f"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "e6ae9f147fec1f59e6003f36c95afe5da35ad3150025d4b25d2b756301f94c7c",
+      "cubin_sha256": "2d0679e2a289d9e6e0f4fd2dcfdc0a038abcb73ac5199cfa7c69d8938e9cd955"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "a39da2804ce217926a268a106ed3984620f5f7b0ab20aeda7a2b5378ace71ba0",
+      "cubin_sha256": "ff6fba1ccfee8c6ec90fbbedb8dc470c00a30a5e1d65cbac8cd46261371ffbe5"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "dadce8e8ee2e30007ef51653ae2a1ca321f783a87ee3d2696d26249ff1c7701d",
+      "cubin_sha256": "0420fb946e4777360d9f564469c904d68fbde8845278f3ccb18396c355292beb"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "d44210c32e07a1b37a62db1ab81c7e0e15fac1860ca899ef3b2cfd743b27de7a",
+      "cubin_sha256": "c917fbe301851c0dd3ee623b67f798948d1a9d6b8bce34f36002c7d85f21f530"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "63fa7d075902632e283f9fd26d718a6e488315e1e4300e89e41fa7f4d30c46e3",
+      "cubin_sha256": "91f031a2f17db0d5401f1e70833ef1bbef0a33eeaa12ba7780f5bc5b5064dbc9"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "42d92b87354cb8b6ed7231ea5676f660fb540630d06f2a9e88f6c2375279204d",
+      "cubin_sha256": "0056517f1355c147108949d36d0c331a0527e0a08dc047427c95283237779c86"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "de21c1a3241ef0d4a55879eb08431df42c010f522f3f60198c8bf427cc60db0c",
+      "cubin_sha256": "a059962008533f0787ac31fc17017bb9a43ced1770ee496980ce542ee3236e29"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "38d7248f778253d56761ec6bbe0c98c9cfdd2fdb78e73e64403f25d0d383753f",
+      "cubin_sha256": "03f5a4ba3660ddb9de0647b8d69f379255d38986b26546d9cbb1275ea8810cbc"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "82cafbb1c7a1e137eebf05b1264d9e8e6cac4f368d06ee9a1f99de1962224606",
+      "cubin_sha256": "7ad5ef880b40641e75171eeaa8a3bca6056989c953e467285d08853aaa5057b5"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "ed1c92cda3164995e10ae8df80440ca3622ee301a225807c24d7b729a7f81f76",
+      "cubin_sha256": "8c34527e46fa013037598e62376b85e56c5c353b4934644b2617e5468a135930"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "1cdc7f4cdedb9ee4a7f22138690be935ed93ca05333e1245917e0a09920c2186",
+      "cubin_sha256": "d72d4364cf6ceb43b6e8f98141430170129841913d29cc867a550a698db6207f"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "92df8ec2f1cebda80f65130feaebf0a4d97ac2935ca4727a546da7eeaa585122",
+      "cubin_sha256": "1fe22b8017b38d0196c2b991958360463eb18bdfbb181a3f8a548b0aa42ad2bb"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "f8b178f87313573338eb64f13f8109da6a77f231477ce4b98a7598da6260750a",
+      "cubin_sha256": "9acce0d204531ea9edce5f83e99b77592e083a4b3080e07fed7e6dd235c20c43"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "dff621fca7c67618070933924a1f0f790c554e85cf3bbc6923ef8da0f34948f5",
+      "cubin_sha256": "f0c39e4170c1cc419e1579fcf41c3cd96f77d36ac24f1ea4d4c3c1340209d7aa"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "12e38ae0c861d66ae7421e8f640cf9341b908df13a977fc9ea299283a467aff4",
+      "cubin_sha256": "b980bdb805472ea783dbe564195454063754a0c3131b22c9fd400349d12185fe"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "c12b84606ce94c1a8cf029eb8639d708f900ac870b32ad14d92b7f379654a540",
+      "cubin_sha256": "5f787508b849d596304ebdd42fc4de0e3d981a16e26dc4f8b7040c5d2334d2ad"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "9f5aa62db13eb5514eb1114981954e5d72170dacf2f2ee6135c12a29a85c3d83",
+      "cubin_sha256": "7a6c3a07b76e7e11de3ba747e7331b7355e30b53e496ea864c31b11edcc216c2"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "a7f1ad27c2f10de2a507bcb7aa700dc09c16227ae1897f9f0f15ee684f694eee",
+      "cubin_sha256": "bd7e356f239e174526eee7b788e748e5dd26070c0ae78b10af334fd66d53e156"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "7c91e8365c6de219d70b8b731ac1329114dd33c4a48cb1a2d9a3e9dbf66e4db2",
+      "cubin_sha256": "f41673fa30327c1b8c7c0cc1195fa188f5fa1f273fa764adc8f0b48823761091"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "ce0d5f510c93a88fd951c48f743940231d02cb38c48b5c5ba8968938d7d5506c",
+      "cubin_sha256": "2f4ab1bfa921e21ed3d9dd4b6360880553269451e3ef6e3f2b530ddfd21a9c9c"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "662b3687e1c5b33017a5a85ae2bf1706ff8f126d3ab538be339ac91d993649bf",
+      "cubin_sha256": "2eb6b8e190b7524407430e658d9211c1facecde434389bc6127f3ccc63aa40f2"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "3406f41df7df8146dbcd05d96973f34e731aa552ea76356e2a27d1319a2c1f11",
+      "cubin_sha256": "be14f308b2069c814f478f8f672094da6c97c7b65a321433784f5dabe647aa3b"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "9c3522cb7e8abe5dddd3ed09988e62090cb244506079f61861c9b589dda7ce54",
+      "cubin_sha256": "db453b4cd499b9dbc139309faa9a7835025ed672f0c4dcf580a87c189e0346ac"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "fec0c5c4001b15ae5bfea6f5c077e5b278da8ab5748d4b3513b658015a3d7174",
+      "cubin_sha256": "168ac7d7c887cf871efb7b5b4fd8549b5c7a0d634d0b0024daaa06fb37fd269d"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "6c1af35804aeb50b371127828bbad757d5be15212ece65282c2a5f189010ef79",
+      "cubin_sha256": "35b9d1e6f8fd59acd4cdb8902b9ed25edc45136ff6d3b94db94445f124dee1c4"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "c0574a91d83d4a3e1d6a9a654faf32a10e810db7204aca8feafff0e589c7e793",
+      "cubin_sha256": "d10d6a9f39b9da713ecf97c63fd9175d05f9c2cc4684de608b10502cdb76195a"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "493dde3b05b2e9ab834419f055b58e47caeaf3fc1f4400ce81c7c4f7f24655f8",
+      "cubin_sha256": "efdf996ab14dd53646633abd757c51816de501841d24a767618b75f8739aa0a5"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "63cd7ab2d723c9a8ebffe853aa5f7711fe19393a9abe6e8c3deea026a9f38e34",
+      "cubin_sha256": "53cff97faf9c40cfab1cd7d50e32c2d901be8e15023ac96e64473f511902d3ec"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "e619e3e0d74863cfb9afd5ecf82d4a888977484b05a7bdf5a59d4b47a3fd7ef2",
+      "cubin_sha256": "ee9415b1585fe89c36c2a2bceccaf2e6be047ee80a27090edb2568ccecca5390"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "8be2d839ee0bffe48792ea2b3c8c8ab8219159920624370518fdd8ea38df52f4",
+      "cubin_sha256": "2b1c4681d7a89fd68cc8c303260cab436e8e2db3a77511b84d214a39ff22ca1f"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "98f4e1dea488c119bfa4c89d189d4f3231a04e5deeedc9946c8dc671717bc14b",
+      "cubin_sha256": "9a4cac104477ab60e407c4a25a76f487fb596183af4b0b14e550c3286d57bae0"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "c5fd4d2799a74e2d8a8d205adc27a9f1241de0cc804a0be10506cee60531b0b7",
+      "cubin_sha256": "6bcab31e4d4385c23f71541c81089c3999fdcbb989b7196ebe4229a4296855d1"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "76cc805651e3976f15235f111b68a27010f964fcd902b7170a02b914b6df59d0",
+      "cubin_sha256": "8d2093645be99181a951c304d697ddcd1fac6f6711656fb19b2276e065b8a1dc"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "3c7e9ee622f2c1509d4f3e8b01bafb748a8812ecae8ea945c8a4a90ab8153d66",
+      "cubin_sha256": "bdd2c2552c44d47b1c915929aacc22cbd9a2c0b0a5e168af435f19b1190206ad"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "bd6f7fcac31649d2ee5c6b2c22c9a951d0eddbeed7b29cd7279b949cae968c77",
+      "cubin_sha256": "0b6be8612e2bbf27527f296fa87aa86881398cb7fd2be7b57af4cf88a0d72571"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "c2c890464f5c07e904d87221a6623d1567776a9a7802f40eb249ccc277047375",
+      "cubin_sha256": "cbb723ca4a9349d626b970e33ba6943e38d64bb26e31aeef5d586dfcdece9196"
+    },
+    {
+      "name": "weight-scales",
+      "num_warps": 4,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "5cb134b6d5a7faea80afb241f0551bfefecf38053d84b21109b014ee570b2daa",
+      "cubin_sha256": "2f8c6cabb7014c51c5e1b6cc10b90c2cc601c29fef83f6ca4c4b4497295e6ae9"
+    },
+    {
+      "name": "packet-mx-pad0",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "bc0c747e43a10c9323c50225f12547edd6c492074ef6bb4f298bbe0a947407a3",
+      "cubin_sha256": "a68c50b147e9a82a48afe80fc00ff20f4b836c9e71e4aa13705cdf6a2fac41ad"
+    },
+    {
+      "name": "packet-mx-pad0",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "68ef9923ee50b909bbad2213591c0863933d24e42fa55b8c459237bd858f22c9",
+      "cubin_sha256": "298ca229b528ec48ea957585dcb21fe6f88633aeb3a347dfffa3e7eee5fa2291"
+    },
+    {
+      "name": "packet-mx-pad0",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "d4330aa860668dea8039bc475bc57fbc2a6792d0ce265caad7a47a8d4808661b",
+      "cubin_sha256": "35ad42336a7eade1703f79b616cad8f14f2588357519b4c2cdcd303a3410c13b"
+    },
+    {
+      "name": "packet-mx-pad1",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "b6f4c72e18230a0d025fda24a703b338c19adf1517c5405959c41c5bcae42465",
+      "cubin_sha256": "2539325a39712c33339a81fa22cb17a146ed48884db777bfcabe15f14f92a59a"
+    },
+    {
+      "name": "packet-mx-pad1",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "5b82ade29d1ab0b7864c10a03da74bd846f88b828ee2ce15a2395c011a58ef2e",
+      "cubin_sha256": "6fbbabf1b83fc5997af68b9d2c4f7c198574426c059a5d8d46ee93e3792e5a3b"
+    },
+    {
+      "name": "packet-mx-pad1",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "3eb2d5566536f94ac2b4a142e4009c18fba18b7a7b3cd794f5caf7439ef673ba",
+      "cubin_sha256": "6c25064828de4965370ea9973f26af0bf9f1f54cf2efe08ab451781186a52663"
+    },
+    {
+      "name": "bound-m1-k4096",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "9d26a05764806cc9b90fb5e9b40fdd990960e68bdfdfe8468b4a4f5efa8d0952",
+      "cubin_sha256": "f39b1aa51cf06cd2fa60d9324171bc95609e30a67c5cfde5c9a269365601a0dd"
+    },
+    {
+      "name": "bound-m1-k4096",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "4b34c449097e6bb8220c0acdaa234df008aab5f8d6372b89f507d65668a13094",
+      "cubin_sha256": "8281a7fe917082d5c7d8fd60cec14b93dc4a19d3792e9bd9e283c3dd25bed3fe"
+    },
+    {
+      "name": "bound-m1-k4096",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "e4321f16077acebe118204759707468067021eb18126cf64b558eac9775c6476",
+      "cubin_sha256": "961cb7f6e19a5b2a175eb7ab2e7ced20f5f036616ad2a4f72b6995360d85e098"
+    },
+    {
+      "name": "bound-m8-k4096",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "b0782da29362433b909b4f1bb04a4bd389d4c73b6e9647f8b9961fe590fef7c2",
+      "cubin_sha256": "65d50a8a7f43fe2bdc6709c70e3659d7843afb5d94ae34a363f784a65182981e"
+    },
+    {
+      "name": "bound-m8-k4096",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "b7369d7ff88fb1a12ac66dc3a94db55b67af0116c4effaf67ee22fc15a00fd47",
+      "cubin_sha256": "8b0a5bd5d68711b6424362de6be6059d206ee9f5f362a8630e1f8c41fb5247a9"
+    },
+    {
+      "name": "bound-m8-k4096",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "d8821cd4f44381885045c6332101fa56a040a23db05ae9dfca05b78b117c9c78",
+      "cubin_sha256": "7fc6944e24010b1a036981027d438856f7092e04b5bbc963942cf01115877282"
+    },
+    {
+      "name": "bound-m8-k20480",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "b4ae6e3553c57369e3f816fe382f2bfca9bdb5ab1c91bc7efd304c97906f0279",
+      "cubin_sha256": "a9c4dc9eed7871e90eb334914e953de8c7609c2d4ca028d55feb9a87e9511b99"
+    },
+    {
+      "name": "bound-m8-k20480",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "5713d230cfa9c249137b75a7e38f6e8378246b74eec1ac811b1633198bc2ea22",
+      "cubin_sha256": "30b586e1b22921cdabc0b8e04ca78e47eea2c926273c2c032e4dce75d792c94c"
+    },
+    {
+      "name": "bound-m8-k20480",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "390458fa7abdcec05644a3b591d4ebd1c1fd16184a3c9445767c99b8d0fed955",
+      "cubin_sha256": "70038985dd7c089cab37a74a7eac3b6f69f51fc24379214351338981ee96ed7a"
+    },
+    {
+      "name": "bound-m128-k4096",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "5f309a70457e25febce31697d25ca8d28d3e82d7690ac2eebdf5e42ff5490f4f",
+      "cubin_sha256": "d1fb4fe23df19e5b8736755c2e97cffe69b3ba060b6b1316d6032589800e8c52"
+    },
+    {
+      "name": "bound-m128-k4096",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "78202cc150843ba410d3ac402157eb5906f647f35d911d4ec49758a1c759fb1a",
+      "cubin_sha256": "06e7f440a42b096b7918b78ae679d04c37d3ce19c7ff23397210078ea8d7706b"
+    },
+    {
+      "name": "bound-m128-k4096",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "a519336e81435aed6fd39d402d5251b0f8cbabf7e814c5cd19cd689c43285683",
+      "cubin_sha256": "f7d38640b4bdac20f7ccf044f69821753287944cc3283ce2843d1511ffc7677b"
+    },
+    {
+      "name": "bound-m129-k4096",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "703ecc19e3d26d75c89ce8e54249d7dde87b3f7162604b438b4172f32b91e924",
+      "cubin_sha256": "a9d1c1d9d71e900e68ef277519c80a537689873ddfc160a885355cf2455dc240"
+    },
+    {
+      "name": "bound-m129-k4096",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "8a8b233e9e010512a274a21bcef8b9f6a26703426633e367b8f2552a7f97e128",
+      "cubin_sha256": "bc916cbe4670b7bb4a661298d27f45d231208f75ac85629449f4feba0a05f946"
+    },
+    {
+      "name": "bound-m129-k4096",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "0bdb387c9048c8b14acbf2811721617cdff1e5fc22091770d91bf84c91f57b2b",
+      "cubin_sha256": "32444f2b2b6663d2711650e0d91f890e26430778ec170d1fa9238d2e52d1d5c9"
+    },
+    {
+      "name": "bound-packet-m128",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "1ca165778ec4d7d6d1ef7d844086be91803f4a1cc4c1b1c2f5148cea9f86e56e",
+      "cubin_sha256": "0ccd29f13b486f60f2e64769dca8f2368c8ed5005b6fcc168f27333613ef4abe"
+    },
+    {
+      "name": "bound-packet-m128",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "0deaafc24d2c9b8041b13adb506fd0e8b727d1db6b3275cb3a456c13b9037e46",
+      "cubin_sha256": "3b87d1b22680acfacefe204296e3cfff3f220a8a88895b1e2715e58cfa7477c2"
+    },
+    {
+      "name": "bound-packet-m128",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "c6f17b5357a77d46a10ef56d28cd89a1ba0d3e11467a51d5a281c057a6ee2660",
+      "cubin_sha256": "7bd41779dcdd3615ac43079381d27eb062035c04fa02da9d921f94a2fbfb682d"
+    },
+    {
+      "name": "bound-packet-m129",
+      "num_warps": 1,
+      "shared_bytes": 0,
+      "cta_barriers": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "d901d6b188b93d21553d3debd05e8710129818e26c0af89b5e65255babb03031",
+      "cubin_sha256": "5cb349e4b46100da85c751157b6da776fe9b7075933f0eeb5f6923741262c48e"
+    },
+    {
+      "name": "bound-packet-m129",
+      "num_warps": 2,
+      "shared_bytes": 32,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "7684f77554f65c9db4730cc13f8ead114ed2554e37a09ca260a538478f970408",
+      "cubin_sha256": "8972fd5bab5f83b5b297d009228a7fd1650420ea39352e7c3eb7e33846866ff2"
+    },
+    {
+      "name": "bound-packet-m129",
+      "num_warps": 4,
+      "shared_bytes": 64,
+      "cta_barriers": 4,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "5c0b07a7276ba3a05ce1c9e35ff354a5799bdc91326618e9bbd96943fb921090",
+      "cubin_sha256": "8fe1c4540cb79e10a1fd836a3181508969e5d25e1d16354047bf273ee7d08562"
+    }
+  ],
+  "scope": "host binding compile/dlopen and SM121 producer compilation; no cuBLAS GPU execution",
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "0a80a021dace024129df3ea2e991109bae7f08a5196add9004b2e196b998c845",
+    "engine/kernels/dense/cublaslt.py": "4e93657e59749e8a51de3ab598e6fa2c00ad040187ecec5029e232d5e1df4f49",
+    "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/prefill_collectives/consumer.py": "3cabd1112ff9f91cb4455692366d975857ab82cf055b9f4ae58d3faaae8a55eb",
+    "probes/engine_cublaslt_compile.py": "3cdfbe9bc2d99c8fe341643f3717d08c363106f327f6de895fceba42a23fb951"
+  }
+}

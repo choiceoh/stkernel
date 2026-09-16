@@ -682,6 +682,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 calib_bytes += need
     router_bytes = net.router_nbytes() if execution == "native" else 0
     projection_bytes = net.decode_projection_nbytes() if execution == "native" else 0
+    from engine.profiles.glm53.cublas import resident_bytes as cublas_resident_bytes
+    cublas_bytes = cublas_resident_bytes(F, D, draft_policy) if execution == 'native' else 0
     draft_bytes = total_bytes(dspecs)
     if D and execution == "native":
         from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
@@ -689,7 +691,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
-    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes + cublas_bytes
                    + 256 * (len(specs) + len(dspecs) + len(vspecs) + len(net.layers) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs, draft_shape) + calib_bytes)
     memory = None
@@ -753,7 +755,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
+                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes, cublas_bytes=cublas_bytes,
                             draft_policy=draft_policy, workspace_gib=workspace_gib)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
@@ -834,6 +836,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                     recorder.gauge('draft_fc_bias_status', drafter.fc_bias_status)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
+                with recorder.phase('cuBLAS head and FC'):
+                    from engine.profiles.glm53.cublas import prepare as prepare_cublas
+                    cublas = prepare_cublas(net, drafter if D else None, arena, draft_policy)
+                    recorder.gauge('cublas_resident_bytes', cublas['resident_bytes'])
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
                 calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena,
                                           max_decode_rows=max_seqs * (1 + drafter.k))
@@ -1147,7 +1153,9 @@ def native_execution_report(net, drafter):
         required_prefill.add('fp8_tiled_projection')
         if not calibrating:
             required_prefill.add('fp8_packet_projection')
-    proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+    from engine.profiles.glm53.cublas import execution_report as cublas_execution_report
+    cublas_proof = cublas_execution_report(net) if hasattr(net, 'cublas_readers') else {}
+    proof = dict(cublas=cublas_proof, decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
                  fixed_k_cost=fixed_k_cost_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),

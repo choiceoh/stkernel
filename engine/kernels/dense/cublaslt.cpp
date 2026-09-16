@@ -49,6 +49,8 @@ class Plan : public std::enable_shared_from_this<Plan> {
   std::shared_ptr<Context> context;
   Descriptors desc;
   int64_t m, n, k;
+  int batches;
+  cudaDataType_t output_type;
   size_t workspace_limit;
   std::vector<cublasLtMatmulHeuristicResult_t> choices;
   std::vector<std::array<uint32_t, 4>> alignments;
@@ -187,7 +189,7 @@ class Plan : public std::enable_shared_from_this<Plan> {
     int count = 0;
     for (;;) {
       check(cublasLtMatmulAlgoGetIds(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
-              CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF,
+              CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, output_type, output_type,
               ids.size(), ids.data(), &count), "cuBLAS algorithm catalog");
       if (size_t(count) < ids.size()) break;
       TORCH_CHECK(ids.size() < 4096, "cuBLAS algorithm catalog exceeds the preparation bound");
@@ -199,7 +201,7 @@ class Plan : public std::enable_shared_from_this<Plan> {
       if (known.count(ids[i])) continue;
       cublasLtMatmulAlgo_t algo{};
       auto status = cublasLtMatmulAlgoInit(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
-          CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF, ids[i], &algo);
+          CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, output_type, output_type, ids[i], &algo);
       if (status == CUBLAS_STATUS_NOT_SUPPORTED) continue;
       check(status, "initialize catalog algorithm");
       result.push_back(algo);
@@ -233,16 +235,47 @@ class Plan : public std::enable_shared_from_this<Plan> {
   }
 
  public:
-  Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit)
-      : context(std::move(context_)), m(m_), n(n_), k(k_), workspace_limit(limit) {
+  Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit,
+       const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight, int batches_ = 1, bool fp32 = false,
+       const Plan* seed = nullptr, size_t seed_index = 0)
+      : context(std::move(context_)), m(m_), n(n_), k(k_), batches(batches_),
+        output_type(fp32 ? CUDA_R_32F : CUDA_R_16BF), workspace_limit(limit) {
     TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
                 && m <= INT32_MAX && n <= INT32_MAX && k <= INT32_MAX, "invalid ST MXFP8 shape");
+    TORCH_CHECK(batches >= 1 && batches <= 16 && (batches == 1 || fp32),
+                "batched MXFP8 partials require FP32 output and at most 16 splits");
     c10::cuda::CUDAGuard guard(context->device);
     setup_operation(desc.operation);
+    // MX heuristics validate non-null scale pointers before enumerating any
+    // algorithms. Borrow real, validated storage for this host-only query;
+    // execution/bind supplies its own scale addresses below.
+    tensor(query_s_q, at::kByte, "query activation scales");
+    tensor(query_s_weight, at::kByte, "query weight scales");
+    int scale_rank = batches == 1 ? 1 : 2;
+    TORCH_CHECK(query_s_q.dim() == scale_rank && query_s_q.numel() == batches * ((m + 127) / 128) * (k / 128) * 512
+                && query_s_weight.dim() == scale_rank && query_s_weight.numel() == batches * n * (k / 32)
+                && (batches == 1 || (query_s_q.size(0) == batches && query_s_weight.size(0) == batches)),
+                "MXFP8 query scale shape mismatch");
+    set_scales(desc.operation, query_s_q, query_s_weight);
     // Column-major TN computes Y^T from the existing row-major W and X.
     check(cublasLtMatrixLayoutCreate(&desc.a, CUDA_R_8F_E4M3, k, n, k), "W layout");
     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
-    check(cublasLtMatrixLayoutCreate(&desc.d, CUDA_R_16BF, n, m, n), "Y layout");
+    check(cublasLtMatrixLayoutCreate(&desc.d, output_type, n, m, n), "Y layout");
+    if (batches > 1) {
+      for (auto item : {std::pair<cublasLtMatrixLayout_t, int64_t>{desc.a, n*k}, {desc.b, m*k}, {desc.d, m*n}}) {
+        check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
+                                               &batches, sizeof(batches)), "batch count");
+        check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET,
+                                               &item.second, sizeof(item.second)), "batch stride");
+      }
+    }
+    if (seed) {
+      TORCH_CHECK(seed_index < seed->choices.size(), "unknown source algorithm");
+      admit(seed->choices[seed_index].algo);
+      set_scale_pointers(desc.operation, nullptr, nullptr);
+      TORCH_CHECK(choices.size() == 1, "prepared cuBLAS algorithm does not support the requested rows");
+      return;
+    }
     check(cublasLtMatmulPreferenceCreate(&desc.preference), "matmul preference");
     uint32_t reduction = CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE;
     check(cublasLtMatmulPreferenceSetAttribute(desc.preference, CUBLASLT_MATMUL_PREF_REDUCTION_SCHEME_MASK,
@@ -295,6 +328,17 @@ class Plan : public std::enable_shared_from_this<Plan> {
       }
       if (!more) break;
     }
+    // Geometry plans outlive the tensors borrowed by preparation. Never leave
+    // their addresses in the reusable descriptor after the query completes.
+    set_scale_pointers(desc.operation, nullptr, nullptr);
+  }
+
+  // Reuse the boot-selected implementation. Only layouts and AlgoCheck change;
+  // no catalog, heuristic query, variants, timing or lane fallback occurs.
+  std::shared_ptr<Plan> with_rows(int64_t rows, size_t index, const torch::Tensor& s_q,
+                                  const torch::Tensor& s_weight) {
+    return std::make_shared<Plan>(context, rows, n, k, workspace_limit, s_q, s_weight,
+                                  batches, output_type == CUDA_R_32F, this, index);
   }
 
   py::list candidates() const {
@@ -323,18 +367,21 @@ class Plan : public std::enable_shared_from_this<Plan> {
     TORCH_CHECK(index < choices.size(), "unknown cuBLAS algorithm");
     tensor(q, at::ScalarType::Float8_e4m3fn, "Q"); tensor(weight, at::ScalarType::Float8_e4m3fn, "W");
     tensor(s_q, at::kByte, "activation scales"); tensor(s_weight, at::kByte, "weight scales");
-    tensor(out, at::kBFloat16, "output"); tensor(workspace, at::kByte, "workspace");
+    tensor(out, output_type == CUDA_R_32F ? at::kFloat : at::kBFloat16, "output"); tensor(workspace, at::kByte, "workspace");
     const auto& alignment = alignments[index];
     TORCH_CHECK(reinterpret_cast<uintptr_t>(weight.data_ptr()) % alignment[0] == 0
                 && reinterpret_cast<uintptr_t>(q.data_ptr()) % alignment[1] == 0
                 && reinterpret_cast<uintptr_t>(out.data_ptr()) % alignment[2] == 0
                 && reinterpret_cast<uintptr_t>(out.data_ptr()) % alignment[3] == 0,
                 "storage does not satisfy the selected cuBLAS algorithm alignment");
-    TORCH_CHECK(q.dim() == 2 && q.size(0) == m && q.size(1) == k
-                && weight.dim() == 2 && weight.size(0) == n && weight.size(1) == k
-                && out.dim() == 2 && out.size(0) == m && out.size(1) == n
-                && s_q.dim() == 1 && s_q.numel() == ((m + 127) / 128) * (k / 128) * 512
-                && s_weight.dim() == 1 && s_weight.numel() == n * (k / 32), "MXFP8 plan shape mismatch");
+    int rank = batches == 1 ? 2 : 3;
+    TORCH_CHECK(q.dim() == rank && q.size(-2) == m && q.size(-1) == k
+                && weight.dim() == rank && weight.size(-2) == n && weight.size(-1) == k
+                && out.dim() == rank && out.size(-2) == m && out.size(-1) == n
+                && s_q.dim() == rank-1 && s_q.numel() == batches * ((m + 127) / 128) * (k / 128) * 512
+                && s_weight.dim() == rank-1 && s_weight.numel() == batches * n * (k / 32)
+                && (batches == 1 || (q.size(0) == batches && weight.size(0) == batches && out.size(0) == batches
+                                    && s_q.size(0) == batches && s_weight.size(0) == batches)), "MXFP8 plan shape mismatch");
     const auto& choice = choices[index];
     TORCH_CHECK(workspace.dim() == 1 && size_t(workspace.numel()) >= choice.workspaceSize
                 && reinterpret_cast<uintptr_t>(workspace.data_ptr()) % 256 == 0, "insufficient/alignment-invalid cuBLAS workspace");
@@ -344,10 +391,13 @@ class Plan : public std::enable_shared_from_this<Plan> {
     TORCH_CHECK(!overlaps(out, workspace), "cuBLAS workspace overlaps output");
   }
 
-  static void set_scales(cublasLtMatmulDesc_t op, const torch::Tensor& s_q, const torch::Tensor& s_weight) {
-    const void* a_scale = s_weight.data_ptr(); const void* b_scale = s_q.data_ptr();
+  static void set_scale_pointers(cublasLtMatmulDesc_t op, const void* a_scale, const void* b_scale) {
     check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &a_scale, sizeof(a_scale)), "scale pointer A");
     check(cublasLtMatmulDescSetAttribute(op, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &b_scale, sizeof(b_scale)), "scale pointer B");
+  }
+
+  static void set_scales(cublasLtMatmulDesc_t op, const torch::Tensor& s_q, const torch::Tensor& s_weight) {
+    set_scale_pointers(op, s_weight.data_ptr(), s_q.data_ptr());
   }
 
   void launch(cublasLtMatmulDesc_t op, size_t index, const torch::Tensor& q,
@@ -398,6 +448,8 @@ class Plan : public std::enable_shared_from_this<Plan> {
     result["candidate_limit"] = MAX_CHOICES;
     result["catalog_ids"] = catalog_ids;
     result["additional_catalog_seeds"] = catalog_seeds;
+    result["batches"] = batches;
+    result["output_type"] = output_type == CUDA_R_32F ? "fp32" : "bf16";
     return result;
   }
 
@@ -408,7 +460,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   py::class_<Context, std::shared_ptr<Context>>(module, "Context").def(py::init<int, int, int>());
   py::class_<Plan::Bound, std::shared_ptr<Plan::Bound>>(module, "BoundMatmul").def("run", &Plan::Bound::run);
   py::class_<Plan, std::shared_ptr<Plan>>(module, "Plan")
-      .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t>())
+      .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t,
+                    const torch::Tensor&, const torch::Tensor&, int, bool>(),
+           py::arg("context"), py::arg("m"), py::arg("n"), py::arg("k"), py::arg("workspace_limit"),
+           py::arg("query_activation_scales"), py::arg("query_weight_scales"),
+           py::arg("batches") = 1, py::arg("fp32") = false)
       .def("candidates", &Plan::candidates).def("run", &Plan::run)
-      .def("bind", &Plan::bind).def("statistics", &Plan::statistics);
+      .def("bind", &Plan::bind).def("statistics", &Plan::statistics)
+      .def("with_rows", &Plan::with_rows);
 }

@@ -1,0 +1,28 @@
+{
+  "status": "FAIL",
+  "gpu_used": true,
+  "numerics_only": false,
+  "scope": "packed model weight; synthetic inputs; no serving or acceptance verdict",
+  "device": "NVIDIA GeForce RTX 5050",
+  "capability": [
+    12,
+    0
+  ],
+  "sms": 20,
+  "timing_target": "sm120-probe",
+  "gb10_admission": false,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "cells": [],
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "6640becc263c7923d29d093a0b03cb671e6a5922b787df73cb87c787784f209b",
+    "engine/kernels/dense/cublaslt.py": "0ff55ee110d79cd8b94356068895fc5f697f15c268a2304d2daa55cbe0e4fb13",
+    "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299",
+    "engine/kernels/dense/cublaslt_split.py": "bf1fb34f9bb80070c8ed094a94449e59251b4501d98ccf0071df788e1d5e0900",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/prefill_collectives/consumer.py": "3cabd1112ff9f91cb4455692366d975857ab82cf055b9f4ae58d3faaae8a55eb",
+    "probes/engine_cublaslt_check.py": "c474f8135e8aa15caa34caf10ce3a1e51771e4bbb4612b64552aa29fbbfaef0b"
+  },
+  "error": "RuntimeError: bound cuBLAS execution allocated additional Torch GPU storage"
+}

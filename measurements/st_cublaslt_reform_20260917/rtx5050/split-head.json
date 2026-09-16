@@ -1,0 +1,1088 @@
+{
+  "status": "PASS",
+  "gpu_used": true,
+  "numerics_only": false,
+  "scope": "packed model weight; synthetic inputs; no serving or acceptance verdict",
+  "device": "NVIDIA GeForce RTX 5050",
+  "capability": [
+    12,
+    0
+  ],
+  "sms": 20,
+  "timing_target": "sm120-probe",
+  "gb10_admission": false,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "cells": [
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        7,
+        38784,
+        4096
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11,
+        "batches": 1,
+        "output_type": "bf16"
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5927900075912476,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5983999967575073,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.6075519919395447,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5994709730148315,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          0,
+          0,
+          4,
+          0.6793195009231567,
+          0.5932319760322571,
+          0.5930719971656799,
+          0.6784700155258179
+        ],
+        [
+          1,
+          0,
+          4,
+          0.6787045001983643,
+          0.5929759740829468,
+          0.5935519933700562,
+          0.6850374937057495
+        ],
+        [
+          3,
+          1507584,
+          4,
+          0.6796485185623169,
+          0.6000614762306213,
+          0.6001225113868713,
+          0.6794540286064148
+        ],
+        [
+          0,
+          0,
+          1,
+          0.6798189878463745,
+          0.5934240221977234,
+          0.5932959914207458,
+          0.679916501045227
+        ],
+        [
+          1,
+          0,
+          1,
+          0.6788480281829834,
+          0.6061279773712158,
+          0.5931040048599243,
+          0.679964005947113
+        ],
+        [
+          3,
+          1507584,
+          1,
+          0.6785925030708313,
+          0.6000649929046631,
+          0.6004635095596313,
+          0.6780844926834106
+        ],
+        [
+          0,
+          0,
+          2,
+          0.6793624758720398,
+          0.5936480164527893,
+          0.5933600068092346,
+          0.6858729720115662
+        ],
+        [
+          1,
+          0,
+          2,
+          0.678612470626831,
+          0.5932959914207458,
+          0.5931360125541687,
+          0.6782090067863464
+        ],
+        [
+          3,
+          1507584,
+          2,
+          0.6787375211715698,
+          0.6006270051002502,
+          0.6000940203666687,
+          0.679627001285553
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "reason": "measured_pipeline_gain",
+        "producer_warps": 4
+      },
+      "status": "PASS",
+      "holdout": [],
+      "graph_replays": 2,
+      "bound_allocation_delta": 0,
+      "bound_workspace_bytes": 0,
+      "extra_weight_scale_bytes": 4964352,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "9af96ae356614f8b72ca969b16e72e5c2e1809eaf66bd4c9b47b8e84e47b0e65",
+          "shape": [
+            38720,
+            4096
+          ],
+          "name": "Glm5NextForCausalLM/lm_head",
+          "kind": "fp8",
+          "calibration": "a0d731b64b51ab03e70a1d27e9b1cb497275acffc4d7f89e4fea0959467d53dd",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "2f3dc77954e48fec347f0389da08d6198b7b1b9c0f4b5fba9450d7a9363334d7",
+        "path": "/work/packs/7e3c089b56122e41d05b7fcfc7163749d4f5a6eaa8f4186e2199fc71762d394e.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1907
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 16384
+    },
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        8,
+        38784,
+        4096
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11,
+        "batches": 1,
+        "output_type": "bf16"
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5941759943962097,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5941759943962097,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.6011499762535095,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.6022089719772339,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          0,
+          0,
+          4,
+          0.6790469884872437,
+          0.5941920280456543,
+          0.5939040184020996,
+          0.6801735162734985
+        ],
+        [
+          1,
+          0,
+          4,
+          0.6833584904670715,
+          0.5942559838294983,
+          0.6003360152244568,
+          0.6800295114517212
+        ],
+        [
+          2,
+          1507584,
+          4,
+          0.6801040172576904,
+          0.6104314923286438,
+          0.6015570163726807,
+          0.6798710227012634
+        ],
+        [
+          0,
+          0,
+          1,
+          0.6802514791488647,
+          0.5943199992179871,
+          0.5975040197372437,
+          0.6804165244102478
+        ],
+        [
+          1,
+          0,
+          1,
+          0.687030017375946,
+          0.5938400030136108,
+          0.593936026096344,
+          0.679325520992279
+        ],
+        [
+          2,
+          1507584,
+          1,
+          0.6797500252723694,
+          0.6015174984931946,
+          0.6016374826431274,
+          0.6803659796714783
+        ],
+        [
+          0,
+          0,
+          2,
+          0.679984986782074,
+          0.5941600203514099,
+          0.6001440286636353,
+          0.6787989735603333
+        ],
+        [
+          1,
+          0,
+          2,
+          0.6796579957008362,
+          0.5940960049629211,
+          0.5938720107078552,
+          0.6793174743652344
+        ],
+        [
+          2,
+          1507584,
+          2,
+          0.6821600198745728,
+          0.6013100147247314,
+          0.6012009978294373,
+          0.679000973701477
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": 1,
+        "workspace": 0,
+        "reason": "measured_pipeline_gain",
+        "producer_warps": 1
+      },
+      "status": "PASS",
+      "holdout": [],
+      "graph_replays": 2,
+      "bound_allocation_delta": 0,
+      "bound_workspace_bytes": 0,
+      "extra_weight_scale_bytes": 4964352,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "9af96ae356614f8b72ca969b16e72e5c2e1809eaf66bd4c9b47b8e84e47b0e65",
+          "shape": [
+            38720,
+            4096
+          ],
+          "name": "Glm5NextForCausalLM/lm_head",
+          "kind": "fp8",
+          "calibration": "a0d731b64b51ab03e70a1d27e9b1cb497275acffc4d7f89e4fea0959467d53dd",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "2f3dc77954e48fec347f0389da08d6198b7b1b9c0f4b5fba9450d7a9363334d7",
+        "path": "/work/packs/7e3c089b56122e41d05b7fcfc7163749d4f5a6eaa8f4186e2199fc71762d394e.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1908
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 16384
+    },
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        14,
+        38784,
+        4096
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11,
+        "batches": 1,
+        "output_type": "bf16"
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5980799794197083,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5985919833183289,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.6046710014343262,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.6048070192337036,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          0,
+          0,
+          4,
+          0.682463526725769,
+          0.601423978805542,
+          0.5981919765472412,
+          0.6828054785728455
+        ],
+        [
+          1,
+          0,
+          4,
+          0.6822084784507751,
+          0.6037920117378235,
+          0.5979999899864197,
+          0.6823750138282776
+        ],
+        [
+          2,
+          1507584,
+          4,
+          0.6820104718208313,
+          0.6069924831390381,
+          0.6050119996070862,
+          0.689520001411438
+        ],
+        [
+          0,
+          0,
+          1,
+          0.6821845173835754,
+          0.5983200073242188,
+          0.5981600284576416,
+          0.6882420182228088
+        ],
+        [
+          1,
+          0,
+          1,
+          0.6823989748954773,
+          0.5984159708023071,
+          0.5981600284576416,
+          0.6827895045280457
+        ],
+        [
+          2,
+          1507584,
+          1,
+          0.6826155185699463,
+          0.6455169916152954,
+          0.6054409742355347,
+          0.6820505261421204
+        ],
+        [
+          0,
+          0,
+          2,
+          0.6819429993629456,
+          0.6043040156364441,
+          0.5982239842414856,
+          0.6823599934577942
+        ],
+        [
+          1,
+          0,
+          2,
+          0.6815760135650635,
+          0.6014400124549866,
+          0.6011679768562317,
+          0.6822530031204224
+        ],
+        [
+          2,
+          1507584,
+          2,
+          0.6820685267448425,
+          0.6051945090293884,
+          0.6050699949264526,
+          0.6872400045394897
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "reason": "measured_pipeline_gain",
+        "producer_warps": 1
+      },
+      "status": "PASS",
+      "holdout": [],
+      "graph_replays": 2,
+      "bound_allocation_delta": 0,
+      "bound_workspace_bytes": 0,
+      "extra_weight_scale_bytes": 4964352,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "9af96ae356614f8b72ca969b16e72e5c2e1809eaf66bd4c9b47b8e84e47b0e65",
+          "shape": [
+            38720,
+            4096
+          ],
+          "name": "Glm5NextForCausalLM/lm_head",
+          "kind": "fp8",
+          "calibration": "a0d731b64b51ab03e70a1d27e9b1cb497275acffc4d7f89e4fea0959467d53dd",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "2f3dc77954e48fec347f0389da08d6198b7b1b9c0f4b5fba9450d7a9363334d7",
+        "path": "/work/packs/7e3c089b56122e41d05b7fcfc7163749d4f5a6eaa8f4186e2199fc71762d394e.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1909
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 16384
+    },
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        16,
+        38784,
+        4096
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11,
+        "batches": 1,
+        "output_type": "bf16"
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.6055039763450623,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.5990399718284607,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.606115996837616,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 1507584,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.6060870289802551,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          1,
+          0,
+          4,
+          0.6836605072021484,
+          0.599183976650238,
+          0.599183976650238,
+          0.6834719777107239
+        ],
+        [
+          0,
+          0,
+          4,
+          0.6895059943199158,
+          0.599183976650238,
+          0.5988320112228394,
+          0.6858224868774414
+        ],
+        [
+          3,
+          1507584,
+          4,
+          0.6866405010223389,
+          0.605797529220581,
+          0.6064324975013733,
+          0.6832334995269775
+        ],
+        [
+          1,
+          0,
+          1,
+          0.6834244728088379,
+          0.5989919900894165,
+          0.6052640080451965,
+          0.6831935048103333
+        ],
+        [
+          0,
+          0,
+          1,
+          0.6835215091705322,
+          0.5993120074272156,
+          0.5989599823951721,
+          0.6841555237770081
+        ],
+        [
+          3,
+          1507584,
+          1,
+          0.683601975440979,
+          0.6068289875984192,
+          0.6067529916763306,
+          0.6831384897232056
+        ],
+        [
+          1,
+          0,
+          2,
+          0.6890919804573059,
+          0.5991520285606384,
+          0.6026239991188049,
+          0.6830974817276001
+        ],
+        [
+          0,
+          0,
+          2,
+          0.6830384731292725,
+          0.5990239977836609,
+          0.5990880131721497,
+          0.6830840110778809
+        ],
+        [
+          3,
+          1507584,
+          2,
+          0.6833950281143188,
+          0.6057425141334534,
+          0.6117385029792786,
+          0.6861630082130432
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "reason": "measured_pipeline_gain",
+        "producer_warps": 4
+      },
+      "status": "PASS",
+      "holdout": [],
+      "graph_replays": 2,
+      "bound_allocation_delta": 0,
+      "bound_workspace_bytes": 0,
+      "extra_weight_scale_bytes": 4964352,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "9af96ae356614f8b72ca969b16e72e5c2e1809eaf66bd4c9b47b8e84e47b0e65",
+          "shape": [
+            38720,
+            4096
+          ],
+          "name": "Glm5NextForCausalLM/lm_head",
+          "kind": "fp8",
+          "calibration": "a0d731b64b51ab03e70a1d27e9b1cb497275acffc4d7f89e4fea0959467d53dd",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "2f3dc77954e48fec347f0389da08d6198b7b1b9c0f4b5fba9450d7a9363334d7",
+        "path": "/work/packs/7e3c089b56122e41d05b7fcfc7163749d4f5a6eaa8f4186e2199fc71762d394e.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1910
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 16384
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "6640becc263c7923d29d093a0b03cb671e6a5922b787df73cb87c787784f209b",
+    "engine/kernels/dense/cublaslt.py": "0ff55ee110d79cd8b94356068895fc5f697f15c268a2304d2daa55cbe0e4fb13",
+    "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299",
+    "engine/kernels/dense/cublaslt_split.py": "1f919796269076222a945a3326a0e64f0c42e4fd30df368c52f7b676b5470a7f",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/prefill_collectives/consumer.py": "3cabd1112ff9f91cb4455692366d975857ab82cf055b9f4ae58d3faaae8a55eb",
+    "probes/engine_cublaslt_check.py": "22d46741a736452e5eb89b9497ffcfe24a7f97278dd1284f5ab91b4ae890bb76"
+  }
+}

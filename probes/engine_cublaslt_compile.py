@@ -22,6 +22,8 @@ def main():
     from triton.compiler import ASTSource
     from engine.kernels.dense.cublaslt import _build
     from engine.kernels.dense.mxfp8 import _quantize, _quantize_bound, _pack_weights
+    from engine.kernels.dense.cublaslt_split import _quantize as _split_quantize, _reduce as _split_reduce
+    from engine.kernels.dense.cublaslt_serving import _activation_scales
     from engine.kernels.prefill_collectives.consumer import _quantize_gather_mx, _quantize_gather_mx_bound
     started = time.monotonic()
     native = _build()
@@ -41,9 +43,23 @@ def main():
                   dict(Packed='*fp8e4nv', Scales='*fp32', Q='*fp8e4nv', S='*i32'),
                   dict(M=m, LOCAL_N=local*4096, PAYLOAD_BYTES=((local*4096 + local*8 + 127)//128)*128, PACK_BLOCK=2048))
                  for m, local in ((128, 32), (129, 33))]
-    for name, fn, signature, constants in variants:
+    configurations = [(name, fn, signature, constants, warps)
+                      for name, fn, signature, constants in variants
+                      for warps in ((4,) if name == 'weight-scales' else (1, 2, 4))]
+    configurations += [(f'split-producer-m{m}', _split_quantize, dict(X='*bf16', Q='*fp8e4nv', S='*i32'),
+                        dict(M=m, K=20480, P=5, PAD=False), 1) for m in (8, 16)]
+    configurations += [(f'split-reduction-m{m}', _split_reduce, dict(X='*fp32', Y='*bf16'),
+                        dict(SIZE=m*4096, P=5), 4) for m in (8, 16)]
+    configurations += [(f'serving-split-producer-m{m}', _split_quantize,
+                        dict(X='*bf16', Q='*fp8e4nv', S='*i32'), dict(M=m, K=20480, P=5, PAD=True), 1)
+                       for m in (1, 7, 8, 16, 24, 32, 64)]
+    configurations += [(f'activation-scales-m{m}-g{g}', _activation_scales, dict(S='*fp32', MX='*i32'),
+                        dict(M=m, G=g), 1) for m in (7, 128, 512) for g in (32, 160)]
+    for name, fn, signature, constants, warps in configurations:
+        if 'SCALAR_SCALE' in fn.arg_names:
+            constants = dict(constants, SCALAR_SCALE=warps == 1)
         kernel = triton.compile(ASTSource(fn, signature, constexprs=constants),
-                                target=GPUTarget('cuda', 121, 32), options=dict(num_warps=4))
+                                target=GPUTarget('cuda', 121, 32), options=dict(num_warps=warps))
         ptx = kernel.asm['ptx']
         expensive = re.findall(r'\b(?:lg2|ex2|div|rcp)\.[\w.]*f32', ptx)
         if name != 'weight-scales' and expensive:
@@ -51,7 +67,11 @@ def main():
         integer_divisions = re.findall(r'\b(?:div|rem)\.[su]32', ptx)
         if name.startswith('bound-') and integer_divisions:
             raise RuntimeError(f'{name} kept dynamic integer division: {integer_divisions}')
-        kernels.append(dict(name=name, shared_bytes=kernel.metadata.shared, expensive_arithmetic=expensive,
+        barriers = re.findall(r'\bbar\.(?:warp\.)?sync\b', ptx)
+        if warps == 1 and (kernel.metadata.shared or barriers):
+            raise RuntimeError(f'{name} retained shared storage or a CTA barrier with one warp')
+        kernels.append(dict(name=name, num_warps=warps, shared_bytes=kernel.metadata.shared,
+                            cta_barriers=len(barriers), expensive_arithmetic=expensive,
                             integer_divisions=integer_divisions,
                             ptx_sha256=hashlib.sha256(kernel.asm['ptx'].encode()).hexdigest(),
                             cubin_sha256=hashlib.sha256(kernel.asm['cubin']).hexdigest()))
@@ -65,7 +85,8 @@ def main():
                   scope='host binding compile/dlopen and SM121 producer compilation; no cuBLAS GPU execution')
     root = Path(__file__).resolve().parents[1]
     paths = ('engine/kernels/dense/cublaslt.cpp', 'engine/kernels/dense/cublaslt.py',
-             'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/fp8.py',
+             'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/cublaslt_split.py',
+             'engine/kernels/dense/cublaslt_serving.py', 'engine/kernels/dense/fp8.py',
              'engine/kernels/prefill_collectives/consumer.py', 'probes/engine_cublaslt_compile.py')
     report['source_sha256'] = {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths}
     args.output.parent.mkdir(parents=True, exist_ok=True)
