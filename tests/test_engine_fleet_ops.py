@@ -258,7 +258,9 @@ class WorkspaceCeilingLaunchTests(LaunchHarness):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         commands = self.boot_commands()
         self.assertEqual(len(commands), 4)
-        self.assertTrue(all("--kv-gib" not in c and "--workspace-gib 10.5 --port" in c for c in commands), commands)
+        # no ST_KV_GIB is not "no --kv-gib" since PR #1042: the launcher pins the budget production
+        # serves on, because a value that lives only in the box's env file does not survive a deploy.
+        self.assertTrue(all("--kv-gib 14.0 --workspace-gib 10.5 --port" in c for c in commands), commands)
 
     def test_a_ceiling_that_is_not_a_positive_number_starts_nothing(self):
         for bad in ("0", "0.0", "-1", "ten", "1e3", "10.5GiB"):
