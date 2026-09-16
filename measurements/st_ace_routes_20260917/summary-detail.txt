@@ -1,0 +1,7 @@
+steps 6154; routed_scale sum of weights per token: mean 2.5000
+mean normalised gate by rank 1..8: 0.233 0.170 0.134 0.113 0.100 0.090 0.083 0.076
+skip 5%: tau 0.0604; skipped routing mass mean 1.99% (p95 14.33%); tokens touched 18.2%, max 7/token; anchor slots 5.3% vs draft 5.0%; reads -5.1% (layers 0.8%..25.9%; requests 4.0%..6.1%, n=12)
+skip 10%: tau 0.0701; skipped routing mass mean 4.62% (p95 20.78%); tokens touched 34.8%, max 7/token; anchor slots 10.2% vs draft 10.0%; reads -9.8% (layers 2.7%..37.7%; requests 8.4%..11.0%, n=12)
+skip 15%: tau 0.0768; skipped routing mass mean 7.56% (p95 26.45%); tokens touched 49.4%, max 7/token; anchor slots 15.1% vs draft 15.0%; reads -14.4% (layers 5.1%..45.8%; requests 12.9%..15.6%, n=12)
+skip 20%: tau 0.0822; skipped routing mass mean 10.75% (p95 30.10%); tokens touched 61.9%, max 7/token; anchor slots 20.0% vs draft 20.0%; reads -19.1% (layers 8.0%..51.7%; requests 17.4%..20.1%, n=12)
+skip 25%: tau 0.0871; skipped routing mass mean 14.14% (p95 33.44%); tokens touched 72.4%, max 7/token; anchor slots 25.0% vs draft 25.0%; reads -23.7% (layers 11.7%..56.4%; requests 21.8%..24.6%, n=12)
