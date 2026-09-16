@@ -13,7 +13,7 @@ import logging
 import os
 import weakref
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cutlass
 import cutlass.cute as cute
@@ -2265,6 +2265,20 @@ def _get_static_kernel(
 
 
 _STATIC_V2_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
+_STATIC_V2_ARMED: List[str] = []
+"""Every static v2 lane this process has armed, in the order it armed them.
+
+The log line below has said this since 22차, one line per lane, and on 2026-09-16 that was the only
+place it was said: rank 1 armed four lanes where its peers armed seven, ran a collective they had not
+reached, and spun in the one-shot wait until the transport's own `__trap()` killed it 30 s later --
+seven boots, and the divergence was visible only by diffing four logs by hand. `armed_static_lanes`
+is that list as a value, so the ranks can agree on it before the capture instead of after the trap.
+"""
+
+
+def armed_static_lanes() -> "tuple[str, ...]":
+    """The armed lane names, sorted: a value two ranks can compare (base/tripwire.agree_payload)."""
+    return tuple(sorted(_STATIC_V2_ARMED))
 
 
 def _static_v2_cache_key(config: dict, **fields) -> Tuple:
@@ -2692,6 +2706,7 @@ def _get_static_kernel_v2(
     # first launch of this shape in a process builds or loads the v2 kernel
     # here, so this line in a worker log means the served wrapper took the
     # v2 lane for that shape. The cached-kernel path is silent otherwise.
+    _STATIC_V2_ARMED.append(name)
     logging.getLogger("flashinfer.b12x").warning(
         "[b12x static v2] lane serving: %s (mac=%d, m=%d, routed=%d, smem=%d B)",
         name, mac, m, m * num_topk, getattr(kernel, "smem_bytes", 0),

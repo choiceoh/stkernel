@@ -212,6 +212,30 @@ class Glm53Engine:
             cleanup_after_error(exc, self.close_decode, "close decode after capture failure")
             raise
 
+    def _agree_on_armed_lanes(self) -> None:
+        """Every rank armed the same MoE lanes, or no rank captures.
+
+        The capture that follows is a lockstep of collectives: each rank issues the same sums in the
+        same order, and a rank that armed a lane its peers did not issues one they never reach. That
+        is not a hypothetical. On 2026-09-16 rank 1 armed FOUR static v2 lanes where its peers armed
+        seven, ran ahead to one-shot sequence 1183 while they sat at 1179, and spun in the peer wait
+        until the transport's own `__trap()` fired at 30 s -- `unspecified launch failure`, an Xid 43
+        beside it, and seven boots that died the same way. The evidence was one line per lane in four
+        logs, and finding it meant diffing them by hand.
+
+        The lanes are armed on first use, so the set is a RESULT and belongs to this moment: after the
+        warmups that arm them, before the capture that depends on them. `agree_payload` sends sixteen
+        words on the normal path and gathers the actual names only when they differ, into every rank's
+        death note. What this buys is the difference between a named failure in a second and a spin
+        that ends in a trapped context the next boot on that node inherits.
+        """
+        from engine.base.tripwire import Tripwire
+        try:
+            from engine.kernels.b12x.moe_dispatch import armed_static_lanes
+        except ImportError:                                  # a reference-lane table binds no b12x kernel
+            return
+        Tripwire.of(self.net.comm).agree_payload("boot:b12x-lanes", list(armed_static_lanes()))
+
     def _check_graph_pools(self) -> None:
         """The decode loop reads this step's auxiliary hidden states, which live in the
         target graphs' memory pool, while the drafter's observation graph replays between
@@ -532,6 +556,7 @@ class Glm53Engine:
         # A slow compile/load must be waited for on the host, without leaving a
         # one-shot kernel running on an otherwise prepared peer's GPU.
         self.net.comm.wait_prepared("decode-experts", final=True)
+        self._agree_on_armed_lanes()
         if self.memory is not None:
             self.memory.checkpoint("decode experts", release_cache=True)
         self.jit_windows.mark("decode experts", opened, time.time())
