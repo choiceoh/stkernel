@@ -1955,7 +1955,7 @@ __device__ __forceinline__ void mk_mhc_p34_load(const MKMhcArgs& a, int t,
   }
 }
 
-template <int HID = HIDDEN, bool V41 = false>
+template <int HID = HIDDEN, bool V41 = false, bool PACK_INPUT = false>
 __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
                                    const float* s_pmix,
                                    const MhcTailRegs<HID>& r) {
@@ -1993,18 +1993,18 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
 #pragma unroll
   for (int i = 0; i < MHC_EPT_; ++i) {
     const int h = i * MK_THREADS + threadIdx.x;
-    a.layer_input[t * HID + h] =
-        __float2bfloat16(vals[i] * rsq * r.nw[i]);
+    const __nv_bfloat16 rounded = __float2bfloat16(vals[i] * rsq * r.nw[i]);
+    a.layer_input[t * HID + h] = rounded;
+    if constexpr (PACK_INPUT) vals[i] = __bfloat162float(rounded);
   }
   __syncthreads();  // sqred reuse
-  if (a.input_pack) {
+  if constexpr (PACK_INPUT) {
     // Quantize the rounded BF16 value the standalone input pack would read.
     // Four warps own a 128-column scale group; retain all sixteen groups in
     // registers and publish their maxima in one block synchronization.
     __shared__ float maxima[MHC_EPT_][MK_WARPS];
 #pragma unroll
     for (int i = 0; i < MHC_EPT_; ++i) {
-      vals[i] = __bfloat162float(__float2bfloat16(vals[i] * rsq * r.nw[i]));
       const float mx = __uint_as_float(__reduce_max_sync(~0u, __float_as_uint(fabsf(vals[i]))));
       if ((threadIdx.x & 31) == 0) maxima[i][threadIdx.x >> 5] = mx;
     }
@@ -2043,7 +2043,8 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
 }
 
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
-          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false>
+          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false,
+          bool PACK_INPUT = false>
 __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   static_assert(!STATIC_TAILS || (BF16_FN && AR_CONSUMER && HID == HIDDEN && !V41));
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
@@ -2287,7 +2288,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
     }
     __syncthreads();
     MK_MHC_TS(3);  // (probe) p2 end / p34 start
-    mk_mhc_p34_compute<HID, V41>(a, t, s_pmix, tr);  // ends in a __syncthreads
+    mk_mhc_p34_compute<HID, V41, PACK_INPUT>(a, t, s_pmix, tr);  // ends in a __syncthreads
     MK_MHC_TS(4);  // (probe) p34 end
     if constexpr (STATIC_TAILS) break;
   }
@@ -2343,18 +2344,18 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false>
+template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false, bool PACK_INPUT = false>
 __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   MK_MHC_TS(0);
-  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS, PACK_INPUT>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, bool STATIC_TAILS = false>
+template <bool BF16_FN, bool STATIC_TAILS = false, bool PACK_INPUT = false>
 __global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
-  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS, PACK_INPUT>(a, blockIdx.x);
 }
 
 // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
@@ -4057,9 +4058,13 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
     auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
     if constexpr (HID == HIDDEN) {
       if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true>;
+      if (a.input_pack) {
+        kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, true> : mk_mhc_ar_kernel<false, HID, false, true>;
+        if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, true>;
+      }
     }
-    static int ar_grids[3] = {0, 0, 0};
-    int& grid = ar_grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
+    static int ar_grids[6] = {};
+    int& grid = ar_grids[(a.input_pack ? 3 : 0) + (static_c1 ? 2 : bf16_fn ? 1 : 0)];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -4145,8 +4150,9 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   const bool static_c1 = tail_mode != 0 && static_shape;
   MKMhcArgs a{};
   if (ptrs.size() == 19) {
-    TORCH_CHECK(hidden == HIDDEN && ints[0] == 8 && ptrs[18] && (ptrs[18] & 15) == 0,
-                "MHC producer pack requires eight hidden-4096 rows and aligned storage");
+    TORCH_CHECK(hidden == HIDDEN && ints[0] == 8 && (direct || ar_consumer) && mk_pdl_enabled()
+                && ptrs[18] && (ptrs[18] & 15) == 0,
+                "MHC producer pack requires an eight-row hidden-4096 consumer and aligned storage");
     a.input_pack = (uint8_t*)ptrs[18];
   }
   a.x_in = (const __nv_bfloat16*)ptrs[0];
@@ -4183,8 +4189,12 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
     auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
     if (static_c1) kernel = mk_mhc_packets_kernel<true, true>;
-    static int grids[3] = {0, 0, 0};
-    int& grid = grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
+    if (a.input_pack) {
+      kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, true> : mk_mhc_packets_kernel<false, false, true>;
+      if (static_c1) kernel = mk_mhc_packets_kernel<true, true, true>;
+    }
+    static int grids[6] = {};
+    int& grid = grids[(a.input_pack ? 3 : 0) + (static_c1 ? 2 : bf16_fn ? 1 : 0)];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kernel, MK_THREADS, 0));

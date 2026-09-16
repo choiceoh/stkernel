@@ -2550,6 +2550,7 @@ constexpr int MLA_PAIR_MAX_W = 2176;
 constexpr int MLA_PAIR_PREP_SMEM = (2 * MLA_PAIR_HASH + 3) * 4;
 constexpr int MLA_PAIR_SMEM = MLA_SMEM_RING + 2 * MLA_SMEM_S
                              + 2 * MLA_SMEM_P + 2 * MLA_SMEM_C;
+constexpr int MLA_DECODE_PAIR_SMEM = MLA_PAIR_SMEM + 2 * MLA_SMEM_Q;
 constexpr int MLA_GROUP4_THREADS = 2 * MK_THREADS;
 constexpr int MLA_GROUP4_PREP_SMEM = MLA_PAIR_HASH * 12 + 12;
 // Weak-overlap groups process two independent rows at a time in two
@@ -2805,6 +2806,17 @@ __device__ __forceinline__ void mla_pair_attention(
       acc[row][nt][0] = acc[row][nt][1] = acc[row][nt][2] = acc[row][nt][3] = 0.f;
   }
   const int ntile = (length + MLA_TILE - 1) / MLA_TILE;
+  __nv_bfloat16* sq = (__nv_bfloat16*)(smem + MLA_PAIR_SMEM);
+  if constexpr (PARTIAL) {
+    if (length > 0) {
+      for (int i = threadIdx.x; i < ROWS * MLA_H * (MLA_D / 8); i += MK_THREADS) {
+        const int h = i / (MLA_D / 8), col = (i % (MLA_D / 8)) * 8;
+        const uint32_t dst = static_cast<uint32_t>(__cvta_generic_to_shared(sq + h * MLA_CP + col));
+        const __nv_bfloat16* src = a.q + ((size_t)t * MLA_H + h) * MLA_D + col;
+        asm volatile("cp.async.ca.shared.global [%0], [%1], 16;" :: "r"(dst), "l"(src) : "memory");
+      }
+    }
+  }
   auto issue = [&](int ti) {
     uint8_t* dst = ring + (size_t)(ti % MLA_NSTAGE) * MLA_TILE * MLA_RP;
 #pragma unroll
@@ -2838,12 +2850,21 @@ __device__ __forceinline__ void mla_pair_attention(
 #pragma unroll
       for (int ks = 0; ks < (MLA_D / 16) / MLA_KQ; ++ks) {
         const int k0 = kq * (MLA_D / MLA_KQ) + ks * 16 + q4 * 2;
-        mla_mma_bf16(c0, c1, c2, c3,
-          __ldg((const uint32_t*)(qa + k0)),
-          __ldg((const uint32_t*)(qa + 8 * MLA_D + k0)),
-          __ldg((const uint32_t*)(qa + k0 + 8)),
-          __ldg((const uint32_t*)(qa + 8 * MLA_D + k0 + 8)),
-          mla_e4m3x2(cb + k0), mla_e4m3x2(cb + k0 + 8));
+        uint32_t a0, a1, a2, a3;
+        if constexpr (PARTIAL) {
+          const uint32_t addr = static_cast<uint32_t>(__cvta_generic_to_shared(
+              sq + (row * MLA_H + (lane & 15)) * MLA_CP
+                 + kq * (MLA_D / MLA_KQ) + ks * 16 + (lane >> 4) * 8));
+          asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+                       : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(addr));
+        } else {
+          a0 = __ldg((const uint32_t*)(qa + k0));
+          a1 = __ldg((const uint32_t*)(qa + 8 * MLA_D + k0));
+          a2 = __ldg((const uint32_t*)(qa + k0 + 8));
+          a3 = __ldg((const uint32_t*)(qa + 8 * MLA_D + k0 + 8));
+        }
+        mla_mma_bf16(c0, c1, c2, c3, a0, a1, a2, a3,
+                     mla_e4m3x2(cb + k0), mla_e4m3x2(cb + k0 + 8));
       }
       float* sh = ss + (row_base + row) * (MLA_SMEM_S / sizeof(float)) + kq * MLA_H * MLA_TILE;
       sh[g * MLA_TILE + n0 + q4 * 2] = c0;
@@ -2892,6 +2913,42 @@ __device__ __forceinline__ void mla_pair_attention(
 #pragma unroll
     for (int row = 0; row < ROWS; ++row) {
       const float crg = scorr[(row_base + row) * MLA_H + g], crg8 = scorr[(row_base + row) * MLA_H + g + 8];
+      if constexpr (PARTIAL) {
+#pragma unroll
+        for (int nt = 0; nt < 8; ++nt) {
+          acc[row][nt][0] *= crg; acc[row][nt][1] *= crg;
+          acc[row][nt][2] *= crg8; acc[row][nt][3] *= crg8;
+        }
+        uint32_t a0, a1, a2, a3;
+        const uint32_t pa = static_cast<uint32_t>(__cvta_generic_to_shared(
+            sp + row * (MLA_SMEM_P / sizeof(__nv_bfloat16)) + (lane & 15) * MLA_PP + (lane >> 4) * 8));
+        asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
+                     : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(pa));
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 1210
+        const int rr = lane & 15;
+        const int krow = (rr >> 2) * 2 + (rr & 1) + ((rr >> 1) & 1) * 8;
+        const uint32_t cb = static_cast<uint32_t>(__cvta_generic_to_shared(
+            tile8 + (size_t)krow * MLA_RP + warp * 64));
+#pragma unroll
+        for (int nt = 0; nt < 8; nt += 2) {
+          uint32_t v0, v1;
+          asm volatile("ldmatrix.sync.aligned.m16n16.x1.trans.shared.b8 {%0, %1}, [%2];"
+                       : "=r"(v0), "=r"(v1) : "r"(cb + nt * 8));
+          mla_mma_bf16(acc[row][nt][0], acc[row][nt][1], acc[row][nt][2], acc[row][nt][3], a0, a1, a2, a3,
+                       mla_e4m3x2_value(v0), mla_e4m3x2_value(v0 >> 16));
+          mla_mma_bf16(acc[row][nt+1][0], acc[row][nt+1][1], acc[row][nt+1][2], acc[row][nt+1][3], a0, a1, a2, a3,
+                       mla_e4m3x2_value(v1), mla_e4m3x2_value(v1 >> 16));
+        }
+#else
+        const uint8_t* cb = tile8 + (size_t)(q4 * 2) * MLA_RP + warp * 64;
+#pragma unroll
+        for (int nt = 0; nt < 8; ++nt) {
+          const int col = nt * 8 + g;
+          mla_mma_bf16(acc[row][nt][0], acc[row][nt][1], acc[row][nt][2], acc[row][nt][3], a0, a1, a2, a3,
+                       mla_e4m3x2_strided(cb + col, MLA_RP), mla_e4m3x2_strided(cb + 8 * MLA_RP + col, MLA_RP));
+        }
+#endif
+      } else {
       const __nv_bfloat16* pa = sp + (row_base + row) * (MLA_SMEM_P / sizeof(__nv_bfloat16)) + g * MLA_PP;
       const uint32_t a0 = *(const uint32_t*)(pa + q4 * 2);
       const uint32_t a1 = *(const uint32_t*)(pa + 8 * MLA_PP + q4 * 2);
@@ -2906,6 +2963,7 @@ __device__ __forceinline__ void mla_pair_attention(
         mla_mma_bf16(acc[row][nt][0], acc[row][nt][1], acc[row][nt][2], acc[row][nt][3],
           a0, a1, a2, a3, mla_e4m3x2_strided(cb + n, MLA_RP),
           mla_e4m3x2_strided(cb + 8 * MLA_RP + n, MLA_RP));
+      }
       }
     }
     mla_group_sync<SUBGROUP>();
@@ -3903,7 +3961,7 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
     MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_pair_prepare,
         cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_PAIR_PREP_SMEM));
     MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_decode_pair_kernel,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_PAIR_SMEM));
+        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_DECODE_PAIR_SMEM));
     prepared[device] = 1;
   }
   MKMlaPairArgs p{};
@@ -3916,7 +3974,7 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
   p.groups = p.a.T / 2; p.a.sm_scale = scalars[0]; p.a.ckv_scale = scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
   mk_launch(mk_mla_pair_prepare, p.groups, MLA_PAIR_PREP_SMEM, stream, p);
-  mk_launch(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_PAIR_SMEM, stream, p);
+  mk_launch(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_DECODE_PAIR_SMEM, stream, p);
   mk_mla_decode_pair_merge<<<dim3(p.a.T, MLA_H / MLA_WARPS), MK_THREADS, 0, stream>>>(p.a);
   MK_CHECK_CUDA(cudaGetLastError());
 }
