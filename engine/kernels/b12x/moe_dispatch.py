@@ -2291,6 +2291,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("compact_staging", False)),
         bool(config.get("sf6_registers", False)),
         bool(config.get("sync_cleanup", False)),
+        bool(config.get("resident_waves", False)),
     )
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
@@ -2357,7 +2358,8 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                     and not direct_scatter and not config.get("probe_direct_scatter", False)
                     and not config.get("probe_route_scatter", False)
                     and bool(config.get("scatter_vec4", True)))
-    return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
+    return dict(config, resident_waves=bool(reform and m == 8 and config.get("resident_waves", True)),
+                decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
                 compact_staging=compact_staging,
@@ -2464,6 +2466,7 @@ def _get_static_kernel_v2(
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
+        even=bool(config["resident_waves"]),
         scatter_fp32=scatter_fp32,
         route_scatter=bool(config.get("probe_route_scatter", False)),
         direct_scatter=bool(config.get("probe_direct_scatter") or config.get("c2_direct_scatter")),
@@ -2632,6 +2635,7 @@ def _get_static_kernel_v2(
         f"f{config['fc1']}g{config['fc2']}a{config['a_rows']}"
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
+        f"{'rw' if config.get('resident_waves') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
         f"{'q' if config.get('sf_pack') else ''}"

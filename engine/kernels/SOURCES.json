@@ -145,7 +145,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "72717baa208053be9040acebf73a393ef81d96e14f70f79dffe73986a07ea811",
+      "local_sha256": "3b9a252a5c8d3cfcd65c39dc1cc3e35b32e60a2fc3da58975976435e40b28cd3",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -172,7 +172,8 @@
         "2026-09-13 explicit eager M128 Q0 batch8 prefill candidate with separate packed/raw/N128 readers.",
         "Keep M64 and scale-expansion experiments explicit-only when merging the private prefill candidates.",
         "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change.",
-        "2026-09-14: include the native packed-byte device helper in the CuTe compile cache identity."
+        "2026-09-14: include the native packed-byte device helper in the CuTe compile cache identity.",
+        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -309,7 +310,7 @@
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
       "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
       "origin": "repository",
-      "local_sha256": "25a03b3b1bbc021f269ff13cb650d95065094b1251da374d3dd6504dff1f54c5",
+      "local_sha256": "841d19ccce3736172cd774b34c4fb64632ffbbdd16bdc5e3e02177f90a804ee5",
       "local_modifications": [
         "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
         "2026-09-13: opt-in epilogue lifetime alias saves 4 KiB for the three-stage FC1 probe; separate-storage offsets and named barriers are preserved.",
@@ -317,7 +318,8 @@
         "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
         "2026-09-14 B12X 12b4eb257441: narrow SF6 shared loads with immediate offsets; retain volatile semantics, ring ownership and exact SFB mapping.",
-        "2026-09-14 CUDA 13.2: replace SF6 split-base addition with native add.u8x4; preserve scale operands, storage and barriers."
+        "2026-09-14 CUDA 13.2: replace SF6 split-base addition with native add.u8x4; preserve scale operands, storage and barriers.",
+        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately."
       ]
     },
     "b12x/moe_static_kernel_v5.py": {
@@ -351,7 +353,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "441a2a22e462fcd6eaa6575769d37b549eaeea99a0b2db86fc2df0089afe09f0",
+      "local_sha256": "9720bcdc650eb7dc295ee71be687fcd7952342ae5116b0c5e750037238651486",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -366,14 +368,15 @@
         "2026-09-14 fleet: the native E4M3x2 widening goes back to the half bridge. On CUDA 13.2.1 a 129,784-token prompt took 54.7/50.9 s to its first token with it and 38.5/37.3 s with the bridge (37.5-39.1 s before the migration); arithmetic unchanged.",
         "2026-09-14 CUDA 13.2: native add.u8x4 replaces __vadd4 in W4A8 LUT expansion; preserve FP8/BF16 rounding and the restored MLA half bridge.",
         "2026-09-15 sm_120 check build: mk_add_u8x4 and the ldmatrix.trans.b8 site each gain an #else for __CUDA_ARCH__ < 1210 -- __vadd4 for the first, the file's own mla_e4m3x2_strided form for the second. The sm_121a branch is untouched and its PTX is byte-identical to before; the layouts are measured against a CPU reference in probes/sm120_b_fragment_check.cu.",
-        "2026-09-16 K=7 eight-row admission: mk_input_shape and mk_use_compact_m8 take m == 8 as well as the k=5-era m == 6, so C=1 reaches the routes it used to. Same instantiation (c2.m <= 8) and partial clamp; unmeasured, operator request."
+        "2026-09-16 K=7 eight-row admission: mk_input_shape and mk_use_compact_m8 take m == 8 as well as the k=5-era m == 6, so C=1 reaches the routes it used to. Same instantiation (c2.m <= 8) and partial clamp; unmeasured, operator request.",
+        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately."
       ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "0a025655272f0f294ffce85472dfe80b69540133d8442f0d6a955b32a6dc7b85",
+      "local_sha256": "bc114c3efaff816021b1a012ecf3d1d1785352a1065c908ca465b9c4b67c1697",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -385,7 +388,8 @@
         "2026-09-13 phase 2: short-prefill tile32 admission; short MLA GPU gates passed on 3c7bcc0a. Retain current bound-shape and sink guards; later integration has no new consumer result.",
         "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged.",
         "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change.",
-        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured."
+        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured.",
+        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately."
       ]
     },
     "qsa.py": {

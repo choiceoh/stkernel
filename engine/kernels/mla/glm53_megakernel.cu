@@ -2778,10 +2778,10 @@ __device__ __forceinline__ void mla_group_sync() {
 // one CTA/SM; Q fragments instead use the read-only cache. This adds ~T*16KB
 // of unique Q traffic versus T*W*512B of original KV traffic. ROWS is static
 // so the two output accumulator arrays stay register-indexed.
-template <int ROWS, int GROUP_ROWS = ROWS, bool SUBGROUP = false>
+template <int ROWS, int GROUP_ROWS = ROWS, bool SUBGROUP = false, bool PARTIAL = false>
 __device__ __forceinline__ void mla_pair_attention(
     const MKMlaPairArgs& p, int t, int length, const int* selected,
-    const int* bits, unsigned char* smem) {
+    const int* bits, unsigned char* smem, int split = 0) {
   const MKMlaArgs& a = p.a;
   constexpr int shared_rows = GROUP_ROWS == 4 ? 4 : 2;
   constexpr int load_warps = GROUP_ROWS == 4 ? 16 : MLA_WARPS;
@@ -2912,6 +2912,25 @@ __device__ __forceinline__ void mla_pair_attention(
   }
   mk_cp_wait<0>();
   mla_group_sync<SUBGROUP>();
+  if constexpr (PARTIAL) {
+#pragma unroll
+    for (int row = 0; row < ROWS; ++row) {
+      const size_t base = ((size_t)(t + row) * a.splits + split) * MLA_H;
+      if (lane == 0) {
+        float* ml = a.pml + (base + warp * 2) * 2;
+        ml[0] = m0[row]; ml[1] = l0[row]; ml[2] = m1[row]; ml[3] = l1[row];
+      }
+      float* o0 = a.part + (base + g) * MLA_D;
+      float* o8 = a.part + (base + g + 8) * MLA_D;
+#pragma unroll
+      for (int nt = 0; nt < 8; ++nt) {
+        const int col = warp * 64 + nt * 8 + q4 * 2;
+        o0[col] = acc[row][nt][0]; o0[col+1] = acc[row][nt][1];
+        o8[col] = acc[row][nt][2]; o8[col+1] = acc[row][nt][3];
+      }
+    }
+    return;
+  }
   float* sl = scorr + shared_rows * MLA_H;
 #pragma unroll
   for (int row = 0; row < ROWS; ++row) {
@@ -2932,6 +2951,54 @@ __device__ __forceinline__ void mla_pair_attention(
     }
   }
   mla_group_sync<SUBGROUP>();
+}
+
+// Decode needs many context shards even for four query pairs. Each shard
+// writes FP32 unnormalized accumulators; only the final merge rounds BF16.
+__global__ __launch_bounds__(MK_THREADS) void mk_mla_decode_pair_kernel(const MKMlaPairArgs p) {
+  extern __shared__ __align__(16) unsigned char smem[];
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const int group = blockIdx.x / p.a.splits, split = blockIdx.x % p.a.splits;
+  const int t = group * 2, n = p.pair_lens[group];
+  if (n >= 0) {
+    const int tiles = (n + MLA_TILE - 1) / MLA_TILE;
+    const int first = tiles * split / p.a.splits * MLA_TILE;
+    const int end = min(n, tiles * (split + 1) / p.a.splits * MLA_TILE);
+    const size_t base = (size_t)group * (2 * p.a.W) + first;
+    mla_pair_attention<2, 2, false, true>(p, t, max(0, end-first),
+        p.pair_slots + base, p.membership + base, smem, split);
+  } else {
+    for (int row = t; row < t + 2; ++row) {
+      const int length = p.a.lens[row], tiles = (length + MLA_TILE - 1) / MLA_TILE;
+      const int first = tiles * split / p.a.splits * MLA_TILE;
+      const int end = min(length, tiles * (split + 1) / p.a.splits * MLA_TILE);
+      mla_pair_attention<1, 1, false, true>(p, row, max(0, end-first),
+          p.a.slots + (size_t)row * p.a.W + first, nullptr, smem, split);
+    }
+  }
+}
+
+__global__ void mk_mla_decode_pair_merge(const MKMlaArgs a) {
+  const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+  const int t = blockIdx.x, h = blockIdx.y * MLA_WARPS + warp;
+  float mm = -INFINITY, den = 0.f, value[MLA_VD] = {};
+  for (int s = 0; s < a.splits; ++s)
+    mm = fmaxf(mm, a.pml[(((size_t)t * a.splits + s) * MLA_H + h) * 2]);
+  for (int s = 0; s < a.splits; ++s) {
+    const size_t base = ((size_t)t * a.splits + s) * MLA_H + h;
+    const float* ml = a.pml + base * 2;
+    if (!(ml[1] > 0.f)) continue;
+    const float weight = __expf(ml[0] - mm);
+    den = fmaf(ml[1], weight, den);
+#pragma unroll
+    for (int e = 0; e < MLA_VD; ++e)
+      value[e] = fmaf(a.part[base * MLA_D + e * 32 + lane], weight, value[e]);
+  }
+  const float inv = den > 0.f ? __frcp_rn(den) : 0.f;
+#pragma unroll
+  for (int e = 0; e < MLA_VD; ++e)
+    a.out[((size_t)t * MLA_H + h) * MLA_D + e * 32 + lane] = __float2bfloat16(value[e] * inv);
 }
 
 __global__ __launch_bounds__(MK_THREADS) void mk_mla_pair_kernel(const MKMlaPairArgs p) {
@@ -3816,6 +3883,44 @@ void mk_run_mla_prefill32(std::vector<int64_t> ptrs, std::vector<double> scalars
             c10::cuda::getCurrentCUDAStream(), a);
 }
 
+void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                           std::vector<int64_t> ints) {
+  TORCH_CHECK(ptrs.size() == 10 && scalars.size() == 2 && ints.size() == 3,
+              "run_mla_decode_pair arg contract");
+  TORCH_CHECK((ints[0] == 8 || ints[0] == 16) && ints[1] > 0 && ints[1] <= MLA_PAIR_MAX_W
+              && ints[2] > 0 && ints[2] <= 64, "decode pair requires K7 C1/C2 and bounded splits");
+  TORCH_CHECK((ptrs[0] & 15) == 0 && (ptrs[1] & 15) == 0 && (ptrs[4] & 3) == 0,
+              "decode pair requires aligned inputs and output");
+  // Per-device preparation is done on the first warm invocation, before capture.
+  int device = 0;
+  MK_CHECK_CUDA(cudaGetDevice(&device));
+  static thread_local std::vector<int> prepared;
+  if ((int)prepared.size() <= device) prepared.resize(device + 1, 0);
+  if (!prepared[device]) {
+    cudaStreamCaptureStatus status;
+    MK_CHECK_CUDA(cudaStreamIsCapturing(c10::cuda::getCurrentCUDAStream(), &status));
+    TORCH_CHECK(status == cudaStreamCaptureStatusNone, "warm decode pair before capture");
+    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_pair_prepare,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_PAIR_PREP_SMEM));
+    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_decode_pair_kernel,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_PAIR_SMEM));
+    prepared[device] = 1;
+  }
+  MKMlaPairArgs p{};
+  p.a.q = (const __nv_bfloat16*)ptrs[0]; p.a.ckv = (const uint8_t*)ptrs[1];
+  p.a.slots = (const int*)ptrs[2]; p.a.lens = (const int*)ptrs[3];
+  p.a.out = (__nv_bfloat16*)ptrs[4]; p.pair_slots = (int*)ptrs[5];
+  p.membership = (int*)ptrs[6]; p.pair_lens = (int*)ptrs[7];
+  p.a.part = (float*)ptrs[8]; p.a.pml = (float*)ptrs[9];
+  p.a.T = (int)ints[0]; p.a.W = (int)ints[1]; p.a.splits = (int)ints[2];
+  p.groups = p.a.T / 2; p.a.sm_scale = scalars[0]; p.a.ckv_scale = scalars[1];
+  auto stream = c10::cuda::getCurrentCUDAStream();
+  mk_launch(mk_mla_pair_prepare, p.groups, MLA_PAIR_PREP_SMEM, stream, p);
+  mk_launch(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_PAIR_SMEM, stream, p);
+  mk_mla_decode_pair_merge<<<dim3(p.a.T, MLA_H / MLA_WARPS), MK_THREADS, 0, stream>>>(p.a);
+  MK_CHECK_CUDA(cudaGetLastError());
+}
+
 void mk_run_mla_prefill_pair(std::vector<int64_t> ptrs, std::vector<double> scalars,
                             std::vector<int64_t> ints) {
   TORCH_CHECK(ptrs.size() == 8 && scalars.size() == 2 && ints.size() == 2,
@@ -4258,6 +4363,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("mla_cluster_max", &mk_mla_cluster_max, "Maximum cluster size for the MLA kernel");
   m.def("mla_tree_cluster_max", &mk_mla_cluster_capacity<true>, "Maximum cluster size for the tree MLA kernel");
   m.def("run_mla_prefill_pair", &mk_run_mla_prefill_pair, "MK MLA exact-selection (not bit-exact output) prefill pair reuse");
+  m.def("run_mla_decode_pair", &mk_run_mla_decode_pair, "K7 context-split pair KV reuse");
   m.def("run_mla_prefill32", &mk_run_mla_prefill32, "MK MLA register-Q prefill over 32-slot tiles");
   m.def("run_mla_prefill_group4", &mk_run_mla_prefill_group4, "MK MLA exact-selection (not bit-exact output) four-query reuse");
   m.def("run_smlp2", &mk_run_smlp2, "MK_SEG_SMLP2 (two PDL-chained v2 launches, no barrier)");

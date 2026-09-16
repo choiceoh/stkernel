@@ -67,6 +67,7 @@ class MlaHardwareTests(unittest.TestCase):
         self.assertEqual(self.calls,[([16,32,48,64,80],[.0625,.7],[48,2048,2])])
 
     def test_legacy_shapes_keep_workspace_path(self):
+        self.mla.ENABLE_MLA_DECODE_PAIR = False
         class LegacySelected(Exception): pass
         def legacy(*args): raise LegacySelected()
         self.mla._ensure_workspace=legacy

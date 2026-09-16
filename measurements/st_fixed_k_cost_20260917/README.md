@@ -1,0 +1,46 @@
+# Fixed K7 verification cost
+
+Base: `5e26753c`. K remains 7, verification remains 8 rows per request,
+and KDA state remains FP32. Three independently controlled changes:
+
+* C1 resident MoE waves choose 48/44/40/36/32 active CTAs only when the
+  choice does not add a wave. Every work item keeps one owner. The control
+  is `resident_waves=False` in the static configuration; kernel keys differ.
+* The direct mHC consumer writes the existing C1 FP8 input pack from its
+  rounded BF16 layer input. The next bound KDA input projection consumes
+  that invocation's pack. Observed/calibrated or unsupported cells cannot
+  consume it. `net.mhc_input_packs=False` disables only this new boundary;
+  existing KDA output producer packs remain enabled.
+* MLA pairs share the multiset union of two selections. Separate membership
+  bits preserve repeated slots and each query's selection. Context shards
+  retain GPU parallelism at 8/16 rows and write FP32 partials, followed by
+  one BF16 merge. Weak overlap uses the two original lists in the same
+  split kernel. `ENABLE_MLA_DECODE_PAIR=False` selects the same-build control.
+  Tree attention and large prefill keep their existing paths.
+
+The new defaults are enabled per the ST charter D11. This is an adoption
+choice, not a measured speed claim. Temporary controls are for this
+comparison and should be retired after the fleet verdict.
+
+Validation entry points (canonical fleet runner):
+
+```
+probes/engine_kernel_check.py --lanes fixed_k_compile --output /cache/fixed-k-0917/compile.jsonl
+probes/engine_kernel_check.py --lanes fixed_k_cost --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full/rank0of4.safetensors --output /cache/fixed-k-0917/gpu.jsonl
+```
+
+The compile lane requires `CUDA_VISIBLE_DEVICES=` and a container without
+GPU devices. It builds the complete dense and MLA Torch extensions plus
+both actual MoE kernels. The GPU lane checks every real mHC coefficient
+set, pack bytes, changed packet descriptors, sparse MLA against its FP32
+reference, changed selections/empty rows/duplicates, and real L3 MoE
+weights with changed routing. Captured B/A/A/B component intervals include
+pack/union preparation and the merge.
+
+Current evidence: 67 focused CPU tests ran (58 passed, 9 hardware tests skipped on
+the Mac); full dense/MLA and both MoE handles built in Torch 2.13.0+cu132,
+CUDA 13.2. Native C1 packet mHC uses 128 registers and 29,232 shared bytes.
+GPU numerical, graph replay, component performance and TP4 consumer
+32K/128K quality, acceptance, TTFT and tok/s are pending. C1/C2 is the
+current serving shape; any C4 consumer comparison needs a matching declared
+four-request capacity in both arms.

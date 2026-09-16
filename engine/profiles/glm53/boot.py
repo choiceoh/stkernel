@@ -1046,7 +1046,9 @@ def decode_fastpath_report(net):
             missing.extend((name, m) for m in sorted(expected - actual))
     if pairs != expected_pairs or missing or not dense:
         raise RuntimeError(f'bound decode fastpaths were not executed: pairs={sorted(expected_pairs - pairs)}, dense={missing}')
-    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense)
+    input_packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+                   if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs)
 
 
 def decode_dsa_report(net):

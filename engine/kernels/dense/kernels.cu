@@ -1768,6 +1768,7 @@ struct MKMhcArgs {
   float* post_mix_out;               // [T, HC]
   float* comb_mix_out;               // [T, HC*HC]
   __nv_bfloat16* layer_input;        // [T, HIDDEN]
+  uint8_t* input_pack;              // optional C1 bound W4 input, then scales
   float* yp;                         // ws [NCHUNK, MHC_MAX_TOK, NOUT]
   float* rp;                         // ws [NCHUNK, MHC_MAX_TOK]
   float* sq;                         // ws [MHC_MAX_TOK]
@@ -1996,6 +1997,39 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
         __float2bfloat16(vals[i] * rsq * r.nw[i]);
   }
   __syncthreads();  // sqred reuse
+  if (a.input_pack) {
+    // Quantize the rounded BF16 value the standalone input pack would read.
+    // Four warps own a 128-column scale group; retain all sixteen groups in
+    // registers and publish their maxima in one block synchronization.
+    __shared__ float maxima[MHC_EPT_][MK_WARPS];
+#pragma unroll
+    for (int i = 0; i < MHC_EPT_; ++i) {
+      vals[i] = __bfloat162float(__float2bfloat16(vals[i] * rsq * r.nw[i]));
+      const float mx = __uint_as_float(__reduce_max_sync(~0u, __float_as_uint(fabsf(vals[i]))));
+      if ((threadIdx.x & 31) == 0) maxima[i][threadIdx.x >> 5] = mx;
+    }
+    __syncthreads();
+#pragma unroll
+    for (int i = 0; i < MHC_EPT_; ++i) {
+      const int half = threadIdx.x / 128, first = half * 4;
+      const float mx = fmaxf(fmaxf(maxima[i][first], maxima[i][first+1]),
+                             fmaxf(maxima[i][first+2], maxima[i][first+3]));
+      const float scale = mk_act_scale(mx), inv = mk_act_rcp(scale);
+      const float v = vals[i] * inv;
+      const int leader = (threadIdx.x & 31) & ~3;
+      const float v0 = __shfl_sync(~0u, v, leader), v1 = __shfl_sync(~0u, v, leader+1);
+      const float v2 = __shfl_sync(~0u, v, leader+2), v3 = __shfl_sync(~0u, v, leader+3);
+      const int kb = i * 2 + half, lane = (threadIdx.x % 128) / 4;
+      if ((threadIdx.x & 3) == 0) {
+        const int q = lane >> 3, word = lane & 7, ks = ((word >> 1) - q) & 3;
+        const size_t offset = (size_t)kb * 1024 + ks * 256 + (t * 4 + q) * 8 + (word & 1) * 4;
+        *(uint32_t*)(a.input_pack + offset) = mk_f32x4_to_e4m3(v0, v1, v2, v3);
+      }
+      if (threadIdx.x % 128 == 0)
+        ((float*)(a.input_pack + (HID / 128) * 1024))[kb * 8 + t] = scale;
+    }
+    __syncthreads();
+  }
 }
 
 __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
@@ -4084,7 +4118,7 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
-  TORCH_CHECK(ptrs.size() == 18 && (ints.size() == 2 || ints.size() == 3) && scalars.size() == 5,
+  TORCH_CHECK((ptrs.size() == 18 || ptrs.size() == 19) && (ints.size() == 2 || ints.size() == 3) && scalars.size() == 5,
               "run_mhc arg contract");
   // PR518 adds optional ints[2]. Validate the full int64 value before
   // narrowing it or reading pointers; otherwise a huge value could wrap.
@@ -4110,6 +4144,11 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   TORCH_CHECK(tail_mode != 1 || static_shape, "static MHC tails require a packed C1 consumer");
   const bool static_c1 = tail_mode != 0 && static_shape;
   MKMhcArgs a{};
+  if (ptrs.size() == 19) {
+    TORCH_CHECK(hidden == HIDDEN && ints[0] == 8 && ptrs[18] && (ptrs[18] & 15) == 0,
+                "MHC producer pack requires eight hidden-4096 rows and aligned storage");
+    a.input_pack = (uint8_t*)ptrs[18];
+  }
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];
   a.post_mix_in = (const float*)ptrs[2];

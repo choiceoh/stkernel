@@ -222,7 +222,9 @@ def producer_pack_nbytes(rows, cols):
     raise ValueError('producer input packs exist at 8 and 16 rows only')
 
 
-def w4_gemm(x, pack, workspace=None, *, bound_input=False):
+def w4_gemm(x, pack, workspace=None, *, bound_input=False, producer_pack=None):
+    if producer_pack is not None and not bound_input:
+        raise ValueError('producer input pack requires a bound input cell')
     if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols or x.shape[1] > KMAX
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
         raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack, K at most 20480")
@@ -231,7 +233,7 @@ def w4_gemm(x, pack, workspace=None, *, bound_input=False):
     # row stride instead of launching a copy for each of the 68 products.
     if bound_input:
         extension().run_gemm_bound_input(x, pack.data, pack.scale, out, pack.rows,
-                                         pack.rowscale.data_ptr(), workspace, None)
+                                         pack.rowscale.data_ptr(), workspace, None, producer_pack=producer_pack)
     elif workspace is None:
         ext = extension()
         run = ext.run_gemm_wide_input if wide_input_cell(x.shape[0], pack.rows, pack.cols) else ext.run_gemm
@@ -348,20 +350,25 @@ class DenseLinear:
                                          device=self.packs[0].data.device)
         return self.workspace.numel() * self.workspace.element_size()
 
-    def __call__(self, x, rows_ok=None, *, observe=True, decode=False):
+    def __call__(self, x, rows_ok=None, *, observe=True, decode=False, producer_pack=None):
         """`rows_ok` [rows] bool: which rows are real -- only a calibration run reads it (the pipeline's ghost rows,
         a masked observation's positions past the committed count); the product itself covers every row."""
         if x.shape[-1] != self.cols or x.dtype != torch.bfloat16:
             raise ValueError("dense input does not match its bound weight")
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols)
+        if producer_pack is not None and not self.input_pack_rows(flat.shape[0]):
+            raise ValueError("producer input pack requires an unobserved single bound W4 cell")
         if observe and self.observer is not None:
             self.observer(flat, rows_ok)
         if flat.shape[0] <= 32 and getattr(self, 'decode_precision', 'w4') == 'w4':
             self.executed |= 1
             if len(self.packs) == 1:
                 bound_input = self._bound_input(flat.shape[0], self.packs[0])
-                out = w4_gemm(flat, self.packs[0], self.workspace, bound_input=bound_input)
+                out = w4_gemm(flat, self.packs[0], self.workspace, bound_input=bound_input,
+                              **({"producer_pack": producer_pack} if producer_pack is not None else {}))
+                if producer_pack is not None:
+                    self.producer_pack_executed.add(flat.shape[0])
                 if bound_input:
                     self.bound_input_executed.add(flat.shape[0])
             else:
@@ -384,6 +391,11 @@ class DenseLinear:
 
     def _bound_input(self, rows, pack):
         return rows in getattr(self, 'decode_input_rows', ()) and bound_input_cell(rows, pack.rows, pack.cols)
+
+    def input_pack_rows(self, rows):
+        return (rows == 8 and self.observer is None and len(self.packs) == 1
+                and getattr(self, 'decode_precision', 'w4') == 'w4'
+                and self._bound_input(rows, self.packs[0]))
 
     def packet_projector(self):
         """The prefill transport may bypass BF16 storage only without observers."""
