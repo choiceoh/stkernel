@@ -210,8 +210,12 @@ class ReleaseCutTests(unittest.TestCase):
         self.assertIn('"$REPO/launchers/st_release.py" cut', runner)
 
 
-def record(sha, name, windows, *, run_index=2, boot='b', quality=(9, 9), dirty=0, issues=(), rehearsal=False, key='arm_sha'):
+def record(sha, name, windows, *, run_index=2, boot='b', quality=(9, 9), dirty=0, issues=(), rehearsal=False,
+           key='arm_sha', profile='default'):
+    # `workload_profile` is what a record is compared within (harness 46). These rows judge the floor
+    # and the delta, so they all measured the same workload unless a test says otherwise.
     rec = {'name': name, 'engine': 'st', key: sha, 'run_index': run_index, 'boot_id': boot + '|started',
+           'workload_profile': profile,
            'decode': {'windows_med': windows, 'tokens_per_step': 3.5}, 'quality': {'ok': quality[0], 'total': quality[1]},
            'korean': {'dirty': dirty, 'n': 5}, 'traffic': {'issues': list(issues)},
            'prefill': [{'ctx': 2000, 'cold_s': 6.0, 'warm_tok_s': 3000.0}, {'ctx': 32000, 'cold_s': 40.0, 'warm_tok_s': 3100.0}],

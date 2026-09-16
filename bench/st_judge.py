@@ -89,12 +89,30 @@ def warm(rec) -> bool:
     return rec.get("run_index") != 1 or rec.get("cold") in ("reset", "live")
 
 
-def samples(rows, sha, *, allow_rehearsal=False, tree=None):
+def profile_of(rec) -> str:
+    """The named workload this record measured. A record from before harness 46 named none."""
+    return str(rec.get("workload_profile") or "")
+
+
+def comparable(a, b) -> bool:
+    """Whether two records measured the same thing, and so may be read against each other.
+
+    Until harness 46 this was assumed, and the assumption was wrong in a way nothing could see: the
+    C=N arm was not part of the recorded workload, so a record that ran it and one that did not were
+    indistinguishable. Now a record says which named workload it is, and two that disagree -- or a
+    record that predates the name -- are not each other's baseline.
+    """
+    return bool(profile_of(a)) and profile_of(a) == profile_of(b)
+
+
+def samples(rows, sha, *, allow_rehearsal=False, tree=None, profile=None):
     """The warm, valid records of `sha` -- or of its engine tree under another commit -- one per boot
     (two runs on one boot are one sample). This is where an adopted candidate's measurement becomes
     the next baseline: the deployed commit's tree is the candidate's, so its records are the base's."""
     picked = {}
     for index, rec in enumerate(rows):
+        if profile is not None and profile_of(rec) != profile:
+            continue                                   # another workload's record is another question's answer
         if not same(sha, rec, tree) or not warm(rec) or errors(rec):
             continue
         if rec.get("rehearsal") and not allow_rehearsal:
@@ -176,6 +194,11 @@ def pooled_floor(rows, *, exclude=(), allow_rehearsal=False):
 def judge(rows, cand, base, *, allow_rehearsal=False, cand_tree=None, base_tree=None) -> dict:
     cw = samples(rows, cand, allow_rehearsal=allow_rehearsal, tree=cand_tree)
     bw = samples(rows, base, allow_rehearsal=allow_rehearsal, tree=base_tree)
+    # A verdict reads one commit's warm column against another's. Two records that measured different
+    # workloads are not two answers to one question, so the base keeps only what the candidate can be
+    # read against (harness 46; before it, no record named its workload and none of them pair here).
+    if cw:
+        bw = [rec for rec in bw if comparable(cw[0], rec)]
     cc = colds(rows, cand, allow_rehearsal=allow_rehearsal, tree=cand_tree)
     bc = colds(rows, base, allow_rehearsal=allow_rehearsal, tree=base_tree)
     cs, bs = summary(cw, cc), summary(bw, bc)
@@ -234,6 +257,8 @@ def main(argv=None) -> int:
     ap.add_argument("action", choices=("samples", "boots", "judge"))
     ap.add_argument("--sha", default="")
     ap.add_argument("--tree", default="", help="the engine/ tree of --sha: records of the same tree under another commit count too")
+    ap.add_argument("--profile", default="", help="count only records of this named workload "
+                    "(bench/measurement_contract.PROFILES); empty counts every workload, as before harness 46")
     ap.add_argument("--cand", default="")
     ap.add_argument("--base", default="")
     ap.add_argument("--cand-tree", default="")
@@ -246,7 +271,8 @@ def main(argv=None) -> int:
     if a.action in ("samples", "boots"):
         if not HEX.fullmatch(a.sha):
             ap.error("--sha must be a commit id")
-        picked = samples(rows, a.sha, allow_rehearsal=a.allow_rehearsal, tree=a.tree or None)
+        picked = samples(rows, a.sha, allow_rehearsal=a.allow_rehearsal, tree=a.tree or None,
+                         profile=a.profile or None)
         if a.action == "samples":
             print(len(picked))
         else:                                        # one line per sample: the boot it came from (deploy-watch asks)
