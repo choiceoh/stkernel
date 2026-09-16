@@ -30,7 +30,10 @@ SHELL_ENTRIES = ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh',
                  'probes/run_ar_consumer_campaign.sh',
                  'probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
                  'bench/st_bracket.sh')
-PYTHON_ENTRIES = ('bench/onepass.py', 'bench/experiments.py')
+PYTHON_ENTRIES = ('bench/onepass.py', 'bench/experiments.py', 'bench/draft_replay.py')
+DRAFT_REPLAY = 'bench/draft_replay.py'
+DRAFT_REPLAY_DEPENDENCIES = ('probes/draft_sensitivity.py', 'launchers/lib/common-tp4.sh',
+                             'launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py')
 # The ST engine's bracket: one committed sha per arm in production shape; short screening by
 # default, full onepass for adoption. It is byte-pinned with what it executes, and its
 # grammar is shas and literal arm names only: a sha is a thing origin has, so the arm is
@@ -299,7 +302,9 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
             _same(_path(effective[key], cwd), target, repo)
     _same(path, relative, repo)
     source = _path(effective.get('REPO', str(cwd)), cwd)
-    if relative in ST_ENTRIES:
+    if relative == DRAFT_REPLAY:
+        dependencies = DRAFT_REPLAY_DEPENDENCIES
+    elif relative in ST_ENTRIES:
         # the ST runner, not the vLLM bracket: pin what it actually executes
         dependencies = ('probes/run_engine_probe.sh',) + (
             ('probes/run_engine_check.sh',) if relative == 'probes/run_engine_check.sh' else ())
@@ -334,6 +339,21 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
             _knobs(knobs)
     elif relative == 'bench/onepass.py':
         _onepass_args(args)
+    elif relative == DRAFT_REPLAY:
+        allowed = {'--capture', '--checkpoint', '--output', '--reader', '--precision', '--rounds'}
+        seen = set()
+        while args:
+            if len(args) < 2 or args[0] not in allowed or args[0] in seen or not re.fullmatch(r'[A-Za-z0-9/][A-Za-z0-9_.,:/=-]{0,255}', args[1]):
+                raise ValueError('draft replay accepts unique literal capture/checkpoint/output/reader/precision/rounds pairs')
+            key, value = args[:2]
+            if key == '--precision' and value not in ('fp8-rtn', 'bf16'):
+                raise ValueError('draft replay precision must be fp8-rtn or bf16')
+            if key == '--rounds' and (not value.isdigit() or not 1 <= int(value) <= 100):
+                raise ValueError('draft replay rounds must be 1..100')
+            seen.add(key)
+            args = args[2:]
+        if not {'--capture', '--checkpoint', '--output'} <= seen:
+            raise ValueError('draft replay requires capture, checkpoint and output')
     elif relative == 'bench/experiments.py':
         _experiment(args, cwd, repo, effective)
     elif relative in ST_ENTRIES:

@@ -141,6 +141,10 @@ def load_state(directory, comm, device):
     d.fast_attention, d.local_heads, d.local_kv_heads = True, state['local_heads'], state['local_kv_heads']
     d.selector_alpha = tuple(state['selector_alpha'])
     d.tuning = replace(d.tuning, selector_projection_fp32=state['selector_projection_fp32'])
+    if str(device).startswith('cuda'):
+        from engine.modules.vocab import CandidateBuffer
+        d.candidate_buffer = CandidateBuffer(d.k, d.target.vp * comm.world_size,
+                                             d.F.sel_top_k * comm.world_size, device)
     return d, state, manifest
 
 
@@ -197,6 +201,9 @@ def capture_graph(call):
     graph = torch.cuda.CUDAGraph()
     with torch.cuda.graph(graph):
         out = call()
+    # Capture records launches; its output has not been computed until replay.
+    graph.replay()
+    torch.cuda.synchronize()
     return graph, out
 
 
@@ -295,6 +302,9 @@ def main():
                 baseline, changed, timing = [], [], []
                 for case in cases:
                     ring = case['ring'].to('cuda')
+                    field = ring.unsqueeze(0)
+                    slot = torch.zeros(1, device='cuda', dtype=torch.int64)
+                    position = torch.tensor(case['position'], device='cuda', dtype=torch.int64)
                     ids, embedding = case['ids'].to('cuda'), case['embedding'].to('cuda')
                     # Proposal always consumes the same anchor + masks; no candidate may reuse final hidden.
                     def embed(token_ids):
@@ -305,12 +315,14 @@ def main():
                         return embedding
                     d.target.embed = embed
                     anchor = ids[:1]
-                    call = lambda: d.propose_tensor(anchor,case['position'],ring)
+                    call = lambda: d.propose_tensor(anchor,position,(field,slot))
                     before = ring.clone()
                     gb, ob = capture_graph(call)
                     baseline.append(ob.tolist())
-                    if baseline[-1] != case['baseline_drafts']:
-                        raise ValueError(f'baseline replay drift: {case["case_id"]}; refusing ranking')
+                    def check_baseline():
+                        if baseline[-1] != case['baseline_drafts']:
+                            raise ValueError(f'baseline replay drift: {case["case_id"]}; got {baseline[-1]}, expected {case["baseline_drafts"]}; refusing ranking')
+                    agreed(comm, check_baseline)
                     with replace_reader(d,name,candidate):
                         gc, oc = capture_graph(call)
                     changed.append(oc.tolist())

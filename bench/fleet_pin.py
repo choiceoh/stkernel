@@ -25,6 +25,7 @@ def source_files(repo):
                  # The ST bracket cuts its arms' releases with this (bench/st_bracket.sh).
                  'launchers/st_release.py',
                  *fleet_onepass.ST_BRACKET_DEPENDENCIES,
+                 *fleet_onepass.DRAFT_REPLAY_DEPENDENCIES,
                  *fleet_onepass.ST_ENTRIES, *fleet_onepass.ST_PROBES)
     for relative in canonical:
         if (repo / relative).is_file():

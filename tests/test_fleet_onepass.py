@@ -25,6 +25,7 @@ class OnepassPolicyTests(unittest.TestCase):
         self.controller = self.root / 'controller'
         self.repo = self.root / 'candidate'
         for relative in (*policy.SHELL_ENTRIES, *policy.PYTHON_ENTRIES, *policy.ST_PROBES,
+                         *policy.DRAFT_REPLAY_DEPENDENCIES,
                          'bench/fleet.sh', 'bench/serving_group.py', 'bench/experiment_baselines.py',
                          'bench/onepass_deploy.py'):
             for root in (self.controller, self.repo):
@@ -53,6 +54,25 @@ class OnepassPolicyTests(unittest.TestCase):
                         ['bash', 'custom-onepass.sh']):
             with self.subTest(command=command), self.assertRaisesRegex(ValueError, 'onepass-only'):
                 self.validate(command)
+
+    def test_draft_replay_is_pinned_and_requires_four_gpus(self):
+        command = ['python3', 'bench/draft_replay.py', '--capture', '/capture',
+                   '--checkpoint', '/models/draft.safetensors', '--output', '/results/fp8.json',
+                   '--precision', 'fp8-rtn', '--reader', 'all', '--rounds', '10']
+        self.assertEqual(self.validate(command)['gpus'], 4)
+        for kind in ('single', 'probe'):
+            with self.subTest(kind=kind), self.assertRaises(ValueError):
+                self.validate(command, kind=kind)
+        for extra in (['--rounds', '0'], ['--reader', '$(id)'], ['--precision', 'int8']):
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                self.validate(command[:8] + extra)
+        for relative in policy.DRAFT_REPLAY_DEPENDENCIES:
+            path = self.repo / relative
+            original = path.read_bytes()
+            path.write_bytes(original + b'# altered\n')
+            with self.subTest(relative=relative), self.assertRaises(ValueError):
+                self.validate(command)
+            path.write_bytes(original)
 
     def test_after_and_boot_only_legs_fail_before_execution(self):
         for command in (['bash', 'bench/chain.sh', 'A=', '--after', 'A', 'gpu-check'],
