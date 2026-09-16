@@ -1,5 +1,9 @@
 # cuBLAS FC split-K improvement — RTX 5050, 2026-09-17
 
+Historical prepared-path results below. The subsequent operator-requested
+[default serving replacement](../st_cublaslt_serving_20260917/README.md) records
+its actual FP8Linear timing, including the slower large-prefill cells.
+
 **The prepared FC candidate now beats both the direct cuBLAS path and DeepGEMM
 on this RTX 5050.** It is enabled in explicit preparation for BF16 FC shapes
 M=8/16, N=4096, K=20480. Serving FP8Linear is unchanged; this is not GB10

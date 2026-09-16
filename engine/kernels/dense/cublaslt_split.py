@@ -10,7 +10,7 @@ from . import mxfp8
 
 
 @triton.jit
-def _quantize(X, Q, S, M: tl.constexpr, K: tl.constexpr, P: tl.constexpr):
+def _quantize(X, Q, S, M: tl.constexpr, K: tl.constexpr, P: tl.constexpr, PAD: tl.constexpr = False):
     row = tl.program_id(0)*4 + tl.arange(0, 4)
     group = tl.program_id(1)
     part = group // (K//P//128)
@@ -22,7 +22,7 @@ def _quantize(X, Q, S, M: tl.constexpr, K: tl.constexpr, P: tl.constexpr):
              (x*inverse[:, None]).to(tl.float8e4nv), row[:, None] < M)
     base = part*tl.cdiv(M, 128)*(K//P//128)*128
     # Reuse the one-warp scalar publisher; neutral padding belongs to binding.
-    mxfp8._publish(S + base, scale, row, within, M, K//P//128, False, True)
+    mxfp8._publish(S + base, scale, row, within, M, K//P//128, PAD, True)
 
 
 @triton.jit

@@ -4214,3 +4214,18 @@ FP32 partial은 8행 0.625MiB/16행 1.25MiB. 큐·프로덕션 재시작 없음.
   여기서 접는다. 셀·순열 함수·프로브 섹션은 남고 서빙 레시피에 토큰이 없어 프로덕션 불변.
 - **함정.** 단일 레인은 프로덕션의 capture-armed 재부팅(00:09) 뒤 MemAvailable ~13 GiB 라 문턱(예산+16 GiB)을 못 넘어 티켓이 수십 분
   대기했고, 플릿 부팅이 프로덕션을 드레인하는 짧은 창에서만 돌았다.
+
+### head·FC 기본 cuBLAS 교체 — 운영자 직접 지시, 23개 서빙 호출 검사 (2026-09-17)
+
+운영자 “head랑 fc에서 deepgemm 바로 대채ㅔ”에 따라 native GLM 부팅이 head, FC prefill,
+FC committed-decode FP8 reader를 cuBLAS로 기본 연결한다. FC decode는 5분할 FP32 누적.
+알고리즘은 가중치 준비 때 고정하고 forward에서는 GPU 탐색·타이밍·DeepGEMM 폴백이 없다.
+네이티브 사전 빌드, arena 예산(별도 decode 팩일 때 92.234375MiB/랭크), 실제 실행 마커를 연결했다.
+
+5050에서 **실제 FP8Linear 호출 23형상**이 수치·변경 입력 그래프 2회·재생 추가 할당 0을 통과했다.
+head 7/8/14/16행 지연 −12.26~12.67%, FC decode 8/16행 −6.32/−6.47%.
+손실도 남긴다: FC decode64 +0.72%, FC prefill1 +6.64%, 512 +0.96%, 2304 +2.84%.
+추가 탐색과 512행 분할도 큰 prefill의 열세를 지우지 못해 분할 실험은 코드에서 제거했다.
+8개 focused 검사, 관련 CPU 54통과/9skip, SM121 93변형 컴파일 통과.
+**이는 운영자 선택의 기본값 변경이며 GB10 실행·엔진 step/s·수용률 실측은 아니다.** 큐·재시작 없음.
+[코드 경계, 전체 비교와 원시 기록](measurements/st_cublaslt_serving_20260917/README.md).

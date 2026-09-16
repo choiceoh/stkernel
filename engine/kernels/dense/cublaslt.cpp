@@ -236,7 +236,8 @@ class Plan : public std::enable_shared_from_this<Plan> {
 
  public:
   Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit,
-       const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight, int batches_ = 1, bool fp32 = false)
+       const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight, int batches_ = 1, bool fp32 = false,
+       const Plan* seed = nullptr, size_t seed_index = 0)
       : context(std::move(context_)), m(m_), n(n_), k(k_), batches(batches_),
         output_type(fp32 ? CUDA_R_32F : CUDA_R_16BF), workspace_limit(limit) {
     TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
@@ -267,6 +268,13 @@ class Plan : public std::enable_shared_from_this<Plan> {
         check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET,
                                                &item.second, sizeof(item.second)), "batch stride");
       }
+    }
+    if (seed) {
+      TORCH_CHECK(seed_index < seed->choices.size(), "unknown source algorithm");
+      admit(seed->choices[seed_index].algo);
+      set_scale_pointers(desc.operation, nullptr, nullptr);
+      TORCH_CHECK(choices.size() == 1, "prepared cuBLAS algorithm does not support the requested rows");
+      return;
     }
     check(cublasLtMatmulPreferenceCreate(&desc.preference), "matmul preference");
     uint32_t reduction = CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE;
@@ -323,6 +331,14 @@ class Plan : public std::enable_shared_from_this<Plan> {
     // Geometry plans outlive the tensors borrowed by preparation. Never leave
     // their addresses in the reusable descriptor after the query completes.
     set_scale_pointers(desc.operation, nullptr, nullptr);
+  }
+
+  // Reuse the boot-selected implementation. Only layouts and AlgoCheck change;
+  // no catalog, heuristic query, variants, timing or lane fallback occurs.
+  std::shared_ptr<Plan> with_rows(int64_t rows, size_t index, const torch::Tensor& s_q,
+                                  const torch::Tensor& s_weight) {
+    return std::make_shared<Plan>(context, rows, n, k, workspace_limit, s_q, s_weight,
+                                  batches, output_type == CUDA_R_32F, this, index);
   }
 
   py::list candidates() const {
@@ -450,5 +466,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
            py::arg("query_activation_scales"), py::arg("query_weight_scales"),
            py::arg("batches") = 1, py::arg("fp32") = false)
       .def("candidates", &Plan::candidates).def("run", &Plan::run)
-      .def("bind", &Plan::bind).def("statistics", &Plan::statistics);
+      .def("bind", &Plan::bind).def("statistics", &Plan::statistics)
+      .def("with_rows", &Plan::with_rows);
 }
