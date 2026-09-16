@@ -25,7 +25,8 @@ def native_modules():
 class NativeListTests(unittest.TestCase):
     def test_every_native_extension_under_kernels_is_built_before_the_first_collective(self):
         from engine.profiles.glm53 import natives
-        listed = {module: entry for _, module, entry in natives.MODULES + (natives.ONESHOT,)}
+        listed = {module: entry for _, module, entry in
+                  natives.MODULES + (natives.ONESHOT,) + natives.PROBE_MODULES}
         self.assertEqual(set(listed), native_modules(),
                          "a native built at its first use makes the ranks wait for its compile inside a collective")
         for module, entry in listed.items():
@@ -34,6 +35,21 @@ class NativeListTests(unittest.TestCase):
                 path = ROOT / module.replace(".", "/") / "__init__.py"
             tree = ast.parse(path.read_text())
             self.assertIn(entry, {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}, module)
+
+    def test_a_probe_only_native_is_exempt_because_no_boot_builds_it(self):
+        """The exemption is the whole point: a cell that a boot builds anyway would stall a collective after all."""
+        from engine.profiles.glm53 import natives
+        exempt = {module for _, module, _ in natives.PROBE_MODULES}
+        self.assertFalse(exempt & {module for _, module, _ in natives.MODULES + (natives.ONESHOT,)})
+        built = {name for name, _ in natives.builds(2, False)}
+        self.assertFalse(built & {name for name, _, _ in natives.PROBE_MODULES})
+        for module in exempt:                                   # and no serving module reaches for it
+            leaf = module.rsplit(".", 1)[-1]
+            for path in (ROOT / "engine/profiles/glm53").rglob("*.py"):
+                if path.name == "natives.py":                   # the registry names it; that is not a binding
+                    continue
+                self.assertFalse(leaf in path.read_text(),
+                                 f"{path.name} binds {module}: move it into MODULES")
 
     def test_the_dense_build_touches_no_device_and_its_lane_probes_after_it(self):
         tree = ast.parse((KERNELS / "dense/__init__.py").read_text())
