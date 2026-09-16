@@ -351,7 +351,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "441a2a22e462fcd6eaa6575769d37b549eaeea99a0b2db86fc2df0089afe09f0",
+      "local_sha256": "89cb0d45d8c54076d142af1c017586b599073fa4523220c1cd9077ac5a097196",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -366,7 +366,8 @@
         "2026-09-14 fleet: the native E4M3x2 widening goes back to the half bridge. On CUDA 13.2.1 a 129,784-token prompt took 54.7/50.9 s to its first token with it and 38.5/37.3 s with the bridge (37.5-39.1 s before the migration); arithmetic unchanged.",
         "2026-09-14 CUDA 13.2: native add.u8x4 replaces __vadd4 in W4A8 LUT expansion; preserve FP8/BF16 rounding and the restored MLA half bridge.",
         "2026-09-15 sm_120 check build: mk_add_u8x4 and the ldmatrix.trans.b8 site each gain an #else for __CUDA_ARCH__ < 1210 -- __vadd4 for the first, the file's own mla_e4m3x2_strided form for the second. The sm_121a branch is untouched and its PTX is byte-identical to before; the layouts are measured against a CPU reference in probes/sm120_b_fragment_check.cu.",
-        "2026-09-16 K=7 eight-row admission: mk_input_shape and mk_use_compact_m8 take m == 8 as well as the k=5-era m == 6, so C=1 reaches the routes it used to. Same instantiation (c2.m <= 8) and partial clamp; unmeasured, operator request."
+        "2026-09-16 K=7 eight-row admission: mk_input_shape and mk_use_compact_m8 take m == 8 as well as the k=5-era m == 6, so C=1 reaches the routes it used to. Same instantiation (c2.m <= 8) and partial clamp; unmeasured, operator request.",
+        "Fixed K7 C2 ordinary decode uses 32-slot tiles with retained BF16 query fragments, two score K partitions and two ring stages. The original sixteen-slot cell remains the C1, narrow-width and private/tree fallback. Independent FP32 numerical gates and same-build component comparisons are recorded in measurements/st_fixed_k_cost_followup_20260917."
       ]
     },
     "mla/__init__.py": {

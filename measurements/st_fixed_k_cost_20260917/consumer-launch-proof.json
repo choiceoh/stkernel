@@ -1,0 +1,97 @@
+{
+  "scope": "separate diagnostic replay; launch counts only, not consumer speed",
+  "records": [
+    {
+      "arm": "B",
+      "run_id": "20260916T164447-d65117f1ea5b",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T164447-d65117f1ea5b/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "3839c4d9c9b066aafefa9cf90d7bc362e1ad1f15a08d3aac30cbff342874c50c",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 336
+      },
+      "input_pack_launches": 298
+    },
+    {
+      "arm": "B",
+      "run_id": "20260916T164447-d65117f1ea5b",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T164447-d65117f1ea5b/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "3839c4d9c9b066aafefa9cf90d7bc362e1ad1f15a08d3aac30cbff342874c50c",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 336
+      },
+      "input_pack_launches": 298
+    },
+    {
+      "arm": "B",
+      "run_id": "20260916T164447-d65117f1ea5b",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T164447-d65117f1ea5b/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "3839c4d9c9b066aafefa9cf90d7bc362e1ad1f15a08d3aac30cbff342874c50c",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 336
+      },
+      "input_pack_launches": 298
+    },
+    {
+      "arm": "B",
+      "run_id": "20260916T164447-d65117f1ea5b",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T164447-d65117f1ea5b/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "3839c4d9c9b066aafefa9cf90d7bc362e1ad1f15a08d3aac30cbff342874c50c",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 336
+      },
+      "input_pack_launches": 298
+    },
+    {
+      "arm": "A",
+      "run_id": "20260916T172031-e1218c7b8c70",
+      "rank": 0,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T172031-e1218c7b8c70/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "000676233090881e5f3d3e4e652da5f6f634d01bad21dbf8347f210bd3bb55a2",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120
+      },
+      "input_pack_launches": 178
+    },
+    {
+      "arm": "A",
+      "run_id": "20260916T172031-e1218c7b8c70",
+      "rank": 1,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T172031-e1218c7b8c70/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "000676233090881e5f3d3e4e652da5f6f634d01bad21dbf8347f210bd3bb55a2",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120
+      },
+      "input_pack_launches": 178
+    },
+    {
+      "arm": "A",
+      "run_id": "20260916T172031-e1218c7b8c70",
+      "rank": 2,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T172031-e1218c7b8c70/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "000676233090881e5f3d3e4e652da5f6f634d01bad21dbf8347f210bd3bb55a2",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120
+      },
+      "input_pack_launches": 178
+    },
+    {
+      "arm": "A",
+      "run_id": "20260916T172031-e1218c7b8c70",
+      "rank": 3,
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260916T172031-e1218c7b8c70/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "000676233090881e5f3d3e4e652da5f6f634d01bad21dbf8347f210bd3bb55a2",
+      "packet_mhc_launches": {
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120
+      },
+      "input_pack_launches": 178
+    }
+  ]
+}

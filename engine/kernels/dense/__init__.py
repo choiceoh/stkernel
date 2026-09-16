@@ -228,7 +228,9 @@ def producer_pack_nbytes(rows, cols):
     raise ValueError('producer input packs exist at 8 and 16 rows only')
 
 
-def w4_gemm(x, pack, workspace=None, *, bound_input=False):
+def w4_gemm(x, pack, workspace=None, *, bound_input=False, producer_pack=None):
+    if producer_pack is not None and not bound_input:
+        raise ValueError('producer input pack requires a bound input cell')
     if (x.ndim != 2 or not 1 <= x.shape[0] <= 32 or x.shape[1] != pack.cols or x.shape[1] > KMAX
             or x.dtype != torch.bfloat16 or x.device != pack.data.device):
         raise ValueError("W4 decode requires 1..32 BF16 rows matching the bound pack, K at most 20480")
@@ -237,7 +239,7 @@ def w4_gemm(x, pack, workspace=None, *, bound_input=False):
     # row stride instead of launching a copy for each of the 68 products.
     if bound_input:
         extension().run_gemm_bound_input(x, pack.data, pack.scale, out, pack.rows,
-                                         pack.rowscale.data_ptr(), workspace, None)
+                                         pack.rowscale.data_ptr(), workspace, None, producer_pack=producer_pack)
     elif workspace is None:
         ext = extension()
         run = ext.run_gemm_wide_input if wide_input_cell(x.shape[0], pack.rows, pack.cols) else ext.run_gemm
@@ -354,20 +356,25 @@ class DenseLinear:
                                          device=self.packs[0].data.device)
         return self.workspace.numel() * self.workspace.element_size()
 
-    def __call__(self, x, rows_ok=None, *, observe=True, decode=False):
+    def __call__(self, x, rows_ok=None, *, observe=True, decode=False, producer_pack=None):
         """`rows_ok` [rows] bool: which rows are real -- only a calibration run reads it (the pipeline's ghost rows,
         a masked observation's positions past the committed count); the product itself covers every row."""
         if x.shape[-1] != self.cols or x.dtype != torch.bfloat16:
             raise ValueError("dense input does not match its bound weight")
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols)
+        if producer_pack is not None and not self.input_pack_rows(flat.shape[0]):
+            raise ValueError("producer input pack requires an unobserved single bound W4 cell")
         if observe and self.observer is not None:
             self.observer(flat, rows_ok)
         if flat.shape[0] <= 32 and getattr(self, 'decode_precision', 'w4') == 'w4':
             self.executed |= 1
             if len(self.packs) == 1:
                 bound_input = self._bound_input(flat.shape[0], self.packs[0])
-                out = w4_gemm(flat, self.packs[0], self.workspace, bound_input=bound_input)
+                out = w4_gemm(flat, self.packs[0], self.workspace, bound_input=bound_input,
+                              **({"producer_pack": producer_pack} if producer_pack is not None else {}))
+                if producer_pack is not None:
+                    self.producer_pack_executed.add(flat.shape[0])
                 if bound_input:
                     self.bound_input_executed.add(flat.shape[0])
             else:
@@ -384,12 +391,17 @@ class DenseLinear:
             if self.fp8 is None:
                 raise ValueError("large-M dense call without a prepared prefill lane")
             lane = self.decode_fp8 if decode and getattr(self, 'decode_fp8', None) is not None else self.fp8
-            out = lane(flat)
+            out = lane(flat, decode=decode) if getattr(lane, 'cublas', None) is not None else lane(flat)
             self.executed |= 2
         return out.reshape(*shape, self.rows)
 
     def _bound_input(self, rows, pack):
         return rows in getattr(self, 'decode_input_rows', ()) and bound_input_cell(rows, pack.rows, pack.cols)
+
+    def input_pack_rows(self, rows):
+        return (rows == 8 and self.observer is None and len(self.packs) == 1
+                and getattr(self, 'decode_precision', 'w4') == 'w4'
+                and self._bound_input(rows, self.packs[0]))
 
     def packet_projector(self):
         """The prefill transport may bypass BF16 storage only without observers."""
@@ -485,6 +497,7 @@ class FP8Linear:
         self.observer = None  # calibration sums this layer's inputs through it when it stands alone (the head)
         self.executed = False
         self.calibrated = quantized is not None
+        self.cublas = None
         padded_rows = (self.rows+127)//128*128
         if quantized is not None:
             q, scale = quantized
@@ -502,20 +515,36 @@ class FP8Linear:
         self.weight = torch.cat(qs), torch.cat(scales)
 
     def consume_weight(self, storage):
+        if self.cublas is not None:
+            raise RuntimeError('relocate FP8 weights before preparing cuBLAS')
         from engine.modules.packed_storage import consume
         self.weight=consume(storage,self.weight)
 
-    def __call__(self, x, rows_ok=None, *, out=None):
+    def prepare_cublas(self, *, split_decode=False, storage=None):
+        from .cublaslt_serving import Reader
+        if self.cublas is not None:
+            raise RuntimeError('cuBLAS reader was already prepared')
+        self.cublas = Reader(self.weight, split_decode=split_decode, storage=storage)
+
+    def __call__(self, x, rows_ok=None, *, out=None, decode=False):
         if self.observer is not None:
             self.observer(x.reshape(-1, self.cols), rows_ok)
         from .fp8 import quantize
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols).contiguous()
+        if self.cublas is not None:
+            result = self.cublas(flat, out=out, decode=decode)
+            self.executed = True
+            return result[:, :self.rows].reshape(*shape, self.rows)
         q, scale = quantize(flat)
         return self.project_quantized(q, scale, out=out).reshape(*shape, self.rows)
 
     def project_quantized(self, q, scale, *, out=None):
         """Consume the existing FP8 recipe; `out` owns the full padded GEMM output."""
+        if self.cublas is not None:
+            result = self.cublas.project_quantized(q, scale, out=out)
+            self.executed = True
+            return result[:, :self.rows]
         from deep_gemm import fp8_gemm_nt
         from engine.kernels.deep_gemm import _initialize
         if (q.ndim != 2 or q.shape[1] != self.cols or q.dtype != torch.float8_e4m3fn

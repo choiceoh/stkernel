@@ -1,0 +1,551 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stkernel 논문 지도 2026-09</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --paper:#f3f5f8; --surface:#ffffff; --surface-2:#e9edf2;
+  --ink:#14202b; --ink-2:#3d4c5a; --muted:#66768a; --line:#d3dbe4; --line-2:#b9c4d0;
+  --accent:#24559f; --accent-ink:#ffffff; --accent-soft:#e4ecf8;
+  --hi:#1b7f5a; --hi-soft:#dff3ea; --md:#a86f12; --md-soft:#fbeed3; --lo:#6b7785; --lo-soft:#e6eaef;
+  --seg-moe:#24559f; --seg-dense:#4f7cc7; --seg-comm:#8fb0e0; --seg-mhc:#b9cdea; --seg-rest:#d7dfe9;
+  --code:#1d2a37; --code-bg:#eef2f6;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0f151b; --surface:#161e27; --surface-2:#1d2732;
+    --ink:#e5ecf3; --ink-2:#c2cdd8; --muted:#8fa0b1; --line:#2a3644; --line-2:#3a4757;
+    --accent:#8ab0ea; --accent-ink:#0f151b; --accent-soft:#1c2b41;
+    --hi:#4fc790; --hi-soft:#12312a; --md:#e2ab4f; --md-soft:#3a2b10; --lo:#98a4b1; --lo-soft:#232c36;
+    --seg-moe:#8ab0ea; --seg-dense:#5f86c4; --seg-comm:#3f5f92; --seg-mhc:#2f4666; --seg-rest:#26313f;
+    --code:#dbe4ee; --code-bg:#1b2530;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0f151b; --surface:#161e27; --surface-2:#1d2732;
+  --ink:#e5ecf3; --ink-2:#c2cdd8; --muted:#8fa0b1; --line:#2a3644; --line-2:#3a4757;
+  --accent:#8ab0ea; --accent-ink:#0f151b; --accent-soft:#1c2b41;
+  --hi:#4fc790; --hi-soft:#12312a; --md:#e2ab4f; --md-soft:#3a2b10; --lo:#98a4b1; --lo-soft:#232c36;
+  --seg-moe:#8ab0ea; --seg-dense:#5f86c4; --seg-comm:#3f5f92; --seg-mhc:#2f4666; --seg-rest:#26313f;
+  --code:#dbe4ee; --code-bg:#1b2530;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans KR","Noto Sans KR","Apple SD Gothic Neo",system-ui,sans-serif;font-size:15px;line-height:1.65;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid transparent}
+a:hover,a:focus-visible{border-bottom-color:var(--accent);outline:none}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.88em;color:var(--code)}
+code{background:var(--code-bg);padding:.08em .35em;border-radius:3px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 24px 96px}
+header.masthead{padding:56px 0 28px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:34px;line-height:1.2;margin:10px 0 12px;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.banner{margin:0 0 14px;padding:8px 12px;border-left:3px solid var(--md);background:var(--md-soft);color:var(--ink);font-size:13.5px;max-width:80ch}
+.lede{font-size:16.5px;color:var(--ink-2);max-width:68ch;margin:0}
+.meta{display:flex;flex-wrap:wrap;gap:8px 22px;margin-top:18px;font-size:13px;color:var(--muted)}
+.meta b{color:var(--ink-2);font-weight:500}
+nav.toc{position:sticky;top:0;z-index:5;background:var(--paper);border-bottom:1px solid var(--line);padding:10px 0;display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px}
+nav.toc a{color:var(--ink-2);padding:2px 0}
+nav.toc a .n{font-family:"IBM Plex Mono",monospace;color:var(--muted);margin-right:4px}
+section{padding:44px 0 8px;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+h2{font-size:24px;margin:0 0 6px;font-weight:600;letter-spacing:-.01em;text-wrap:balance}
+h2 .n{font-family:"IBM Plex Mono",monospace;color:var(--muted);font-weight:400;font-size:16px;margin-right:10px}
+h3{font-size:16.5px;margin:30px 0 8px;font-weight:600}
+.slice{display:inline-flex;align-items:center;gap:8px;font-family:"IBM Plex Mono",monospace;font-size:12.5px;color:var(--muted);margin:0 0 14px}
+.slice i{display:inline-block;width:12px;height:12px;border-radius:2px}
+p.state{max-width:72ch;color:var(--ink-2);margin:0 0 16px}
+p.state b{color:var(--ink);font-weight:600}
+.budget{margin:26px 0 8px}
+.bar{display:flex;height:34px;border-radius:4px;overflow:hidden;border:1px solid var(--line-2)}
+.bar a{display:flex;align-items:center;justify-content:center;color:var(--ink);font-family:"IBM Plex Mono",monospace;font-size:12px;border-bottom:0;border-right:1px solid var(--paper);white-space:nowrap;overflow:hidden}
+.bar a:last-child{border-right:0}
+.bar a:hover{filter:brightness(1.08)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12.5px;color:var(--muted);margin-top:8px;font-family:"IBM Plex Mono",monospace}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface);margin:0 0 10px}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:13.8px}
+th{text-align:left;font-weight:500;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:10px 12px;border-bottom:1px solid var(--line);background:var(--surface-2)}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.p{width:31%}
+td.p a{font-weight:500}
+td.src{width:15%;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);white-space:nowrap}
+td.why{color:var(--ink-2)}
+td.rel{width:52px;text-align:center}
+.chip{display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:11.5px;line-height:1;padding:5px 7px;border-radius:3px;font-weight:500}
+.hi{color:var(--hi);background:var(--hi-soft)}.md{color:var(--md);background:var(--md-soft)}.lo{color:var(--lo);background:var(--lo-soft)}
+.known{font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted);border:1px solid var(--line-2);padding:1px 5px;border-radius:3px;margin-left:6px;vertical-align:1px}
+.todo{border-left:3px solid var(--accent);background:var(--accent-soft);padding:12px 16px;margin:14px 0 8px;border-radius:0 4px 4px 0}
+.todo b{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);margin-bottom:6px;font-family:"IBM Plex Mono",monospace}
+.todo ul{margin:0;padding-left:18px}
+.todo li{margin:3px 0}
+ul.also{font-size:13px;color:var(--muted);margin:6px 0 0;padding-left:18px;max-width:80ch}
+ul.also li{margin:2px 0}
+.top{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:22px 0 4px}
+.top .card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+.top .card .k{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
+.top .card .t{font-weight:600;margin:4px 0 4px;font-size:15px}
+.top .card .d{font-size:13.5px;color:var(--ink-2)}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin:8px 0 14px}
+.facts .f{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;font-size:13.5px}
+.facts .f b{display:block;font-weight:600;margin-bottom:3px}
+.facts .f span{color:var(--ink-2)}
+.gaps li{margin:4px 0}
+footer{padding:28px 0 0;font-size:13px;color:var(--muted);max-width:80ch}
+@media (max-width:640px){h1{font-size:28px} .bar a{font-size:10.5px}}
+@media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important}}
+html{scroll-behavior:smooth;scroll-padding-top:56px}
+</style>
+
+<div class="wrap">
+<header class="masthead">
+  <div class="eyebrow">stkernel · 4× DGX Spark GB10 · TP4 어텐션 + EP4 MoE · 문헌 조사</div>
+  <h1>stkernel 논문 지도 2026-09</h1>
+  <p class="lede">2026년(주로 6~9월) 커널·서빙엔진·스펙 디코딩·양자화 논문을 <b>우리 디코드 스텝의 병목별</b>로 배치했다. 각 절은 스텝 예산의 한 조각을 맡고, 표는 "무엇을 주장하나"와 "우리 스택에 얼마나 붙나"만 적는다. 관련도는 GB10(sm_121, tcgen05 없음, 273 GB/s)과 C=1~4 저동시성 기준이다.</p>
+  <p class="banner">그날의 조사 — <b>2026-09-17 의 조사다.</b> 그날 참이었던 것이고 유지되지 않는다 — 이후 무엇이 바뀌었는지는 <code>MEASUREMENTS.md</code> 가 안다. 논문 수치는 저자 자기 보고값이고 이 스택에서 재현한 것이 아니다.</p>
+  <div class="meta">
+    <span><b>기준일</b> 2026-09-17</span>
+    <span><b>범위</b> arXiv 2601~2609 + OSDI/SOSP/ASPLOS/ISCA/MLSys/EMNLP 2026 + 벤더 릴리스</span>
+    <span><b>이미 인용된 것</b> DFlash <span class="mono">2607.05147</span>, EcoSpec, Bole, TreeWY, Mirage MPK, IndexCache는 표에서 <span class="known">기존</span>으로만 표시</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="목차">
+  <a href="#top"><span class="n">0</span>먼저 볼 것</a>
+  <a href="#moe"><span class="n">1</span>MoE 스트리밍</a>
+  <a href="#spec"><span class="n">2</span>스펙 디코딩</a>
+  <a href="#launch"><span class="n">3</span>런치 바닥·융합</a>
+  <a href="#attn"><span class="n">4</span>어텐션·인덱서·KV</a>
+  <a href="#comm"><span class="n">5</span>통신</a>
+  <a href="#num"><span class="n">6</span>수치·결정성</a>
+  <a href="#gb10"><span class="n">7</span>GB10 플랫폼</a>
+  <a href="#models"><span class="n">8</span>모델 보고서</a>
+  <a href="#gaps"><span class="n">9</span>빈 곳</a>
+  <a href="#adopt"><span class="n">10</span>도입 검토</a>
+</nav>
+
+<section id="top">
+  <h2><span class="n">0</span>먼저 볼 것</h2>
+  <p class="state">우리 C=1 K=7 스텝 프로파일(PR #963 기록, <span class="mono">54.0 ms</span> 프로파일 시 / 비프로파일 약 47)을 그대로 지도의 뼈대로 쓴다. 막대의 각 조각을 누르면 그 조각을 공격하는 절로 간다.</p>
+  <div class="budget">
+    <div class="bar" aria-label="디코드 스텝 예산 54.0 ms">
+      <a href="#moe" style="flex:25.1;background:var(--seg-moe);color:var(--accent-ink)">MoE 25.1</a>
+      <a href="#launch" style="flex:13.7;background:var(--seg-dense);color:var(--accent-ink)">dense 13.7</a>
+      <a href="#comm" style="flex:4.4;background:var(--seg-comm)">comm 4.4</a>
+      <a href="#launch" style="flex:4.4;background:var(--seg-mhc)">mHC 4.4</a>
+      <a href="#launch" style="flex:6.4;background:var(--seg-rest)">기타 6.4</a>
+    </div>
+    <div class="legend">
+      <span><i style="background:var(--seg-moe)"></i>MoE 전문가 스트리밍 46%</span>
+      <span><i style="background:var(--seg-dense)"></i>dense GEMM</span>
+      <span><i style="background:var(--seg-comm)"></i>TP4 통신</span>
+      <span><i style="background:var(--seg-mhc)"></i>mHC (vLLM 시절 대비 런치당 2×)</span>
+      <span><i style="background:var(--seg-rest)"></i>샘플링·리드백·기타 · 총 1,359 런치</span>
+    </div>
+  </div>
+
+  <div class="top">
+    <div class="card"><div class="k">MoE 스트리밍 · 커널</div><div class="t"><a href="https://arxiv.org/abs/2609.04244">MonoMoE</a> + <a href="https://arxiv.org/abs/2606.13233">ReSET small-M NVFP4</a></div><div class="d">weight-major 퍼시스턴트 메가커널(FlashInfer 공개)과 CUDA-core dequant-on-load 커널. 소배치 그룹 GEMM이 DRAM 대역의 17~22%만 쓴다는 관찰이 우리 25 ms의 정체다.</div></div>
+    <div class="card"><div class="k">MoE 스트리밍 · 바이트</div><div class="t"><a href="https://arxiv.org/abs/2609.05228">ACE</a> / <a href="https://arxiv.org/abs/2605.18643">ZEDA</a></div><div class="d">학습·캘리브레이션 없이 전문가 슬롯 절반을 건너뛰거나(ACE), 자기증류로 절반을 끄는(ZEDA, GLM-4.7-Flash 검증) 계열. 토큰당 바이트가 유일한 지렛대라면 여기다.</div></div>
+    <div class="card"><div class="k">스펙 · 드래프터</div><div class="t">거부 상태 재활용 3편 + <a href="https://inco.ai/blog/dflash2/">DFlash 2</a></div><div class="d"><a href="https://arxiv.org/abs/2609.06498">DFlow</a>, <a href="https://arxiv.org/abs/2609.14717">Carryover</a>, <a href="https://arxiv.org/abs/2608.29748">ReTrace</a>가 같은 달에 같은 지렛대(검증기가 본 거부 지점을 다음 블록에 되먹임)를 독립적으로 보고. "거부의 61%가 잘못된 top-1"이라는 우리 진단과 맞물린다.</div></div>
+    <div class="card"><div class="k">스펙 · 학습 한 줄 수정</div><div class="t"><a href="https://arxiv.org/abs/2607.01893">Spec-AUF</a> / <a href="https://arxiv.org/abs/2608.05448">DBLAST</a></div><div class="d">첫 실패 이후 위치의 CE 감독을 끊는 손실(AUF)과, T=1 샘플링 엔트로피에서 블록 드래프터가 무너지는 이유를 다룬 유일한 논문(DBLAST). 오프라인 온도 트릭이 라이브에서 안 잡힌 우리 실패와 같은 축.</div></div>
+    <div class="card"><div class="k">스펙 · 트리 비용</div><div class="t"><a href="https://arxiv.org/abs/2605.00342">EVICT</a> / <a href="https://arxiv.org/abs/2606.03819">TreeFlash</a></div><div class="d">전문가 비용 프로파일로 트리를 검증 전에 자르는 무손실 규칙(SGLang 구현)과, 마진 트리의 "오른쪽 형제가 같은 분포"라는 약점을 MLP 하나로 메우는 방법. 우리 트리 경제학 기록(#966)의 정확한 후속.</div></div>
+    <div class="card"><div class="k">인덱서 top-k</div><div class="t"><a href="https://arxiv.org/abs/2604.22312">Guess-Verify-Refine</a> / <a href="https://arxiv.org/abs/2607.11976">LiteTopK</a></div><div class="d">NVIDIA TRT-LLM 팀의 Blackwell DSA top-k(radix-select 대비 1.88×, 스펙 디코딩 하에서도 유지)와 GLM 프리필용 융합 인덱서. <b>정정(10절)</b>: LiteTopK 코드는 sm_100a 전용이고, ST 디코드 선택은 이미 자체 커널(<code>st_dsa_select</code>, #1010·#1025)이다.</div></div>
+    <div class="card"><div class="k">런치 바닥</div><div class="t"><a href="https://arxiv.org/abs/2604.13327">Event Tensor</a> / <a href="https://arxiv.org/abs/2607.23099">DA-MoE</a></div><div class="d">Mirage MPK의 후속(동적 형상 메가커널 + TP 통신 내장)과, CUDA 그래프 조건 노드로 커널 변형을 디바이스 측에서 고르는 기법. 바이트-동일 폴드가 끝난 뒤 남은 런치 지렛대.</div></div>
+    <div class="card"><div class="k">통신 · 소메시지 TP4</div><div class="t"><a href="https://arxiv.org/abs/2607.16100">Every Microsecond Matters</a> / <a href="https://arxiv.org/abs/2511.09557">NVRAR</a></div><div class="d">NCCL 디바이스 API의 저지연 집합통신(속도-빛 한계 7% 이내)과 NVSHMEM 재귀 배가 all-reduce(멀티노드 소메시지에서 NCCL 대비 1.9~3.6×). 스위치드 패브릭 위 4.4 ms가 대상.</div></div>
+    <div class="card"><div class="k">결정성</div><div class="t"><a href="https://arxiv.org/abs/2608.14376">CoRun</a> / <a href="https://arxiv.org/abs/2607.28097">전문가 합산 순서</a></div><div class="d">배치 불변 커널 대신 고정 형상 패딩으로 결정성을 얻는 쪽(C≤4 + CUDA 그래프면 거의 공짜)과, V4-Flash에서 수학적으로 같은 전문가 합산 순서가 다른 텍스트 분지를 만든다는 관찰. 우리 cumsum 발산(#941)과 같은 부류.</div></div>
+  </div>
+</section>
+
+<section id="moe">
+  <h2><span class="n">1</span>MoE 전문가 스트리밍</h2>
+  <div class="slice"><i style="background:var(--seg-moe)"></i>25.1 ms / 46% · C=4에서는 60~65% · 약 207 GB/s로 스트리밍</div>
+  <p class="state"><b>지금</b> 바이트-동일 런치 폴드(#810~#821)는 다 썼고, 남은 건 수치가 바뀌는 커널 작업이다. 지렛대는 셋뿐이다: 같은 바이트를 더 빨리 읽기(커널), 토큰당 바이트 줄이기(전문가 희소성·비트), 스펙 디코딩으로 바이트당 토큰 늘리기(2절). 재양자화 품질은 프로덕션 21.9% / NVIDIA 14.6% / GPTQ 10.9%의 층 오차 격차를 어디서 회수할지의 문제다.</p>
+
+  <h3>1a. 소배치 MoE 커널</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.04244">MonoMoE: Fused Mega-kernel for Quantized MoE Decoding</a></td><td class="src">AWS · 2609.04244 · 2026-08</td><td class="why">weight-major 퍼시스턴트 메가커널. 디코드 스텝의 토큰 타일 전체를 텐서코어 N 차원에 놓고 CTA를 전문가 가중치 타일로 분할. 라우팅·양자화·두 프로젝션·활성화·합산을 한 런치에. 소배치 가중치 스트리밍 GEMM이 DRAM 대역 17~22%만 쓴다는 관찰. vLLM Triton grouped GEMM 대비 1.54×, H200 TPOT −18.7%. FlashInfer 공개. FP8만; NVFP4·mma.sync 이식 필요.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.13233">ReSET: Latency-Critical NVFP4 Reasoning</a></td><td class="src">한양대 · 2606.13233 · 2026-06</td><td class="why">온도 스케일링 논문이지만 부록이 핵심: M=1,2용 CUDA-core NVFP4 커널(e4m3 블록 스케일, FP4 언팩 파이프라인) + 형상별 디스패치. NVFP4 vLLM 대비 커널 2.5×, 종단 약 2×. 코드 공개(aiha-lab/ReSET). GB10에서 소 M NVFP4 텐서코어가 FP8 대비 2×를 못 내는 현실(7절)에 맞는 답.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.23911">TritonMoE: Cross-Platform Fused MoE Dispatch in Triton</a></td><td class="src">2605.23911 · 2026-04</td><td class="why">라우터·순열·전문가 GEMM·가중 합산을 Triton으로. L2 상주 입력 타일에서 gate+up 융합 + 레지스터 내 SiLU로 글로벌 트래픽 −35%. sm_121에서 그대로 돈다.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.15789">Approaching Shannon Bound with Lossless LLM Weight Compression</a></td><td class="src">ISCA 2026 · 2606.15789</td><td class="why">타일 단위 ANS 복원, 엔트로피 한계 0.01~0.1비트 이내. Mixtral-176B 1.6×. e2m1+e4m3 전문가에 짜낼 엔트로피가 남았는지는 싼 실험.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.14385">DeaMoE: MoE Structure for Fast Small-Batch Decoding</a></td><td class="src">USTC · 2608.14385 · 2026-08</td><td class="why">전문가를 "부서"로 묶어 대부분 파라미터 공유, 스텝당 로드 −50.9%. 재학습 필요라 GLM 고정 가중치엔 불가; 조합 프레임(Qwen3.8 모듈) 쪽 참고.</td><td class="rel"><span class="chip lo">하</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.02652">Unfolding the Leech Lattice: 2-Bit Weights</a></td><td class="src">2609.02652 · 2026-09</td><td class="why">격자 VQ 2비트 + 분기 없는 융합 디코드, 비트플레인 배치. 품질 비용은 크지만 dequant-on-load GEMV의 레이아웃 교훈은 유효.</td><td class="rel"><span class="chip lo">하</span></td></tr>
+  </table></div>
+
+  <h3>1b. 토큰당 전문가 바이트 줄이기</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.05228">ACE: Adaptive Calibration-Free Expert Skipping</a></td><td class="src">2609.05228 · 2026-09</td><td class="why">오프라인 전문가 통계(스펙트럼 프록시) + 런타임 라우터 게이트로 저가치 슬롯 스킵, top-1은 항상 유지. Qwen3.6-35B-A3B 슬롯 50% 스킵에서 기존 스킵법 대비 PPL −7.96%, 평균 +4.15 pt. 학습·캘리브 없음.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.18643">ZEDA: Post-Trained MoE Can Skip Half Experts via Self-Distillation</a></td><td class="src">칭화/상하이AI · 2605.18643</td><td class="why">파라미터 없는 zero 전문가를 추가하고 자기증류로 토큰 의존 활성화 학습. 전문가 FLOPs &gt;50% 제거, GLM-4.7-Flash +4.0 pt, 종단 약 1.20×. 우리 모델 직계 조상에서 검증됨.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.08133">Alloc-MoE: Budget-Aware Expert Activation Allocation</a></td><td class="src">2604.08133 · 2026-04</td><td class="why">층별(민감도 + DP)·토큰별 전문가 예산 배분. 절반 예산에서 디코드 1.34×(V2-Lite). 층별 비균일 top-k는 라우터 커널에 싸게 들어간다.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.07814">LorExperts / BTExperts: Shape Mutating Expert Compression</a></td><td class="src">2608.07814 · 2026-08</td><td class="why">클러스터당 지배 전문가 하나 + 나머지는 저랭크 델타, 라우터 보존·재학습 없음. Qwen3-30B-A3B·Gemma-4-26B에서 약 50% 압축. 저랭크 델타 GEMM 경로가 있어야 바이트가 준다.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.19289">Speculating Experts (YALIS)</a></td><td class="src">UMD · 2603.19289</td><td class="why">현재 표현으로 다음 층·다음 토큰 전문가 예측 후 프리페치. 통합 메모리에선 PCIe가 아니라 L2/SM 스케줄링 문제로 바뀌지만 예측기는 재사용 가능.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: ConMoE 프로토타입 재배정 25~50% 감소 <span class="mono">2605.29350</span> · FlexMoE 전문가 내부 채널 프루닝 50% at 99.8% <span class="mono">2606.27866</span> · DraftExpert 층별 드래프트 전문가 <span class="mono">2607.24434</span> · Patterns behind Chaos(ISCA 2026 최우수, 전문가 선택 트레이스 공개) <span class="mono">2510.05497</span></li>
+  </ul>
+
+  <h3>1c. 재양자화 품질 (NVFP4 전문가)</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2512.02010">Four Over Six: Adaptive Block Scaling for NVFP4</a> + <a href="https://developer.nvidia.com/blog/creating-the-nvidia-nemotron-3-ultra-nvfp4-checkpoint-with-nvidia-model-optimizer/">Nemotron 3 Ultra NVFP4 레시피</a></td><td class="src">MIT/NVIDIA · 2512.02010 v5 2026-05 · 블로그 2026-06-26</td><td class="why">블록 최대값을 4 또는 6에 매핑해 근최대 원소의 격자를 고르게. NVIDIA가 실제 출하하는 PTQ: 라우티드 전문가 NVFP4, 공유 전문가·Mamba FP8, 어텐션 BF16, KV FP8, 유효 5.03 bit/elem; 블록 MSE 중앙값 −16.4%. NVIDIA vs Red Hat 랭크 오차 차이의 유력한 설명 일부.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.07618">ScaleSweep: NVFP4 PTQ via Block Scale Initialization</a></td><td class="src">2606.07618 · 2026-05</td><td class="why">AbsMax 대신 실현 가능한 블록 스케일 후보를 유계 스윕. W/A/KV 전부 NVFP4에서 FP 성능 &gt;93% 보존. g16 e4m3 스케일 선택에 바로 꽂히는 개선.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.12245">SOAR: Scale Optimization for NVFP4</a></td><td class="src">2605.12245 · 2026-05</td><td class="why">텐서 전역 스케일과 블록 스케일의 폐형식 공동 최적화 + quant/dequant 스케일 분리 탐색. 같은 메모리에서 정확도 향상. 재양자화 파이프라인에서 A/B가 싸다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2601.20088">Quantization-Aware Distillation for NVFP4 (QAD)</a></td><td class="src">NVIDIA · 2601.20088 · 2026-01</td><td class="why">BF16 교사 → NVFP4 학생 KL 증류. SFT/RL/병합 파이프라인에 견고, Nemotron 계열에서 BF16 근접. GPTQ 10.9% 천장을 닫는 방법이고, 교사 대비 KL은 우리가 추적해야 할 종단 지표(nats).</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.05688">VSRAQ: Routing-Consistent Quantization of MoE</a></td><td class="src">2606.05688 · 2026-06</td><td class="why">양자화 전 top-k 라우팅을 보존하는 PTQ 목적(값 정렬 + 순서 정렬). 층별 전문가 재구성 오차는 라우팅이 뒤집히면 틀린 지표라는 주장. Red Hat/NVIDIA/GPTQ 비교에 넣을 지표.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.02217">Router Calibration for MoE Compression</a></td><td class="src">2603.02217 · 2026-02</td><td class="why">압축 후 손상 대부분이 라우터-전문가 불일치; 라벨 없는 데이터로 라우터만 KD하면 회복, 세립 MoE(작은 전문가 다수)에서 최대. GLM급이 바로 그 영역.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.22370">FAAR: Format-Aware Adaptive Rounding for NVFP4</a></td><td class="src">2603.22370 · 2026-03</td><td class="why">E2M1 비균일 격자를 존중하는 AdaRound 계열 + 2단계 정렬 FT. 소형 모델 증거만 있지만 "GPTQ-for-FP4" 라운딩 축.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.00079">BitsMoE</a> · <a href="https://arxiv.org/abs/2606.04980">AlphaQ</a> · <a href="https://arxiv.org/abs/2605.23078">GEMQ</a></td><td class="src">2606.00079 · 2606.04980 · 2605.23078</td><td class="why">2~3비트 전문가·혼합 정밀도 배분 계열. BitsMoE는 2비트 Qwen3-30B-A3B에서 GPTQ 대비 +27.8 pt, 디코드 1.76×; AlphaQ는 캘리브 없는 전문가별 비트; GEMQ는 전역 LP + 라우터 시프트 보정. 네이티브 텐서코어 포맷이 없어 커스텀 dequant 필요.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.10496">CodeQuant (ICLR 2026)</a></td><td class="src">2604.10496</td><td class="why">학습 가능한 회전으로 활성화 이상치 평활 + 코드북 중심 미세조정. FP4 전 회전 아이디어; 코드북 경로는 하드웨어 비친화.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: QUADS NVFP4 RL 롤아웃 안정성 <span class="mono">2607.15810</span> · Quartet II NVFP4 사전학습 <span class="mono">2601.22813</span> · 671B MoE FP4 학습(Hopper) <span class="mono">2603.02731</span> · MixFP4 <span class="mono">2605.31035</span> · 전문가별 혼합정밀 일반화 보장 <span class="mono">2604.06515</span></li>
+  </ul>
+  <div class="todo"><b>먼저 할 일</b><ul>
+    <li>MonoMoE의 weight-major 스케줄을 우리 NVFP4 전문가 커널 형상(M≤32, 48 SM, 99 KB smem)으로 옮길 수 있는지 FlashInfer 소스에서 wgmma 의존부터 본다.</li>
+    <li>ReSET 커널을 GB10에서 그대로 재고 Marlin INT4 경로(7절 포럼 측정)와 3자 비교. 수치가 바뀌는 작업이니 레인 티켓 필요.</li>
+    <li>재양자화: Four-over-Six + ScaleSweep/SOAR를 head_compare 암에 추가하고, 층 오차 대신 VSRAQ식 라우팅 일치율과 교사 대비 nats로 판정.</li>
+    <li>ACE는 학습 없이 붙는다. 50% 슬롯 스킵을 GLM-5.3-Flash에서 nats 비용으로 먼저 잰다.</li>
+  </ul></div>
+</section>
+
+<section id="spec">
+  <h2><span class="n">2</span>스펙 디코딩</h2>
+  <div class="slice"><i style="background:var(--seg-moe)"></i>바이트당 토큰 · 주 지렛대 · K=7 블록 드래프터 + 8행 트리 · 프로덕션 T=1</div>
+  <p class="state"><b>지금</b> 트리 걷기가 거부의 61%에서 잘못된 드래프터 top-1을 따랐다(#966) → 드래프터 품질이 지렛대. 오프라인 온도 트릭은 라이브 A/B에서 안 잡혔고 학습된 리랭커는 과적합. 8행 트리는 층당 41.9 전문가를 읽는다. 2026년 6~9월은 정확히 이 셋을 다룬 논문이 쏟아진 기간이다: 거부 상태 되먹임, 학습-추론 정렬, 전문가 비용 인식 트리 절단.</p>
+
+  <h3>2a. 블록 드래프터 구조 (DFlash 계보)</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://inco.ai/blog/dflash2/">DFlash 2 "Keep Drafting Parallel"</a> (<a href="https://huggingface.co/z-lab/Qwen3.8-27B-DFlash2">체크포인트</a>)</td><td class="src">z-lab / Inco · 블로그 2026-08 · arXiv 없음</td><td class="why">슬롯당 top-16 후보를 유지하고 저랭크 쌍선형 선택기가 인접 후보 간 일관된 경로를 고름; 어텐션/FFN 앞뒤 2-탭 depthwise conv로 접미사 붕괴 방지(+3% 파라미터). Qwen3.8-27B 평균 수락 4.80(DSpark 3.62), 2.7~3.4×; 검증당 토큰 +16~25%에 사이클 지연 약 1%. SGLang·vLLM·llama.cpp 지원. 우리 리랭커가 과적합한 자리에 들어가는 싼 선택기.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.06498">DFlow: Verifier Information Flow in Block Diffusion SD</a></td><td class="src">2609.06498 · 2026-09</td><td class="why">거부된 위치의 타깃 은닉 상태를 다음 블록 드래프트 조건으로 재사용(self-condition 학습). 타깃 추가 연산 없음. Qwen3에서 DFlash 대비 일관된 수락 길이 향상.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.14717">Carryover Drafting: Recycling Rejected States</a></td><td class="src">2609.14717 · 2026-09</td><td class="why">거부된 타깃 은닉 상태를 드래프터가 attend하는 임시 KV로(학습 임베딩 하나로 표시); "parallel draft–verify–draft" 학습. 수락 길이 +6.5~14.7%, vLLM 종단 +7.9~14.4%(번역 +28.8%). DFlash·DSpark형 드래프터에 적용.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.29748">ReTrace: Rejected-Trajectory Conditioning</a></td><td class="src">2608.29748 · 2026-08</td><td class="why">거부된 접미사의 은닉 표현을 다음 블록에 정렬해 게이트 잔차로 융합. 추가 forward 없음. 같은 지렛대의 세 번째 독립 보고 — 라운드 내 개선과 직교라 합성 가능.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.02438">xPress: Parallel Refinement for Diffusion Drafters</a></td><td class="src">IBM 등 · 2608.02438 · 2026-08</td><td class="why">"개별로는 그럴듯, 결합은 비현실" 드래프트를 한 번의 병렬 패스로 정리하는 경량 인과 정제기. 수락 길이 평균 +30%(최대 +56%), Qwen3-8B 처리량 1.3×.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.02091">DFlare: Scaling Up Draft Capacity</a></td><td class="src">2606.02091 · 2026-06</td><td class="why">드래프트 층마다 타깃 층들의 학습 가능한 혼합을 읽음(DFlash의 단일 표현 병목 제거). DFlash 대비 +5~11%, GPT-OSS-20B 3.91×.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.26744">HyperDFlash: Hyper-Connection-Aligned Block SD</a></td><td class="src">2606.26744 · 2026-06</td><td class="why">DeepSeek-V4의 하이퍼커넥션 잔차용 DFlash형 드래프터: 붕괴 전 잔차 스트림에 조건화, 선형 압축기를 게이트 감쇄기로. 우리 타깃의 mHC/게이트 잔차에서 "어느 잔차 상태를 드래프터에 줄 것인가"가 바로 이 질문.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.25852">AngelSpec (DFly)</a></td><td class="src">2607.25852 · 2026-07</td><td class="why">블록 확산 백본 + 하이브리드 타깃 조건화 + 선행자 조건 AR 헤드; 도메인별 드래프터, 검증 깊이 적응. MoE 타깃(Hy3-A21B) 동시성 4~64에서 DFlash 대비 +10.5~11.8%, 수락 길이 +30%.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.30427">DBloom: Ceiling-Clipped Acceptance Histograms</a></td><td class="src">2608.30427 · 2026-08</td><td class="why">진단: 수락 히스토그램이 블록 크기 천장에서 스파이크면 속도가 묶여 있다는 뜻. 커리큘럼으로 블록 16→24. 우리 K=7이 클리핑 중인지 보는 싼 체크.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.29707">Domino</a> / <a href="https://arxiv.org/abs/2607.08642">DominoTree</a></td><td class="src">2605.29707 · 2607.08642</td><td class="why">병렬 드래프트 백본 + 접두 조건 정제 헤드(SGLang 5.8×); DominoTree는 학습 없이 루트-노드 경로 따라 조건부 트리(Qwen3-8B 7.3×, 장문맥 수락 +29~36%, 단일·동시 요청 모두).</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.07710">WhiFlash: Token-Level Cross-Paradigm Routing</a></td><td class="src">EMNLP 2026 · 2606.07710</td><td class="why">토큰별로 AR 드래프터와 확산 드래프터 사이 라우팅. 드래프터 둘은 128 GB에서 메모리 부담이지만 "블록 드래프터는 폭발적으로 실패한다"는 관찰이 우리 거부 분석과 일치.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: PCTree 재학습 없이 세미-AR 체인→트리 <span class="mono">2608.02123</span> · CURE 블록 내 고불확실 위치 수리 <span class="mono">2608.00531</span> · DeLS-Spec 고정 DFlash + 지역 헤드 <span class="mono">2607.07409</span> · D²SD 이중 확산 드래프터 <span class="mono">2606.04446</span> · Ψ-Spec 타깃 자체에 확산 가중치(타깃 학습 필요) <span class="mono">2609.04010</span></li>
+  </ul>
+
+  <h3>2b. 드래프터 학습 · MTP 헤드</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.01893">Spec-AUF: Accept-Until-Fail Training</a></td><td class="src">2607.01893 · 2026-07</td><td class="why">드래프터가 처음 실패할 것으로 예측되는 위치까지만 CE 감독(추론은 그 뒤를 버린다). DFlash 방출 길이 2.40→2.61, Domino 2.56→2.68. 손실 한 줄 수정, 추론 불변.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.30135">VAT: Verification-Aware Training</a></td><td class="src">NAVER · 2608.30135 · 2026-08</td><td class="why">학습 스텝마다 검증을 시뮬레이션; 이진 검증 헤드 + 수락/거부 적응 가중. 수락 길이 +11.4%, 벽시계 +8.7%. EAGLE-3·DFlash 드롭인.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.29343">Draft-OPD: On-Policy Distillation for Draft Models</a></td><td class="src">2605.29343 · 2026-05</td><td class="why">타깃 보조 롤아웃 + 검증에서 드러난 오류 위치 리플레이. thinking 모델 &gt;5×, DFlash 대비 +13%. 오프라인→추론 불일치를 고치는 축 — 우리 온도 트릭이 라이브에서 죽은 이유와 같은 축.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.05448">DBLAST: Dependent Block Drafting for Stochastic SD</a></td><td class="src">2608.05448 · 2026-08</td><td class="why">위치 독립 블록 드래프터는 타깃 샘플링 엔트로피가 오를수록 수락 길이를 잃는다는 것을 보임; 위치 간 저랭크 잠재 혼합 + 수락 지향 목적. T=1 프로덕션을 위해 블록 드래프터를 학습한 유일한 논문.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.09338">Osprey: Target-agnostic Pre-training for Drafters</a></td><td class="src">EMNLP 2026 · 2609.09338 · 2026-09</td><td class="why">일반 LM을 프루닝·복원해 재사용 가능한 드래프터 백본으로, 타깃별 경량 적응. MiniMax-M2.5(229B MoE) 수락 길이 +22.7%, tok/s +17.5%; 도메인 밖·다국어에서 최대 이득.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://developers.redhat.com/articles/2026/09/08/optimize-vllm-speculative-decoding-fastmtp-heads">FastMTP식 MTP 헤드 미세조정 (vLLM Speculators 0.6)</a></td><td class="src">Red Hat · 2026-09-08 · 블로그</td><td class="why">서빙과 같은 teacher-forced 재귀 루프, 위치 지수 감쇠, 전체 어휘 드래프팅. Qwen3-Next-80B 위치별 수락 0.897→0.912 / 0.719→0.776 / 0.476→0.616, ITL 중앙값 1.25×. 우리 MTP 경로(89%)의 깊이 2~3 붕괴가 짧은 FT로 고쳐진다는 증거.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.18810">D-PACE: Position-Aware Cross-Entropy</a></td><td class="src">2605.18810 · 2026-05</td><td class="why">기대 수락 길이의 미분 가능 대리로 위치별 손실 가중. 학습 비용 +2.3%, 두 온도에서 평가.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.19223">AdaFlash: On-Policy Distilled Diffusion Drafters</a></td><td class="src">COLM 2026 ws · 2607.19223</td><td class="why">reverse-KL 온폴리시 증류 + 스텝별 드래프트 길이 헤드.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://vllm.ai/blog/2026-05-26-eagle-3-1">EAGLE 3.1</a></td><td class="src">vLLM 블로그 · 2026-05-26</td><td class="why">타깃 은닉 상태 FC 정규화 + post-norm 되먹임으로 깊이에서의 "attention drift" 억제; 장문맥 수락 길이 최대 2×. Kimi K2.6 GB200 TP4: C=1 2.03×, C=4 1.71×. AR 드래프터 기준선이 움직였고 drift 수정은 은닉 상태 조건 드래프터 전반에 이전 가능.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: GrowMTP RL 루프 안에서 드래프트 헤드 성장 <span class="mono">2609.16648</span> · Online Draft Co-Training(256K RL, 122B) <span class="mono">2609.07108</span> · P-EAGLE 병렬 EAGLE(GPT-OSS-120B vLLM 1.10~1.36×) <span class="mono">2602.01469</span> · KVShot 드래프트의 타깃 KV 접근(종단 이득 미미) <span class="mono">2604.26412</span> · MLA 드래프터 함수 재구성 <span class="mono">2607.27269</span></li>
+  </ul>
+
+  <h3>2c. 트리 구성 · 검증 · 샘플링</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.03819">TreeFlash: Parallel AR-Approximation</a></td><td class="src">ETH · 2606.03819 · 2026-06</td><td class="why">원샷 블록 드래프터는 분기 무관 마진을 내므로 트리 형제가 같은 분포를 공유 → 드래프터 은닉 + 이전 토큰 조건 MLP로 AR 조건을 상수 비용에 근사. 블록 효율 +12%, 속도 +9%. 우리가 잰 "고정 8노드가 가장 깊은 체인 노드를 잃는다"는 약점을 정확히 지목.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.18394">JetSpec: Parallel Tree Drafting</a></td><td class="src">UCSD · 2606.18394 · 2026-06</td><td class="why">한 forward에 타깃 AR 분해와 정렬된 트리를 내는 헤드(분기별 인과 조건화). MATH-500 9.64×, chat 4.58×. 트리 예산을 키워도 포화하지 않는다는 주장.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.12989">DDTree: Block Diffusion Draft Trees</a></td><td class="src">Technion · 2604.12989 · 2026-04</td><td class="why">DFlash 위치별 마진에서 고정 노드 예산 하 best-first 힙으로 트리 구성, 조상 전용 마스크로 검증. AR 드래프터 없이 EAGLE-3급 수락.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.00487">TAPS: Target-Aware Prefix Tree Selection</a></td><td class="src">2606.00487 · 2026-05</td><td class="why">확산 마진을 접두 조건 수락 추정으로 바꿔 고정 예산 하 접두-닫힌 부분트리 선택(거부된 접두의 자손을 검증하지 않음). DFlash 대비 1.36×, DDTree 대비 1.74×.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.06763">Weaver: Trees from Marginals</a></td><td class="src">2607.06763 · 2026-07</td><td class="why">분해 드래프터 top-K 마진에서 토큰 간 의존을 복원하는 어댑터로 제안 트리. 최적화된 DFlash 대비 +24.7%. Gated-DeltaNet 층용 SGLang CUDA 트리 검증 커널 동봉 — 하이브리드 어텐션 타깃(Qwen3.8)에 직접.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.29727">Bastion: Budget-Aware Tree-structured Block Diffusion Drafting</a></td><td class="src">KAIST · 2605.29727</td><td class="why">경로 신뢰도 수락 대리 + 온라인 지연 추정기 + best-first 확장으로 쿼리 의존 트리. 학습·설정 튜닝 없음. 검증 비용 모델이 측정값이라 GB10에선 곧 전문가 스트리밍 비용.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.08721">LibraSpec: Marginal-Gain-Driven Dynamic Diffusion SD</a></td><td class="src">2608.08721 · 2026-08</td><td class="why">드래프터 신뢰도로 "몇 토큰까지 검증할 가치가 있나"를 한계 이득 &gt; 검증 비용일 때만 연장. 학습 없음, greedy·sampling 모두. 고정 K 블록 드래프터의 길이 적응.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.24411">ResiSpec: Multi-Candidate Sampling via Residual Distribution Shaping</a></td><td class="src">2608.24411 · 2026-08</td><td class="why">"residual drift": 첫 형제가 거부되면 잔여 타깃 분포가 드래프터의 확신 질량과 어긋남. 정확성을 유지하며 검증 중 제안을 재성형, 기존 다후보 대비 최대 1.92×. T=1 오른쪽 형제 노드가 바로 이 경우.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.04543">UniVer: Multi-step and Multi-draft SD as Conditional OT</a></td><td class="src">2605.04543 · 2026-05</td><td class="why">트리 검증을 접두 수락 제약 하 지역 OT 계획의 합성으로. 무손실, 재귀 기각 샘플링 대비 수락 길이 +4.2~8.5%. 8행 트리의 노드별 재귀 기각 걷기를 대체.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.20475">SonicSampler: Tile-Aware Kernels for Sampling and Speculative Verification</a></td><td class="src">Tri Dao 등 · 2607.20475</td><td class="why">온도/top-k/top-p/min-p/패널티/문법 + 스펙 검증을 CUDA 그래프 호환 배치 커널 하나로; 2단계 top-k 10×. 우리 cumsum 비결정성(#941)과 스텝 런치 바닥이 둘 다 이 커널 안에 산다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2602.16994">Dynamic Delayed Tree Expansion for Multi-Path SD</a></td><td class="src">2602.16994 · 2026-02</td><td class="why">샘플링 영역별 검증 규칙 체계 비교: Traversal Verification 우세; 지연 분기 + 소형 선택기로 +5%. 어느 샘플링-인식 검증기를 돌릴지의 근거. 선택기엔 우리 "리랭커 과적합" 경고 적용.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.15504">How Lossless Is Lossless SD? (Orthrus)</a></td><td class="src">2609.15504 · 2026-09</td><td class="why">"무손실" 하이브리드 디코딩이 BF16에서 AR 궤적을 43~45%만 재현(FP32 100%), 벤치 열화는 없음. NVFP4/FP8 타깃의 궤적 동일성 테스트에 기대치를 준다.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: BlockPilot 인스턴스별 블록 크기 예측(T=1 4.20×) <span class="mono">2606.31315</span> · TreeGraft 싼+강한 드래프터 접목 <span class="mono">2608.26112</span> · PRESTO 접두 정렬 트리 <span class="mono">2607.22634</span> · CaDDTree 라운드별 처리량 최적 노드 예산 <span class="mono">2606.01813</span> · 손실 검증 계열(프로덕션 도어엔 부적합) <span class="mono">2609.02897</span>, <span class="mono">2607.26627</span></li>
+  </ul>
+
+  <h3>2d. MoE 타깃의 검증 비용</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.00342">EVICT: Adaptive Verification for MoE SD</a></td><td class="src">USTC · 2605.00342 v2 2026-09</td><td class="why">트리 가지가 서로 다른 전문가를 켜므로 검증 비용이 트리 폭에 비례. 드래프터 신호 + 오프라인 층별 전문가 비용으로 검증 전 트리를 비용 효율 접두까지 절단. 학습·하이퍼파라미터 없음, 무손실, SGLang CUDA 그래프 서빙 안. AR 대비 2.35×, EAGLE-3 대비 1.21×. 고정 8노드 대신 쓸 원칙 있는 절단 규칙.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2602.16052">MoE-Spec: Expert Budgeting for SD</a></td><td class="src">2602.16052 · 2026-02</td><td class="why">검증 시 층별 전문가 용량을 고정해 트리 깊이와 메모리 트래픽을 분리. EAGLE-3 대비 10~30%. EcoSpec과 같은 지렛대의 검증기 측.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.02989">AcceptMoE: Commitment-Weighted Verifier Expert Sets</a></td><td class="src">2608.02989 · 2026-08</td><td class="why">검증기 측 전문가 선택기가 라우터 점수를 확약 확률로 가중, 블록별 자기 크기 조정. C=1 SGLang 1.29×(오프로드 2.06×)이지만 −0.27 pp — 손실 있음. C=1에서 스펙 트리가 건너뛸 수 있는 스트리밍 양을 정량화.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.14643">BigMoMo: MoE + SD on Mobile</a></td><td class="src">PKU · 2609.14643 · 2026-09</td><td class="why">다중 토큰 검증 창으로 전문가 가중치 읽기를 배치(공동 로드, 수락 인식 프루닝, 연속 플래시 레이아웃). 스펙 MoE 기준선 대비 1.82×. "검증 창이 전문가 스트리밍을 상각한다"는 논리를 더 굶주린 장치에서 명시.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.15051">An Interpretable Latency Model for SD in LLM Serving</a></td><td class="src">Red Hat/MIT · 2605.15051</td><td class="why">프리필/드래프트/검증의 부하 독립·의존 항 폐형식, Little 법칙으로 배치 추정; vLLM 스윕에서 검증. 270 GB/s 노드에서 C=1~4 스펙이 어디서 이득을 잃는지 예측하는 모델.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p">EcoSpec <span class="known">기존</span> · Bole <span class="known">기존</span> · TreeWY <span class="known">기존</span></td><td class="src">2607.12696 · 2608.01651 · 2608.20961</td><td class="why">이미 EXPERIMENT_TREE_DATAFLOW.md에 인용. EcoSpec의 "expert scattering" 비용 모델은 EVICT·BigMoMo의 전제.</td><td class="rel"><span class="chip lo">—</span></td></tr>
+  </table></div>
+
+  <h3>2e. 리트리벌·하이브리드·KV 측 드래프팅</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.20104">Graft: Draft Less, Retrieve More</a></td><td class="src">2605.20104 · 2026-05</td><td class="why">저신뢰 모델 드래프트 가지를 잘라내고 생성 이력 n-gram 리트리벌 가지를 접목해 병합 트리 검증. 학습 없음·무손실, EAGLE-3 대비 +21.8%, Qwen3-235B 포함. 8행 트리의 약한 행을 드래프트 비용 0인 리트리벌 행으로 교체.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.01019">Hybrid Verified Decoding: Learning to Allocate Verification</a></td><td class="src">Intel 등 · 2606.01019</td><td class="why">접미사 캐시 드래프트의 수락 길이를 검증 전에 예측해 스텝마다 캐시/모델 드래프터 선택. 에이전틱 워크플로 2.73×. n-gram + 모델 드래프터 하이브리드의 라우팅을 보상 추정으로.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.03839">Oilbird: Keys the Verifier Already Computes</a></td><td class="src">2608.03839 · 2026-08</td><td class="why">리트리벌 풀을 검증기 은닉 상태로 재키잉(의미 매칭). 학습 없는 드래프터 셋에서 수락 길이 +24~29%, 도구 호출 EAGLE-3 대비 2.0×. 블록 드래프터가 이미 쓰는 타깃 은닉 상태를 그대로 씀.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.08097">OasisKV: Lookahead Sparse Prefetching</a></td><td class="src">MSRA · 2608.08097 · 2026-08</td><td class="why">스펙 디코딩의 lookahead 토큰으로 다음 스텝이 attend할 KV 블록을 예측·프리페치. 우리 두 지렛대(DFlash 블록 + DSA top-k)를 결합 — 드래프트 토큰이 인덱서 선택을 한 스텝 앞서 준다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.24957">Dustin: Draft-Augmented Sparse Verification</a></td><td class="src">ICML 2026 · 2606.24957</td><td class="why">드래프트 lookahead + 타깃 어텐션 이력으로 검증 패스의 핵심 KV 선택. 32K에서 self-attention 27.85×, 종단 9.17×(72B). 검증 스텝이 KV를 K+1번 다시 읽는 자리를 희소화.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.30252">Strong Drafts Need Compact Memories</a></td><td class="src">EMNLP 2026 Findings · 2608.30252</td><td class="why">드래프트 측 KV만 경량 어댑터로 압축(&gt;70%), 타깃은 전체 KV(무손실). 드래프터 스텝당 바이트 감소.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.21535">Windowed-MTP at Million-Token Context</a></td><td class="src">2607.21535 · 2026-07</td><td class="why">드래프트 어텐션에만 StreamingLLM식 창+싱크(타깃은 전체). 1M 문맥에서 스텝 비용 −28~44%. 우리 DFlash 쿼리별 창 수정(#992~#997)의 MTP 헤드판.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: Goose 비등방 트리(n-gram+통계) <span class="mono">2604.02047</span> · AdaPLD 어휘+의미 리트리벌 <span class="mono">2606.05742</span> · SSR 추론 모델 자기 스펙 <span class="mono">2608.20359</span> · ECHO 초기 층 드래프트 루프(MoE에선 초기 층 전문가 스트리밍이 남음) <span class="mono">2609.17241</span> · BudgetDraft 희소 KV 예산에 강건한 드래프터 학습 <span class="mono">2606.00144</span></li>
+  </ul>
+
+  <h3>2f. 시스템 통합 · GB10 커뮤니티 측정</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.03251">Speculative Speculative Decoding (Saguaro)</a></td><td class="src">ICLR 2026 · Tri Dao 등 · 2603.03251</td><td class="why">검증이 도는 동안 유력한 검증 결과들에 대해 미리 드래프트; 추측이 맞으면 드래프트 비용이 사라짐. 최적화 SD 대비 30%, AR 대비 최대 5×. 요청 분할로는 8~24 ms를 못 숨긴 C=2 SMT 결론(#1065) 뒤에 남은 유휴 SM의 다른 용도.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://www.lmsys.org/blog/2026-06-15-next-generation-speculative-decoding-dflash-v2/">SGLang Spec V2 + DFlash</a></td><td class="src">LMSYS · 2026-06-15</td><td class="why">오버랩 스케줄러로 호스트-디바이스 동기 제거(배치 N−1 정리와 배치 N KV 할당을 GPU 작업과 겹침). DFlash는 타깃 은닉 상태를 융합 Triton 커널로 드래프트 KV에 즉시 실체화. Qwen3.5-397B-A17B 8×B200 C=1: 기준 대비 &gt;4.3×, 네이티브 MTP 대비 1.5×. 우리 드래프터 부류의 MoE C=1 참조 구현.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://mazurov.dev/posts/glm-speculation-benchmark/">GLM-5.3-Flash: DFlash vs Native MTP on 2× GB10</a></td><td class="src">커뮤니티 · 2026-09-07</td><td class="why">GLM-5.3-Flash NVFP4, 2× GB10 TP=2, SGLang: 네이티브 MTP는 3 중 2.5~2.7 수락; DFlash2 BF16 32.35 tok/s vs MTP 25.75(짧은 코드), 128K 세션 둘 합산 46.06 vs 38.73; 저자는 KV 여유 때문에 MTP 선택. 같은 모델, 같은 하드웨어.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://ai-muninn.com/en/blog/dgx-spark-bandwidth-ceiling-85-percent">Qwen3.8-27B 65 tok/s on one DGX Spark</a></td><td class="src">커뮤니티 · 2026-08-23</td><td class="why">기준 12.32 tok/s = 273 GB/s 천장의 85%; DFlash2 드래프트 예산 12에서 65.0 tok/s(MTP 35.7, DSpark 42.9). 도약은 수락 포화 체크 후 예산 8→12에서 나왔다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://forums.developer.nvidia.com/t/mimo-v2-5-dflash-speculative-decoding-on-a-2x-dgx-spark-pair-22-67-tok-s-depending-on-workload/375607">MiMo-V2.5 + DFlash on 2× DGX Spark</a></td><td class="src">NVIDIA 포럼 · 2026-07-05</td><td class="why">310B MoE, vLLM TP=2 eager: 22.3 → 27.6(산문) / 55.1(수학) / 66.9(JSON) tok/s; 산문 수락 T=0 2.4 vs T=0.7 1.45. 이 하드웨어에서의 샘플링 페널티를 정량화.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://vllm.ai/blog/2026-07-28-speculators-parallel-drafting">vLLM 병렬 드래프팅</a> · <a href="https://vllm.ai/blog/2026-08-23-speculative-decoding-amd-gpus">AMD 스펙 디코딩 연구</a></td><td class="src">vLLM 블로그 · 2026-07/08</td><td class="why">P-EAGLE/DFlash/DSpark가 Speculators로 1급 지원. MI300X/MI355X 비교: 병렬 드래프터는 num_speculative_tokens 7 또는 11에서 정점, 순차는 3~7. K≈7~11이 대역 제한 부품의 병렬 드래프터 스위트스팟.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.20503">FASER: Fine-Grained Phase Management for SD</a></td><td class="src">2604.20503 · 2026-04</td><td class="why">요청별 스펙 길이, 검증 중 거부 토큰 조기 프루닝, 청크 검증과 드래프팅의 공간 다중화. vLLM 프로토타입 지연 최대 1.92×. C=1~4에서 요청별 K.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.09557">SPEED-Bench</a></td><td class="src">NVIDIA · ICML 2026 · 2604.09557</td><td class="why">도메인·동시성 축의 표준 SD 평가(vLLM·TRT-LLM). 배치 의존 최적 드래프트 길이, 합성 입력이 속도를 과장함을 문서화. 우리 paired A/B 프로토콜 참고.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <div class="todo"><b>먼저 할 일</b><ul>
+    <li>DBloom 진단부터: 현재 드래프터의 수락 히스토그램이 K=7 천장에 스파이크인지 캘리브 체인 로그로 본다. 스파이크면 K를 늘리는 게 학습보다 먼저다.</li>
+    <li>드래프터 재학습 대기 중인 #1003에 Spec-AUF(손실 한 줄)와 DBLAST의 T=1 목적을 넣는다. 거부 상태 되먹임(DFlow/Carryover/ReTrace)은 다음 학습 사이클.</li>
+    <li>트리: EVICT의 전문가 비용 절단을 #966 데이터로 오프라인 시뮬레이션. 예상대로면 고정 8노드를 대체. TreeFlash MLP는 그 다음.</li>
+    <li>T=1 검증기를 UniVer/ResiSpec으로 바꿀 때는 무손실성 증명이 있으니 GPU 검증 없이 CPU 오라클로 분포 동일성부터 확인.</li>
+    <li>GLM-5.3-Flash 2× GB10 커뮤니티 수치(DFlash2 vs MTP)는 우리 4× TP4 수치와 노드당으로 맞춰 본다.</li>
+  </ul></div>
+</section>
+
+<section id="launch">
+  <h2><span class="n">3</span>런치 바닥 · 커널 융합 · dense GEMM · mHC</h2>
+  <div class="slice"><i style="background:var(--seg-dense)"></i>dense 13.7 + mHC 4.4 + 기타 6.4 ms · 1,359 런치/스텝 · 바이트-동일 폴드 소진</div>
+  <p class="state"><b>지금</b> C=1 바닥은 바이트가 아니라 런치다(#862 리드백 스톨, #1065 "launch floor not bytes"). 메가커널은 2026년에 Mirage MPK → Event Tensor로 세대가 바뀌었고, 소 SM·저대역 부품(RTX 5090, L4)에서 이득이 가장 크다는 측정이 여럿 나왔다. GB10은 그 부류다.</p>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.13327">Event Tensor: Compiling Dynamic Megakernels</a></td><td class="src">CMU/NVIDIA · 2604.13327 · 2026-04</td><td class="why">형상·배치 가변 메가커널의 컴파일러 추상; 정적+동적 스케줄링 변환으로 퍼시스턴트 커널 생성. vLLM/SGLang(CUDA 그래프, PDL, torch.compile) 대비 지연 SOTA, 워밍업 대폭 감소; TP용 GEMM+reduce-scatter / all-gather+GEMM 융합 포함. Mirage MPK <span class="known">기존</span>의 후속.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.12379">ForgeMegakernel</a></td><td class="src">THU/OpenBMB · 2609.12379 · 2026-09</td><td class="why">코딩 에이전트가 생성하는 디코드 메가커널: SM별 명령 스트림, 전역 배리어 대신 의존 카운터, smem 버퍼 풀. 8 모델 패밀리 14 연산에서 대역 50.5~85.9%, SGLang 대비 1.21×. dense만(MoE·MLA 없음). 중간 상태 오라클 + 마일스톤 레시피는 48 SM용 메가커널을 손으로 다 짜지 않는 길.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.23099">DA-MoE: Distribution-Aware MoE Inference with Adaptive Kernel Dispatch</a></td><td class="src">NTU/Harvard · 2607.23099 · 2026-07</td><td class="why">라우팅 왜도의 Dirichlet 모델 + "유효 전문가 수"로 오프라인 튜닝된 커널 변형을 고르고, CUDA 12.8 조건부 그래프 노드로 호스트 동기 없이 디바이스 측 전환. DeepSeek-V3 1.16×, Kimi K2 1.29×. K=7 블록이 전문가당 토큰 수를 바꾸는 우리 캡처 그래프에 맞는 기법.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.30571">Memory-Bound but Not Bandwidth-Limited</a></td><td class="src">2605.30571 · 2026-05</td><td class="why">44셀 배치-1 연구: 분석적 메모리 바닥 대비 달성률이 피크 대역이 클수록 떨어짐(L4 약 81%, H100 약 27%); 숨은 항은 런치. CUDA 그래프 H100 1.26× vs L4 1.03×; L4에서 GPTQ+ExLlamaV2 17.4 ms vs bf16 62.3인데 bnb-nf4는 거의 무효. 저대역 부품에서 양자화 디코드 이득은 전적으로 dequant 커널에 달렸다는 우리 결론의 외부 판.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.11581">Ada-MK: Adaptive MegaKernel via DAG Search</a></td><td class="src">Baidu · 2605.11581 · 2026-05</td><td class="why">런치 오버헤드 종단 14.6% 측정; smem 제약 모델(피크 −50%), MLIR 오프라인 DAG 탐색, 디코드만 메가커널로 TRT-LLM 안에서 실행(프리필은 융합 연산 유지). TRT-LLM 대비 +23.6%. 프로덕션 검증된 "디코드만 메가커널" 분할.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.09682">AutoMegaKernel</a></td><td class="src">2606.09682 · 2026-06</td><td class="why">에이전트가 HF Llama 계열을 퍼시스턴트 협력 커널 하나로 컴파일, 정적 데드락/레이스 검사. W8A16 배치-1: RTX 5090(sm_120) 1.19~1.23×, L4 1.33×, A100/H100에선 열세. 메가커널 이득이 저대역·소 SM에서 가장 크다는 증거.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://www.usenix.org/conference/osdi26/presentation/ghosh">GraCE: Compiler Support for CUDA Graphs</a></td><td class="src">OSDI 2026 · IISc/MSR</td><td class="why">그래프 캡처 가능하게 만드는 코드 변환, 그래프 내 커널 파라미터 복사 오버헤드 제거, 선택적 그래프화. 우리 비그래프 구간(리드백·샘플링)에 적용할 회계.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.01927">Albireo: Eliminating Non-Scalable Overheads</a></td><td class="src">2606.01927 · 2026-06</td><td class="why">TP가 서브리니어인 이유는 스케줄링·I/O·샘플링이 TP 차수와 함께 줄지 않아서; 이를 연산과 겹치고 샘플링을 시퀀스 병렬화. vLLM 대비 지연 −48%. 4노드 TP4 + 스텝당 호스트 작업(리드백, cumsum)이 정확히 그 항.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.12465">TaxBreak: Overhead Decomposition</a> · <a href="https://arxiv.org/abs/2603.22774">CPU-Induced Slowdowns in Multi-GPU Inference</a></td><td class="src">ISPASS 2026 · 2603.12465 / IISWC 2026 · 2603.22774</td><td class="why">MoE는 토큰당 dense의 8~11배 커널을 디스패치; 빠른 호스트 CPU가 오케스트레이션 10~29% 절감. 멀티 GPU 슬로다운을 지연 런치·정체된 통신·토크나이즈로 추적, CUDA 그래프로도 잔존. GB10 Arm 호스트의 런치 지연을 노드별로 잴 근거.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://github.com/deepseek-ai/DeepGEMM">DeepGEMM 2026 (Mega MoE · Mega mHC · PDL · DeepJIT)</a> · <a href="https://github.com/deepseek-ai/TileKernels">TileKernels</a></td><td class="src">DeepSeek · 2026-04-16 / 09-10 릴리스</td><td class="why">EP 디스패치+FP8×FP4 GEMM1+SwiGLU+GEMM2+combine을 대칭 메모리 메가커널 하나로; PDL 채택; mHC 잔차 융합 커널; TileLang mHC에 소배치용 CTA 간 split-K와 RMSNorm+Sinkhorn+잔차 혼합 선융합. SM90/SM100 전용이라 GB10에선 못 쓰지만, 융합 경계와 mHC split-K는 우리 4.4 ms mHC의 청사진.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.02521">Tile-Level Activation Overlap</a></td><td class="src">MSR · 2607.02521 · 2026-07</td><td class="why">CUTLASS GEMM 타일에 SwiGLU 융합; 중간 실체화가 MLP 시간의 9~37%. PyTorch 대비 최대 2.47×, 참조와 비트 일치(cuBLAS는 4.5~11% 불일치). CuTe 에필로그 폴드는 바이트-동일 규칙 대상이나 우리 dense는 cuBLASLt FP8.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.23467">Hybrid JIT–CUDA Graph for Low-Latency Inference</a></td><td class="src">2604.23467 · 2026-04</td><td class="why">정적 부분은 그래프 재생, 동적 부분은 JIT 후 디코드 스텝 간 재사용. 배치-1 TTFT −34%. 그래프 캡처를 깨는 동적 top-k/인덱서 조각에.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: ClusterFusion++ RTX 5090 전블록 디코드 융합 + 퍼시스턴트 TMA 디스크립터 <span class="mono">2604.23553</span> · Blink CPU-free 서빙(퍼시스턴트 커널 + SmartNIC) <span class="mono">2604.07609</span> · Dissecting GPU Utilization on Hopper(wave quantization 시각) <span class="mono">2609.12923</span> · SLOWeave 데드라인 인식 프리필 청크(C=2~4에서 프리필이 디코드 ITL을 찌를 때) <span class="mono">2609.07883</span> · Twill 소프트웨어 파이프라이닝+warp 특화 스케줄 탐색(OSDI 2026) <span class="mono">2512.18134</span> · VAMP CUDA VMM으로 전문가/KV 경계 런타임 재분할(12 GiB 워크스페이스 천장 참고) <span class="mono">2609.13537</span></li>
+  </ul>
+  <div class="todo"><b>먼저 할 일</b><ul>
+    <li>DA-MoE의 조건부 그래프 노드: CUDA 13.2에서 지원되므로 K=7 검증 배치 형상별 커널 변형 전환을 캡처 안에서 시험(호스트 동기 제거).</li>
+    <li>Event Tensor 저장소가 sm_121에서 빌드되는지 확인. 되면 디코드만 메가커널(Ada-MK 분할)로 런치 수를 잰다. 안 되면 ForgeMegakernel의 에이전트 레시피로 mHC+샘플링 구간부터.</li>
+    <li>mHC 4.4 ms: TileKernels의 split-K mHC를 TileLang SM120 경로(7절)로 컴파일해 본다.</li>
+  </ul></div>
+</section>
+
+<section id="attn">
+  <h2><span class="n">4</span>어텐션 · DSA 인덱서 · 긴 프리필 · KV</h2>
+  <div class="slice"><i style="background:var(--seg-rest)"></i>DSA 글루 5커널(#819) · 인덱서 선택 · MLA 확장 회귀(#952/#956) · 944K 프리필 워크스페이스</div>
+  <p class="state"><b>지금</b> DSA 글루는 이미 커널로 접었고, 남은 건 인덱서 자체의 비용(32 헤드, top-2048)과 top-k 선택, 그리고 MLA FP8→BF16 확장 경로다. 2026년은 DSA 인덱서 비용 절감 논문이 GLM-5 계열에서 직접 검증되며 나온 해다. FA4·FlashMLA는 sm_121 빌드가 없어 "융합 경계"만 가져온다.</p>
+
+  <h3>4a. DSA 인덱서 · top-k</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.22312">Guess-Verify-Refine: Data-Aware Top-K on Blackwell</a></td><td class="src">NVIDIA TRT-LLM · 2604.22312 · 2026-04</td><td class="why">이전 스텝 top-K를 추측으로, 사전 인덱싱 통계와 secant식 임계 축소, smem 완성으로 정확한 top-2048. 프로덕션 radix-select 대비 평균 1.88×(층당 최대 2.42×), DeepSeek-V3.2 100K 최소 지연 배치에서 TPOT −7.52%; 스펙 디코딩 하에서도 이득 유지. CUDA-core 경로라 sm_121 무관.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.11976">LiteTopK: Fused Indexer-TopK Kernel</a></td><td class="src">2607.11976 · 2026-07</td><td class="why">점수가 좁은 띠에 몰림 → 샘플로 범위 추정, 후보 비닝, 인접 토큰 후보 패킹(LiteDSA)으로 글로벌 트래픽·동기 절감. GLM-5.2 프리필 8×B200 1.35×, 정확도 손실 없음. 우리 인덱서 선택 커널의 직접 후보.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.08450">Sample-Guided Exact Top-K (HPC-Ops)</a></td><td class="src">Tencent · 2609.08450 · 2026-09</td><td class="why">고정 보폭 샘플링으로 대략 경계 제안, 전체 행 검증 + 정확 정제. 20 연산자 구성에서 기하평균 1.55×. 정확한 top-k라 바이트-동일 교체 후보.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.07363">MISA: Mixture of Indexer Sparse Attention</a></td><td class="src">2605.07363 · 2026-05</td><td class="why">블록 풀링 키에서 라우터가 인덱서 헤드 부분집합 선택: 64(V3.2)/32(GLM-5) 대신 8 활성 헤드, H200에서 DSA 인덱서 커널 대비 3.82×, 128K까지 DSA 선택 토큰 &gt;92% 복원. 학습 없음; 품질 검증 필요.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.28458">HISA: Hierarchical Indexing for Fine-Grained Sparse Attention</a></td><td class="src">COLM 2026 · 2603.28458 v4 2026-09</td><td class="why">풀링 키 블록 필터 후 유지 블록 안에서만 원래 DSA 인덱서. 학습 없음, Sparse MLA 앞 드롭인, 64K에서 인덱서 3.75×. DeepSeek-V3.2·GLM-5에서 검증.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p">IndexCache <span class="known">기존</span> → GLM-5.2 IndexShare</td><td class="src">Zhipu · 2603.12201 · <a href="https://sebastianraschka.com/blog/2026/glm-5-2-indexshare.html">해설 2026-06-18</a></td><td class="why">인접 DSA 층 선택 토큰 70~100% 중복 → 인덱스 재사용으로 인덱서 연산 75% 제거. GLM-5.2가 full/shared/shared/shared 패턴으로 출하하고 MTP 드래프트 층에도 공유. GLM-5.3-Flash가 이를 가지면 공유 층에서 인덱서 커널을 건너뛰고 선택 위치를 층 간 캐시해야 한다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.02568">StreamIndex: Memory-Bounded Streaming Top-k</a></td><td class="src">2605.02568 · 2026-05</td><td class="why">[S,S] 인덱서 중간을 실체화하지 않는 청크 분할-병합 top-k. 기준선이 64K에서 OOM인데 1M까지(H200 피크 6.21 GB), 재현율 1.0000. Triton. 944K 프리필의 인덱서 중간 메모리 절벽에 직접.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.30389">PRR: Predict, Reuse, and Repair</a></td><td class="src">HPE Labs · 2606.30389</td><td class="why">EMA로 다음 스텝 선택 블록 예측, 선택과 어텐션 겹침, 온라인 소프트맥스 수리 커널로 누락 보정. 토큰당 지연 최대 −40%. Guess-Verify-Refine과 보완.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: RouteRelay 층 간 경로 재사용(스코어링 38~52%에 재현율 99.99%) <span class="mono">2609.07306</span> · FlashMemory-DeepSeek-V4 lookahead 희소 어텐션(KV 13.5% GPU 상주) <span class="mono">2606.09079</span> · HiSparse 계층 KV 관리(SGLang 업스트림, 통합 메모리에선 gather 커널만 유효) <span class="mono">2608.07009</span></li>
+  </ul>
+
+  <h3>4b. 긴 프리필 · MLA · FP8 어텐션</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2602.10718">SnapMLA: FP8 Quantized MLA Decoding</a></td><td class="src">Meituan · 2602.10718 · 2026-02</td><td class="why">RoPE 부분은 고정밀, 잠재 KV는 토큰별 FP8; 스케일 정렬을 고친 양자화 PV 파이프라인; 융합 데이터플로. 장문 출력 디코드 1.91×, BF16 품질. 디코드에서 FP8→BF16 확장을 아예 피하는 경로 — #952 회귀의 대안.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.06521">P-Cast Precision in FP8 Attention: Sinks and S=2^8</a></td><td class="src">2606.06521 · 2026-06</td><td class="why">PV 전 P를 E4M3로 캐스팅할 때 어텐션 싱크 하에서 순방향 KV 반복이 예측 가능한 비율의 확률을 언더플로; 역방향 반복 + 정적 스케일 S=256으로 MSE 3~10× 개선(FA3/FA4에 이미 반영). 우리 MLA 확장 경로가 같은 P/V 정밀도 축.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://doi.org/10.1145/3779212.3790237">TPLA: Tensor Parallel Latent Attention</a></td><td class="src">ASPLOS 2026 · 프리프린트 2508.15881</td><td class="why">MLA 잠재 벡터와 헤드별 입력 차원을 TP 랭크에 샤딩해 각 장치가 잠재 KV의 조각만 보유(프리필은 MLA, 디코드는 TPLA, 재학습 없음). 32K에서 DeepSeek-V3 1.79×, Kimi-K2 1.93×. 우리 TP4 MLA 디코드는 잠재 캐시를 랭크마다 복제한다 — 270 GB/s에서 그 대역세를 없앤다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.06199">FlashPrefill</a></td><td class="src">2603.06199 · 2026-03</td><td class="why">수직/슬래시/블록 패턴 동시 탐색 + 정렬 없는 동적 임계. 256K에서 27.78×, 4K에서도 1.71×. dense 어텐션 층의 학습 없는 프리필 희소화; 944K로 외삽할 수치.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.05451">FlashAttention-4</a></td><td class="src">Princeton/Together/NVIDIA · 2603.05451 · 2026-03</td><td class="why">완전 비동기 MMA·큰 타일용 파이프라인, FMA 유닛에서 소프트웨어 에뮬레이션 exp, 조건부 소프트맥스 리스케일링, CuTe-DSL 전량 작성. B200 hd128 BF16 1613 TFLOP/s. tcgen05/TMEM 의존이라 GB10 미지원; MUFU:MMA 비가 불리한 mma.sync 부품에도 이식되는 건 다항식 exp와 조건부 리스케일링.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://github.com/deepseek-ai/FlashMLA">FlashMLA 2026-09-10 (V4.1-Flash 커널)</a></td><td class="src">DeepSeek · GitHub</td><td class="why">FP8/FP4 KV 캐시 프리필+디코드; norm-rope-attn-rope-cast 융합 커널(Q-norm, Q-RoPE, 코어 어텐션, O-RoPE, FP8 캐스트 한 런치). SM90/SM100만. 융합 경계는 우리 CuTe/Triton 커널에서 재현할 런치 감축.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.01502">Move the Query, Not the Cache</a></td><td class="src">FAU · 2606.01502 · 2026-05</td><td class="why">MLA는 라우팅되는 쿼리 행이 약 1 KB라 KV를 옮기는 것보다 쿼리를 잠재 KV가 있는 곳으로 보내는 게 이김; 비용 모델 약 7% 이내. V3.2/V4·GLM-5.1 대상. 4노드에 944K KV를 위치별로 샤딩하고 잠재 쿼리를 라우팅하는 대안.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: FP4 FlashAttention-4(변환 바운드, GB200 2.13×; MXFP4 P/V 학습 전부 발산) <span class="mono">2609.04105</span> · S2O 온라인 순열 조기 중단 <span class="mono">2602.22575</span> · VSPrefill <span class="mono">2603.04460</span> · CompactAttention 청크 프리필 <span class="mono">2605.16839</span> · Token Sparse Attention(ICML 2026) <span class="mono">2602.03216</span> · DashAttention α-entmax 블록 선택 <span class="mono">2605.18753</span> · RedKnot-MLA V4 오프라인 헤드 재사용 <span class="mono">2609.07008</span></li>
+  </ul>
+
+  <h3>4c. KV 캐시 양자화 · 축출</h3>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.20474">UltraQuant: 4-bit KV Caching for Context-Heavy Agents</a></td><td class="src">EMNLP 2026 Industry · 2606.20474 v3 2026-09</td><td class="why">FP8 쿼리 × FP4 KV(Walsh–Hadamard 회전, 블록 스케일), CDNA4에서 Claude Code 트레이스로 평가; MiniMax-M2.5 2.71×, Qwen3-235B 4.38×, FP8 대비 KV 바이트 절반. 레시피가 NVFP4 KV로 이식됨.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.03458">KVarN: Variance-Normalized KV Quantization</a></td><td class="src">Huawei · 2606.03458 · 2026-06</td><td class="why">KV 양자화 오차가 긴 디코드에서 주로 잘못된 토큰 스케일로 누적됨을 보임; Hadamard + 이중 스케일 분산 정규화로 2비트 KV SOTA(MATH500/AIME24), 캘리브 없음, vLLM 통합. 긴 추론 생성이 우리 워크로드.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.19157">SAW-INT4: System-Aware 4-Bit KV Quantization</a></td><td class="src">Tri Dao 등 · 2604.19157</td><td class="why">페이지 레이아웃·융합 어텐션 하에서 KV 양자화 설계 스윕; 토큰별 INT4 + 블록 대각 Hadamard가 승리, 융합 rotate-quant 커널로 종단 오버헤드 0. MLA가 이미 토큰당 KV를 줄인다는 주석.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.09864">Alignment Collapse Under KV Cache Quantization</a></td><td class="src">2606.09864 v2 2026-08</td><td class="why">11 모델에서 3~4비트 타깃 KV 양자화가 스펙 수락률·처리량은 정상인 채 거부 응답을 조용히 제거. 수락률과 PPL이 KV 양자화 손상을 못 잡는다는 구체 사례 — 종단 KL/행동 검사의 근거.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.08317">RDKV</a> · <a href="https://arxiv.org/abs/2608.05326">QEvict</a> · <a href="https://arxiv.org/abs/2608.04074">NOVA-KV</a></td><td class="src">2605.08317 · 2608.05326 · 2608.04074</td><td class="why">축출과 양자화를 하나의 비트 배분으로(RDKV, 128K 디코드 4.5×); 복구 가능한 3단 양자화 축출(QEvict); 어텐션 곱 오차를 왜곡 지표로 하는 변환 부호화 VQ(NOVA-KV 2비트). 944K급 문맥의 KV 비트 vs 토큰 트레이드.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: RoPE 인식 비트 배분 Block-GTQ(MLA에선 분리 RoPE 키만 해당) <span class="mono">2606.24033</span> · DepthWeave-KV 층 간 인수분해 8.3× <span class="mono">2607.06523</span> · Apple 통합 메모리에서 int4 KV가 fp16보다 빠름 <span class="mono">2605.05699</span> · NVIDIA EAI 블로그 "Pushing Intelligence to 4-bit"(NVFP4 KV 언급, 수치는 3자 요약이라 미검증) · GLM-5.3-Flash용 vLLM+LMCache 하이브리드 상태 캐시 복구(같은 모델·NVFP4·TP, 45층 상태 정렬 버그 수정) <span class="mono">2609.15030</span></li>
+  </ul>
+  <div class="todo"><b>먼저 할 일</b><ul>
+    <li><s>인덱서 top-k를 Guess-Verify-Refine 또는 HPC-Ops로 교체</s> — 정정: 디코드는 이미 <code>st_dsa_select</code>(한 번 읽기 바닥의 85%, sm_120). 남은 질문은 프리필 top-k 의 여유뿐이다(10절).</li>
+    <li><s>IndexShare 층 패턴 확인</s> — 정정: ST 는 <code>indexer_types</code> 전부 full 을 단언한다(체크포인트에 공유 층 없음). 훈련 없는 재사용은 GLM-5.3 에서 40차에 재서 기각됐다(10절).</li>
+    <li>MLA 확장: SnapMLA식 FP8 PV 경로를 half 브리지(#956) 대안으로 프로브. P-Cast의 S=256 정적 스케일은 CuTe 커널 상수 하나.</li>
+    <li>TPLA는 재학습 없이 TP4 잠재 캐시 복제를 없앤다. 디코드 잠재 KV 바이트가 스텝에서 얼마인지부터 잰다.</li>
+  </ul></div>
+</section>
+
+<section id="comm">
+  <h2><span class="n">5</span>통신 · TP4/EP4 · 4노드 패브릭</h2>
+  <div class="slice"><i style="background:var(--seg-comm)"></i>4.4 ms/스텝 · 소메시지 all-reduce · EP4 dispatch/combine · NVLink 없음</div>
+  <p class="state"><b>지금</b> 4노드 TP4는 NVSwitch 논문이 가정하는 토폴로지가 아니다. 2026년 NVIDIA/ETH의 저지연 집합통신 연구와 NCCL 디바이스 API가 소메시지 멀티노드 케이스를 직접 다루고, EP 통신은 GPU 개시 RDMA 없이도 되는 CPU 프록시 설계가 OSDI에 실렸다.</p>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.16100">Every Microsecond Matters: Near Speed-of-Light GPU Collectives</a></td><td class="src">NVIDIA/ETH · 2607.16100 · 2026-07</td><td class="why">소·중 메시지용 지연 최적 집합통신: 배리어 없는 동기, 대칭 메모리, 멀티캐스트; NCCL 디바이스 API의 저지연 인터페이스; 속도-빛 한계 7% 이내. 장문맥 소배치 TP 추론이 동기. 노드 간은 IB/RoCE 위 GPU 개시 네트워킹.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2511.09557">NVRAR (YALIS): Multi-node Inference Communication</a></td><td class="src">UMD/LLNL · 2511.09557 v4 2026-05</td><td class="why">NCCL all-reduce가 멀티노드 TP 디코드의 소메시지에서 비최적; NVSHMEM 재귀 배가 계층 all-reduce가 128 KB~2 MB에서 NCCL 대비 1.9~3.6× 저지연(Slingshot·IB), 405B 디코드 배치 지연 1.72×. M=1~32 × hidden 메시지가 이 범위 이하.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2603.13606">NCCL EP: Unified Expert Parallel Communication API</a></td><td class="src">NVIDIA · 2603.13606 v3 2026-04</td><td class="why">ncclEpDispatch/Combine, 디코드용 Low-Latency 모드와 학습용 High-Throughput 모드; GPU 개시 RDMA + NVLink; vLLM 통합. NVLink 없는 4노드 EP4는 DeepEP LL 경로가 설계하지 않은 케이스 — NCCL 네이티브 LL이 후보.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.13585">mKernel: Multi-GPU, Multi-Node Fused Kernels</a></td><td class="src">Berkeley/UC Davis · 2609.13585 · 2026-09</td><td class="why">타일 단위로 연산·NVLink·노드 간 RDMA를 겹치는 융합 커널 라이브러리; SM을 연산/통신 역할로 분할; verbs 위 명령 큐 + 호스트 프록시로 GPU 주도 RDMA. GEMM+AllReduce 1.72×. 호스트 프록시 설계가 GPU 개시 RDMA 없는 NIC에 맞는다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2512.19849">UCCL-EP: Portable Expert-Parallel Communication</a></td><td class="src">OSDI 2026 · 2512.19849</td><td class="why">DeepEP의 GPU 개시 토큰 RDMA를 락프리 GPU→CPU 명령 채널 + 멀티스레드 CPU 프록시(GPUDirect RDMA)로 대체; GPU/NIC 조합 전반 이식, 최대 2.1×. Spark ConnectX-7 링크 위 EP4 dispatch/combine을 벤더 종속 없이 — Arm 20코어 호스트에서 프록시 가능.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.08973">SiFAR: Synchronization-Free All-Reduce</a></td><td class="src">GT/NVIDIA · 2607.08973 · 2026-07</td><td class="why">all-reduce를 완전히 없애면 8B TP8에서 +43% tok/s; 이중 버퍼링으로 하단 배리어 제거, 스위치 내 리덕션, 상단 배리어는 추측 리덕션; all-reduce 지연 −52%. 스위치 내 리덕션은 NVSwitch 가정이나 배리어 제거·이중 버퍼는 ConnectX one-shot에 이전. "GEMM+AR 융합은 저지연 추론에서 이득 적음"이라는 주석.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.26607">Moebius: Runtime Parallelism Switch for MoE</a></td><td class="src">USC · 2606.26607 · 2026-06</td><td class="why">저부하에선 TP, 고부하에선 EP가 빠름; 두 레이아웃 상주(메모리 2.4%), 215~434 ms에 무중단 리샤딩. Qwen3-235B 8×H200에서 어디서나 더 나은 정적 레이아웃과 동급. 저동시성 MoE의 TP vs EP 직접 데이터 — 우리 TP4 어텐션 + EP4 MoE 질문.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.23150">Scaling Multi-Node MoE Inference Using Expert Activation Patterns</a></td><td class="src">GT/Meta · 2604.23150 · 2026-04</td><td class="why">10만+ 실제 활성화 트레이스: 도메인별 전문가 친화도, 프리필/디코드 상관; 워크로드 인식 마이크로배치 그룹화 + 배치로 all-to-all 데이터 최대 20× 감소. 저배치에선 소메시지 디스패치 바닥이 지배한다는 주석 — 우리 케이스.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.10493">Cloud-Grade SLOs for Local MoE via CPU–GPU Hybrid</a></td><td class="src">OSDI 2026 · THU/KTransformers 계보 · 2606.10493</td><td class="why">2× RTX 5090 "SmallEP", 노드 내 PD 분리(제로카피 공유 가중치), 어텐션/MoE 이중 배치 오버랩(지연 &lt;15% 비용에 처리량 +50%), AVX-512 FP8 GEMV. 우리 운영점(소비자 Blackwell, FP8 전문가, 작은 EP, 단일 사용자 SLO)에 가장 가까운 시스템; 이중 배치 오버랩은 srv4가 기각한 C=2 아이디어라 그들 수치와 대조할 것.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.13057">TEMPO: Makespan-Aware EP Load Balancing</a></td><td class="src">Kuaishou · 2608.13057</td><td class="why">전문가 시간은 max-affine: 전문가당 약 156~168 토큰 아래는 메모리 바운드. 우리는 전부 그 영역 — 밸런싱은 토큰 수가 아니라 전문가 수·바이트로.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.14237">OpWeave: Operator Disaggregation Cost Model</a></td><td class="src">CMU/Purdue · 2609.14237 · 2026-09</td><td class="why">어텐션/FFN 연산자 분리 vs 공존의 이득 상한 해석 모델. 어텐션-소수 노드/MoE-전 노드가 TP4+EP4를 이기는지 만들기 전에 재는 용도.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+  <ul class="also">
+    <li>한 줄: NVSHMEM 해부(DeepEP 사례) <span class="mono">2606.05951</span> · 점유 조형 + 통신 커널 우선순위로 오버랩(벤더 라이브러리 무수정, −25.5%) <span class="mono">2606.09200</span> · MSCCL++ 추론용 통신 추상(ASPLOS 2026) · CAP 통신 인식 전문가 배치(vLLM, EPLB 대비 1.23~1.86×) <span class="mono">2607.05116</span> · SPICE 저랭크 대리 전문가 프리페치 <span class="mono">2608.21240</span> · 2× Spark llama.cpp RPC Qwen3-235B 12.5 tok/s(vLLM+Ray+NCCL 실패 보고, NVIDIA 포럼 2025-12)</li>
+  </ul>
+  <div class="todo"><b>먼저 할 일</b><ul>
+    <li>스텝의 all-reduce 메시지 크기 분포(M≤32 × hidden)를 적고 NVRAR 구간(128 KB~2 MB)에 드는지 본다. 들면 NVSHMEM 재귀 배가 프로토타입이 4.4 ms의 절반을 노린다.</li>
+    <li>NCCL 2026 디바이스 API의 LL 집합통신이 ConnectX-7 위에서 쓰이는지 srv2 컨테이너에서 버전 확인.</li>
+    <li>Moebius 결과대로면 C=1에서 EP4 MoE보다 TP4 MoE가 빠를 수 있다. 우리 EP 기본값(72.63 vs TP 80.49 tok/s) 기록과 같은 방향이니 프리필 제약을 다시 본다.</li>
+  </ul></div>
+</section>
+
+<section id="num">
+  <h2><span class="n">6</span>수치 · 결정성 · 측정법</h2>
+  <div class="slice"><i style="background:var(--seg-rest)"></i>T=1 cumsum 발산(#941) · MLA 확장 회귀 · 재양자화 판정 지표 · paired A/B</div>
+  <div class="tbl"><table>
+    <tr><th>논문</th><th>출처</th><th>요지 · 우리와의 접점</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.14376">CoRun: Padding for Deterministic Inference</a></td><td class="src">2608.14376 · 2026-08</td><td class="why">배치 불변 커널(&gt;2× 지연, 처리량 최대 −74%) 대신 위치 불변성 이용: 고정 형상 배치 + 패딩, 프리필/디코드 분리, CUDA 그래프. 배치 불변 커널 대비 처리량 +15~324%. C=1~4 + 그래프 버스트 런치에선 패딩 고정 형상이 거의 공짜고 동시성 간 비트 재현성을 준다.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.28097">Expert Reduction Order → Behavioral Divergence (V4-Flash)</a></td><td class="src">2607.28097 · 2026-07</td><td class="why">수학적으로 동치인 전문가 합산 순서(피연산자 표현 vs 누산 정밀도, 4 스킴)가 서로 다른 연속 분지를 만듦(720 순서가 5층에서 10~11 분지, 50 프롬프트 중 12~36에서 8~32 토큰 뒤 발산); 네이티브 변환+누산+순서를 맞춘 스킴만 192 궤적 비트 재현. MoE combine이 cumsum과 같은 부류의 비결정성 원천 — 기준선 vs 후보 비교의 "수치 호환 계약".</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2601.17768">LLM-42: Determinism with Verified Speculation</a></td><td class="src">SOSP 2026 · MSR India · 2601.17768</td><td class="why">비결정 고속 경로 + 고정 형상 리덕션 스케줄 하 검증-롤백 재생; 기존 커널 재사용, 비용은 결정성이 필요한 트래픽에 비례. 블록 드래프터의 검증 패스와 자연스럽게 합성.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.30218">MarginGate</a> · <a href="https://arxiv.org/abs/2511.17826">TBIK (ICML 2026)</a></td><td class="src">2605.30218 · 2511.17826</td><td class="why">단독 vs 배치 디코드 BF16 토큰 플립률 0.3~1.3%, 저마진 스텝(15~19%)만 검증해 시퀀스 결정성 100%; TBIK는 트리 기반 불변 Triton matmul + 트리 all-reduce로 TP=1과 TP=N 비트 동일(vLLM 통합). paired A/B의 결정성 가드와 TP4 vs 단일 노드 오라클 비교.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.13440">A KL Lens on Quantization</a> · <a href="https://arxiv.org/abs/2607.08734">The Illusion of Equivalency</a></td><td class="src">2604.13440 · 2607.08734</td><td class="why">FP 모델 대비 KL이 MSE/SQNR보다 구성 요소 순위를 잘 매김(역전파 없는 민감도); 8→2비트에서 정확도/PPL은 평평한데 항목별 "정답 일치"는 이동, Q/K 투영이 V/O보다 민감. 층 오차 21.9/14.6/10.9% vs +0.034 nats 판정을 종단 KL과 프롬프트별 일치표로 해야 한다는 근거.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.08114">KV Quantisation Quality Measures (TurboQuant-inspired)</a></td><td class="src">2605.08114 · 2026-04</td><td class="why">QJL식 키 양자화가 내적 분산을 π/2 부풀리고 소프트맥스가 증폭; K 방향 오차와 라우팅 손상을 잇는 지표는 KL; 4비트 예산에선 K/V 비대칭 처리.</td><td class="rel"><span class="chip md">중</span></td></tr>
+  </table></div>
+</section>
+
+<section id="gb10">
+  <h2><span class="n">7</span>GB10 플랫폼 사실 (sm_121)</h2>
+  <p class="state">논문이 아니라 릴리스·이슈·포럼이지만, 위 논문 중 무엇이 붙는지를 결정하는 건 이 사실들이다. arXiv에 GB10 전용 논문은 아직 없다.</p>
+  <div class="facts">
+    <div class="f"><b><a href="https://www.backend.ai/blog/2026-02-is-dgx-spark-actually-a-blackwell">GB10 = SM121, 48 SM, 273 GB/s</a></b><span>있음: 5세대 텐서코어 FP4/FP6. 없음: TMEM, tcgen05, WGMMA, 2-SM MMA. 프로그래밍 모델은 확장 mma.sync. FlashMLA·FA4·DeepGEMM은 SM12x 미지원. (Backend.AI 2026-02-19)</span></div>
+    <div class="f"><b><a href="https://forums.developer.nvidia.com/t/fp4-on-dgx-spark-why-it-doesnt-scale-like-youd-expect/360142">FP4가 기대만큼 안 나오는 이유</a></b><span>SM121 측정: NVFP4 dense 356 TFLOPS(피크 500의 71%), FP8 188. warp 수준 OMMA/QMMA(smem→regs→dequant→TC), 약 99 KB smem이 작은 타일 강제. 권고: CUTLASS 4.4+ SM121 패치, 소 M에선 Marlin INT4(W4A16/W4A8)가 NVFP4를 이김, DeepGEMM 불가, Triton FP8은 폴백. (NVIDIA 포럼 2026-02)</span></div>
+    <div class="f"><b><a href="https://github.com/flashinfer-ai/flashinfer/issues/3170">FlashInfer SM121 감사 (#3170)</a></b><span>동작: FA2 디코드, XQA, MLA 백엔드, CUTLASS/cuDNN FP4 dense GEMM, MXFP4 BMM. 불가/게이트: FMHAv2 프리필(is_sm120a_supported가 121 제외), mm_bf16, TRT-LLM 저지연 mm_fp8(sm_100a만), GDN 커널, TRT-LLM allreduce, 최적화 "b12x" FP4 백엔드가 minor==0 휴리스틱으로 제외. 17개 수정 항목. (2026-04-24)</span></div>
+    <div class="f"><b><a href="https://github.com/vllm-project/vllm/issues/43906">vLLM #43906: SM_121에서 MXFP8 MoE가 항상 Marlin 폴백</a></b><span>is_device_capability_family(100)이 SM_121을 제외해 MoE 전문가는 FP8→BF16 Marlin 경로, dense는 CUTLASS MX. Spark 위 업스트림 비교 기준선이 느린 MoE 경로일 수 있다는 함정. (2026-05-28)</span></div>
+    <div class="f"><b><a href="https://arxiv.org/abs/2604.23466">CUDA Tile 평가: sm_120에선 Triton이 안전</a></b><span>cuTile GEMM은 cuBLAS의 52~79%; 융합 어텐션은 B200에서 FA2 2.5×인데 RTX PRO 6000(sm_120)에선 FA2의 53%. Triton은 세 GPU 모두 cuBLAS 62~101%. (2604.23466, v2 2026-06)</span></div>
+    <div class="f"><b><a href="https://github.com/tile-ai/tilelang/releases">TileLang v0.1.13: SM120 NVFP4 블록 스케일 MMA</a></b><span>2026-08-03 SM120 NVFP4 경로(packed-scale, pingpong lowering); v0.1.14 warp 특화 스케줄·IO 인식 레이아웃 비용 모델; DeepSeek-V4 예제 2026-05-07. DeepSeek의 mHC/게이팅/양자화 커널을 담은 DSL 중 GB10에 가장 가까운 벤더 인정 FP4 경로.</span></div>
+    <div class="f"><b><a href="https://github.com/NVIDIA/cuda-tile/releases">CUDA Tile IR 13.2~13.4</a></b><span>13.2(2026-03) CC 12.X 지원; 13.3(05) mmaf_scaled 블록 스케일 FP4는 sm_100+ 문서; 13.4(09) f8E5M3 스케일, Rubin sm_107 프리뷰. sm_121에서 mmaf_scaled가 mma.sync FP4로 내려가는지는 프로브 필요.</span></div>
+    <div class="f"><b><a href="https://vllm.ai/blog/2026-06-01-vllm-dgx-spark">vLLM on DGX Spark (2026-06-01)</a></b><span>단일 Spark 레시피: NVFP4, FlashInfer CUTLASS 어텐션, CUDA 그래프, --max-num-seqs 4(더 크면 열화), FP8 KV 비권장. Nemotron-3-Super-120B(12B 활성) 디코드 22.7~23.7 tok/s. 멀티노드 TP는 언급만. 노드당 이길 공개 수치.</span></div>
+    <div class="f"><b><a href="https://github.com/antirez/ds4/issues/773">antirez/ds4 #773: 디코드는 대역의 85~90%</a></b><span>V4-Flash 약 2비트 전문가/Q8 어텐션(81 GiB): 17.9 tok/s, 45 ms/토큰, 포화 읽기 천장 231~234 GB/s, 토큰당 10~13 GB. 결론: 남은 지렛대는 방출 토큰당 가중치 바이트뿐(스펙, 비트, 전문가 희소성). 우리 MoE 프로파일과 같은 결론.</span></div>
+    <div class="f"><b><a href="https://developer.nvidia.com/blog/new-software-and-model-optimizations-supercharge-nvidia-dgx-spark/">NVIDIA 2026-01-05: 2 Spark NVFP4 + 스펙 2.6×</a></b><span>llama.cpp MoE 평균 +35%; Qwen-235B NVFP4 + 스펙 디코딩이 2 Spark ConnectX-7 200 Gbps에서 FP8 대비 최대 2.6×. 유일한 벤더 멀티 Spark 수치.</span></div>
+    <div class="f"><b><a href="https://arxiv.org/abs/2606.20537">FlashRT 실행 상태 캡슐 (GB10 측정)</a></b><span>KV·순환 상태·MTP 상태·메타데이터를 그래프 결합 단위로 스냅샷/복원(서브 ms). RTX 5090·Jetson Thor·DGX Spark 측정. GB10 수치가 있는 드문 arXiv.</span></div>
+    <div class="f"><b><a href="https://github.com/VincentKaufmann/fp4-cuda-kernel">fp4-cuda-kernel (CUTLASS 3.8, SM120/121)</a></b><span>DGX Spark에서 NVFP4 GEMM 85~129 TFLOPS, M=256~512에서 BF16 F.linear 대비 1.4~2.4×, M=4096에선 cuBLAS BF16이 벽시계로 이김. 프리필급 M의 sm_121 NVFP4 텐서코어 천장.</span></div>
+    <div class="f"><b><a href="https://arxiv.org/abs/2605.04956">KernelBenchX: 에이전트 커널의 한계</a></b><span>176 Triton 과제: 반복 정제가 컴파일률은 올리고 평균 속도는 내림; 정답 커널의 46.6%가 PyTorch보다 느림; 양자화 과제 0/30; 하드웨어 간 속도 편차 21.4×. H100에서 튜닝된 건 GB10에서 다시 재야 한다.</span></div>
+  </div>
+  <ul class="also">
+    <li>한 줄: Nautilus 자동 스케줄링 컴파일러(RTX 5090 +42%) <span class="mono">2604.14825</span> · ThunderKittens 2.0 SM120 타깃(어느 타일 op가 mma.sync 기반인지 확인 필요) · CUDA-L2 RL GEMM(FP16 대형만) <span class="mono">2512.02551</span> · Blackwell 마이크로벤치(B200만) <span class="mono">2512.02189</span> · Silicon Showdown 소비자 Blackwell TRT-LLM NVFP4 1.6× vs BF16 <span class="mono">2605.00519</span> · DeepSeek-V4-Flash on AMD gfx90a(FP4 포맷 브리지·저 M·층별 동기가 병목이라는 진단) <span class="mono">2609.15627</span></li>
+  </ul>
+</section>
+
+<section id="models">
+  <h2><span class="n">8</span>모델 보고서 (구조 참조)</h2>
+  <p class="state">조합 프레임(Qwen3.8 모듈, Ling-3.0)과 GLM-5.x 계보의 1차 출처. GLM-5.3-Flash 자체의 1차 보고서는 못 찾았고, 45층(34 linear + 11 full)·NoPE MLA·32헤드 인덱서 top-2048·320B/18B라는 수치는 3자 비교글(MarkTechPost 2026-08-28)이다.</p>
+  <div class="tbl"><table>
+    <tr><th>보고서</th><th>출처</th><th>우리와 관련된 사실</th><th>관련</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.19348">DeepSeek-V4</a></td><td class="src">2606.19348 · 2026-04</td><td class="why">V4-Pro 1.6T/49B, V4-Flash 284B/13B, 1M. CSA(시퀀스 압축 KV 후 DSA) + HCA + mHC + Muon. 1M에서 V3.2 대비 FLOPs 27%, KV 10%. FP4 QAT를 전문가 가중치와 CSA 인덱서 QK 경로에; 인덱스 점수 BF16으로 top-k 2× at 99.7% 재현율.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2608.30320">Qwen3.8-Next 설계 논문</a></td><td class="src">Qwen · 2608.30320 · 2026-08</td><td class="why">125B/6B 활성 + 51B 오프-가속기 n-gram 테이블; Gated DeltaNet 3:1 full; full 층을 Qwen Sparse Attention(마이크로블록 인덱서, top-512 × 4토큰 블록 = 2048)으로 교체; 4분기 Gated Residual. 우리 조합 프레임의 QSA/GR 1차 출처.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2602.15763">GLM-5</a></td><td class="src">Zhipu · 2602.15763 · 2026-02</td><td class="why">744B MoE, DSA + MLA, 28.5T 토큰. MTP: 학습 시 파라미터 공유 3층(드래프트 메모리는 V3 1층과 같음), 4 스텝에서 수락 길이 2.76 vs V3.2 2.55. 우리 MTP 헤드 89%의 천장 설명.</td><td class="rel"><span class="chip hi">상</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.24653">Kimi K3</a></td><td class="src">2607.24653 · 2026-07</td><td class="why">2.8T/104B, 896 전문가 top-16(Stable LatentMoE), KDA + Attention Residuals, 1M. 릴리스 블로그 기준 전문가 MXFP4 + MXFP8 활성화 QAT(SFT~RL). 프론티어 MoE가 4비트 전문가를 네이티브 출하한다는 증거(단 MXFP4 g32, NVFP4 아님).</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.13392">MiniMax Sparse Attention (M3)</a> · <a href="https://arxiv.org/abs/2608.01662">LongCat Sparse Attention</a></td><td class="src">2606.13392 · 2608.01662</td><td class="why">GQA 위 블록 희소(고정 2048 예산, 1M에서 어텐션 연산 28.4× 감소); LongCat은 스트리밍 정렬 인덱싱 + 층 간 인덱스 상각 + 계층 스코어링을 네이티브 학습. DSA 인덱서의 비연속 접근 문제와 스트리밍 친화 레이아웃 수정을 문서화 — LPDDR5X의 메모리 시스템 이슈.</td><td class="rel"><span class="chip md">중</span></td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.02518">GLM-5 Serving Parameter Tuning for OpenClaw</a></td><td class="src">2607.02518 · 2026-07</td><td class="why">GLM-5 2노드×8GPU, 28~30K 에이전트 프롬프트: 청크 3072, TP=4, PP=4가 최선. 처리량 지향이지만 청크 크기 민감도는 이전 가능.</td><td class="rel"><span class="chip lo">하</span></td></tr>
+  </table></div>
+</section>
+
+<section id="gaps">
+  <h2><span class="n">9</span>빈 곳 · 미검증 · 방법</h2>
+  <ul class="gaps">
+    <li><b>GB10 전용 arXiv 논문은 없다.</b> FlashRT(2606.20537)에 측정치가 있을 뿐이고, 나머지는 벤더 블로그·포럼·이슈·커뮤니티 글이다. 2·4 Spark 디코드 공개 수치도 NVIDIA 1월 블로그(2 Spark 2.6×)와 커뮤니티 둘뿐이다.</li>
+    <li><b>엔진 기술 보고서 부재.</b> vLLM V1·SGLang·TensorRT-LLM·Dynamo·llama.cpp·MLC·LMDeploy의 2026 arXiv 보고서는 없다. 벤더 측 2026 항목은 커널/라이브러리(FlashInfer MonoMoE, Tencent HPC-Ops, SGLang HiSparse/EVICT)로만 나왔다.</li>
+    <li><b>미검증 주장.</b> TensorRT-LLM 2026 릴리스의 "EAGLE3 동적 트리·PD+MTP 오버랩"은 검색 스니펫만 있고 문서 페이지엔 없다. NVIDIA EAI 블로그의 NVFP4 KV "FP8 대비 50%·손실 &lt;1%"는 3자 요약 수치. DFlash 2·EAGLE 3.1은 블로그/체크포인트만 있고 arXiv 없음. GLM-5.3-Flash 구조 수치는 3자.</li>
+    <li><b>얇은 영역.</b> MLA 잠재 캐시 양자화(SnapMLA 하나), 추론 시 양자화 인식 라우팅(PTQ 목적 외 없음), 추론용 FP4 GEMM 누산 정밀도(학습 측·어텐션 측만), 전문가 간 델타 압축(LorExperts 하나), cuBLASLt FP8 휴리스틱·skinny split-K/stream-K 2026 논문 없음, Blackwell paged attention 전용 논문 없음, Ling-3.0 기술 보고서 미발견, MLSys 2026 논문 페이지 미렌더(제목만), ATC 2026 목록 접근 불가, StreamEP(SOSP)·Kairox·ECHO(OSDI) 프리프린트 없음.</li>
+    <li><b>학습 필요 vs 무학습.</b> 표의 "상" 중 재학습이 필요한 것: DFlow·Carryover·ReTrace·Spec-AUF·VAT·Draft-OPD·DBLAST·Osprey·DFlare·HyperDFlash·AngelSpec(드래프터만), ZEDA·QAD·VSRAQ(타깃 측). 무학습: ACE, EVICT, LibraSpec, Bastion, TAPS, DDTree, PCTree, Graft, UniVer, ResiSpec, MISA, HISA, IndexShare, Guess-Verify-Refine, LiteTopK, HPC-Ops top-k, SnapMLA, TPLA, CoRun, 모든 커널·통신 항목.</li>
+  </ul>
+  <footer>
+    <p><b>방법.</b> 4개 병렬 조사(서빙 시스템 / 스펙 디코딩 / GPU 커널 / 양자화·KV·희소성)가 2026-09-17에 WebSearch 약 100회, arXiv 초록·리스팅·학회 프로그램·릴리스 페이지 약 400회 fetch. 표의 모든 arXiv ID는 초록 페이지가 실제로 열렸고, 0절의 상위 추천 9편은 별도로 재확인했다. 관련도(상/중/하)는 GB10 sm_121·C=1~4·현재 병목 기준의 판단이며 논문 품질 평가가 아니다. 수치는 각 논문의 자기 보고값이고 우리 하드웨어에서 재현된 것이 아니다.</p>
+    <p>기준 프로파일: main <span class="mono">de8bfff6</span> C=1 K=7, 54.0 ms 프로파일 시(PR #963). 트리 경제학: PR #966. C=2 SMT 기각: PR #1065/#1067. 재양자화 오차: expert requant capture 2026-09-13/14.</p>
+  </footer>
+</section>
+
+<section id="adopt">
+  <h2><span class="n">10</span>도입 검토 (2026-09-17)</h2>
+  <p class="state">0절 상위 추천 중 커널·런치·통신 후보를 <b>우리 ST 엔진 코드</b>와 <b>업스트림 실체</b>에 대조했다. 결론: 붙여 본 후보 대부분은 ST가 이미 자체 구현한 것과 동형이거나 GB10(sm_121, GPUDirect RDMA 미지원)에서 돌지 않는다. 남는 도입 대상은 바이트를 줄이는 것 하나(ACE)와, 사용처가 생기면 쓸 조건부 그래프 확장 하나다. 같은 날 원장과 대조해 <b>이 절의 첫 판에 있던 전제 셋을 고쳤다</b>(10c).</p>
+
+  <h3>10a. 대조에 쓴 우리 쪽 사실</h3>
+  <div class="facts">
+    <div class="f"><b>MoE 디코드 커널은 이미 MonoMoE 설계다</b><span><code>engine/kernels/b12x/moe_static_kernel_v5.py</code> — CuTe DSL 퍼시스턴트, 층당 1런치, gather·활성화 FP4 양자화·GEMM·scatter·가중 합산 융합, tile-major(weight-major) 저장, <code>MmaMXF4NVF4Op</code>(sm_120f 블록 스케일 mma.sync FP4)로 텐서코어 dequant, SF6 스케일 패킹. 25.13 ms / 40.2회 = 층당 625 µs. 스트리밍 실측 178~204 GB/s(273 의 65~75%, C=2 캠페인). 남은 20% 는 128 B 행 세그먼트 접근 무늬이고, L2 프리페치 셀(#1067)과 셀 z(#1070)가 이미 공략해 닫혔다.</span></div>
+    <div class="f"><b>TP all-reduce는 NCCL이 아니다</b><span><code>engine/kernels/oneshot/dsv4_oneshot_ar.cu</code> — libibverbs RDMA 위 자체 one-shot, CPU 프록시 스레드, PDL. 스텝당 102회, 64 KiB(C=1), 고정 16 µs + 전송 14 µs. NCCL은 폴백. GPUDirect RDMA는 GB10에서 불가(peermem 로드 실패, dmabuf 심볼 불일치 — MEASUREMENTS_ARCHIVE).</span></div>
+    <div class="f"><b>EP가 아니라 TP 샤딩</b><span><code>engine/profiles/glm53/facts.py</code> ENABLE_EP=0 — 288 전문가 전부 로컬, intermediate 2048→512 슬라이스. all-to-all 없음. EP 통신 후보(NCCL EP, UCCL-EP)는 무관.</span></div>
+    <div class="f"><b>디코드 top-k는 9월 15일에 교체됨</b><span><code>engine/kernels/decode_topk.cu</code> <code>st_dsa_select</code> — 정확 단일 패스 radix select, 캡처 안전, 25,920행 0 불일치. 프로파일의 torch topk 0.85 ms는 교체 전 수치. 스텝 간·층 간 재사용 없음(<code>indexer_types</code> 전부 full 단언).</span></div>
+    <div class="f"><b>조건부 노드·PDL·퍼시스턴트 세그먼트가 이미 있다</b><span><code>engine/kernels/bounded_graph/loop.cu</code> WHILE 조건부 노드(버스트), one-shot AR·MLA 메가커널의 griddepcontrol, <code>engine/kernels/mla/glm53_megakernel.cu</code> "콜렉티브 사이 세그먼트당 퍼시스턴트 런치 1회". 그래프는 torch.cuda.CUDAGraph 51개, 샘플링 포함.</span></div>
+    <div class="f"><b>툴체인</b><span>CUDA 13.2.1 · torch 2.13 · triton 3.7.1 · flashinfer 0.6.18.dev20260819(CuTe-DSL MoE/GEMM 층만) · tilelang 0.1.12 · cutlass-dsl 4.6.2 · deep_gemm 2.6.1(시드에서 추출, sm120 fp8_fp4 커널 2개 사용) · NCCL 2.29.7 · NVSHMEM 3.4.5 핀만 있고 미사용.</span></div>
+  </div>
+
+  <h3>10b. 판정</h3>
+  <div class="tbl"><table>
+    <tr><th>후보</th><th>판정</th><th>근거</th><th>남는 것</th></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.04244">MonoMoE</a></td><td class="rel"><span class="chip lo">불필요</span></td><td class="why">코드는 sm_90a 전용(wgmma·TMA·mbarrier, <code>__CUDA_ARCH__&lt;900</code>이면 trap), 128 CTA 동시 상주 필수(48 SM에서 데드락), FP8 128×128 블록 스케일(우리 NVFP4 g16 아님). 논문의 비교 기준(vLLM Triton grouped GEMM, DRAM 17~22%)이 우리 상황이 아니다 — V5가 이미 같은 설계로 천장 근처.</td><td class="why">없음. 설계만 참고.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2606.13233">ReSET small-M NVFP4</a></td><td class="rel"><span class="chip lo">불가</span></td><td class="why">GEMV는 sm_121에서 컴파일되나(cvt e2m1x2는 sm_120f) dense GEMV일 뿐 MoE 래퍼 없음, M≤8 CUDA-core / ≤16 mma.sync, W4A4(활성화 NVFP4 양자화 필요). LICENSE가 "all rights reserved"라 출하 불가. 우리 M=8/16 텐서코어 경로가 이미 대역 포화.</td><td class="why">없음.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2605.23911">TritonMoE</a></td><td class="rel"><span class="chip lo">불필요</span></td><td class="why">FP16 가중치(<code>tl.dot</code> fp16), BLOCK_M=64, A100용 교육적 설계. gate+up 융합은 V5가 이미 함.</td><td class="why">없음.</td></tr>
+    <tr><td class="p"><a href="https://github.com/vllm-project/vllm">Marlin NVFP4 W4A16 MoE</a></td><td class="rel"><span class="chip lo">보류</span></td><td class="why">12.0f 빌드 존재, 포맷 일치(e2m1·g16 e4m3·전역 스케일), 1~2일 A/B 가능. 그러나 포럼의 "Marlin이 NVFP4를 이김"은 vLLM dense 경로 대비이지 b12x V5 대비가 아니고, V5는 이미 천장 근처. fp16 dequant라 수치 변경 → 레인 필요. 레인이 남을 때만.</td><td class="why">대역 효율 ≤10%.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.05228">ACE 전문가 스킵</a></td><td class="rel"><span class="chip hi">도입 후보 1</span></td><td class="why">Apache-2.0, 파이썬(<code>patch_moe_blocks_for_ace</code>), 아키텍처 무관. 오프라인 [L,E] 테이블 2개(GSP·RCR, 동결 가중치에서) + 라우터 top-k 뒤 토큰별 마스크(top-1 유지, 재정규화) — 우리 <code>route_weights</code> Triton 커널에 접힘. 임계값 τ는 라벨 없는 한 패스로 정함(완전 무데이터는 아님). <b>바이트를 줄이는 유일한 후보.</b> 단 8행 dedup(층당 41.9 전문가) 때문에 실현 절감은 s%보다 작다. <b>논문의 무프루닝 대비 절대값</b>: Qwen3-30B-A3B 스킵 10% PPL 7.52→7.55·정확도 80.67→80.39, 20% 7.66·80.25, 30% 7.86·79.77; Qwen3.6-35B-A3B 10% 7.01→7.16, 20% 7.34(+4.7%); Gemma-4 20% 81.63→81.28. 20% 는 토큰당 +0.019~0.046 nats 로, 프로덕션이 NVIDIA 랭크를 택하지 않았던 차이(+0.034)와 같은 크기다.</td><td class="why">MoE 25 ms의 일부. 검증은 커널 수치가 아니라 모델 품질(nats·30프롬프트) + 드래프트 수락률.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2609.08450">HPC-Ops 정확 top-k</a></td><td class="rel"><span class="chip md">프리필만</span></td><td class="why">MIT, 커널 본체에 아키텍처 게이트 없음(shfl·ballot·cluster/DSMEM만), fp32 로짓·행별 유효 길이, 이전 스텝 힌트 불필요. <b>정정</b>: 첫 판은 09-14 프로파일의 torch top-k 0.85 ms 를 근거로 삼았지만 그 자리는 #1010·#1025 의 <code>st_dsa_select</code> 가 이미 차지했다 — sm_120 에서 행 읽기 스윕이 박스 피크의 85%, 16×50688 에 22.7 µs(한 번 읽기 바닥 10.1). 어떤 정확 top-k 도 행을 한 번은 읽으므로 디코드 이득 상한은 11 층 × ~12 µs ≈ 0.13 ms/스텝(200K 문맥). 프리필 선택(<code>prefill_topk.cu</code>, SGLang 라딕스 파생)은 긴 문맥에서 비중이 커질 수 있는데 ST 기록이 없다.</td><td class="why">프리필 top-k 의 바닥 대비 여유를 컴포넌트로 먼저 잰다. 여유가 없으면 포팅하지 않는다.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.22312">Guess-Verify-Refine</a></td><td class="rel"><span class="chip md">후순위</span></td><td class="why">TRT-LLM Apache-2.0, 본체는 sm_80급(정책 게이트만 SM100+), 59 KB smem. 이전 스텝 top-k 인덱스를 행별로 넘겨야 하는데 ST는 스텝 간 상태가 없고, 8행 드래프팅에선 k&gt;1행의 시간 상관이 약해 이득 미측정. HPC-Ops가 힌트 없이 같은 자리를 채움.</td><td class="why">HPC-Ops 이후에 비교.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.11976">LiteTopK</a></td><td class="rel"><span class="chip lo">불가</span></td><td class="why">sm_100a 전용(UMMA·TMEM·tcgen05). 프리필 지렛대이며 재작성 3주+. 944K 프리필 메모리가 막히면 Triton인 StreamIndex(<span class="mono">2605.02568</span>)가 더 싼 대안.</td><td class="why">프리필 [1024×n_cand] fp32 왕복.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2604.13327">Event Tensor / Mirage MPK</a></td><td class="rel"><span class="chip lo">불가</span></td><td class="why">CMake arch 75~90, 단일 노드 NVSHMEM TP, MLA 미지원, 전체 스텝 교체형(연산자 단위 상호운용 불가). Forge는 코드 없음·dense 단일 GPU, AutoMK는 Llama·배치 1. 우리 MK 세그먼트 퍼시스턴트가 이미 그 방향.</td><td class="why">자체 MK 확장으로.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.23099">DA-MoE 조건부 디스패치</a></td><td class="rel"><span class="chip md">메커니즘만</span></td><td class="why">FlashInfer 코드는 sm_100 cubin. 메커니즘(IF/SWITCH 조건부 노드)은 <code>bounded_graph/loop.cu</code>에 WHILE이 있어 1~2일 확장. 그러나 V5는 라우팅 스큐 무관 정적 커널이라 "변형 선택"이 필요 없다. 호스트 동기가 남은 데이터 의존 분기가 생기면 그때.</td><td class="why">사용처 대기.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.16100">Every Microsecond Matters</a> / <a href="https://arxiv.org/abs/2511.09557">NVRAR</a></td><td class="rel"><span class="chip lo">불가</span></td><td class="why">전자는 저자 스스로 scale-up(LSA/NVLS) 한정. NVRAR은 NVSHMEM IBGDA/IBRC 필요 — GB10은 GPUDirect RDMA 미지원(NVIDIA 공식, peermem 불가), GDAKI는 세그폴트 보고(TRT-LLM #12715). 이득도 ≥256 KB에서만이고 우리 메시지는 64 KiB. 우리 one-shot(30 µs)은 이미 Spark NCCL(16 KB에 40 µs) 아래.</td><td class="why">콜렉티브 수 102와 프록시 고정비 16 µs. GPU 개시 RDMA는 드라이버가 열릴 때까지 막힘.</td></tr>
+    <tr><td class="p">NCCL EP · UCCL-EP · mKernel</td><td class="rel"><span class="chip lo">무관/불가</span></td><td class="why">ST는 EP를 안 쓴다(TP 샤딩). mKernel은 sm_90a 전용.</td><td class="why">없음.</td></tr>
+    <tr><td class="p"><a href="https://arxiv.org/abs/2607.20475">SonicSampler</a></td><td class="rel"><span class="chip lo">코드 없음</span></td><td class="why">공개 저장소 없음(\codeTBA). 우리 검증은 이미 Triton 1런치(<code>block_verify.py</code>), 그래프 안. 재구현 7~10일에 비트 결정성 미보장.</td><td class="why">cumsum 외부 유지 설계와 충돌.</td></tr>
+  </table></div>
+
+  <div class="todo"><b>권고 순서</b><ul>
+    <li><b>ACE</b> (도입 후보 1): ① 논문 표에서 무프루닝 대비 절대 손실부터 읽는다. ② 동결 NVFP4 전문가(dequant)에서 GSP·RCR 테이블 생성(CPU, 시간 단위). ③ <code>route_weights</code> 뒤 마스크를 CPU 오라클로 구현하고 8행 dedup 하의 실현 전문가 수 감소를 #966 데이터로 오프라인 계산 — 층당 41.9가 얼마나 줄면 25 ms가 얼마나 주는지. ④ 그 수치가 5% 이상일 때만 레인 티켓(품질 nats + 수락률 + C=1 두 판). 무손실 대안 EVICT(<span class="mono">2605.00342</span>, 트리를 전문가 비용으로 절단)를 같은 오프라인 계산에 나란히 둔다.</li>
+    <li><b>HPC-Ops top-k</b>: 디코드는 위 상한 때문에 하지 않는다. 프리필은 단일 GPU 레인 컴포넌트 비교(HPC-Ops <code>topk_filtered</code> 대 <code>prefill_topk</code> 대 한 번 읽기, 1024 행 × 32K~236K 후보, 집합 대조)로 여유부터 잰다.</li>
+    <li><s>운영자 결정 필요: IndexShare</s> — <b>정정, 다시 열지 않는다.</b> 첫 판이 인용한 +13.6%(32K)/+16.0%(128K)는 GLM-5.3 이 아니라 앞선 DSV4 오버레이(C4A 층)의 수치였다. GLM-5.3 에서는 40차(2026-09-08)에 <code>INDEX_CACHE_FREQ=6</code> 을 재서 기각했다 — 37K 프리필 −45%, 디코드 −4.7%(콜드 컴파일 부팅 단서), 품질 무해, 그 과정에서 층 규칙 버그도 고쳤다(PR #476). ST 바이트 모델(839차)은 문맥과 함께 자라는 항 전부를 128K 에서 3.33 ms(스텝의 4.7%)로 본다 — 인덱서 재사용이 줄일 수 있는 것은 그 일부다.</li>
+    <li><b>부수 발견</b>: b12x finalize의 bf16x2 relaxed atomic(FlashInfer #5221, 2026-09-14)이 run-to-run 비재현. V5의 FC2 scatter도 atomic-add(M64 암 기록)라 같은 부류 — T=1 결정성 작업(#941)의 다음 후보 원천.</li>
+  </ul></div>
+
+  <h3>10c. 같은 날 고친 전제</h3>
+  <ul class="gaps">
+    <li><b>IndexShare 수치의 출처.</b> DSV4 오버레이 수치를 GLM-5.3 의 것으로 읽었다. GLM-5.3 은 40차에 기각(위).</li>
+    <li><b>디코드 top-k 비용.</b> 09-14 프로파일(교체 전)의 torch top-k 0.85 ms 를 현재 비용으로 읽었다. #1010 이후 자체 커널이고 남은 상한은 스텝당 ~0.13 ms.</li>
+    <li><b>MoE 스트리밍 속도.</b> 커널 호출 시간과 전문가 크기로 약 230 GB/s 를 추정했지만 원장의 실측은 178~204 GB/s 이고, 그 남은 거리는 C=2 캠페인이 이미 공략해 닫았다. MonoMoE 판정(불필요)은 바뀌지 않는다 — 코드가 sm_90a 전용이고 설계가 V5 와 같다.</li>
+    <li><b>ACE 다음 단계.</b> #966 의 원시 행은 층별 요약뿐이라 게이트별 전문가 합집합을 오프라인으로 다시 셀 수 없다. 원시 라우트(id·가중치)를 떨어뜨리는 디버그 커밋(머지 안 함)으로 C=1 12문항 브래킷을 큐에 넣었다(<code>ace-routes-0917</code>). 결과는 원장 항목으로 온다.</li>
+  </ul>
+</section>
+</div>

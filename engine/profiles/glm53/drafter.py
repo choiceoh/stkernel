@@ -385,7 +385,8 @@ class Drafter:
     def context_linear(self, aux, keep=None, *, decode=False, observe=True):
         """Phase is explicit: row count cannot distinguish a short prompt."""
         layer = self.dense.get('fc.weight')
-        if layer is not None and getattr(layer, 'decode_fp8', None) is not None:
+        if layer is not None and (getattr(layer, 'decode_fp8', None) is not None
+                                  or getattr(getattr(layer, 'fp8', None), 'cublas', None) is not None):
             return layer(aux, keep, decode=decode, observe=observe)
         if not observe:
             return layer(aux, observe=False)

@@ -232,7 +232,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                     exec(compile(ast.Module(body=body, type_ignores=[]), str(path), "exec"), namespace)
                     self.assertIs(namespace[function](), ext)
                 directory = Path(calls[0]["build_directory"])
-                self.assertEqual(directory.parent, shared / name)
+                self.assertEqual(directory.parent, (shared / name).resolve())
                 for source in calls[0]["sources"]:
                     self.assertEqual(Path(source).parent, directory / "src")
                     self.assertEqual(Path(source).read_bytes(), path.with_name(Path(source).name).read_bytes())

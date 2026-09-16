@@ -1,0 +1,55 @@
+--- base-cublaslt.cpp
++++ split_plan.cpp
+@@ -12,6 +12,7 @@
+ #include <string>
+ #include <vector>
+ 
++namespace st_cublaslt_split {
+ namespace py = pybind11;
+ 
+ static void check(cublasStatus_t status, const char* operation) {
+@@ -187,7 +188,7 @@
+     int count = 0;
+     for (;;) {
+       check(cublasLtMatmulAlgoGetIds(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
+-              CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF,
++              CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F,
+               ids.size(), ids.data(), &count), "cuBLAS algorithm catalog");
+       if (size_t(count) < ids.size()) break;
+       TORCH_CHECK(ids.size() < 4096, "cuBLAS algorithm catalog exceeds the preparation bound");
+@@ -199,7 +200,7 @@
+       if (known.count(ids[i])) continue;
+       cublasLtMatmulAlgo_t algo{};
+       auto status = cublasLtMatmulAlgoInit(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
+-          CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF, ids[i], &algo);
++          CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F, ids[i], &algo);
+       if (status == CUBLAS_STATUS_NOT_SUPPORTED) continue;
+       check(status, "initialize catalog algorithm");
+       result.push_back(algo);
+@@ -252,7 +253,7 @@
+     // Column-major TN computes Y^T from the existing row-major W and X.
+     check(cublasLtMatrixLayoutCreate(&desc.a, CUDA_R_8F_E4M3, k, n, k), "W layout");
+     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
+-    check(cublasLtMatrixLayoutCreate(&desc.d, CUDA_R_16BF, n, m, n), "Y layout");
++    check(cublasLtMatrixLayoutCreate(&desc.d, CUDA_R_32F, n, m, n), "Y layout");
+     check(cublasLtMatmulPreferenceCreate(&desc.preference), "matmul preference");
+     uint32_t reduction = CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE;
+     check(cublasLtMatmulPreferenceSetAttribute(desc.preference, CUBLASLT_MATMUL_PREF_REDUCTION_SCHEME_MASK,
+@@ -336,7 +337,7 @@
+     TORCH_CHECK(index < choices.size(), "unknown cuBLAS algorithm");
+     tensor(q, at::ScalarType::Float8_e4m3fn, "Q"); tensor(weight, at::ScalarType::Float8_e4m3fn, "W");
+     tensor(s_q, at::kByte, "activation scales"); tensor(s_weight, at::kByte, "weight scales");
+-    tensor(out, at::kBFloat16, "output"); tensor(workspace, at::kByte, "workspace");
++    tensor(out, at::kFloat, "output"); tensor(workspace, at::kByte, "workspace");
+     const auto& alignment = alignments[index];
+     TORCH_CHECK(reinterpret_cast<uintptr_t>(weight.data_ptr()) % alignment[0] == 0
+                 && reinterpret_cast<uintptr_t>(q.data_ptr()) % alignment[1] == 0
+@@ -419,6 +420,8 @@
+ 
+ };
+ 
++} // namespace st_cublaslt_split
++using namespace st_cublaslt_split;
+ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
+   module.def("version", [] { return cublasLtGetVersion(); });
+   py::class_<Context, std::shared_ptr<Context>>(module, "Context").def(py::init<int, int, int>());

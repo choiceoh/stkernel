@@ -71,7 +71,7 @@ def main() -> int:
             for r in cutlass.range_constexpr(rows):
                 for c in cutlass.range_constexpr(chunks):
                     got = int(cute.crd2idx((r, c * 32, 0), layout)) // 2     # fp4 elements -> bytes
-                    if kind == 1:
+                    if cutlass.const_expr(kind == 1):
                         want = r * pitch + ((c ^ (r % 8)) * 16)
                     else:
                         want = r * pitch + ((c ^ ((r // 2) % 4)) * 16)

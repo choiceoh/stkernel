@@ -1,0 +1,110 @@
+--- base-cublaslt.cpp
++++ batch_plan.cpp
+@@ -12,6 +12,7 @@
+ #include <string>
+ #include <vector>
+ 
++namespace st_cublaslt_batch {
+ namespace py = pybind11;
+ 
+ static void check(cublasStatus_t status, const char* operation) {
+@@ -49,6 +50,7 @@
+   std::shared_ptr<Context> context;
+   Descriptors desc;
+   int64_t m, n, k;
++  int batches;
+   size_t workspace_limit;
+   std::vector<cublasLtMatmulHeuristicResult_t> choices;
+   std::vector<std::array<uint32_t, 4>> alignments;
+@@ -187,7 +189,7 @@
+     int count = 0;
+     for (;;) {
+       check(cublasLtMatmulAlgoGetIds(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
+-              CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF,
++              CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F,
+               ids.size(), ids.data(), &count), "cuBLAS algorithm catalog");
+       if (size_t(count) < ids.size()) break;
+       TORCH_CHECK(ids.size() < 4096, "cuBLAS algorithm catalog exceeds the preparation bound");
+@@ -199,7 +201,7 @@
+       if (known.count(ids[i])) continue;
+       cublasLtMatmulAlgo_t algo{};
+       auto status = cublasLtMatmulAlgoInit(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
+-          CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_16BF, CUDA_R_16BF, ids[i], &algo);
++          CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, CUDA_R_32F, CUDA_R_32F, ids[i], &algo);
+       if (status == CUBLAS_STATUS_NOT_SUPPORTED) continue;
+       check(status, "initialize catalog algorithm");
+       result.push_back(algo);
+@@ -234,8 +236,8 @@
+ 
+  public:
+   Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit,
+-       const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight)
+-      : context(std::move(context_)), m(m_), n(n_), k(k_), workspace_limit(limit) {
++       const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight, int batches_)
++      : context(std::move(context_)), m(m_), n(n_), k(k_), workspace_limit(limit), batches(batches_) {
+     TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
+                 && m <= INT32_MAX && n <= INT32_MAX && k <= INT32_MAX, "invalid ST MXFP8 shape");
+     c10::cuda::CUDAGuard guard(context->device);
+@@ -245,14 +247,18 @@
+     // execution/bind supplies its own scale addresses below.
+     tensor(query_s_q, at::kByte, "query activation scales");
+     tensor(query_s_weight, at::kByte, "query weight scales");
+-    TORCH_CHECK(query_s_q.dim() == 1 && query_s_q.numel() == ((m + 127) / 128) * (k / 128) * 512
+-                && query_s_weight.dim() == 1 && query_s_weight.numel() == n * (k / 32),
++    TORCH_CHECK(query_s_q.dim() == 2 && query_s_q.numel() == batches * ((m + 127) / 128) * (k / 128) * 512
++                && query_s_weight.dim() == 2 && query_s_weight.numel() == batches * n * (k / 32),
+                 "MXFP8 query scale shape mismatch");
+     set_scales(desc.operation, query_s_q, query_s_weight);
+     // Column-major TN computes Y^T from the existing row-major W and X.
+     check(cublasLtMatrixLayoutCreate(&desc.a, CUDA_R_8F_E4M3, k, n, k), "W layout");
+     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
+-    check(cublasLtMatrixLayoutCreate(&desc.d, CUDA_R_16BF, n, m, n), "Y layout");
++    check(cublasLtMatrixLayoutCreate(&desc.d, CUDA_R_32F, n, m, n), "Y layout");
++    for (auto item : {std::pair<cublasLtMatrixLayout_t, int64_t>{desc.a, n*k}, {desc.b, m*k}, {desc.d, m*n}}) {
++      check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batches, sizeof(batches)), "batch count");
++      check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &item.second, sizeof(item.second)), "batch stride");
++    }
+     check(cublasLtMatmulPreferenceCreate(&desc.preference), "matmul preference");
+     uint32_t reduction = CUBLASLT_REDUCTION_SCHEME_COMPUTE_TYPE;
+     check(cublasLtMatmulPreferenceSetAttribute(desc.preference, CUBLASLT_MATMUL_PREF_REDUCTION_SCHEME_MASK,
+@@ -336,18 +342,17 @@
+     TORCH_CHECK(index < choices.size(), "unknown cuBLAS algorithm");
+     tensor(q, at::ScalarType::Float8_e4m3fn, "Q"); tensor(weight, at::ScalarType::Float8_e4m3fn, "W");
+     tensor(s_q, at::kByte, "activation scales"); tensor(s_weight, at::kByte, "weight scales");
+-    tensor(out, at::kBFloat16, "output"); tensor(workspace, at::kByte, "workspace");
++    tensor(out, at::kFloat, "output"); tensor(workspace, at::kByte, "workspace");
+     const auto& alignment = alignments[index];
+     TORCH_CHECK(reinterpret_cast<uintptr_t>(weight.data_ptr()) % alignment[0] == 0
+                 && reinterpret_cast<uintptr_t>(q.data_ptr()) % alignment[1] == 0
+                 && reinterpret_cast<uintptr_t>(out.data_ptr()) % alignment[2] == 0
+                 && reinterpret_cast<uintptr_t>(out.data_ptr()) % alignment[3] == 0,
+                 "storage does not satisfy the selected cuBLAS algorithm alignment");
+-    TORCH_CHECK(q.dim() == 2 && q.size(0) == m && q.size(1) == k
+-                && weight.dim() == 2 && weight.size(0) == n && weight.size(1) == k
+-                && out.dim() == 2 && out.size(0) == m && out.size(1) == n
+-                && s_q.dim() == 1 && s_q.numel() == ((m + 127) / 128) * (k / 128) * 512
+-                && s_weight.dim() == 1 && s_weight.numel() == n * (k / 32), "MXFP8 plan shape mismatch");
++    TORCH_CHECK(q.dim() == 3 && q.size(0) == batches && q.size(1) == m && q.size(2) == k
++                && weight.dim() == 3 && weight.size(0) == batches && weight.size(1) == n && weight.size(2) == k
++                && out.dim() == 3 && out.size(0) == batches && out.size(1) == m && out.size(2) == n,
++                "batched shape mismatch");
+     const auto& choice = choices[index];
+     TORCH_CHECK(workspace.dim() == 1 && size_t(workspace.numel()) >= choice.workspaceSize
+                 && reinterpret_cast<uintptr_t>(workspace.data_ptr()) % 256 == 0, "insufficient/alignment-invalid cuBLAS workspace");
+@@ -419,13 +424,15 @@
+ 
+ };
+ 
++} // namespace st_cublaslt_batch
++using namespace st_cublaslt_batch;
+ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
+   module.def("version", [] { return cublasLtGetVersion(); });
+   py::class_<Context, std::shared_ptr<Context>>(module, "Context").def(py::init<int, int, int>());
+   py::class_<Plan::Bound, std::shared_ptr<Plan::Bound>>(module, "BoundMatmul").def("run", &Plan::Bound::run);
+   py::class_<Plan, std::shared_ptr<Plan>>(module, "Plan")
+       .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t,
+-                    const torch::Tensor&, const torch::Tensor&>())
++                    const torch::Tensor&, const torch::Tensor&, int>())
+       .def("candidates", &Plan::candidates).def("run", &Plan::run)
+       .def("bind", &Plan::bind).def("statistics", &Plan::statistics);
+ }

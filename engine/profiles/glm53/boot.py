@@ -682,6 +682,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 calib_bytes += need
     router_bytes = net.router_nbytes() if execution == "native" else 0
     projection_bytes = net.decode_projection_nbytes() if execution == "native" else 0
+    from engine.profiles.glm53.cublas import resident_bytes as cublas_resident_bytes
+    cublas_bytes = cublas_resident_bytes(F, D, draft_policy) if execution == 'native' else 0
     draft_bytes = total_bytes(dspecs)
     if D and execution == "native":
         from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
@@ -689,7 +691,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
-    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes + cublas_bytes
                    + 256 * (len(specs) + len(dspecs) + len(vspecs) + len(net.layers) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs, draft_shape) + calib_bytes)
     memory = None
@@ -753,7 +755,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
+                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes, cublas_bytes=cublas_bytes,
                             draft_policy=draft_policy, workspace_gib=workspace_gib)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
@@ -820,15 +822,24 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
+                    if DRAFT_FC_CAPTURE or DRAFT_FC_CAPTURE_WHEN_MISSING:
+                        from engine.profiles.glm53.draft_fc_capture import retain_source
+                        retain_source(drafter)
                     with recorder.phase("drafter packs"):
                         drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena,
                                              policy=draft_policy, tuning=tuning)
+                    if not DRAFT_FC_CAPTURE and drafter.fc_bias is not None:
+                        drafter.fc_capture_source = None
                     if capture_rows is not None:
                         recorder.gauge('drafter_decode_cells', len(drafter.bind_decode_cells(capture_rows)))
                     recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
                     recorder.gauge('draft_fc_bias_status', drafter.fc_bias_status)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
+                with recorder.phase('cuBLAS head and FC'):
+                    from engine.profiles.glm53.cublas import prepare as prepare_cublas
+                    cublas = prepare_cublas(net, drafter if D else None, arena, draft_policy)
+                    recorder.gauge('cublas_resident_bytes', cublas['resident_bytes'])
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
                 calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena,
                                           max_decode_rows=max_seqs * (1 + drafter.k))
@@ -1046,7 +1057,25 @@ def decode_fastpath_report(net):
             missing.extend((name, m) for m in sorted(expected - actual))
     if pairs != expected_pairs or missing or not dense:
         raise RuntimeError(f'bound decode fastpaths were not executed: pairs={sorted(expected_pairs - pairs)}, dense={missing}')
-    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense)
+    input_packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+                   if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs)
+
+
+def fixed_k_cost_report(net):
+    """Require target consumers, not a native self-test's launch, before opening the door."""
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows:
+        return {}
+    packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+             if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    if getattr(net, 'producer_packs', False) and getattr(net, 'mhc_input_packs', False):
+        for row_count in rows:
+            eligible = [name for name, layer in net.dense.items() if name.endswith('kda.in_proj')
+                        and getattr(layer, 'input_pack_rows', lambda rows: False)(row_count)]
+            if len(eligible) > 1 and not any(row_count in packs.get(name, ()) for name in eligible):
+                raise RuntimeError(f'fixed K7 mHC input packs did not reach a target projection at {row_count} rows')
+    return dict(mhc_input_packs=packs)
 
 
 def decode_dsa_report(net):
@@ -1124,7 +1153,10 @@ def native_execution_report(net, drafter):
         required_prefill.add('fp8_tiled_projection')
         if not calibrating:
             required_prefill.add('fp8_packet_projection')
-    proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+    from engine.profiles.glm53.cublas import execution_report as cublas_execution_report
+    cublas_proof = cublas_execution_report(net) if hasattr(net, 'cublas_readers') else {}
+    proof = dict(cublas=cublas_proof, decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+                 fixed_k_cost=fixed_k_cost_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
                  drafter_decode_cells=drafter_decode_cell_report(drafter),

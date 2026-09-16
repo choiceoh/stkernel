@@ -1,0 +1,8 @@
+Previous HEAD position was 36e8f03d perf(moe): vectorize fixed K7 frontend activation loads without changing quantization
+HEAD is now at 0b382a91 docs: keep the MLA provenance note as one list entry
+...........................
+----------------------------------------------------------------------
+Ran 27 tests in 9.968s
+
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK

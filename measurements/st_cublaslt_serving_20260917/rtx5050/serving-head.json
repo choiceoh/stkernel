@@ -1,0 +1,318 @@
+{
+  "status": "PASS",
+  "device": "NVIDIA GeForce RTX 5050",
+  "capability": [
+    12,
+    0
+  ],
+  "sms": 20,
+  "cuda": "13.2",
+  "torch": "2.13.0+cu132",
+  "timing_target": "sm120-probe",
+  "scope": "actual serving reader; real packed weights, synthetic activations; no TP4/acceptance verdict",
+  "weight": {
+    "identity": {
+      "version": 2,
+      "weight": "9af96ae356614f8b72ca969b16e72e5c2e1809eaf66bd4c9b47b8e84e47b0e65",
+      "shape": [
+        38720,
+        4096
+      ],
+      "name": "Glm5NextForCausalLM/lm_head",
+      "kind": "fp8",
+      "calibration": "a0d731b64b51ab03e70a1d27e9b1cb497275acffc4d7f89e4fea0959467d53dd",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    },
+    "sha256": "2f3dc77954e48fec347f0389da08d6198b7b1b9c0f4b5fba9450d7a9363334d7",
+    "path": "/work/packs/7e3c089b56122e41d05b7fcfc7163749d4f5a6eaa8f4186e2199fc71762d394e.pt"
+  },
+  "cells": [
+    {
+      "shape": [
+        1,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.674201488494873,
+        0.5869119763374329,
+        0.5927519798278809,
+        0.6731200218200684
+      ]
+    },
+    {
+      "shape": [
+        7,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6796090006828308,
+        0.5935840010643005,
+        0.593455970287323,
+        0.6796259880065918
+      ]
+    },
+    {
+      "shape": [
+        8,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6799755096435547,
+        0.5939679741859436,
+        0.5975520014762878,
+        0.6828209757804871
+      ]
+    },
+    {
+      "shape": [
+        14,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6821345090866089,
+        0.5980319976806641,
+        0.5981600284576416,
+        0.6826574802398682
+      ]
+    },
+    {
+      "shape": [
+        16,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6829435229301453,
+        0.5988640189170837,
+        0.599407970905304,
+        0.6828135251998901
+      ]
+    },
+    {
+      "shape": [
+        21,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6921234726905823,
+        0.6015200018882751,
+        0.6079840064048767,
+        0.6864975094795227
+      ]
+    },
+    {
+      "shape": [
+        24,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6875494718551636,
+        0.603056013584137,
+        0.6032800078392029,
+        0.6883754730224609
+      ]
+    },
+    {
+      "shape": [
+        28,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6892334818840027,
+        0.6046559810638428,
+        0.6043679714202881,
+        0.6953654885292053
+      ]
+    },
+    {
+      "shape": [
+        32,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6910085082054138,
+        0.6066399812698364,
+        0.6064479947090149,
+        0.6913455128669739
+      ]
+    },
+    {
+      "shape": [
+        56,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.6998264789581299,
+        0.6185759902000427,
+        0.6150720119476318,
+        0.6993424892425537
+      ]
+    },
+    {
+      "shape": [
+        64,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.7075765132904053,
+        0.6179519891738892,
+        0.617792010307312,
+        0.7024744749069214
+      ]
+    },
+    {
+      "shape": [
+        256,
+        38784,
+        4096
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.923057496547699,
+        0.8651365041732788,
+        0.8906880021095276,
+        0.9806944727897644
+      ]
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/dense/__init__.py": "cbedc869ddde6499810e09c9cfbaf991850e6cdcb84842ec7cc2143fb53aa06d",
+    "engine/kernels/dense/cublaslt.cpp": "7706be38961a1b303970b808d332cbe4668de0fcaaa577c9d415e9633e18d384",
+    "engine/kernels/dense/cublaslt_serving.py": "ac0dd02044d9c76b7fed8829eeb6a54708e9b41b1ea8056d714d59d07c89864e",
+    "engine/kernels/dense/cublaslt_split.py": "b296285ea88567ec58779400e3efc4374ae7a87e9b6dc1e9ae776f32981f7180",
+    "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299",
+    "probes/engine_cublaslt_serving_check.py": "2b1b71ac04dd13bef3a1f52412784480f2692494522d89bf80e41e953d68e783"
+  },
+  "reader": {
+    "backend": "cublaslt",
+    "resident_bytes": 4964352,
+    "executed": [
+      "direct"
+    ],
+    "algorithms": {
+      "1": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      }
+    },
+    "warmed_rows": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        7
+      ],
+      [
+        1,
+        8
+      ],
+      [
+        1,
+        14
+      ],
+      [
+        1,
+        16
+      ],
+      [
+        1,
+        21
+      ],
+      [
+        1,
+        24
+      ],
+      [
+        1,
+        28
+      ],
+      [
+        1,
+        32
+      ],
+      [
+        1,
+        56
+      ],
+      [
+        1,
+        64
+      ],
+      [
+        1,
+        256
+      ]
+    ]
+  }
+}

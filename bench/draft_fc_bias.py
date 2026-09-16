@@ -10,14 +10,15 @@ from engine.profiles.glm53.draft_fc_bias import decode_reader, reader_identity, 
 
 
 @torch.inference_mode()
-def collect_fc_pairs(drafter, batches, *, max_rows=4096):
+def collect_fc_pairs(drafter, batches, *, max_rows=4096, source=None):
     """Each batch: aux [M,K], keep [M] bool, ids [M] request families, split.
 
     Preserve the native batch shape when executing the reader, but retain only
-    committed rows. Preparation must retain fc.weight (no consume/compact).
+    committed rows. A compact drafter supplies its retained BF16 reference.
     """
     layer = drafter.dense['fc.weight']
-    source, gamma = drafter.p['fc.weight'], drafter.p['hidden_norm.weight']
+    source = drafter.p.get('fc.weight') if source is None else source
+    gamma = drafter.p['hidden_norm.weight']
     if source is None:
         raise ValueError('FC pair collection requires retained BF16 source weights')
     if type(max_rows) is not int or not 1 <= max_rows <= 65536:
