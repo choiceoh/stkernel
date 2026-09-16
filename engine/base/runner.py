@@ -232,7 +232,9 @@ class Runner:
             self.prefix_spills += 1
             prefix.hold_tier(h, key)
             prefix.spill_end(h, spilled=True)
-        if len(prefix.free_snaps) >= self.spill_low_water or self._spills:
+        if self._spills:
+            return                                          # one write at a time: the tier has one staging buffer
+        if len(prefix.free_snaps) >= self.spill_low_water and not self.nothing_to_step():
             return
         if self._maintained == prefix.version and not any(
                 s in self.state.prompt_len and self.state.computed.get(s, 0) >= self.state.prompt_len[s] for s in self._chain):
@@ -259,6 +261,22 @@ class Runner:
                 continue
             self._spills[h] = future
             break                                           # one write at a time: the tier has one staging buffer
+
+    def nothing_to_step(self) -> bool:
+        """No step in flight and none to plan: the tier's thread has the machine to itself.
+
+        Not `self.idle` (finished rows that still hold their tokens) -- those can sit for a long
+        time with real work going on beside them. This asks the scheduler's own question: nothing
+        waiting, nothing running, nothing launched.
+
+        Spilling under this is free. The tier write runs on the tier's own thread and D10 already
+        promises it never blocks a step; what `spill_low_water` withholds is not the machine, it is
+        the decision, and it withholds it until snapshots are nearly gone. That made the tier an
+        overflow: production declares 48 snapshots tiered, so the first byte reached the disk only
+        once 40 boundaries were resident, and a fleet that is relaunched three times a day (the
+        teardown is SIGKILL) never got there -- `prefix_tier_entries` sat at 0.
+        """
+        return not self.inflight and not self.state.waiting and not self.state.running
 
     def _restoring_keys(self) -> set:
         return {self.tier_key(h) for h, _, _, _ in self._restores.values()}

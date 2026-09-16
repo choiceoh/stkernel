@@ -412,6 +412,73 @@ class PrefixCacheTests(unittest.TestCase):
         run_to_end(r, 0)
         self.assertIsNone(r.shared_ahead(ids, (), above=8))             # cached now: nothing to wait for
 
+    def test_a_quiet_engine_writes_its_leaves_out_without_waiting_for_pressure(self):
+        """The tier is not an overflow. A boundary only survives a boot if it is ON the disk.
+
+        `spill_low_water` withholds the decision until snapshots are nearly gone; production
+        declares 48 of them tiered, so the first byte reached the tier only once 40 boundaries
+        were resident, and a fleet relaunched three times a day (the teardown is SIGKILL) never
+        got there -- `prefix_tier_entries` sat at 0 against a 16 GiB budget. The write runs on the
+        tier's own thread and D10 already promises it never blocks a step, so when the scheduler
+        has nothing to plan there is nothing to withhold it from.
+        """
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=8)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0                                # never under pressure: 8 snapshots, none taken
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        self.assertTrue(r.nothing_to_step(), "the prompt is done: nothing waiting, running or launched")
+        self.assertGreaterEqual(len(cache.free_snaps), r.spill_low_water)
+        for _ in range(6):                                   # issue, land, look again
+            r.step(now=0)
+        self.assertGreaterEqual(r.prefix_spills, 1, "a quiet engine writes what it has")
+        h12 = cache.chain(list(range(12)))[12]
+        self.assertIn(h12, cache.tier_keys, "and the boundary is addressable on the tier")
+
+    def test_a_busy_engine_still_waits_for_pressure_before_writing(self):
+        """Quiet is the only thing this adds. With work to plan, `spill_low_water` decides as before."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=8)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        r.submit(1, 12, now=0, ids=list(range(100, 112)))    # waiting: the engine has something to plan
+        self.assertFalse(r.nothing_to_step())
+        r.step(now=0)
+        self.assertEqual(r.prefix_spills, 0, "not while there is a step to take")
+
+    def test_one_spill_landing_does_not_stop_the_scan_from_finding_the_next(self):
+        """`spill_candidates` skips what is already spilled, so a landing changes the candidate set.
+
+        The scan trusts `prefix.version` to tell it whether looking again is worth anything. Before
+        this, a landed spill bumped nothing: the runner wrote ONE boundary and then waited for some
+        unrelated change to the cache before it would look for another.
+        """
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=64, snapshots=8)
+        r.kv.attach_storage(Storage(64 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0
+        # two prompts that share nothing: a chain has ONE leaf, so two leaves need two chains
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        r.submit(1, 12, now=0, ids=list(range(100, 112)))
+        run_to_end(r, 1)
+        before = cache.version
+        for _ in range(20):
+            r.step(now=0)
+        self.assertGreaterEqual(r.prefix_spills, 2, "the scan kept going after the first one landed")
+        self.assertGreater(cache.version, before)
+        for h in cache.tier_keys:
+            self.assertTrue(cache.entries[h].spilled)
+
     def test_two_boundaries_cannot_share_a_tier_slot(self):
         """The tier indexes by 56 bits of the hash. Two boundaries naming one slot must not be served from it --
         the loser would get the winner's KV, quietly, across the tenant separation the salt exists to draw."""

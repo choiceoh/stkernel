@@ -245,6 +245,11 @@ class PrefixCache:
             e.spilled = True
         if failed:
             e.spill_failed = True
+        if spilled or failed:
+            # `spill_candidates` skips both, so the candidate set just changed and a scan that
+            # trusts `version` must run again. Without this the caller writes ONE boundary and then
+            # waits for some unrelated change to the cache before looking for the next.
+            self.version += 1
 
     def pin(self, hashes) -> int:
         """An operator's warm prompt: these boundaries go last, of every kind of pressure. Their blocks move to the
