@@ -105,3 +105,16 @@ candidate shares only matching KV rows within the current 16-slot tiles,
 retains each original sparse list/split, and merges in the same resident launch.
 No union, sorting, separate merge launch or per-replay barrier reset is needed.
 Changed tile order and asymmetric lengths join the existing numerical gates.
+
+## Sixth GPU verdict (`b631febd`)
+
+All 42 MLA fixtures and prior gates pass. MLA C1 identical improves to
+42.97 -> 61.52 us, still slower. No local-memory spill was found (64 registers,
+0 local bytes). The next iteration removes tile search/ballots and skips empty
+query arithmetic. Native mHC remains the warp-local implementation.
+
+The added distinct-coefficient chain materially changes the mHC result:
+90 packet boundaries take 1592.05 -> 1287.60 us (-19.12%); nonpacket chain
+1522.76 -> 1223.76 us (-19.64%). Each graph contains all 90 real coefficient
+sets, no pack clone. These are component throughputs; serving fuses only
+eligible KDA input boundaries, so they are not a whole-engine speed claim.

@@ -2824,10 +2824,10 @@ __device__ __forceinline__ void mla_pair_attention(
   __nv_bfloat16* sq = (__nv_bfloat16*)(smem + (parallel_pair ?
       MLA_DECODE_PAIR_SMEM - 2 * MLA_SMEM_Q : MLA_PAIR_SMEM));
   if constexpr (PARTIAL) {
-    if ((parallel_pair ? ntile : length) > 0) {
-      for (int i = threadIdx.x; i < (parallel_pair ? 2 : ROWS) * MLA_H * (MLA_D / 8);
-           i += (parallel_pair ? 2 : 1) * MK_THREADS) {
-        const int h = i / (MLA_D / 8), col = (i % (MLA_D / 8)) * 8;
+    if (length > 0) {
+      for (int i = (parallel_pair ? threadIdx.x % MK_THREADS : threadIdx.x); i < ROWS * MLA_H * (MLA_D / 8);
+           i += MK_THREADS) {
+        const int h = row_base * MLA_H + i / (MLA_D / 8), col = (i % (MLA_D / 8)) * 8;
         const uint32_t dst = static_cast<uint32_t>(__cvta_generic_to_shared(sq + h * MLA_CP + col));
         const __nv_bfloat16* src = a.q + ((size_t)t * MLA_H + h) * MLA_D + col;
         asm volatile("cp.async.ca.shared.global [%0], [%1], 16;" :: "r"(dst), "l"(src) : "memory");
@@ -2845,17 +2845,15 @@ __device__ __forceinline__ void mla_pair_attention(
       bool copy = true;
       if constexpr (parallel_pair) {
         if (row_base) {
-          // Each lane tests one candidate from the other query's current
-          // 16-slot tile. A matching slot uses that exact FP8 row. Repeated
-          // selections retain their own score and probability mass.
-          const int other_j = ti * MLA_TILE + lane;
-          const bool valid = lane < MLA_TILE && other_j < count0 && j < length;
-          const int other = valid ? a.slots[(size_t)t * a.W + first0 + other_j] : -1;
-          const unsigned int hit = __ballot_sync(0xffffffff, valid && slot == other);
-          const int shared = __ffs(hit)-1;
-          at = shared >= 0 ? shared : MLA_TILE+k;
+          // A same-position equality test is warp-uniform and reads one
+          // index. Reuse is free of searches, ballots and extra candidate
+          // loads; every nonmatching selection keeps its independent row.
+          const bool valid = j < count0 && j < length;
+          const int other = valid ? a.slots[(size_t)t * a.W + first0 + j] : -1;
+          const bool shared = valid && slot == other;
+          at = shared ? k : MLA_TILE+k;
           if (lane == 0) maps[(ti % MLA_NSTAGE) * MLA_TILE + k] = at;
-          copy = shared < 0;
+          copy = !shared;
         }
       }
       if (copy) mk_cp_async16(dst + (size_t)at * MLA_RP + lane * 16,
@@ -2881,6 +2879,7 @@ __device__ __forceinline__ void mla_pair_attention(
       }
       return k;
     };
+    if (!parallel_pair || kmax > 0) {
 #pragma unroll
     for (int row = 0; row < ROWS; ++row) {
       const int n0 = (warp % MLA_NG) * 8, kq = warp / MLA_NG;
@@ -3011,6 +3010,7 @@ __device__ __forceinline__ void mla_pair_attention(
       }
     }
     mla_group_sync<SUBGROUP || parallel_pair>();
+    }
   }
   mk_cp_wait<0>();
   mla_group_sync<SUBGROUP || parallel_pair>();
@@ -3027,8 +3027,8 @@ __device__ __forceinline__ void mla_pair_attention(
 #pragma unroll
       for (int nt = 0; nt < 8; ++nt) {
         const int col = warp * 64 + nt * 8 + q4 * 2;
-        o0[col] = acc[row][nt][0]; o0[col+1] = acc[row][nt][1];
-        o8[col] = acc[row][nt][2]; o8[col+1] = acc[row][nt][3];
+        *(float2*)(o0 + col) = make_float2(acc[row][nt][0], acc[row][nt][1]);
+        *(float2*)(o8 + col) = make_float2(acc[row][nt][2], acc[row][nt][3]);
       }
     }
     return;
@@ -3065,8 +3065,9 @@ __global__ __launch_bounds__(2 * MK_THREADS) void mk_mla_decode_pair_kernel(cons
   mla_pair_attention<1, 2, false, true>(p, group*2, 0, nullptr, nullptr, smem, split);
   mk_grid_barrier(p.a.barrier_ctr, p.a.grid);
   const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
-  // Spread the output heads over the whole resident grid for the merge.
-  for (int pair = blockIdx.x + warp*p.a.grid; pair < p.a.T*MLA_H; pair += 16*p.a.grid) {
+  // Match the control's eight-warp head grouping during reduction.
+  for (int pair = blockIdx.x*MLA_WARPS + warp; warp < MLA_WARPS && pair < p.a.T*MLA_H;
+       pair += MLA_WARPS*p.a.grid) {
     const int t = pair / MLA_H, h = pair % MLA_H;
     float mm = -INFINITY, den = 0.f, value[MLA_VD] = {};
     for (int s = 0; s < p.a.splits; ++s)

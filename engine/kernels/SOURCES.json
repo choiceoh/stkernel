@@ -356,7 +356,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "7841eaa054dd0931224ecf0732eb79abbff2caa25097828e36efed78e22bdc9d",
+      "local_sha256": "548f2e1ae1927a4f61d9521795aa7c3ca8f8536c89c363d536cee490eef278c8",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -377,7 +377,8 @@
         "2026-09-17 decode pair assigns separate warp groups to each query while sharing one KV ring; scalar-list cells use a bounded 256-thread subgroup.",
         "2026-09-17 decode union reserves output once per warp; paired decode widens KV once in shared memory and weak-overlap rows run concurrently in disjoint shared regions.",
         "2026-09-17 decode union uses bounded radix sorting and prefix counts to remove shared hash contention; all duplicate multiplicities retained.",
-        "2026-09-17 remove decode union preparation: compare the current 16-slot tiles, reuse equal FP8 rows, preserve each original selection and split, and merge in the same resident launch."
+        "2026-09-17 remove decode union preparation: compare the current 16-slot tiles, reuse equal FP8 rows, preserve each original selection and split, and merge in the same resident launch.",
+        "2026-09-17 same-position equality replaces tile search; empty query groups skip arithmetic and partial writes are vectorized."
       ]
     },
     "mla/__init__.py": {
