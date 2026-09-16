@@ -1349,8 +1349,9 @@ class MoEStaticKernelV4:
         sfa2_base_addr = shared_ptr_to_u32(storage.sSFA2.data_ptr())
         a2_base_addr = shared_ptr_to_u32(storage.sA2.data_ptr())
         sfb1_base_addr = shared_ptr_to_u32(storage.sSFB1.data_ptr())
-        sb1_base_addr = shared_ptr_to_u32(storage.sB1.data_ptr())     # bulk_b: the FC1 stage ring's byte base
-        sb2_base_addr = shared_ptr_to_u32(storage.sB2.data_ptr())     # bulk_b: the FC2 stage ring's byte base
+        # bulk_b: the stage rings' byte bases (the fp4 pointers recast to bytes before the address is taken)
+        sb1_base_addr = shared_ptr_to_u32(cute.recast_ptr(storage.sB1.data_ptr(), dtype=cutlass.Uint8))
+        sb2_base_addr = shared_ptr_to_u32(cute.recast_ptr(storage.sB2.data_ptr(), dtype=cutlass.Uint8))
         sfb2_base_addr = shared_ptr_to_u32(storage.sSFB2.data_ptr())
         ctrl_base_addr = shared_ptr_to_u32(storage.ctrl.data_ptr())
         scatter_tok_base_addr = shared_ptr_to_u32(storage.scatter_tok_cache.data_ptr())

@@ -1487,32 +1487,55 @@ def _tile_expert_weights(
     return w13_t, w2_t
 
 
-def _swizzle_tile_boxes(w13_t: torch.Tensor, w2_t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+def _swizzle_tile_boxes(w13_t: torch.Tensor, w2_t: torch.Tensor, *, kind: str = "byte") -> Tuple[torch.Tensor, torch.Tensor]:
     """Cell z: the reform tile's B stages in the smem byte order, so one cp.async.bulk lands a stage.
 
-    w13_t [E, K/256, N, 128 B] (the 256 chunk): a stage is 128 rows x 128 B; the stage's Swizzle<3,4,3>
-    puts row r's 16 B chunk c at chunk c ^ (r % 8). w2_t [E, I/128, H, 64 B]: a stage is 256 rows x 64 B;
-    Swizzle<2,4,3> puts row r's chunk c at c ^ ((r // 2) % 4). Both maps are involutions per row, so the
-    copy is its own inverse; nothing inside a 16 B chunk moves (probes/b12x_reform_layout_print.py)."""
+    w13_t [E, K/256, N, 128 B] (the 256 chunk): a stage is 128 rows x 128 B under Swizzle<3,4,3>; w2_t
+    [E, I/128, H, 64 B]: a stage is 256 rows x 64 B under Swizzle<2,4,3>. What the swizzle acts on is the
+    question the diagnostics answer -- `kind`:
+      byte    the swizzle on BYTE offsets, the TMA hardware's 128B / 64B modes: row r's 16 B chunk c lands at
+              c ^ (r % 8) (FC1), c ^ ((r // 2) % 4) (FC2)
+      nibble  the swizzle on fp4 ELEMENT offsets, as the DSL's composed layout is written: row r's 8 B unit u
+              (16 per FC1 row, 8 per FC2 row) lands at u ^ ((2 r + (u >> 3)) % 8) (FC1), u ^ (r % 4) (FC2)
+      plain   no permutation (the TMA writing linear rows)
+    Every map is an involution per row, so a second application restores the storage; nothing inside an
+    8 B unit moves (probes/b12x_reform_layout_print.py enumerates the layouts)."""
     if w13_t.dtype != torch.uint8 or w2_t.dtype != torch.uint8:
         raise TypeError("swizzled expert weights: tile-major fp4 bytes (uint8) expected")
+    if kind not in ("byte", "nibble", "plain"):
+        raise ValueError(f"unknown swizzle kind {kind!r}")
     e, kt, rows, kin_b = w13_t.shape
     if kin_b != 128 or rows % 128:
         raise ValueError("cell z needs the 256 w13 chunk (128 B rows) and 128-row FC1 stages")
-    boxes = w13_t.reshape(e, kt, rows // 128, 128, 8, 16)
-    r = torch.arange(128, device=w13_t.device)
-    c = torch.arange(8, device=w13_t.device)
-    src = (c[None, :] ^ (r[:, None] % 8))                       # [128, 8]: the chunk that lands at (r, c)
-    w13_z = boxes.gather(4, src.view(1, 1, 1, 128, 8, 1).expand(e, kt, rows // 128, 128, 8, 16)).reshape(w13_t.shape)
     e2, kt2, hrows, kin2_b = w2_t.shape
     if kin2_b != 64 or hrows % 256:
         raise ValueError("cell z needs the 64 B w2 rows and 256-row FC2 stages")
-    boxes2 = w2_t.reshape(e2, kt2, hrows // 256, 256, 4, 16)
-    r2 = torch.arange(256, device=w2_t.device)
-    c2 = torch.arange(4, device=w2_t.device)
-    src2 = (c2[None, :] ^ ((r2[:, None] // 2) % 4))              # [256, 4]
-    w2_z = boxes2.gather(4, src2.view(1, 1, 1, 256, 4, 1).expand(e2, kt2, hrows // 256, 256, 4, 16)).reshape(w2_t.shape)
-    return w13_z.contiguous(), w2_z.contiguous()
+    if kind == "plain":
+        return w13_t.contiguous().clone(), w2_t.contiguous().clone()
+    dev = w13_t.device
+    if kind == "byte":
+        r = torch.arange(128, device=dev)[:, None]
+        c = torch.arange(8, device=dev)[None, :]
+        src = c ^ (r % 8)                                            # [128, 8] 16 B chunks
+        boxes = w13_t.reshape(e, kt, rows // 128, 128, 8, 16)
+        w13_z = boxes.gather(4, src.view(1, 1, 1, 128, 8, 1).expand(e, kt, rows // 128, 128, 8, 16))
+        r2 = torch.arange(256, device=dev)[:, None]
+        c2 = torch.arange(4, device=dev)[None, :]
+        src2 = c2 ^ ((r2 // 2) % 4)                                  # [256, 4]
+        boxes2 = w2_t.reshape(e2, kt2, hrows // 256, 256, 4, 16)
+        w2_z = boxes2.gather(4, src2.view(1, 1, 1, 256, 4, 1).expand(e2, kt2, hrows // 256, 256, 4, 16))
+    else:
+        r = torch.arange(128, device=dev)[:, None]
+        u = torch.arange(16, device=dev)[None, :]
+        src = u ^ ((2 * r + (u >> 3)) % 8)                           # [128, 16] 8 B units
+        boxes = w13_t.reshape(e, kt, rows // 128, 128, 16, 8)
+        w13_z = boxes.gather(4, src.view(1, 1, 1, 128, 16, 1).expand(e, kt, rows // 128, 128, 16, 8))
+        r2 = torch.arange(256, device=dev)[:, None]
+        u2 = torch.arange(8, device=dev)[None, :]
+        src2 = u2 ^ (r2 % 4)                                         # [256, 8]
+        boxes2 = w2_t.reshape(e2, kt2, hrows // 256, 256, 8, 8)
+        w2_z = boxes2.gather(4, src2.view(1, 1, 1, 256, 8, 1).expand(e2, kt2, hrows // 256, 256, 8, 8))
+    return w13_z.reshape(w13_t.shape).contiguous(), w2_z.reshape(w2_t.shape).contiguous()
 
 
 def static_v2_weights_layout(**geometry) -> bool:

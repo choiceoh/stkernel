@@ -116,16 +116,20 @@ class Layer:
                 views, w13_fp4=w13_t.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
                 w13_tiled_storage=w13_t, w13_chunk=chunk)
         if served == 256:
-            # cell z: a pre-swizzled copy of BOTH tile-major storages (w13 over the served 256 chunk, w2), so
-            # the served view's bytes are untouched and every other arm keeps reading them
-            # moe_prepare re-lays these tensors IN PLACE. Re-tiling self.w13
-            # here interprets tile-major bytes as row-major and corrupts z.
-            w13_z, w2_z = md._swizzle_tile_boxes(
-                views.w13_tiled_storage, views.w2_tiled_storage)
-            self.views['z'] = dataclasses.replace(
-                views, w13_fp4=w13_z.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
-                down_fp4=w2_z.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
-                w13_tiled_storage=w13_z, w2_tiled_storage=w2_z, w13_chunk=served, swizzled=True)
+            # cell z: a permuted copy of BOTH tile-major storages (w13 over the served 256 chunk, w2) per
+            # permutation kind, so the served view's bytes are untouched and every other arm keeps reading
+            # them. Three kinds ride the same bulk_b kernel: the one whose bytes the MMA reads exactly is the
+            # smem order the TMA writes (the first z ticket, c2z-0917, failed the byte kind by 3e7 ulps)
+            # moe_prepare already rewrites these tensors in place. Applying
+            # the row-major-to-tile transform again corrupts every z variant.
+            w13_t, w2_t = views.w13_tiled_storage, views.w2_tiled_storage
+            for label, kind in (('z', 'byte'), ('zn', 'nibble'), ('zp', 'plain')):
+                w13_z, w2_z = md._swizzle_tile_boxes(w13_t, w2_t, kind=kind)
+                self.views[label] = dataclasses.replace(
+                    views, w13_fp4=w13_z.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
+                    down_fp4=w2_z.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0),
+                    w13_tiled_storage=w13_z, w2_tiled_storage=w2_z, w13_chunk=served, swizzled=True)
+            del w13_t, w2_t
         self.sf13 = mma_sf_view(self.w13_sf, self.w13.shape[1], 4096)
         self.sf2 = mma_sf_view(self.w2_sf, self.w2.shape[1], self.w2.shape[2] * 2)
         ones = torch.ones(288, device=self.w13.device, dtype=torch.float32)
@@ -451,34 +455,38 @@ def bulk_cells(report, layers, spread, brackets):
     if any('z' not in layer.views for layer in layers):
         raise RuntimeError('cell z needs the served 256 chunk (its boxes are the reform stages)')
     z = md._parse_glm53_static_v2('t,r,sf6,batch,z')
-    arms = [('served', served, None), ('z', 'z', z),
-            ('zl', served, dict(z, bulk_b_linear=True)), ('served_b', served, None)]
-    failures = []
+    kinds = ('z', 'zn', 'zp')               # one kernel, three storage orders: byte swizzle, nibble swizzle, plain
+    arms = [('served', served, None)] + [(k, k, z) for k in kinds] + [('served_b', served, None)]
+    arms.insert(-1, ('zl', served, dict(z, bulk_b_linear=True)))
+    kinds = (*kinds, 'zl')
+    passed = set(kinds)
     for fixture in (('c2_two_requests', 16, 2, spread), ('c1_one_request', 8, 1, spread)):
         fx = Fixtures(layers, fixture[1])
         fx.load(fixture, 1)
         for scope, group in (('single', layers[:1]), ('chain', layers)):
             graphs, accs = capture_arms(group, fx, arms)
             try:
-                failed = exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', ['z', 'zl'], scope=scope)
-                failures += [f'{label}@{fixture[1]}/{scope}' for label in failed]
+                failed = exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', list(kinds), scope=scope)
+                passed -= set(failed)
                 uniques = fx.load(fixture, 7)[:len(group)]
-                for candidate in ('z', 'zl'):
-                    if candidate in failed:
-                        continue
-                    res = bracket(report, graphs, 'served', candidate, brackets=brackets, fixture=fixture[0] + '_bulk',
+                for label in (k for k in kinds if k not in failed):
+                    res = bracket(report, graphs, 'served', label, brackets=brackets, fixture=fixture[0] + '_bulk',
                                   rows=fixture[1], scope=scope, layers=len(group), unique_experts=uniques)
                     stream_bytes = sum(uniques) * EXPERT_BYTES
                     report('rate', fixture=fixture[0] + '_bulk', rows=fixture[1], scope=scope, unique_experts=uniques,
-                           expert_bytes=stream_bytes, candidate=candidate,
+                           expert_bytes=stream_bytes, candidate=label,
                            control_gbps_evicted=stream_bytes / res['evicted']['control_us']['mean'] * 1e6 / 1e9,
                            candidate_gbps_evicted=stream_bytes / res['evicted']['candidate_us']['mean'] * 1e6 / 1e9)
             finally:
                 for graph in graphs.values():
                     graph.reset()
-    if failures:
-        raise RuntimeError(f'bulk cells beyond the ulp bound: {failures}')
-    stamp_cells(report, layers, [('served', served, None), ('z', 'z', z)], spread)
+    report('bulk_verdict', exact_kinds=sorted(passed), failed_kinds=sorted(set(kinds) - passed))
+    if passed:
+        stamp_cells(report, layers, [('served', served, None)] + [
+            (k, served if k == 'zl' else k, dict(z, bulk_b_linear=True) if k == 'zl' else z)
+            for k in sorted(passed)], spread)
+    if not passed:
+        raise RuntimeError('bulk cells: no storage order reproduced the served bytes (byte, nibble, plain all beyond the ulp bound)')
 
 
 def price_cells(report, layers, spread, brackets):
