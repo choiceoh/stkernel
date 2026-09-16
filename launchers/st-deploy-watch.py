@@ -587,6 +587,70 @@ def engine_tree(sha: str) -> str:
         return ""
 
 
+def commit_message(sha: str) -> str:
+    """The deployed commit's own words, or "" when git cannot be asked (a source tree that moved)."""
+    try:
+        code, out, _ = run(["git", "log", "-1", "--format=%B", sha], cwd=SOURCE, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return out if code == 0 else ""
+
+
+PROBE_MARK = "D17-probe:"
+
+
+def probe_wanted(sha: str, log) -> bool:
+    """Whether a D17 probe belongs to this commit at all, said once for both callers.
+
+    Two places queue one -- `after_deploy` right after the deploy, and `ensure_probe` on a later cycle
+    when the sample is still missing -- and the gate has to be on both or it is on neither.
+
+    A probe reserves the door for a whole C1/C2/32K bracket and answers 409 to every other request
+    while it runs; on 2026-09-16 that reached a user as `API error 409` from the assistant. Paying it
+    after every deploy buys a baseline for changes that never claimed to move one.
+    """
+    claims, why = claims_speed(commit_message(sha))
+    if not claims:
+        log(f"  no D17 probe for {str(sha)[:12]}: {why}")
+    return claims
+
+
+def claims_speed(message: str) -> "tuple[bool, str]":
+    """D17's question -- "does this change claim speed?" -- asked of the commit, and why the answer is that.
+
+    The PR template asks it outright, but a squash merge keeps the title and the commit list and drops
+    the body, so the answer has to live where git can see it. Two places do:
+
+      the type      `perf:` / `perf(engine):` -- the author saying this change is about speed
+      a line        `D17-probe: yes|no` -- for the change that knows better than its type does, in
+                    either direction: a `fix:` that moves the step, a `perf:` whose numbers are
+                    already in a bracket and needs no second one
+
+    Why this is the gate and not "every deployed commit": a probe reserves the door for the whole of a
+    C1/C2/32K bracket, and every request that is not the recording's gets a 409 while it runs. Paying
+    that per deploy buys a baseline for changes that never claimed to move one (2026-09-16 operator:
+    "커밋당 한번은 너무 많아. 성능 향상을 주장하는 pr이 머지됐을때만 하면 모를까").
+
+    What it costs, said plainly: a `fix:` that quietly regresses the step is no longer sampled, so the
+    NEXT `perf:` commit's sample carries that regression and is read against an older baseline. D17's
+    own answer to that is the bracket -- a speed claim is measured base->cand->base before it merges,
+    not inferred from two production samples.
+    """
+    lines = [line.strip() for line in message.splitlines() if line.strip()]
+    for line in lines:
+        if line.lower().startswith(PROBE_MARK.lower()):
+            said = line[len(PROBE_MARK):].strip().lower()
+            if said in ("yes", "y", "true", "1"):
+                return True, f"{PROBE_MARK} {said}"
+            if said in ("no", "n", "false", "0"):
+                return False, f"{PROBE_MARK} {said}"
+    subject = lines[0] if lines else ""
+    kind = subject.split(":", 1)[0].strip().lower() if ":" in subject else ""
+    if kind == "perf" or kind.startswith("perf("):
+        return True, f"its type is {kind!r}"
+    return False, f"it claims no speed ({kind or 'no conventional type'})"
+
+
 def sample_boots(sha: str, log, controller: Path = CONTROLLER, jsonl: Path = JSONL, tree: str = "") -> "list[str] | None":
     """The production boots that gave `sha` a warm, valid sample -- by the controller's own judge
     (bench/st_judge.py boots), so what a sample is gets decided once. None when it cannot be told,
@@ -644,7 +708,8 @@ def remember_probe(sha: str, queued: bool, state: Path = None, tally: dict = Non
 
 def ensure_probe(sha: str, held: dict, a, log, *, controller: Path = None, fleet_dir: Path = None,
                  jsonl: Path = None, state: Path = None, boot: "str | None" = "?", tree: "str | None" = "?") -> bool:
-    """A D17 probe ticket for the deployed commit only while it has fewer than --probe-samples (1)
+    """A D17 probe ticket for a deployed commit that CLAIMS SPEED (`claims_speed`) and has fewer
+    than --probe-samples (1)
     warm samples -- by commit or by engine tree, so a candidate the bracket measured and main then
     adopted needs none (the operator's rule: its own measurement is the next baseline), and a
     fleet-side merge inherits the sample of the engine it did not touch. Samples count per
@@ -652,6 +717,8 @@ def ensure_probe(sha: str, held: dict, a, log, *, controller: Path = None, fleet
     --probe-attempts per boot, --probe-gap apart; nothing is queued while a probe ticket is queued
     or holding, when the judge cannot be asked, or when nothing serves."""
     if getattr(a, "dry_run", False) or not getattr(a, "probe", True) or not sha:
+        return False
+    if not probe_wanted(sha, log):
         return False
     controller = Path(controller or getattr(a, "controller", CONTROLLER))
     fleet_dir = Path(fleet_dir or FLEET)
@@ -694,7 +761,7 @@ def after_deploy(head: str, a, log) -> None:
     controller = Path(getattr(a, "controller", CONTROLLER))
     if getattr(a, "follow", True):
         follow_controller(head, log, controller)
-    if getattr(a, "probe", True):
+    if getattr(a, "probe", True) and probe_wanted(head, log):
         remember_probe(head, queue_probe(head, log, controller))
 
 

@@ -8,6 +8,7 @@ worth exactly what its refusals are worth.
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "launchers"))
@@ -339,6 +340,11 @@ class AfterDeployTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.tmp = Path(self.temporary.name)
         self.lines = []
+        # These shas are not in any tree, and the probe now asks the commit whether it claims speed
+        # (`claims_speed`). What is judged here is the ticket, so the claim is stated rather than read.
+        claims = patch.object(watch, "commit_message", return_value="perf: a speed claim")
+        claims.start()
+        self.addCleanup(claims.stop)
 
     def log(self, line):
         self.lines.append(line)
@@ -426,6 +432,21 @@ class AfterDeployTests(unittest.TestCase):
         tally = watch.state_of(self.tmp / "deploy-state.json")["probe"]
         self.assertEqual((tally["sha"], tally["attempts"], tally["queued"]), ("0" * 40, 1, True), "the ticket is tallied")
 
+    def test_a_deploy_that_claims_no_speed_queues_no_probe(self):
+        """The behaviour this gate exists for: most deploys are a `fix:` or a `docs:`, and a probe
+        reserves the door for a whole bracket -- every other request answers 409 while it runs."""
+        from types import SimpleNamespace
+        from unittest import mock
+        controller = self.stub_controller()
+        state = mock.patch.object(watch, "STATE", self.tmp / "deploy-state.json")
+        state.start()
+        self.addCleanup(state.stop)
+        with patch.object(watch, "commit_message", return_value="fix: a thing that is not speed"):
+            watch.after_deploy("0" * 40, SimpleNamespace(dry_run=False, controller=str(controller),
+                                                         follow=False, probe=True), self.log)
+        self.assertFalse((self.tmp / "argv").exists(), "no ticket for a commit that claims nothing")
+        self.assertIn("no D17 probe", chr(10).join(self.lines))
+
     def test_it_runs_only_after_a_deploy_that_is_recorded(self):
         """A failed launch is a rejection; nothing follows it, and no probe samples a fleet in recovery."""
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
@@ -468,10 +489,13 @@ class ProbeSelfHealTests(unittest.TestCase):
     def log(self, line):
         self.lines.append(line)
 
-    def ensure(self, held=None, sha=None, a=None, boot="live|now", tree=""):
-        return watch.ensure_probe(self.SHA if sha is None else sha, held or {}, a or self.a, self.log,
-                                  controller=self.controller, fleet_dir=self.fleet, jsonl=self.jsonl, state=self.state,
-                                  boot=boot, tree=tree)
+    def ensure(self, held=None, sha=None, a=None, boot="live|now", tree="", claims="perf: a speed claim"):
+        # The commit's own words are the gate now (`claims_speed`): these tests are about the ticket,
+        # so they say the claim outright instead of reaching for a git tree that is not here.
+        with patch.object(watch, "commit_message", return_value=claims):
+            return watch.ensure_probe(self.SHA if sha is None else sha, held or {}, a or self.a, self.log,
+                                      controller=self.controller, fleet_dir=self.fleet, jsonl=self.jsonl,
+                                      state=self.state, boot=boot, tree=tree)
 
     def sample(self, sha=None, run_index=2, boot="b|1", tree=None):
         import json as _json
@@ -749,3 +773,53 @@ class CachedBaselineTests(unittest.TestCase):
         self.assertIn('state["gate"] = {"sha": head, "image": gate_image(judged), "verdicts": after', kept)
         dropped = source[source.index('"rejected_by": "launch"') - 400:source.index('"rejected_by": "launch"')]
         self.assertIn('if k != "gate"', dropped)
+
+
+class SpeedClaimTests(unittest.TestCase):
+    """A D17 probe is queued for a commit that CLAIMS speed, not for every deploy.
+
+    The probe reserves the door for a whole C1/C2/32K bracket and answers 409 to every other request
+    while it runs -- on 2026-09-16 that reached a user as `API error 409` from the assistant. Paying
+    that after every deploy buys a baseline for changes that never claimed to move one.
+    """
+
+    NL = chr(10)
+
+    def test_a_perf_type_claims_speed(self):
+        for subject in ("perf: 무언가", "perf(loader): 로드가", "PERF(boot): x", "perf(engine): y"):
+            with self.subTest(subject=subject):
+                claims, why = watch.claims_speed(subject + self.NL + self.NL + "body")
+                self.assertTrue(claims, why)
+                self.assertIn("type", why)
+
+    def test_every_other_type_does_not(self):
+        for subject in ("fix: x", "feat: x", "docs: x", "ci: x", "test: x", "revert: x",
+                        "measure(boot): x", "chore: x", "no conventional type at all"):
+            with self.subTest(subject=subject):
+                claims, why = watch.claims_speed(subject)
+                self.assertFalse(claims, why)
+                self.assertIn("claims no speed", why)
+
+    def test_a_change_that_knows_better_than_its_type_says_so(self):
+        """A `fix:` that moves the step asks for the probe; a `perf:` already bracketed declines it."""
+        claims, why = watch.claims_speed("fix: the router did it twice" + self.NL * 2 + "D17-probe: yes" + self.NL)
+        self.assertTrue(claims)
+        self.assertIn("D17-probe", why)
+        claims, why = watch.claims_speed("perf(engine): x" + self.NL * 2 + "D17-probe: no" + self.NL)
+        self.assertFalse(claims)
+        self.assertIn("D17-probe", why)
+
+    def test_an_empty_message_claims_nothing(self):
+        self.assertFalse(watch.claims_speed("")[0])
+        self.assertFalse(watch.claims_speed("   " + self.NL + self.NL + "  ")[0])
+
+    def test_the_gate_runs_before_anything_that_costs(self):
+        """The first thing `ensure_probe` asks after the flags: no controller, no judge, no ticket."""
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text(encoding="utf-8")
+        head = source.index("def ensure_probe(")
+        body = source[head:head + 3000]
+        self.assertLess(body.index("probe_wanted(sha, log)"), body.index("sample_boots("))
+        after = source[source.index("def after_deploy("):source.index("def main(")]
+        # both callers or neither: after_deploy queues its own ticket without going through ensure_probe
+        self.assertIn("probe_wanted(head, log)", after)
+        self.assertIn('log(f"  no D17 probe for', source)
