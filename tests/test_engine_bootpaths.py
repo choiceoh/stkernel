@@ -2,6 +2,7 @@
 import datetime
 import importlib.util
 import os
+import shutil
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -177,7 +178,7 @@ class LauncherTests(unittest.TestCase):
         vLLM-parity default for a single box, not this fleet's shape.
         """
         self.assertIn("KV_GIB=${ST_KV_GIB:-14.0}", self.text)
-        kv = '$KV_GIB"'
+        kv = 'KV_ARG="--kv-gib $KV_GIB"'   # not `$KV_GIB"`: that also ends the line that validates it
         for env, want in (({}, "--kv-gib 14.0"), ({"ST_KV_GIB": "7.0"}, "--kv-gib 7.0")):
             self.assertEqual(self._launcher_var("KV_ARG", "KV_GIB=${ST_KV_GIB", kv, env), want, env)
         # a budget that is not a number is a refusal, not a `--kv-gib` the boot has to parse
@@ -203,8 +204,8 @@ class LauncherTests(unittest.TestCase):
             self.assertEqual(code, 2, bad)
             self.assertEqual(out, "", "a refused tier must not leave a half-built argument")
 
-    @staticmethod
-    def _bash(script, env):
+    @classmethod
+    def _bash(cls, script, env):
         """Run a snippet of the launcher. Bytes, and through stdin.
 
         The snippets carry `;;`, quotes and parens, so as one `bash -c` argument they are at the
@@ -213,19 +214,41 @@ class LauncherTests(unittest.TestCase):
         shell reading `case ... in\\r` says only `syntax error`. Bytes over stdin are the same
         everywhere.
         """
-        run = subprocess.run(["bash", "-s"], input=script.encode(), env=env, capture_output=True)
+        run = subprocess.run([cls._shell(), "-s"], input=script.encode(), env=env,
+                             capture_output=True)
         return SimpleNamespace(returncode=run.returncode,
                                stdout=run.stdout.decode(errors="replace"),
                                stderr=run.stderr.decode(errors="replace"))
 
+    @classmethod
+    def _shell(cls):
+        """A bash that inherits the environment we hand it -- these snippets are read from one.
+
+        On Windows the name resolves to WSL's bash, which starts a fresh Linux environment and so
+        answers every case with the launcher's default. That is worse than no answer: it is a green
+        suite. Git ships a bash that does behave, so look beside git before giving up.
+        """
+        if getattr(cls, "_shell_path", ...) is ...:
+            cls._shell_path = None
+            git = shutil.which("git")
+            beside = [str(parent / rel) for parent in (Path(git).parents if git else ())
+                      for rel in ("bin/bash.exe", "usr/bin/bash.exe")]
+            for cmd in ["bash", *beside]:
+                try:
+                    out = subprocess.run([cmd, "-s"], input=b'printf %s "$ST_PROBE"\n',
+                                         env={**os.environ, "ST_PROBE": "reached"},
+                                         capture_output=True).stdout
+                except OSError:
+                    continue
+                if out == b"reached":
+                    cls._shell_path = cmd
+                    break
+        return cls._shell_path
+
     def _launcher_var(self, var, first, last, env, check=True):
         """Run the launcher block from `first` through `last`, and print what it set `var` to."""
-        # A `bash` that does not inherit the environment cannot answer these (Windows resolves the
-        # name to WSL's, which starts a fresh Linux environment). Skip rather than read its default
-        # as an answer -- every case would come back as the default and some would "pass".
-        if self._bash('printf %s "$ST_PROBE"\n', {**os.environ, "ST_PROBE": "reached"}).stdout \
-                != "reached":
-            self.skipTest("this box's `bash` does not inherit the environment")
+        if self._shell() is None:
+            self.skipTest("no bash on this box inherits the environment it is given")
         start = self.text.index(first)
         block = self.text[start:self.text.index(last, start) + len(last)]
         blank = {name: "" for name in ("ST_TIER_DIR", "ST_KV_GIB")}  # unset, whatever ran the suite
