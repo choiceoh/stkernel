@@ -116,7 +116,7 @@ def _aligned(ids_from, weights_from, ids_to):
 def judge(report, group, x, graphs, outs, *, rows, groups, scope, fixture):
     """Replay every arm in both orders over SEEDS draws of x; gate the fused logits and its own selection,
     count the flips against the served chain. Returns (passed, stats)."""
-    stats = dict(rows=0, set_mismatch_rows=0, order_mismatch_rows=0, weight_rows_compared=0, own_set_mismatch_rows=0,
+    stats = dict(rows_judged=0, set_mismatch_rows=0, order_mismatch_rows=0, weight_rows_compared=0, own_set_mismatch_rows=0,
                  own_order_mismatch_rows=0, control_self_diff=0)
     for seed in range(SEEDS):
         x.copy_(grouped(rows, groups, SPREAD, 5000 + 100 * seed + rows))
@@ -142,7 +142,7 @@ def judge(report, group, x, graphs, outs, *, rows, groups, scope, fixture):
                     _merge_max(stats, 'own_weights_max_ulps', own['fp32_max_ulps'])
                 # the flips against the served chain, and the weights where the set survived
                 set_ok = (is_.sort(1).values == if_.sort(1).values).all(1)
-                stats['rows'] += rows
+                stats['rows_judged'] += rows
                 stats['set_mismatch_rows'] += int(rows - set_ok.sum())
                 stats['order_mismatch_rows'] += int(rows - (is_ == if_).all(1).sum())
                 if set_ok.any():
@@ -157,8 +157,8 @@ def judge(report, group, x, graphs, outs, *, rows, groups, scope, fixture):
               and stats['own_weights_max_ulps'] <= OWN_WEIGHT_MAX_ULPS)
     report('exact', fixture=fixture, rows=rows, scope=scope, layers=[r.L for r in group], seeds=SEEDS,
            replay_orders='forward/reverse', logits_max_ulps_gate=MAX_ULPS, own_weights_max_ulps_gate=OWN_WEIGHT_MAX_ULPS,
-           set_flip_pct=100. * stats['set_mismatch_rows'] / stats['rows'],
-           order_flip_pct=100. * stats['order_mismatch_rows'] / stats['rows'], passed=passed, **stats)
+           set_flip_pct=100. * stats['set_mismatch_rows'] / stats['rows_judged'],
+           order_flip_pct=100. * stats['order_mismatch_rows'] / stats['rows_judged'], passed=passed, **stats)
     return passed, stats
 
 
@@ -214,8 +214,8 @@ def main(ranks=None, *, samples=None, output=None):
                         fused_us={c: res[c]['candidate_us']['mean'] for c in res},
                         saved_us_per_layer={c: (res[c]['control_us']['mean'] - res[c]['candidate_us']['mean']) / len(group)
                                             for c in res},
-                        set_flip_pct=100. * stats['set_mismatch_rows'] / stats['rows'],
-                        order_flip_pct=100. * stats['order_mismatch_rows'] / stats['rows'],
+                        set_flip_pct=100. * stats['set_mismatch_rows'] / stats['rows_judged'],
+                        order_flip_pct=100. * stats['order_mismatch_rows'] / stats['rows_judged'],
                         logits_max_ulps=stats['logits_max_ulps'], weights_max_ulps=stats['weights_max_ulps']))
                 except Exception as exc:  # the other cells' evidence is kept; the run still fails
                     failures.append(f'{fixture}:{scope}')
