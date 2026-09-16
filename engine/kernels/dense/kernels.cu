@@ -3349,14 +3349,24 @@ int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 // More residency alone lost on the small shared-expert GEMMs and on the
 // 51-tile in-projection. They retain the two-block transposed kernel.
 bool mk_use_compact_m8(int m, int n, int k, bool lr = false) {
-  // The two shapes won their A/B at six rows (k=5 C=1). K=7 serves eight, and
-  // eight takes the same instantiation (mk_launch_gemm2 dispatches c2.m <= 8)
-  // with A_ROWS = 8 exactly filled instead of padded; mk_choose_ksr2 follows m
-  // through its m x n x ksr partial clamp. Operator 2026-09-16: admit eight
-  // rows unmeasured. Rollback: drop the m == 8 term.
-  return MK_COMPACT_M8 && !lr && (m == 6 || m == 8) &&
-         ((n == 4096 && k == 2048) || (n == 6144 && k == 4096));
-}
+  // The two shapes won their A/B at six rows (k=5 C=1). Eight rows were admitted here unmeasured on
+  // 2026-09-16 and taken back the same day, on the rollback that commit itself wrote down.
+  //
+  // Eight rows is where these two shapes are ALSO bound_c1 cells (kernels/dense.bound_input_cell,
+  // judged in st_c2_dense_cells_20260915). The compact instantiation's smaller shared memory raises
+  // its occupancy, so mk_choose_ksr2 reads g_gemm2_m8_bps instead of g_gemm2_bps and returns a
+  // different ksr -- and mk_run_gemm_bound_input admits only ksr 3 at (n 4096, k 2048) and ksr 2 or 3
+  // at (n 6144, k 4096). Off those it raises "bound C1 input plan is outside the declared reduction
+  // geometry" and the boot dies before its door. Every boot on main died there until this came out.
+  // Six rows never met it: K=5 does not serve eight.
+  //
+  // The cells are measured and the eight-row admission was not, so the unmeasured side gives way.
+  // Re-admitting eight rows means making the two agree rather than picking one -- give a bound call
+  // the ordinary instantiation (thread the bound flag through mk_use_compact_m8's two call sites,
+  // bps at mk_choose_ksr2 and the launch in mk_launch_gemm2), so a bound cell keeps its declared ksr
+  // and every other eight-row call still takes the compact path -- and put a boot behind it.
+  return MK_COMPACT_M8 && !lr && m == 6 &&
+         ((n == 4096 && k == 2048) || (n == 6144 && k == 4096));}
 
 int mk_choose_ksr2(int m, int n, int k, bool lr = false) {
   const int nblk = n / SMEM_W_ROWS, kblk = k / KSTEP;
