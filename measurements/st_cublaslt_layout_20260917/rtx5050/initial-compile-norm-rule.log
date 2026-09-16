@@ -1,0 +1,7 @@
+W0916 21:31:39.803000 1 site-packages/torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+Traceback (most recent call last):
+  File "/work/probes/engine_cublaslt_compile.py", line 102, in <module>
+    main()
+  File "/work/probes/engine_cublaslt_compile.py", line 70, in main
+    raise RuntimeError(f'{name} still has log/exp/div/reciprocal instructions: {expensive}')
+RuntimeError: split-norm-m1-bias0 still has log/exp/div/reciprocal instructions: ['div.full.f32']

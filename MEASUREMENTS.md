@@ -4276,6 +4276,23 @@ head 7/8/14/16행 지연 −12.26~12.67%, FC decode 8/16행 −6.32/−6.47%.
 **이는 운영자 선택의 기본값 변경이며 GB10 실행·엔진 step/s·수용률 실측은 아니다.** 큐·재시작 없음.
 [코드 경계, 전체 비교와 원시 기록](measurements/st_cublaslt_serving_20260917/README.md).
 
+## 2026-09-17 — cuBLAS FC padded pitch + fused RMS, default
+
+Follow-up to #1071: keep the five-way FP32 FC split, pad each physical weight
+row by 384 bytes and fuse partial reduction with the existing BF16/RMS/bias
+boundaries. Actual `FP8Linear` calls on the authorized RTX 5050 improve FC
+decode+RMS by **5.2–6.5%** versus frozen main `b41efc7d`; M8
+0.32813→0.30789 ms, M16 0.33592→0.31536 ms, M32 0.34833→0.32690 ms.
+Two B/A/A/B brackets per cell, real FP8 packs and synthetic changed inputs.
+All 28 final cells are bit-identical, including changed-input graphs with zero
+replay allocations. Head execution and FC prefill are unchanged within noise;
+the earlier large-prefill loss versus DeepGEMM remains unresolved. Direct
+algorithm validation reduces warm host plan preparation ~94–95% (less than
+1 ms total, not a boot/step speed claim). Added residency is 7.5 MiB/rank,
+declared in the arena budget. No queue/deployment/restart; **GB10/TP4 step/s and
+acceptance remain unmeasured**. Rejected zero-copy, split-count, operand-order,
+producer-tile and batch-gap experiments, exact receipts and reproduction:
+[`measurements/st_cublaslt_layout_20260917/`](measurements/st_cublaslt_layout_20260917/README.md).
 ### 라우터를 한 런치로 — 층당 7발을 1발로, 42층 사슬 C=2 −1.48 ms·C=1 −1.83 ms, top-8 집합 뒤집힘 0 (2026-09-17, srv4 단일 GPU 레인 7회, 운영자 "그럼 남은거 뒤져")
 
 C=2 캠페인이 남긴 지도를 코드와 원장으로 되짚었다(`measurements/st_c2_levers_survey_20260917/`).

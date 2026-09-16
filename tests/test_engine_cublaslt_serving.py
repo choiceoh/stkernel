@@ -64,8 +64,8 @@ class ServingContracts(unittest.TestCase):
         head = 38784*4096//32
         self.assertEqual(resident_bytes(F), head)
         self.assertEqual(resident_bytes(F, D, DraftPolicy('w4')), head+2621440)
-        self.assertEqual(resident_bytes(F, D, DraftPolicy('fp8')), head+89128960)
-        self.assertEqual(resident_bytes(F, D, DraftPolicy('fp8', 'decode')), head+91750400)
+        self.assertEqual(resident_bytes(F, D, DraftPolicy('fp8')), head+89128960+4096*5*384)
+        self.assertEqual(resident_bytes(F, D, DraftPolicy('fp8', 'decode')), head+91750400+4096*5*384)
 
     def test_execution_proof_rejects_an_unexecuted_default_reader(self):
         from engine.profiles.glm53.cublas import execution_report
@@ -75,10 +75,43 @@ class ServingContracts(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'fc_prefill'):
             execution_report(net)
         net.cublas_readers['fc_prefill'].cublas.executed.add('split_decode')
+        with self.assertRaisesRegex(RuntimeError, 'split_decode_norm'):
+            execution_report(net)
+        net.cublas_readers['fc_prefill'].cublas.executed.add('split_decode_norm')
         self.assertEqual(len(execution_report(net)), 2)
         net.cublas_readers['head'].cublas = None
         with self.assertRaisesRegex(RuntimeError, 'head'):
             execution_report(net)
+
+    def test_fc_normalization_keeps_decode_phase_bias_and_observation(self):
+        from engine.kernels.dense import DenseLinear
+        from engine.profiles.glm53.drafter import Drafter
+        class Reader:
+            cublas = object()
+            def __call__(self, x, *, decode=False, normalization=None):
+                self.options = decode, normalization
+                return x
+        layer = DenseLinear.__new__(DenseLinear)
+        layer.rows = layer.cols = 128
+        observed = []
+        layer.observer = lambda x, mask: observed.append(mask)
+        layer.decode_precision, layer.executed = 'fp8', 0
+        layer.fp8, layer.decode_fp8 = Reader(), Reader()
+        d = Drafter.__new__(Drafter)
+        d.dense, d.F = {'fc.weight': layer}, NS(rms_eps=1e-6)
+        d.p = {'hidden_norm.weight': torch.ones(128, dtype=torch.bfloat16)}
+        d.fc_bias = torch.ones(128)
+        x, mask = torch.zeros(8, 128, dtype=torch.bfloat16), torch.ones(8, dtype=torch.bool)
+        d.context_projected_norm(x, mask, decode=True)
+        self.assertIs(observed[0], mask)
+        self.assertTrue(layer.decode_fp8.options[0])
+        self.assertIs(layer.decode_fp8.options[1][0], d.p['hidden_norm.weight'])
+        self.assertIs(layer.decode_fp8.options[1][2], d.fc_bias)
+        d.context_projected_norm(x, mask, decode=True, observe=False)
+        self.assertEqual(len(observed), 1)
+        layer.decode_fp8 = None
+        d.context_projected_norm(x, decode=True, observe=False)
+        self.assertIs(layer.fp8.options[1][2], d.fc_bias)
 
 
 @unittest.skipUnless(os.environ.get('ST_TEST_CUBLASLT_GPU') == '1', 'owned GPU required')
@@ -120,6 +153,19 @@ class ServingGpu(unittest.TestCase):
                 q, scales = quantize(sources[0])
                 torch.testing.assert_close(layer.project_quantized(q, scales), outputs[0][:,:127])
                 self.assertEqual(layer.cublas.report()['backend'], 'cublaslt')
+                for bias in (None, torch.linspace(-2, 2, 128, device='cuda')):
+                    from engine.kernels.common.norm_rope import norm
+                    norm_weight = torch.ones(128, device='cuda', dtype=torch.bfloat16)
+                    # This layer has a padded logical output; normalization must refuse it.
+                    with self.assertRaisesRegex(ValueError, 'unpadded'):
+                        layer(sources[0], decode=True, normalization=(norm_weight, 1e-6, bias))
+                    layer.rows = 128
+                    reference = norm(layer(sources[0], decode=True), norm_weight, 1e-6, bias=bias)
+                    normalized = layer(sources[0], decode=True, normalization=(norm_weight, 1e-6, bias))
+                    torch.testing.assert_close(normalized, reference, rtol=0, atol=0)
+                    layer.rows = 127
+                self.assertIn('split_decode_norm', layer.cublas.executed)
+                self.assertTrue(all(p['preferred_hit'] for p in layer.cublas.report()['preparation'].values()))
             finally:
                 for graph in graphs:
                     graph.reset()

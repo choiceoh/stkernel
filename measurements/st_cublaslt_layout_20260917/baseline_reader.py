@@ -10,9 +10,6 @@ import triton.language as tl
 from . import mxfp8
 from .fp8 import require_disjoint
 
-SPLIT_PARTS = 5
-SPLIT_WEIGHT_PADDING = 384  # alter only the physical row pitch; logical K and FP8 values stay fixed
-
 
 @triton.jit
 def _activation_scales(S, MX, M: tl.constexpr, G: tl.constexpr):
@@ -24,7 +21,7 @@ def _activation_scales(S, MX, M: tl.constexpr, G: tl.constexpr):
 
 def weight_nbytes(n, k, *, split_decode=False):
     direct = mxfp8.scale_bytes(n, k)
-    return direct + (n*(k+SPLIT_PARTS*SPLIT_WEIGHT_PADDING) + direct if split_decode else 0)
+    return direct + (n*k + direct if split_decode else 0)
 
 
 def _candidate(candidates):
@@ -50,7 +47,7 @@ class Reader:
         native = _build()
         self.context = native.Context(q.device.index, *torch.cuda.get_device_capability(q.device))
         self.mx_weight = mxfp8.pack_weight_scales(scales, n, k)
-        self.split_weight = PackedWeight(weight, SPLIT_PARTS, padding=SPLIT_WEIGHT_PADDING) if split_decode else None
+        self.split_weight = PackedWeight(weight, 5) if split_decode else None
         values = [self.mx_weight]
         if self.split_weight is not None:
             values.extend((self.split_weight.q, self.split_weight.scales))
@@ -63,13 +60,12 @@ class Reader:
                 self.split_weight.q, self.split_weight.scales = values[1:]
         self.seeds, self.plans, self.executed = {}, {}, set()
         self.workspace = torch.empty(0, device=q.device, dtype=torch.uint8)
-        for parts in ((1, SPLIT_PARTS) if split_decode else (1,)):
+        for parts in ((1, 5) if split_decode else (1,)):
             kp = k//parts
             size = mxfp8.scale_bytes(8, kp)
             query = torch.full((size,) if parts == 1 else (parts, size), 127, device=q.device, dtype=torch.uint8)
             ws = self.mx_weight if parts == 1 else self.split_weight.scales
-            plan = native.Plan(self.context, 8, n, kp, 0, query, ws, parts, parts != 1, True,
-                               SPLIT_WEIGHT_PADDING if parts != 1 else 0)
+            plan = native.Plan(self.context, 8, n, kp, 0, query, ws, parts, parts != 1)
             selected = _candidate(plan.candidates())
             self.seeds[parts] = (plan, selected)
             self.plans[parts, 8] = (plan, selected['index'])
@@ -97,29 +93,15 @@ class Reader:
             require_disjoint(out, self.split_weight.scales)
         return out
 
-    def __call__(self, x, *, out=None, decode=False, normalization=None):
+    def __call__(self, x, *, out=None, decode=False):
         if (x.ndim != 2 or x.shape[1] != self.k or x.shape[0] <= 0 or x.dtype != torch.bfloat16
                 or x.device != self.weight[0].device or not x.is_contiguous()):
             raise ValueError('cuBLAS input requires contiguous BF16 [M,K]')
         m = x.shape[0]
-        if normalization is not None:
-            norm, eps, bias = normalization
-            if not decode or not self.split_decode:
-                raise ValueError('fused normalization requires the split decode reader')
-            if (norm.shape != (self.n,) or norm.dtype != torch.bfloat16 or norm.device != x.device
-                    or not norm.is_contiguous() or not 0 < eps < float('inf')):
-                raise ValueError('fused normalization requires a contiguous BF16 weight and positive finite epsilon')
-            if bias is not None and (bias.shape != norm.shape or bias.dtype != torch.float32
-                                     or bias.device != x.device or not bias.is_contiguous()):
-                raise ValueError('fused normalization bias must be contiguous FP32 on the input device')
         out = self._out(m, out, x)
-        if normalization is not None:
-            require_disjoint(out, norm)
-            if bias is not None:
-                require_disjoint(out, bias)
         if decode and self.split_decode:
             from .cublaslt_split import _quantize, _reduce
-            p, kp = SPLIT_PARTS, self.k//SPLIT_PARTS
+            p, kp = 5, self.k//5
             q = torch.empty((p, m, kp), dtype=torch.float8_e4m3fn, device=x.device)
             s = torch.empty((p, mxfp8.scale_bytes(m, kp)), dtype=torch.uint8, device=x.device)
             partials = torch.empty((p, m, self.n), dtype=torch.float32, device=x.device)
@@ -127,13 +109,7 @@ class Reader:
                                                        bool(m % 128), num_warps=1)
             plan, index = self._plan(m, p, s)
             plan.run(index, q, self.split_weight.q, s, self.split_weight.scales, partials, self.workspace)
-            if normalization is None:
-                _reduce[(triton.cdiv(m*self.n, 256),)](partials, out, m*self.n, p, num_warps=4)
-            else:
-                from .cublaslt_split import _reduce_norm
-                _reduce_norm[(m,)](partials, norm, norm if bias is None else bias, out, m, self.n, p, eps,
-                                   bias is not None, triton.next_power_of_2(self.n), num_warps=8)
-                self.executed.add('split_decode_norm')
+            _reduce[(triton.cdiv(m*self.n, 256),)](partials, out, m*self.n, p, num_warps=4)
             self.executed.add('split_decode')
         else:
             q, s = mxfp8.quantize(x, num_warps=1)
@@ -160,5 +136,4 @@ class Reader:
     def report(self):
         return dict(backend='cublaslt', resident_bytes=self.resident_bytes, executed=sorted(self.executed),
                     algorithms={str(p): c for p, (_, c) in self.seeds.items()},
-                    preparation={str(p): plan.statistics() for p, (plan, _) in self.seeds.items()},
                     warmed_rows=sorted([p, m] for p, m in self.plans))

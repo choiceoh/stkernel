@@ -9,7 +9,7 @@ def resident_bytes(F, D=None, policy=None):
         scale = n*(k//32)
         size += scale  # prefill FC's direct MX scales
         if policy is not None and policy.fc_precision == 'fp8':
-            size += n*k + scale  # five-way decode weight and its scales
+            size += n*(k+5*384) + scale  # five-way decode weight, padded physical pitch, and scales
             if policy.separate_decode_fp8:
                 size += scale  # independent calibrated decode reader's direct scales
     return size
@@ -49,6 +49,7 @@ def execution_report(net):
         required = {'split_decode'} if name == 'fc_decode' else {'direct'}
         if reader is not None and reader.split_decode:
             required.add('split_decode')
+            required.add('split_decode_norm')
         if reader is None or not required.issubset(reader.executed):
             raise RuntimeError(f'default cuBLAS reader was not executed: {name}, expected {sorted(required)}')
         result[name] = reader.report()

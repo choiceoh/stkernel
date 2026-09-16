@@ -22,7 +22,7 @@ def main():
     from triton.compiler import ASTSource
     from engine.kernels.dense.cublaslt import _build
     from engine.kernels.dense.mxfp8 import _quantize, _quantize_bound, _pack_weights
-    from engine.kernels.dense.cublaslt_split import _quantize as _split_quantize, _reduce as _split_reduce
+    from engine.kernels.dense.cublaslt_split import _quantize as _split_quantize, _reduce as _split_reduce, _reduce_norm
     from engine.kernels.dense.cublaslt_serving import _activation_scales
     from engine.kernels.prefill_collectives.consumer import _quantize_gather_mx, _quantize_gather_mx_bound
     started = time.monotonic()
@@ -55,6 +55,10 @@ def main():
                        for m in (1, 7, 8, 16, 24, 32, 64)]
     configurations += [(f'activation-scales-m{m}-g{g}', _activation_scales, dict(S='*fp32', MX='*i32'),
                         dict(M=m, G=g), 1) for m in (7, 128, 512) for g in (32, 160)]
+    configurations += [(f'split-norm-m{m}-bias{int(bias)}', _reduce_norm,
+                        dict(X='*fp32', W='*bf16', BIAS='*fp32' if bias else '*bf16', Y='*bf16'),
+                        dict(M=m, N=4096, P=5, EPS=1e-6, HAS_BIAS=bias, BN=4096), 8)
+                       for m in (1, 7, 8, 16, 24, 32, 64) for bias in (False, True)]
     for name, fn, signature, constants, warps in configurations:
         if 'SCALAR_SCALE' in fn.arg_names:
             constants = dict(constants, SCALAR_SCALE=warps == 1)
@@ -62,7 +66,9 @@ def main():
                                 target=GPUTarget('cuda', 121, 32), options=dict(num_warps=warps))
         ptx = kernel.asm['ptx']
         expensive = re.findall(r'\b(?:lg2|ex2|div|rcp)\.[\w.]*f32', ptx)
-        if name != 'weight-scales' and expensive:
+        # The FP8 producers avoid log/exp/div; RMS keeps the established IEEE
+        # division (also present in common.norm_rope) to preserve its rounding.
+        if name != 'weight-scales' and not name.startswith('split-norm-') and expensive:
             raise RuntimeError(f'{name} still has log/exp/div/reciprocal instructions: {expensive}')
         integer_divisions = re.findall(r'\b(?:div|rem)\.[su]32', ptx)
         if name.startswith('bound-') and integer_divisions:
