@@ -250,6 +250,12 @@ fi
 log "=== st-glm53 supervisor start ==="
 if health; then
   log "existing ST fleet healthy -- adopting"
+  # An adopted fleet's prefix cache is as empty as a freshly booted one's -- nothing has
+  # ever filled it. warm_cache lives inside wait_for_health, which a start that is already
+  # healthy never enters, so the one path that skipped the warm was the common one. health
+  # just passed, so this returns on the first poll; its return is the loop's business, not
+  # a launch decision.
+  wait_for_health adopted
 else
   attempt_launch
 fi
