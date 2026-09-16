@@ -163,6 +163,7 @@ class Glm53Net:
         self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
         self.dense = {}
+        self.cublas_readers = {}
         self.shared_mlp = {}
         self.shared_overlap = None
         self._router_layers = None                         # None until every native FP32 router is resident

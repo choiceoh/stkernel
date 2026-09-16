@@ -25,7 +25,7 @@ def native_modules():
 class NativeListTests(unittest.TestCase):
     def test_every_native_extension_under_kernels_is_built_before_the_first_collective(self):
         from engine.profiles.glm53 import natives
-        listed = {module: entry for _, module, entry in natives.MODULES + (natives.ONESHOT,) + natives.PROBE_MODULES}
+        listed = {module: entry for _, module, entry in natives.MODULES + (natives.ONESHOT,)}
         self.assertEqual(set(listed), native_modules(),
                          "a native built at its first use makes the ranks wait for its compile inside a collective")
         for module, entry in listed.items():
@@ -106,7 +106,7 @@ class NativeBuildsTests(unittest.TestCase):
             builds = natives.builds(2, True)
         self.assertEqual(importers, {threading.get_ident()})
         self.assertEqual([name for name, _ in builds],
-                         ["dense", "mla", "prefill-topk", "router-fp32", "decode-topk", "mapped-staging", "bounded-graph", "decode-queue", "one-shot"])
+                         ["cublaslt", "dense", "mla", "prefill-topk", "router-fp32", "decode-topk", "mapped-staging", "bounded-graph", "decode-queue", "one-shot"])
         self.assertEqual(natives.NativeBuilds(builds).wait().keys(), dict(builds).keys())
         self.assertEqual(calls, [(2, True)])
 

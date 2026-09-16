@@ -46,21 +46,38 @@ def row_programs(rows):
 
 
 @triton.jit
-def _rows(M, TILED: tl.constexpr):
+def _row(M, offset, TILED: tl.constexpr):
     pid = tl.program_id(0)
     if TILED:
-        quarter = pid // 32 * 128 + pid % 32 + tl.arange(0, 4)*32
+        quarter = pid // 32 * 128 + pid % 32 + offset*32
         # Keep only ceil(tail/4) producers for an incomplete row tile: M=129
         # launches 33, not 64 CTAs per K128 group. Full tiles stay coalesced.
-        tail = M // 128 * 128 + pid % 32 * 4 + tl.arange(0, 4)
+        tail = M // 128 * 128 + pid % 32 * 4 + offset
         return tl.where(pid < M // 128 * 32, quarter, tail)
     else:
-        return pid*4 + tl.arange(0, 4)
+        return pid*4 + offset
 
 
 @triton.jit
-def _publish(S, scale, row, group, M, G: tl.constexpr, PAD: tl.constexpr = True):
-    tl.store(S + _word_offset(row, group, G), _scale_word(scale), row < M)
+def _rows(M, TILED: tl.constexpr):
+    return _row(M, tl.arange(0, 4), TILED)
+
+
+@triton.jit
+def _publish(S, scale, row, group, M, G: tl.constexpr, PAD: tl.constexpr = True,
+              SCALAR_SCALE: tl.constexpr = False, TILED: tl.constexpr = False):
+    words = _scale_word(scale)
+    if SCALAR_SCALE:
+        # With one warp, every lane already owns all four reduced row values.
+        # A vector store makes the compiler redistribute them through shared
+        # memory/ldmatrix. Extract each register value and let a scalar store
+        # elect its single writer; no replicated-lane data races or layout copy.
+        for index in tl.static_range(4):
+            word = tl.sum(tl.where(tl.arange(0, 4) == index, words, 0), 0)
+            actual_row = _row(M, index, TILED)
+            tl.store(S + _word_offset(actual_row, group, G), word, actual_row < M)
+    else:
+        tl.store(S + _word_offset(row, group, G), words, row < M)
     # The last four-row producer initializes all missing rows of the last
     # 128-row scale tile. Padding is metadata only: Q and D keep real M.
     if PAD:
@@ -72,7 +89,7 @@ def _publish(S, scale, row, group, M, G: tl.constexpr, PAD: tl.constexpr = True)
 
 @triton.jit(do_not_specialize=['M'])
 def _quantize(X, Q, S, M, K: tl.constexpr, G: tl.constexpr, TILED: tl.constexpr,
-              PAD: tl.constexpr = True):
+              PAD: tl.constexpr = True, SCALAR_SCALE: tl.constexpr = False):
     row = _rows(M, TILED)
     group = tl.program_id(1)
     col = group * 128 + tl.arange(0, 128)
@@ -82,12 +99,12 @@ def _quantize(X, Q, S, M, K: tl.constexpr, G: tl.constexpr, TILED: tl.constexpr,
     scale, inverse = _power2_scale(amax)
     tl.store(Q + row[:, None] * K + col[None, :],
              (x * inverse[:, None]).to(tl.float8e4nv), row[:, None] < M)
-    _publish(S, scale, row, group, M, G, PAD)
+    _publish(S, scale, row, group, M, G, PAD, SCALAR_SCALE, TILED)
 
 
 @triton.jit
-def _quantize_bound(X, Q, S, M: tl.constexpr, K: tl.constexpr):
-    _quantize(X, Q, S, M, K, K // 128, M >= 128, False)
+def _quantize_bound(X, Q, S, M: tl.constexpr, K: tl.constexpr, SCALAR_SCALE: tl.constexpr = False):
+    _quantize(X, Q, S, M, K, K // 128, M >= 128, False, SCALAR_SCALE)
 
 
 @triton.jit
@@ -103,7 +120,9 @@ def buffers(rows, cols, device):
             torch.empty(scale_bytes(rows, cols), device=device, dtype=torch.uint8))
 
 
-def quantize(x, *, out=None):
+def quantize(x, *, out=None, num_warps=4):
+    if type(num_warps) is not int or num_warps not in (1, 2, 4):
+        raise ValueError('MX producer requires 1, 2 or 4 warps')
     if (x.ndim != 2 or not x.is_cuda or x.dtype != torch.bfloat16
             or not x.is_contiguous() or x.shape[0] <= 0 or x.shape[1] <= 0 or x.shape[1] % 128):
         raise ValueError('MX quantization requires contiguous CUDA BF16 [M,K], K aligned to 128')
@@ -117,11 +136,11 @@ def quantize(x, *, out=None):
         from .fp8 import require_disjoint
         require_disjoint(x, q, scales)
     _quantize[(row_programs(m), k // 128)](x, q, scales.view(torch.int32), m, k, k // 128,
-                                        m >= 128, bool(m % 128), num_warps=4)
+                                        m >= 128, bool(m % 128), num_warps == 1, num_warps=num_warps)
     return q, scales
 
 
-def bind_quantize(x):
+def bind_quantize(x, *, out=None, num_warps=4):
     """Initialize private padding once; graph replay updates only real rows.
 
     The returned closure owns its source and outputs for graph lifetime. Input
@@ -129,12 +148,12 @@ def bind_quantize(x):
     """
     if torch.cuda.is_current_stream_capturing():
         raise RuntimeError('MX quantizer must be bound before capture')
-    outputs = quantize(x)
+    outputs = quantize(x, out=out, num_warps=num_warps)
     q, scales = outputs
     words = scales.view(torch.int32)
     m, k = x.shape
     def run():
-        _quantize_bound[(row_programs(m), k // 128)](x, q, words, m, k, num_warps=4)
+        _quantize_bound[(row_programs(m), k // 128)](x, q, words, m, k, num_warps == 1, num_warps=num_warps)
         return outputs
     run()  # compile the fixed geometry before any caller can capture it
     return run

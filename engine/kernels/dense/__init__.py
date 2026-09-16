@@ -384,7 +384,7 @@ class DenseLinear:
             if self.fp8 is None:
                 raise ValueError("large-M dense call without a prepared prefill lane")
             lane = self.decode_fp8 if decode and getattr(self, 'decode_fp8', None) is not None else self.fp8
-            out = lane(flat)
+            out = lane(flat, decode=decode) if getattr(lane, 'cublas', None) is not None else lane(flat)
             self.executed |= 2
         return out.reshape(*shape, self.rows)
 
@@ -485,6 +485,7 @@ class FP8Linear:
         self.observer = None  # calibration sums this layer's inputs through it when it stands alone (the head)
         self.executed = False
         self.calibrated = quantized is not None
+        self.cublas = None
         padded_rows = (self.rows+127)//128*128
         if quantized is not None:
             q, scale = quantized
@@ -502,20 +503,36 @@ class FP8Linear:
         self.weight = torch.cat(qs), torch.cat(scales)
 
     def consume_weight(self, storage):
+        if self.cublas is not None:
+            raise RuntimeError('relocate FP8 weights before preparing cuBLAS')
         from engine.modules.packed_storage import consume
         self.weight=consume(storage,self.weight)
 
-    def __call__(self, x, rows_ok=None, *, out=None):
+    def prepare_cublas(self, *, split_decode=False, storage=None):
+        from .cublaslt_serving import Reader
+        if self.cublas is not None:
+            raise RuntimeError('cuBLAS reader was already prepared')
+        self.cublas = Reader(self.weight, split_decode=split_decode, storage=storage)
+
+    def __call__(self, x, rows_ok=None, *, out=None, decode=False):
         if self.observer is not None:
             self.observer(x.reshape(-1, self.cols), rows_ok)
         from .fp8 import quantize
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols).contiguous()
+        if self.cublas is not None:
+            result = self.cublas(flat, out=out, decode=decode)
+            self.executed = True
+            return result[:, :self.rows].reshape(*shape, self.rows)
         q, scale = quantize(flat)
         return self.project_quantized(q, scale, out=out).reshape(*shape, self.rows)
 
     def project_quantized(self, q, scale, *, out=None):
         """Consume the existing FP8 recipe; `out` owns the full padded GEMM output."""
+        if self.cublas is not None:
+            result = self.cublas.project_quantized(q, scale, out=out)
+            self.executed = True
+            return result[:, :self.rows]
         from deep_gemm import fp8_gemm_nt
         from engine.kernels.deep_gemm import _initialize
         if (q.ndim != 2 or q.shape[1] != self.cols or q.dtype != torch.float8_e4m3fn

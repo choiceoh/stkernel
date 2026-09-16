@@ -1,0 +1,127 @@
+{
+  "status": "PASS",
+  "scope": "SM120 experiment only; real FC pack and synthetic activations",
+  "weight": {
+    "identity": {
+      "version": 2,
+      "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+      "shape": [
+        4096,
+        20480
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+      "kind": "fp8",
+      "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    },
+    "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+    "path": "/work/packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt"
+  },
+  "device": "NVIDIA GeForce RTX 5050",
+  "cublaslt": 130400,
+  "cells": [
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "search": {
+        "checked_configurations": 364,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 11,
+        "additional_catalog_seeds": 10
+      },
+      "candidates": 1,
+      "trials": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "numerics": true,
+          "milliseconds": 4.438015937805176
+        }
+      ],
+      "choice": 0,
+      "direct_split_split_direct": [
+        0.35812801122665405,
+        0.3286224901676178,
+        0.3285520076751709,
+        0.35868799686431885
+      ],
+      "deep_split_split_deep": [
+        0.34311050176620483,
+        0.32869601249694824,
+        0.32896149158477783,
+        0.3433130085468292
+      ],
+      "changed_inputs": 2
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "search": {
+        "checked_configurations": 364,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 11,
+        "additional_catalog_seeds": 10
+      },
+      "candidates": 1,
+      "trials": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "numerics": true,
+          "milliseconds": 0.32207998633384705
+        }
+      ],
+      "choice": 0,
+      "direct_split_split_direct": [
+        0.3609760105609894,
+        0.3227199912071228,
+        0.3287014961242676,
+        0.36403200030326843
+      ],
+      "deep_split_split_deep": [
+        0.35151100158691406,
+        0.32241150736808777,
+        0.3225499987602234,
+        0.3520990014076233
+      ],
+      "changed_inputs": 2
+    }
+  ],
+  "source_sha256": {
+    "/work/measurements/st_cublaslt_reform_20260917/batch_plan.cpp": "05ac0ee9ea347f846b3b6988c400dd575f9c17b89b7845db33e018917456ff57",
+    "/work/measurements/st_cublaslt_reform_20260917/compare_batch.py": "1607fdce7010e04819add5f92155c282db4cf2139cec28c412e0673e938ef249"
+  }
+}

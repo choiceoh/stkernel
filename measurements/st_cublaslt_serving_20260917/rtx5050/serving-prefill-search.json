@@ -1,0 +1,558 @@
+{
+  "status": "PASS",
+  "gpu_used": true,
+  "numerics_only": false,
+  "scope": "packed model weight; synthetic inputs; no serving or acceptance verdict",
+  "device": "NVIDIA GeForce RTX 5050",
+  "capability": [
+    12,
+    0
+  ],
+  "sms": 20,
+  "timing_target": "sm120-probe",
+  "gb10_admission": false,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "cells": [
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        512,
+        4096,
+        20480
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11,
+        "batches": 1,
+        "output_type": "bf16"
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.9676300287246704,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.9857280254364014,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 1835264,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.9324210286140442,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 1835264,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 0.9695320129394531,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          2,
+          1835264,
+          4,
+          1.0238499641418457,
+          0.9755315184593201,
+          0.9885575175285339,
+          1.0313199758529663
+        ],
+        [
+          0,
+          0,
+          4,
+          1.0087250471115112,
+          1.026528000831604,
+          1.0312960147857666,
+          1.0250990390777588
+        ],
+        [
+          3,
+          1835264,
+          4,
+          1.0318809747695923,
+          0.9789555072784424,
+          0.9935420155525208,
+          1.026039958000183
+        ],
+        [
+          2,
+          1835264,
+          1,
+          1.0270359516143799,
+          0.9787145256996155,
+          0.9856680035591125,
+          1.0358895063400269
+        ],
+        [
+          0,
+          0,
+          1,
+          1.0396145582199097,
+          1.0318080186843872,
+          1.020975947380066,
+          1.0340174436569214
+        ],
+        [
+          3,
+          1835264,
+          1,
+          1.0324790477752686,
+          0.9858335256576538,
+          0.9983050227165222,
+          1.0373685359954834
+        ],
+        [
+          2,
+          1835264,
+          2,
+          1.030959963798523,
+          0.9798914790153503,
+          0.9882184863090515,
+          1.0393019914627075
+        ],
+        [
+          0,
+          0,
+          2,
+          1.035936951637268,
+          1.0317120552062988,
+          1.0325440168380737,
+          1.0074360370635986
+        ],
+        [
+          3,
+          1835264,
+          2,
+          1.0080419778823853,
+          0.9755409955978394,
+          0.9856284856796265,
+          1.0339909791946411
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": 3,
+        "workspace": 1835264,
+        "reason": "measured_pipeline_gain",
+        "producer_warps": 2
+      },
+      "status": "PASS",
+      "holdout": [],
+      "graph_replays": 2,
+      "bound_allocation_delta": 0,
+      "bound_workspace_bytes": 1835264,
+      "extra_weight_scale_bytes": 2621440,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+          "shape": [
+            4096,
+            20480
+          ],
+          "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+          "kind": "fp8",
+          "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+        "path": "/work/packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1907
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 327680
+    },
+    {
+      "device": 0,
+      "capability": [
+        12,
+        0
+      ],
+      "sms": 20,
+      "cublaslt": 130400,
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "shape": [
+        2304,
+        4096,
+        20480
+      ],
+      "producer": "bf16",
+      "candidates": 4,
+      "timing_target": "sm120-probe",
+      "search": {
+        "checked_configurations": 447,
+        "admitted_configurations": 4,
+        "candidate_limit": 192,
+        "catalog_ids": 12,
+        "additional_catalog_seeds": 11,
+        "batches": 1,
+        "output_type": "bf16"
+      },
+      "graph_unroll": 16,
+      "screened": [
+        {
+          "index": 0,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 4.664095878601074,
+          "numerics": true
+        },
+        {
+          "index": 1,
+          "workspace": 0,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": 1,
+          "reduction": 0,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 4.7333760261535645,
+          "numerics": true
+        },
+        {
+          "index": 2,
+          "workspace": 2359680,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 6.426819801330566,
+          "numerics": true
+        },
+        {
+          "index": 3,
+          "workspace": 2359680,
+          "id": 70,
+          "tile": 20,
+          "stages": 36,
+          "split_k": -2,
+          "reduction": 2,
+          "swizzle": 0,
+          "custom": 0,
+          "alignment_a": 16,
+          "alignment_b": 16,
+          "alignment_c": 16,
+          "alignment_d": 16,
+          "milliseconds": 6.41743278503418,
+          "numerics": true
+        }
+      ],
+      "brackets": [
+        [
+          0,
+          0,
+          4,
+          4.619865417480469,
+          4.821743965148926,
+          4.753407955169678,
+          4.62235689163208
+        ],
+        [
+          1,
+          0,
+          4,
+          4.615576267242432,
+          4.757487773895264,
+          4.754232883453369,
+          4.6161370277404785
+        ],
+        [
+          3,
+          2359680,
+          4,
+          4.6304168701171875,
+          6.424938678741455,
+          6.440106391906738,
+          4.608495712280273
+        ],
+        [
+          0,
+          0,
+          1,
+          4.614447116851807,
+          4.752895832061768,
+          4.744719982147217,
+          4.6187744140625
+        ],
+        [
+          1,
+          0,
+          1,
+          4.616702079772949,
+          4.787676811218262,
+          4.747983932495117,
+          4.6227593421936035
+        ],
+        [
+          3,
+          2359680,
+          1,
+          4.6266913414001465,
+          6.4280171394348145,
+          6.4321818351745605,
+          4.6221137046813965
+        ],
+        [
+          0,
+          0,
+          2,
+          4.595484733581543,
+          4.758607864379883,
+          4.752208232879639,
+          4.62767219543457
+        ],
+        [
+          1,
+          0,
+          2,
+          4.6297173500061035,
+          4.754367828369141,
+          4.7555999755859375,
+          4.6286444664001465
+        ],
+        [
+          3,
+          2359680,
+          2,
+          4.63113260269165,
+          6.428670883178711,
+          6.419257640838623,
+          4.643390655517578
+        ]
+      ],
+      "scope": "warm captured component pipeline; not serving throughput",
+      "producer_warps_searched": [
+        4,
+        1,
+        2
+      ],
+      "bracket_columns": [
+        "index",
+        "workspace",
+        "producer_warps",
+        "B_before",
+        "A_first",
+        "A_second",
+        "B_after"
+      ],
+      "producer_checks": [
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "choice": {
+        "index": null,
+        "workspace": 0,
+        "reason": "no_consistent_gain",
+        "producer_warps": 4
+      },
+      "status": "PASS",
+      "holdout": [],
+      "graph_replays": 2,
+      "bound_allocation_delta": 3678208,
+      "bound_workspace_bytes": 0,
+      "extra_weight_scale_bytes": 2621440,
+      "weight": {
+        "identity": {
+          "version": 2,
+          "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+          "shape": [
+            4096,
+            20480
+          ],
+          "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+          "kind": "fp8",
+          "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+          "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+          "smooth": "none"
+        },
+        "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+        "path": "/work/packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt"
+      },
+      "input": {
+        "kind": "synthetic",
+        "seed": 1908
+      },
+      "producer_warp_checks": [
+        {
+          "warps": 1,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 2,
+          "identical_fp8": true,
+          "identical_scales": true
+        },
+        {
+          "warps": 4,
+          "identical_fp8": true,
+          "identical_scales": true
+        }
+      ],
+      "activation_scale_bytes": 1474560
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "7706be38961a1b303970b808d332cbe4668de0fcaaa577c9d415e9633e18d384",
+    "engine/kernels/dense/cublaslt.py": "0ff55ee110d79cd8b94356068895fc5f697f15c268a2304d2daa55cbe0e4fb13",
+    "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299",
+    "engine/kernels/dense/cublaslt_split.py": "b296285ea88567ec58779400e3efc4374ae7a87e9b6dc1e9ae776f32981f7180",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/prefill_collectives/consumer.py": "3cabd1112ff9f91cb4455692366d975857ab82cf055b9f4ae58d3faaae8a55eb",
+    "probes/engine_cublaslt_check.py": "22d46741a736452e5eb89b9497ffcfe24a7f97278dd1284f5ab91b4ae890bb76"
+  }
+}

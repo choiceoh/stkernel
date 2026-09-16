@@ -53,15 +53,41 @@ class PreparationTests(unittest.TestCase):
     def test_both_paired_pipeline_samples_must_win(self):
         from engine.kernels.dense.cublaslt import select_winner
         # Fast means are insufficient if one side regresses or wins by <2%.
-        self.assertIsNone(select_winner([(0, 0, 10., 5., 10.1, 10.)]).index)
-        self.assertIsNone(select_winner([(0, 0, 10., 9.9, 9., 10.)]).index)
+        self.assertIsNone(select_winner([(0, 0, 4, 10., 5., 10.1, 10.)]).index)
+        self.assertIsNone(select_winner([(0, 0, 4, 10., 9.9, 9., 10.)]).index)
         self.assertIsNone(select_winner([]).index)
-        choice = select_winner([(1, 8192, 10., 9., 9., 10.), (2, 4096, 10., 9., 9., 10.),
-                                (3, 0, 10., 9.5, 9.5, 10.)])
+        choice = select_winner([(1, 8192, 4, 10., 9., 9., 10.), (2, 4096, 4, 10., 9., 9., 10.),
+                                (3, 0, 4, 10., 9.5, 9.5, 10.)])
         self.assertEqual((choice.index, choice.workspace), (2, 4096))
         for invalid in (float('inf'), float('nan'), -1., 0.):
             with self.assertRaises(ValueError):
-                select_winner([(0, 0, invalid, 1., 1., 1.)])
+                select_winner([(0, 0, 4, invalid, 1., 1., 1.)])
+
+    def test_sm120_timing_requires_explicit_device_probe(self):
+        from engine.kernels.dense.cublaslt import require_timing_target
+        rtx = dict(capability=(12, 0), sms=20)
+        with self.assertRaises(RuntimeError):
+            require_timing_target(rtx)
+        require_timing_target(rtx, 'sm120-probe')
+        require_timing_target(dict(capability=(12, 1), sms=48))
+        for wrong in (dict(capability=(12, 1), sms=48), dict(capability=(9, 0), sms=132)):
+            with self.assertRaises(RuntimeError):
+                require_timing_target(wrong, 'sm120-probe')
+
+    def test_winner_keeps_the_producer_layout_of_the_complete_pipeline(self):
+        from engine.kernels.dense.cublaslt import select_winner
+        choice = select_winner([(7, 0, 4, 10., 9.5, 9.5, 10.),
+                                (7, 0, 1, 10., 8.5, 8.5, 10.),
+                                (8, 0, 2, 10., 7., 10.2, 10.)])
+        self.assertEqual((choice.index, choice.producer_warps), (7, 1))
+        for invalid in (0, 3, True):
+            with self.assertRaisesRegex(ValueError, 'warp count'):
+                select_winner([(7, 0, invalid, 10., 8., 8., 10.)])
+
+    def test_custom_producer_cannot_silently_ignore_a_warp_choice(self):
+        from engine.kernels.dense.cublaslt import _bind_producer
+        with self.assertRaisesRegex(ValueError, 'custom producers'):
+            _bind_producer(lambda mx, out: (), True, num_warps=1)
 
     def test_workspace_generations_survive_growth_and_streams_do_not_alias(self):
         import torch
@@ -130,6 +156,118 @@ class PreparationTests(unittest.TestCase):
             self.assertIs(caught.exception, original)
             self.assertIn('secondary teardown', original.__notes__[0])
             self.assertEqual(calls[-1], 'reset')
+
+
+@unittest.skipUnless(TORCH and os.environ.get('ST_TEST_CUBLASLT_GPU') == '1',
+                     'requires explicit owned-GPU permission')
+class NativePreparationTests(unittest.TestCase):
+    def test_mx_query_uses_real_scales_and_binding_owns_execution_scales(self):
+        import torch
+        from engine.kernels.dense.cublaslt import _build, WORKSPACE_LIMIT
+        native = _build()
+        device = torch.cuda.current_device()
+        context = native.Context(device, *torch.cuda.get_device_capability(device))
+        scales = torch.full((512,), 127, device='cuda', dtype=torch.uint8)
+        # A null scale pointer used to abort the heuristic query here.
+        plan = native.Plan(context, 7, 128, 128, WORKSPACE_LIMIT, scales, scales)
+        candidates = plan.candidates()
+        self.assertTrue(candidates)
+        with self.assertRaisesRegex(RuntimeError, 'query scale shape'):
+            native.Plan(context, 7, 128, 128, WORKSPACE_LIMIT, scales[:256], scales)
+        q = torch.ones(7, 128, device='cuda').to(torch.float8_e4m3fn)
+        weight = torch.ones(128, 128, device='cuda').to(torch.float8_e4m3fn)
+        out = torch.empty(7, 128, device='cuda', dtype=torch.bfloat16)
+        candidate = candidates[0]
+        scratch = torch.empty(candidate['workspace'], device='cuda', dtype=torch.uint8)
+        a_scales, b_scales = scales.clone(), scales.clone()
+        bound = plan.bind(candidate['index'], q, weight, a_scales, b_scales, out, scratch)
+        scales.fill_(130)  # The query's scale values must not affect execution.
+        bound.run()
+        torch.testing.assert_close(out, torch.full_like(out, 128), rtol=0, atol=0)
+        a_scales.fill_(128)
+        bound.run()
+        torch.testing.assert_close(out, torch.full_like(out, 256), rtol=0, atol=0)
+
+
+    def test_batched_partials_use_each_scale_slice_and_reject_bad_buffers(self):
+        import torch
+        from engine.kernels.dense.cublaslt import _build, WORKSPACE_LIMIT
+        native = _build()
+        context = native.Context(0, *torch.cuda.get_device_capability())
+        scales = torch.full((5, 512), 127, device='cuda', dtype=torch.uint8)
+        plan = native.Plan(context, 8, 128, 128, WORKSPACE_LIMIT, scales, scales, 5, True)
+        self.assertTrue(plan.candidates())
+        q = torch.ones(5, 8, 128, device='cuda').to(torch.float8_e4m3fn)
+        w = torch.ones(5, 128, 128, device='cuda').to(torch.float8_e4m3fn)
+        out = torch.empty(5, 8, 128, device='cuda', dtype=torch.float32)
+        c = plan.candidates()[0]
+        scratch = torch.empty(c['workspace'], device='cuda', dtype=torch.uint8)
+        actual = scales.clone()
+        for part in range(5):
+            actual[part].fill_(127+part)
+        bound = plan.bind(c['index'], q, w, actual, scales, out, scratch)
+        scales.fill_(128)
+        bound.run()
+        for part in range(5):
+            torch.testing.assert_close(out[part], torch.full_like(out[part], 256*2**part), rtol=0, atol=0)
+        with self.assertRaisesRegex(RuntimeError, 'shape mismatch'):
+            plan.bind(c['index'], q.reshape(8, 5, 128), w, actual, scales, out, scratch)
+        with self.assertRaises(RuntimeError):
+            plan.bind(c['index'], q, w, actual, scales, out.bfloat16(), scratch)
+        with self.assertRaisesRegex(RuntimeError, 'FP32'):
+            native.Plan(context, 8, 128, 128, WORKSPACE_LIMIT, scales, scales, 5, False)
+
+
+    def test_split_bindings_have_private_storage_and_replay_changed_sources(self):
+        import torch
+        from engine.kernels.dense.cublaslt import _build, BF16Producer
+        from engine.kernels.dense.cublaslt_split import PackedWeight, SplitPlan
+        native = _build()
+        owner = SimpleNamespace(native=native, context=native.Context(0, *torch.cuda.get_device_capability()))
+        weight = (torch.ones(128, 640, device='cuda').to(torch.float8_e4m3fn),
+                  torch.ones(1, 5, device='cuda'))
+        packed = PackedWeight(weight, 5)
+        source = torch.ones(8, 640, device='cuda', dtype=torch.bfloat16)
+        other = torch.full_like(source, 2)
+        plan = SplitPlan(owner, packed, 8, source)
+        c = plan.native.candidates()[0]
+        plan.index, plan.workspace_bytes = c['index'], c['workspace']
+        first, second = plan.bind(BF16Producer(source)), plan.bind(BF16Producer(other))
+        for name in ('q', 'scales', 'partials', 'out'):
+            self.assertNotEqual(getattr(first, name).data_ptr(), getattr(second, name).data_ptr())
+        stream = torch.cuda.Stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        graphs = [torch.cuda.CUDAGraph(), torch.cuda.CUDAGraph()]
+        for graph, execution in zip(graphs, (first, second)):
+            with torch.cuda.graph(graph, stream=stream):
+                execution()
+        try:
+            source.fill_(3)
+            other.fill_(4)
+            with patch.object(torch, 'empty', side_effect=AssertionError('allocation after binding')):
+                first()
+                second()
+                for graph in graphs:
+                    graph.replay()
+            torch.testing.assert_close(first.out, torch.full_like(first.out, 640*3), rtol=0, atol=0)
+            torch.testing.assert_close(second.out, torch.full_like(second.out, 640*4), rtol=0, atol=0)
+            with self.assertRaisesRegex(ValueError, 'overlap'):
+                plan.bind(BF16Producer(source), out=source.view(-1)[:8*128].view(8, 128))
+            weight[1].mul_(2)
+            with self.assertRaisesRegex(RuntimeError, 'modified'):
+                plan.bind(BF16Producer(source))
+        finally:
+            for graph in graphs:
+                graph.reset()
+        with torch.inference_mode():
+            inference_weight = tuple(t.clone() for t in weight)
+            inference_pack = PackedWeight(inference_weight, 5)
+            self.assertEqual(inference_pack.versions, (None, None))
+            inference_plan = SplitPlan(owner, inference_pack, 8, source)
+            c = inference_plan.native.candidates()[0]
+            inference_plan.index, inference_plan.workspace_bytes = c['index'], c['workspace']
+            execution = inference_plan.bind(BF16Producer(source))
+            torch.testing.assert_close(execution(), torch.full_like(execution.out, 640*3*2), rtol=0, atol=0)
 
 
 @unittest.skipUnless(TORCH and TRITON, 'requires torch and triton')
@@ -210,6 +348,21 @@ class BoundExecutionTests(unittest.TestCase):
             bound()
         self.assertEqual(executed, [])
 
+    def test_selected_warp_configuration_reaches_bound_execution(self):
+        import torch
+        from engine.kernels.dense.cublaslt import BF16Producer, Choice
+        p, calls = self.prepared()
+        p.choice = Choice(0, 1024, 'test', 1)
+        source = torch.empty(8, 128, dtype=torch.bfloat16)
+        outputs = self.producer(True, None)
+        with patch.object(torch.cuda, 'is_current_stream_capturing', return_value=False), \
+                patch('engine.kernels.dense.mxfp8.bind_quantize', return_value=lambda: outputs) as bind:
+            execution = p.bind(BF16Producer(source))
+            execution()
+        bind.assert_called_once_with(source, out=None, num_warps=1)
+        self.assertIs(execution.buffers, outputs)
+        self.assertEqual(len(calls), 1)
+
 
 
 @unittest.skipUnless(TORCH and TRITON and INTERPRET, 'explicit no-GPU Triton interpreter check')
@@ -281,12 +434,46 @@ class InterpreterTests(unittest.TestCase):
             x.mul_(2)
             baseline[(rows, triton.cdiv(k//128, 4))](x, base_q, base_s, k, k//128)
             _quantize_bound[(row_programs(rows), k//128)](
-                x, q[:rows*k].view(torch.float8_e4m3fn), scales.view(torch.int32), rows, k)
+                x, q[:rows*k].view(torch.float8_e4m3fn), scales.view(torch.int32), rows, k, True, num_warps=1)
             self.assertTrue(torch.equal(q[:rows*k].view_as(base_q), base_q.view(torch.uint8)))
             self.assertTrue((scales[:size][padding] == 91).all())
             self.assertTrue((scales[size:] == 93).all())
             scales[:size][padding] = 127
             self.assert_scale_layout(scales[:size], base_s, rows, k)
+        self.assertFalse(torch.cuda.is_initialized())
+
+    def test_split_producer_layout_redzones_and_fp32_reduction(self):
+        import torch
+        import triton
+        from engine.kernels.dense.cublaslt_split import _quantize, _reduce
+        from engine.kernels.dense.fp8 import _quantize as baseline
+        from engine.kernels.dense.mxfp8 import scale_bytes
+        for rows, k, parts in ((7, 640, 5), (8, 20480, 5), (16, 20480, 5)):
+            groups = rows*(k//128)
+            values = torch.arange(128).remainder(17).sub(8).float().repeat(groups, 1)
+            values[:, -1] = 448
+            x = (values * torch.exp2(torch.arange(groups).remainder(15).float()-8)[:, None]).reshape(rows, k).bfloat16()
+            q0 = torch.empty_like(x, dtype=torch.float8_e4m3fn)
+            s0 = torch.empty(rows, k//128)
+            baseline[(rows, triton.cdiv(k//128, 4))](x, q0, s0, k, k//128)
+            q = torch.full((rows*k+128,), 93, dtype=torch.uint8)
+            size = scale_bytes(rows, k//parts)
+            s = torch.full((parts*size+128,), 127, dtype=torch.uint8)
+            s[parts*size:] = 93
+            _quantize[(triton.cdiv(rows, 4), k//128)](x, q.view(torch.float8_e4m3fn), s.view(torch.int32),
+                                                   rows, k, parts, num_warps=1)
+            restored = q[:rows*k].reshape(parts, rows, k//parts).permute(1, 0, 2).reshape(rows, k)
+            self.assertTrue(torch.equal(restored, q0.view(torch.uint8)))
+            for part in range(parts):
+                self.assert_scale_layout(s[part*size:(part+1)*size],
+                                         s0[:, part*(k//parts//128):(part+1)*(k//parts//128)], rows, k//parts)
+            self.assertTrue((q[rows*k:] == 93).all())
+            self.assertTrue((s[parts*size:] == 93).all())
+        partials = torch.tensor([1e6, 1, -1e6, 3, 5])[:, None].expand(5, 257).contiguous()
+        out = torch.full((257+128,), 93, dtype=torch.bfloat16)
+        _reduce[(2,)](partials, out, 257, 5)
+        self.assertTrue((out[:257] == 9).all())
+        self.assertTrue((out[257:] == 93).all())
         self.assertFalse(torch.cuda.is_initialized())
 
     def test_weight_scale_replication_covers_every_normal_exponent(self):
@@ -335,7 +522,7 @@ class InterpreterTests(unittest.TestCase):
             s1[:size].fill_(127)
             _quantize_gather_mx_bound[(row_programs(real_rows), k//128)](
                 received.view(torch.float8_e4m3fn), received.view(torch.float32), q1, s1.view(torch.int32),
-                real_rows, local, stride, block)
+                real_rows, local, stride, block, True, num_warps=1)
             self.assert_scale_layout(s1[:size], s0, real_rows, k)
 
 

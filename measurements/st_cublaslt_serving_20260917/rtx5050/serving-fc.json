@@ -1,0 +1,317 @@
+{
+  "status": "PASS",
+  "device": "NVIDIA GeForce RTX 5050",
+  "capability": [
+    12,
+    0
+  ],
+  "sms": 20,
+  "cuda": "13.2",
+  "torch": "2.13.0+cu132",
+  "timing_target": "sm120-probe",
+  "scope": "actual serving reader; real packed weights, synthetic activations; no TP4/acceptance verdict",
+  "weight": {
+    "identity": {
+      "version": 2,
+      "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+      "shape": [
+        4096,
+        20480
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+      "kind": "fp8",
+      "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    },
+    "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+    "path": "/work/packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt"
+  },
+  "cells": [
+    {
+      "shape": [
+        1,
+        4096,
+        20480
+      ],
+      "decode": true,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.3330419957637787,
+        0.31799501180648804,
+        0.31573548913002014,
+        0.3336600065231323
+      ]
+    },
+    {
+      "shape": [
+        7,
+        4096,
+        20480
+      ],
+      "decode": true,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.34247198700904846,
+        0.32215750217437744,
+        0.32176050543785095,
+        0.34316450357437134
+      ]
+    },
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "decode": true,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.34460848569869995,
+        0.32299450039863586,
+        0.3225719928741455,
+        0.34450098872184753
+      ]
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "decode": true,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.35555800795555115,
+        0.32931849360466003,
+        0.3293825089931488,
+        0.3487184941768646
+      ]
+    },
+    {
+      "shape": [
+        24,
+        4096,
+        20480
+      ],
+      "decode": true,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.34825900197029114,
+        0.33635300397872925,
+        0.33562299609184265,
+        0.34781700372695923
+      ]
+    },
+    {
+      "shape": [
+        32,
+        4096,
+        20480
+      ],
+      "decode": true,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.3512350022792816,
+        0.3445360064506531,
+        0.34493550658226013,
+        0.3507924973964691
+      ]
+    },
+    {
+      "shape": [
+        64,
+        4096,
+        20480
+      ],
+      "decode": true,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.3634434938430786,
+        0.3655950129032135,
+        0.3654884994029999,
+        0.36238300800323486
+      ]
+    },
+    {
+      "shape": [
+        1,
+        4096,
+        20480
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.33337149024009705,
+        0.35550400614738464,
+        0.35572800040245056,
+        0.3335619866847992
+      ]
+    },
+    {
+      "shape": [
+        128,
+        4096,
+        20480
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.4287630021572113,
+        0.4030719995498657,
+        0.40700799226760864,
+        0.42861849069595337
+      ]
+    },
+    {
+      "shape": [
+        512,
+        4096,
+        20480
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        0.980193018913269,
+        1.0116480588912964,
+        1.0250719785690308,
+        1.0372129678726196
+      ]
+    },
+    {
+      "shape": [
+        2304,
+        4096,
+        20480
+      ],
+      "decode": false,
+      "numerics": true,
+      "changed_input_graph_replays": 2,
+      "graph_allocation_bytes": 0,
+      "deep_serving_serving_deep_ms": [
+        4.5790629386901855,
+        4.736207962036133,
+        4.743072032928467,
+        4.638794898986816
+      ]
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/dense/__init__.py": "cbedc869ddde6499810e09c9cfbaf991850e6cdcb84842ec7cc2143fb53aa06d",
+    "engine/kernels/dense/cublaslt.cpp": "7706be38961a1b303970b808d332cbe4668de0fcaaa577c9d415e9633e18d384",
+    "engine/kernels/dense/cublaslt_serving.py": "ac0dd02044d9c76b7fed8829eeb6a54708e9b41b1ea8056d714d59d07c89864e",
+    "engine/kernels/dense/cublaslt_split.py": "b296285ea88567ec58779400e3efc4374ae7a87e9b6dc1e9ae776f32981f7180",
+    "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299",
+    "probes/engine_cublaslt_serving_check.py": "2b1b71ac04dd13bef3a1f52412784480f2692494522d89bf80e41e953d68e783"
+  },
+  "reader": {
+    "backend": "cublaslt",
+    "resident_bytes": 89128960,
+    "executed": [
+      "direct",
+      "split_decode"
+    ],
+    "algorithms": {
+      "1": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "5": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      }
+    },
+    "warmed_rows": [
+      [
+        1,
+        1
+      ],
+      [
+        1,
+        8
+      ],
+      [
+        1,
+        128
+      ],
+      [
+        1,
+        512
+      ],
+      [
+        1,
+        2304
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        5,
+        8
+      ],
+      [
+        5,
+        16
+      ],
+      [
+        5,
+        24
+      ],
+      [
+        5,
+        32
+      ],
+      [
+        5,
+        64
+      ]
+    ]
+  }
+}

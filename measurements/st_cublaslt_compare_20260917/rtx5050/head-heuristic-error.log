@@ -1,0 +1,14 @@
+{"status": "FAIL", "gpu_used": true, "numerics_only": false, "scope": "packed model weight; synthetic inputs; no serving or acceptance verdict", "device": "NVIDIA GeForce RTX 5050", "capability": [12, 0], "sms": 20, "timing_target": "sm120-probe", "gb10_admission": false, "torch": "2.13.0+cu132", "cuda": "13.2", "cublaslt": 130400, "cells": [], "source_sha256": {"engine/kernels/dense/cublaslt.cpp": "0a80a021dace024129df3ea2e991109bae7f08a5196add9004b2e196b998c845", "engine/kernels/dense/cublaslt.py": "847d0a299520bb1cdc5555dc68f068ad6d4674dcf23bb7912cc4fa19cc7ad73e", "engine/kernels/dense/mxfp8.py": "81600338eb0d865c38d0fc663abac11aa9b3ad8ff158279d7b333b011ef69299", "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f", "engine/kernels/prefill_collectives/consumer.py": "3cabd1112ff9f91cb4455692366d975857ab82cf055b9f4ae58d3faaae8a55eb", "probes/engine_cublaslt_check.py": "40758e7d69f2dbd2cb36b66c3fc4f6b8a3148d99e79f8508f88ab41a7add8779"}, "error": "RuntimeError: cuBLAS heuristics failed: cuBLAS status 7"}
+Traceback (most recent call last):
+  File "/work/probes/engine_cublaslt_check.py", line 224, in <module>
+    main()
+  File "/work/probes/engine_cublaslt_check.py", line 160, in main
+    prepared = PreparedProjection(weight, m, producer, args.producer, mx_weight=mx_weight,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/engine/kernels/dense/cublaslt.py", line 342, in __init__
+    self.choice, self.record = self.owner.prepare(self.key, weight, self.mx_weight, producer)
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/work/engine/kernels/dense/cublaslt.py", line 200, in prepare
+    self.plans[geometry] = self.native.Plan(self.context, m, n, k, WORKSPACE_LIMIT)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: cuBLAS heuristics failed: cuBLAS status 7

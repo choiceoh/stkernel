@@ -1,0 +1,55 @@
+{
+  "status": "PASS",
+  "scope": "CPU packed-input validation; GPU comparison pending",
+  "gpu_used": false,
+  "unit_tests": {
+    "passed": 2,
+    "failed": 0
+  },
+  "packs": [
+    {
+      "identity": {
+        "version": 2,
+        "weight": "9af96ae356614f8b72ca969b16e72e5c2e1809eaf66bd4c9b47b8e84e47b0e65",
+        "shape": [
+          38720,
+          4096
+        ],
+        "name": "Glm5NextForCausalLM/lm_head",
+        "kind": "fp8",
+        "calibration": "a0d731b64b51ab03e70a1d27e9b1cb497275acffc4d7f89e4fea0959467d53dd",
+        "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+        "smooth": "none"
+      },
+      "sha256": "2f3dc77954e48fec347f0389da08d6198b7b1b9c0f4b5fba9450d7a9363334d7",
+      "path": "/cache/st-dense-packs/7e3c089b56122e41d05b7fcfc7163749d4f5a6eaa8f4186e2199fc71762d394e.pt",
+      "shape": [
+        38784,
+        4096
+      ],
+      "cuda_initialized": false
+    },
+    {
+      "identity": {
+        "version": 2,
+        "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+        "shape": [
+          4096,
+          20480
+        ],
+        "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+        "kind": "fp8",
+        "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+        "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+        "smooth": "none"
+      },
+      "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+      "path": "/cache/st-dense-packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt",
+      "shape": [
+        4096,
+        20480
+      ],
+      "cuda_initialized": false
+    }
+  ]
+}
