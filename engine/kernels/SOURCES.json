@@ -356,7 +356,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "d4e95b74af732dbf42a61f4c7a3ebe2f2f9a9bb4e33c844d7ae271ed85c479b7",
+      "local_sha256": "d5b92d5fd4d11ba9144ca6d8ac5f0bb9a50cb4aace6312745a0462843d6a3d2e",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -375,7 +375,8 @@
         "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately.",
         "2026-09-17 fixed K7 second candidate: shared Q and SM121 matrix loads replace scalar pair reads after the first pair schedule regressed; GPU recheck pending.",
         "2026-09-17 decode pair assigns separate warp groups to each query while sharing one KV ring; scalar-list cells use a bounded 256-thread subgroup.",
-        "2026-09-17 decode union reserves output once per warp; paired decode widens KV once in shared memory and weak-overlap rows run concurrently in disjoint shared regions."
+        "2026-09-17 decode union reserves output once per warp; paired decode widens KV once in shared memory and weak-overlap rows run concurrently in disjoint shared regions.",
+        "2026-09-17 decode union uses bounded radix sorting and prefix counts to remove shared hash contention; all duplicate multiplicities retained."
       ]
     },
     "mla/__init__.py": {

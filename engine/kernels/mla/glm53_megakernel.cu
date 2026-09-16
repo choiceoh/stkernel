@@ -41,6 +41,8 @@
 // (the osar done_ctr trick), so graph replay with baked pointers stays
 // exact. PDL instructions are emitted; overlap requires the launch attribute.
 
+#include <cub/block/block_radix_sort.cuh>
+#include <cub/block/block_scan.cuh>
 #include <torch/extension.h>
 // c10, not ATen/cuda/CUDAContext.h: that header pulls CUDAContextLight.h
 // -> <cusparse.h>, which this image does not ship under /usr/local/cuda
@@ -2686,6 +2688,82 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_pair_prepare(const MKMlaPai
   if (threadIdx.x == 0) p.pair_lens[group] = (int)*total;
 }
 
+// Decode has only four/eight groups, so shared atomic probing leaves most
+// of the GPU idle. A bounded block radix sort groups identical slots without
+// contention. Prefix counts recover each row's multiplicity exactly.
+constexpr int MLA_UNION_ITEMS = 18;
+constexpr int MLA_UNION_CAP = MK_THREADS * MLA_UNION_ITEMS;
+using MlaUnionSort = cub::BlockRadixSort<unsigned int, MK_THREADS, MLA_UNION_ITEMS, unsigned int>;
+using MlaUnionScan = cub::BlockScan<unsigned int, MK_THREADS>;
+union MlaUnionTemp {
+  MlaUnionSort::TempStorage sort;
+  MlaUnionScan::TempStorage scan;
+};
+constexpr int MLA_UNION_SMEM = sizeof(MlaUnionTemp) + 2 * MLA_UNION_CAP * sizeof(unsigned int);
+static_assert(MLA_UNION_CAP >= 2 * 2176 && MLA_UNION_SMEM <= 99 * 1024);
+__global__ __launch_bounds__(MK_THREADS) void mk_mla_decode_pair_prepare(const MKMlaPairArgs p) {
+  __shared__ MlaUnionTemp temp;
+  __shared__ unsigned int sorted[MLA_UNION_CAP], prefix[MLA_UNION_CAP];
+  const int group = blockIdx.x, t = group * 2;
+  asm volatile("griddepcontrol.launch_dependents;");
+  asm volatile("griddepcontrol.wait;" ::: "memory");
+  const int n0 = p.a.lens[t], n1 = p.a.lens[t+1], n = n0+n1;
+  if (n0 <= 0 || n1 <= 0) {
+    if (threadIdx.x == 0) p.pair_lens[group] = -1;
+    return;
+  }
+  unsigned int keys[MLA_UNION_ITEMS], rows[MLA_UNION_ITEMS];
+#pragma unroll
+  for (int i = 0; i < MLA_UNION_ITEMS; ++i) {
+    const int j = threadIdx.x * MLA_UNION_ITEMS + i;
+    keys[i] = j < n ? static_cast<unsigned int>(p.a.slots[(size_t)(t + (j >= n0)) * p.a.W + (j < n0 ? j : j-n0)]) : 0xffffffffu;
+    rows[i] = j < n0 ? 1u : 0u;
+  }
+  MlaUnionSort(temp.sort).Sort(keys, rows);
+  __syncthreads();
+  MlaUnionScan(temp.scan).InclusiveSum(rows, rows);
+#pragma unroll
+  for (int i = 0; i < MLA_UNION_ITEMS; ++i) {
+    const int j = threadIdx.x * MLA_UNION_ITEMS + i;
+    sorted[j] = keys[i]; prefix[j] = rows[i];
+  }
+  __syncthreads();
+  unsigned int counts[MLA_UNION_ITEMS], offsets[MLA_UNION_ITEMS];
+#pragma unroll
+  for (int i = 0; i < MLA_UNION_ITEMS; ++i) {
+    const int j = threadIdx.x * MLA_UNION_ITEMS + i;
+    unsigned int c0 = 0, c1 = 0;
+    if (j < n && (j == 0 || sorted[j-1] != keys[i])) {
+      int lo = j+1, hi = n;
+      while (lo < hi) {
+        const int mid = (lo+hi)/2;
+        if (sorted[mid] == keys[i]) lo = mid+1; else hi = mid;
+      }
+      c0 = prefix[lo-1] - (j ? prefix[j-1] : 0u);
+      c1 = lo-j-c0;
+    }
+    counts[i] = c0 | (c1 << 16);
+    offsets[i] = max(c0, c1);
+  }
+  __syncthreads();
+  unsigned int total;
+  MlaUnionScan(temp.scan).ExclusiveSum(offsets, offsets, total);
+  if (total * 4 > static_cast<unsigned int>(n) * 3) {
+    if (threadIdx.x == 0) p.pair_lens[group] = -1;
+    return;
+  }
+#pragma unroll
+  for (int i = 0; i < MLA_UNION_ITEMS; ++i) {
+    const unsigned int c0 = counts[i] & 65535u, c1 = counts[i] >> 16;
+    for (unsigned int repeat = 0; repeat < max(c0,c1); ++repeat) {
+      const size_t at = (size_t)group * (2*p.a.W) + offsets[i] + repeat;
+      p.pair_slots[at] = keys[i];
+      p.membership[at] = (repeat < c0 ? 1 : 0) | (repeat < c1 ? 2 : 0);
+    }
+  }
+  if (threadIdx.x == 0) p.pair_lens[group] = total;
+}
+
 // Four-query scheduling uses 64-bit packed counts (four 16-bit fields),
 // with an 8192-key table bounded independently of cache slot IDs. Four
 // disjoint W2176 rows can exceed table capacity: bounded probing marks the
@@ -4027,8 +4105,6 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
     cudaStreamCaptureStatus status;
     MK_CHECK_CUDA(cudaStreamIsCapturing(c10::cuda::getCurrentCUDAStream(), &status));
     TORCH_CHECK(status == cudaStreamCaptureStatusNone, "warm decode pair before capture");
-    MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_pair_prepare<true>,
-        cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_PAIR_PREP_SMEM));
     MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_decode_pair_kernel,
         cudaFuncAttributeMaxDynamicSharedMemorySize, MLA_DECODE_PAIR_SMEM));
     prepared[device] = 1;
@@ -4042,7 +4118,7 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
   p.a.T = (int)ints[0]; p.a.W = (int)ints[1]; p.a.splits = (int)ints[2];
   p.groups = p.a.T / 2; p.a.sm_scale = scalars[0]; p.a.ckv_scale = scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
-  mk_launch(mk_mla_pair_prepare<true>, p.groups, MLA_PAIR_PREP_SMEM, stream, p);
+  mk_launch(mk_mla_decode_pair_prepare, p.groups, 0, stream, p);
   mk_launch<2 * MK_THREADS>(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_DECODE_PAIR_SMEM, stream, p);
   mk_mla_decode_pair_merge<<<dim3(p.a.T, MLA_H / MLA_WARPS), MK_THREADS, 0, stream>>>(p.a);
   MK_CHECK_CUDA(cudaGetLastError());

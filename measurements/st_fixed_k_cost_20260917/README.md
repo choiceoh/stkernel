@@ -87,3 +87,11 @@ regresses (19.63 -> 20.17 us, +2.73%). MLA remains slower: C1 identical
 preparation; overlapping PDL kernel durations must not be added as latency.
 The fourth candidate removes per-stripe output-counter contention, widens
 shared KV once for both queries, and executes weak-overlap rows concurrently.
+
+## Fourth GPU verdict (`8f3fe48a`)
+
+All correctness gates pass. C1 identical MLA is 43.00 -> 84.08 us, disjoint
+43.05 -> 74.11 us. Hash preparation remains substantial despite compact
+reservations. The next candidate uses bounded radix grouping and prefix
+counts for the exact multiset union. mHC moves packing onto the 32 finished
+projection CTAs; each row is published and rearmed before graph completion.
