@@ -114,6 +114,14 @@ EXPERT_CAPTURE = False
 # writes one bundle per rank; `reader_identity` pins the executed pack, so it cannot be fitted
 # anywhere but inside the boot that will be corrected.
 DRAFT_FC_CAPTURE = False
+# The correction a boot binds from `draft-fc-bias.json` does not exist until a boot collects the
+# pairs for it, and a boot that HAS the correction has nothing left to collect. So the collector
+# arms exactly when the bias is missing -- the same shape the calibration blobs already have, where
+# a boot without them sums one and files it. It costs the host ~437 MiB and a few seconds at
+# shutdown, and it stops itself at the row budget. Unlike calibration the bundle is not the
+# artifact: a CPU fit (`bench/draft_tune.py fc-bias`) has to turn it into one, so a boot keeps
+# collecting until somebody does. DRAFT_FC_CAPTURE forces it on even when the bias is present.
+DRAFT_FC_CAPTURE_WHEN_MISSING = True
 DRAFT_FC_CAPTURE_ROWS = 4096
 CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
 CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
@@ -1740,7 +1748,9 @@ def fleet(a) -> int:
                                                        sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS)
             print(f"  expert capture: rank {comm.rank} armed; rows and stats under {Path(a.dump_dir) / 'expert-capture'} "
                   f"on rank {capture_mod.CAPTURE_RANK}", flush=True)
-        if DRAFT_FC_CAPTURE:                                # the drafter is prepared and calibrated by here
+        collect_fc = DRAFT_FC_CAPTURE or (DRAFT_FC_CAPTURE_WHEN_MISSING
+                                          and getattr(getattr(engine, "drafter", None), "fc_bias", None) is None)
+        if collect_fc:                                      # the drafter is prepared and calibrated by here
             from engine.profiles.glm53 import draft_fc_capture as draft_fc_mod
             engine.draft_fc_capture = draft_fc_mod.attach(
                 engine, Path(a.dump_dir) / "draft-fc-pairs", rows=DRAFT_FC_CAPTURE_ROWS,
@@ -1787,6 +1797,11 @@ def fleet(a) -> int:
                 try:
                     if engine.memory is not None:
                         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
+                    try:
+                        write_boot_counters(engine, Path(a.dump_dir) / f"counters-rank{comm.rank}.json",
+                                            rank=comm.rank)
+                    except Exception as exc:                  # noqa: BLE001 -- a shutdown never fails a shutdown
+                        print(f"  counters: rank {comm.rank} not written: {type(exc).__name__}: {exc}", flush=True)
                     if getattr(engine, "expert_capture", None) is not None:
                         try:
                             engine.expert_capture.close()
@@ -1815,6 +1830,34 @@ def fleet(a) -> int:
         finally:
             comm.close()
     return 0
+
+
+def write_boot_counters(engine, path, *, rank):
+    """One boot's decode counters, so a later one can be compared against it.
+
+    A boot's counters die with it: `st:spec_accepted_per_step_total` and the rest reset at every
+    start, so the only way anyone has read real acceptance is to scrape a live door -- which mixes
+    whatever traffic that boot has seen, cannot be differenced across boots, and answers nothing
+    once the boot is gone. Everything written here is already accumulated on the adapter; nothing
+    is computed for the file. Kept as COUNTS, not rates, so two records subtract.
+    """
+    import json as _json
+    counters = {}
+    for name in ("accepted_per_step", "accepted_total", "drafted_total", "steps",
+                 "steps_verified", "ceiling_positions", "reachable_mass", "covered_mass",
+                 "decode_shape_counts"):
+        value = getattr(engine, name, None)
+        if value is None:
+            continue
+        counters[name] = {str(k): v for k, v in value.items()} if isinstance(value, dict) else value
+    drafter = getattr(engine, "drafter", None)
+    record = dict(version=1, rank=int(rank), when=time.time(), counters=counters,
+                  spec_k=getattr(drafter, "k", None),
+                  fc_bias_status=getattr(drafter, "fc_bias_status", None),
+                  lanes=getattr(engine, "lane_info", None))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps(record, sort_keys=True, default=str))
+    return record
 
 
 def main(argv=None) -> int:

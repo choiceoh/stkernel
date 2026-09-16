@@ -16,6 +16,13 @@ calls per slot with its sequence -- wrapping it keeps the sequence map current w
 decode path. Splitting by family (not by row) is what `fit_fc_bias` requires: it refuses train and
 validation sets that share a request.
 
+Rows are held on the HOST, not the device. `aux` is 20,480 BF16 columns -- 40 KiB a row -- and a
+4,096-row budget over eight-row slots is about 437 MiB. On the device that is a boot's worth of
+arena; on the host it is a page cache. `collect_fc_pairs` wants them back on the source device, so
+`close` moves each batch there one at a time and frees it again. That is what lets this ride a
+serving boot instead of costing a fleet window: this is collection, not judgement, and collection
+needs no exclusivity -- a speed measurement does, which is why `onepass` asks for the door alone.
+
     DRAFT_FC_CAPTURE = True in the profile's boot, then
     bench/draft_tune.py fc-bias <rank>.pt --out draft-fc-bias.json
 """
@@ -114,7 +121,8 @@ class DraftFcCapture:
             rows_kept = int(mask[lo:hi].sum())
             if not rows_kept or self.kept[split] + rows_kept > self.rows:
                 continue
-            self.batches.append(dict(aux=flat[lo:hi].clone(), keep=keep[lo:hi].clone(),
+            # host-side: see the module docstring. `close` returns them to the source device.
+            self.batches.append(dict(aux=flat[lo:hi].to('cpu', copy=True), keep=keep[lo:hi].cpu(),
                                      ids=[family] * t, split=split))
             self.kept[split] += rows_kept
 
@@ -133,7 +141,13 @@ class DraftFcCapture:
             report['error'] = self.stopped or 'no committed rows in both splits'
             return report
         from bench.draft_fc_bias import collect_fc_pairs
-        bundle = collect_fc_pairs(self.drafter, self.batches, max_rows=self.rows)
+        device = self.drafter.p['fc.weight'].device
+
+        def on_device():
+            for batch in self.batches:                 # one at a time: the whole set never lands at once
+                yield dict(batch, aux=batch['aux'].to(device), keep=batch['keep'].to(device))
+
+        bundle = collect_fc_pairs(self.drafter, on_device(), max_rows=self.rows)
         self.root.mkdir(parents=True, exist_ok=True)
         torch.save(bundle, out)
         report['reader_sha256'] = bundle['reader_sha256']

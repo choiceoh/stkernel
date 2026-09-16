@@ -85,6 +85,16 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(cap.batches, [])
         self.assertIn('error', cap.close())
 
+    def test_rows_are_held_on_the_host(self):
+        """437 MiB of aux on the device would cost a fleet window; on the host it rides a serving boot."""
+        cap = DraftFcCapture(fake_drafter(), '/tmp/unused', rows=64, salt='s')
+        cap.attach()
+        rows(cap, 2, 8, [8, 8])
+        self.assertTrue(cap.batches)
+        for batch in cap.batches:
+            self.assertEqual(batch['aux'].device.type, 'cpu')
+            self.assertEqual(batch['keep'].device.type, 'cpu')
+
     def test_arming_refuses_what_the_collector_cannot_read(self):
         with self.assertRaises(ValueError):
             attach(types.SimpleNamespace(drafter=None), '/tmp/unused')
