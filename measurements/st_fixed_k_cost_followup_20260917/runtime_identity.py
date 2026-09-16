@@ -35,7 +35,17 @@ def read(item):
     rank, host = item
     local = ['docker', 'exec', 'st-glm53', 'python3', '-c', CODE]
     cmd = local if rank == 0 else ['ssh', '-n', '-o', 'BatchMode=yes', 'choiceoh@' + host, shlex.join(local)]
-    return dict(rank=rank, node=host, **json.loads(subprocess.check_output(cmd, text=True)))
+    identity = json.loads(subprocess.check_output(cmd, text=True))
+    log_cmd = ['docker', 'logs', 'st-glm53']
+    if rank != 0:
+        log_cmd = ['ssh', '-n', '-o', 'BatchMode=yes', 'choiceoh@' + host, shlex.join(log_cmd)]
+    lines = subprocess.check_output(log_cmd, text=True, stderr=subprocess.STDOUT).splitlines()
+    proof = [json.loads(line.split('ST_NATIVE_EXECUTION ', 1)[1])
+             for line in lines if line.startswith('ST_NATIVE_EXECUTION ')]
+    if len(proof) != 1 or proof[0]['rank'] != rank:
+        raise RuntimeError(f'rank {rank}: missing or ambiguous execution proof')
+    return dict(rank=rank, node=host, **identity, native_execution=proof[0],
+                moe_served=[line for line in lines if line.startswith('[b12x static v2] lane serving:')])
 
 
 if __name__ == '__main__':
