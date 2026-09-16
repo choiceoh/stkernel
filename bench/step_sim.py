@@ -957,7 +957,7 @@ def main() -> int:
         args.chunk_align = 2304
         if args.draft_slots is None:
             import step_kernels as kern
-            args.draft_slots = args.k if args.k is not None else kern.load_engine_facts(args.model).get("spec_k", 6)
+            args.draft_slots = args.k if args.k is not None else kern.load_engine_facts(args.model).get("spec_k", 7)
         args.token_budget = 9216 + args.draft_slots
     elif args.draft_slots is None:
         args.draft_slots = 3
