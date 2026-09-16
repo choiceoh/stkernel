@@ -101,6 +101,25 @@ layouts first (`NvmeTier.oldest`).
 """
 PREFIX_TIER_GIB = 16.0
 TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem whatever its own cap allows
+# A measurement arm's switch, never production's (profiles/glm53/capture.py): the served boot scores the vocabulary
+# head on the rows it is already prefilling and writes them position by position, so two boots fed the same corpus can
+# be compared where it matters -- the NLL of the true next token, not a throughput number. That is the channel the
+# 2026-09-14 hybrid arms were read on (measurements/st_hybrid_head_nll_20260916) and the one #911 said it never ran.
+# A commit that sets it is booted by a fleet hold and fed a corpus through the door; main keeps it False, and with it
+# False nothing here runs. Carried over from the arm branch it was written on, which was never merged.
+EXPERT_CAPTURE = False
+CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
+CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
+# The dense pack store's root: calibration blobs under <root>/mkcalib/rank<r>/, GPTQ packs cached under
+# <root>/st-dense-packs/. A measurement arm points it at another calibration; production keeps /cache.
+PACK_ROOT = "/cache"
+# A measurement arm's switch, never production's: plan a Hessian for EVERY target dense projection (not only the ones
+# the store lacks) and file them under CALIBRATION_ROOT instead of the production store -- the door's
+# POST /v1/engine/calibration with a root ending in "-fit" files the fit documents' sums and zeroes them for the
+# held-out documents (capture.arm_calibration_phases). This is how calib-v2-fit and -heldout were summed.
+CALIBRATION_CAPTURE = False
+CALIBRATION_ROOT = "/cache/calib-v2"
+
 PREFIX_SNAPSHOT_GIB = 4.25
 PREFIX_UNTIERED_SNAPSHOT_GIB = 4.25
 PREFIX_COMPRESSED_BYTES = 1 << 30
@@ -611,7 +630,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if execution == "native":
         from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration
         from engine.kernels.dense.store import PackStore
-        store = PackStore("/cache", comm.rank, weights_id=F.weight_layout)
+        store = PackStore(PACK_ROOT, comm.rank, weights_id=F.weight_layout)
         calib_plan = []                                   # (module, weight key, missing tiles, small rows, committed decode rows only)
         if D:
             recorder.gauge('draft_policy_requested', draft_policy.label())
@@ -846,7 +865,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             engine.budget = redeclare           # printed once from guesses at boot, once from this boot's ledger
             engine.arena = arena                # every device tensor is a view of it: `release` needs the last reference
             engine.vision = vision
-            engine.calibration, engine.calibration_root = calibration, (str(store.root) if store is not None else None)
+            engine.calibration, engine.calibration_root = calibration, (
+                CALIBRATION_ROOT if CALIBRATION_CAPTURE else (str(store.root) if store is not None else None))
             engine.pack_stats = dict(store.stats) if store is not None else {}
             if store is not None:
                 dense_layers = list(net.dense.values()) + (list(drafter.dense.values()) if D else [])
@@ -1701,10 +1721,23 @@ def fleet(a) -> int:
         if comm.rank == 0:
             print("  warmup: " + ", ".join(f"{k} {v}s" for k, v in paid.items()) + (f"; structured output: {'on' if engine.grammars else 'off (no xgrammar)'}"))
         if engine.calibration is not None:                  # every warm-up and capture is behind us: from here the sums are the served traffic
+            from engine.kernels.dense import calibration as calibration_mod
             engine.calibration.arm()
             print(f"  calibration: rank {comm.rank} summing the inputs of {len(engine.calibration.rows)} uncalibrated pack tiles "
                   f"({len(engine.calibration.deferred)} deferred) -> {engine.calibration_root}/mkcalib/rank{comm.rank}/ "
-                  "(filed on its own at 32K rows, at shutdown, or on POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
+                  f"(filed on its own at {calibration_mod.ROWS_TARGET // 1024}K rows, at shutdown, or on "
+                  "POST /v1/engine/calibration; the next boot packs GPTQ from them)", flush=True)
+        if EXPERT_CAPTURE:                                  # after every warm-up and graph capture: only served prefill is recorded
+            from engine.profiles.glm53 import capture as capture_mod
+            engine.expert_capture = capture_mod.attach(engine, Path(a.dump_dir) / "expert-capture", a.ranks,
+                                                       sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS)
+            print(f"  expert capture: rank {comm.rank} armed; rows and stats under {Path(a.dump_dir) / 'expert-capture'} "
+                  f"on rank {capture_mod.CAPTURE_RANK}", flush=True)
+        if CALIBRATION_CAPTURE and engine.calibration is not None:
+            from engine.profiles.glm53 import capture as capture_mod
+            capture_mod.arm_calibration_phases(engine)
+            print(f"  calibration arm: rank {comm.rank} sums {len(engine.calibration.H)} Hessians "
+                  f"({len(engine.calibration.deferred)} deferred) for {CALIBRATION_ROOT}-fit and -heldout", flush=True)
         from engine.base.stall import StepWatch
         server = Server(engine, runner, comm, port=a.port, tokenizer=tok, chat=renderer,
                reasoning_effort_aliases=REASONING_EFFORT_ALIASES,
@@ -1740,6 +1773,11 @@ def fleet(a) -> int:
                 try:
                     if engine.memory is not None:
                         engine.memory.write(Path(a.dump_dir) / f"memory-rank{comm.rank}.json")
+                    if getattr(engine, "expert_capture", None) is not None:
+                        try:
+                            engine.expert_capture.close()
+                        except Exception as exc:              # noqa: BLE001 -- a shutdown never fails a shutdown
+                            print(f"  expert capture: rank {comm.rank} could not close: {type(exc).__name__}: {exc}", flush=True)
                     if getattr(engine, "calibration", None) is not None:
                         written = engine.file_calibration()
                         if written:
