@@ -111,14 +111,26 @@ B/A/A/B 두 괄호의 평균 변화(warm / evicted), `_l2` 대 서빙 경로, �
 안 열린다** — 슬라이스당 고정 사슬 자체(x 양자화·부분합·도착·에필로그)가 값이고, 그것은 커널 본문의 일이다(같은 시각 다른
 세션의 `c1deep-0917` "deep-ring arm" 이 그 자리를 재고 있었다).
 
-## 5. MoE 셀 `z` 재도전: 첫 티켓은 바이트 순서로 실패 — 진단 팔 셋 대기 (티켓 `c2z-0917` → `c2z2-0917`)
+## 5. MoE 셀 `z` 재도전: 저장소 순서 셋이 전부 틀린다 — 배관 문제로 접음 (티켓 `c2z-0917`, `c2z2-0917`)
 
 reform 타일의 B 스테이지 레이아웃(`probes/b12x_reform_layout_print.py`): B1 `S<3,4,3> o ((8,16),(256,1),(1,2))`(128 B 행),
 B2 `S<2,4,3> o ((8,32),(128,1),(1,3))`(64 B 행). 호스트 순열을 **바이트 단위 표준 스위즐**(16 B 청크 ^= 행%8 / (행//2)%4)로
 두고 스테이지마다 `cp.async.bulk` 하나로 같은 mbarrier 에 같은 바이트를 완료하는 셀 `z` 는 **네 팔 전부 3.3e7 ulps(max|diff|
 8.4)로 게이트를 넘었다** — 옛 `z`(니블 단위 순열, 0/3 PASS)와 같은 증상이고, 둘은 서로 다른 순열이다. 그래서 같은 커널에 저장소
-순서 셋(byte / nibble / plain)을 물리는 진단 티켓을 큐에 넣었다: 정확한 것이 하드웨어가 쓰는 순서이고, 셋 다 틀리면 순열이 아니라
-배관(주소·스테이지·장벽)이다. 결과는 이 절에 붙는다.
+순서 셋을 물리는 진단 티켓(`c2z2-0917`, 원시 `moe-z-95588042.jsonl`)을 돌렸다.
+
+| 저장소 순서 | C=2 단일 max\|diff\| | C=1 단일 | ulps |
+|---|---:|---:|---:|
+| byte (16 B 청크 ^= 행%8 / (행//2)%4, TMA 하드웨어 모드) | 8.39 | 8.51 | 3.3e7 |
+| nibble (8 B 단위 ^= (2행+반)%8 / 행%4, DSL 레이아웃의 원소 단위 읽기) | 7.82 | 7.36 | 3.3e7 |
+| plain (순열 없음) | 7.80 | 6.96 | 3.3e7 |
+
+**셋 다 같은 자릿수로 틀리고 서로 조금씩 다르다**: 순열은 결과를 바꾸지만 어느 것도 서빙 바이트를 재현하지 않는다 → 문제는 순열이
+아니라 벌크 복사의 배관이다. 종이 위에서는 착지 주소(`storage.sB1` 바이트 베이스 + 슬롯 × 16 KB, 1024 정렬), 원본 주소(타일 우선
+[E][K/256][N][128 B] 의 e·2 MiB + kt·128 KiB + 타일·16 KiB), 장벽 회계(TMA 박스와 같은 16384 B 를 같은 mbarrier 에 완료)가 모두
+맞아 보이지만, GPU 가 아니라고 한다. 다음 사람이 이 자리를 열려면 **smem 덤프 프로브**(장벽 뒤 B 스테이지 16 KB 를 전역에 쓰는
+프로브 전용 모드로 TMA 착지 이미지와 벌크 착지 이미지를 바이트로 대조)가 먼저다. 기대 이득이 옛 `z` 의 −2.5 %(MoE 의 ~0.7 ms/
+스텝) 상한이라 여기서 접는다. 셀 `z`·`_swizzle_tile_boxes`·`bulk` 섹션은 남는다(서빙 레시피에 토큰 없음).
 
 ## 한계
 
@@ -135,6 +147,10 @@ ST_PROBE_GIB=64 bash bench/fleet.sh run --gpu --detach <s> 30 "<note>" -- \
 # dense
 ST_PROBE_GIB=64 bash bench/fleet.sh run --gpu --detach <s> 30 "<note>" -- \
   bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes dense_cells --seqs 1,2 --samples 2
+# 셀 z 진단(§5): 저장소 순서 셋(z / zn / zp)과 served_b 를 한 티켓에
+ST_PROBE_GIB=64 bash bench/fleet.sh run --gpu --detach <s> 30 "<note>" -- \
+  bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes moe_c2_cells:bulk
+# m=16 ksr 스윕(§4): dense_cells 의 *_ksr<n> 팔은 같은 dense 명령에 들어 있다(1-ulp 게이트)
 # CPU 컴파일(시드 이미지, CUDA 숨김): probes/engine_moe_chunk_compile.py --only static --chunks 256; dense 는
 # `from engine.kernels.dense import build; build()` (ST_DENSE_BUILD_ROOT 지정). probes/engine_decode_native_compile.py 는
 # dense/__init__.py 의 `extension` 이 `build` 로 바뀐 뒤 낡았다(StopIteration).
