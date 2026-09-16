@@ -38,7 +38,7 @@ def _quantize_gather(Packed, Scales, Q, S, LOCAL_N, PAYLOAD_BYTES,
 @triton.jit(do_not_specialize=['M', 'LOCAL_N', 'PAYLOAD_BYTES'])
 def _quantize_gather_mx(Packed, Scales, Q, S, M, LOCAL_N, PAYLOAD_BYTES,
                         K: tl.constexpr, G: tl.constexpr, PACK_BLOCK: tl.constexpr, TILED: tl.constexpr):
-    row = _rows(TILED)
+    row = _rows(M, TILED)
     group = tl.program_id(1)
     col = group*128 + tl.arange(0, 128)
     rank, local_row = row // (LOCAL_N // K), row % (LOCAL_N // K)

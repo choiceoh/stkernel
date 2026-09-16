@@ -85,7 +85,7 @@ class Bank:
     """Geometry plans shared by layers; scratch is isolated by CUDA stream.
 
     Old scratch generations stay owned because a captured graph may still
-    reference them. Growth is geometric, bounded by twice the largest demand
+    reference them. Growth is geometric, bounded by twice the largest rounded allocation
     per stream, rather than 64 MiB for every layer or every shape.
     """
     def __init__(self, device):

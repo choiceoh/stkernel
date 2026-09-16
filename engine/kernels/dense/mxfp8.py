@@ -27,14 +27,18 @@ def _scale_word(scale):
 
 
 def row_programs(rows):
-    return triton.cdiv(rows, 128)*32 if rows >= 128 else triton.cdiv(rows, 4)
+    return triton.cdiv(rows, 4)
 
 
 @triton.jit
-def _rows(TILED: tl.constexpr):
+def _rows(M, TILED: tl.constexpr):
     pid = tl.program_id(0)
     if TILED:
-        return pid // 32 * 128 + pid % 32 + tl.arange(0, 4)*32
+        quarter = pid // 32 * 128 + pid % 32 + tl.arange(0, 4)*32
+        # Keep only ceil(tail/4) producers for an incomplete row tile: M=129
+        # launches 33, not 64 CTAs per K128 group. Full tiles stay coalesced.
+        tail = M // 128 * 128 + pid % 32 * 4 + tl.arange(0, 4)
+        return tl.where(pid < M // 128 * 32, quarter, tail)
     else:
         return pid*4 + tl.arange(0, 4)
 
@@ -52,7 +56,7 @@ def _publish(S, scale, row, group, M, G: tl.constexpr):
 
 @triton.jit(do_not_specialize=['M'])
 def _quantize(X, Q, S, M, K: tl.constexpr, G: tl.constexpr, TILED: tl.constexpr):
-    row = _rows(TILED)
+    row = _rows(M, TILED)
     group = tl.program_id(1)
     col = group * 128 + tl.arange(0, 128)
     x = tl.load(X + row[:, None] * K + col[None, :], row[:, None] < M,

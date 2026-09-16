@@ -20,7 +20,7 @@ compile cost. Adoption requires a measured cell and the normal boot build barrie
   Quantized FP8 values are unchanged. Each four-row producer computes both values
   and scale words. At M >= 128, the four 32-row quarters of the scale tile share a
   producer so its scale words are contiguous; short decode batches use adjacent
-  rows and do not launch full empty row tiles. The last producer initializes the
+  rows; a partial final tile launches only ceil(tail/4) producers. The last producer initializes the
   scale padding. Q and BF16 output retain real M.
 * **Packet producer.** TP4 FP8-v3 packets can produce the same MX layout in one
   launch. The intermediate BF16 rounding is kept in registers. There is no full
@@ -45,7 +45,7 @@ compile cost. Adoption requires a measured cell and the normal boot build barrie
   by CUDA stream and grow geometrically; old generations remain owned for graph
   lifetime. Scratch allocation may happen at warmup/capture, never graph replay.
   Preparation scratch is temporary; retained workspace is below twice the largest
-  selected demand per stream, not 64 MiB per layer or per shape.
+  rounded allocation per stream (at most 64 MiB each), not 64 MiB per layer or per shape.
 
 ## Cost and limits
 
