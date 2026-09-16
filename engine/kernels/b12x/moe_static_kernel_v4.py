@@ -60,6 +60,7 @@ from .moe_activation import gated_activation_f32, is_gated_activation
 from .moe_w4a16_fp4_helpers import add_u8x4
 from .moe_static_common import (
     _bulk_g2s,
+    _bulk_prefetch_l2,
     STAMP_BARRIER1,
     STAMP_DMA_BASE,
     STAMP_ITEMS,
@@ -117,6 +118,7 @@ class MoEStaticKernelV4:
         fc2_prefetch: bool = False,
         fc1_stages: int = 2,
         fc2_stages: int = 2,
+        l2_prefetch: int = 0,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -178,6 +180,19 @@ class MoEStaticKernelV4:
         self.swiglu_limit = float(swiglu_limit) if swiglu_limit is not None else None
         self.fc1_stages = int(fc1_stages)
         self.fc2_stages = int(fc2_stages)
+        # l<n> (2026-09-16): the DMA warp asks L2 for the B stage n stages ahead of the one it lands
+        # (cp.async.bulk.prefetch.L2, one request per contiguous 16 KB run, no smem). A CTA's two
+        # 16 KB FC1 stages in flight over ~6 us of DRAM latency stream ~5 GB/s (the stamps of
+        # st_c2_moe_chunk_20260915: FC1 5.0, FC2 5.5 GB/s per CTA, 48 CTAs = 215-220 of 273 GB/s),
+        # and the ring cannot deepen: the CTA's smem is spent. The prefetch raises the bytes in
+        # flight without a byte of smem. The MMA reads the same bytes, so numerics are the kernel's
+        # own. Declared for the M16 reform tile over tile-major storage whose chunk equals the FC1 K
+        # tile (the dispatcher checks): only then is a box one contiguous run.
+        self.l2_prefetch = int(l2_prefetch)
+        if self.l2_prefetch < 0 or self.l2_prefetch > 16:
+            raise ValueError("l2 prefetch depth must be 0..16 stages")
+        if self.l2_prefetch and not decode_reform:
+            raise ValueError("l2 prefetch is declared for the M16 reform tile (t,r) only")
         self.stamps = bool(stamps)
         self.decode_reform = bool(decode_reform)
         # One integrated C=1 tile: halve padded M work, consume both FC1
@@ -1034,6 +1049,8 @@ class MoEStaticKernelV4:
             next_item,
             sfb1_packed,
             sfb2_packed,
+            b_w13,
+            b_down,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],
@@ -1093,6 +1110,8 @@ class MoEStaticKernelV4:
         next_item: cute.Tensor,
         sfb1_packed: cute.Tensor,   # (E, blocks/expert, stage bytes) u8
         sfb2_packed: cute.Tensor,
+        b_w13_raw: cute.Tensor,     # the weight storage itself: the l<n> prefetch addresses (unused off lane)
+        b_down_raw: cute.Tensor,
     ):
         """Kernel entry point."""
         from cutlass.cute.nvgpu.warp.mma import Field as WarpField
@@ -2455,6 +2474,21 @@ class MoEStaticKernelV4:
             sf_blocks_per_expert = Int64(cute.size(sfb1_packed.shape[1]))
             sfb2_packed_base = get_ptr_as_int64(sfb2_packed, Int32(0))
             sf2_blocks_per_expert = Int64(cute.size(sfb2_packed.shape[1]))
+            if cutlass.const_expr(self.l2_prefetch > 0):
+                # Tile-major storage (rows, K_in, K_tiles, E), K-major within the chunk, K_in == the
+                # kernel's K tile: a (tile rows x K_in) box is one contiguous run at
+                # base + e * expert + k_tile * ktile + n_tile * box bytes (fp4: bytes = elements / 2).
+                w13_base = get_ptr_as_int64(b_w13_raw, Int32(0))
+                w13_row_bytes = Int64(cute.size(b_w13_raw.shape[1])) // Int64(2)
+                w13_ktile_bytes = Int64(cute.size(b_w13_raw.shape[0])) * w13_row_bytes
+                w13_expert_bytes = w13_ktile_bytes * Int64(cute.size(b_w13_raw.shape[2]))
+                fc1_box_bytes = Int64(self.fc1_tile_n) * w13_row_bytes
+                w2_base = get_ptr_as_int64(b_down_raw, Int32(0))
+                w2_row_bytes = Int64(cute.size(b_down_raw.shape[1])) // Int64(2)
+                w2_ktile_bytes = Int64(cute.size(b_down_raw.shape[0])) * w2_row_bytes
+                w2_expert_bytes = w2_ktile_bytes * Int64(cute.size(b_down_raw.shape[2]))
+                fc2_box_bytes = Int64(self.fc2_tile_n) * w2_row_bytes
+                prefetch_ahead = Int32(self.l2_prefetch)
             n_slices = Int32(self.output_tile_count_n)
             role = Int32(2)
             if current_work_linear_idx >= split_base:
@@ -2510,6 +2544,27 @@ class MoEStaticKernelV4:
                             tBgSFB_up_nk = tBgSFB_w13[(None, sfb_up_idx, None, weight_expert_idx)]
                             tBgSFB_gate_nk = tBgSFB_w13[(None, sfb_gate_idx, None, weight_expert_idx)]
                         for k_tile in range(0, k_tile_cnt1, 1, unroll=1):  # type: ignore[call-overload]
+                            if cutlass.const_expr(self.l2_prefetch > 0):
+                                # the gate and up boxes n stages ahead, then -- past FC1's end -- the
+                                # item's first FC2 boxes, so the stream of requests runs on across
+                                # the FC1/FC2 seam of the same item
+                                if is_dma_lane0:
+                                    ahead = k_tile + prefetch_ahead
+                                    if ahead < k_tile_cnt1:
+                                        w13_at = (w13_base + Int64(weight_expert_idx) * w13_expert_bytes
+                                                  + Int64(ahead) * w13_ktile_bytes)
+                                        _bulk_prefetch_l2(w13_at + Int64(gate_tile) * fc1_box_bytes,
+                                                          Int32(fc1_box_bytes))
+                                        _bulk_prefetch_l2(w13_at + Int64(up_tile) * fc1_box_bytes,
+                                                          Int32(fc1_box_bytes))
+                                    else:
+                                        down_tile = ahead - k_tile_cnt1
+                                        if down_tile < output_tile_cnt:
+                                            _bulk_prefetch_l2(
+                                                w2_base + Int64(weight_expert_idx) * w2_expert_bytes
+                                                + Int64(intermediate_slice) * w2_ktile_bytes
+                                                + Int64(down_tile) * fc2_box_bytes,
+                                                Int32(fc2_box_bytes))
                             if cutlass.const_expr(self.a_ring):
                                 a_pipeline.producer_acquire(a_prod_state)
                                 abar = a_pipeline.producer_get_barrier(a_prod_state)
@@ -2623,6 +2678,15 @@ class MoEStaticKernelV4:
 
                 # ---- FC2: the item's 32 down tiles ----
                 for output_tile_idx in range(0, output_tile_cnt, 1, unroll=4):  # type: ignore[call-overload]
+                    if cutlass.const_expr(self.l2_prefetch > 0):
+                        if is_dma_lane0:
+                            down_ahead = output_tile_idx + prefetch_ahead
+                            if down_ahead < output_tile_cnt:
+                                _bulk_prefetch_l2(
+                                    w2_base + Int64(weight_expert_idx) * w2_expert_bytes
+                                    + Int64(intermediate_slice) * w2_ktile_bytes
+                                    + Int64(down_ahead) * fc2_box_bytes,
+                                    Int32(fc2_box_bytes))
                     fc2_pipeline.producer_acquire(fc2_prod_state)
                     bar2 = fc2_pipeline.producer_get_barrier(fc2_prod_state)
                     cute.copy(

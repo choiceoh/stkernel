@@ -174,6 +174,27 @@ def _bulk_g2s(dst_smem, src_gmem, nbytes, mbar_smem, *, loc=None, ip=None):
 
 
 @dsl_user_op
+def _bulk_prefetch_l2(src_gmem, nbytes, *, loc=None, ip=None):
+    """1-D cp.async.bulk.prefetch.L2 (sm_90+): pull nbytes of one contiguous global run into L2, no shared
+    memory, no barrier, no completion to wait for. One thread issues it; address and size 16 B aligned.
+    The static kernel's DMA warp uses it (cell l<n>, 2026-09-16) to keep expert-weight stages in flight
+    beyond its smem ring: two 16 KB FC1 stages over ~6 us of DRAM latency stream ~5 GB/s per CTA
+    (st_c2_moe_chunk_20260915 stamps), and the ring cannot grow -- the CTA's 99 KB are spent."""
+    llvm.inline_asm(
+        None,
+        [
+            Int64(src_gmem).ir_value(loc=loc, ip=ip),
+            Int32(nbytes).ir_value(loc=loc, ip=ip),
+        ],
+        "cp.async.bulk.prefetch.L2.global [$0], $1;",
+        "l,r",
+        has_side_effects=True,
+        is_align_stack=False,
+        asm_dialect=llvm.AsmDialect.AD_ATT,
+    )
+
+
+@dsl_user_op
 def _ld_shared_i32(addr, *, loc=None, ip=None):
     return Int32(
         llvm.inline_asm(

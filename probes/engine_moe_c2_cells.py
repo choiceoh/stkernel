@@ -32,6 +32,10 @@ Sections (engine_kernel_check.py --lanes moe_c2_cells[:section...][:layers=3,4,5
            every static row count (probe config reform_every_static, not served) over 512 and 256
   price    what the FC1 input (A + SFA) and scale (SF6) boxes cost the served 16-row tile: the probe-only timing
            cells xa / xs skip those TMA issues (their numerics are garbage and are not compared)
+  prefetch the l<n> cells (2026-09-16): the DMA warp bulk-prefetches the B stage n stages ahead into L2 over the
+           served chunk -- exactness (a hint must not move a bit beyond the add-order floor) and timing at C=2
+           (two requests) and C=1 (one request), single and chain, warm and evicted, plus the stamped per-item
+           rates of l4 against the served tile
 """
 import dataclasses
 import hashlib
@@ -49,7 +53,8 @@ from probes.engine_decode_fusions import _capture, _time
 TARGET_U8 = 41.9      # distinct experts per layer an 8-row C=1 verify reads on the fleet
 LAYERS = (3, 4, 5)
 CHUNKS = (512, 256)
-SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price')
+SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price', 'prefetch')
+PREFETCH_DEPTHS = (2, 4, 8)
 RANKS = '/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors'
 # bytes a unique expert streams per layer: w13 + w2 + SF6 FC1 (128 x 1552) + SF6 FC2 (64 x 1552)
 EXPERT_BYTES = 1024 * 2048 + 4096 * 256 + (128 + 64) * 1552
@@ -387,6 +392,41 @@ def depth_cells(report, layers, spread, brackets):
     stamp_cells(report, layers, [('served', 512, None), ('fc2_two_slots', 512, two_slots)], spread)
 
 
+def prefetch_cells(report, layers, spread, brackets):
+    """l<n> against the served tile over the served chunk: C=2 two requests and C=1 one request."""
+    from engine.kernels.b12x import moe_dispatch as md
+    served = md._w13_tile_chunk()
+    labels = [f'l{d}' for d in PREFETCH_DEPTHS]
+    arms = ([('served', served, None)]
+            + [(f'l{d}', served, md._parse_glm53_static_v2(f't,r,sf6,batch,l{d}')) for d in PREFETCH_DEPTHS]
+            + [('served_b', served, None)])
+    failures = []
+    for fixture in (('c2_two_requests', 16, 2, spread), ('c1_one_request', 8, 1, spread)):
+        fx = Fixtures(layers, fixture[1])
+        fx.load(fixture, 1)
+        for scope, group in (('single', layers[:1]), ('chain', layers)):
+            graphs, accs = capture_arms(group, fx, arms)
+            try:
+                failed = exact_arms(report, group, fx, [fixture], graphs, accs, 'served', 'served_b', labels, scope=scope)
+                failures += [f'{label}@{fixture[1]}/{scope}' for label in failed]
+                uniques = fx.load(fixture, 7)[:len(group)]
+                for label in (l for l in labels if l not in failed):
+                    res = bracket(report, graphs, 'served', label, brackets=brackets, fixture=fixture[0] + '_prefetch',
+                                  rows=fixture[1], scope=scope, layers=len(group), unique_experts=uniques)
+                    stream_bytes = sum(uniques) * EXPERT_BYTES
+                    report('rate', fixture=fixture[0] + '_prefetch', rows=fixture[1], scope=scope, unique_experts=uniques,
+                           expert_bytes=stream_bytes, candidate=label,
+                           control_gbps_evicted=stream_bytes / res['evicted']['control_us']['mean'] * 1e6 / 1e9,
+                           candidate_gbps_evicted=stream_bytes / res['evicted']['candidate_us']['mean'] * 1e6 / 1e9)
+            finally:
+                for graph in graphs.values():
+                    graph.reset()
+    if failures:
+        raise RuntimeError(f'prefetch cells beyond the ulp bound: {failures}')
+    stamp_cells(report, layers, [('served', served, None),
+                                 ('l4', served, md._parse_glm53_static_v2('t,r,sf6,batch,l4'))], spread)
+
+
 def price_cells(report, layers, spread, brackets):
     from engine.kernels.b12x import moe_dispatch as md
     fixture = ('c2_two_requests', 16, 2, spread)
@@ -596,6 +636,7 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
                             ('prefill', lambda: prefill_cells(report, layers, chunks, brackets)),
                             # after the served shapes: an arm reading a mis-described box could fault the context
                             ('shapes', lambda: shape_cells(report, layers, spread, brackets)),
+                            ('prefetch', lambda: prefetch_cells(report, layers, spread, brackets)),
                             # last: the timing cells read garbage scales/inputs, a fault would poison the context
                             ('price', lambda: price_cells(report, layers, spread, brackets))):
             if section not in wanted:

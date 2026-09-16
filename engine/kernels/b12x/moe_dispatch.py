@@ -409,6 +409,8 @@ _STATIC_V2_DEFAULT = {
     # 39차: t = tile-major expert weights (moe_static_kernel_v5), h = 64-row
     "tiled": False, "sf_pack": False, "decode_reform": False,
     "reform_sf_pack": False,
+    # l<n>: B stages prefetched into L2 n stages ahead by the DMA warp (0 = off)
+    "l2_prefetch": 0,
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -482,10 +484,16 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
                 )
             cfg["skip_sf" if token == "xs" else "skip_a"] = True
             continue
+        if len(token) >= 2 and token[0] == "l" and token[1:].isdigit():
+            # l<n> (2026-09-16): the static kernel's DMA warp asks L2 for the B stage n stages
+            # ahead (cp.async.bulk.prefetch.L2, one request per contiguous 16 KB run, no smem).
+            # A hint: the MMA reads the same bytes, so the numerics are the kernel's own.
+            cfg["l2_prefetch"] = int(token[1:])
+            continue
         if len(token) < 2 or token[0] not in "mfga" or not token[1:].isdigit():
             raise ValueError(
                 f"{_GLM53_B12X_STATIC_V2_ENV} must be 0 or comma-separated "
-                f"u|v,f<fc1>,g<fc2>[,m32][,a32][,s][,t][,q][,r][,sf6] cells (got {raw!r})"
+                f"u|v,f<fc1>,g<fc2>[,l<n>][,m32][,a32][,s][,t][,q][,r][,sf6] cells (got {raw!r})"
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
@@ -506,6 +514,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: sf6 requires t,r")
     if cfg.get("batch_reform") and not (cfg["decode_reform"] and cfg["reform_sf_pack"]):
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: batch requires t,r,sf6")
+    if cfg.get("l2_prefetch") and not (cfg["tiled"] and cfg["decode_reform"]):
+        raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: l<n> requires t,r (a tile-major M16 box is one contiguous run)")
     return cfg
 
 
@@ -2290,6 +2300,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("fc1_reuse_a", False)),
         bool(config.get("compact_staging", False)),
         bool(config.get("sf6_registers", False)),
+        int(config.get("l2_prefetch", 0)),
         bool(config.get("sync_cleanup", False)),
     )
     # Expanded output and register scatter never alias a served handle.
@@ -2462,6 +2473,11 @@ def _get_static_kernel_v2(
     alpha_dtype = cutlass.Float32
 
     output_tile_count_n = max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1])
+    l2_prefetch = int(config.get("l2_prefetch", 0))
+    if l2_prefetch and (not tiled or not reform or chunk != 256):
+        # the reform's FC1 box is (128 rows x K256); over the 256 chunk it is one contiguous 16 KB run,
+        # over 512 it is half of every row's chunk -- no run to prefetch as one request
+        raise ValueError("l<n> needs t,r over the 256 w13 chunk (the FC1 box is then one contiguous run)")
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
@@ -2487,6 +2503,7 @@ def _get_static_kernel_v2(
         output_tile_count_n=output_tile_count_n,
         fc1_stages=int(config["fc1"]),
         fc2_stages=int(config["fc2"]),
+        l2_prefetch=l2_prefetch,
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
