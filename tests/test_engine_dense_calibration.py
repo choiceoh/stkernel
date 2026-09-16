@@ -325,6 +325,26 @@ class BudgetTests(unittest.TestCase):
         self.assertLess(BUDGET_BYTES, 16 << 30, "the budget lands in arena_bytes; it cannot be free")
 
 
+class ThicknessTests(unittest.TestCase):
+    def test_a_filed_blob_is_thick_enough_to_condition_the_widest_hessian(self):
+        """ROWS_TARGET is the thickness a rank keeps, not a checkpoint interval.
+
+        housekeeping files at this and disarms the observer; a filed blob reads as present on the next boot and
+        nothing tops it up. The widest Hessian this engine calibrates is K=4096, and a covariance wants many more
+        rows than its own width -- 33K was 8x. Measured 2026-09-16: the knee is near 90K (87K buys a median 89%
+        of the 17K->330K span), so the target must clear it.
+        """
+        from engine.kernels.dense.calibration import ROWS_TARGET, ROWS_FLOOR
+        widest = 4096
+        self.assertGreaterEqual(ROWS_TARGET, 16 * widest,
+                                "a K=4096 Hessian summed over fewer than 16x its width is the thin blob that made "
+                                "GPTQ read worse than RTN on three of sixteen production sites")
+        self.assertGreater(ROWS_TARGET, ROWS_FLOOR)
+        # Reachable: a boot that never gets here files whatever it had at shutdown, so the target must be a
+        # thickness serving actually reaches (33차: 50,696 prefill tokens in 23 s).
+        self.assertLessEqual(ROWS_TARGET, 1 << 20, "a target a boot cannot reach files an arbitrary thickness")
+
+
 class CalibrationProvenanceTests(unittest.TestCase):
     """A Hessian belongs to the weights that made the activations it summed.
 
