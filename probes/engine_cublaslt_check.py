@@ -38,7 +38,7 @@ def main():
     import torch
     from engine.kernels.dense import FP8Linear
     from engine.kernels.dense import fp8, mxfp8
-    from engine.kernels.dense.cublaslt import PreparedProjection, _build, WORKSPACE_LIMIT
+    from engine.kernels.dense.cublaslt import BF16Producer, PacketProducer, PreparedProjection, _build, WORKSPACE_LIMIT
     from engine.kernels.deep_gemm import _initialize
     _initialize()
     from deep_gemm import fp8_gemm_nt
@@ -70,19 +70,16 @@ def main():
             mx_weight = mxfp8.pack_weight_scales(weight[1], n, k)
             if args.producer == 'bf16':
                 source = torch.randn(m, k, device='cuda', dtype=torch.bfloat16)
-                def producer(mx, out):
-                    return (mxfp8 if mx else fp8).quantize(source, out=out)
+                producer = BF16Producer(source)
             else:
                 from engine.kernels.prefill_collectives import PrefillCollectives
-                from engine.kernels.prefill_collectives.consumer import quantize_gather
                 local = (m+3)//4
                 packets = []
                 for rank in range(4):
                     x = torch.randn(local, k, device='cuda', dtype=torch.bfloat16)*2**rank
                     packets.append(PrefillCollectives.pack(x, x.numel())[0])
                 source = torch.cat(packets)
-                def producer(mx, out):
-                    return quantize_gather(source, local, real_rows=m, mx=mx, out=out)
+                producer = PacketProducer(source, local, real_rows=m)
             baseline = torch.empty((m, n), device='cuda', dtype=torch.bfloat16)
             candidate = torch.empty_like(baseline)
             q0, s0 = producer(False, None)

@@ -1,0 +1,240 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "seconds": 0.7592505689826794,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "binary": "/work/out/cache/cublaslt/dd2ee6e7edd126aae0c1bbbc/st_cublaslt_dd2ee6e7edd126aae0c1bbbc.so",
+  "binary_sha256": "cc95e7f3e9276705716392340da80303b88c2aa05fa2cb96115adb2f6bcc7680",
+  "triton": "3.7.1",
+  "kernels": [
+    {
+      "name": "quantize-k128-tiled0-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "c6b90356bd190753d074ac9cd61ff1b3e305574c7661eb86b0b2342be4b241ed",
+      "cubin_sha256": "4d4b09dabec346968a9abaf5c994d0dde39d92e5bbc20bd7f1ca36a9754f82eb"
+    },
+    {
+      "name": "quantize-k128-tiled0-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "8a8cd538b59af5d7de2115b9b38059030db0b1ff3a57c735eecccc482e7fd8b5",
+      "cubin_sha256": "f8d9026bfead4f9a29ae55fe349bd816f2a84e8c2ae665b27cd85b8828af60d5"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "36cfe764ecdfcb6ead9473d63c12fe4b7fecf798c6a6e292b86eee6a7f009078",
+      "cubin_sha256": "2b13938e053fc40a70e80e85219c8bca54fe609099a2b9f43c7553e672748ca5"
+    },
+    {
+      "name": "quantize-k128-tiled1-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "43621d34c3e31223bf941b70a4838a36726f854af3836de7b500c16aba361618",
+      "cubin_sha256": "075defd8f8fccaf780cdf1099e59042f1a711aafdc185a6cc62e48e3ac3aa904"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "b1974e0a816b17e3d6d4a3b0cbf1022f40b9deba5f8185810119155c6ede669d",
+      "cubin_sha256": "632eb3854dcceaab8564c30b6c590bfeae5c6cd71a04e1ed8c7a645d64b33390"
+    },
+    {
+      "name": "quantize-k384-tiled0-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "93f2618c3d2d0b2c1d7224ff9b6c7c58b739005ef892ef09cf990792b570e669",
+      "cubin_sha256": "91d0137c673a57e625f3c80373a08b32c52faed15faf024d529a1c3346fc944b"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "fa6e154d1d3c70c6cb0a190e0c2e49933bc92109967e779e4f38a5e511918635",
+      "cubin_sha256": "ac0c10892832aea1cf9e74d50d8228671951493cea93c71d0514e6e72575bee0"
+    },
+    {
+      "name": "quantize-k384-tiled1-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "7bfd52aa1215def08b506779c194cdc6ebab7e7dcfefaa4bdd67fcde5fb8b72f",
+      "cubin_sha256": "a6ae7266e186fb86bd622f99473b47c86fc72dcec7fc8f1c34578ba4a5a4b5e9"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "95dcea58cd7337a8bfb6f20d7e9795fcd58a7e9b68f417027c2e97afcc92a1fd",
+      "cubin_sha256": "e76e7192f2009928e367ff90b7a6956aaa720a82713f137b1ef83dfeee6cc9fe"
+    },
+    {
+      "name": "quantize-k4096-tiled0-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "f86fadbc1b6f696ad7dfa1b4e534c7c5889b0f170f1db5669cb297a29fa8d154",
+      "cubin_sha256": "4b11b95b1a1df717adabe6e7f896396e53ad21299dcaf31d8f6e15edc0029bff"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "480f57a7c87727373b2d4a0469d3814ac45e67d5c60185417b1d2b7cc884e1d5",
+      "cubin_sha256": "2017614a0051bb350f60da246a7b721a04c1d7861198ba25355ec6b187fe921a"
+    },
+    {
+      "name": "quantize-k4096-tiled1-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "432ab34b3cbc97c79653f5ac018c3dfd42dafe86a78a66e12bfe5331d222be93",
+      "cubin_sha256": "0acfcd1c0b00a493882437d5329a5819ba85493bf089c16947169ddccd49adc4"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "2e9bd26bf19241a0c1cb1bbd8946389ddcff980aac16cf40f9ba335420dfc0c7",
+      "cubin_sha256": "c7555faeb6b3b1b5766ad22d400d8c05b174966c72583fb53b183de85d4df361"
+    },
+    {
+      "name": "quantize-k20480-tiled0-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "8f24ee97deb4de806b0e8826797a774a7d19c2beafba01b862799d3193136f93",
+      "cubin_sha256": "3a1ee0cb13ed10033905d6ff4452d99834cec13fb98076e3dc3ae42e24755ac8"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "45226c6dbdbb7c8aea8982618dbef445d93d969cdc542a27c6de5ae36d668716",
+      "cubin_sha256": "5fb09cf39f8498362f727ba37a8109d4cb806b952207f55bbdb5503314e37f30"
+    },
+    {
+      "name": "quantize-k20480-tiled1-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "c687bc9df424be17d4e6d58fb36205cd63e86f9c25ef63d655ad778daa2d6748",
+      "cubin_sha256": "fbcdb2f4558f7a1d674b48f58b7bc5f2eed33be8f988a516f6bdefa42863f81b"
+    },
+    {
+      "name": "weight-scales",
+      "shared_bytes": 0,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "bcf996db3f141aa7ee0d7c9e1633a3d77c19e3e1c0250a2253390e6a9e407fb0",
+      "cubin_sha256": "976602c8444ccf845a3b75b71807682c333f8fc9bb7eb5e569e2dd5d0e084533"
+    },
+    {
+      "name": "packet-mx-pad0",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "cefe27369ca0dba6257d8da2dd4463b22cfb9266a4fdebda52dff7a94a073832",
+      "cubin_sha256": "6a4a2484b5a030967a36818c394eece8e97a933b0dca6424f60a718d67e80057"
+    },
+    {
+      "name": "packet-mx-pad1",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [
+        "div.s32",
+        "div.s32",
+        "div.s32",
+        "div.s32"
+      ],
+      "ptx_sha256": "85c15ec230f7346c9b23a10273b2748c578166a5cb110aadb6d164b63c2013ea",
+      "cubin_sha256": "72d25a4220eb73578f7a7c9405aa8a2283c0520357098c8627f9d2eb37867ca8"
+    },
+    {
+      "name": "bound-m1-k4096",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "e77f3a8376522aec4e5ed5a92463e9e12eaa2a3bb404aa392f3ece45c1441f2c",
+      "cubin_sha256": "e067a91d98c57cb4b89997ef548e126e5f9500452eef151e77fac20c64b308b2"
+    },
+    {
+      "name": "bound-m8-k4096",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "4a386cd976f41140e88f7480bb7659cfc59fdd8f78ff07deb10f5a32f80778bb",
+      "cubin_sha256": "eac08bf771910f18da684b718a531649fb82065ad46777009b246a4f4f207be8"
+    },
+    {
+      "name": "bound-m8-k20480",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "df2239f9e4ee515557f2a0f5750b891dfbd967e35eff8aedf4a3d9334c09f865",
+      "cubin_sha256": "dceeaf5c124e24175884abc022e89e9b98afa82c8214ff9085f4b579f78138a0"
+    },
+    {
+      "name": "bound-m128-k4096",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "276c51fe9c81f78b7e3a754cc45706dcfc0db98f1493405c9a55459ded88a81f",
+      "cubin_sha256": "dcf107d449c88fb10df0761b5d6870a87fcd68876f58b6ab1b2d655b6d694af7"
+    },
+    {
+      "name": "bound-m129-k4096",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "253632489ad91fffa7e3dfb1aaffbcca2ff13c30de1571015b4af430ebec54aa",
+      "cubin_sha256": "026f7dc774d9273c8473a136b343ae1058f8381d339949e31e7b5d1fc7e755b3"
+    },
+    {
+      "name": "bound-packet-m128",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "47ba87c789aac0e5335c17646b0038ce749056146c5f91872f43f94df9bc9c6c",
+      "cubin_sha256": "30acdffc2a5f37a032d8af72fcbd4c5463ab4049e6139f4ac78045ec9e4fe8d1"
+    },
+    {
+      "name": "bound-packet-m129",
+      "shared_bytes": 64,
+      "expensive_arithmetic": [],
+      "integer_divisions": [],
+      "ptx_sha256": "d2da87b3611c67ce20275707a6262d15d082523185dc2a257becc3c44de1ee99",
+      "cubin_sha256": "bd50b7c2a0aa4631fb0e467a8848ddfb148aa0665a8bf2ff0695745bdcb93c9d"
+    }
+  ],
+  "scope": "host binding compile/dlopen and SM121 producer compilation; no cuBLAS GPU execution",
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "0a80a021dace024129df3ea2e991109bae7f08a5196add9004b2e196b998c845",
+    "engine/kernels/dense/cublaslt.py": "17988b3722c2462a0b9f7676798a6341f7577ac153d4480371afc76bdd1e17ad",
+    "engine/kernels/dense/mxfp8.py": "228119d87ae2500269f4db12e3992adcd2fe9fda23b140e609f99b8a5e68fe87",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/prefill_collectives/consumer.py": "d1924a9a4a06adeaec34b145ed182efec617e888eab15d434289140130a50df1",
+    "probes/engine_cublaslt_compile.py": "ec7048c2e80ecca457071474e08b3f0b73cb72d352e72a9e5ae51a69e828e878"
+  }
+}
