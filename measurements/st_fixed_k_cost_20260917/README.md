@@ -1,166 +1,150 @@
 # Fixed K7 mHC input packing
 
-Original base: `da917a4d`; integrated main: `72b708cd`. K remains 7,
-verification remains 8 rows per request, and KDA state remains FP32.
-The final candidate retains mHC producer packing only. Resident MoE waves
-had no clear gain; seven implementations of adjacent-query MLA sharing
-passed numerics but remained slower, so both changes were removed.
-Their implementations remain in the recorded commits below.
+**Verdict: component cost reduction and target execution are proven; a whole-engine
+speed improvement is not established.** Canonical `st_judge.py` returns
+`NO EVIDENCE: the candidate has no valid warm sample (its records failed gates)`.
+PR #1068 remains a draft, with adoption pending. K stays 7, verification stays
+8 rows per request, and KDA state stays FP32.
 
-The direct mHC consumer writes the existing C1 FP8 input pack from its
-rounded BF16 layer input, using warp-local 128-column packing. The next
-bound KDA input projection consumes that invocation's exact pack.
-Observed/calibrated or unsupported cells cannot consume it.
-`net.mhc_input_packs=False` disables only this new boundary; existing KDA
-output producer packs remain enabled. Ordinary mHC template instantiations
-and occupancy entries retain their original arithmetic and register lifetimes.
-`ST_NATIVE_EXECUTION.fixed_k_cost.mhc_input_packs` requires actual consumption
-by the target projection before serving starts.
+Three requested directions were evaluated across seven GPU revisions. Resident
+MoE wave scheduling had no clear gain. Adjacent-query sparse MLA sharing passed
+numerics but remained slower. Both were removed from the final source. The
+retained candidate is mHC producer packing; it is not a claimed serving win.
 
-All 90 real mHC coefficient sets pass bitwise output and FP8 pack equality
-at four magnitudes, with and without changing TP4 packet descriptors.
-The final native mHC bytes were qualified in revisions 3, 4, 6 and 7.
-Two distinct-coefficient chain comparisons reduce the packet boundary
-interval by 19.12% and 19.43%. The graphs contain all 90 coefficient sets
-and include the separate pack in the control. Serving only fuses eligible
-KDA input boundaries: this is not a whole-engine speed claim.
+## Retained implementation and numerical proof
 
-Final validation entry points:
+The direct mHC consumer packs its once-rounded BF16 layer input using warp-local
+128-column FP8 packing. The next bound KDA input projection consumes that exact
+invocation-owned buffer. Observers and unsupported cells use the existing path.
+Pack-writing template instantiations and occupancy entries are separate from
+ordinary consumers. `net.mhc_input_packs=False` disables this new boundary only;
+existing KDA output producer packs stay enabled in both arms.
 
-```
-probes/engine_kernel_check.py --lanes fixed_k_compile --output /cache/fixed-k-0917/compile.jsonl
-probes/engine_kernel_check.py --lanes fixed_k_cost --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full/rank0of4.safetensors --output /cache/fixed-k-0917/gpu.jsonl
-```
+All 90 real mHC coefficient sets pass bitwise equality of all four outputs and
+FP8 pack bytes at magnitudes 0, .001, 1 and 30, with and without changing TP4
+packet descriptors and repeated graph replay. The final native implementation
+was qualified in revisions 3, 4, 6 and 7. The final focused Linux CPU gate ran
+55 tests (52 passed, 3 GPU-only skips); the source-lifetime repair below ran
+40 tests (39 passed, one GPU-only skip). Full CI passed on the measured engine.
 
-The compile lane requires `CUDA_VISIBLE_DEVICES=` and a container without
-GPU devices. The narrowed final probe builds dense and checks real mHC
-coefficients, pack bytes, changed packet descriptors and captured B/A/A/B
-component intervals. Earlier records also contain the removed MLA/MoE
-numerical and timing gates. CUDA source/binary hashes and runtime identity
-are recorded in each artifact (Torch 2.13.0+cu132, CUDA 13.2, SM121).
+Two graphs containing all 90 distinct real coefficient sets, including the
+separate pack in the control and no pack clone, were timed B/A/A/B:
 
-Matched TP4 consumer validation is pending. It uses the extended onepass
-profile for 2K/32K/128K coverage, C1 twice and the current serving capacity
-(C2) once, without 128K C2. C4 is not measured. Compilation and capture
-precede the consumer measurements. Quality, acceptance, TTFT, output tok/s
-and warm step/s decide adoption; component timings alone do not.
+| Revision | Packet control → fused | Nonpacket control → fused |
+|---|---:|---:|
+| v6 | 1592.05 → 1287.60 us (-19.12%) | 1522.76 → 1223.76 us (-19.64%) |
+| v7 | 1601.07 → 1290.03 us (-19.43%) | 1520.75 → 1226.71 us (-19.34%) |
 
-## First GPU verdict (`18e14162`)
+Single-coefficient packet replay is near parity (v7: 19.57 → 19.72 us).
+Serving fuses only 30 KDA boundaries, so the chain reduction is not an engine
+throughput estimate. L0 and the boundaries following auxiliary features
+(L6/L25/L34) retain their ordinary path.
 
-`gpu-v1.jsonl`: all 90 real mHC coefficient sets pass bitwise output and
-pack equality at four magnitudes, with and without changing TP4 packet
-descriptors. MLA passes all 30 geometry/selection fixtures and repeated
-graph replay, with relative L2 error below 0.0021. Real L3 MoE passes
-changed routing and zero-output replay with no observed output difference.
+## Matched TP4 consumer result
 
-Performance is rejected for the first fused mHC/MLA implementation:
-packet mHC +2.11% (20.19 -> 20.61 us), C1 MLA identical selection
-43.11 -> 142.99 us, C2 59.84 -> 222.99 us. The MoE wave change has no
-clear win (U40 evicted 679.47 -> 679.21 us). These are component intervals,
-not consumer tok/s. The second candidate removes repeated mHC conversion,
-specializes pack-writing consumers, and adopts the stock decode kernel's
-shared-Q and matrix-load instructions for MLA. Its qualification is pending.
+Control `ffd19b44630b905f0c68db5e8f060bc78680012e` and candidate
+`69c5420cf497992184842308990a1f6d90613a5b` differ by one boolean assignment in
+`net.py`. The source-lifetime repair is identical in both. CUDA source hash is
+`8d3bd8a91b1d81b3de92c00ef9d250e4a0e24915f3ff5602df0ae13ebda71154` on all four
+nodes. Each node reuses its native cache key `350283036157c48725e8dc7c` across
+both boots; per-node binary hashes and mtimes are in `consumer-runtime.json`.
+Binaries are built per node, not asserted byte-identical across nodes.
 
-## Second GPU verdict (`a236b5fa`)
+Each arm ran the canonical extended onepass profile: 2K/32K/128K, C1 twice,
+current serving capacity C2 once (without 128K C2), with exclusive traffic.
+C4 was not measured. Compilation/capture precede measurement; diagnostic
+profiling follows it. All listed C1 prefill samples have zero prefix reuse.
 
-`gpu-v2.jsonl` passes every numerical/replay gate. Revised C1 MLA improves
-from 142.99 to 85.49 us for identical selections, but its matched control
-is 43.17 us; it is still rejected for speed. C2 is 61.72 -> 107.15 us.
-Packet mHC is 19.40 -> 20.50 us (+5.66%). The third candidate assigns one
-warp group to each MLA query and transposes completed mHC values for
-warp-local packing. The MLA profiler runs only after all unprofiled timings.
+The following are **raw observations from failed-quality runs**, not eligible
+speed verdicts. Request tok/s is sum(completion tokens - 1) / sum(decode seconds),
+not step/s multiplied by acceptance. The harness correctly clears its primary
+step-rate field when a gate fails; the table shows the retained raw median.
 
-## Third GPU verdict (`03cb3652`)
+| Arm / run | Actual request tok/s | Acceptance | Raw median step/s | C1 quality |
+|---|---:|---:|---:|---:|
+| B / 1 | 87.3047 | 53.6728% | 19.887089 | 6/9 |
+| B / 2 | 83.3485 | 50.4309% | 19.891678 | 7/9 |
+| A / 1 | 85.2527 | 52.0330% | 19.885538 | 7/9 |
+| A / 2 | 86.1621 | 53.3209% | 19.882239 | 7/9 |
 
-`gpu-v3.jsonl` passes all numerical/replay gates. Warp-local mHC packing
-reaches parity without packets (18.57 -> 18.56 us), but packet mode still
-regresses (19.63 -> 20.17 us, +2.73%). MLA remains slower: C1 identical
-43.07 -> 87.40 us. Diagnostic profiling identifies substantial union
-preparation; overlapping PDL kernel durations must not be added as latency.
-The fourth candidate removes per-stripe output-counter contention, widens
-shared KV once for both queries, and executes weak-overlap rows concurrently.
+C1 Korean corruption is zero in all four runs. C2 quality is B 8/12, A 10/12.
+Cold request-rate change is -2.35%, warm +3.38%; warm acceptance also rises
+2.89 percentage points while raw median step/s changes -0.047%. Baseline
+repetitions already differ substantially in output length and acceptance.
+None of the five full C1 response hashes match between arms in either run.
+Greedy text differences alone are not a rejection (ledger rule 8); the quality
+gates and lack of repeated valid brackets prevent an adoption claim.
 
-## Fourth GPU verdict (`8f3fe48a`)
+The first run also measures four fixed 1024-token C1 requests. Two output hashes
+match exactly; their observed decode rates are 106.4239 → 106.2806 and
+107.6071 → 107.4849 tok/s (about -0.1%). This single pair does not establish
+neutrality or regression. The fixed C2 observation is invalid in both arms
+because its preparation identity changed/was unknown; it is not adoption proof.
 
-All correctness gates pass. C1 identical MLA is 43.00 -> 84.08 us, disjoint
-43.05 -> 74.11 us. Hash preparation remains substantial despite compact
-reservations. The next candidate uses bounded radix grouping and prefix
-counts for the exact multiset union. mHC moves packing onto the 32 finished
-projection CTAs; each row is published and rearmed before graph completion.
-
-## Fifth GPU verdict (`2715eda1`)
-
-All correctness gates pass; both changes are rejected for performance.
-Packet mHC rises 19.56 -> 22.65 us, and C1 identical MLA is 43.05 -> 92.33 us.
-Ready-row helper fences/counters and radix preparation are removed. The sixth
-candidate shares only matching KV rows within the current 16-slot tiles,
-retains each original sparse list/split, and merges in the same resident launch.
-No union, sorting, separate merge launch or per-replay barrier reset is needed.
-Changed tile order and asymmetric lengths join the existing numerical gates.
-
-## Sixth GPU verdict (`b631febd`)
-
-All 42 MLA fixtures and prior gates pass. MLA C1 identical improves to
-42.97 -> 61.52 us, still slower. No local-memory spill was found (64 registers,
-0 local bytes). The next iteration removes tile search/ballots and skips empty
-query arithmetic. Native mHC remains the warp-local implementation.
-
-The added distinct-coefficient chain materially changes the mHC result:
-90 packet boundaries take 1592.05 -> 1287.60 us (-19.12%); nonpacket chain
-1522.76 -> 1223.76 us (-19.64%). Each graph contains all 90 real coefficient
-sets, no pack clone. These are component throughputs; serving fuses only
-eligible KDA input boundaries, so they are not a whole-engine speed claim.
-
-## Seventh GPU verdict (`1f049629`)
-
-All correctness/replay gates pass. Distinct-coefficient packet mHC chain
-1601.07 -> 1290.03 us (-19.43%); nonpacket 1520.75 -> 1226.71 us (-19.34%).
-Single-coefficient packet interval remains near parity, 19.57 -> 19.72 us.
-C1 identical MLA is 43.20 -> 47.50 us (+9.96%); C2 is 59.62 -> 71.18 us
-(+19.39%). Even after eliminating union preparation, separate merge,
-tile search and empty-query arithmetic, MLA sharing is rejected.
-Resident MoE waves remain without a reproducible gain. Final source removes
-both unsuccessful experiments and retains the qualified warp-local mHC pack.
-
-## Consumer admission and source-lifetime repair
-
-The first full bracket (`fixedkfull-0917`, control `40272da2`) stopped before
-serving: all four ranks raised `draft FC capture needs the retained BF16 source`.
-`boot-failure.json` pins the logs. Automatic FC collection inherited from main
-was armed after compact drafter storage had retired its reference weight.
-
-Both arms now retain an independent host copy before compaction and move it
-back to the reader device only when collecting the shutdown bundle. The live
-reader and compact arena are unchanged. A regression test overwrites the original
-storage and checks the collected reference, actual output and reader identity.
-The focused Linux gate runs 40 tests: 39 passed, one GPU-only skip. The prior
-55-test gate (52 passed, three GPU skips) and full CI also passed. One retry
-caught a script-mode relative import; commit `69c5420c` uses the absolute import.
-No consumer speed claim is taken from either failed boot.
-
-The matched full bracket is `fixedkfull3-0917`: baseline `ffd19b44630b`,
-candidate `69c5420c`. The entire tree difference is one boolean assignment,
-`net.mhc_input_packs=False/True`. The canonical command is:
+`consumer.jsonl` retains all four completed records with per-request hashes,
+TTFT, generation rates, quality, acceptance, serving shape and runtime identity.
+`consumer-summary.json` is reproducible with:
 
 ```
-ST_BRACKET_VALIDATION=full ONEPASS_PROFILE=extended REPO=/home/choiceoh/st-worktrees/fixed-k-cost-0917 bash /home/choiceoh/stkernel/bench/fleet.sh st-chain fixedkfull3-0917 50   "fixed K7 mHC pack same-build B/A with compact source preserved"   -- B=ffd19b44 A=69c5420c
+python3 measurements/st_fixed_k_cost_20260917/summarize.py \
+  measurements/st_fixed_k_cost_20260917/consumer.jsonl
+python3 bench/st_judge.py judge --cand 69c5420c --base ffd19b44 \
+  --jsonl measurements/st_fixed_k_cost_20260917/consumer.jsonl
 ```
 
-Each `NAME=sha` already adds one arm to the order; no extra names are needed
-for a single B/A pair. Consumer results follow when the run completes.
+The baseline ticket `fixedkfull3-0917` returns its quality failure after retaining
+both C1 passes, before running A. A was therefore measured in the separately
+queued `fixedkcandidate-0917` ticket with the same profile, avoiding a third
+baseline boot. Both tickets stopped their four containers, dropped their owned
+tiers and released the fleet reservation.
 
-The first baseline C1 pass completed with quality 6/9 and no Korean corruption;
-its raw measured request rate is 87.30 tok/s (32K: 85.28, 128K: 88.38).
-These are observations, not an eligible speed baseline: the harness correctly
-clears `decode.windows_med` when quality fails. The baseline ticket retains
-its second C1 pass, then returns the failure before the candidate arm. Candidate
-`69c5420c` is separately queued as `fixedkcandidate-0917` with the same extended
-profile and two runs, so the matched output/acceptance comparison can still be
-completed without rerunning the failed baseline a third time.
+## Actual target execution
 
-The same baseline boot is already non-identical across C1 repetitions:
-the three 2K outputs contain 2176/3611/4671 tokens in run 1 and
-2313/3967/8391 in run 2. Prompt workloads and temperature (0) are unchanged.
-Therefore request-rate deltas cannot by themselves establish the small
-mHC speed effect. `summarize.py` retains actual request timings and hashes,
-and refuses an eligible speed claim when outputs differ or evidence fails.
+Startup proves 30 eight-row KDA input-pack consumers on every candidate rank
+and zero in the control (`consumer-native-A/B.jsonl`). A separate 2K diagnostic
+confirms the GPU specialization ran: across four traced decode steps, each rank
+changes 336 ordinary packet mHC launches into 216 ordinary + 120 pack-writing
+launches. Standalone input-pack launches fall **298 → 178**, or 30 removed per
+traced step (`consumer-launch-proof.json`). CUPTI launch counts are evidence;
+overlapping PDL kernel durations are not added as latency.
+
+The optimization selects the eight-row graph, not the HTTP group's label.
+Two concurrently decoding requests use the sixteen-row path, but one request
+finishing early can leave an eight-row tail that uses the fusion. C2 group-level
+results are therefore not a strict no-treatment control.
+
+## Seven component revisions
+
+All revisions passed their numerical/replay gates. Earlier records also cover
+42 final MLA geometry/selection fixtures (including duplicates, permutations,
+asymmetric lengths and empty rows) against an independent FP32 reference, and
+real L3 MoE weights with changed routing and zero-output replay. Rejections below
+are performance findings, not numerical failures.
+
+| Rev / commit | Packet mHC single-boundary us | MLA C1 identical-selection us | Change / outcome |
+|---|---:|---:|---|
+| 1 / `18e14162` | 20.19 → 20.61 | 43.11 → 142.99 | Initial fusion/union sharing rejected; MoE U40 evicted 679.47 → 679.21 us has no clear gain. |
+| 2 / `a236b5fa` | 19.40 → 20.50 | 43.17 → 85.49 | Reuse rounded mHC values; MLA shared-Q/matrix loads, still slower. |
+| 3 / `03cb3652` | 19.63 → 20.17 | 43.07 → 87.40 | Warp-local mHC packing; parallel query groups. |
+| 4 / `8f3fe48a` | 19.68 → 20.01 | 43.00 → 84.08 | Compact union reservations and shared BF16 KV ring. |
+| 5 / `2715eda1` | 19.56 → 22.65 | 43.05 → 92.33 | Ready-row mHC helpers and radix union both rejected and removed. |
+| 6 / `b631febd` | 19.33 → 19.58 | 42.97 → 61.52 | Retain warp-local mHC; matching tiles without union or separate merge. Add distinct-coefficient chain. |
+| 7 / `1f049629` | 19.57 → 19.72 | 43.20 → 47.50 | Remove tile search and empty-query work; MLA still +9.96% C1 / +19.39% C2, removed. |
+
+The final probe is narrowed to retained mHC (`fixed_k_compile` builds dense
+without GPUs; `fixed_k_cost` checks real coefficients and chains under a fleet
+reservation). Rejected implementations remain in the recorded commits. Runtime,
+source, binary and coefficient hashes are in `compile*.jsonl` / `gpu-v*.jsonl`.
+
+## Boot repair encountered during validation
+
+The initial baseline stopped before serving on all ranks: automatic draft FC
+collection inherited from main was armed after compact storage had retired its
+BF16 reference. Both arms now retain an independent host copy before compaction
+and move it to the reader device only for the shutdown pair bundle. The live
+reader and compact arena are unchanged. A regression overwrites the retired
+storage and checks identical reference/actual outputs and reader identity.
+
+`boot-failure.json` pins the initial source-lifetime failure and one retry that
+caught a script-mode relative import. The measured commit uses an absolute
+import. Neither failed boot contributes a consumer speed claim.
