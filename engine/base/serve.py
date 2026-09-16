@@ -1490,6 +1490,11 @@ class Server:
         self.handed_over = None                    # {'to':..., 'parked': n, 'lost': n} once it happens
         self._lease_seen = 0.0                     # last poll, so a step is not a file stat
         self.lease_poll_s = 2.0
+        # How long a handover may spend writing resident boundaries out. The next holder wants
+        # them; the requester wants the fleet. 30 s is the tier's sequential rate against what a
+        # handover can still be holding, and the loop stops at the deadline whatever is left --
+        # a shutdown that does not finish is worse than a cache that does not.
+        self.handover_flush_s = 30.0
         self.steps_prefill = self.steps_decode = 0   # D9: a step is one kind or the other, never both
         # Latency is owed from the request's arrival, not from the step that served it.
         # Rank 0 admits, answers and serves /metrics, so only rank 0 keeps these.
@@ -2655,9 +2660,17 @@ class Server:
                     parked += 1
                 except Exception:                 # noqa: BLE001 -- one lost turn is not a lost handover
                     lost += 1                     # ... but it is never a silent one
-        self.handed_over = {"to": self.draining, "parked": parked, "lost": lost}
-        if lost:
-            print(f"  handover to {self.draining}: {parked} conversations parked, {lost} LOST", flush=True)
+        # The other half of what is resident. `_retire` parks a finished TURN; `maintain_prefix`
+        # writes boundaries out but never waits, because a step must not. Nothing else ever waits
+        # for them, so a boundary still in memory here did not survive the handover -- and the next
+        # holder prefills from zero what this one already computed.
+        boundaries = self.runner.flush_prefix(deadline=self.clock() + self.handover_flush_s)
+        self.handed_over = {"to": self.draining, "parked": parked, "lost": lost,
+                            "boundaries": boundaries}
+        if lost or boundaries["left"]:
+            print(f"  handover to {self.draining}: {parked} conversations parked, {lost} LOST; "
+                  f"{boundaries['spilled']} boundaries on the tier, {boundaries['left']} left behind",
+                  flush=True)
         if self.lease and self.comm.rank == 0:
             from engine.base import fleet_lease
             try:

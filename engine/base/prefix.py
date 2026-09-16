@@ -21,7 +21,7 @@ being one exactly when a block of it is handed out -- not a moment earlier, so a
 back while its blocks are still there pays nothing at all.
 
 The scarce thing here is not the block, it is the SNAPSHOT: a declared few gigabytes of them
-against thousands of blocks (profiles/glm53/boot.PREFIX_SNAPSHOT_GIB, 48 of 45 MiB as production
+against thousands of blocks (profiles/glm53/boot.PREFIX_SNAPSHOT_GIB, 96 of 45 MiB as production
 runs, with cold copies in a bounded compressed RAM cache over NVMe), and a snapshot is only ever
 freed because something else wants it that instant. So the two
 resources part ways, and a boundary has three lives, not two:
@@ -245,6 +245,11 @@ class PrefixCache:
             e.spilled = True
         if failed:
             e.spill_failed = True
+        if spilled or failed:
+            # `spill_candidates` skips both, so the candidate set just changed and a scan that
+            # trusts `version` must run again. Without this the caller writes ONE boundary and then
+            # waits for some unrelated change to the cache before looking for the next.
+            self.version += 1
 
     def pin(self, hashes) -> int:
         """An operator's warm prompt: these boundaries go last, of every kind of pressure. Their blocks move to the

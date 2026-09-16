@@ -2,6 +2,7 @@
 pool's BLOCK (45차 §23): a prefill chunk holds two here (BLOCK 4, CHUNK 8), so the boundary inside a chunk is `marks`."""
 from __future__ import annotations
 
+import time
 import unittest
 
 from engine.base import scheduler as sched
@@ -411,6 +412,121 @@ class PrefixCacheTests(unittest.TestCase):
         self.assertIsNone(r.shared_ahead(list(range(100, 120)), ()))    # a different prompt shares nothing
         run_to_end(r, 0)
         self.assertIsNone(r.shared_ahead(ids, (), above=8))             # cached now: nothing to wait for
+
+    def test_a_quiet_engine_writes_its_leaves_out_without_waiting_for_pressure(self):
+        """The tier is not an overflow. A boundary only survives a boot if it is ON the disk.
+
+        `spill_low_water` withholds the decision until snapshots are nearly gone; production
+        declares 48 of them tiered, so the first byte reached the tier only once 40 boundaries
+        were resident, and a fleet relaunched three times a day (the teardown is SIGKILL) never
+        got there -- `prefix_tier_entries` sat at 0 against a 16 GiB budget. The write runs on the
+        tier's own thread and D10 already promises it never blocks a step, so when the scheduler
+        has nothing to plan there is nothing to withhold it from.
+        """
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=8)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0                                # never under pressure: 8 snapshots, none taken
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        self.assertTrue(r.nothing_to_step(), "the prompt is done: nothing waiting, running or launched")
+        self.assertGreaterEqual(len(cache.free_snaps), r.spill_low_water)
+        for _ in range(6):                                   # issue, land, look again
+            r.step(now=0)
+        self.assertGreaterEqual(r.prefix_spills, 1, "a quiet engine writes what it has")
+        h12 = cache.chain(list(range(12)))[12]
+        self.assertIn(h12, cache.tier_keys, "and the boundary is addressable on the tier")
+
+    def test_a_busy_engine_still_waits_for_pressure_before_writing(self):
+        """Quiet is the only thing this adds. With work to plan, `spill_low_water` decides as before."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=32, snapshots=8)
+        r.kv.attach_storage(Storage(32 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        r.submit(1, 12, now=0, ids=list(range(100, 112)))    # waiting: the engine has something to plan
+        self.assertFalse(r.nothing_to_step())
+        r.step(now=0)
+        self.assertEqual(r.prefix_spills, 0, "not while there is a step to take")
+
+    def test_one_spill_landing_does_not_stop_the_scan_from_finding_the_next(self):
+        """`spill_candidates` skips what is already spilled, so a landing changes the candidate set.
+
+        The scan trusts `prefix.version` to tell it whether looking again is worth anything. Before
+        this, a landed spill bumped nothing: the runner wrote ONE boundary and then waited for some
+        unrelated change to the cache before it would look for another.
+        """
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=64, snapshots=8)
+        r.kv.attach_storage(Storage(64 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0
+        # two prompts that share nothing: a chain has ONE leaf, so two leaves need two chains
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        r.submit(1, 12, now=0, ids=list(range(100, 112)))
+        run_to_end(r, 1)
+        before = cache.version
+        for _ in range(20):
+            r.step(now=0)
+        self.assertGreaterEqual(r.prefix_spills, 2, "the scan kept going after the first one landed")
+        self.assertGreater(cache.version, before)
+        for h in cache.tier_keys:
+            self.assertTrue(cache.entries[h].spilled)
+
+    def test_a_shutdown_flush_writes_out_what_no_step_would_wait_for(self):
+        """`maintain_prefix` never waits -- a step must not -- so it leaves whatever was in flight.
+
+        Nothing else ever waits for a boundary either, so one still in memory when the process ends
+        did not survive it, and the next holder prefills from zero what this one already computed.
+        A handover has already stopped serving, so there it can wait.
+        """
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=64, snapshots=8)
+        r.kv.attach_storage(Storage(64 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0                                # never under pressure
+        for seq, base in enumerate((0, 100, 200)):
+            r.submit(seq, 12, now=0, ids=list(range(base, base + 12)))
+            run_to_end(r, seq)
+        self.assertEqual(r.prefix_spills, 0, "no step waited for any of them")
+
+        report = r.flush_prefix()
+        self.assertEqual(report["left"], 0, "nothing a boundary could still be written from")
+        self.assertGreaterEqual(report["spilled"], 3)
+        self.assertGreaterEqual(r.prefix_spills, 3)
+        for base in (0, 100, 200):
+            h = cache.chain(list(range(base, base + 12)))[12]
+            self.assertIn(h, cache.tier_keys, f"the leaf of {base} is on the tier")
+
+    def test_the_flush_stops_at_its_deadline_and_says_what_is_left(self):
+        """A shutdown that does not finish is worse than a cache that does not. The caller is told."""
+        from test_engine_tier import MemoryTier, Storage
+        from engine.base.tiered_kv import TieredKV
+        r, cache = runner(blocks=64, snapshots=8)
+        r.kv.attach_storage(Storage(64 * 4), 4)
+        r.prefix_tier = TieredKV(r.kv, MemoryTier())
+        r.spill_low_water = 0
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+
+        report = r.flush_prefix(deadline=time.monotonic() - 1)    # the budget is already gone
+        self.assertEqual((report["spilled"], report["left"]), (0, 1))
+        self.assertEqual(r.prefix_spills, 0, "it did not start a write it could not wait for")
+        self.assertEqual(r.flush_prefix()["left"], 0, "and the next one still writes it")
+
+    def test_a_runner_without_a_tier_flushes_to_nowhere_and_says_so(self):
+        r, _ = runner(blocks=16, snapshots=2)
+        r.submit(0, 12, now=0, ids=list(range(12)))
+        run_to_end(r, 0)
+        self.assertEqual(r.flush_prefix(), {"spilled": 0, "left": 0, "failed": 0})
 
     def test_two_boundaries_cannot_share_a_tier_slot(self):
         """The tier indexes by 56 bits of the hash. Two boundaries naming one slot must not be served from it --

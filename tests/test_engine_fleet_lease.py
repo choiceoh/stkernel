@@ -557,6 +557,19 @@ exit 3
         self.assertIn("conversations parked, {lost} LOST", serve)
         self.assertIn('"st:handover_conversations_lost"', serve)
 
+    def test_a_handover_leaves_its_boundaries_on_the_tier_not_in_the_memory_it_is_giving_up(self):
+        """Parking the conversations is half of what is resident. The other half is the prefix cache.
+
+        `maintain_prefix` writes boundaries out but never waits, because a step must not, and
+        nothing else ever waits for them -- so one still in memory here is one the next holder
+        prefills from zero after this one already computed it.
+        """
+        serve = (ROOT / "engine/base/serve.py").read_text()
+        self.assertIn("self.runner.flush_prefix(deadline=self.clock() + self.handover_flush_s)", serve)
+        self.assertLess(serve.index("flush_prefix(deadline"), serve.index("self.handed_over = {"),
+                        "it must run before the handover is declared, not after")
+        self.assertIn("boundaries on the tier, {boundaries['left']} left behind", serve)
+
     def test_the_handover_reports_through_the_lease_before_letting_go(self):
         serve = (ROOT / "engine/base/serve.py").read_text()
         self.assertIn('phase="handed over", parked=parked, lost=lost', serve)
