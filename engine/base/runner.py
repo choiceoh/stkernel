@@ -262,6 +262,39 @@ class Runner:
             self._spills[h] = future
             break                                           # one write at a time: the tier has one staging buffer
 
+    def flush_prefix(self, deadline: "float | None" = None) -> dict:
+        """Write every resident boundary the tier does not have yet, waiting for each. Shutdown only.
+
+        `maintain_prefix` never waits -- a step must not -- so the ordinary path leaves whatever was
+        still in flight. This is the other end: a handover has already stopped serving, and a
+        boundary that is not on the disk when the process ends did not survive it. Bounded by
+        `deadline` because a shutdown that does not finish is worse than a cache that does not.
+
+        Returns what it managed, so the caller can say so rather than assume it.
+        """
+        report = {"spilled": 0, "left": 0, "failed": 0}
+        if self.prefix is None or self.prefix_tier is None:
+            return report
+        while deadline is None or time.monotonic() < deadline:
+            self.maintain_prefix()
+            if not self._spills:
+                break                                       # nothing was picked up: there is nothing left to write
+            spilled_before = self.prefix_spills
+            for future in list(self._spills.values()):
+                try:
+                    future.result(timeout=None if deadline is None else max(0., deadline - time.monotonic()))
+                except Exception:                           # noqa: BLE001 -- shutdown: maintain_prefix judges it
+                    pass
+            self.maintain_prefix()                          # land it: hold_tier, spill_end, counters
+            if self.prefix_spills == spilled_before:
+                report["failed"] += 1
+                if report["failed"] > 3:
+                    break                                   # it is not making progress; stop rather than spin
+        report["spilled"] = sum(1 for h in self.prefix.entries if self.prefix.entries[h].spilled)
+        report["left"] = sum(1 for h, e in self.prefix.entries.items()
+                             if not e.spilled and not e.transient and self.prefix.is_leaf(h))
+        return report
+
     def nothing_to_step(self) -> bool:
         """No step in flight and none to plan: the tier's thread has the machine to itself.
 

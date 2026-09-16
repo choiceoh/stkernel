@@ -101,14 +101,27 @@ layouts first (`NvmeTier.oldest`).
 """
 PREFIX_TIER_GIB = 16.0
 TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem whatever its own cap allows
-PREFIX_SNAPSHOT_GIB = 2.125
+PREFIX_SNAPSHOT_GIB = 4.25
 PREFIX_UNTIERED_SNAPSHOT_GIB = 4.25
 PREFIX_COMPRESSED_BYTES = 1 << 30
-"""Tiered serving keeps 48 native raw snapshots instead of 96, plus at most
-1 GiB of compressed cold snapshots. Original FP32/BF16 bits are preserved.
-The existing prefix tier owns asynchronous spill/restore and a durable NVMe
-copy. Its compressed cache only changes where a restore reads, never rank
-ownership. Untiered local runs retain the original raw budget.
+"""Tiered serving keeps the same 96 native raw snapshots an untiered one does, plus
+at most 1 GiB of compressed cold snapshots and the NVMe tier below them.
+
+It kept 48 until 2026-09-16: the tier and the compressed cache were taken to
+substitute for raw residency. Production says the resident table is the binding
+resource, and halving it is a regression in exactly the thing that binds --
+`prefix_snapshot_self_evicts_total` 258 against `snapshot_denials_total` 0 and
+`kv_blocks_cached` 111 of 1,398, over 148 requests averaging 12,140 prompt tokens
+(≈16 block boundaries each). Blocks were never scarce; checkpoints were, and a long
+prompt was throwing away its own earlier ones to make its later ones. The 2.125 GiB
+that buys the other 48 is inside the +19.59 GiB a KV-14.0 boot left unassigned.
+
+Whether a tiered run can do with fewer is a real question and this is not its answer
+-- it is the refusal to assume it. Measure tiered-48 against tiered-96 before cutting
+it again; `--snapshots` and `budget.budget(snapshots=)` take the other value directly.
+Original FP32/BF16 bits are preserved. The existing prefix tier owns asynchronous
+spill/restore and a durable NVMe copy. Its compressed cache only changes where a
+restore reads, never rank ownership.
 
 At least nine raw slots remain for a 6,912-token chunk. Compression ratios
 are data dependent; the cap includes entries being built. The codec uses

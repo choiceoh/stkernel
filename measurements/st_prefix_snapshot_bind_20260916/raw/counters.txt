@@ -1,0 +1,56 @@
+# A LATER read of the same boot than the README's table (148 requests -> 176 here).
+# The 28 requests in between added 2,076 prompt tokens (~74 each: the supervisor's health chats,
+# not Deneb traffic) and moved NOTHING in the cache -- hits 19, reused 920,832, evictions 1,109,
+# entries 96/96, self_evicts 258, all unchanged. The README's ratios are read off this same state.
+# srv2 head, 2026-09-16 (boot 11:09, tier off, ST_KV_GIB=7.0)
+2026-09-16T12:20:06+09:00
+vllm:request_success_total{engine="st"} 176
+vllm:prompt_tokens_total{engine="st"} 1798758
+vllm:gpu_cache_usage_perc{engine="st"} 0
+st:kv_blocks_total{engine="st"} 1398
+st:kv_blocks_used{engine="st"} 0
+st:state_slots_total{engine="st"} 2
+st:kv_blocks_free{engine="st"} 1398
+st:kv_blocks_anonymous{engine="st"} 1287
+st:kv_blocks_cached{engine="st"} 111
+st:kv_blocks_faded{engine="st"} 0
+st:state_slots_free{engine="st"} 2
+vllm:prefix_cache_queries_total{engine="st"} 178
+vllm:prefix_cache_hits_total{engine="st"} 19
+st:prefix_cache_evictions_total{engine="st"} 1109
+st:prefix_resets_total{engine="st"} 0
+st:prefix_cache_reclaimable_blocks{engine="st"} 111
+st:prefix_reused_tokens_total{engine="st"} 920832
+st:prefix_entries{engine="st"} 96
+st:prefix_faded_entries{engine="st"} 0
+st:prefix_cache_fades_total{engine="st"} 0
+st:prefix_pinned_entries{engine="st"} 0
+st:prefix_tier_entries{engine="st"} 0
+st:prefix_tier_spills_total{engine="st"} 0
+st:prefix_tier_restores_total{engine="st"} 0
+st:prefix_dedup_waits_total{engine="st"} 0
+st:prefix_snapshots_free{engine="st"} 0
+st:prefix_snapshot_denials_total{engine="st"} 0
+st:prefix_snapshot_self_evicts_total{engine="st"} 258
+st:prefix_transient_dropped_total{engine="st"} 844
+st:reuse_path_total{engine="st",path="prefix_or_cold"} 178
+vllm:request_success_by_reason_total{engine="st",finished_reason="length"} 124
+vllm:request_success_by_reason_total{engine="st",finished_reason="stop"} 52
+st:spec_greedy_first_rejection_total{engine="st",reason="all_accepted",accepted_prefix="7"} 3330
+st:spec_greedy_first_rejection_total{engine="st",reason="candidate_miss",accepted_prefix="0"} 123
+st:spec_greedy_first_rejection_total{engine="st",reason="candidate_miss",accepted_prefix="1"} 281
+st:spec_greedy_first_rejection_total{engine="st",reason="candidate_miss",accepted_prefix="2"} 276
+st:spec_greedy_first_rejection_total{engine="st",reason="candidate_miss",accepted_prefix="3"} 262
+st:spec_greedy_first_rejection_total{engine="st",reason="candidate_miss",accepted_prefix="4"} 228
+st:spec_greedy_first_rejection_total{engine="st",reason="candidate_miss",accepted_prefix="5"} 183
+st:spec_greedy_first_rejection_total{engine="st",reason="candidate_miss",accepted_prefix="6"} 123
+st:spec_greedy_first_rejection_total{engine="st",reason="output_boundary",accepted_prefix="1"} 10
+st:spec_greedy_first_rejection_total{engine="st",reason="output_boundary",accepted_prefix="6"} 2
+st:spec_greedy_first_rejection_total{engine="st",reason="policy_modified",accepted_prefix="-1"} 95
+st:spec_greedy_first_rejection_total{engine="st",reason="selector_miss",accepted_prefix="0"} 1569
+st:spec_greedy_first_rejection_total{engine="st",reason="selector_miss",accepted_prefix="1"} 1566
+st:spec_greedy_first_rejection_total{engine="st",reason="selector_miss",accepted_prefix="2"} 1336
+st:spec_greedy_first_rejection_total{engine="st",reason="selector_miss",accepted_prefix="3"} 1083
+st:spec_greedy_first_rejection_total{engine="st",reason="selector_miss",accepted_prefix="4"} 806
+st:spec_greedy_first_rejection_total{engine="st",reason="selector_miss",accepted_prefix="5"} 711
+st:spec_greedy_first_rejection_total{engine="st",reason="selector_miss",accepted_prefix="6"} 509
