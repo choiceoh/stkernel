@@ -4276,7 +4276,7 @@ head 7/8/14/16행 지연 −12.26~12.67%, FC decode 8/16행 −6.32/−6.47%.
 **이는 운영자 선택의 기본값 변경이며 GB10 실행·엔진 step/s·수용률 실측은 아니다.** 큐·재시작 없음.
 [코드 경계, 전체 비교와 원시 기록](measurements/st_cublaslt_serving_20260917/README.md).
 
-### 45차 — DSA 선택: GB10 의 48 KB 공유 메모리에서 st_dsa_select 는 후보 13만부터 읽기 바닥의 14~18배, HPC-Ops 정확 top-k 는 4배 빠르다 (2026-09-17, srv4 단일 GPU 레인 1회, PR #NNNN)
+### 45차 — DSA 선택: GB10 의 48 KB 공유 메모리에서 st_dsa_select 는 후보 13만부터 읽기 바닥의 14~18배, HPC-Ops 정확 top-k 는 4배 빠르다 (2026-09-17, srv4 단일 GPU 레인 1회, PR #1078)
 
 논문 지도(#1074) 10절의 "디코드 top-k 는 이미 바닥 근처(sm_120 85%)" 전제를 GB10 에서 다시 쟀다. 합성 logits 컴포넌트 측정이고
 서빙·step/s 아님. HPC-Ops `topk_filtered`(MIT, 수정 없이 벤더링)를 `sm_121a` 로 빌드해 `st_dsa_select`·`prefill_topk`·읽기 바닥과
