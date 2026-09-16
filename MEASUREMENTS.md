@@ -3661,3 +3661,17 @@ onepass·수용률·step/s·품질은 재지 않았다. D17 대로 속도 주장
 - **값.** 정상 상태에서 게이트가 **두 벌 → 한 벌**. 위 세 사이클 기준 **약 5.5 분**이다. 이 변경이 배포되는 첫 사이클은 캐시가 없어 여전히 두 벌을 돈다.
 - **검증.** CPU 7 테스트(재사용, sha 불일치, 이미지 이동, 반쪽 기록, 읽을 수 없는 핀, 그리고 게이트가 다른 커밋을 추출하기 **전에** 캐시를 묻는지). 이 상자에서 `test_st_deploy_watch` 는 67 개 중 손대기 전과 같은 집합이 실패한다(윈도우 환경).
 - **미측정.** 실제 배포 사이클. 다음 배포의 `gate:` 와 `deploying` 사이 시간, 그리고 `baseline: ... not re-run` 줄.
+
+### Xid 43 은 고장이 아니라 우리 커널의 `__trap()` 이었다 (2026-09-16, srv1 rank 1, 부팅 실패 일곱 번)
+
+- **증상.** 09-16 하루 동안 부팅이 일곱 번 같은 자리에서 죽었다. 전부 **rank 1(srv1)** 이고, 전부 `AcceleratorError: CUDA error: unspecified launch failure`, 그리고 srv1 의 dmesg 에 `NVRM: Xid (PCI:000f:01:00): 43` 이 그 시각마다 찍혔다. 세 번의 읽기(슈퍼바이저 포렌식, 다른 세션의 요약, 그리고 나)가 전부 **"srv1 GPU 이상"** 으로 읽었다.
+- **판정 — 우리가 부른 것이다.** `engine/kernels/oneshot/dsv4_oneshot_ar.cu` 는 피어 플래그를 스핀하다가 `OSAR_STALL_TRAP_S`(**30 초**) 뒤에 `__trap()` 을 부른다. 주석이 그 의도를 적어 두었다: *"the engine dies in seconds with the line above, not after a 5-minute RPC timeout with nothing"*. `__trap()` 은 호스트에 `cudaErrorLaunchFailure` 로 도착하고 드라이버는 그 옆에 **Xid 43** 을 남긴다.
+  - 산술이 맞는다. 스톨 워드는 3 초에 쓰이고 프록시가 5 초마다 찍는다 — 죽기 전 로그에 STALL 줄이 **여섯 개**, 그리고 트랩은 30 초다.
+- **그러면 진짜 원인은 무엇인가 — rank 1 이 30 초 넘게 피어를 기다렸다.**
+  - `[oneshot] STALL rank=1 phase=wait(peer-flags) seq=1183 slot=3 missing_peer_mask=0x7 tx_seq=1183 ack_seq=1183 rxf[slot]={1179,1179,1179}`
+  - RING=4 이므로 1183 과 1179 는 같은 슬롯이다. 피어 셋은 **1182 까지 보내고 1183 을 보내지 않았다.**
+  - 네 랭크의 마지막 로그 줄이 **같다**(`[b12x static v2] lane serving: static2_m16_…`) — 전부 **그래프 캡처 안**이고, 피어들은 죽지도 에러를 내지도 않았다. rank 1 만 한 집합통신 앞서 있었고 피어들은 30 초 넘게 오지 않았다.
+- **바꾼 것(진단).** `base/tripwire.death_note` 가 `unspecified launch failure`·`cudaErrorLaunchFailure` 를 보면 `likely` 를 붙이고, **파일에만이 아니라 줄로도 찍는다**: 이것은 보통 이 스택의 자기 워치독이고, 바로 위의 `[oneshot] STALL … missing_peer_mask` 줄이 누가 안 왔는지 말하며, 원인은 **그 피어들의 로그**에 있다는 것. 판정(`kind`)은 바꾸지 않는다 — 읽기는 판정 옆의 힌트지 판정이 아니다.
+  - 인용한 30 초는 테스트가 커널 소스의 `#define OSAR_STALL_TRAP_S` 와 대조한다. 산문에 적힌 숫자는 썩는다.
+- **안 바꾼 것.** 스톨 자체. 캡처 중에 피어 셋이 30 초 넘게 한 집합통신을 발행하지 않은 이유는 그들의 로그에 있고, 같은 구간을 다른 세션이 "CUDA boot preparation fix" 로 잡고 있다(#1036 이 캡처 앞의 전문가 준비를 옮겼다).
+- **검증.** CPU 22 테스트.
