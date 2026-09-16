@@ -145,6 +145,8 @@ class MlaHardwareTests(unittest.TestCase):
                     cell = self.calls[-1][2][-1]
                     expected = (8 if materialize else 4 if rows == 8 else 6) if rows in (8, 16) and mode == 'ordinary' else 0
                     self.assertEqual(cell, expected, (materialize, rows, mode))
+                    self.assertEqual(self.calls[-1][0][7],
+                                     {0: 144, 4: 176, 6: 208, 8: 240}[expected])
 
     def test_tree_uses_own_capacity_before_selecting_cluster(self):
         self.mla._EXT.mla_tree_cluster_max = lambda: 2
