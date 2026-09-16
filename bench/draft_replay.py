@@ -7,7 +7,9 @@ from pathlib import Path
 import re
 import shlex
 import signal
+import shutil
 import subprocess
+import tempfile
 import time
 
 NODES = ('10.10.10.2', '10.10.10.1', '10.10.10.3', '10.10.10.4')
@@ -29,6 +31,7 @@ def main():
     ap.add_argument('--reader', default='all', help='one reader, or all')
     ap.add_argument('--precision', choices=('fp8-rtn', 'bf16'), default='fp8-rtn')
     ap.add_argument('--rounds', type=int, default=10)
+    ap.add_argument('--engine-revision', required=True, help='the captured serving commit, independent of queue controller updates')
     args = ap.parse_args()
     if not 1 <= args.rounds <= 100:
         raise ValueError('rounds must be 1..100')
@@ -43,6 +46,9 @@ def main():
     if subprocess.check_output(['git', '-C', str(repo), 'status', '--porcelain'], text=True).strip():
         raise ValueError('replay source checkout must be committed and clean')
     revision = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+    if not re.fullmatch(r'[0-9a-f]{7,40}', args.engine_revision):
+        raise ValueError('engine revision must be a commit id')
+    engine_revision = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', args.engine_revision + '^{commit}'], text=True).strip()
     image = os.environ['ST_IMAGE']  # pin the capture's image explicitly in the admitted command
     tree = Path('/home/choiceoh/st-replay-runs') / session / revision[:12]
     out = args.output.resolve()
@@ -71,9 +77,9 @@ def main():
         run(rank, ['test', '-s', str(args.checkpoint)])
         run(rank, ['mkdir', '-p', str(tree), str(out.parent)])
         if rank == 0:
-            run(0, ['rsync', '-a', '--exclude=__pycache__', *[str(repo / p) for p in ('engine', 'probes', 'launchers')], str(tree) + '/'])
+            run(0, ['rsync', '-a', '--exclude=__pycache__', *[str(staged / p) for p in ('engine', 'probes', 'launchers')], str(tree) + '/'])
         else:
-            run(0, ['rsync', '-a', '--exclude=__pycache__', *[str(repo / p) for p in ('engine', 'probes', 'launchers')],
+            run(0, ['rsync', '-a', '--exclude=__pycache__', *[str(staged / p) for p in ('engine', 'probes', 'launchers')],
                     'choiceoh@' + NODES[rank] + ':' + str(tree) + '/'])
         actual = run(rank, ['docker', 'image', 'inspect', '--format', '{{.Id}}', image], capture_output=True, text=True).stdout.strip()
         mem = run(rank, ['cat', '/proc/meminfo'], capture_output=True, text=True).stdout
@@ -82,9 +88,16 @@ def main():
             raise ValueError(f'rank {rank} lacks 8 GiB replay room plus a 16 GiB floor')
         return dict(rank=rank, host=NODES[rank], image=actual, memory_available=available)
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        runtime = list(pool.map(prepare, range(4)))
-    (out.parent / (out.stem + '-runtime.json')).write_text(json.dumps(dict(revision=revision, runtime=runtime, env=env,
+    with tempfile.TemporaryDirectory(prefix='draft-replay-source-') as temporary:
+        staged = Path(temporary)
+        archive = staged / 'source.tar'
+        with archive.open('wb') as f:
+            run(0, ['git', '-C', str(repo), 'archive', engine_revision, 'engine', 'launchers'], stdout=f)
+        run(0, ['tar', '-xf', str(archive), '-C', str(staged)])
+        shutil.copytree(repo / 'probes', staged / 'probes', ignore=shutil.ignore_patterns('__pycache__'))
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            runtime = list(pool.map(prepare, range(4)))
+    (out.parent / (out.stem + '-runtime.json')).write_text(json.dumps(dict(revision=revision, engine_revision=engine_revision, runtime=runtime, env=env,
         capture=str(args.capture), checkpoint=str(args.checkpoint), precision=args.precision, reader=args.reader,
         rounds=args.rounds, engine_booted=False, source_tree=str(tree)), indent=2) + '\n')
     probe = ['python3', '-u', '/repo/probes/draft_sensitivity.py', '--capture', str(args.capture),

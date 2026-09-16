@@ -340,20 +340,22 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     elif relative == 'bench/onepass.py':
         _onepass_args(args)
     elif relative == DRAFT_REPLAY:
-        allowed = {'--capture', '--checkpoint', '--output', '--reader', '--precision', '--rounds'}
+        allowed = {'--capture', '--checkpoint', '--output', '--reader', '--precision', '--rounds', '--engine-revision'}
         seen = set()
         while args:
             if len(args) < 2 or args[0] not in allowed or args[0] in seen or not re.fullmatch(r'[A-Za-z0-9/][A-Za-z0-9_.,:/=-]{0,255}', args[1]):
                 raise ValueError('draft replay accepts unique literal capture/checkpoint/output/reader/precision/rounds pairs')
             key, value = args[:2]
+            if key == '--engine-revision' and not SHA.fullmatch(value):
+                raise ValueError('draft replay engine revision must be a commit id')
             if key == '--precision' and value not in ('fp8-rtn', 'bf16'):
                 raise ValueError('draft replay precision must be fp8-rtn or bf16')
             if key == '--rounds' and (not value.isdigit() or not 1 <= int(value) <= 100):
                 raise ValueError('draft replay rounds must be 1..100')
             seen.add(key)
             args = args[2:]
-        if not {'--capture', '--checkpoint', '--output'} <= seen:
-            raise ValueError('draft replay requires capture, checkpoint and output')
+        if not {'--capture', '--checkpoint', '--output', '--engine-revision'} <= seen:
+            raise ValueError('draft replay requires capture, checkpoint, output and engine revision')
     elif relative == 'bench/experiments.py':
         _experiment(args, cwd, repo, effective)
     elif relative in ST_ENTRIES:

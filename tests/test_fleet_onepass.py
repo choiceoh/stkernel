@@ -58,7 +58,7 @@ class OnepassPolicyTests(unittest.TestCase):
     def test_draft_replay_is_pinned_and_requires_four_gpus(self):
         command = ['python3', 'bench/draft_replay.py', '--capture', '/capture',
                    '--checkpoint', '/models/draft.safetensors', '--output', '/results/fp8.json',
-                   '--precision', 'fp8-rtn', '--reader', 'all', '--rounds', '10']
+                   '--precision', 'fp8-rtn', '--reader', 'all', '--rounds', '10', '--engine-revision', 'a'*40]
         self.assertEqual(self.validate(command)['gpus'], 4)
         for kind in ('single', 'probe'):
             with self.subTest(kind=kind), self.assertRaises(ValueError):
