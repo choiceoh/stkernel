@@ -1,0 +1,17 @@
+begin 200 {"schema": 1, "ranks": [{"rank": 0, "token": "aceroutes-a72ff6afe743", "status": "recording", "preparation": {"specializations": 0, "graph_captures": 56, "observers": ["triton.runtime.jit._do_compile"
+json-s100-ledger: 3538 tokens in 62.2 s
+json-s100-portfolio: 1532 tokens in 21.3 s
+json-s100-logic: 3399 tokens in 58.4 s
+json-s101-ledger: 2124 tokens in 33.2 s
+json-s101-portfolio: 1826 tokens in 26.8 s
+json-s101-logic: 1836 tokens in 33.2 s
+json-s102-ledger: 2874 tokens in 45.9 s
+json-s102-portfolio: 1772 tokens in 25.9 s
+json-s102-logic: 3477 tokens in 59.1 s
+json-s103-ledger: 1949 tokens in 29.0 s
+json-s103-portfolio: 1942 tokens in 29.3 s
+json-s103-logic: 2820 tokens in 48.6 s
+end 200
+6154 route_dump rows on rank 0; errors []; files ['/home/choiceoh/glm53-logs/route-dump/aceroutes-a72ff6afe743.bin']
+bytes expected 99251712
+ACE-ROUTES done

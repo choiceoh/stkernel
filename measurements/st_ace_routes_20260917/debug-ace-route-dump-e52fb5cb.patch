@@ -1,0 +1,121 @@
+From e52fb5cbe1a28f6f1b64910a242da0c88773f920 Mon Sep 17 00:00:00 2001
+From: choiceoh <choiceoh@topsolar.kr>
+Date: Thu, 17 Sep 2026 05:45:55 +0900
+Subject: [PATCH] debug: route dump -- raw routed experts of every synchronous
+ C=1 verify step (ACE byte-reduction analysis, never merge)
+
+Captured decode graphs copy each layer's top-8 ids and weights into static
+buffers; every step runs synchronously (route_probe) and rank 0 appends
+int16 ids + float32 weights [42 MoE layers, 8 rows, 8] to
+~/glm53-logs/route-dump/<latency token>.bin, with a route_dump latency row
+carrying the offset, accepted/drafted/committed counts and the row tokens.
+Based on #966's sibling-overlap probe (ef2e5b6e).
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ engine/profiles/glm53/adapter.py | 46 ++++++++++++++++++++++++++++++++
+ engine/profiles/glm53/net.py     |  8 +++++-
+ 2 files changed, 53 insertions(+), 1 deletion(-)
+
+diff --git a/engine/profiles/glm53/adapter.py b/engine/profiles/glm53/adapter.py
+index 8a5f5d6e..5f57c585 100644
+--- a/engine/profiles/glm53/adapter.py
++++ b/engine/profiles/glm53/adapter.py
+@@ -145,6 +145,13 @@ class Glm53Engine:
+             raise ValueError("capture must finish before requests are admitted")
+         if self.decode_graphs is not None:
+             raise ValueError("decode graphs are already prepared")
++        # debug (never merge): static route buffers exist before any graph is captured (ACE byte-reduction dump)
++        route_rows = max_seqs * (self.drafter.k + 1)
++        self.net.route_ids = torch.full((self.F.layers, route_rows, self.F.topk_experts), -1,
++                                        dtype=torch.int32, device=self.caches.device)
++        self.net.route_w = torch.zeros((self.F.layers, route_rows, self.F.topk_experts),
++                                       dtype=torch.float32, device=self.caches.device)
++        self._route_dump = None
+         from engine.base import jit_writes
+         # Every window of this phase is timed here and walked once at the end: the phase is the boot's
+         # largest and the question it keeps raising is which of its passes compiled (base/jit_writes).
+@@ -951,8 +958,35 @@ class Glm53Engine:
+         self.chain_exits[reason] = self.chain_exits.get(reason, 0) + 1
+         return False
+ 
++    def _route_dump_row(self, sink, run, s, routes_host, accepted, drafted, committed, row_tokens) -> None:
++        """debug (never merge): raw routed experts of one synchronous verify step, for the ACE byte-reduction analysis.
++
++        Appends int16 ids [moe layers, rows, top-k] then float32 weights (renormalised x routed_scaling_factor) of the
++        same shape to /home/choiceoh/glm53-logs/route-dump/<latency token>.bin on rank 0's node; the latency row
++        carries the offset. Row 0 is the anchor (the last committed token), rows 1.. the drafts.
++        """
++        from pathlib import Path
++        ids, w = routes_host
++        ids = ids[:, s.start: s.start + s.length].contiguous()
++        w = w[:, s.start: s.start + s.length].contiguous()
++        if self._route_dump is None or self._route_dump['token'] != run['token']:
++            path = Path('/home/choiceoh/glm53-logs/route-dump') / f"{run['token']}.bin"
++            path.parent.mkdir(parents=True, exist_ok=True)
++            self._route_dump = dict(token=run['token'], file=path.open('wb'), path=str(path), offset=0)
++        dump = self._route_dump
++        blob = ids.numpy().tobytes() + w.numpy().tobytes()
++        dump['file'].write(blob)
++        dump['file'].flush()
++        sink(kind='route_dump', operation='ace_routes', phase='decode', seq=int(s.seq), context=int(s.ctx),
++             rows=int(ids.shape[1]), layers=int(ids.shape[0]), topk=int(ids.shape[2]), accepted=int(accepted),
++             drafted=int(drafted), committed=int(committed), offset=int(dump['offset']), nbytes=len(blob),
++             path=dump['path'], tokens=[int(t) for t in row_tokens])
++        dump['offset'] += len(blob)
++
+     def _blocked_by(self, seq: int) -> "str | None":
+         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
++        if getattr(getattr(self, 'net', None), 'route_ids', None) is not None:
++            return 'route_probe'      # debug (never merge): every step synchronous so its routes are read before the next
+         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
+             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
+         opts = self.options.get(seq, {})
+@@ -1521,6 +1555,15 @@ class Glm53Engine:
+             self.decode_shape_counts[key] = self.decode_shape_counts.get(key, 0) + 1
+             h, aux, local = self.decode_graphs.run(step, shape)
+             sampled = self.sampling_graphs.run(shape, temps, topk, topp, self._pick_uniforms(step.segments)).tolist() if not all(rich.values()) else None
++        # debug (never merge): this step's routes, read on rank 0 before the next step overwrites the buffers
++        route_sink = route_run = routes_host = None
++        if getattr(self.net, 'route_ids', None) is not None and self.net.comm.rank == 0 and self.draft_diagnostics is not None:
++            route_sink = self.draft_diagnostics.sink
++            route_run = getattr(getattr(route_sink, '__self__', None), 'active', None)
++            if route_run is not None:
++                moe = torch.tensor([L for L in self.net.layers if self.F.is_moe(L)], device=self.net.route_ids.device)
++                routes_host = (self.net.route_ids.index_select(0, moe)[:, :len(flat)].to(torch.int16).cpu(),
++                               self.net.route_w.index_select(0, moe)[:, :len(flat)].cpu())
+         picked = {}
+         if any(rich.values()):
+             # One collective for the step -- gathering a rich row at a time made the number of all-gathers a
+@@ -1562,6 +1605,9 @@ class Glm53Engine:
+             new, done = self._commit(s.seq, accepted, new, lps, len(drafts[s.seq]))
+             committed = len(new)                                           # clipped tokens must not enter the next turn's context
+             committed_counts.append(committed)
++            if routes_host is not None:
++                self._route_dump_row(route_sink, route_run, s, routes_host, accepted, len(drafts[s.seq]), committed,
++                                     flat[s.start: s.start + s.length])
+             boundary = (s.ctx + committed) // self.F.block * self.F.block
+             if committed and boundary > s.ctx:
+                 self.caches.stash_draft(s.slot, boundary)                  # the cells a snapshot at the boundary needs, before observe
+diff --git a/engine/profiles/glm53/net.py b/engine/profiles/glm53/net.py
+index 5f6244a0..16cefb6f 100644
+--- a/engine/profiles/glm53/net.py
++++ b/engine/profiles/glm53/net.py
+@@ -1025,7 +1025,13 @@ class Glm53Net:
+                 logits = router_logits(x, gate)
+             else:
+                 logits = x.float() @ gate.T
+-        return self._select_routes(L, logits)
++        sel, w = self._select_routes(L, logits)
++        # debug (never merge): a decode-width route lands in static buffers the captured graphs replay into
++        buf = getattr(self, 'route_ids', None)
++        if buf is not None and x.shape[0] <= buf.shape[1]:
++            buf[L, :x.shape[0]].copy_(sel)
++            self.route_w[L, :x.shape[0]].copy_(w)
++        return sel, w
+ 
+     def _select_routes(self, L, logits):
+         F, p, n = self.F, self.p, f"L{L}.moe."
+-- 
+2.54.0
+

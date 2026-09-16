@@ -1,0 +1,11 @@
+steps 6154 (8 rows, 42 MoE layers, top-8); tokens/step 4.725
+distinct experts a layer, all slots kept: 41.91 of 64 slots (uniform random would be 58.1)
+target skip       tau  skipped  distinct   reads reads/slot  step est
+        5%    0.0604     5.0%     39.79   -5.1%       1.01     -2.3%
+       10%    0.0701    10.0%     37.80   -9.8%       0.98     -4.5%
+       15%    0.0768    15.0%     35.86  -14.4%       0.96     -6.6%
+       20%    0.0822    20.0%     33.92  -19.1%       0.95     -8.7%
+       25%    0.0871    25.0%     31.98  -23.7%       0.95    -10.8%
+       30%    0.0916    30.0%     30.04  -28.3%       0.94    -13.0%
+       40%    0.1003    40.0%     26.09  -37.7%       0.94    -17.3%
+step est = read reduction x MoE share: an upper bound (MoE time taken as proportional to distinct experts, tokens/step taken as unchanged -- skipping changes the target, so acceptance must be measured)
