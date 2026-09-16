@@ -354,13 +354,15 @@ class DenseLinear:
                                          device=self.packs[0].data.device)
         return self.workspace.numel() * self.workspace.element_size()
 
-    def __call__(self, x, rows_ok=None, *, observe=True, decode=False):
+    def __call__(self, x, rows_ok=None, *, observe=True, decode=False, normalization=None):
         """`rows_ok` [rows] bool: which rows are real -- only a calibration run reads it (the pipeline's ghost rows,
         a masked observation's positions past the committed count); the product itself covers every row."""
         if x.shape[-1] != self.cols or x.dtype != torch.bfloat16:
             raise ValueError("dense input does not match its bound weight")
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols)
+        if normalization is not None and (not decode or self.decode_precision != 'fp8'):
+            raise ValueError('fused dense normalization requires explicit FP8 decode')
         if observe and self.observer is not None:
             self.observer(flat, rows_ok)
         if flat.shape[0] <= 32 and getattr(self, 'decode_precision', 'w4') == 'w4':
@@ -384,7 +386,10 @@ class DenseLinear:
             if self.fp8 is None:
                 raise ValueError("large-M dense call without a prepared prefill lane")
             lane = self.decode_fp8 if decode and getattr(self, 'decode_fp8', None) is not None else self.fp8
-            out = lane(flat, decode=decode) if getattr(lane, 'cublas', None) is not None else lane(flat)
+            if normalization is not None:
+                out = lane(flat, decode=decode, normalization=normalization)
+            else:
+                out = lane(flat, decode=decode) if getattr(lane, 'cublas', None) is not None else lane(flat)
             self.executed |= 2
         return out.reshape(*shape, self.rows)
 
@@ -514,14 +519,17 @@ class FP8Linear:
             raise RuntimeError('cuBLAS reader was already prepared')
         self.cublas = Reader(self.weight, split_decode=split_decode, storage=storage)
 
-    def __call__(self, x, rows_ok=None, *, out=None, decode=False):
+    def __call__(self, x, rows_ok=None, *, out=None, decode=False, normalization=None):
         if self.observer is not None:
             self.observer(x.reshape(-1, self.cols), rows_ok)
         from .fp8 import quantize
         shape = x.shape[:-1]
         flat = x.reshape(-1, self.cols).contiguous()
+        if normalization is not None and (self.cublas is None or self.rows != self.weight[0].shape[0]):
+            raise ValueError('fused FP8 normalization requires an unpadded cuBLAS reader')
         if self.cublas is not None:
-            result = self.cublas(flat, out=out, decode=decode)
+            options = {} if normalization is None else dict(normalization=normalization)
+            result = self.cublas(flat, out=out, decode=decode, **options)
             self.executed = True
             return result[:, :self.rows].reshape(*shape, self.rows)
         q, scale = quantize(flat)

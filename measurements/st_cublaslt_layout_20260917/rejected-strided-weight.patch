@@ -1,0 +1,97 @@
+diff --git a/engine/kernels/dense/cublaslt.cpp b/engine/kernels/dense/cublaslt.cpp
+index 942f674e..7a24e438 100644
+--- a/engine/kernels/dense/cublaslt.cpp
++++ b/engine/kernels/dense/cublaslt.cpp
+@@ -50,6 +50,7 @@ class Plan : public std::enable_shared_from_this<Plan> {
+   Descriptors desc;
+   int64_t m, n, k;
+   int batches;
++  bool strided_weight;
+   cudaDataType_t output_type;
+   size_t workspace_limit;
+   std::vector<cublasLtMatmulHeuristicResult_t> choices;
+@@ -210,9 +211,9 @@ class Plan : public std::enable_shared_from_this<Plan> {
+     return result;
+   }
+ 
+-  void tensor(const torch::Tensor& value, at::ScalarType type, const char* name) const {
++  void tensor(const torch::Tensor& value, at::ScalarType type, const char* name, bool contiguous = true) const {
+     TORCH_CHECK(value.is_cuda() && value.get_device() == context->device && value.scalar_type() == type
+-                && value.is_contiguous() && reinterpret_cast<uintptr_t>(value.data_ptr()) % 16 == 0,
++                && (!contiguous || value.is_contiguous()) && reinterpret_cast<uintptr_t>(value.data_ptr()) % 16 == 0,
+                 name, " must be aligned, contiguous and on the plan's CUDA device");
+   }
+ 
+@@ -237,13 +238,15 @@ class Plan : public std::enable_shared_from_this<Plan> {
+  public:
+   Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit,
+        const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight, int batches_ = 1, bool fp32 = false,
+-       const Plan* seed = nullptr, size_t seed_index = 0)
++       bool strided_weight_ = false, const Plan* seed = nullptr, size_t seed_index = 0)
+       : context(std::move(context_)), m(m_), n(n_), k(k_), batches(batches_),
++        strided_weight(strided_weight_),
+         output_type(fp32 ? CUDA_R_32F : CUDA_R_16BF), workspace_limit(limit) {
+     TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
+                 && m <= INT32_MAX && n <= INT32_MAX && k <= INT32_MAX, "invalid ST MXFP8 shape");
+     TORCH_CHECK(batches >= 1 && batches <= 16 && (batches == 1 || fp32),
+                 "batched MXFP8 partials require FP32 output and at most 16 splits");
++    TORCH_CHECK(!strided_weight || batches > 1, "strided weights require a K-partitioned batch");
+     c10::cuda::CUDAGuard guard(context->device);
+     setup_operation(desc.operation);
+     // MX heuristics validate non-null scale pointers before enumerating any
+@@ -258,11 +261,11 @@ class Plan : public std::enable_shared_from_this<Plan> {
+                 "MXFP8 query scale shape mismatch");
+     set_scales(desc.operation, query_s_q, query_s_weight);
+     // Column-major TN computes Y^T from the existing row-major W and X.
+-    check(cublasLtMatrixLayoutCreate(&desc.a, CUDA_R_8F_E4M3, k, n, k), "W layout");
++    check(cublasLtMatrixLayoutCreate(&desc.a, CUDA_R_8F_E4M3, k, n, strided_weight ? batches*k : k), "W layout");
+     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
+     check(cublasLtMatrixLayoutCreate(&desc.d, output_type, n, m, n), "Y layout");
+     if (batches > 1) {
+-      for (auto item : {std::pair<cublasLtMatrixLayout_t, int64_t>{desc.a, n*k}, {desc.b, m*k}, {desc.d, m*n}}) {
++      for (auto item : {std::pair<cublasLtMatrixLayout_t, int64_t>{desc.a, strided_weight ? k : n*k}, {desc.b, m*k}, {desc.d, m*n}}) {
+         check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
+                                                &batches, sizeof(batches)), "batch count");
+         check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET,
+@@ -338,7 +341,7 @@ class Plan : public std::enable_shared_from_this<Plan> {
+   std::shared_ptr<Plan> with_rows(int64_t rows, size_t index, const torch::Tensor& s_q,
+                                   const torch::Tensor& s_weight) {
+     return std::make_shared<Plan>(context, rows, n, k, workspace_limit, s_q, s_weight,
+-                                  batches, output_type == CUDA_R_32F, this, index);
++                                  batches, output_type == CUDA_R_32F, strided_weight, this, index);
+   }
+ 
+   py::list candidates() const {
+@@ -365,7 +368,10 @@ class Plan : public std::enable_shared_from_this<Plan> {
+                 const torch::Tensor& s_q, const torch::Tensor& s_weight,
+                 const torch::Tensor& out, const torch::Tensor& workspace) const {
+     TORCH_CHECK(index < choices.size(), "unknown cuBLAS algorithm");
+-    tensor(q, at::ScalarType::Float8_e4m3fn, "Q"); tensor(weight, at::ScalarType::Float8_e4m3fn, "W");
++    tensor(q, at::ScalarType::Float8_e4m3fn, "Q"); tensor(weight, at::ScalarType::Float8_e4m3fn, "W", !strided_weight);
++    TORCH_CHECK(!strided_weight || (weight.dim() == 3 && weight.stride(0) == k
++                && weight.stride(1) == batches*k && weight.stride(2) == 1),
++                "strided weights must be exact partitions of their original row-major matrix");
+     tensor(s_q, at::kByte, "activation scales"); tensor(s_weight, at::kByte, "weight scales");
+     tensor(out, output_type == CUDA_R_32F ? at::kFloat : at::kBFloat16, "output"); tensor(workspace, at::kByte, "workspace");
+     const auto& alignment = alignments[index];
+@@ -449,6 +455,7 @@ class Plan : public std::enable_shared_from_this<Plan> {
+     result["catalog_ids"] = catalog_ids;
+     result["additional_catalog_seeds"] = catalog_seeds;
+     result["batches"] = batches;
++    result["strided_weight"] = strided_weight;
+     result["output_type"] = output_type == CUDA_R_32F ? "fp32" : "bf16";
+     return result;
+   }
+@@ -461,10 +468,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
+   py::class_<Plan::Bound, std::shared_ptr<Plan::Bound>>(module, "BoundMatmul").def("run", &Plan::Bound::run);
+   py::class_<Plan, std::shared_ptr<Plan>>(module, "Plan")
+       .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t,
+-                    const torch::Tensor&, const torch::Tensor&, int, bool>(),
++                    const torch::Tensor&, const torch::Tensor&, int, bool, bool>(),
+            py::arg("context"), py::arg("m"), py::arg("n"), py::arg("k"), py::arg("workspace_limit"),
+            py::arg("query_activation_scales"), py::arg("query_weight_scales"),
+-           py::arg("batches") = 1, py::arg("fp32") = false)
++           py::arg("batches") = 1, py::arg("fp32") = false, py::arg("strided_weight") = false)
+       .def("candidates", &Plan::candidates).def("run", &Plan::run)
+       .def("bind", &Plan::bind).def("statistics", &Plan::statistics)
+       .def("with_rows", &Plan::with_rows);

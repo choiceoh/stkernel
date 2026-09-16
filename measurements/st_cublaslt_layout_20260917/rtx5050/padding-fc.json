@@ -1,0 +1,1089 @@
+{
+  "status": "PASS",
+  "scope": "split layout experiment; real weights, synthetic activations; no engine/acceptance proof",
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "cublaslt": 130400,
+  "device": "NVIDIA GeForce RTX 5050",
+  "weight": {
+    "identity": {
+      "version": 2,
+      "weight": "dbf7c69cc7315f41ea8ebab6dedd907e68502464b1d63551bca2a02a27310f4b",
+      "shape": [
+        4096,
+        20480
+      ],
+      "name": "DFlash2Qwen3ForCausalLM/outputs-5-14-24-33-42/model.fc.committed-decode-v1",
+      "kind": "fp8",
+      "calibration": "1ac6cb2a21d748e013b66fa939ddcfe49a4022088285080596712cb2dadaee4d",
+      "algorithm": "c6150f39614bbc604865b0b840e5a789b2f964b4f34fab6b04bceb4b9c11084a",
+      "smooth": "none"
+    },
+    "sha256": "5b0401047353dee8db41466d60ebd8c1be82ff1cfa74ac95542829f4c09e6cbe",
+    "path": "/work/packs/e29b30a8de75e0e3e6fc6895abd857dac5a74910db589ab28f5306e98fc50009.pt"
+  },
+  "cells": [
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 0,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 0,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3208000063896179,
+        0.31913599371910095,
+        0.3186880052089691,
+        0.3202880024909973
+      ],
+      "deep_ms": 0.3437789976596832,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 86507520
+    },
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 128,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 128,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.320607990026474,
+        0.3250240087509155,
+        0.3240000009536743,
+        0.3203519880771637
+      ],
+      "deep_ms": 0.3430750072002411,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 89128960
+    },
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 256,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 256,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.320607990026474,
+        0.31196799874305725,
+        0.31222501397132874,
+        0.320499986410141
+      ],
+      "deep_ms": 0.34397900104522705,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 91750400
+    },
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 384,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 384,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.32073599100112915,
+        0.30748799443244934,
+        0.30742400884628296,
+        0.3210560083389282
+      ],
+      "deep_ms": 0.34336501359939575,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 94371840
+    },
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 512,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 512,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.32124900817871094,
+        0.3147839903831482,
+        0.31407999992370605,
+        0.320607990026474
+      ],
+      "deep_ms": 0.3428820073604584,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 96993280
+    },
+    {
+      "shape": [
+        8,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 1024,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 1024,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3200959861278534,
+        0.3307200074195862,
+        0.33078399300575256,
+        0.3208000063896179
+      ],
+      "deep_ms": 0.34326300024986267,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 107479040
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 0,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 0,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3277119994163513,
+        0.32604798674583435,
+        0.3251520097255707,
+        0.3287999927997589
+      ],
+      "deep_ms": 0.34966498613357544,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 86507520
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 128,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 128,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.32892799377441406,
+        0.33103999495506287,
+        0.3309760093688965,
+        0.3280960023403168
+      ],
+      "deep_ms": 0.34738099575042725,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 89128960
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 256,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 256,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.32841598987579346,
+        0.3186880052089691,
+        0.31836798787117004,
+        0.3285439908504486
+      ],
+      "deep_ms": 0.34954699873924255,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 91750400
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 384,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 384,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.32784000039100647,
+        0.31439998745918274,
+        0.31382399797439575,
+        0.327455997467041
+      ],
+      "deep_ms": 0.35096898674964905,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 94371840
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 512,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 512,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3284800052642822,
+        0.32175999879837036,
+        0.3211840093135834,
+        0.3281039893627167
+      ],
+      "deep_ms": 0.34872400760650635,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 96993280
+    },
+    {
+      "shape": [
+        16,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 1024,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 1024,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3279680013656616,
+        0.33776000142097473,
+        0.3367359936237335,
+        0.3272640109062195
+      ],
+      "deep_ms": 0.34825900197029114,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 107479040
+    },
+    {
+      "shape": [
+        32,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 0,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 0,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.340831995010376,
+        0.3362239897251129,
+        0.33641600608825684,
+        0.34012800455093384
+      ],
+      "deep_ms": 0.3500339984893799,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 86507520
+    },
+    {
+      "shape": [
+        32,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 128,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 128,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.34006398916244507,
+        0.3450239896774292,
+        0.34438401460647583,
+        0.34064000844955444
+      ],
+      "deep_ms": 0.34968098998069763,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 89128960
+    },
+    {
+      "shape": [
+        32,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 256,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 256,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.340256005525589,
+        0.3299820125102997,
+        0.33001598715782166,
+        0.3401919901371002
+      ],
+      "deep_ms": 0.35039499402046204,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 91750400
+    },
+    {
+      "shape": [
+        32,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 384,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 384,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.34006500244140625,
+        0.3253439962863922,
+        0.32553601264953613,
+        0.340256005525589
+      ],
+      "deep_ms": 0.3505440056324005,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 94371840
+    },
+    {
+      "shape": [
+        32,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 512,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 512,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.340256005525589,
+        0.3354560136795044,
+        0.33481600880622864,
+        0.33987200260162354
+      ],
+      "deep_ms": 0.3581329882144928,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 96993280
+    },
+    {
+      "shape": [
+        32,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 1024,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 1024,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.34064000844955444,
+        0.34988799691200256,
+        0.34988799691200256,
+        0.3404479920864105
+      ],
+      "deep_ms": 0.35064199566841125,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 107479040
+    },
+    {
+      "shape": [
+        64,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 0,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 0,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3640959858894348,
+        0.3591040074825287,
+        0.35897600650787354,
+        0.36345601081848145
+      ],
+      "deep_ms": 0.36364299058914185,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 86507520
+    },
+    {
+      "shape": [
+        64,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 128,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 128,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3625600039958954,
+        0.37088000774383545,
+        0.37119999527931213,
+        0.363072007894516
+      ],
+      "deep_ms": 0.36131200194358826,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 89128960
+    },
+    {
+      "shape": [
+        64,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 256,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 256,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.3631359934806824,
+        0.35148799419403076,
+        0.3516159951686859,
+        0.3624959886074066
+      ],
+      "deep_ms": 0.36224299669265747,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 91750400
+    },
+    {
+      "shape": [
+        64,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 384,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 384,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.36454400420188904,
+        0.34937599301338196,
+        0.3497599959373474,
+        0.3628160059452057
+      ],
+      "deep_ms": 0.36452600359916687,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 94371840
+    },
+    {
+      "shape": [
+        64,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 512,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 512,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.36422398686408997,
+        0.35923200845718384,
+        0.35942399501800537,
+        0.36345601081848145
+      ],
+      "deep_ms": 0.36260101199150085,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 96993280
+    },
+    {
+      "shape": [
+        64,
+        4096,
+        20480
+      ],
+      "parts": 5,
+      "padding": 1024,
+      "search": {
+        "checked_configurations": 1,
+        "admitted_configurations": 1,
+        "candidate_limit": 192,
+        "catalog_ids": 0,
+        "additional_catalog_seeds": 0,
+        "preferred_hit": true,
+        "batches": 5,
+        "weight_padding": 1024,
+        "output_type": "fp32"
+      },
+      "base_trial_trial_base_ms": [
+        0.363072007894516,
+        0.3713279962539673,
+        0.37193799018859863,
+        0.3723199963569641
+      ],
+      "deep_ms": 0.36207398772239685,
+      "status": "PASS",
+      "choice": {
+        "index": 0,
+        "workspace": 0,
+        "id": 70,
+        "tile": 20,
+        "stages": 36,
+        "split_k": 1,
+        "reduction": 0,
+        "swizzle": 0,
+        "custom": 0,
+        "alignment_a": 16,
+        "alignment_b": 16,
+        "alignment_c": 16,
+        "alignment_d": 16
+      },
+      "extra_weight_bytes": 107479040
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/dense/cublaslt.cpp": "a86f1b640bd182f8798a8067e8ff92bdc60548c0a0bfbd43e3c9ac1002dff93d",
+    "engine/kernels/dense/cublaslt_split.py": "beab7aba741371ecc742aef348a03af71a1e32f517a51b76650efd5db63809a3",
+    "engine/kernels/dense/cublaslt_serving.py": "5a0b1a88798a12e3800fd94227f0d276f6382ff82f210f60934552a86ed6ef5d",
+    "probes/engine_cublaslt_padding_check.py": "2b63876f6168220e142b958e46a673df9885ff5ffd9cb28e6868cc33cd0787ae"
+  }
+}
