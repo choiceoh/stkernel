@@ -1,6 +1,7 @@
 """Model-bound K=7 routes; CPU wiring is not GPU numerical or speed proof."""
 from types import SimpleNamespace as NS
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import torch
@@ -195,3 +196,32 @@ class BoundDecodeGpuTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class CompactM8AgreesWithBoundC1Tests(unittest.TestCase):
+    def test_a_shape_is_never_both_compact_m8_and_a_bound_cell_at_eight_rows(self):
+        """The two kernels pick ksr from the same occupancy, and they must not disagree about it.
+
+        `mk_use_compact_m8` sends a shape to the compact instantiation, whose smaller shared memory
+        raises its occupancy, so `mk_choose_ksr2` reads g_gemm2_m8_bps instead of g_gemm2_bps and can
+        return a different ksr. `mk_run_gemm_bound_input`'s own contract admits only ksr 3 at
+        (n 4096, k 2048) and ksr 2 or 3 at (n 6144, k 4096); off those it raises "bound C1 input plan
+        is outside the declared reduction geometry" and the boot dies before its door.
+
+        On 2026-09-16 eight rows were admitted to the compact path unmeasured, which made those two
+        shapes both compact AND bound cells, and every boot on main died there -- caught by a
+        measurement arm, not by CI, because nothing here can boot. Six rows never met it: K=5 does not
+        serve eight. Re-admitting eight rows means making the two agree first.
+        """
+        from engine.kernels.dense import bound_input_cell
+        source = (Path(__file__).resolve().parents[1] / "engine/kernels/dense/kernels.cu").read_text()
+        body = source.split("bool mk_use_compact_m8(")[1].split("}")[0]
+        code = " ".join(l.split("//")[0] for l in body.splitlines())   # the comments name m == 8 to explain it
+        compact_at_eight = "m == 8" in code
+        compact_shapes = ((4096, 2048), (6144, 4096))          # the two the function names
+        for n, k in compact_shapes:
+            self.assertIn(f"n == {n} && k == {k}", code, "the compact shapes moved; re-read this test")
+            if compact_at_eight:
+                self.assertFalse(bound_input_cell(8, n, k),
+                                 f"({n}, {k}) is compact at eight rows AND a bound cell: ksr comes from "
+                                 "g_gemm2_m8_bps and the bound C1 contract will refuse the launch")
