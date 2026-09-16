@@ -7,7 +7,12 @@ name: engine check
 
 on:
   pull_request:
-    paths: ["engine/**", "tests/**", "tools/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
+    # `launchers/**` is here because a launcher is code that runs before anything else can, and the
+    # suite judges it: `tests/test_engine_bootpaths` and `test_st_deploy_watch` read those files and
+    # run their snippets. On 2026-09-16 a one-line `[ -n "$X" ] && ...` went into `start-st-glm53.sh`
+    # under `set -euo pipefail` -- false when the variable is unset, which is every production launch,
+    # and a false last command ends the script. No workflow ran on that PR. It was caught by hand.
+    paths: ["engine/**", "tests/**", "tools/**", "launchers/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
   workflow_dispatch:
 
 jobs:
