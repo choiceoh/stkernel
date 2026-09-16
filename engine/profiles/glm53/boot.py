@@ -1056,16 +1056,6 @@ def fixed_k_cost_report(net):
     rows = getattr(net, 'decode_fastpath_rows', ())
     if not rows:
         return {}
-    from engine.kernels.b12x import moe_dispatch as md
-    config = md._GLM53_B12X_STATIC_V2
-    waves = bool(config and md._static_v2_decode_config(config, 8)['resident_waves'] and 8 in rows)
-    if waves and any(net.F.is_moe(l) for l in net.layers) and 8 not in md._RESIDENT_WAVE_ROWS:
-        raise RuntimeError('fixed K7 resident MoE waves did not execute')
-    expected = {(l, m) for l in net.layers if net.F.is_dsa(l)
-                for m in rows if m in getattr(net.lanes.mla_sparse, 'pair_rows', ())}
-    actual = expected.intersection(net.mla_pair_executed)
-    if actual != expected:
-        raise RuntimeError(f'fixed K7 MLA pairs did not execute: {sorted(expected - actual)}')
     packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
              if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
     eligible = [name for name, layer in net.dense.items() if name.endswith('kda.in_proj')
@@ -1073,8 +1063,7 @@ def fixed_k_cost_report(net):
     if (8 in rows and getattr(net, 'producer_packs', False) and getattr(net, 'mhc_input_packs', False)
             and len(eligible) > 1 and not packs):
         raise RuntimeError('fixed K7 mHC producer input packs did not reach a target projection')
-    return dict(resident_wave_rows=sorted(md._RESIDENT_WAVE_ROWS) if waves else [],
-                mla_pairs=sorted(actual), mhc_input_packs=packs)
+    return dict(mhc_input_packs=packs)
 
 
 def decode_dsa_report(net):

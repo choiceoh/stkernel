@@ -1518,8 +1518,8 @@ class MoEStaticKernelV4:
                     cute.arch.globaltimer(),
                 )
         # Item striding: n_active CTAs, the rest exit after the frontend. With
-        # `even`, candidates may not increase the number of waves. Among
-        # those, the fewest empty slots wins (ties: the largest); each saturates DRAM
+        # `even`, the candidate leaving the fewest empty slots in its last
+        # wave wins (ties: the largest); every candidate still saturates DRAM
         # (32 CTAs need 7.5 GB/s each; a lone CTA streams ~10).
         n_active = Int32(gdim_z)
         start_work_idx = Int32(bidz)
@@ -1528,16 +1528,14 @@ class MoEStaticKernelV4:
             total_items = next_item[Int32(0)]
         if cutlass.const_expr(self.even):
             best_waste = Int32(0x7FFFFFFF)
-            min_waves = (total_items + Int32(gdim_z) - Int32(1)) // Int32(gdim_z)
             for cand in (48, 44, 40, 36, 32):
                 n_c = Int32(cand)
                 if n_c <= Int32(gdim_z):
                     waves = (total_items + n_c - Int32(1)) // n_c
                     waste = waves * n_c - total_items
-                    if waves <= min_waves:
-                        if waste < best_waste:
-                            best_waste = waste
-                            n_active = n_c
+                    if waste < best_waste:
+                        best_waste = waste
+                        n_active = n_c
             if Int32(bidz) >= n_active:
                 start_work_idx = Int32(0x3FFFFFFF)   # decodes as no work
         # split plan: items >= split_base are last-wave items (role 0 for

@@ -2324,7 +2324,6 @@ def _get_static_kernel(
 
 
 _STATIC_V2_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
-_RESIDENT_WAVE_ROWS: set[int] = set()
 
 
 def _static_v2_cache_key(config: dict, **fields) -> Tuple:
@@ -2354,7 +2353,6 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         bool(config.get("l2_prefetch_fc1", True)),
         bool(config.get("bulk_b", False)),
         bool(config.get("sync_cleanup", False)),
-        bool(config.get("resident_waves", False)),
     )
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
@@ -2421,8 +2419,7 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                     and not direct_scatter and not config.get("probe_direct_scatter", False)
                     and not config.get("probe_route_scatter", False)
                     and bool(config.get("scatter_vec4", True)))
-    return dict(config, resident_waves=bool(reform and m == 8 and config.get("resident_waves", True)),
-                decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
+    return dict(config, decode_reform=reform, sf6_separate=separate, sf6_word_expand=word_expand,
                 sf6_fc2_word_expand=fc2_word_expand,
                 packed_activation_store=packed_activation_store, fc1_reuse_a=fc1_reuse_a,
                 compact_staging=compact_staging,
@@ -2537,7 +2534,6 @@ def _get_static_kernel_v2(
         raise ValueError("l<n> needs t,r over the 256 w13 chunk (the FC1 box is then one contiguous run)")
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
-        even=bool(config["resident_waves"]),
         scatter_fp32=scatter_fp32,
         route_scatter=bool(config.get("probe_route_scatter", False)),
         direct_scatter=bool(config.get("probe_direct_scatter") or config.get("c2_direct_scatter")),
@@ -2709,7 +2705,6 @@ def _get_static_kernel_v2(
         f"f{config['fc1']}g{config['fc2']}a{config['a_rows']}"
         f"{'s' if config['stamps'] else ''}{'d' if config.get('dynamic') else ''}"
         f"{'w' if config.get('wide') else ''}{'e' if config.get('even') else ''}"
-        f"{'rw' if config.get('resident_waves') else ''}"
         f"{'k' if config.get('split') else ''}{'u' if config.get('v4') else ''}"
         f"{'v' if config.get('a_ring') else ''}{'t' if config.get('tiled') else ''}"
         f"{'q' if config.get('sf_pack') else ''}"
@@ -3871,8 +3866,6 @@ def launch_sm120_static_moe(
             or kernel_scatter_output is scatter_output):
         raise RuntimeError('MoE finalizer lost its separate FP32 scatter owner')
     compiled(*runtime_args)
-    if static_v2_stamps is not None and static_v2_config.get("resident_waves"):
-        _RESIDENT_WAVE_ROWS.add(int(a.shape[0]))
     if _output_finalize is not None:
         # The callback consumes the borrowed accumulator on this stream before
         # another MoE launch may reuse it. No BF16 output tensor is written.

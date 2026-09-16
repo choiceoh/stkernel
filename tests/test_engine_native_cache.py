@@ -171,7 +171,9 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                         patch("engine.kernels.common.native_cache.cuda_toolchain_identity",
                               return_value=[("/cuda/bin/nvcc", "13.0"), ("/cuda/bin/ptxas", "13.0")]), \
                         patch.dict(os.environ, {env_name: str(self.root / relative.split('/')[0])}):
-                    exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
+                    helpers = ([n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'flags_for']
+                               if relative.startswith('dense/') else [])
+                    exec(compile(ast.Module(body=helpers + [node], type_ignores=[]), str(path), "exec"), namespace)
                     self.assertIs(namespace[function](), ext)
                 call = calls[0]
                 for source in call['sources']:
@@ -211,7 +213,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                     exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
                     self.assertIs(namespace[function](), ext)
                 directory = Path(calls[0]["build_directory"])
-                self.assertEqual(directory.parent, shared / name)
+                self.assertEqual(directory.parent, (shared / name).resolve())
                 for source in calls[0]["sources"]:
                     self.assertEqual(Path(source).parent, directory / "src")
                     self.assertEqual(Path(source).read_bytes(), path.with_name(Path(source).name).read_bytes())
