@@ -2035,10 +2035,12 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
       const float mx = __uint_as_float(__reduce_max_sync(~0u, __float_as_uint(local)));
       const float scale = mk_act_scale(mx), inv = mk_act_rcp(scale);
       const int q = lane >> 3, word = lane & 7, ks = ((word >> 1) - q) & 3;
-      const size_t offset = (size_t)kb * 1024 + ks * 256 + (t * 4 + q) * 8 + (word & 1) * 4;
+      const bool wide = a.num_tokens == 16;
+      const size_t offset = wide ? ((size_t)kb * 32 + t) * 128 + lane * 4
+                                : (size_t)kb * 1024 + ks * 256 + (t * 4 + q) * 8 + (word & 1) * 4;
       *(uint32_t*)(a.input_pack + offset) = mk_f32x4_to_e4m3(v0 * inv, v1 * inv, v2 * inv, v3 * inv);
       if (lane == 0)
-        ((float*)(a.input_pack + (HID / 128) * 1024))[kb * 8 + t] = scale;
+        ((float*)(a.input_pack + (HID / 128) * (wide ? 4096 : 1024)))[kb * (wide ? 32 : 8) + t] = scale;
     }
     __syncthreads();
   }
@@ -3871,16 +3873,17 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
   if (producer_pack.has_value()) {
     // Written by x's producer from x's own BF16 bytes in the reading cell's layout:
     // mk_input_pack_kernel's for a C1 cell, mk_wide_input_pack_kernel's for the
-    // sixteen-row KDA output CTA (the one sixteen-row cell whose input has a producer).
+    // sixteen-row KDA input or output CTA.
     auto pk = *producer_pack;
     const int64_t kblk = k / KSTEP;
     const bool kda_output16 = m == 16 && forward_pipeline && address.has_value() && n == 4096 && k == 2048;
+    const bool kda_input16 = m == 16 && forward_pipeline && !address.has_value() && n == 6416 && k == 4096;
     const int64_t words = c1 ? kblk * 1024 : kblk * 32 * KSTEP;
-    TORCH_CHECK((c1 || kda_output16) && pk.device() == x.device() && pk.scalar_type() == torch::kUInt8
+    TORCH_CHECK((c1 || kda_output16 || kda_input16) && pk.device() == x.device() && pk.scalar_type() == torch::kUInt8
                     && pk.is_contiguous() && ((uintptr_t)pk.data_ptr() & 7) == 0
                     && pk.numel() == words + kblk * (c1 ? 8 : 32) * (int64_t)sizeof(float),
                 "a producer pack is its reading cell's aligned pack: a C1 cell's [k/128 x 1024] FP8 words and "
-                "[k/128 x 8] scales, or the sixteen-row KDA output's [k/128 x 32 x 128] bytes and [k/128 x 32] scales");
+                "[k/128 x 8] scales, or the sixteen-row KDA cell's [k/128 x 32 x 128] bytes and [k/128 x 32] scales");
     producer_q = pk.data_ptr<uint8_t>();
     producer_s = reinterpret_cast<float*>(pk.data_ptr<uint8_t>() + words);
   }
@@ -4164,9 +4167,9 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   const bool static_c1 = tail_mode != 0 && static_shape;
   MKMhcArgs a{};
   if (ptrs.size() == 19) {
-    TORCH_CHECK(hidden == HIDDEN && ints[0] == 8 && (direct || ar_consumer) && mk_pdl_enabled()
+    TORCH_CHECK(hidden == HIDDEN && (ints[0] == 8 || ints[0] == 16) && (direct || ar_consumer) && mk_pdl_enabled()
                 && ptrs[18] && (ptrs[18] & 15) == 0,
-                "MHC producer pack requires an eight-row hidden-4096 consumer and aligned storage");
+                "MHC producer pack requires an 8- or 16-row hidden-4096 consumer and aligned storage");
     a.input_pack = (uint8_t*)ptrs[18];
   }
   a.x_in = (const __nv_bfloat16*)ptrs[0];

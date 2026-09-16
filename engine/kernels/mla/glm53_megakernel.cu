@@ -2242,8 +2242,9 @@ __global__ __launch_bounds__(MK_THREADS, TILE == 32 ? 2 : 1) void mk_mla_kernel(
   static_assert(TILE == 16 || (TILE == 32 && QREG && !CLUSTER && !TREE));
   constexpr int MLA_TILE = TILE;
   constexpr int MLA_NSTAGE = TILE == 32 ? 2 : 3;
-  constexpr int MLA_KQ = 128 / TILE;
+  constexpr int MLA_KQ = MLA_WARPS * 8 / TILE;
   constexpr int MLA_NG = TILE / 8;
+  static_assert(MLA_KQ * MLA_NG == MLA_WARPS, "score fragments must cover exactly the CTA warps");
   constexpr int MLA_PP = TILE + 8;
   constexpr int MLA_SMEM_RING = MLA_NSTAGE * TILE * MLA_RP;
   constexpr int MLA_SMEM_S = MLA_KQ * MLA_H * TILE * 4;

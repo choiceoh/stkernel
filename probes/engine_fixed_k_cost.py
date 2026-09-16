@@ -51,18 +51,68 @@ def timings(report, component, graphs, **meta):
 
 
 def mhc_check(report, ranks):
-    from engine.kernels.dense import producer_pack_nbytes
+    from engine.kernels.dense import DenseLinear
     from engine.kernels.dense.mhc import MHC
-    from probes.engine_mhc_c2_packed import load, Rows, SCALARS, compare
-    from probes.engine_decode_fusions import _capture
+    from engine.profiles.glm53.weights import rank_loader
+    from probes.engine_mhc_c2_packed import load
     path, keys, weights, coeff, digest = load(ranks)
     owner = MHC(weights)
-    data = Rows(8)
+    loaded = rank_loader(Path(path)).load([f'L{layer}.kda.in_proj' for layer in (0, 1, 2)], device='cuda')
+    projections = []
+    for layer in (0, 1, 2):
+        projection = DenseLinear(loaded[f'L{layer}.kda.in_proj'], prefill=False)
+        projection.decode_input_rows = (8, 16)
+        projections.append((f'L{layer}.hc.attn_fn', projection))
+    for rows in (8, 16):
+        _mhc_rows_check(report, path, keys, owner, coeff, digest, rows)
+        _mhc_projection_check(report, owner, coeff, projections, rows)
+
+
+def _mhc_projection_check(report, owner, coeff, projections, rows):
+    from engine.kernels.dense import producer_pack_nbytes
+    from probes.engine_mhc_c2_packed import Rows, SCALARS
+    from probes.engine_decode_fusions import _capture
+    data = Rows(rows)
+    def call(fused):
+        outs = []
+        for key, projection in projections:
+            pack = torch.empty(producer_pack_nbytes(rows, 4096), dtype=torch.uint8, device='cuda') if fused else None
+            values = owner(key, data.meta, data.res, data.post, data.comb, *coeff[key], *SCALARS,
+                           packets=data.descriptor, output_pack=pack)
+            outs.append(projection(values[-1], producer_pack=pack))
+        return outs
+    graphs, outputs = zip(*[_capture(lambda fused=fused: call(fused)) for fused in (False, True)])
+    try:
+        for step, magnitude in enumerate((0., .001, 1., 30.)):
+            data.fill(step, magnitude)
+            for order in (graphs, graphs[::-1]):
+                for arm in outputs:
+                    for out in arm:
+                        out.fill_(float('nan'))
+                for graph in order:
+                    graph.replay()
+                for want, got in zip(*outputs):
+                    torch.testing.assert_close(got, want, rtol=0, atol=0)
+        report('numerics', component='mhc_kda_input', rows=rows, bitwise=True, layers=3,
+               magnitudes=4, replay_orders='forward/reverse', changed_descriptor=True)
+        timings(report, 'mhc_kda_input', graphs, rows=rows, layers=3)
+    finally:
+        for graph in graphs:
+            graph.reset()
+
+
+def _mhc_rows_check(report, path, keys, owner, coeff, digest, rows):
+    from engine.kernels.dense import producer_pack_nbytes
+    from probes.engine_mhc_c2_packed import Rows, SCALARS, compare
+    from probes.engine_decode_fusions import _capture
+    data = Rows(rows)
     # Every real coefficient set is checked; timing uses one complete boundary.
     for key in keys:
         for packets in (False, True):
-            packed = torch.empty(producer_pack_nbytes(8, 4096), dtype=torch.uint8, device='cuda')
+            packs = [torch.full((producer_pack_nbytes(rows, 4096),), 0xa5, dtype=torch.uint8, device='cuda')
+                     for _ in range(2)]
             def call(fused):
+                packed = packs[int(fused)]
                 values = owner(key, data.meta if packets else data.x, data.res, data.post, data.comb,
                                *coeff[key], *SCALARS, packets=data.descriptor if packets else None,
                                output_pack=packed if fused else None)
@@ -78,10 +128,10 @@ def mhc_check(report, ranks):
                     compare([outputs[0][0]], [outputs[1][0]], 'mHC pack fusion')
                     if not torch.equal(outputs[0][1], outputs[1][1]):
                         raise AssertionError(f'{key}: fused input pack bytes differ')
-                report('numerics', component='mhc', key=key, packets=packets, bitwise=True,
+                report('numerics', component='mhc', rows=rows, key=key, packets=packets, bitwise=True,
                        magnitudes=4, changed_descriptor=True, rank=path, weights_sha256=digest)
                 if key == keys[0]:
-                    timings(report, 'mhc_pack_boundary', graphs, packets=packets)
+                    timings(report, 'mhc_pack_boundary', graphs, rows=rows, packets=packets)
             finally:
                 for graph in graphs:
                     graph.reset()
@@ -89,7 +139,7 @@ def mhc_check(report, ranks):
     # stream. Single-layer hot replay alone cannot judge this boundary.
     from probes.engine_decode_fusions import _time
     for packets in (False, True):
-        pack = torch.empty(producer_pack_nbytes(8, 4096), dtype=torch.uint8, device='cuda')
+        pack = torch.empty(producer_pack_nbytes(rows, 4096), dtype=torch.uint8, device='cuda')
         def chain(fused):
             for key in keys:
                 values = owner(key, data.meta if packets else data.x, data.res, data.post, data.comb,
@@ -104,7 +154,7 @@ def mhc_check(report, ranks):
             for _ in range(3):
                 for arm in (0, 1, 1, 0):
                     samples.append(dict(arm=arm, us=_time(graphs[arm], iterations=8)*1000))
-            report('timing', component='mhc_model_chain', packets=packets, boundaries=len(keys),
+            report('timing', component='mhc_model_chain', rows=rows, packets=packets, boundaries=len(keys),
                    samples=samples, weights_sha256=digest, scope='distinct real coefficients; component only')
         finally:
             for graph in graphs:
