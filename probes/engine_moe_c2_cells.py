@@ -89,6 +89,9 @@ class Layer:
         got = loader.load(names + (extra if modelopt else []), device='cuda')
         self.L = L
         self.w13, self.w13_sf, self.w2, self.w2_sf, self.gate, self.bias = (got[k] for k in names)
+        # the router is IEEE FP32 with resident FP32 weights since #1014 (engine/kernels/router_fp32.py):
+        # the rank file's BF16 gate is upcast once, as net._router_weights holds it
+        self.gate = self.gate.float()
         self.identity = dict(layer=L, scales='ModelOpt' if modelopt else 'folded',
                              sample_sha256={k.split('.')[-1]: _sample_sha(got[k]) for k in names},
                              gate_sha256=hashlib.sha256(self.gate.float().cpu().numpy().tobytes()).hexdigest())

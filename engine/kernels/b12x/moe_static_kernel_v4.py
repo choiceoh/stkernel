@@ -2476,18 +2476,19 @@ class MoEStaticKernelV4:
             sf2_blocks_per_expert = Int64(cute.size(sfb2_packed.shape[1]))
             if cutlass.const_expr(self.l2_prefetch > 0):
                 # Tile-major storage (rows, K_in, K_tiles, E), K-major within the chunk, K_in == the
-                # kernel's K tile: a (tile rows x K_in) box is one contiguous run at
-                # base + e * expert + k_tile * ktile + n_tile * box bytes (fp4: bytes = elements / 2).
-                w13_base = get_ptr_as_int64(b_w13_raw, Int32(0))
-                w13_row_bytes = Int64(cute.size(b_w13_raw.shape[1])) // Int64(2)
-                w13_ktile_bytes = Int64(cute.size(b_w13_raw.shape[0])) * w13_row_bytes
+                # kernel's K tile (the dispatcher checks): a (tile rows x K_in) box is one contiguous run
+                # at base + e * expert + k_tile * ktile + n_tile * box bytes. Row and box bytes are the
+                # tile's own constants; the byte view of the fp4 storage gives the base address.
+                w13_base = get_ptr_as_int64(cute.recast_tensor(b_w13_raw, cutlass.Uint8), Int32(0))
+                w2_base = get_ptr_as_int64(cute.recast_tensor(b_down_raw, cutlass.Uint8), Int32(0))
+                fc1_box_i64 = Int64(self.fc1_tile_n * (self.fc1_tile_k // 2))
+                fc2_box_i64 = Int64(self.fc2_tile_n * (self.fc2_tile_k // 2))
+                fc1_box_bytes = Int32(self.fc1_tile_n * (self.fc1_tile_k // 2))
+                fc2_box_bytes = Int32(self.fc2_tile_n * (self.fc2_tile_k // 2))
+                w13_ktile_bytes = Int64(cute.size(b_w13_raw.shape[0])) * Int64(self.fc1_tile_k // 2)
                 w13_expert_bytes = w13_ktile_bytes * Int64(cute.size(b_w13_raw.shape[2]))
-                fc1_box_bytes = Int64(self.fc1_tile_n) * w13_row_bytes
-                w2_base = get_ptr_as_int64(b_down_raw, Int32(0))
-                w2_row_bytes = Int64(cute.size(b_down_raw.shape[1])) // Int64(2)
-                w2_ktile_bytes = Int64(cute.size(b_down_raw.shape[0])) * w2_row_bytes
+                w2_ktile_bytes = Int64(cute.size(b_down_raw.shape[0])) * Int64(self.fc2_tile_k // 2)
                 w2_expert_bytes = w2_ktile_bytes * Int64(cute.size(b_down_raw.shape[2]))
-                fc2_box_bytes = Int64(self.fc2_tile_n) * w2_row_bytes
                 prefetch_ahead = Int32(self.l2_prefetch)
             n_slices = Int32(self.output_tile_count_n)
             role = Int32(2)
@@ -2553,18 +2554,18 @@ class MoEStaticKernelV4:
                                     if ahead < k_tile_cnt1:
                                         w13_at = (w13_base + Int64(weight_expert_idx) * w13_expert_bytes
                                                   + Int64(ahead) * w13_ktile_bytes)
-                                        _bulk_prefetch_l2(w13_at + Int64(gate_tile) * fc1_box_bytes,
-                                                          Int32(fc1_box_bytes))
-                                        _bulk_prefetch_l2(w13_at + Int64(up_tile) * fc1_box_bytes,
-                                                          Int32(fc1_box_bytes))
+                                        _bulk_prefetch_l2(w13_at + Int64(gate_tile) * fc1_box_i64,
+                                                          fc1_box_bytes)
+                                        _bulk_prefetch_l2(w13_at + Int64(up_tile) * fc1_box_i64,
+                                                          fc1_box_bytes)
                                     else:
                                         down_tile = ahead - k_tile_cnt1
                                         if down_tile < output_tile_cnt:
                                             _bulk_prefetch_l2(
                                                 w2_base + Int64(weight_expert_idx) * w2_expert_bytes
                                                 + Int64(intermediate_slice) * w2_ktile_bytes
-                                                + Int64(down_tile) * fc2_box_bytes,
-                                                Int32(fc2_box_bytes))
+                                                + Int64(down_tile) * fc2_box_i64,
+                                                fc2_box_bytes)
                             if cutlass.const_expr(self.a_ring):
                                 a_pipeline.producer_acquire(a_prod_state)
                                 abar = a_pipeline.producer_get_barrier(a_prod_state)
@@ -2685,8 +2686,8 @@ class MoEStaticKernelV4:
                                 _bulk_prefetch_l2(
                                     w2_base + Int64(weight_expert_idx) * w2_expert_bytes
                                     + Int64(intermediate_slice) * w2_ktile_bytes
-                                    + Int64(down_ahead) * fc2_box_bytes,
-                                    Int32(fc2_box_bytes))
+                                    + Int64(down_ahead) * fc2_box_i64,
+                                    fc2_box_bytes)
                     fc2_pipeline.producer_acquire(fc2_prod_state)
                     bar2 = fc2_pipeline.producer_get_barrier(fc2_prod_state)
                     cute.copy(
