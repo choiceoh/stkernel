@@ -1,6 +1,6 @@
 # DFlash 층별 수용 민감도와 추가 비용을 비교하는 하니스
 
-**구현·CPU 검증 및 실제 캡처 완료.** 사용자 요청에 따라 측정용 엔진을 부팅해 C=1 요청 8개에서 16사례를 4개 rank에 수집했다. 32K·128K 문맥을 포함하며 파일 해시, rank 간 일치, 실제 출력과 정답 토큰 일치를 확인했다. [캡처 결과와 보관 경로](live/README.md). 실제 층별 수용 효과와 GPU replay 비용은 아직 미측정이다.
+**구현·실제 캡처·TP4 GPU 비교 완료.** C=1 요청 8개에서 수집한 16사례(32K·128K 포함)에 대해 dense 연산 30개를 각각 FP8/BF16으로 교체했다. 60개 후보 모두 사례별 수용 길이 개선이 없고 지연·가중치 비용만 증가해 이번 자료에서는 W4를 유지한다. [비교 결과와 원본 데이터](comparison/README.md), [캡처 결과와 보관 경로](live/README.md). 전체 엔진 tok/s와 완결 출력 품질은 별도 미측정이다.
 
 이 하니스는 한 번 확보한 실제 입력·상태에서 블록 연산 하나씩 FP8 RTN 또는 BF16로 바꿔, 뒤의 block·head·selector까지 다시 실행한다. 실제 수용 길이의 민감도와 추가 지연·가중치 저장량을 같이 본다. 이전 [층별 양자화 오차](../st_dflash_pack_error_20260916/README.md)는 교체 순위로 사용하지 않는다.
 
@@ -41,7 +41,7 @@ JSON에는 다음이 남는다.
 
 1. 이 작업본에는 `DRAFT_REPLAY_CASES = 16`이 설정되어 있다. 실제 C=1 greedy 요청을 여러 개 보내며 32K·128K 등 목표 context를 포함한다. 모델 출력 품질용 corpus와 요청 단위 holdout도 분리한다. 저장 위치는 `<dump-dir>/draft-replay/rankN/`이며 매 실행마다 새 디렉터리를 사용한다. 이번 캡처는 완료되어 [별도 보관 위치](live/README.md)에 있다.
 2. 4개 rank의 파일을 보존한다. 각 rank에는 `state.pt`, `manifest.json`, `case-NNNNN.pt`, 대응하는 `.json` 정답이 있어야 한다. 같은 소스·PyTorch·GPU architecture와 원본 drafter checkpoint를 사용한다.
-3. GPU 실행은 기존 fleet admission과 TP4 환경으로 준비하되, 서버 엔진을 띄우지 않고 각 rank에서 아래 probe를 실행한다. `WORLD_SIZE`, `RANK`, rendezvous 환경은 기존 fleet launcher가 제공해야 한다. world=1로 rank 0만 실행하는 것은 거부한다.
+3. GPU 실행은 `bench/draft_replay.py`를 fleet admission에 등록한다. [완료된 비교와 launcher 명령](comparison/README.md)을 참고한다. launcher가 캡처 당시 engine source를 고정하고 TP4 환경을 준비해 서버 엔진 없이 아래 probe를 실행한다. world=1로 rank 0만 실행하는 것은 거부한다. 아래는 rank별 내부 probe 명령이며 fleet 등록을 대체하지 않는다.
 
 ```sh
 python3 probes/draft_sensitivity.py \
@@ -51,11 +51,11 @@ python3 probes/draft_sensitivity.py \
   --output /path/to/draft-sensitivity-fp8.json
 ```
 
-`--reader layers.2.mlp.down_proj.weight`처럼 범위를 좁힐 수 있으나, 2층을 우선시할 근거는 아직 없다. `--precision bf16`은 해당 연산의 고정밀 민감도 비교다. 한 arm에서 여러 연산을 동시에 바꾸지 않는다.
+`--reader layers.2.mlp.down_proj.weight`처럼 범위를 좁힐 수 있으나 이번 실제 비교에서도 해당 reader의 수용 이득은 0이었다. `--precision bf16`은 해당 연산의 고정밀 민감도 비교다. 한 arm에서 여러 연산을 동시에 바꾸지 않는다.
 
 ## 범위와 남은 검증
 
-고정된 context ring에서 재생 가능한 **5개 block의 dense 연산 30개**가 대상이다. FC/context projection을 바꾸려면 타깃 aux 이력부터 context K/V를 다시 구성해야 하므로 `fc.weight`는 명시적으로 거부한다. FC 영향이 작다고 결론내린 것이 아니다. Selector 자체의 정밀도 변경, sampling, 후보를 적용한 장기 generation, GPU 성능·품질 판정도 이 버전의 완료 항목이 아니다.
+고정된 context ring에서 재생 가능한 **5개 block의 dense 연산 30개**가 대상이다. FC/context projection을 바꾸려면 타깃 aux 이력부터 context K/V를 다시 구성해야 하므로 `fc.weight`는 명시적으로 거부한다. FC 영향이 작다고 결론내린 것이 아니다. native GPU proposal 비용은 측정했지만 Selector 자체의 정밀도 변경, sampling, 후보를 적용한 장기 generation, 전체 엔진 성능·품질 판정은 완료 항목이 아니다.
 
 CPU 테스트는 실제 요청의 개선 수치를 만들지 않는다. 작은 DFlash의 block→head→selector 경로에서 reader 변경이 전파되고 원상복구되는지, 준비된 팩 전체의 저장·복원, TP shard 및 스무딩, 정답의 지연 수집, censored bounds, 파일·rank 불일치 거부와 비용 선별을 확인한다.
 

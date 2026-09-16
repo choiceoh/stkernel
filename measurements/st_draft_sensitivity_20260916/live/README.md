@@ -37,7 +37,7 @@ python3 measurements/st_draft_sensitivity_20260916/audit_capture.py measurements
 - 4개 rank 합계 prepared state 1,919,969,708바이트, snapshots 675,446,528바이트: 약 **2.42 GiB**. 작은 JSON 메타데이터는 별도다.
 - 원본은 각 노드의 `/home/choiceoh/glm53-logs/st-bracket-dumps/draftreplay4-0916-hold-4e6698a1a47f/draft-replay/rankN/`에도 보존했다.
 
-총 요청 시간은 158.07초다. 비동기 decode 중단과 파일 저장을 포함하므로 **정상 서빙의 tok/s 또는 캡처 오버헤드 실측으로 해석하지 않는다.** native GPU replay와 층별 precision 교체 비교는 아직 실행하지 않았다. 실제 순위·수용률 개선·성능 개선 결론은 없다.
+총 요청 시간은 158.07초다. 비동기 decode 중단과 파일 저장을 포함하므로 **정상 서빙의 tok/s 또는 캡처 오버헤드 실측으로 해석하지 않는다.** 이후 서버 재부팅 없이 [native TP4 비교](../comparison/README.md)를 완료했다. dense 연산 30개를 각각 FP8/BF16으로 교체한 60개 후보 모두 이 16사례의 수용 길이는 같았고 proposal 지연·가중치 비용이 증가했다. 전체 엔진 tok/s 및 완결 출력 품질의 개선 주장은 없다.
 
 ## 부팅 실패와 조치
 

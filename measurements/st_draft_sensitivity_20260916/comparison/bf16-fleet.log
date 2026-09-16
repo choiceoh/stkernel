@@ -1,0 +1,11 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-draftcompare-bf16-0916-20260916-235253.txt
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "c430940290064a8f969d7be530b4b3e9", "phase": "waiting", "reason": "dequeue", "since": 444513.880385184, "updated_at": 1789570373.9881911, "version": 1}
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-draftcompare-bf16-0916-20260916-235253.txt
+GO draftcompare-bf16-0916 2026-09-16_23:52:54
+  node 10.10.10.1: gpu=ok stray=3 ram=95G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=97G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=92G path=ok 
+TP4 replay started: 8f0a8dff23d8df7d0ac68912d57a2262037d7079, logs /home/choiceoh/glm53-logs/draft-compare-0916/bf16-rankN.log
+TP4 replay complete: /home/choiceoh/glm53-logs/draft-compare-0916/bf16.json
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "32f599af7d9148fe8cf637a1a40d4dbf", "phase": "waiting", "reason": "release", "since": 444628.484692327, "updated_at": 1789570488.592499, "version": 1}
