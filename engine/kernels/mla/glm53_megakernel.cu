@@ -2237,7 +2237,7 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
-template <bool CLUSTER = false, bool TREE = false, bool QREG = false, int TILE = 16>
+template <bool CLUSTER = false, bool TREE = false, bool QREG = false, int TILE = 16, bool SYNC_CLEAN = false>
 __global__ __launch_bounds__(MK_THREADS, TILE == 32 ? 2 : 1) void mk_mla_kernel(const MKMlaArgs a) {
   static_assert(TILE == 16 || (TILE == 32 && QREG && !CLUSTER && !TREE));
   constexpr int MLA_TILE = TILE;
@@ -2450,8 +2450,12 @@ __global__ __launch_bounds__(MK_THREADS, TILE == 32 ? 2 : 1) void mk_mla_kernel(
 #endif
         }
       }
-      __syncthreads();
+      // The next tile begins with cp.wait + a CTA barrier before issuing
+      // any overwrite of ring/score/probability storage. A second barrier
+      // here is redundant. Keep one after the final tile before item reuse.
+      if constexpr (!SYNC_CLEAN) __syncthreads();
     }
+    if constexpr (SYNC_CLEAN) __syncthreads();
 
     if constexpr (CLUSTER) {
       // Reuse the Q/ring/scores storage for FP32 partials only after all async
@@ -3598,18 +3602,23 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
   a.probe = ints.size() > 3 ? (int)ints[3] : 0;
   const int qreg = ints.size() == 5 ? (int)ints[4] : 0;
-  TORCH_CHECK((qreg == 0 || qreg == 2), "MLA query-register cell must be 0 or 2");
+  TORCH_CHECK((qreg == 0 || qreg == 2 || qreg == 4 || qreg == 6), "MLA decode cell must be 0, 2, 4 or 6");
   TORCH_CHECK(!qreg || (ptrs.size() == 8 && (a.T == 8 || a.T == 16) && a.probe == 0),
               "MLA query registers require the bound 8/16-row ordinary decode cell");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  if (qreg == 2) {
-    static int tile32_grid = 0;
-    constexpr int smem = 2 * 32 * MLA_RP + 2 * MLA_H * 32 * 4
-                         + MLA_H * 40 * 2 + MLA_SMEM_C;
-    if (!tile32_grid) MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<false, false, true, 32>,
+  if (qreg) {
+    static int grids[3] = {};
+    const bool tile32 = (qreg & 2) != 0;
+    const int smem = tile32 ? 2 * 32 * MLA_RP + 2 * MLA_H * 32 * 4
+                              + MLA_H * 40 * 2 + MLA_SMEM_C : MLA_SMEM;
+    auto kernel = qreg == 2 ? mk_mla_kernel<false, false, true, 32>
+        : qreg == 6 ? mk_mla_kernel<false, false, true, 32, true>
+                    : mk_mla_kernel<false, false, false, 16, true>;
+    int& grid = grids[qreg / 2 - 1];
+    if (!grid) MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,
         cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
-    a.grid = mk_resident_grid(mk_mla_kernel<false, false, true, 32>, tile32_grid, smem, MLA_GRID_CAP);
-    mk_launch(mk_mla_kernel<false, false, true, 32>, a.grid, smem, stream, a);
+    a.grid = mk_resident_grid(kernel, grid, smem, MLA_GRID_CAP);
+    mk_launch(kernel, a.grid, smem, stream, a);
   } else if (ptrs.size() == 9) {
     TORCH_CHECK(ptrs[8] && (ptrs[8] & 15) == 0 && a.T >= 1 && a.T <= 32 && a.probe == 0,
                 "tree MLA requires aligned private rows and bounded exact decode");

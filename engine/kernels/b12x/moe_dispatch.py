@@ -2379,6 +2379,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
     )
     if config.get("input_vec16", False):
         cfg += ("input_vec16_v1",)
+    if config.get("input_amax_tree", False):
+        cfg += ("input_amax_tree_v1",)
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2587,6 +2589,7 @@ def _get_static_kernel_v2(
         l2_prefetch_fc1=bool(config.get("l2_prefetch_fc1", True)),
         bulk_b=bulk_b,
         input_vec16=bool(config.get("input_vec16", False)),
+        input_amax_tree=bool(config.get("input_amax_tree", False)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
@@ -2749,6 +2752,7 @@ def _get_static_kernel_v2(
         f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
         f"{'sync' if config.get('sync_cleanup') else ''}"
         f"{'inputv16' if config.get('input_vec16') else ''}"
+        f"{'amaxtree' if config.get('input_amax_tree') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )

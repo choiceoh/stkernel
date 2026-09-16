@@ -38,6 +38,10 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'next_k_compile' or args.lanes == 'next_k_cost' or args.lanes.startswith('next_k_cost:'):
+        from probes.engine_fixed_k_next import run
+        run(args.output, args.ranks, compile_only=args.lanes == 'next_k_compile', sections=args.lanes.split(':')[1:])
+        return
     if args.lanes in ('fixed_k_compile', 'fixed_k_cost'):
         from probes.engine_fixed_k_cost import run
         run(args.output, args.ranks, compile_only=args.lanes == 'fixed_k_compile')

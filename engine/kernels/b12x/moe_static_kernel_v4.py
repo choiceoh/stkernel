@@ -123,6 +123,7 @@ class MoEStaticKernelV4:
         l2_prefetch_fc1: bool = True,
         bulk_b: bool = False,
         input_vec16: bool = False,
+        input_amax_tree: bool = False,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -283,6 +284,7 @@ class MoEStaticKernelV4:
         self.sf6_registers = bool(sf6_registers and self.compact_staging)
         self.scatter_reuse = bool(scatter_reuse)
         self.input_vec16 = bool(input_vec16)
+        self.input_amax_tree = bool(input_amax_tree)
         if self.input_vec16 and sf_vec_size != 16:
             raise ValueError("vector input loads require complete BF16x16 scale groups")
         if self.scatter_reuse and not (self.direct_scatter and self.sf6_registers
@@ -1480,7 +1482,19 @@ class MoEStaticKernelV4:
                     else:
                         value = cutlass.Float32(a_input[token_idx, block_start + Int32(elem_idx)])
                     values[elem_idx] = value
-                    block_max = fmax_f32(block_max, fabs_f32(value))
+                    if cutlass.const_expr(not self.input_amax_tree):
+                        block_max = fmax_f32(block_max, fabs_f32(value))
+                if cutlass.const_expr(self.input_amax_tree):
+                    # Abs/max is exact; balance the dependency tree without
+                    # changing the values or the expert-specific quantizer.
+                    peaks = cute.make_rmem_tensor((8,), cutlass.Float32)
+                    for i in cutlass.range_constexpr(8):
+                        peaks[i] = fmax_f32(fabs_f32(values[2*i]), fabs_f32(values[2*i+1]))
+                    for i in cutlass.range_constexpr(4):
+                        peaks[i] = fmax_f32(peaks[2*i], peaks[2*i+1])
+                    for i in cutlass.range_constexpr(2):
+                        peaks[i] = fmax_f32(peaks[2*i], peaks[2*i+1])
+                    block_max = fmax_f32(peaks[0], peaks[1])
                 scale_byte = Uint8(0)
                 packed_lo = Uint64(0)
                 if self.fast_math:

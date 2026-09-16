@@ -44,6 +44,7 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
 
 
 class MHC:
+    SHARED_RCP = False  # same-build candidate, no serving change before GPU proof
     # Rows whose consumer kernels read the lossless BF16 pack: K=7 verify steps at C=1 (8 rows) and C=2 (16 rows).
     # `packed_rows=8` is the same-build control, the C=1-only gate, for the probe that qualifies 16 rows
     # (measurements/st_c2_mhc_packed_20260915). Serving never passes it.
@@ -104,12 +105,12 @@ class MHC:
             tensors.append(output_pack)
         args = ([t.data_ptr() for t in tensors], [eps,hc_eps,hc_eps,post_mult,eps], [n, sinkhorn, self.hidden])
         if packets is None:
-            self.ext.run_mhc(*args,weight is packed,small)
+            self.ext.run_mhc(*args,weight is packed,small, **({"shared_rcp": True} if self.SHARED_RCP else {}))
         else:
             if (packets.device != x.device or packets.dtype != torch.int64 or
                     packets.shape != (4,) or not packets.is_contiguous()):
                 raise ValueError("MHC needs a same-device contiguous int64[4] rank descriptor")
-            self.ext.run_mhc_packets(*args,packets,weight is packed)
+            self.ext.run_mhc_packets(*args,packets,weight is packed, **({"shared_rcp": True} if self.SHARED_RCP else {}))
         self.executed.add(key)
         return rc,pm,cm,li
 
