@@ -34,6 +34,23 @@ def _reduce(X, Y, SIZE: tl.constexpr, P: tl.constexpr):
     tl.store(Y + i, value.to(tl.bfloat16), i < SIZE)
 
 
+@triton.jit
+def _reduce_norm(X, W, BIAS, Y, M: tl.constexpr, N: tl.constexpr, P: tl.constexpr,
+                 EPS: tl.constexpr, HAS_BIAS: tl.constexpr, BN: tl.constexpr):
+    row = tl.program_id(0)
+    col = tl.arange(0, BN)
+    value = tl.full((BN,), 0, tl.float32)
+    for part in tl.static_range(P):
+        value += tl.load(X + part*M*N + row*N + col, col < N, 0)
+    # Preserve the existing GEMM output round before optional FP32 bias/RMS.
+    value = value.to(tl.bfloat16).to(tl.float32)
+    if HAS_BIAS:
+        value += tl.load(BIAS + col, col < N, 0)
+    scale = tl.rsqrt(tl.sum(value*value)/N + EPS)
+    weight = tl.load(W + col, col < N, 0)
+    tl.store(Y + row*N + col, (value*scale).to(tl.bfloat16)*weight, col < N)
+
+
 def _versions(weight):
     # Inference tensors intentionally have no version counter. They can be
     # repacked, but cannot participate in a mutation-aware shared cache.
@@ -42,16 +59,19 @@ def _versions(weight):
 
 class PackedWeight:
     """Retain original tensors and versions so shared repacks cannot go stale."""
-    def __init__(self, weight, parts):
+    def __init__(self, weight, parts, *, padding=0):
         q, scales = weight
         n, k = q.shape
         if type(parts) is not int or not 2 <= parts <= 16 or k % (parts*128):
             raise ValueError('split weights require 2..16 aligned K partitions')
+        if type(padding) is not int or not 0 <= padding <= 4096 or padding % 16:
+            raise ValueError('split weight padding must be 0..4096 aligned to 16')
         self.source = weight
         self.versions = _versions(weight)
-        self.parts, self.shape = parts, (n, k)
+        self.parts, self.shape, self.padding = parts, (n, k), padding
         kp = k//parts
-        self.q = q.reshape(n, parts, kp).permute(1, 0, 2).contiguous()
+        view = q.reshape(n, parts, kp).permute(1, 0, 2)
+        self.q = torch.nn.functional.pad(view, (0, padding)).contiguous() if padding else view.contiguous()
         source_scales = scales.reshape(n//128, parts, kp//128).permute(1, 0, 2).contiguous()
         self.scales = torch.stack([mxfp8.pack_weight_scales(source_scales[p], n, kp) for p in range(parts)])
 
@@ -74,7 +94,8 @@ class SplitPlan:
                            dtype=torch.uint8, device=source.device)
         from .cublaslt import WORKSPACE_LIMIT
         self.native = owner.native.Plan(owner.context, rows, packed.shape[0], k//packed.parts,
-                                        WORKSPACE_LIMIT, query, packed.scales, packed.parts, True)
+                                        WORKSPACE_LIMIT, query, packed.scales, packed.parts, True,
+                                        weight_padding=packed.padding)
 
     def bind(self, producer, *, out=None, workspace=None):
         return BoundSplit(self, producer, out=out, workspace=workspace)

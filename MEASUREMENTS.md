@@ -4275,3 +4275,59 @@ head 7/8/14/16행 지연 −12.26~12.67%, FC decode 8/16행 −6.32/−6.47%.
 8개 focused 검사, 관련 CPU 54통과/9skip, SM121 93변형 컴파일 통과.
 **이는 운영자 선택의 기본값 변경이며 GB10 실행·엔진 step/s·수용률 실측은 아니다.** 큐·재시작 없음.
 [코드 경계, 전체 비교와 원시 기록](measurements/st_cublaslt_serving_20260917/README.md).
+
+## 2026-09-17 — cuBLAS FC padded pitch + fused RMS, default
+
+Follow-up to #1071: keep the five-way FP32 FC split, pad each physical weight
+row by 384 bytes and fuse partial reduction with the existing BF16/RMS/bias
+boundaries. Actual `FP8Linear` calls on the authorized RTX 5050 improve FC
+decode+RMS by **5.2–6.5%** versus frozen main `b41efc7d`; M8
+0.32813→0.30789 ms, M16 0.33592→0.31536 ms, M32 0.34833→0.32690 ms.
+Two B/A/A/B brackets per cell, real FP8 packs and synthetic changed inputs.
+All 28 final cells are bit-identical, including changed-input graphs with zero
+replay allocations. Head execution and FC prefill are unchanged within noise;
+the earlier large-prefill loss versus DeepGEMM remains unresolved. Direct
+algorithm validation reduces warm host plan preparation ~94–95% (less than
+1 ms total, not a boot/step speed claim). Added residency is 7.5 MiB/rank,
+declared in the arena budget. No queue/deployment/restart; **GB10/TP4 step/s and
+acceptance remain unmeasured**. Rejected zero-copy, split-count, operand-order,
+producer-tile and batch-gap experiments, exact receipts and reproduction:
+[`measurements/st_cublaslt_layout_20260917/`](measurements/st_cublaslt_layout_20260917/README.md).
+### 라우터를 한 런치로 — 층당 7발을 1발로, 42층 사슬 C=2 −1.48 ms·C=1 −1.83 ms, top-8 집합 뒤집힘 0 (2026-09-17, srv4 단일 GPU 레인 7회, 운영자 "그럼 남은거 뒤져")
+
+C=2 캠페인이 남긴 지도를 코드와 원장으로 되짚었다(`measurements/st_c2_levers_survey_20260917/`).
+- **이미 착지했거나 닫힌 다섯.** 16행 mHC 계수 팩(#972, 20.9 µs/호출)·consumer 16행 상한(#967)·DSA 선택 한 런치(#971·#1010)는 C=2
+  프로파일(`9c45086a`) 뒤에 들어왔다(그 기록 머리에 주석). MoE 스트리밍은 계측기의 선형 상한이 273 이 아니라 **239 GB/s** 이고 서빙
+  타일이 그 93~95 %, TMA 박스는 연속 16 KB 라 "128 B 행 세그먼트" 가설은 성립하지 않았다. 발행 대기 중 `HintArgs` 는 대기를 쥔
+  `k_publish_packets` 가 1 스레드 커널이고 상한이 EXP-13 에서 −0.4~0.6 ms 로 이미 철회됐다. 공유 전문가를 289번째 전문가로 넣는 길은
+  BF16 체크포인트를 NVFP4 로 옮기는(A8→A4, rowscale·act-order 손실) 품질 결정이라 운영자 몫으로 남긴다.
+- **열린 하나: 라우터.** 서빙은 층당 7 런치(cast, sgemm, split-K reduce, `_scores`, `gatherTopK`, `bitonicSort`, `_weights`)로 스텝당
+  ~300발이다. `engine/kernels/router_fused.cu` 는 96 CTA(SM 당 둘, CTA 당 전문가 3)가 상주 FP32 게이트를 한 번 흘리며 IEEE FP32 곱을
+  고정 순서로 누적하고, 마지막 CTA 가 sigmoid+bias top-8(동점은 낮은 id)과 원시 시그모이드 가중치를 낸다. 서빙 모듈에 묶지 않은 셀이다.
+- **게이트(`probes/engine_router_cells.py`, 실물 랭크 3 게이트 42층, 합성 행).** logits ≤12 ulps, 커널 자기 logits 위의 선택은 torch 와
+  집합 동일·가중치 ≤3 ulps, **서빙 사슬 대비 top-8 집합 뒤집힘 0/24,768 행**. 순서만 다른 행 1~3 % 는 커널 자기 logits 위에서도 같은
+  수라 FP32 동점의 열 순서 규칙 차이다(MoE 합 순서로 이어질 수 있는 add-order 급).
+- **시간(최종 판 `373dc770`, `c2rt7-0917`).** 42층 사슬 evicted C=2 3236.8 → 1755.0 µs(−45.8 %, 바닥 −0.06 %), C=1 3189.6 → 1356.8 µs
+  (−57.5 %, 바닥 −0.03 %); 단일 층 warm C=2 67.9 → 33.5, C=1 55.4 → 20.6 µs.
+- **판 여섯.** 48 CTA × 전문가 6 은 레지스터 255 로 SM 당 CTA 하나라 게이트 로드를 앞당겨도 1954 µs 그대로였고, 벌크 복사로 smem 에
+  올리면 곱이 착지를 기다려 2250 µs 로 느렸다. 96 CTA × 3 이 1819, 모든 행 x 의 청크 선적재는 8행 −1.7 %·16행 +5 % 라 운영자
+  "v5도 c=1에 도입하거나 v4+v5 함께 도입" 에 따라 `ROWS` 템플릿이 8행에만 쓴다. 사슬 층당 ~42 µs 는 아직 DRAM 시간보다 크다.
+- **정정: 셀 `z` 는 배관 문제가 아니었다.** 위 "후속 둘도 열리지 않는다" 항목과 `st_l2_prefetch_20260916` §5 의 결론은 틀렸다. 프로브가
+  `moe_prepare` 로 제자리 타일된 w13/w2 에 `_tile_expert_weights` 를 한 번 더 걸었다(이중 타일). #1068 후속(`moe-v8.jsonl`)이 고친 뒤
+  byte 스위즐 `z` 는 정확하고 nibble·plain 은 제대로 실패했으며 속도는 거의 중립이었다. 그 README 에 정정 주석을 달았다.
+- **한계와 채택.** 한 랭크·합성 행·컴포넌트 값이고 엔진 step/s 주장이 아니다. 티켓마다 서빙 대조군이 ~1 % 흔들려 판 비교는 같은 티켓의
+  변화율로 읽는다. 채택은 서빙 결선(`lanes.route_weights`, 캡처 전 빌드, `route_observer`)과 브래킷(품질·한국어·수용률·step/s)이 답한다.
+
+### 45차 — ACE식 전문가 슬롯 스킵의 바이트: 스킵한 슬롯 비율이 거의 그대로 읽기 감소, 스텝 상한은 스킵의 0.45배 (2026-09-17, TP4 GB10 hold 1회, PR #1076)
+
+논문 지도(#1074) 10절이 바이트를 줄이는 유일한 후보로 남긴 ACE(arXiv:2609.05228)의 GB10 상한. main `a9bf7afc` + 디버그 `e52fb5cb`
+(머지 안 함)으로 C=1 12문항(#966 과 같은 부하)의 **원시 라우트 6,154 스텝**을 받아 오프라인으로 셌다.
+- **덤프 검증.** 스킵 전 층당 고유 전문가 41.91(#966 41.9), tokens/step 4.725.
+- **게이트만의 대리 규칙**(1위 유지, 1위가 아닌 슬롯의 전역 분위수 임계값, GSP·RCR 표 없음): 스킵 10% → 읽기 −9.8%, 15% → −14.4%,
+  20% → −19.1%. **스킵한 슬롯당 읽기 0.94~1.01** — 게이트 낮은 슬롯은 다른 행이 읽지 않는 전문가다. MoE 비중 0.458 을 곱한 스텝
+  **상한** −4.5% / −6.6% / −8.7%.
+- **GLM 게이트는 평평하다**(순위별 0.233…0.076). 스킵 10% 가 라우팅 질량 평균 4.62%(p95 20.8%)를 빼고, 층별 읽기 감소가
+  2.7%~37.7% 로 갈린다. 요청 12개는 8.4%~11.0% 로 고르다.
+- **판정 아님.** 스킵을 서빙하지 않았고 품질·수용률·step/s 없음. 논문 기준 스킵 20% 는 토큰당 +0.019~0.046 nats(Qwen 계열)로
+  NVIDIA 랭크를 택하지 않은 차이(+0.034)와 같은 크기. 다음은 기본 꺼진 노브 + head NLL 짝 비교(스킵 10·15%, 전역 대 층별 분위수) —
+  미착수. [원시·스크립트·함정(부팅 실패 셋)](measurements/st_ace_routes_20260917/README.md).
