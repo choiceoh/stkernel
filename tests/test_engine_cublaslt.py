@@ -10,8 +10,36 @@ TRITON = importlib.util.find_spec('triton') is not None
 INTERPRET = os.environ.get('TRITON_INTERPRET') == '1'
 
 
+if TORCH and TRITON and INTERPRET:
+    import triton
+    import triton.language as tl
+    from engine.kernels.dense.mxfp8 import _power2_scale
+
+    @triton.jit
+    def _scale_probe(X, S, I, Reference):
+        index = tl.program_id(0)*256 + tl.arange(0, 256)
+        amax = tl.maximum(tl.load(X + index).to(tl.float32), 1e-4)
+        scale, inverse = _power2_scale(amax)
+        tl.store(S + index, scale)
+        tl.store(I + index, inverse)
+        tl.store(Reference + index, tl.exp2(tl.ceil(tl.log2(amax / 448.))))
+
+
 @unittest.skipUnless(TORCH, 'requires torch')
 class PreparationTests(unittest.TestCase):
+    def test_algorithm_alignment_uses_actual_storage_for_every_operand(self):
+        from engine.kernels.dense.cublaslt import _aligned
+        candidate = dict(alignment_a=256, alignment_b=128, alignment_c=64, alignment_d=256)
+        tensor = lambda address: SimpleNamespace(data_ptr=lambda: address)
+        aligned = tensor(4096)
+        self.assertTrue(_aligned(candidate, aligned, aligned, aligned))
+        for operand in range(3):
+            args = [aligned, aligned, aligned]
+            args[operand] = tensor(4096 + 16)
+            self.assertFalse(_aligned(candidate, *args))
+        # A sliced weight can still use the smaller-alignment algorithm.
+        self.assertTrue(_aligned(dict.fromkeys(candidate, 16), tensor(4112), aligned, aligned))
+
     def test_non_fleet_cards_cannot_enter_timing(self):
         import torch
         from engine.kernels.dense.cublaslt import Bank
@@ -76,14 +104,15 @@ class PreparationTests(unittest.TestCase):
 
     def test_graph_reset_runs_on_success_and_capture_failure_preserves_original_error(self):
         import torch
-        from engine.kernels.dense.cublaslt import _measure
+        from engine.kernels.dense.cublaslt import _measure, GRAPH_UNROLL
         calls = []
         graph = SimpleNamespace(capture_begin=lambda *a, **k: calls.append('begin'),
                                 capture_end=lambda: calls.append('end'),
                                 replay=lambda: calls.append('replay'), reset=lambda: calls.append('reset'))
         event = SimpleNamespace(record=lambda: None, synchronize=lambda: None, elapsed_time=lambda _: 8.)
         with patch.object(torch.cuda, 'CUDAGraph', return_value=graph), patch.object(torch.cuda, 'Event', return_value=event):
-            self.assertEqual(_measure(lambda: calls.append('fn'), None), 2.)
+            self.assertEqual(_measure(lambda: calls.append('fn'), None), 2. / GRAPH_UNROLL)
+            self.assertEqual(calls.count('fn'), GRAPH_UNROLL + 1)
             self.assertEqual(calls[-1], 'reset')
             self.assertEqual(calls.count('replay'), 5)
             original = ValueError('first failure')
@@ -173,10 +202,10 @@ class BoundExecutionTests(unittest.TestCase):
             bound = p.bind(self.producer)
         executed = []
         bound.matmul = lambda: executed.append(True)
-        bound.producer = lambda mx, out: self.producer(mx, None)
+        bound.producer = lambda: self.producer(True, None)
         with self.assertRaisesRegex(RuntimeError, 'replaced'):
             bound()
-        bound.producer = lambda mx, out: ()
+        bound.producer = lambda: ()
         with self.assertRaisesRegex(RuntimeError, 'replaced'):
             bound()
         self.assertEqual(executed, [])
@@ -188,6 +217,16 @@ class InterpreterTests(unittest.TestCase):
     def setUp(self):
         import torch
         torch.set_num_threads(1)
+
+    def test_scale_and_inverse_for_every_bf16_magnitude(self):
+        import torch
+        # All 32,768 positive BF16 encodings, including zero, subnormals,
+        # scale boundaries, infinity and NaNs. Negative magnitudes are the same.
+        x = torch.arange(32768, dtype=torch.int16).view(torch.bfloat16)
+        output, inverse, reference = (torch.empty(32768) for _ in range(3))
+        _scale_probe[(128,)](x, output, inverse, reference)
+        torch.testing.assert_close(output, reference, rtol=0, atol=0, equal_nan=True)
+        torch.testing.assert_close(inverse, reference.reciprocal(), rtol=0, atol=0, equal_nan=True)
 
     def assert_scale_layout(self, mx, scales, rows, k):
         import torch
@@ -206,7 +245,7 @@ class InterpreterTests(unittest.TestCase):
         import torch
         import triton
         from engine.kernels.dense.fp8 import _quantize as baseline
-        from engine.kernels.dense.mxfp8 import _quantize, scale_bytes, row_programs
+        from engine.kernels.dense.mxfp8 import _quantize, _quantize_bound, scale_bytes, row_programs
         for rows, k in ((1, 128), (4, 384), (7, 4096), (8, 20480), (127, 128),
                         (128, 256), (129, 384), (257, 128)):
             groups = rows * (k//128)
@@ -229,6 +268,25 @@ class InterpreterTests(unittest.TestCase):
             self.assertTrue((q[rows*k:] == 93).all())
             self.assertTrue((scales[size:] == 93).all())
             self.assert_scale_layout(scales[:size], base_s, rows, k)
+            # The bound path retains neutral padding from preparation. A
+            # sentinel proves replay leaves those words untouched, including
+            # tails of an otherwise coalesced full-row tile.
+            scales[:size].fill_(127)
+            padding = torch.ones(size, dtype=torch.bool)
+            for row in range(rows):
+                for group in range(k//128):
+                    offset = (row//128*(k//128)+group)*512 + row%32*16 + row%128//32*4
+                    padding[offset:offset+4] = False
+            scales[:size][padding] = 91
+            x.mul_(2)
+            baseline[(rows, triton.cdiv(k//128, 4))](x, base_q, base_s, k, k//128)
+            _quantize_bound[(row_programs(rows), k//128)](
+                x, q[:rows*k].view(torch.float8_e4m3fn), scales.view(torch.int32), rows, k)
+            self.assertTrue(torch.equal(q[:rows*k].view_as(base_q), base_q.view(torch.uint8)))
+            self.assertTrue((scales[:size][padding] == 91).all())
+            self.assertTrue((scales[size:] == 93).all())
+            scales[:size][padding] = 127
+            self.assert_scale_layout(scales[:size], base_s, rows, k)
         self.assertFalse(torch.cuda.is_initialized())
 
     def test_weight_scale_replication_covers_every_normal_exponent(self):
@@ -246,7 +304,7 @@ class InterpreterTests(unittest.TestCase):
         import torch
         import triton
         from engine.kernels.dense.mxfp8 import scale_bytes, row_programs
-        from engine.kernels.prefill_collectives.consumer import _quantize_gather, _quantize_gather_mx
+        from engine.kernels.prefill_collectives.consumer import _quantize_gather, _quantize_gather_mx, _quantize_gather_mx_bound
         k, block = 4096, 2048
         for local_rows, real_rows, extra in ((32, 128, 0), (33, 129, 128), (35, 138, 0)):
             local = local_rows*k
@@ -272,6 +330,13 @@ class InterpreterTests(unittest.TestCase):
             self.assert_scale_layout(s1[:size], s0, real_rows, k)
             self.assertTrue((s1[size:] == 93).all())
             self.assertTrue(torch.equal(received, original))
+            # Reuse exactly the initialized scale storage, without a padding
+            # launch or repeated tail writes, for the packet producer too.
+            s1[:size].fill_(127)
+            _quantize_gather_mx_bound[(row_programs(real_rows), k//128)](
+                received.view(torch.float8_e4m3fn), received.view(torch.float32), q1, s1.view(torch.int32),
+                real_rows, local, stride, block)
+            self.assert_scale_layout(s1[:size], s0, real_rows, k)
 
 
 if __name__ == '__main__':
