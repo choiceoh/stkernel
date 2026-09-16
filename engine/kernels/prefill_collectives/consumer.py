@@ -11,6 +11,7 @@ import triton
 import triton.language as tl
 
 from engine.kernels.prefill_collectives import BLOCK
+from engine.kernels.dense.mxfp8 import _publish, _rows, row_programs
 
 
 @triton.jit(do_not_specialize=["LOCAL_N", "PAYLOAD_BYTES"])
@@ -34,7 +35,26 @@ def _quantize_gather(Packed, Scales, Q, S, LOCAL_N, PAYLOAD_BYTES,
     tl.store(S + row*G + group, output_scale, group < G)
 
 
-def quantize_gather(received, local_rows, *, real_rows=None, routed=False):
+@triton.jit(do_not_specialize=['M', 'LOCAL_N', 'PAYLOAD_BYTES'])
+def _quantize_gather_mx(Packed, Scales, Q, S, M, LOCAL_N, PAYLOAD_BYTES,
+                        K: tl.constexpr, G: tl.constexpr, PACK_BLOCK: tl.constexpr, TILED: tl.constexpr):
+    row = _rows(M, TILED)
+    group = tl.program_id(1)
+    col = group*128 + tl.arange(0, 128)
+    rank, local_row = row // (LOCAL_N // K), row % (LOCAL_N // K)
+    values = tl.load(Packed + rank[:, None]*PAYLOAD_BYTES + local_row[:, None]*K + col[None, :],
+                     row[:, None] < M, other=0.).to(tl.float32)
+    scale = tl.load(Scales + rank*(PAYLOAD_BYTES//4) + LOCAL_N//4
+                    + (local_row*K + group*128)//PACK_BLOCK, row < M, other=1.)
+    x = (values*scale[:, None]).to(tl.bfloat16).to(tl.float32)
+    amax = tl.maximum(tl.max(tl.abs(x), 1), 1e-4)
+    output_scale = tl.exp2(tl.ceil(tl.log2(amax/448.)))
+    tl.store(Q + row[:, None]*K + col[None, :],
+             (x/output_scale[:, None]).to(tl.float8e4nv), row[:, None] < M)
+    _publish(S, output_scale, row, group, M, G)
+
+
+def quantize_gather(received, local_rows, *, real_rows=None, routed=False, mx=False, out=None):
     """Convert four rank-ordered packets to contiguous FP8 rows and FP32 scales.
 
 `received` is the byte output of the existing FP8-v3 all-gather. Its owner
@@ -56,9 +76,30 @@ guarantees the packet values and scales obey that transport's contract.
         stride = PacketGeometry(rows, local_rows, routed=True).stride
     if received.numel() != peers*stride:
         raise ValueError("consumer packet length does not match four rank-ordered packets")
-    q = torch.empty((rows, k), device=received.device, dtype=torch.float8_e4m3fn)
-    scales = torch.empty((rows, k//128), device=received.device, dtype=torch.float32)
-    _quantize_gather[(rows, triton.cdiv(k//128, 4))](
-        received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales,
-        local, stride, k, k//128, BLOCK, num_warps=4)
+    from engine.kernels.dense.mxfp8 import buffers, scale_bytes
+    if type(mx) is not bool:
+        raise ValueError('MX output ABI selection must be a boolean')
+    if out is not None:
+        q, scales = out
+    elif mx:
+        q, scales = buffers(rows, k, received.device)
+    else:
+        q = torch.empty((rows, k), device=received.device, dtype=torch.float8_e4m3fn)
+        scales = torch.empty((rows, k//128), device=received.device, dtype=torch.float32)
+    if (q.shape != (rows, k) or q.dtype != torch.float8_e4m3fn or q.device != received.device
+            or scales.shape != ((scale_bytes(rows, k),) if mx else (rows, k//128))
+            or scales.dtype != (torch.uint8 if mx else torch.float32) or scales.device != received.device
+            or not q.is_contiguous() or not scales.is_contiguous()):
+        raise ValueError('packet producer output buffers do not match their ABI')
+    if out is not None:
+        from engine.kernels.dense.fp8 import require_disjoint
+        require_disjoint(received, q, scales)
+    if mx:
+        _quantize_gather_mx[(row_programs(rows), k//128)](
+            received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales.view(torch.int32),
+            rows, local, stride, k, k//128, BLOCK, rows >= 128, num_warps=4)
+    else:
+        _quantize_gather[(rows, triton.cdiv(k//128, 4))](
+            received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales,
+            local, stride, k, k//128, BLOCK, num_warps=4)
     return q, scales

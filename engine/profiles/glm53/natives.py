@@ -27,6 +27,10 @@ MODULES = (("dense", "engine.kernels.dense", "build"),
            ("bounded-graph", "engine.kernels.bounded_graph", "build"),
            ("decode-queue", "engine.kernels.decode_queue", "build"))
 ONESHOT = ("one-shot", "engine.kernels.oneshot", "build")        # its sources take the served rails and flag mode
+# Built explicitly by its numerical/tuning probe. No serving reader calls it;
+# prebuilding an unadmitted comparison lane would tax every production boot.
+# Move it to MODULES when a measured cell actually adopts the prepared reader.
+PROBE_MODULES = (("cublaslt", "engine.kernels.dense.cublaslt", "_build"),)
 
 
 def builds(oneshot_rails: int, oneshot_inline: bool):
