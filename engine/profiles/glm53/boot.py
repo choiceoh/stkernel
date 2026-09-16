@@ -123,7 +123,7 @@ DRAFT_FC_CAPTURE = False
 # shutdown, and it stops itself at the row budget. Unlike calibration the bundle is not the
 # artifact: a CPU fit (`bench/draft_tune.py fc-bias`) has to turn it into one, so a boot keeps
 # collecting until somebody does. DRAFT_FC_CAPTURE forces it on even when the bias is present.
-DRAFT_FC_CAPTURE_WHEN_MISSING = True
+DRAFT_FC_CAPTURE_WHEN_MISSING = False           # replay measurement arm: FC collection requires BF16 weights freed by prepare
 DRAFT_FC_CAPTURE_ROWS = 4096
 CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
 CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
