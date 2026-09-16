@@ -53,9 +53,8 @@ class RouterFusedTests(unittest.TestCase):
         py = (ROOT / 'engine/kernels/router_fused.py').read_text()
         self.assertIn("'-O3', '-gencode', 'arch=compute_121a,code=sm_121a'", py)
         self.assertNotIn('use_fast_math', py)
-        # the kernel is a cell, never a lane: no serving module binds it
-        for path in ('engine/profiles/glm53/lanes.py', 'engine/profiles/glm53/net.py', 'engine/kernels/glm_pointwise.py'):
-            self.assertNotIn('router_fused', (ROOT / path).read_text())
+        # The consumer integration remains an explicit same-build experiment.
+        self.assertIn('self.fused_decode_router = False', (ROOT / 'engine/profiles/glm53/net.py').read_text())
 
     def test_probe_is_wired_and_reads_the_served_route(self):
         check = (ROOT / 'probes/engine_kernel_check.py').read_text()
@@ -86,6 +85,50 @@ class RouterFusedTests(unittest.TestCase):
         ids_t, _ = _kernel_rule(tied, tb)
         self.assertEqual(ids_t[0, 0].item(), 5)
         self.assertEqual(ids_t[0, 1].item(), 100)
+
+class RouterConsumerTests(unittest.TestCase):
+    def test_bias_is_budgeted_resident_fp32_and_only_bound_rows_use_fusion(self):
+        from types import SimpleNamespace as NS
+        from unittest.mock import patch
+        from engine.base.arena import Arena
+        from engine.profiles.glm53 import facts
+        from engine.profiles.glm53.net import Glm53Net
+        from engine.kernels import glm_pointwise, router_fused
+        from tests.test_engine_kernel_shape import GLM53_TEXT_CONFIG
+        net = Glm53Net(facts.architecture(GLM53_TEXT_CONFIG), NS(rank=0, world_size=4),
+                       NS(rmsnorm=None, swiglu=None, route_weights=None), [3])
+        gate = torch.zeros(288, 4096, dtype=torch.bfloat16)
+        bias = torch.randn(288).bfloat16()
+        net.p = {'L3.moe.gate': gate, 'L3.moe.bias': bias}
+        net.fused_decode_router = True
+        net.decode_fastpath_rows = (8, 16)
+        arena = Arena(net.router_nbytes(), device='cpu')
+        net.prepare_routers(arena)
+        self.assertEqual(arena.remaining, 0)
+        resident = net._router_fused_bias[3]
+        self.assertEqual(resident.untyped_storage().data_ptr(), arena.buf.data_ptr())
+        torch.testing.assert_close(resident, bias.float(), rtol=0, atol=0)
+        fused, plain = [], []
+        def route(x, actual_gate, actual_bias, topk, scale):
+            self.assertIs(actual_gate, net._router_weights[3])
+            self.assertIs(actual_bias, resident)
+            fused.append(x.shape[0])
+            return torch.zeros(x.shape[0], 8, dtype=torch.int32), torch.zeros(x.shape[0], 8)
+        def logits(x, actual_gate):
+            self.assertIs(actual_gate, net._router_weights[3])
+            plain.append(x.shape[0])
+            return torch.zeros(x.shape[0], 288)
+        with patch.object(router_fused, 'route', route), patch.object(glm_pointwise, 'router_logits', logits):
+            for rows in (1, 7, 8, 16, 24, 32):
+                net.route(3, torch.zeros(rows, 4096, dtype=torch.bfloat16))
+            net.decode_fastpath_rows = (8,)
+            net.route(3, torch.zeros(16, 4096, dtype=torch.bfloat16))
+            net.fused_decode_router = False
+            net.route(3, torch.zeros(8, 4096, dtype=torch.bfloat16))
+        self.assertEqual(fused, [8, 16])
+        self.assertEqual(plain, [1, 7, 24, 32, 16, 8])
+        self.assertEqual(net._router_fused_executed, {(3, 8), (3, 16)})
+        self.assertEqual(net._router_fp32, {3})
 
 
 if __name__ == '__main__':

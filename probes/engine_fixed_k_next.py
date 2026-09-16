@@ -245,12 +245,13 @@ def run(output, ranks, *, compile_only=False, sections=()):
         else:
             torch.manual_seed(91718)
             wanted = set(sections) or {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair'}
-            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair', 'moe_debug'}:
+            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair', 'moe_debug', 'mla_direct'}:
                 raise ValueError(f'unknown component: {wanted}')
             for name, fn in (('mla', lambda: mla_check(report)), ('mhc', lambda: mhc_check(report, ranks)),
                              ('moe', lambda: moe_check(report, ranks)),
                              ('moe_debug', lambda: moe_frontend_check(report, ranks)),
                              ('moe_pair', lambda: moe_check(report, ranks, pair_reuse=True)),
+                             ('mla_direct', lambda: __import__('probes.engine_fixed_k_cost', fromlist=['mla_check']).mla_check(report, direct_cvt=True)),
                              ('mla_bf16', lambda: __import__('probes.engine_fixed_k_cost', fromlist=['mla_check']).mla_check(report, bf16_tile=True))):
                 if name in wanted:
                     try:

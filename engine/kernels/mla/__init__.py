@@ -41,6 +41,7 @@ PREFILL_MODES = ("stock", "tile32")
 ENABLE_MLA_QREG = True
 ENABLE_MLA_SYNC_CLEAN = False  # private same-build candidate until measured
 ENABLE_MLA_BF16_TILE = False
+ENABLE_MLA_DIRECT_CVT = False
 ENABLE_MLA_CLUSTER = True
 ENABLE_MLA_PREFILL32 = False
 
@@ -265,6 +266,8 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
              ((2 if ENABLE_MLA_QREG and T == 16 and slots.shape[1] >= 128 else 0)
               | (4 if ENABLE_MLA_SYNC_CLEAN and T in (8, 16) else 0)))
             if branch is None and probe == 0 else 0)
+    if ENABLE_MLA_DIRECT_CVT and branch is None and probe == 0 and T in (8, 16):
+        cell = 12 if T == 16 and slots.shape[1] >= 128 else 10
     # Experimental cells can have a different resident grid. A monotonic
     # ticket counter cannot switch divisors between their graph replays.
     barrier_name = f"barrier_mla_cell{cell}" if cell >= 4 else "barrier_mla"

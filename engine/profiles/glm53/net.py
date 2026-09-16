@@ -169,6 +169,9 @@ class Glm53Net:
         self._router_layers = None                         # None until every native FP32 router is resident
         self._router_weights = {}
         self._router_fp32 = set()
+        self.fused_decode_router = False
+        self._router_fused_bias = {}
+        self._router_fused_executed = set()
         self._decode_pairs = {}
         self.decode_fastpath_rows = ()
         self.decode_pairs_executed = set()
@@ -275,7 +278,11 @@ class Glm53Net:
 
     def router_nbytes(self):
         """Replicated FP32 gates, read by every native decode and prefill router."""
-        return sum(self.F.experts * self.F.hidden * 4 for L in self.layers if self.F.is_moe(L))
+        from engine.base.arena import ALIGN
+        bias_bytes = ((self.F.experts * 4 + ALIGN - 1) // ALIGN * ALIGN
+                      if getattr(self, 'fused_decode_router', False) else 0)
+        return sum(self.F.experts * self.F.hidden * 4 + bias_bytes
+                   for L in self.layers if self.F.is_moe(L))
 
     def prepare_routers(self, arena):
         """Convert checkpoint gates once into the declared FP32 arena region."""
@@ -291,6 +298,15 @@ class Glm53Net:
             resident = arena.carve(weight.numel() * 4, f'router/{layer}').view(F32).view_as(weight)
             resident.copy_(weight)
             self._router_weights[layer] = resident
+        if self.fused_decode_router:
+            from engine.base.arena import ALIGN
+            if (self.F.hidden, self.F.experts, self.F.topk_experts, self.F.spec_k) != (4096, 288, 8, 7):
+                raise ValueError('fused decode router requires the GLM53 K7 profile')
+            size = (self.F.experts * 4 + ALIGN - 1) // ALIGN * ALIGN
+            for layer in sorted(layers):
+                bias = arena.carve(size, f'router-bias/{layer}').view(F32)[:self.F.experts]
+                bias.copy_(self.p[f'L{layer}.moe.bias'])
+                self._router_fused_bias[layer] = bias
         self._router_layers = layers
 
     def decode_projection_nbytes(self):
@@ -1014,6 +1030,14 @@ class Glm53Net:
         Decode and every prefill width use IEEE FP32 operands, accumulation
         and logits. Native execution reads the resident gate directly; the
         unprepared reference converts its checkpoint gate at the call site."""
+        if (getattr(self, 'fused_decode_router', False) and self._router_layers is not None
+                and x.shape[0] in (8, 16) and x.shape[0] in self.decode_fastpath_rows):
+            from engine.kernels.router_fused import route
+            result = route(x, self._router_weights[L], self._router_fused_bias[L],
+                           self.F.topk_experts, self.F.routed_scale)
+            self._router_fp32.add(L)
+            self._router_fused_executed.add((L, x.shape[0]))
+            return result
         if self._router_layers is not None:
             from engine.kernels.glm_pointwise import router_logits
             logits = router_logits(x, self._router_weights[L])

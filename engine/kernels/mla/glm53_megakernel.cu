@@ -2237,7 +2237,19 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
-template <bool CLUSTER = false, bool TREE = false, bool QREG = false, int TILE = 16, bool SYNC_CLEAN = false, bool BF16_TILE = false>
+// Decode-only comparison: prefill retains the qualified half bridge.
+template <bool DIRECT>
+__device__ __forceinline__ uint32_t mla_decode_e4m3x2(uint32_t packed) {
+  if constexpr (DIRECT) {
+    uint32_t result;
+    asm("cvt.rn.bf16x2.e4m3x2 %0, %1;" : "=r"(result) : "h"((uint16_t)packed));
+    return result;
+  } else {
+    return mla_e4m3x2_value(packed);
+  }
+}
+
+template <bool CLUSTER = false, bool TREE = false, bool QREG = false, int TILE = 16, bool SYNC_CLEAN = false, bool BF16_TILE = false, bool DIRECT = false>
 __global__ __launch_bounds__(MK_THREADS, (TILE == 32 || BF16_TILE) ? 2 : 1) void mk_mla_kernel(const MKMlaArgs a) {
   static_assert(TILE == 16 || (TILE == 32 && QREG && !CLUSTER && !TREE));
   static_assert(!BF16_TILE || (TILE == 16 && QREG && !CLUSTER && !TREE));
@@ -2374,7 +2386,7 @@ __global__ __launch_bounds__(MK_THREADS, (TILE == 32 || BF16_TILE) ? 2 : 1) void
                          *(const uint32_t*)b, *(const uint32_t*)(b + 8));
           } else {
             mla_mma_bf16(c0, c1, c2, c3, a0, a1, a2, a3,
-                         mla_e4m3x2(cb + k0), mla_e4m3x2(cb + k0 + 8));
+                         mla_decode_e4m3x2<DIRECT>(*(const uint16_t*)(cb + k0)), mla_decode_e4m3x2<DIRECT>(*(const uint16_t*)(cb + k0 + 8)));
           }
         }
         float* sh = ss + (size_t)kq * MLA_H * MLA_TILE;
@@ -2454,9 +2466,9 @@ __global__ __launch_bounds__(MK_THREADS, (TILE == 32 || BF16_TILE) ? 2 : 1) void
           asm volatile("ldmatrix.sync.aligned.m16n16.x1.trans.shared.b8 {%0, %1}, [%2];"
                        : "=r"(v0), "=r"(v1) : "r"(cb + nt * 8));
           mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
-                       mla_e4m3x2_value(v0), mla_e4m3x2_value(v0 >> 16));
+                       mla_decode_e4m3x2<DIRECT>(v0), mla_decode_e4m3x2<DIRECT>(v0 >> 16));
           mla_mma_bf16(acc[nt+1][0], acc[nt+1][1], acc[nt+1][2], acc[nt+1][3], a0, a1, a2, a3,
-                       mla_e4m3x2_value(v1), mla_e4m3x2_value(v1 >> 16));
+                       mla_decode_e4m3x2<DIRECT>(v1), mla_decode_e4m3x2<DIRECT>(v1 >> 16));
         }
 #else
         // sm_120 has neither ldmatrix's .b8 element type nor its .m16n16 shape, and this is
@@ -3635,18 +3647,20 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
   a.probe = ints.size() > 3 ? (int)ints[3] : 0;
   const int qreg = ints.size() == 5 ? (int)ints[4] : 0;
-  TORCH_CHECK((qreg == 0 || qreg == 2 || qreg == 4 || qreg == 6 || qreg == 8), "MLA decode cell must be 0, 2, 4, 6 or 8");
+  TORCH_CHECK((qreg == 0 || qreg == 2 || qreg == 4 || qreg == 6 || qreg == 8 || qreg == 10 || qreg == 12), "MLA decode cell must be 0, 2, 4, 6, 8, 10 or 12");
   TORCH_CHECK(!qreg || (ptrs.size() == 8 && (a.T == 8 || a.T == 16) && a.probe == 0),
               "MLA query registers require the bound 8/16-row ordinary decode cell");
   auto stream = c10::cuda::getCurrentCUDAStream();
   if (qreg) {
-    static int grids[4] = {};
-    const bool tile32 = (qreg & 2) != 0;
+    static int grids[6] = {};
+    const bool tile32 = qreg == 2 || qreg == 6 || qreg == 12;
     const int smem = tile32 ? 2 * 32 * MLA_RP + 2 * MLA_H * 32 * 4
                               + MLA_H * 40 * 2 + MLA_SMEM_C : MLA_SMEM;
     auto kernel = qreg == 2 ? mk_mla_kernel<false, false, true, 32>
         : qreg == 6 ? mk_mla_kernel<false, false, true, 32, true>
         : qreg == 8 ? mk_mla_kernel<false, false, true, 16, true, true>
+        : qreg == 10 ? mk_mla_kernel<false, false, false, 16, true, false, true>
+        : qreg == 12 ? mk_mla_kernel<false, false, true, 32, true, false, true>
                     : mk_mla_kernel<false, false, false, 16, true>;
     int& grid = grids[qreg / 2 - 1];
     if (!grid) MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,

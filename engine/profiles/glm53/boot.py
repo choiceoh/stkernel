@@ -1170,6 +1170,7 @@ def native_execution_report(net, drafter):
                  shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
                  shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
                  router_fp32=len(net._router_fp32),
+                 router_fused=sorted(getattr(net, '_router_fused_executed', ())),
                  prefill_collectives=sorted(net.prefill_transport.executed),
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
                  prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
@@ -1178,6 +1179,11 @@ def native_execution_report(net, drafter):
                  prefill_ffn_packets=sorted(getattr(net, 'prefill_packet_executed', ())),
                  prefill_ffn_packet_plan=sorted(getattr(net, 'prefill_packet_planned', ())),
                  prefill_ffn_received_peak_bytes=getattr(net, 'prefill_packet_peak_bytes', 0))
+    if getattr(net, 'fused_decode_router', False):
+        expected = {(L, rows) for L in net._router_layers
+                    for rows in net.decode_fastpath_rows if rows in (8, 16)}
+        if set(proof['router_fused']) != expected or not expected:
+            raise RuntimeError(f'fused decode routers were not executed at every bound width: {proof}')
     if proof['prefill_ffn_packets'] != proof['prefill_ffn_packet_plan']:
         raise RuntimeError(f'agreed packet FFN readers were not executed: {proof}')
     if (getattr(net, 'prefill_absorb_tiles', False)
