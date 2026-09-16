@@ -48,6 +48,36 @@ class ResidentWaveTests(unittest.TestCase):
 
 
 class InputPackTests(unittest.TestCase):
+    def test_serving_proof_refuses_each_missing_consumer(self):
+        path = Path(__file__).resolve().parents[1] / 'engine/profiles/glm53/boot.py'
+        fn = next(n for n in ast.parse(path.read_text()).body
+                  if isinstance(n, ast.FunctionDef) and n.name == 'fixed_k_cost_report')
+        fn.body = [n for n in fn.body if not isinstance(n, ast.ImportFrom)]
+        md = NS(_GLM53_B12X_STATIC_V2={'resident_waves': True}, _RESIDENT_WAVE_ROWS={8},
+                _static_v2_decode_config=lambda config, rows: config)
+        scope = dict(md=md)
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), 'exec'), scope)
+        report = scope['fixed_k_cost_report']
+        layer = lambda: NS(producer_pack_executed={8}, input_pack_rows=lambda rows: rows == 8)
+        net = NS(decode_fastpath_rows=(8, 16), layers=(0, 1, 2),
+                 F=NS(is_moe=lambda l: l > 0, is_dsa=lambda l: l == 1),
+                 lanes=NS(mla_sparse=NS(pair_rows={8, 16})), mla_pair_executed={(1, 8), (1, 16)},
+                 dense={'L0.kda.in_proj': layer(), 'L2.kda.in_proj': layer()},
+                 producer_packs=True, mhc_input_packs=True)
+        self.assertEqual(report(net)['mla_pairs'], [(1, 8), (1, 16)])
+        with patch.object(md, '_RESIDENT_WAVE_ROWS', set()):
+            with self.assertRaisesRegex(RuntimeError, 'MoE'):
+                report(net)
+        with patch.object(net, 'mla_pair_executed', {(1, 8)}):
+            with self.assertRaisesRegex(RuntimeError, 'MLA'):
+                report(net)
+        for value in net.dense.values():
+            value.producer_pack_executed.clear()
+        with self.assertRaisesRegex(RuntimeError, 'mHC'):
+            report(net)
+        net.mhc_input_packs = False
+        self.assertEqual(report(net)['mhc_input_packs'], {})
+
     def test_bound_forward_consumes_the_exact_owned_pack(self):
         layer = writer(4096)
         x = torch.zeros(8, 4096, dtype=torch.bfloat16)

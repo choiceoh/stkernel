@@ -2265,6 +2265,7 @@ def _get_static_kernel(
 
 
 _STATIC_V2_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
+_RESIDENT_WAVE_ROWS: set[int] = set()
 
 
 def _static_v2_cache_key(config: dict, **fields) -> Tuple:
@@ -3793,6 +3794,8 @@ def launch_sm120_static_moe(
             or kernel_scatter_output is scatter_output):
         raise RuntimeError('MoE finalizer lost its separate FP32 scatter owner')
     compiled(*runtime_args)
+    if static_v2_stamps is not None and static_v2_config.get("resident_waves"):
+        _RESIDENT_WAVE_ROWS.add(int(a.shape[0]))
     if _output_finalize is not None:
         # The callback consumes the borrowed accumulator on this stream before
         # another MoE launch may reuse it. No BF16 output tensor is written.

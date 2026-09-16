@@ -171,6 +171,7 @@ class Glm53Net:
         self._decode_pairs = {}
         self.decode_fastpath_rows = ()
         self.decode_pairs_executed = set()
+        self.mla_pair_executed = set()
         self._query_pairs = {}
         self.decode_dsa_rows = ()
         self.decode_latents_executed = set()
@@ -979,7 +980,10 @@ class Glm53Net:
     def _mla_context(self, L, q, latent, slots, valid, step, caches):
         prefix = self._mla_prefix(len(q), step)
         if not prefix:
-            return self.lanes.mla_sparse(q, latent, slots, valid, self.F.mla_scale, 1.0)
+            out = self.lanes.mla_sparse(q, latent, slots, valid, self.F.mla_scale, 1.0)
+            if len(q) in getattr(self.lanes.mla_sparse, 'pair_rows', ()):
+                self.mla_pair_executed.add((L, len(q)))
+            return out
         s = step.segments[0]
         out = torch.empty_like(q)
         self.lanes.mla_dense_prefix(q[:prefix], latent, *caches.token_map(L, s.seq),
