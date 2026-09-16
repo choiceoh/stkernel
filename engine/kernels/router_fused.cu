@@ -7,14 +7,17 @@
 // 300 launches whose bytes are one 4.7 MB FP32 gate read per layer.
 //
 // Here 96 CTAs, two to an SM, stream the resident FP32 gate once -- three experts a CTA, one 16 KB
-// row per expert, evict-first, every request of a k chunk (gate and all rows of x) issued before the
-// chunk's first product -- and take the IEEE FP32 products against every row (BF16 promoted
-// exactly) in a FIXED order: a
+// row per expert, evict-first, the warp's whole 6 KB of gate requested before its first product --
+// and take the IEEE FP32 products against every row (BF16 promoted exactly) in a FIXED order: a
 // lane's sequential fmaf chain over its k, a shuffle tree across the warp (lane 0's association
 // kept), the eight warps in order. Two CTAs an SM is what the register budget allows at three
 // experts (six experts a CTA needed 255 registers, one CTA an SM, and the loads then streamed at
 // ~100 GB/s however they were issued: c2rt2/c2rt3-0917; staging the six rows by cp.async.bulk
-// into 96 KB of shared memory was slower still, c2rt4-0917, the copies landing before any product).
+// into 96 KB of shared memory was slower still, c2rt4-0917, the copies landing before any product;
+// requesting every row's x for a chunk before the chunk's products won 1.7% at 8 rows and lost 5%
+// at 16, c2rt6-0917, so the ROWS template picks that order at 8). At ~43 us a layer for one 4.7 MB
+// gate the 16-row cut is still not DRAM-bound; the next question is a profile, not another blind
+// cut (measurements/st_c2_levers_survey_20260917).
 // The last CTA to arrive (a ticket, like the mHC tails) selects for every row: score =
 // div_rn(1, 1 + exp(-logit)) + bias, top-k descending by score with an exact tie to the LOWER
 // expert id, weight = s / (sum s + 1e-20) * scale from the RAW sigmoid with the sum taken in column
@@ -78,10 +81,15 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
   const int tid = threadIdx.x, warp = tid >> 5, lane = tid & 31;
   const int e0 = blockIdx.x * ST_RT_PER_CTA;
 
-  // phase 1: this CTA's three experts against every row, over the warp's k slice. Per chunk, every
-  // request first -- the three gate float4 (evict-first) and the row's four elements of x for every
-  // row, so one L2 round trip serves the chunk instead of one per row -- then the products.
+  // phase 1: this CTA's three experts against every row, over the warp's k slice. The warp's whole
+  // 6 KB of gate first (12 float4 a lane, evict-first), then the products.
+  float4 g[ST_RT_LANE_CHUNKS][ST_RT_PER_CTA];
   const int kbase = warp * ST_RT_KSLICE + lane * 4;
+#pragma unroll
+  for (int j = 0; j < ST_RT_LANE_CHUNKS; ++j)
+#pragma unroll
+    for (int e = 0; e < ST_RT_PER_CTA; ++e)
+      g[j][e] = __ldcs(reinterpret_cast<const float4*>(gate + (size_t)(e0 + e) * ST_RT_HIDDEN + kbase + j * 128));
   float acc[ST_RT_PER_CTA][ROWS];
 #pragma unroll
   for (int e = 0; e < ST_RT_PER_CTA; ++e)
@@ -90,26 +98,42 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
 #pragma unroll
   for (int j = 0; j < ST_RT_LANE_CHUNKS; ++j) {
     const int k = kbase + j * 128;
-    float4 g[ST_RT_PER_CTA];
+    if constexpr (ROWS <= 8) {
+      // eight rows: the chunk's x for every row first, one L2 round trip a chunk (c2rt6-0917: -1.7% over
+      // the per-row order at 8 rows, +5% at 16, where the extra registers cost more than the round trips)
+      float xa[ROWS], xb[ROWS], xc[ROWS], xd[ROWS];
 #pragma unroll
-    for (int e = 0; e < ST_RT_PER_CTA; ++e)
-      g[e] = __ldcs(reinterpret_cast<const float4*>(gate + (size_t)(e0 + e) * ST_RT_HIDDEN + k));
-    float xa[ROWS], xb[ROWS], xc[ROWS], xd[ROWS];
+      for (int t = 0; t < ROWS; ++t) {
+        xa[t] = xb[t] = xc[t] = xd[t] = 0.f;
+        if (t < rows) st_rt_load4<X>(x + (size_t)t * ST_RT_HIDDEN + k, xa[t], xb[t], xc[t], xd[t]);
+      }
 #pragma unroll
-    for (int t = 0; t < ROWS; ++t) {
-      xa[t] = xb[t] = xc[t] = xd[t] = 0.f;
-      if (t < rows) st_rt_load4<X>(x + (size_t)t * ST_RT_HIDDEN + k, xa[t], xb[t], xc[t], xd[t]);
-    }
+      for (int t = 0; t < ROWS; ++t) {
 #pragma unroll
-    for (int t = 0; t < ROWS; ++t) {
+        for (int e = 0; e < ST_RT_PER_CTA; ++e) {
+          float s = acc[e][t];
+          s = fmaf(g[j][e].x, xa[t], s);
+          s = fmaf(g[j][e].y, xb[t], s);
+          s = fmaf(g[j][e].z, xc[t], s);
+          s = fmaf(g[j][e].w, xd[t], s);
+          acc[e][t] = s;
+        }
+      }
+    } else {
+      // sixteen rows: each row's x beside its products
 #pragma unroll
-      for (int e = 0; e < ST_RT_PER_CTA; ++e) {
-        float s = acc[e][t];
-        s = fmaf(g[e].x, xa[t], s);
-        s = fmaf(g[e].y, xb[t], s);
-        s = fmaf(g[e].z, xc[t], s);
-        s = fmaf(g[e].w, xd[t], s);
-        acc[e][t] = s;
+      for (int t = 0; t < ROWS; ++t) {
+        float a = 0.f, b = 0.f, c = 0.f, d = 0.f;
+        if (t < rows) st_rt_load4<X>(x + (size_t)t * ST_RT_HIDDEN + k, a, b, c, d);
+#pragma unroll
+        for (int e = 0; e < ST_RT_PER_CTA; ++e) {
+          float s = acc[e][t];
+          s = fmaf(g[j][e].x, a, s);
+          s = fmaf(g[j][e].y, b, s);
+          s = fmaf(g[j][e].z, c, s);
+          s = fmaf(g[j][e].w, d, s);
+          acc[e][t] = s;
+        }
       }
     }
   }
