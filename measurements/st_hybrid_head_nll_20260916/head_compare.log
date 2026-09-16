@@ -1,0 +1,31 @@
+# head_compare: production(RH) vs NVIDIA ModelOpt vs hybrid-gptq   (run 2026-09-16)
+
+## arms
+== 22:51:41 arm hold-e032a6005824 = e032a6005824c08322a5e3865b27669272497ea5 -> /home/choiceoh/st-releases/e032a6005824 (port 8001)
+2026-09-14 05:48:48 arm HY (/home/choiceoh/expert-capture/st-glm53-hybrid.env): quieting the nodes
+2026-09-14 05:50:41 arm HY: hold pid 810031; feeding
+2026-09-14 06:01:40 arm HY: feed exit 0 -- 133 ok rows
+RANKS_DIR=/home/choiceoh/models/st-glm53-hybrid-gptq-v1
+CKPT=/home/choiceoh/hybrid-meta
+
+## A vs N  -- reproduces PR #911 +0.034
+WARNING: document numbering differs between the boots (133 vs 174 documents)
+split                docs positions    nll RH     nll N      N-RH                95% CI  N better |   bf16 RH    bf16 N      diff                95% CI |     kl RH      kl N
+fit                   108     27622   2.82052   2.85496  +0.03444 [ +0.01427, +0.05485]     0.532 |   2.82245   2.85708  +0.03464 [ +0.01424, +0.05530] |  6.08e-04  6.05e-04
+heldout                25      6400   3.01215   3.03420  +0.02206 [ -0.02919, +0.06805]     0.533 |   3.01378   3.03681  +0.02303 [ -0.02820, +0.06893] |  6.26e-04  6.20e-04
+heldout-no-onepass     22      5632   2.98758   3.01955  +0.03197 [ -0.01575, +0.07437]     0.531 |   2.98909   3.02190  +0.03281 [ -0.01466, +0.07576] |  6.46e-04  6.39e-04
+
+## A vs HY -- the measurement PR #911 called Not measured
+WARNING: document numbering differs between the boots (133 vs 186 documents)
+split                docs positions    nll RH    nll HY     HY-RH                95% CI HY better |   bf16 RH   bf16 HY      diff                95% CI |     kl RH     kl HY
+fit                   108     27622   2.82052   2.87060  +0.05008 [ +0.02920, +0.07174]     0.538 |   2.82245   2.87256  +0.05011 [ +0.02919, +0.07202] |  6.08e-04  5.88e-04
+heldout                25      6400   3.01215   3.03632  +0.02417 [ -0.03556, +0.09232]     0.538 |   3.01378   3.03815  +0.02437 [ -0.03515, +0.09235] |  6.26e-04  6.27e-04
+heldout-no-onepass     22      5632   2.98758   3.02798  +0.04040 [ -0.01798, +0.11267]     0.538 |   2.98909   3.02977  +0.04068 [ -0.01778, +0.11285] |  6.46e-04  6.42e-04
+
+## N vs HY
+WARNING: document numbering differs between the boots (174 vs 186 documents)
+WARNING: 174 documents scored, 133 ok feed rows
+split                docs positions     nll N    nll HY      HY-N                95% CI HY better |    bf16 N   bf16 HY      diff                95% CI |      kl N     kl HY
+fit                   108     27622   2.85496   2.87060  +0.01564 [ -0.00459, +0.03707]     0.509 |   2.85708   2.87256  +0.01547 [ -0.00491, +0.03689] |  6.05e-04  5.88e-04
+heldout                25      6400   3.03420   3.03632  +0.00211 [ -0.06363, +0.07056]     0.509 |   3.03681   3.03815  +0.00134 [ -0.06399, +0.06982] |  6.20e-04  6.27e-04
+heldout-no-onepass     22      5632   3.01955   3.02798  +0.00842 [ -0.05247, +0.07605]     0.510 |   3.02190   3.02977  +0.00787 [ -0.05282, +0.07577] |  6.39e-04  6.42e-04

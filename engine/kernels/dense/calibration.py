@@ -22,7 +22,20 @@ import torch
 
 ROWS_TARGET = 32768        # rows per blob before the sums are filed on their own (33차: 33K tokens)
 ROWS_FLOOR = 4096          # fewer than this at shutdown is not filed: a starved Hessian would pack worse than none
-BUDGET_BYTES = 2 << 30     # per rank, from the arena; the rest waits for a later boot
+BUDGET_BYTES = 8 << 30     # per rank, from the arena; the rest waits for a later boot -- see below
+# Every target Hessian a GLM-5.3 rank needs sums to 7.25 GiB (102 blobs at K=4096, 34 at 2048, 22 at 1536,
+# 3 at 3072, 42 at 512), so at 2 GiB a full recalibration took FOUR boots, each one a fleet window and each
+# one a chance to die on the path 33차 recorded dying repeatedly. Eight covers a rank in one pass with room
+# to spare. This is a CAP, not an allocation: `calib_bytes` only grows for blobs a boot actually lacks, so a
+# steady-state boot with a few missing sites is unchanged, and the sum lands in `arena_bytes`, which
+# `prepare_allocation` judges -- a budget that does not fit refuses the boot at the memory gate instead of
+# taking the room from serving.
+#
+# Why a full recalibration is worth the window at all (measured 2026-09-16, measurements/st_site_lane_table_20260916):
+# production's blobs are a thin sum -- ntok 17,189, and `_gptq_inverse_factor` steps its damping ladder to 10%
+# on them -- and against a 19x thicker calibration they cost a median 33% of the W4 decode lane's error. On
+# three of sixteen sites the thin blob made GPTQ WORSE THAN RTN, which is the packer compensating for a
+# distribution it does not have.
 GRAM_ROWS = 256           # small calls share one Gram update; bounded staging is part of the same budget
 
 
@@ -176,10 +189,14 @@ class Calibration:
     def complete(self, target: int = ROWS_TARGET) -> bool:
         return bool(self.rows) and self.progress() >= target
 
-    def save(self, root: "str | Path", rank: int) -> "list[Path]":
+    def save(self, root: "str | Path", rank: int, weights_id=None) -> "list[Path]":
         """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack
         left, through a temporary file. A tile summed for its peaks alone keeps the Hessian the store already had,
-        and its token count with it: only the peaks are this boot's."""
+        and its token count with it: only the peaks are this boot's.
+
+        `weights_id` names the weights this boot served, and travels with the Hessian so a later boot can tell
+        whether the sum describes its own inputs (`store.fits_weights`). A tile that keeps an older Hessian keeps
+        that Hessian's id too -- the field describes the sum, not the boot that last touched the file."""
         self.flush()
         written = []
         back = {}                                                          # blob key -> the s to undo (H -> s H s, amax -> amax * s)
@@ -200,16 +217,20 @@ class Calibration:
                     continue                                               # its blob went away under us: a later boot sums the whole thing
                 blob = torch.load(path, map_location="cpu", weights_only=True)
                 H, ntok = blob["H"].float(), int(blob["ntok"])
+                sum_id = blob.get("weights_id")            # the retained Hessian's own provenance, not this boot's
             else:
                 H, ntok = H.detach().float(), int(self.rows[key])
                 if s is not None:
                     H = (H * s[:, None]) * s[None, :]
+                sum_id = weights_id
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary = path.with_suffix(f".{os.getpid()}.tmp")            # a boot that dies mid-write leaves the old blob, not a truncated one
             try:
                 blob = {"H": H.cpu().contiguous(), "amax": amax.cpu().contiguous(), "ntok": ntok, "name": key}
                 if key in self.input_scopes:
                     blob['input_scope'] = self.input_scopes[key]
+                if sum_id is not None:
+                    blob['weights_id'] = sum_id
                 torch.save(blob, temporary)
                 os.replace(temporary, path)
             finally:

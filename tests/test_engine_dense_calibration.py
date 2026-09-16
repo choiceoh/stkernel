@@ -301,5 +301,98 @@ class Fp8GptqTests(unittest.TestCase):
             self.assertTrue(torch.equal(q.view(torch.uint8), q2.view(torch.uint8)))
 
 
+class BudgetTests(unittest.TestCase):
+    def test_one_boot_can_sum_every_target_hessian_a_glm53_rank_needs(self):
+        """A full recalibration must not need four fleet windows.
+
+        Each boot sums what fits BUDGET_BYTES and defers the rest, so the budget decides how many boots a
+        recalibration costs -- and every one of them is a window, a production outage, and a chance to die on
+        the path 33차 recorded dying repeatedly. These are the target weights a GLM-5.3 rank packs (the shapes
+        rank3of4 carries, TP=4), by the K each one is calibrated over; the drafter's blobs are extra and are
+        not moved aside for a target recalibration.
+        """
+        from engine.kernels.dense.calibration import BUDGET_BYTES
+        rank = ((4096, 34 + 11 + 42 + 11 + 3 + 1),   # kda.in_proj, mla.o_proj, moe.sh_gate_up, mla.qkv_a, mlp.gate_up, head
+                (2048, 34),                          # kda.o_proj
+                (1536, 11 + 11),                     # idx.wq_b, mla.q_b
+                (3072, 3),                           # mlp.down
+                (512, 42))                           # moe.sh_down
+        plan = sum(Calibration.nbytes(PackStore.tiles("x", k)) * n for k, n in rank)
+        self.assertLess(plan, BUDGET_BYTES,
+                        f"a rank's target Hessians are {plan / 2**30:.2f} GiB but the budget is "
+                        f"{BUDGET_BYTES / 2**30:.2f} GiB: a full recalibration would take "
+                        f"{-(-plan // BUDGET_BYTES)} boots, not one")
+        self.assertLess(BUDGET_BYTES, 16 << 30, "the budget lands in arena_bytes; it cannot be free")
+
+
+class CalibrationProvenanceTests(unittest.TestCase):
+    """A Hessian belongs to the weights that made the activations it summed.
+
+    `calibration_path` keys a blob by the weight's NAME, so nothing but this check stops a boot that changed
+    checkpoints from compensating every weight for a distribution it no longer produces. Measured 2026-09-16:
+    a blob from another arm cost +43..114% on the layer-1 KDA projections, and on o_proj the mismatched GPTQ
+    read worse than RTN at every damping and shrinkage -- so the refusal must reach the pack, not just a query.
+    """
+
+    NAME = "A/model.h"
+
+    def blob(self, store, weights_id=None, k=256):
+        path = store.calibration_path(self.NAME)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        x = torch.randn(1024, k) @ (torch.randn(k, k) * 0.3 + torch.eye(k))
+        blob = {"H": x.T @ x, "ntok": 1024, "name": self.NAME, "amax": x.abs().amax(0)}
+        if weights_id is not None:
+            blob["weights_id"] = weights_id
+        torch.save(blob, path)
+
+    def test_a_blob_summed_under_other_weights_is_refused_and_the_pack_rounds_to_nearest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            w = (torch.randn(128, 256) * 0.05).bfloat16()
+            self.blob(PackStore(tmp, 0), weights_id="layout-A")
+            own = PackStore(tmp, 0, weights_id="layout-A")
+            self.assertTrue(own.calibrated(self.NAME))
+            self.assertIsNotNone(own.pack_fp8(w, self.NAME), "its own blob still packs GPTQ")
+            self.assertEqual(own.foreign, set())
+
+            other = PackStore(tmp, 0, weights_id="layout-B")
+            self.assertFalse(other.calibrated(self.NAME))
+            self.assertIsNone(other.pack_fp8(w, self.NAME), "no FP8 GPTQ from a foreign blob")
+            digest = other.weight_digest(w)
+            self.assertIsNone(other._calibration_sha(self.NAME, 256, None, digest),
+                              "and the W4 lane sees no calibration, so `pack` rounds to nearest")
+            self.assertIn(self.NAME, other.foreign)
+            self.assertEqual([need.key for need in other.missing_calibration(self.NAME, 256)], [self.NAME],
+                             "and the boot is told to sum its own")
+
+    def test_a_blob_from_before_the_field_is_taken_so_existing_fleets_keep_their_packs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            w = (torch.randn(128, 256) * 0.05).bfloat16()
+            self.blob(PackStore(tmp, 0))                                  # no weights_id: claims nothing
+            store = PackStore(tmp, 0, weights_id="layout-A")
+            self.assertTrue(store.calibrated(self.NAME))
+            self.assertIsNotNone(store.pack_fp8(w, self.NAME))
+            self.assertEqual(store.foreign, set())
+            self.assertTrue(PackStore(tmp, 0).calibrated(self.NAME), "a store that names no weights takes any blob")
+
+    def test_the_sums_id_travels_with_the_hessian_not_with_the_boot_that_files_it(self):
+        from engine.kernels.dense.calibration import Calibration
+        with tempfile.TemporaryDirectory() as tmp:
+            store = PackStore(tmp, 0, weights_id="layout-A")
+            self.blob(store, weights_id="layout-A", k=64)                  # an older boot's Hessian
+            c = Calibration("cpu", budget_bytes=1 << 20)
+            layer = FakeLayer(64, self.NAME)
+            self.assertTrue(c.attach(layer.name, layer, store.missing_calibration(layer.name, 64), small_rows=True))
+            self.assertEqual(list(c.H), [], "peaks only: the Hessian stays on disk")
+            c.arm()
+            layer(torch.randn(20, 64).bfloat16())
+            c.save(tmp, rank=0, weights_id="layout-B")                     # a boot serving OTHER weights files peaks
+            kept = torch.load(store.calibration_path(self.NAME), map_location="cpu", weights_only=True)
+            self.assertEqual(kept["weights_id"], "layout-A",
+                             "a retained Hessian keeps its own provenance, not this boot's")
+            self.assertTrue(PackStore(tmp, 0, weights_id="layout-A").calibrated(self.NAME))
+            self.assertFalse(PackStore(tmp, 0, weights_id="layout-B").calibrated(self.NAME),
+                             "the peaks boot did not make the old sum its own")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,84 @@
+# Four levers past GPTQ, and what a stale Hessian costs. L1 KDA, real weights, real Hessians.
+# Calibrated on calib-v2-fit unless the row says otherwise; scored on calib-v2-heldout throughout.
+# rh-era = ~/glm53-cache/mkcalib, summed 2026-09-12 -- the blobs every 2026-09-14 eval arm loaded.
+
+## 1. Hessian provenance: calibrate two ways, score on one held-out set
+site      lane      calibrated on   heldout rel err
+in_proj   W4        calib-v2-fit         2.2193e-02
+in_proj   W4        rh-era 9/12          3.1736e-02      (+43%)
+in_proj   FP8       calib-v2-fit         2.7478e-03
+in_proj   FP8       rh-era 9/12          4.2916e-03      (+56%)
+o_proj    W4        calib-v2-fit         4.9114e-02
+o_proj    W4        rh-era 9/12          7.8331e-02      (+60%)
+o_proj    FP8       calib-v2-fit         5.8874e-04
+o_proj    FP8       rh-era 9/12          1.2591e-03      (+114%)
+
+## 2. Scale-search objective (packing._w4_search scores 16 candidates by squared WEIGHT error)
+== L1.kda.in_proj  (6416, 4096)
+   A. scale-search objective                 RTN  GPTQ act_order
+      identity                      3.6035e-02      2.2193e-02   (+0% / +0%) [ships]
+      diag                          3.5828e-02      2.2303e-02   (-1% / +0%)
+      block                         3.4579e-02      2.2553e-02   (-4% / +2%)
+== L1.kda.o_proj  (4096, 2048)
+      identity                      7.4753e-02      4.9114e-02   (+0% / +0%) [ships]
+      diag                          6.8370e-02      4.9484e-02   (-9% / +1%)
+      block                         6.5093e-02      5.0114e-02   (-13% / +2%)
+# Helps RTN, costs 2% under GPTQ: the two are substitutes and GPTQ is the stronger one.
+
+## 3. Can damping or shrinkage patch a stale Hessian?  (GPTQ act_order, block-weighted scales)
+== in_proj   ceiling (matched calibration)   2.2553e-02
+      rh-era, percdamp=0.01                  3.9680e-02
+      rh-era, percdamp=0.05                  3.9783e-02
+      rh-era, percdamp=0.20                  3.9795e-02
+      rh-era, shrink=0.25                    3.9971e-02
+      rh-era, shrink=0.50                    4.0121e-02
+== o_proj   ceiling (matched calibration)    5.0114e-02
+      rh-era, percdamp=0.01                  8.9496e-02
+      rh-era, percdamp=0.05                  8.7148e-02
+      rh-era, percdamp=0.20                  8.6367e-02
+      rh-era, shrink=0.25                    8.7860e-02
+      rh-era, shrink=0.50                    8.6767e-02
+# No. o_proj recovers ~10% of the gap, in_proj none.
+
+## 4. So what IS the best pack a node with only a stale Hessian can build?
+== L1.kda.in_proj   everything below is built from the STALE rh-era Hessian only
+      RTN, identity scales (no Hessian at all)   3.6035e-02   <- wins
+      RTN, stale-weighted scales                 4.5173e-02
+      GPTQ act_order, stale                      3.9680e-02
+== L1.kda.o_proj
+      RTN, identity scales (no Hessian at all)   7.4753e-02   <- wins
+      RTN, stale-weighted scales                 8.5846e-02
+      GPTQ act_order, stale                      8.9496e-02
+# A stale Hessian is worth less than no Hessian, every way of using it.
+
+## 5. Low-rank correction of the residual (33차 lever 4)
+== L1.kda.in_proj  (6416, 4096)
+      pack                             heldout     vs r=0     bytes
+      RTN                           3.6035e-02         -      0.0%
+      RTN + LoRC r=16               3.5424e-02       -2%      2.3%
+      RTN + LoRC r=32               3.4963e-02       -3%      4.6%
+      RTN + LoRC r=64               3.4075e-02       -5%      9.1%
+      GPTQ act_order                2.2193e-02         -      0.0%
+      GPTQ act_order + LoRC r=16    2.1972e-02       -1%      2.3%
+      GPTQ act_order + LoRC r=32    2.1754e-02       -2%      4.6%
+      GPTQ act_order + LoRC r=64    2.1352e-02       -4%      9.1%
+== L1.kda.o_proj  (4096, 2048)
+      RTN                           7.4753e-02         -      0.0%
+      RTN + LoRC r=16               6.7797e-02       -9%      4.2%
+      RTN + LoRC r=32               6.5760e-02      -12%      8.3%
+      RTN + LoRC r=64               6.2747e-02      -16%     16.7%
+      GPTQ act_order                4.9114e-02         -      0.0%
+      GPTQ act_order + LoRC r=16    4.8479e-02       -1%      4.2%
+      GPTQ act_order + LoRC r=32    4.7909e-02       -2%      8.3%
+      GPTQ act_order + LoRC r=64    4.6683e-02       -5%     16.7%
+# 33차's asymmetry does NOT reproduce: -1..5% on GPTQ, and on o_proj LoRC helps RTN MORE.
+# 33차's -37..66% came from a synthetic Hessian with rank-64 correlation built in.
+
+## 6. percdamp on a MATCHED Hessian -- is the shipped 1% right?
+== L1.kda.in_proj                     == L1.kda.o_proj
+      percdamp=0.002   2.2264e-02           percdamp=0.002   4.9152e-02
+      percdamp=0.005   2.2236e-02           percdamp=0.005   4.9128e-02
+      percdamp=0.010   2.2193e-02 [ships]   percdamp=0.010   4.9114e-02 [ships]
+      percdamp=0.020   2.2146e-02           percdamp=0.020   4.9098e-02
+      percdamp=0.050   2.2082e-02           percdamp=0.050   4.9202e-02
+# Flat: 0.5% across a 25x sweep. The shipped 1% is effectively optimal.

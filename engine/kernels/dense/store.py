@@ -58,8 +58,11 @@ class Need(NamedTuple):
 
 
 class PackStore:
-    def __init__(self, root, rank):
+    def __init__(self, root, rank, weights_id=None):
         self.root, self.rank = Path(root), rank
+        self.weights_id = weights_id             # the weights this boot serves; a blob summed under others is refused
+        self.foreign = set()                     # names whose blob was summed under other weights (re-sum these)
+        self._claims = {}                        # calibration path -> the weights_id it claims, cached per boot
         self.stats = Counter()
         self.read_files = set()
         self._factor_entry = None                # (identity, factor) of the last weight: its two lanes share one factorisation
@@ -83,9 +86,41 @@ class PackStore:
     def calibration_path(self, key, rank=None):
         return self.root/'mkcalib'/f'rank{self.rank if rank is None else rank}'/(key+'.pt')
 
+    def fits_weights(self, path):
+        """Whether that blob's Hessian describes the inputs THIS boot's weights make.
+
+        A Hessian is a sum over one boot's activations, so it belongs to the checkpoint that produced them --
+        but `calibration_path` keys a blob by the weight's NAME alone, so a boot that changed checkpoints would
+        otherwise GPTQ every weight against a distribution it no longer has. Measured 2026-09-16 on the layer-1
+        KDA projections: a blob summed on another arm cost +43..114%, and on o_proj the mismatched GPTQ came out
+        WORSE than RTN (8.95e-2 vs 7.48e-2) at every damping and shrinkage tried -- a stale Hessian is worth less
+        than no Hessian, so refusing it is the point. The three 2026-09-14 eval arms shared one blob set and their
+        head NLL ordered by how far their experts sat from the arm that summed it.
+
+        A blob written before this field makes no claim and is taken: the fleet's existing blobs stay usable, and
+        the next calibration stamps them.
+        """
+        if self.weights_id is None:
+            return True
+        if path not in self._claims:
+            try:
+                blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
+                self._claims[path] = blob.get('weights_id')
+            except Exception:
+                self._claims[path] = None                # unreadable here: `missing_calibration` says what is wrong
+        claimed = self._claims[path]
+        return claimed is None or claimed == self.weights_id
+
     def calibrated(self, name):
-        """Whether this store holds a calibration blob for `name` (any shape: `pack` checks the fit)."""
-        return self.calibration_path(name).is_file()
+        """Whether this store holds a calibration blob for `name` that was summed under this boot's weights
+        (any shape: `pack` checks the fit). A foreign blob reads as uncalibrated, so the pack rounds to nearest."""
+        path = self.calibration_path(name)
+        if not path.is_file():
+            return False
+        if not self.fits_weights(path):
+            self.foreign.add(name)
+            return False
+        return True
 
     def missing_calibration(self, name, cols):
         """The blobs of `name` this store lacks: what a calibrating boot must sum. A blob that exists but does not fit
@@ -95,6 +130,10 @@ class PackStore:
             key, start, width = tile.key, tile.start, tile.width
             path = self.calibration_path(key)
             if not path.is_file():
+                missing.append(Need(key, start, width))
+                continue
+            if not self.fits_weights(path):           # summed under other weights: this boot must sum its own
+                self.foreign.add(name)
                 missing.append(Need(key, start, width))
                 continue
             blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
@@ -145,6 +184,9 @@ class PackStore:
         try:
             stat = path.stat()
         except FileNotFoundError:
+            return None
+        if not self.fits_weights(path):     # summed under other weights: round to nearest rather than compensate
+            self.foreign.add(name)          # for a distribution this boot does not have (`fits_weights`)
             return None
         key = (str(path), stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, int(k), self._smooth_sha(smooth))
         sha = digest.calibrations.get(key)
