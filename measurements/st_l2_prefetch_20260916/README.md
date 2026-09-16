@@ -88,6 +88,50 @@ B/A/A/B 두 괄호의 평균 변화(warm / evicted), `_l2` 대 서빙 경로, �
 늘려야 하는데 상주 블록은 레지스터가 96 으로 묶는다. 얻을 상한이 호출당 ~5 µs × 84 = 0.4 ms/스텝이라 커널 재작성 값어치가 없고,
 진짜 레버는 경계 수(스텝당 ~1,200 런치 × PDL 인계)라 mHC 가 아니라 이웃 커널과의 융합 쪽이다 — 11차가 시도했던 자리.
 
+## 4. m=16 `ksr` 스윕: 규칙이 이미 최적 — 기각 (티켓 `c2ksr-0917`, 16행)
+
+`dense_cells` 의 16행 셀마다 서빙 경로를 `set_gemm2(n)`(n = 1, 2, 4, 8) 아래 캡처한 팔을 붙였다. fold 순서가 바뀌므로
+1 bf16 ulp(원소와 텐서 RMS 중 큰 쪽) 게이트다. 원시 이벤트 `dense-ksr-5ec0d03e.jsonl`.
+
+- **서빙 16행 CTA 셀은 강제 ksr 을 거부한다** — `kda.in_proj`·`kda.o_proj`·`mla.o_proj`·`mla.qkv_a`·`mlp.*` 의 `bound` 경로는
+  "sixteen-row cells require the ordinary lane's K slices": 그 커널들의 K 슬라이스 수는 레인의 선언 기하라 벤치 훅으로 못 바꾼다.
+- **훅이 먹는 경로(generic: 드래프터 두 셀, pair: 쿼리 쌍)에서는 규칙의 선택이 최적이거나 잡음 안**이다. 게이트는 전부 통과
+  (최대 1.0 ulp, fold 순서 차).
+
+| 셀 (서빙 ksr) | ksr1 | ksr2 | ksr4 | ksr8 |
+|---|---:|---:|---:|---:|
+| drafter.gate_up 단일 (2) | +9.5 / −1.3 | +0.0 / +0.4 | +11.1 / +3.0 | +26.9 / +4.6 |
+| drafter.gate_up 사슬 (2) | −0.1 / +2.0 | −0.0 / +0.2 | +0.1 / +1.9 | +4.9 / +4.0 |
+| drafter.down 단일 (3) | +18.2 / −3.8 | +16.6 / −3.1 | +16.2 / +5.6 | +25.7 / +14.6 |
+| drafter.down 사슬 (3) | +18.1 / +12.5 | +5.5 / +4.2 | +9.7 / +6.3 | +11.4 / +6.4 |
+| mla.query 사슬 (3+3) | — | +11.9 / +4.8 | +22.2 / +7.4 | +37.0 / +17.0 |
+
+(warm / evicted 평균 변화.) 슬라이스를 줄이면 warm 에서 크게 느려지고 evicted 에서 기껏 −3~−4 %(단일 층, 사슬에서는 +), 늘리면
+둘 다 느려진다. 30차가 m=8 에서 고른 "96 슬롯 한 파도" 규칙은 m=16 에서도 옳다. **dense 소형 GEMM 의 남은 시간은 ksr 로도
+안 열린다** — 슬라이스당 고정 사슬 자체(x 양자화·부분합·도착·에필로그)가 값이고, 그것은 커널 본문의 일이다(같은 시각 다른
+세션의 `c1deep-0917` "deep-ring arm" 이 그 자리를 재고 있었다).
+
+## 5. MoE 셀 `z` 재도전: 저장소 순서 셋이 전부 틀린다 — 배관 문제로 접음 (티켓 `c2z-0917`, `c2z2-0917`)
+
+reform 타일의 B 스테이지 레이아웃(`probes/b12x_reform_layout_print.py`): B1 `S<3,4,3> o ((8,16),(256,1),(1,2))`(128 B 행),
+B2 `S<2,4,3> o ((8,32),(128,1),(1,3))`(64 B 행). 호스트 순열을 **바이트 단위 표준 스위즐**(16 B 청크 ^= 행%8 / (행//2)%4)로
+두고 스테이지마다 `cp.async.bulk` 하나로 같은 mbarrier 에 같은 바이트를 완료하는 셀 `z` 는 **네 팔 전부 3.3e7 ulps(max|diff|
+8.4)로 게이트를 넘었다** — 옛 `z`(니블 단위 순열, 0/3 PASS)와 같은 증상이고, 둘은 서로 다른 순열이다. 그래서 같은 커널에 저장소
+순서 셋을 물리는 진단 티켓(`c2z2-0917`, 원시 `moe-z-95588042.jsonl`)을 돌렸다.
+
+| 저장소 순서 | C=2 단일 max\|diff\| | C=1 단일 | ulps |
+|---|---:|---:|---:|
+| byte (16 B 청크 ^= 행%8 / (행//2)%4, TMA 하드웨어 모드) | 8.39 | 8.51 | 3.3e7 |
+| nibble (8 B 단위 ^= (2행+반)%8 / 행%4, DSL 레이아웃의 원소 단위 읽기) | 7.82 | 7.36 | 3.3e7 |
+| plain (순열 없음) | 7.80 | 6.96 | 3.3e7 |
+
+**셋 다 같은 자릿수로 틀리고 서로 조금씩 다르다**: 순열은 결과를 바꾸지만 어느 것도 서빙 바이트를 재현하지 않는다 → 문제는 순열이
+아니라 벌크 복사의 배관이다. 종이 위에서는 착지 주소(`storage.sB1` 바이트 베이스 + 슬롯 × 16 KB, 1024 정렬), 원본 주소(타일 우선
+[E][K/256][N][128 B] 의 e·2 MiB + kt·128 KiB + 타일·16 KiB), 장벽 회계(TMA 박스와 같은 16384 B 를 같은 mbarrier 에 완료)가 모두
+맞아 보이지만, GPU 가 아니라고 한다. 다음 사람이 이 자리를 열려면 **smem 덤프 프로브**(장벽 뒤 B 스테이지 16 KB 를 전역에 쓰는
+프로브 전용 모드로 TMA 착지 이미지와 벌크 착지 이미지를 바이트로 대조)가 먼저다. 기대 이득이 옛 `z` 의 −2.5 %(MoE 의 ~0.7 ms/
+스텝) 상한이라 여기서 접는다. 셀 `z`·`_swizzle_tile_boxes`·`bulk` 섹션은 남는다(서빙 레시피에 토큰 없음).
+
 ## 한계
 
 - 한 랭크, 실물 가중치, 합성 행(실물 라우터), 프로덕션 스위치 아닌 프로브 기본 실행계획. 팔 간 차만 유효하다.
@@ -103,6 +147,10 @@ ST_PROBE_GIB=64 bash bench/fleet.sh run --gpu --detach <s> 30 "<note>" -- \
 # dense
 ST_PROBE_GIB=64 bash bench/fleet.sh run --gpu --detach <s> 30 "<note>" -- \
   bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes dense_cells --seqs 1,2 --samples 2
+# 셀 z 진단(§5): 저장소 순서 셋(z / zn / zp)과 served_b 를 한 티켓에
+ST_PROBE_GIB=64 bash bench/fleet.sh run --gpu --detach <s> 30 "<note>" -- \
+  bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes moe_c2_cells:bulk
+# m=16 ksr 스윕(§4): dense_cells 의 *_ksr<n> 팔은 같은 dense 명령에 들어 있다(1-ulp 게이트)
 # CPU 컴파일(시드 이미지, CUDA 숨김): probes/engine_moe_chunk_compile.py --only static --chunks 256; dense 는
 # `from engine.kernels.dense import build; build()` (ST_DENSE_BUILD_ROOT 지정). probes/engine_decode_native_compile.py 는
 # dense/__init__.py 의 `extension` 이 `build` 로 바뀐 뒤 낡았다(StopIteration).
