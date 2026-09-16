@@ -1,6 +1,9 @@
 # RTX 5050 head and FC cuBLAS comparison — 2026-09-17
 
-Status: **six component comparisons complete: head wins, FC loses on RTX 5050.**
+Status of this initial comparison: **head wins, direct cuBLAS FC loses on RTX 5050.**
+The subsequent [five-way batched FC implementation](../st_cublaslt_reform_20260917/README.md)
+beats direct cuBLAS by 10.8–11.8% and DeepGEMM by 8.5–9.1% on the same device.
+The original full-K results below remain historical evidence.
 The user approved the comparison and explicitly offered the RTX 5050. This is a
 device-specific exception to the older SM120 numerics-only rule, not GB10
 admission. Production owns the four GB10s. No fleet ticket or service restart is

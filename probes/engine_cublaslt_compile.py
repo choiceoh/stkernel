@@ -22,6 +22,7 @@ def main():
     from triton.compiler import ASTSource
     from engine.kernels.dense.cublaslt import _build
     from engine.kernels.dense.mxfp8 import _quantize, _quantize_bound, _pack_weights
+    from engine.kernels.dense.cublaslt_split import _quantize as _split_quantize, _reduce as _split_reduce
     from engine.kernels.prefill_collectives.consumer import _quantize_gather_mx, _quantize_gather_mx_bound
     started = time.monotonic()
     native = _build()
@@ -44,8 +45,12 @@ def main():
     configurations = [(name, fn, signature, constants, warps)
                       for name, fn, signature, constants in variants
                       for warps in ((4,) if name == 'weight-scales' else (1, 2, 4))]
+    configurations += [(f'split-producer-m{m}', _split_quantize, dict(X='*bf16', Q='*fp8e4nv', S='*i32'),
+                        dict(M=m, K=20480, P=5), 1) for m in (8, 16)]
+    configurations += [(f'split-reduction-m{m}', _split_reduce, dict(X='*fp32', Y='*bf16'),
+                        dict(SIZE=m*4096, P=5), 4) for m in (8, 16)]
     for name, fn, signature, constants, warps in configurations:
-        if name != 'weight-scales':
+        if 'SCALAR_SCALE' in fn.arg_names:
             constants = dict(constants, SCALAR_SCALE=warps == 1)
         kernel = triton.compile(ASTSource(fn, signature, constexprs=constants),
                                 target=GPUTarget('cuda', 121, 32), options=dict(num_warps=warps))
@@ -74,7 +79,7 @@ def main():
                   scope='host binding compile/dlopen and SM121 producer compilation; no cuBLAS GPU execution')
     root = Path(__file__).resolve().parents[1]
     paths = ('engine/kernels/dense/cublaslt.cpp', 'engine/kernels/dense/cublaslt.py',
-             'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/fp8.py',
+             'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/cublaslt_split.py', 'engine/kernels/dense/fp8.py',
              'engine/kernels/prefill_collectives/consumer.py', 'probes/engine_cublaslt_compile.py')
     report['source_sha256'] = {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths}
     args.output.parent.mkdir(parents=True, exist_ok=True)

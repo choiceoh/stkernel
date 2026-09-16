@@ -90,7 +90,7 @@ def main():
                   torch=torch.__version__, cuda=torch.version.cuda, cublaslt=_build().version(), cells=[])
     root = Path(__file__).resolve().parents[1]
     sources = ('engine/kernels/dense/cublaslt.cpp', 'engine/kernels/dense/cublaslt.py',
-               'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/fp8.py',
+               'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/cublaslt_split.py', 'engine/kernels/dense/fp8.py',
                'engine/kernels/prefill_collectives/consumer.py', 'probes/engine_cublaslt_check.py')
     report['source_sha256'] = {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in sources}
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -162,13 +162,14 @@ def main():
                 execution = prepared.bind(producer, out=candidate)
                 execution()
                 torch.cuda.synchronize()
-                resident = torch.cuda.memory_allocated()
-                torch.cuda.reset_peak_memory_stats()
+                allocated_before = torch.cuda.memory_stats()['allocated_bytes.all.allocated']
                 execution()
                 torch.cuda.synchronize()
-                allocation_delta = torch.cuda.max_memory_allocated() - resident
+                # Cumulative allocation counters cannot mistake delayed graph
+                # pool frees / Python GC between snapshots for an allocation.
+                allocation_delta = torch.cuda.memory_stats()['allocated_bytes.all.allocated'] - allocated_before
                 if prepared.choice.index is not None and allocation_delta:
-                    raise RuntimeError('bound cuBLAS execution allocated additional Torch GPU storage')
+                    raise RuntimeError(f'bound cuBLAS execution allocated {allocation_delta} Torch GPU bytes: {prepared.choice}')
                 if not torch.allclose(candidate, baseline, rtol=.01, atol=.001):
                     raise RuntimeError('prepared output differs from the matched DeepGEMM baseline')
                 # Capture on a separate stream. The binding owns private
@@ -202,7 +203,36 @@ def main():
                             raise RuntimeError('changed-input graph replay differs from matched baseline')
                 finally:
                     graph.reset()
-                record = dict(prepared.record, status='PASS', graph_replays=2, bound_allocation_delta=allocation_delta,
+                holdout = []
+                if prepared.split is not None:
+                    from engine.kernels.dense.cublaslt import _measure
+                    # Rebuild the best direct finalist independently; do not
+                    # claim a faster FC by comparing separate process runs.
+                    selected = min(prepared.record['brackets'], key=lambda row: (row[4]+row[5])/2)
+                    direct_index, direct_workspace, warps = selected[:3]
+                    direct_producer = producer.bind(True, num_warps=warps)
+                    direct_q, direct_s = direct_producer()
+                    direct_out = torch.empty_like(candidate)
+                    scratch = torch.empty(direct_workspace, dtype=torch.uint8, device=candidate.device)
+                    direct_native = prepared.owner.plans[prepared.key[:3]].bind(
+                        direct_index, direct_q, weight[0], direct_s, mx_weight, direct_out, scratch)
+                    def direct():
+                        direct_producer()
+                        direct_native.run()
+                    def deep():
+                        producer(False, (q0, s0))
+                        fp8_gemm_nt((q0, s0), weight, baseline)
+                    stream.wait_stream(torch.cuda.current_stream())
+                    with torch.cuda.stream(stream):
+                        for repeat in range(2):
+                            for label, base in (('direct_cublas', direct), ('deep_gemm', deep)):
+                                samples = [_measure(fn, None) for fn in (base, execution, execution, base)]
+                                expected = direct_out if label == 'direct_cublas' else baseline
+                                if not torch.allclose(candidate, expected, rtol=.01, atol=.001):
+                                    raise RuntimeError('holdout comparison failed the numerical gate')
+                                holdout.append(dict(baseline=label, repeat=repeat, samples=samples))
+                    torch.cuda.current_stream().wait_stream(stream)
+                record = dict(prepared.record, status='PASS', holdout=holdout, graph_replays=2, bound_allocation_delta=allocation_delta,
                               bound_workspace_bytes=0 if execution.workspace is None else execution.workspace.numel())
             record['extra_weight_scale_bytes'] = mx_weight.numel()
             record['weight'] = weight_record

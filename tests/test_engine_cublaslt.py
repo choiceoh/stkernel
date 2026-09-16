@@ -189,6 +189,78 @@ class NativePreparationTests(unittest.TestCase):
         torch.testing.assert_close(out, torch.full_like(out, 256), rtol=0, atol=0)
 
 
+    def test_batched_partials_use_each_scale_slice_and_reject_bad_buffers(self):
+        import torch
+        from engine.kernels.dense.cublaslt import _build, WORKSPACE_LIMIT
+        native = _build()
+        context = native.Context(0, *torch.cuda.get_device_capability())
+        scales = torch.full((5, 512), 127, device='cuda', dtype=torch.uint8)
+        plan = native.Plan(context, 8, 128, 128, WORKSPACE_LIMIT, scales, scales, 5, True)
+        self.assertTrue(plan.candidates())
+        q = torch.ones(5, 8, 128, device='cuda').to(torch.float8_e4m3fn)
+        w = torch.ones(5, 128, 128, device='cuda').to(torch.float8_e4m3fn)
+        out = torch.empty(5, 8, 128, device='cuda', dtype=torch.float32)
+        c = plan.candidates()[0]
+        scratch = torch.empty(c['workspace'], device='cuda', dtype=torch.uint8)
+        actual = scales.clone()
+        for part in range(5):
+            actual[part].fill_(127+part)
+        bound = plan.bind(c['index'], q, w, actual, scales, out, scratch)
+        scales.fill_(128)
+        bound.run()
+        for part in range(5):
+            torch.testing.assert_close(out[part], torch.full_like(out[part], 256*2**part), rtol=0, atol=0)
+        with self.assertRaisesRegex(RuntimeError, 'shape mismatch'):
+            plan.bind(c['index'], q.reshape(8, 5, 128), w, actual, scales, out, scratch)
+        with self.assertRaises(RuntimeError):
+            plan.bind(c['index'], q, w, actual, scales, out.bfloat16(), scratch)
+        with self.assertRaisesRegex(RuntimeError, 'FP32'):
+            native.Plan(context, 8, 128, 128, WORKSPACE_LIMIT, scales, scales, 5, False)
+
+
+    def test_split_bindings_have_private_storage_and_replay_changed_sources(self):
+        import torch
+        from engine.kernels.dense.cublaslt import _build, BF16Producer
+        from engine.kernels.dense.cublaslt_split import PackedWeight, SplitPlan
+        native = _build()
+        owner = SimpleNamespace(native=native, context=native.Context(0, *torch.cuda.get_device_capability()))
+        weight = (torch.ones(128, 640, device='cuda').to(torch.float8_e4m3fn),
+                  torch.ones(1, 5, device='cuda'))
+        packed = PackedWeight(weight, 5)
+        source = torch.ones(8, 640, device='cuda', dtype=torch.bfloat16)
+        other = torch.full_like(source, 2)
+        plan = SplitPlan(owner, packed, 8, source)
+        c = plan.native.candidates()[0]
+        plan.index, plan.workspace_bytes = c['index'], c['workspace']
+        first, second = plan.bind(BF16Producer(source)), plan.bind(BF16Producer(other))
+        for name in ('q', 'scales', 'partials', 'out'):
+            self.assertNotEqual(getattr(first, name).data_ptr(), getattr(second, name).data_ptr())
+        stream = torch.cuda.Stream()
+        stream.wait_stream(torch.cuda.current_stream())
+        graphs = [torch.cuda.CUDAGraph(), torch.cuda.CUDAGraph()]
+        for graph, execution in zip(graphs, (first, second)):
+            with torch.cuda.graph(graph, stream=stream):
+                execution()
+        try:
+            source.fill_(3)
+            other.fill_(4)
+            with patch.object(torch, 'empty', side_effect=AssertionError('allocation after binding')):
+                first()
+                second()
+                for graph in graphs:
+                    graph.replay()
+            torch.testing.assert_close(first.out, torch.full_like(first.out, 640*3), rtol=0, atol=0)
+            torch.testing.assert_close(second.out, torch.full_like(second.out, 640*4), rtol=0, atol=0)
+            with self.assertRaisesRegex(ValueError, 'overlap'):
+                plan.bind(BF16Producer(source), out=source.view(-1)[:8*128].view(8, 128))
+            weight[1].mul_(2)
+            with self.assertRaisesRegex(RuntimeError, 'modified'):
+                plan.bind(BF16Producer(source))
+        finally:
+            for graph in graphs:
+                graph.reset()
+
+
 @unittest.skipUnless(TORCH and TRITON, 'requires torch and triton')
 class ProducerContracts(unittest.TestCase):
     def test_scale_size_is_metadata_padding_only(self):
@@ -359,6 +431,40 @@ class InterpreterTests(unittest.TestCase):
             self.assertTrue((scales[size:] == 93).all())
             scales[:size][padding] = 127
             self.assert_scale_layout(scales[:size], base_s, rows, k)
+        self.assertFalse(torch.cuda.is_initialized())
+
+    def test_split_producer_layout_redzones_and_fp32_reduction(self):
+        import torch
+        import triton
+        from engine.kernels.dense.cublaslt_split import _quantize, _reduce
+        from engine.kernels.dense.fp8 import _quantize as baseline
+        from engine.kernels.dense.mxfp8 import scale_bytes
+        for rows, k, parts in ((7, 640, 5), (8, 20480, 5), (16, 20480, 5)):
+            groups = rows*(k//128)
+            values = torch.arange(128).remainder(17).sub(8).float().repeat(groups, 1)
+            values[:, -1] = 448
+            x = (values * torch.exp2(torch.arange(groups).remainder(15).float()-8)[:, None]).reshape(rows, k).bfloat16()
+            q0 = torch.empty_like(x, dtype=torch.float8_e4m3fn)
+            s0 = torch.empty(rows, k//128)
+            baseline[(rows, triton.cdiv(k//128, 4))](x, q0, s0, k, k//128)
+            q = torch.full((rows*k+128,), 93, dtype=torch.uint8)
+            size = scale_bytes(rows, k//parts)
+            s = torch.full((parts*size+128,), 127, dtype=torch.uint8)
+            s[parts*size:] = 93
+            _quantize[(triton.cdiv(rows, 4), k//128)](x, q.view(torch.float8_e4m3fn), s.view(torch.int32),
+                                                   rows, k, parts, num_warps=1)
+            restored = q[:rows*k].reshape(parts, rows, k//parts).permute(1, 0, 2).reshape(rows, k)
+            self.assertTrue(torch.equal(restored, q0.view(torch.uint8)))
+            for part in range(parts):
+                self.assert_scale_layout(s[part*size:(part+1)*size],
+                                         s0[:, part*(k//parts//128):(part+1)*(k//parts//128)], rows, k//parts)
+            self.assertTrue((q[rows*k:] == 93).all())
+            self.assertTrue((s[parts*size:] == 93).all())
+        partials = torch.tensor([1e6, 1, -1e6, 3, 5])[:, None].expand(5, 257).contiguous()
+        out = torch.full((257+128,), 93, dtype=torch.bfloat16)
+        _reduce[(2,)](partials, out, 257, 5)
+        self.assertTrue((out[:257] == 9).all())
+        self.assertTrue((out[257:] == 93).all())
         self.assertFalse(torch.cuda.is_initialized())
 
     def test_weight_scale_replication_covers_every_normal_exponent(self):

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import hashlib
 from pathlib import Path
 import threading
+from weakref import WeakValueDictionary
 import torch
 
 
@@ -90,6 +91,7 @@ class Choice:
     workspace: int = 0
     reason: str = 'deep_gemm'
     producer_warps: int = 4
+    split_parts: int = 1
 
 
 def select_winner(brackets):
@@ -170,6 +172,7 @@ class Bank:
         self.identity = dict(device=device, capability=capability, sms=sms, cublaslt=self.native.version(),
                              torch=torch.__version__, cuda=torch.version.cuda)
         self.plans, self.workspaces = {}, {}
+        self.split_weights = WeakValueDictionary()
         self.owners = []
         self.lock = threading.RLock()
         self.tuning_stream = torch.cuda.Stream(device=device)
@@ -345,6 +348,22 @@ class PreparedProjection:
         # own numeric decision. Own these tensors for the decision's lifetime.
         self.key = rows, *q.shape, producer_key
         self.choice, self.record = self.owner.prepare(self.key, weight, self.mx_weight, producer)
+        self.split = None
+        from .cublaslt_split import prepare
+        from engine.base.graphs import frozen_gc
+        with self.owner.lock, torch.cuda.device(q.device):
+            calling = torch.cuda.current_stream(q.device)
+            self.owner.tuning_stream.wait_stream(calling)
+            with torch.cuda.stream(self.owner.tuning_stream), frozen_gc():
+                self.split, split_record = prepare(self, producer)
+            calling.wait_stream(self.owner.tuning_stream)
+        if split_record is not None:
+            self.record['split_k'] = split_record
+        if self.split is not None:
+            self.record['direct_choice'] = self.record['choice']
+            self.choice = Choice(self.split.index, self.split.workspace_bytes,
+                                 'measured_split_pipeline_gain', 1, self.split.packed.parts)
+            self.record['choice'] = vars(self.choice)
 
     def bind(self, producer, *, out=None, workspace=None):
         """Own fixed buffers and a private descriptor before capture/execution.
@@ -354,9 +373,13 @@ class PreparedProjection:
         may supply shared scratch only when those bindings execute serially.
         Retain the binding for graph lifetime; storage addresses are immutable.
         """
+        if getattr(self, 'split', None) is not None:
+            return self.split.bind(producer, out=out, workspace=workspace)
         return BoundProjection(self, producer, out=out, workspace=workspace)
 
     def __call__(self, producer, *, out=None):
+        if getattr(self, 'split', None) is not None:
+            return self.bind(producer, out=out)()
         q_weight = self.weight[0]
         shape = self.rows, q_weight.shape[0]
         if out is None:
