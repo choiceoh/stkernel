@@ -42,10 +42,10 @@ class RouterFusedTests(unittest.TestCase):
     def test_kernel_source_keeps_the_contract_the_cell_measures(self):
         src = (ROOT / 'engine/kernels/router_fused.cu').read_text()
         for needle in ('#define ST_RT_CTAS 96', '#define ST_RT_PER_CTA 3', '#define ST_RT_TOPK 8',
-                       '__launch_bounds__(ST_RT_THREADS, 2)', 'float4 g[ST_RT_LANE_CHUNKS][ST_RT_PER_CTA];',
+                       '__launch_bounds__(ST_RT_THREADS, 2)', 'float xa[ROWS], xb[ROWS], xc[ROWS], xd[ROWS];',
                        'atomicAdd(ticket, 1u) == gridDim.x - 1', '*ticket = 0u;', '__threadfence();',
                        '__fdiv_rn(1.0f, 1.0f + expf(-v))', '__fdiv_rn(s, sum + 1e-20f) * scale', '__ldcs(',
-                       'ob > best || (ob == best && oe < be)', 'fmaf(g[j][e].x, a, s)'):
+                       'ob > best || (ob == best && oe < be)', 'fmaf(g[e].x, xa[t], s)'):
             self.assertIn(needle, src)
         self.assertNotIn('__expf', src)          # the accurate libdevice exp, as Triton's libdevice.exp
         self.assertNotIn('__fdividef', src)
