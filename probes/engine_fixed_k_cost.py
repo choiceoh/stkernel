@@ -21,8 +21,22 @@ def compile_check(report):
     for name, module in (('dense', dense.build()), ('mla', mla._build())):
         report('compile', component=name, module=module.__file__,
                binary_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest())
-    from probes.b12x_reform_layout_print import main as layout_check
-    layout_check()
+    os.environ['CUTE_DSL_ARCH'] = 'sm_121a'
+    with patch.object(torch.cuda, 'is_available', return_value=True), \
+            patch.object(torch.cuda, 'get_device_capability', return_value=(12, 1)):
+        from engine.kernels.b12x import moe_dispatch as md
+        with patch.object(md, 'get_num_sm', return_value=48), \
+                patch.object(md, 'get_max_active_clusters', return_value=48), \
+                patch.object(md, 'build_and_load_cute_dsl_kernel', side_effect=lambda module, name, build, **kw: build()):
+            for rows in (8, 16):
+                for cell in ('z', 'zl'):
+                    cfg = md._parse_glm53_static_v2('t,r,sf6,batch,' + cell)
+                    md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8, config=cfg,
+                                            mac_override=48, w13_chunk=256,
+                                            activation='swigluoai_uninterleave',
+                                            swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
+                    report('compile', component='moe', cell=cell, rows=rows)
+
     if torch.cuda.is_initialized():
         raise RuntimeError('compile gate touched a GPU')
 

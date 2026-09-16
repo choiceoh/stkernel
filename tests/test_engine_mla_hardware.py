@@ -79,6 +79,21 @@ class MlaHardwareTests(unittest.TestCase):
                         Tensor((t,),"i32",64),.0625,.7)
         self.assertEqual(self.calls,[])
 
+    def test_retained_queries_are_bound_to_ordinary_k7_cells(self):
+        self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
+        self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
+        self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
+        torch = SimpleNamespace(int32='i32', bfloat16='bf16')
+        for rows in (1, 8, 16, 24):
+            for enabled in (False, True):
+                self.mla.ENABLE_MLA_QREG = enabled
+                q = Tensor((rows,16,512), 'bf16', 16)
+                with patch.dict(sys.modules, torch=torch):
+                    self.mla.mla_decode(q, Tensor((4096,512),'u8',32),
+                        Tensor((rows,2048),'i32',48), Tensor((rows,),'i32',64),
+                        .0625, 1., Tensor(q.shape,'bf16',80))
+                self.assertEqual(self.calls[-1][2][-1], int(enabled and rows in (8,16)))
+
     def test_tree_banks_pass_direct_pointers_with_same_cluster_and_split_plan(self):
         self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
         self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
