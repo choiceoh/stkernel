@@ -32,14 +32,15 @@ def compile_check(report):
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', side_effect=lambda module, name, build, **kw: build()):
             for rows in (8, 16):
-                for enabled in (False, True):
+                for cell, enabled, paired in (('base', False, False), ('tree', True, False),
+                                               ('pair', False, True), ('pair_tree', True, True)):
                     cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True,
-                               input_amax_tree=enabled)
+                               input_amax_tree=enabled, input_pair_reuse=paired)
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8, config=cfg,
                                             mac_override=48, w13_chunk=256,
                                             activation='swigluoai_uninterleave',
                                             swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
-                    report('compile', component='moe', rows=rows, input_amax_tree=enabled)
+                    report('compile', component='moe', rows=rows, cell=cell, input_amax_tree=enabled, input_pair_reuse=paired)
     if torch.cuda.is_initialized():
         raise RuntimeError('compile gate initialized CUDA')
 
@@ -120,7 +121,7 @@ def mla_check(report):
     check(report, sync_cleanup=True)
 
 
-def moe_check(report, ranks):
+def moe_check(report, ranks, *, pair_reuse=False):
     from probes import engine_moe_c2_cells as cells
     from engine.profiles.glm53.weights import rank_loader
     from engine.profiles.glm53.lanes import served
@@ -136,8 +137,12 @@ def moe_check(report, ranks):
            allocated_bytes=torch.cuda.memory_allocated())
     spread = cells.calibrate(layers, report)
     base = md._parse_glm53_static_v2('t,r,sf6,batch')
-    arms = [(name, chunk, dict(base, input_vec16=True, input_amax_tree=enabled))
-            for name, enabled in (('base', False), ('tree', True), ('repeat', False))]
+    choices = [('base', False, False), ('tree', True, False), ('repeat', False, False)]
+    if pair_reuse:
+        choices = [('base', False, False), ('pair', False, True), ('pair_tree', True, True), ('repeat', False, False)]
+    candidates = [name for name, _, _ in choices if name not in ('base', 'repeat')]
+    arms = [(name, chunk, dict(base, input_vec16=True, input_amax_tree=tree, input_pair_reuse=paired))
+            for name, tree, paired in choices]
     failures = []
     for rows in (8, 16):
         fixtures = [(f'c{rows//8}_requests', rows, rows//8, spread),
@@ -148,17 +153,18 @@ def moe_check(report, ranks):
             graphs, accs = cells.capture_arms(group, fx, arms)
             try:
                 failed = cells.exact_arms(report, group, fx, fixtures, graphs, accs,
-                                          'base', 'repeat', ['tree'], scope=scope)
+                                          'base', 'repeat', candidates, scope=scope)
                 failures.extend(failed)
                 if not failed:
                     uniques = fx.load(fixtures[0], 7)[:len(group)]
-                    cells.bracket(report, graphs, 'base', 'tree', brackets=3,
-                                  fixture=fixtures[0][0], rows=rows, scope=scope,
-                                  layers=len(group), unique_experts=uniques)
+                    for candidate in candidates:
+                        cells.bracket(report, graphs, 'base', candidate, brackets=3,
+                                      fixture=fixtures[0][0], rows=rows, scope=scope,
+                                      layers=len(group), unique_experts=uniques)
             finally:
                 for graph in graphs.values():
                     graph.reset()
-        cells.stamp_cells(report, layers, arms[:2], spread, rows=rows)
+        cells.stamp_cells(report, layers, arms[:-1], spread, rows=rows)
     if failures:
         raise RuntimeError(f'MoE tree-max failed: {failures}')
 
@@ -181,11 +187,12 @@ def run(output, ranks, *, compile_only=False, sections=()):
             compile_check(report)
         else:
             torch.manual_seed(91718)
-            wanted = set(sections) or {'mla', 'mhc', 'moe', 'mla_bf16'}
-            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16'}:
+            wanted = set(sections) or {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair'}
+            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair'}:
                 raise ValueError(f'unknown component: {wanted}')
             for name, fn in (('mla', lambda: mla_check(report)), ('mhc', lambda: mhc_check(report, ranks)),
                              ('moe', lambda: moe_check(report, ranks)),
+                             ('moe_pair', lambda: moe_check(report, ranks, pair_reuse=True)),
                              ('mla_bf16', lambda: __import__('probes.engine_fixed_k_cost', fromlist=['mla_check']).mla_check(report, bf16_tile=True))):
                 if name in wanted:
                     try:

@@ -2381,6 +2381,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("input_vec16_v1",)
     if config.get("input_amax_tree", False):
         cfg += ("input_amax_tree_v1",)
+    if config.get("input_pair_reuse", False):
+        cfg += ("input_pair_reuse_v1",)
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2560,6 +2562,8 @@ def _get_static_kernel_v2(
         # the reform's FC1 box is (128 rows x K256); over the 256 chunk it is one contiguous 16 KB run,
         # over 512 it is half of every row's chunk -- no run to prefetch as one request
         raise ValueError("l<n> needs t,r over the 256 w13 chunk (the FC1 box is then one contiguous run)")
+    if config.get("input_pair_reuse") and not (reform and m in (8, 16) and k == 4096 and num_topk == 8):
+        raise ValueError("paired input reuse requires complete K7 GLM top-8 route pairs")
     kernel_cls = MoEStaticKernelV5 if tiled else MoEStaticKernelV4
     kernel: Any = kernel_cls(
         scatter_fp32=scatter_fp32,
@@ -2590,6 +2594,7 @@ def _get_static_kernel_v2(
         bulk_b=bulk_b,
         input_vec16=bool(config.get("input_vec16", False)),
         input_amax_tree=bool(config.get("input_amax_tree", False)),
+        input_pair_reuse=bool(config.get("input_pair_reuse", False)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
@@ -2753,6 +2758,7 @@ def _get_static_kernel_v2(
         f"{'sync' if config.get('sync_cleanup') else ''}"
         f"{'inputv16' if config.get('input_vec16') else ''}"
         f"{'amaxtree' if config.get('input_amax_tree') else ''}"
+        f"{'inputpair' if config.get('input_pair_reuse') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )
