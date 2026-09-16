@@ -107,7 +107,7 @@ TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem
 # 2026-09-14 hybrid arms were read on (measurements/st_hybrid_head_nll_20260916) and the one #911 said it never ran.
 # A commit that sets it is booted by a fleet hold and fed a corpus through the door; main keeps it False, and with it
 # False nothing here runs. Carried over from the arm branch it was written on, which was never merged.
-EXPERT_CAPTURE = False
+EXPERT_CAPTURE = True                            # MEASUREMENT ARM -- never merged; main keeps this False
 CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
 CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
 # The dense pack store's root: calibration blobs under <root>/mkcalib/rank<r>/, GPTQ packs cached under
