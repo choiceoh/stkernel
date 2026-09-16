@@ -2237,8 +2237,17 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
-template <bool CLUSTER = false, bool TREE = false, bool QREG = false>
-__global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
+template <bool CLUSTER = false, bool TREE = false, bool QREG = false, int TILE = 16>
+__global__ __launch_bounds__(MK_THREADS, TILE == 32 ? 2 : 1) void mk_mla_kernel(const MKMlaArgs a) {
+  static_assert(TILE == 16 || (TILE == 32 && QREG && !CLUSTER && !TREE));
+  constexpr int MLA_TILE = TILE;
+  constexpr int MLA_NSTAGE = TILE == 32 ? 2 : 3;
+  constexpr int MLA_KQ = 128 / TILE;
+  constexpr int MLA_NG = TILE / 8;
+  constexpr int MLA_PP = TILE + 8;
+  constexpr int MLA_SMEM_RING = MLA_NSTAGE * TILE * MLA_RP;
+  constexpr int MLA_SMEM_S = MLA_KQ * MLA_H * TILE * 4;
+  constexpr int MLA_SMEM_P = MLA_H * MLA_PP * 2;
   extern __shared__ __align__(16) char mla_smem[];
   uint8_t* ring = (uint8_t*)mla_smem;
   __nv_bfloat16* sq = (__nv_bfloat16*)(ring + MLA_SMEM_RING);
@@ -2391,9 +2400,11 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         for (int nt = 0; nt < 8; ++nt) {
           acc[nt][0] *= crg; acc[nt][1] *= crg; acc[nt][2] *= crg8; acc[nt][3] *= crg8;
         }
+#pragma unroll
+        for (int pv_k = 0; pv_k < TILE / 16; ++pv_k) {
         uint32_t a0, a1, a2, a3;
         const uint32_t paddr = static_cast<uint32_t>(__cvta_generic_to_shared(
-            sp + (lane & 15) * MLA_PP + (lane >> 4) * 8));
+            sp + (lane & 15) * MLA_PP + (lane >> 4) * 8 + pv_k * 16));
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
                      : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(paddr));
         // ldmatrix.trans produces four consecutive K bytes for column g
@@ -2403,7 +2414,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         const int row = lane & 15;
         const int krow = (row >> 2) * 2 + (row & 1) + ((row >> 1) & 1) * 8;
         const uint32_t cb = static_cast<uint32_t>(__cvta_generic_to_shared(
-            tile8 + (size_t)krow * MLA_RP + warp * 64));
+            tile8 + (size_t)(krow + pv_k * 16) * MLA_RP + warp * 64));
 #pragma unroll
         for (int nt = 0; nt < 8; nt += 2) {
           uint32_t v0, v1;
@@ -2427,7 +2438,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         // the m16n8k16 fragment layouts against a CPU matmul (128/128 elements), then this
         // strided form against a CPU reference over a tile with a non-square row pitch
         // (256/256). A is left exactly as the ldmatrix above produced it -- .b16 is fine here.
-        const uint8_t* cbs = tile8 + (size_t)(q4 * 2) * MLA_RP + warp * 64;
+        const uint8_t* cbs = tile8 + (size_t)(q4 * 2 + pv_k * 16) * MLA_RP + warp * 64;
 #pragma unroll
         for (int nt = 0; nt < 8; ++nt) {
           const int n = nt * 8 + g;
@@ -2436,6 +2447,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
                        mla_e4m3x2_strided(cbs + 8 * MLA_RP + n, MLA_RP));
         }
 #endif
+        }
       }
       __syncthreads();
     }
@@ -3584,11 +3596,20 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // roofline probe mode (1 = streams only, 2 = + the dot): an explicit argument of the
   // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
   a.probe = ints.size() > 3 ? (int)ints[3] : 0;
-  const bool qreg = ints.size() == 5 && ints[4] != 0;
+  const int qreg = ints.size() == 5 ? (int)ints[4] : 0;
+  TORCH_CHECK(qreg >= 0 && qreg <= 2, "MLA query-register cell must be 0, 1 or 2");
   TORCH_CHECK(!qreg || (ptrs.size() == 8 && (a.T == 8 || a.T == 16) && a.probe == 0),
               "MLA query registers require the bound 8/16-row ordinary decode cell");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  if (qreg) {
+  if (qreg == 2) {
+    static int tile32_grid = 0;
+    constexpr int smem = 2 * 32 * MLA_RP + 2 * MLA_H * 32 * 4
+                         + MLA_H * 40 * 2 + MLA_SMEM_C;
+    if (!tile32_grid) MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<false, false, true, 32>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+    a.grid = mk_resident_grid(mk_mla_kernel<false, false, true, 32>, tile32_grid, smem, MLA_GRID_CAP);
+    mk_launch(mk_mla_kernel<false, false, true, 32>, a.grid, smem, stream, a);
+  } else if (qreg == 1) {
     static int qreg_grid = 0;
     constexpr int smem = MLA_SMEM - MLA_SMEM_Q;
     if (!qreg_grid) MK_CHECK_CUDA(cudaFuncSetAttribute(mk_mla_kernel<false, false, true>,

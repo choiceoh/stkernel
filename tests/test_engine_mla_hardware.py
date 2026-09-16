@@ -92,7 +92,7 @@ class MlaHardwareTests(unittest.TestCase):
                     self.mla.mla_decode(q, Tensor((4096,512),'u8',32),
                         Tensor((rows,2048),'i32',48), Tensor((rows,),'i32',64),
                         .0625, 1., Tensor(q.shape,'bf16',80))
-                self.assertEqual(self.calls[-1][2][-1], int(enabled and rows in (8,16)))
+                self.assertEqual(self.calls[-1][2][-1], 2 if enabled and rows in (8,16) else 0)
 
     def test_tree_banks_pass_direct_pointers_with_same_cluster_and_split_plan(self):
         self.mla._EXT.run_mla = lambda *args: self.calls.append(args)

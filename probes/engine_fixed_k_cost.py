@@ -155,11 +155,12 @@ def mla_check(report):
                         errors = [mla._rel_err(out, ref) for out in outputs]
                         if max(errors) > .02 or any(not out.isfinite().all().item() for out in outputs):
                             raise AssertionError(f'MLA {rows=} {width=} {case=}: {errors=}')
-                    if not torch.equal(outputs[0], outputs[1]):
-                        raise AssertionError(f'MLA query retention changed BF16 bits: {rows=} {width=} {case=}')
-                    report('numerics', component='mla_qreg', bitwise=True, rows=rows, width=width, case=case, errors=errors)
+                    bitwise = torch.equal(outputs[0], outputs[1])
+                    if errors[1] > errors[0] + .002:
+                        raise AssertionError(f'MLA tile32 worsened independent accuracy: {errors=}')
+                    report('numerics', component='mla_tile32', bitwise=bitwise, rows=rows, width=width, case=case, errors=errors)
                     if width == 2048:
-                        timings(report, 'mla_qreg', graphs, rows=rows, width=width, case=case)
+                        timings(report, 'mla_tile32', graphs, rows=rows, width=width, case=case)
             finally:
                 for graph in graphs:
                     graph.reset()
