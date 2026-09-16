@@ -2054,45 +2054,6 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
   return make_float2(__uint_as_float(low), __uint_as_float(high));
 }
 
-// The static C1 grid has 32 projection CTAs that become idle while eight
-// other CTAs finish the mHC tails. Let those CTAs pack one K block each as
-// soon as a row is published. Counters use the model-owned, otherwise-unused
-// sq workspace and are rearmed by the final reader before this grid ends.
-__device__ void mk_mhc_pack_ready_row(const MKMhcArgs& a, int kb) {
-  const int row = threadIdx.x >> 5, lane = threadIdx.x & 31;
-  auto ready = reinterpret_cast<unsigned int*>(a.sq);
-  if (lane == 0) {
-    volatile unsigned int* flag = ready + row;
-    MK_SPIN_WAIT(*flag != 1u, 64, "mhc pack row ready");
-  }
-  __syncwarp();
-  __threadfence();
-  uint2 raw;
-  const __nv_bfloat16* src = a.layer_input + row * HIDDEN + kb * KSTEP + lane * 4;
-  asm volatile("ld.global.cg.v2.u32 {%0, %1}, [%2];"
-               : "=r"(raw.x), "=r"(raw.y) : "l"(src) : "memory");
-  const __nv_bfloat16* bf = reinterpret_cast<const __nv_bfloat16*>(&raw);
-  float v[4], mx = 0.f;
-#pragma unroll
-  for (int i = 0; i < 4; ++i) { v[i] = __bfloat162float(bf[i]); mx = fmaxf(mx, fabsf(v[i])); }
-  mx = __uint_as_float(__reduce_max_sync(0xffffffffu, __float_as_uint(mx)));
-  const float scale = mk_act_scale(mx), inv = mk_act_rcp(scale);
-  const int q = lane >> 3, word = lane & 7, ks = ((word >> 1) - q) & 3;
-  const size_t offset = (size_t)kb * 1024 + ks * 256 + (row * 4 + q) * 8 + (word & 1) * 4;
-  *(uint32_t*)(a.input_pack + offset) = mk_f32x4_to_e4m3(v[0]*inv,v[1]*inv,v[2]*inv,v[3]*inv);
-  if (lane == 0) reinterpret_cast<float*>(a.input_pack + (HIDDEN / KSTEP) * 1024)[kb * 8 + row] = scale;
-  __threadfence();
-  __syncwarp();
-  if (lane == 0) {
-    const unsigned int last = atomicAdd(ready + 8 + row, 1u);
-    if (last == HIDDEN / KSTEP - 1) {
-      ready[row] = 0;
-      ready[8 + row] = 0;
-      __threadfence();
-    }
-  }
-}
-
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
           bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false,
           bool PACK_INPUT = false>
@@ -2339,13 +2300,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
     }
     __syncthreads();
     MK_MHC_TS(3);  // (probe) p2 end / p34 start
-    mk_mhc_p34_compute<HID, V41, PACK_INPUT && !STATIC_TAILS>(a, t, s_pmix, tr);
-    if constexpr (PACK_INPUT && STATIC_TAILS) {
-      // Every output writer publishes before the row's ready flag.
-      __threadfence();
-      __syncthreads();
-      if (threadIdx.x == 0) atomicExch(reinterpret_cast<unsigned int*>(a.sq) + t, 1u);
-    }  // ends in a __syncthreads
+    mk_mhc_p34_compute<HID, V41, PACK_INPUT>(a, t, s_pmix, tr);  // ends in a __syncthreads
     MK_MHC_TS(4);  // (probe) p34 end
     if constexpr (STATIC_TAILS) break;
   }
@@ -2353,12 +2308,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   // Every token's chunk counter was rearmed by its sole tail owner. A
   // static launch has no shared tail/exit tickets to reset. The next PDL
   // consumer still waits for completion of this whole grid, including tails.
-  if constexpr (STATIC_TAILS) {
-    if constexpr (PACK_INPUT) {
-      if (bid < HIDDEN / KSTEP) mk_mhc_pack_ready_row(a, bid);
-    }
-    return;
-  }
+  if constexpr (STATIC_TAILS) return;
   // exit ticket: the last block out rearms the tail counter for the next
   // launch (every block has made its final, failing take by then)
   __syncthreads();

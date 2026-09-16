@@ -356,7 +356,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.cu",
       "sha256": "61f76b048b1991bfa449c5ef86056f414b7a750840e87383d6367e1ae2ae70a1",
       "origin": "repository",
-      "local_sha256": "a371e60aacaa816b0f6d04f3893df810fb12ba0c66d6aceef3c0fa59bd554420",
+      "local_sha256": "7841eaa054dd0931224ecf0732eb79abbff2caa25097828e36efed78e22bdc9d",
       "local_modifications": [
         "SM121 integer warp max reduction",
         "Cluster-local MLA split reduction with reused shared memory",
@@ -376,14 +376,15 @@
         "2026-09-17 fixed K7 second candidate: shared Q and SM121 matrix loads replace scalar pair reads after the first pair schedule regressed; GPU recheck pending.",
         "2026-09-17 decode pair assigns separate warp groups to each query while sharing one KV ring; scalar-list cells use a bounded 256-thread subgroup.",
         "2026-09-17 decode union reserves output once per warp; paired decode widens KV once in shared memory and weak-overlap rows run concurrently in disjoint shared regions.",
-        "2026-09-17 decode union uses bounded radix sorting and prefix counts to remove shared hash contention; all duplicate multiplicities retained."
+        "2026-09-17 decode union uses bounded radix sorting and prefix counts to remove shared hash contention; all duplicate multiplicities retained.",
+        "2026-09-17 remove decode union preparation: compare the current 16-slot tiles, reuse equal FP8 rows, preserve each original selection and split, and merge in the same resident launch."
       ]
     },
     "mla/__init__.py": {
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "bc114c3efaff816021b1a012ecf3d1d1785352a1065c908ca465b9c4b67c1697",
+      "local_sha256": "9f1431170d41ddd8b5e96e3495967bfd583fcb2480b52cf4b821c8532f5d5065",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -396,7 +397,8 @@
         "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged.",
         "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change.",
         "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured.",
-        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately."
+        "2026-09-17 fixed K7: bounded resident-wave scheduling, MHC producer input packing, and context-split pair KV reuse; GPU and consumer evidence recorded separately.",
+        "2026-09-17 remove decode union preparation: compare the current 16-slot tiles, reuse equal FP8 rows, preserve each original selection and split, and merge in the same resident launch."
       ]
     },
     "qsa.py": {

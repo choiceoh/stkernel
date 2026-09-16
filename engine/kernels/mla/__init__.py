@@ -90,7 +90,7 @@ def _ensure_workspace(device):
     import torch
     if _WS is None:
         _WS = {name: torch.zeros(8, dtype=torch.int32, device=device)
-               for name in ("barrier", "barrier_mla")}
+               for name in ("barrier", "barrier_mla", "barrier_mla_pair")}
     return _WS
 
 
@@ -275,10 +275,9 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
 def mla_decode_pair(q, ckv, slots, lens, sm_scale, ckv_scale, out=None):
     """Two independent selections share KV loads, with context shards filling the GPU.
 
-    The bounded multiset union preserves repeated slots and each row's mask.
-    Low-overlap pairs use their original lists on the device. FP32 partials
-    are merged before the sole output rounding. Buffers are invocation-owned
-    so captured graphs and layers cannot overwrite one another's union.
+    Each query retains its original list and multiplicity. Within a 16-slot
+    tile, equal KV rows are loaded once and read by both warp groups. One
+    resident launch also merges its FP32 partials; no union is prepared.
     """
     import torch
     t, h, d = q.shape
@@ -295,12 +294,10 @@ def mla_decode_pair(q, ckv, slots, lens, sm_scale, ckv_scale, out=None):
     groups, width = t // 2, slots.shape[1]
     splits = max(1, _bound().device.sms // groups)
     splits = min(MLA_SPLITS_MAX, splits)
-    union = torch.empty((groups, 2 * width), dtype=torch.int32, device=q.device)
-    bits = torch.empty_like(union)
-    lengths = torch.empty(groups, dtype=torch.int32, device=q.device)
+    barrier = _ensure_workspace(q.device)["barrier_mla_pair"]
     partial = torch.empty((t, splits, h, d), dtype=torch.float32, device=q.device)
     ml = torch.empty((t, splits, h, 2), dtype=torch.float32, device=q.device)
-    _EXT.run_mla_decode_pair([x.data_ptr() for x in (q, ckv, slots, lens, out, union, bits, lengths, partial, ml)],
+    _EXT.run_mla_decode_pair([x.data_ptr() for x in (q, ckv, slots, lens, out, partial, ml, barrier)],
                              [float(sm_scale), float(ckv_scale)], [t, width, splits])
     return out
 

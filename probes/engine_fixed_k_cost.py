@@ -99,13 +99,19 @@ def mla_check(report):
             candidate = lambda: mla.mla_decode_pair(q, cache, slots, lens, 512**-.5, 1.)
             graphs, outputs = zip(*[_capture(fn) for fn in (control, candidate)])
             try:
-                for case in ('identical', 'partial', 'disjoint', 'duplicates', 'empty_tail'):
+                for case in ('identical', 'partial', 'disjoint', 'duplicates', 'empty_tail', 'permuted', 'uneven'):
                     q.normal_()
                     slots.copy_(torch.randint(32768, (rows, width), device='cuda', dtype=torch.int32))
                     lens.fill_(width)
                     if case in ('identical', 'partial', 'duplicates'):
                         shared = width if case != 'partial' else width * 3 // 4
                         slots[1::2, :shared].copy_(slots[::2, :shared])
+                    if case == 'permuted':
+                        full = width // 16 * 16
+                        slots[1::2, :full].copy_(slots[::2, :full].reshape(rows//2, -1, 16).flip(-1).reshape(rows//2, full))
+                    if case == 'uneven':
+                        slots[1::2].copy_(slots[::2])
+                        lens.sub_(torch.arange(rows, device='cuda', dtype=torch.int32) % 8)
                     if case == 'duplicates':
                         slots[:, :width//2].copy_(slots[:, :1].expand(-1, width//2))
                     if case == 'empty_tail':

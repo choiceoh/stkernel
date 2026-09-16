@@ -95,3 +95,13 @@ All correctness gates pass. C1 identical MLA is 43.00 -> 84.08 us, disjoint
 reservations. The next candidate uses bounded radix grouping and prefix
 counts for the exact multiset union. mHC moves packing onto the 32 finished
 projection CTAs; each row is published and rearmed before graph completion.
+
+## Fifth GPU verdict (`2715eda1`)
+
+All correctness gates pass; both changes are rejected for performance.
+Packet mHC rises 19.56 -> 22.65 us, and C1 identical MLA is 43.05 -> 92.33 us.
+Ready-row helper fences/counters and radix preparation are removed. The sixth
+candidate shares only matching KV rows within the current 16-slot tiles,
+retains each original sparse list/split, and merges in the same resident launch.
+No union, sorting, separate merge launch or per-replay barrier reset is needed.
+Changed tile order and asymmetric lengths join the existing numerical gates.
