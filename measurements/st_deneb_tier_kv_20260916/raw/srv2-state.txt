@@ -1,0 +1,44 @@
+=== date ===
+2026-09-16T11:14:51+09:00
+=== ~/.config/st-glm53.env (tier/kv) ===
+ST_KV_GIB=14.0
+ST_TIER_DIR=/home/choiceoh/st-tier
+=== running container boot argv ===
+--kv-gib
+7.0
+--
+--tier-dir=
+--dump-dir
+=== container started ===
+2026-09-16T02:09:49.077571648Z
+=== tier roots on this node ===
+/home/choiceoh/glm53-logs/st-tier
+/home/choiceoh/glm53-logs/st-tier.diverged-0915
+4.0K	/home/choiceoh/glm53-logs/st-tier
+769M	/home/choiceoh/glm53-logs/st-tier.diverged-0915
+=== ~/st-tier (off the mount) ===
+absent on the host -- it only ever existed inside the container
+=== supervisor 11:0x ===
+2026-09-16 10:40:52 fleet free, but the queue was active 1131s ago: 1200s of quiet queue before production is restored (its next ticket takes the fleet as it is): waiting -- no forensics, no launch attempt
+2026-09-16 10:58:55 === st-glm53 supervisor start ===
+2026-09-16 10:58:57 existing ST fleet healthy -- adopting
+2026-09-16 11:02:05 fleet free, but the queue was active 1167s ago: 1200s of quiet queue before production is restored (its next ticket takes the fleet as it is): waiting -- no forensics, no launch attempt
+2026-09-16 11:03:07 health check failed (1/3): containers=no door=no chat=no
+2026-09-16 11:03:39 health check failed (2/3): containers=no door=no chat=no
+2026-09-16 11:04:10 health check failed (3/3): containers=no door=no chat=no
+2026-09-16 11:04:11 forensics: /home/choiceoh/glm53-logs/st-forensics/20260916-110410
+2026-09-16 11:04:13 launching the ST fleet (production lease as production/srv2/2433568)
+2026-09-16 11:06:48 launch: door up after 135s
+2026-09-16 11:06:48 launch: healthy after 135s (a chat answered)
+2026-09-16 11:09:52 === st-glm53 supervisor start ===
+2026-09-16 11:09:55 a fleet is booting (head container 6s old, no door yet): adopting it, not relaunching it
+2026-09-16 11:12:20 adoption: door up after 135s
+=== deploy-watch relaunch ===
+2026-09-16 11:09:34   gate passed: 1 file(s) fail on both, none newly
+2026-09-16 11:09:34   deploying 4347fe9d8a04
+2026-09-16 11:09:42   stop: rc=0 released
+2026-09-16 11:09:52   #8 naming to docker.io/library/st-engine:glm53 done
+2026-09-16 11:09:52   #8 DONE 0.1s
+2026-09-16 11:09:52   10.10.10.4: file cache returned: MemFree 97.9 GiB, MemAvailable 102.4 GiB, Cached 5.3 GiB -> MemFree 102.5 GiB, MemAvailable 102.4 GiB, Cached 1.2 GiB; commit: overcommit_memory 0, CommitLimit 76.8 GiB, Committed_AS 30.5 GiB
+2026-09-16 11:09:52   reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 3509168)
+2026-09-16 11:09:52   10.10.10.4: started

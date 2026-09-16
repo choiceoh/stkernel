@@ -79,12 +79,29 @@ CKPT=${CKPT:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}
 DRAFTER=${DRAFTER:-/home/choiceoh/models/GLM-5.3-Flash-DFlash2}
 ENGINE_DIR=${ST_ENGINE_DIR:-/home/choiceoh/st-engine}    # production can pin a release directory on every node
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
-# The NVMe tier (parked conversations and prefix boundaries) is off by default since 2026-09-15: the
-# ranks' tiers diverged and production could not boot. ST_TIER_DIR=<dir> turns it on for a boot.
-TIER_DIR=${ST_TIER_DIR:-off}
+# The NVMe tier (parked conversations and prefix boundaries). It was off from 2026-09-15, when the
+# ranks' tiers diverged and production could not boot; the cause's fix -- key-level reconciliation,
+# `Server._reconcile_parked` (#837) -- is in, the four ranks' tier directories were left empty, and
+# production booted on it again 2026-09-16 (135 s, first attempt). ST_TIER_DIR=off turns it back off
+# for a boot; any other value is the tier root, under which boot.py claims one `rank<N>` per rank.
+#
+# Off is not free: with no tier a finished turn is never registered as a conversation
+# (base/serve, `if self.runner.tiered is None`), so its boundaries are dropped when its row is
+# reclaimed. Production measured 17 prefix hits in 100 queries against 1,144 evictions -- with 97%
+# of the blocks free. That is not capacity, it is having nowhere to keep what was just computed.
+#
+# The path must be under MOUNTED_ROOT. That is the only host directory the rank containers bind
+# (see `docker run` below), so a tier anywhere else is written into the container's own writable
+# layer: the boot *succeeds*, the tier reports itself live, reuse inside that boot works -- and
+# every parked conversation and boundary is discarded with the container. It cost a production
+# boot on 2026-09-16 (~/st-tier, off the mount, looked healthy for 3 minutes). The fleet lease
+# learned the same lesson at ~/st-fleet.lock; refuse it here instead of learning it a third time.
+MOUNTED_ROOT=/home/choiceoh/glm53-logs
+TIER_DIR=${ST_TIER_DIR:-$MOUNTED_ROOT/st-tier}
 case $TIER_DIR in
   off) TIER_ARG="--tier-dir=" ;;              # boot.py builds no tier from an empty directory
-  *) TIER_ARG="--tier-dir $TIER_DIR" ;;
+  "$MOUNTED_ROOT"/?*) TIER_ARG="--tier-dir $TIER_DIR" ;;
+  *) echo "ST_TIER_DIR must be 'off' or a path under $MOUNTED_ROOT (the only host directory the rank containers mount); got: $TIER_DIR" >&2; exit 2 ;;
 esac
 DUMP_DIR=${ST_DUMP_DIR:-/home/choiceoh/glm53-logs/st-dumps}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"

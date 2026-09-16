@@ -155,15 +155,69 @@ class LauncherTests(unittest.TestCase):
         # the buffered output is printed in the loop that waits, so rank order survives
         self.assertLess(self.text.index('pids[$r]=$!'), self.text.index('cat "$stage/rank$r.log"'))
 
-    def test_the_nvme_tier_is_off_unless_a_directory_is_named(self):
-        start = self.text.index("TIER_DIR=${ST_TIER_DIR:-off}")
-        block = self.text[start:self.text.index("esac", start) + len("esac")]
+    def test_the_nvme_tier_is_on_by_default_and_only_the_word_off_takes_it_away(self):
+        """Since 2026-09-16 the default is a tier, not none: `off` is a deliberate word, not a fallback.
+
+        With no tier a finished turn is never registered as a conversation, so its prefix boundaries
+        are dropped when the row is reclaimed -- production measured 17 hits in 100 queries against
+        1,144 evictions with 97% of the blocks free (MEASUREMENTS.md, PR #1041).
+        """
+        for env, want in (({}, "--tier-dir /home/choiceoh/glm53-logs/st-tier"),
+                          ({"ST_TIER_DIR": "off"}, "--tier-dir="),
+                          ({"ST_TIER_DIR": "/home/choiceoh/glm53-logs/st-bracket-tier/x-base"},
+                           "--tier-dir /home/choiceoh/glm53-logs/st-bracket-tier/x-base")):
+            self.assertEqual(self._tier_arg(env), want, env)
         self.assertIn("--drafter-dir $DRAFTER $TIER_ARG --dump-dir $DUMP_DIR", self.text)
-        for env, want in (({}, "--tier-dir="), ({"ST_TIER_DIR": "off"}, "--tier-dir="),
-                          ({"ST_TIER_DIR": "/x/tier"}, "--tier-dir /x/tier")):
-            out = subprocess.run(["bash", "-c", block + '\nprintf %s "$TIER_ARG"'], env={"PATH": os.environ["PATH"], **env},
-                                 capture_output=True, text=True, check=True).stdout
-            self.assertEqual(out, want)
+
+    def test_a_tier_off_the_one_mounted_directory_is_refused_not_quietly_made_ephemeral(self):
+        """A tier the containers cannot see boots fine and throws everything away with the container.
+
+        `docker run` binds exactly one host directory for state. A tier outside it lands in the
+        container's writable layer: live counters, working reuse within the boot, nothing after it.
+        `~/st-tier` did that to a production boot on 2026-09-16, and `~/st-fleet.lock` did it to the
+        fleet lease before that -- so the launcher refuses instead of booting.
+        """
+        root = "/home/choiceoh/glm53-logs"
+        self.assertIn("MOUNTED_ROOT=" + root, self.text)
+        self.assertIn("-v %s:%s " % (root, root), self.text,
+                      "MOUNTED_ROOT must name the directory `docker run` actually binds")
+        for bad in ("/home/choiceoh/st-tier",      # the one that cost the 09-16 boot
+                    "/home/choiceoh/glm53-logs",   # the root itself is not a tier
+                    "/tmp/tier", "off2", "relative/tier"):
+            out, code = self._tier_arg({"ST_TIER_DIR": bad}, check=False)
+            self.assertEqual(code, 2, bad)
+            self.assertEqual(out, "", "a refused tier must not leave a half-built argument")
+
+    @staticmethod
+    def _bash(script, env):
+        """Run a snippet of the launcher. Bytes, and through stdin.
+
+        The snippets carry `;;`, quotes and parens, so as one `bash -c` argument they are at the
+        mercy of the host's argument quoting; a temp file hands bash a path its host may not
+        resolve; and text=True writes stdin through the platform's newline translation, where a
+        shell reading `case ... in\\r` says only `syntax error`. Bytes over stdin are the same
+        everywhere.
+        """
+        run = subprocess.run(["bash", "-s"], input=script.encode(), env=env, capture_output=True)
+        return SimpleNamespace(returncode=run.returncode,
+                               stdout=run.stdout.decode(errors="replace"),
+                               stderr=run.stderr.decode(errors="replace"))
+
+    def _tier_arg(self, env, check=True):
+        # A `bash` that does not inherit the environment cannot answer these (Windows resolves the
+        # name to WSL's, which starts a fresh Linux environment). Skip rather than read its default
+        # as an answer -- every case would come back as the default and two of them would "pass".
+        if self._bash('printf %s "$ST_TIER_DIR"\n', {**os.environ, "ST_TIER_DIR": "reached"}).stdout \
+                != "reached":
+            self.skipTest("this box's `bash` does not inherit the environment")
+        start = self.text.index("MOUNTED_ROOT=")
+        block = self.text[start:self.text.index("esac", start) + len("esac")]
+        run = self._bash(block + '\nprintf %s "$TIER_ARG"\n',
+                         {**os.environ, **{"ST_TIER_DIR": ""}, **env})
+        if not check:
+            return run.stdout, run.returncode
+        self.assertEqual(run.returncode, 0, run.stderr)
+        return run.stdout
 
     def test_a_node_that_fails_stops_the_rest(self):
         self.assertIn('failed="$failed $r"', self.text)
