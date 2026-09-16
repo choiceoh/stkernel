@@ -1,0 +1,37 @@
+{
+  "sha": "8eff05b4c55c9fab0a6ef42013bf248b1db5feae",
+  "session": "tool-perf-c3-0916",
+  "engine_files": 337,
+  "engine_sha256": "fc8b4bbee8e62bd65b25378beb677cfd64726d171190a13de893efaf5db9c3c4",
+  "status": "booting",
+  "baseline_quality_only_sha": "b7d577cf131fe0c59ff90b9a23a0f9d0f28a3534",
+  "origin_included": "3646de581323437f151bd535aae4186ee2115b5a",
+  "cli_commit": "6be685f0e6b9e0df05ed024848cf7fe1eca48752",
+  "performance": {
+    "pp": 2048,
+    "tg": 512,
+    "depths": [
+      0,
+      4096,
+      8192
+    ],
+    "concurrency": [
+      1,
+      2
+    ],
+    "runs": 3,
+    "exact_tg": true,
+    "temperature": 1,
+    "top_p": 0.95,
+    "seed": 42,
+    "thinking": true
+  },
+  "quality": {
+    "scenarios": 88,
+    "temperature": 1,
+    "top_p": 0.95,
+    "seed": 42,
+    "concurrency": 1,
+    "trials": 1
+  }
+}
