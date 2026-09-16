@@ -44,6 +44,16 @@ def _family_split(family: str, share: float, salt: str) -> str:
     return 'validation' if int.from_bytes(digest[:8], 'big') / 2 ** 64 < share else 'train'
 
 
+def retain_source(drafter):
+    """Keep an independent host reference before compact storage retires BF16 weights."""
+    drafter.fc_capture_source = drafter.p['fc.weight'].detach().to('cpu', copy=True)
+
+
+def source_weight(drafter):
+    source = getattr(drafter, 'fc_capture_source', None)
+    return source if source is not None else drafter.p.get('fc.weight')
+
+
 class DraftFcCapture:
     """Accumulate committed decode FC inputs, then write one rank's pair bundle."""
 
@@ -141,13 +151,14 @@ class DraftFcCapture:
             report['error'] = self.stopped or 'no committed rows in both splits'
             return report
         from bench.draft_fc_bias import collect_fc_pairs
-        device = self.drafter.p['fc.weight'].device
+        device = self.drafter.p['hidden_norm.weight'].device
+        source = source_weight(self.drafter).to(device)
 
         def on_device():
             for batch in self.batches:                 # one at a time: the whole set never lands at once
                 yield dict(batch, aux=batch['aux'].to(device), keep=batch['keep'].to(device))
 
-        bundle = collect_fc_pairs(self.drafter, on_device(), max_rows=self.rows)
+        bundle = collect_fc_pairs(self.drafter, on_device(), max_rows=self.rows, source=source)
         self.root.mkdir(parents=True, exist_ok=True)
         torch.save(bundle, out)
         report['reader_sha256'] = bundle['reader_sha256']
@@ -161,8 +172,8 @@ def attach(engine, root, **kwargs):
     drafter = getattr(engine, 'drafter', None)
     if drafter is None:
         raise ValueError('draft FC capture needs a prepared drafter')
-    if drafter.p.get('fc.weight') is None:
-        raise ValueError('draft FC capture needs the retained BF16 source (prepare without consume_weights)')
+    if source_weight(drafter) is None:
+        raise ValueError('draft FC capture needs the retained BF16 source (retain before compaction)')
     layer = drafter.dense.get('fc.weight')
     if getattr(layer, 'observer', None) is not None:
         raise ValueError('draft FC capture needs an observer-free reader: finish calibration first')
