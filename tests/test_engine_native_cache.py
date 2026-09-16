@@ -15,6 +15,29 @@ from engine.kernels.common.native_cache import cuda_toolchain_identity, prepare_
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def builder_body(tree, function):
+    """The builder plus the module-level helpers it calls, to a fixed point, in module order.
+
+    These tests are about the build BOUNDARY -- staged sources, retained flags -- not about a builder
+    being a single self-contained function, so the harness follows the module when it factors one
+    out. #1067 moved the dense flags into `flags_for`; the single-node exec then raised NameError,
+    the deploy gate recorded main as rejected, and every deploy parked behind it.
+    """
+    defs = {n.name: n for n in tree.body if isinstance(n, ast.FunctionDef)}
+    keep, pending = set(), [function]
+    while pending:
+        name = pending.pop()
+        if name in keep or name not in defs:
+            continue
+        keep.add(name)
+        pending.extend(n.id for n in ast.walk(defs[name])
+                       if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load))
+    body = [node for name, node in defs.items() if name in keep]
+    for node in body:
+        node.decorator_list = []
+    return body
+
+
 class NativeCacheTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -155,8 +178,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
             with self.subTest(builder=relative):
                 path = ROOT / "engine/kernels" / relative
                 tree = ast.parse(path.read_text())
-                node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == function)
-                node.decorator_list = []
+                body = builder_body(tree, function)
                 calls = []
                 ext = SimpleNamespace(probe_device=lambda: (12, 1, 48))
                 def load(**kwargs):
@@ -171,9 +193,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                         patch("engine.kernels.common.native_cache.cuda_toolchain_identity",
                               return_value=[("/cuda/bin/nvcc", "13.0"), ("/cuda/bin/ptxas", "13.0")]), \
                         patch.dict(os.environ, {env_name: str(self.root / relative.split('/')[0])}):
-                    helpers = ([n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'flags_for']
-                               if relative.startswith('dense/') else [])
-                    exec(compile(ast.Module(body=helpers + [node], type_ignores=[]), str(path), "exec"), namespace)
+                    exec(compile(ast.Module(body=body, type_ignores=[]), str(path), "exec"), namespace)
                     self.assertIs(namespace[function](), ext)
                 call = calls[0]
                 for source in call['sources']:
@@ -195,8 +215,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
             with self.subTest(builder=relative):
                 path = ROOT / "engine/kernels" / relative
                 tree = ast.parse(path.read_text())
-                node = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == function)
-                node.decorator_list = []
+                body = builder_body(tree, function)
                 calls = []
                 ext = SimpleNamespace()
                 def load(**kwargs):
@@ -210,7 +229,7 @@ print(json.dumps([key,[(Path(p).read_text(),Path(p).stat().st_ino,Path(p).stat()
                         patch("engine.kernels.common.native_cache.cuda_toolchain_identity",
                               return_value=[("/cuda/bin/nvcc", "13.0"), ("/cuda/bin/ptxas", "13.0")]), \
                         patch.dict(os.environ, {"ST_NATIVE_BUILD_ROOT": str(shared)}):
-                    exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
+                    exec(compile(ast.Module(body=body, type_ignores=[]), str(path), "exec"), namespace)
                     self.assertIs(namespace[function](), ext)
                 directory = Path(calls[0]["build_directory"])
                 self.assertEqual(directory.parent, (shared / name).resolve())
