@@ -1471,6 +1471,13 @@ class Server:
             raise ValueError("park_min_tokens must be a nonnegative integer")
         self.park_min_tokens = park_min_tokens
         self._transient = set()                    # request ids whose turn is not kept when it finishes (every rank alike)
+        # A warm is not a turn: nobody will continue it, so it must not become a parked conversation --
+        # a useful warm prompt is a block or more, well past `park_min_tokens`, so every one of them
+        # would have written a slot's whole state to the conversation tier on EVERY boot and pushed real
+        # conversations out of its LRU (the same way a 17-token health ping did on 2026-09-13). But its
+        # BOUNDARIES are the entire point, so it is not `_transient` either: that flag also keeps them
+        # off the prefix tier. Two axes, and a warm wants one of each.
+        self._warming = set()
         self._abandoned = set()                    # rank 0: request ids nobody will read -- their answers are dropped
         self.turns_not_retained = {}               # reason -> finished turns released instead of kept
         self.max_context = int(getattr(engine, "max_context", 2**31 - 1))   # the model's trained positions; the door refuses beyond
@@ -2006,6 +2013,7 @@ class Server:
     def _answer(self, request, result):
         self._last_request_at = time.monotonic()
         self._transient.discard(request)
+        self._warming.discard(request)
         if self.comm.rank == 0:
             with self._lock:
                 event = self.pending.pop(request, None)
@@ -2708,6 +2716,7 @@ class Server:
             heapq.heappush(self._free_rows, row)
             return
         reason = ("asked" if request is not None and request in self._transient
+                  else "warm" if request is not None and request in self._warming
                   else "short" if self.park_min_tokens and self.engine.context(row) < self.park_min_tokens else None)
         if reason is not None:
             conversation = self._conversation_of.pop(row, None)
@@ -2756,6 +2765,7 @@ class Server:
         self._resuming.clear()
         self._idle_order.clear()
         self._transient.clear()
+        self._warming.clear()
         self._conversations.clear()
         self._conversation_of.clear()
         if error is not None:
@@ -3094,6 +3104,8 @@ class Server:
             for entry in arrivals:                   # the options came with the broadcast, so this set is every rank's
                 if entry[7] and entry[7].get("_transient"):
                     self._transient.add(entry[0])
+                if entry[7] and entry[7].get("_warm"):
+                    self._warming.add(entry[0])
             for request, reason in cancels:
                 self._cancel(request, reason)
             for control in controls:
@@ -3880,7 +3892,8 @@ class Server:
                     ids = req["ids"]
                 else:
                     raise RequestError("warm needs messages, a prompt or ids")
-                request, event = server.submit(ids, 1, 0.0, cache_salt=cache_key(req))
+                request, event = server.submit(ids, 1, 0.0, cache_salt=cache_key(req),
+                                               options={"_warm": True})
                 if not event.wait(server.request_timeout_s):
                     server.cancel(request, "timeout")
                     raise RequestError("warm timed out", 504)

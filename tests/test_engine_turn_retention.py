@@ -51,6 +51,30 @@ class RetentionTests(unittest.TestCase):
         self.assertEqual(tier.keys(), [chat], "an ordinary turn is still parked")
         self.assertIn('st:turns_not_retained_total{engine="st",reason="asked"} 1', s.metrics())
 
+    def test_a_warm_leaves_boundaries_and_not_a_parked_conversation(self):
+        """A warm is not a turn: nobody will continue it. But its boundaries are the entire point.
+
+        `retain: false` would do both -- release the row AND keep the boundaries off the prefix tier
+        (`runner.transient`). A useful warm prompt is a block or more, well past `park_min_tokens`,
+        so without its own flag every warm on every boot wrote a slot's whole state to the
+        conversation tier and pushed real conversations out of its LRU -- what a 17-token health
+        ping did on 2026-09-13, once per boot per warm prompt instead of once per thirty seconds.
+        """
+        tier = MemoryTier()
+        s = T.server(rows=2, keep_idle=True, tier=tier)
+        warm, _ = s.submit([3], 1, 0, options={"_warm": True})
+        settle(s)
+        self.assertEqual(s.take_result(warm), [3])
+        self.assertEqual(tier.keys(), [], "no conversation was parked for it")
+        self.assertEqual(sorted(s._free_rows), [0, 1])
+        self.assertFalse(s._conversations or s._conversation_of or s._warming)
+        self.assertEqual(s.turns_not_retained, {"warm": 1})
+        self.assertEqual(s.runner.transient, set(),
+                         "and its boundaries were NOT marked transient: the tier is what it is for")
+        chat, _ = s.submit([5], 1, 0)
+        settle(s)
+        self.assertEqual(tier.keys(), [chat], "an ordinary turn is still parked")
+
     def test_a_turn_shorter_than_the_floor_is_released_and_one_at_the_floor_is_parked(self):
         tier = MemoryTier()
         s = T.server(rows=2, keep_idle=True, tier=tier)
