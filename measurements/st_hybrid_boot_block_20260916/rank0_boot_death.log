@@ -1,0 +1,55 @@
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=258048 -> rows 294784/294784 tiles 2303/2303 tasks 9212/9212
+  memory gate: rank 0 runs prefill/32256/1016320 -- no record for this key; the newest (prefill-rank0-8c868b294a82039204f869e1.json) differs at config.arena_bytes, config.blocks, config.kv_gib, config.lane_info.calibration, config.lane_info.draft_policy, config.lane_info.fp8_gptq, config.lane_info.packs, config.lane_info.smoothed ...
+[b12x static v2] lane serving: static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncc256 (mac=48, m=1, routed=8, smem=0 B)
+[b12x static v2] lane serving: static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256a2u64c256 (mac=48, m=1, routed=8, smem=0 B)
+[oneshot] STALL rank=0 phase=wait(peer-flags) seq=910 slot=2 missing_peer_mask=0x7 tx_seq=910 ack_seq=910 rxf[slot]={906,910,910} beat=68494837505
+[b12x static v2] lane serving: static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncc256 (mac=48, m=8, routed=64, smem=0 B)
+[b12x static v2] lane serving: static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256a2u64c256 (mac=48, m=8, routed=64, smem=0 B)
+[oneshot] STALL rank=0 phase=wait(peer-flags) seq=1001 slot=1 missing_peer_mask=0x7 tx_seq=1001 ack_seq=1001 rxf[slot]={997,1001,1001} beat=70646356737
+[b12x static v2] lane serving: static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1c256 (mac=48, m=64, routed=512, smem=0 B)
+[b12x static v2] lane serving: static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutc256 (mac=48, m=64, routed=512, smem=0 B)
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=4096 -> rows 40832/294784 tiles 319/2303 tasks 1276/9212
+[b12x-bounds] state_E=288 n=512 tile_m=128 routed_rows=32760 -> rows 69504/294784 tiles 543/2303 tasks 2172/9212
+  kernel warmup returned 4.85 GiB of inactive allocator cache
+[b12x static v2] lane serving: static2_m16_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncc256 (mac=48, m=16, routed=128, smem=0 B)
+[serve] death rank=0 kind=local phase='boot': ValueError: private scatter requires packed FP32 output without split work
+  calibration: rank 0 not filed -- collecting 0/131072 rows over 176 blobs, 58 tiles deferred to a later boot (fewer than 4096 rows)
+  released: rank 0 gave back 65.49 GiB of 65.50 GiB arena plus 95 MiB of tier memory; 1.29 GiB reserved and 1191 MiB allocated still
+  released: rank 0 did NOT come back clean -- 1191 MiB is still held by live tensors, largest blocks 576 MiB, 288 MiB, 72 MiB, 64 MiB, 36 MiB, 32 MiB
+---- traceback ----
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1846, in <module>
+[rank0]:     raise SystemExit(main())
+[rank0]:                      ^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1842, in main
+[rank0]:     return fleet(a)
+[rank0]:            ^^^^^^^^
+[rank0]:   File "/repo/engine/profiles/glm53/boot.py", line 1660, in fleet
+[rank0]:     engine.capture_decode(MAX_SEQS)
+[rank0]:   File "/repo/engine/profiles/glm53/adapter.py", line 156, in capture_decode
+[rank0]:     self._warmup_decode_experts(max_seqs)
+[rank0]:   File "/repo/engine/profiles/glm53/adapter.py", line 535, in _warmup_decode_experts
+[rank0]:     self.net.warmup_decode_experts(rows, self.caches.device)
+[rank0]:   File "/repo/engine/profiles/glm53/net.py", line 272, in warmup_decode_experts
+[rank0]:     expert(x, *routes[topk])
+[rank0]:   File "/repo/engine/profiles/glm53/lanes.py", line 583, in moe
+[rank0]:     return b12x_fused_moe(x=x.contiguous(), output=output,
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/usr/local/lib/python3.12/dist-packages/flashinfer/api_logging.py", line 2333, in _auto_dump_wrapper
+[rank0]:     return _inner(*args, **kwargs)
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/kernels/b12x/b12x_moe.py", line 220, in b12x_fused_moe
+[rank0]:     return launch_sm120_moe(
+[rank0]:            ^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/kernels/b12x/moe_dispatch.py", line 6239, in launch_sm120_moe
+[rank0]:     return launch_sm120_static_moe(
+[rank0]:            ^^^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/kernels/b12x/moe_dispatch.py", line 3689, in launch_sm120_static_moe
+[rank0]:     compiled, mac = _get_static_kernel_v2(
+[rank0]:                     ^^^^^^^^^^^^^^^^^^^^^^
+[rank0]:   File "/repo/engine/kernels/b12x/moe_dispatch.py", line 2461, in _get_static_kernel_v2
+[rank0]:     kernel: Any = kernel_cls(
+[rank0]:                   ^^^^^^^^^^^
+[rank0]:   File "/repo/engine/kernels/b12x/moe_static_kernel_v4.py", line 159, in __init__
+[rank0]:     raise ValueError("private scatter requires packed FP32 output without split work")
+[rank0]: ValueError: private scatter requires packed FP32 output without split work
