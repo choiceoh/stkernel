@@ -1062,6 +1062,28 @@ def decode_fastpath_report(net):
     return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs)
 
 
+def next_k_cost_report(net):
+    """A candidate must reach the bound consumer before the serving door opens."""
+    from engine.kernels import mla
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows:
+        return {}
+    mhc = getattr(net, 'mhc', None)
+    expanded = set(getattr(mhc, 'expanded_executed', ()))
+    if getattr(mhc, 'EXPAND_FN', False) and 8 in rows:
+        expected = {(name.removesuffix('.kda.in_proj') + '.hc.attn_fn', 8)
+                    for name, layer in net.dense.items() if name.endswith('.kda.in_proj')
+                    and getattr(layer, 'input_pack_rows', lambda n: False)(8)}
+        if not expected or not expected.issubset(expanded):
+            raise RuntimeError(f'expanded mHC coefficients missed consumers: {sorted(expected - expanded)}')
+    direct = set(mla._DECODE_CELLS_EXECUTED)
+    if mla.ENABLE_MLA_DIRECT_CVT:
+        expected = {(n, 10 if n == 8 else 12) for n in rows if n in (8, 16)}
+        if expected and not expected.issubset(direct):
+            raise RuntimeError(f'direct MLA conversion missed captured rows: {sorted(expected - direct)}')
+    return dict(mhc_expanded=sorted(expanded), mla_direct=sorted(direct))
+
+
 def fixed_k_cost_report(net):
     """Require target consumers, not a native self-test's launch, before opening the door."""
     rows = getattr(net, 'decode_fastpath_rows', ())
@@ -1156,7 +1178,7 @@ def native_execution_report(net, drafter):
     from engine.profiles.glm53.cublas import execution_report as cublas_execution_report
     cublas_proof = cublas_execution_report(net) if hasattr(net, 'cublas_readers') else {}
     proof = dict(cublas=cublas_proof, decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
-                 fixed_k_cost=fixed_k_cost_report(net),
+                 fixed_k_cost=fixed_k_cost_report(net), next_k_cost=next_k_cost_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
                  drafter_decode_cells=drafter_decode_cell_report(drafter),

@@ -62,6 +62,7 @@ class MHC:
         device = next(iter(weights.values())).device
         self.weights = {}
         self.executed = set()
+        self.expanded_executed = set()
         for key, fn in weights.items():
             if fn.shape != (self.nout, self.hc * self.hidden) or fn.dtype != torch.float32 or not fn.is_contiguous():
                 raise ValueError(f"MK MHC requires FP32 [{self.nout},{self.hc}*{self.hidden}] weights")
@@ -103,15 +104,18 @@ class MHC:
                     or output_pack.numel() != producer_pack_nbytes(n, self.hidden)):
                 raise ValueError("MHC input pack requires same-device byte storage for eight 4096-wide rows")
             tensors.append(output_pack)
+        expand_fn = self.EXPAND_FN and output_pack is not None and weight is packed
         args = ([t.data_ptr() for t in tensors], [eps,hc_eps,hc_eps,post_mult,eps], [n, sinkhorn, self.hidden])
         if packets is None:
-            self.ext.run_mhc(*args,weight is packed,small, **({"expand_fn": True} if self.EXPAND_FN else {}))
+            self.ext.run_mhc(*args,weight is packed,small, **({"expand_fn": True} if expand_fn else {}))
         else:
             if (packets.device != x.device or packets.dtype != torch.int64 or
                     packets.shape != (4,) or not packets.is_contiguous()):
                 raise ValueError("MHC needs a same-device contiguous int64[4] rank descriptor")
-            self.ext.run_mhc_packets(*args,packets,weight is packed, **({"expand_fn": True} if self.EXPAND_FN else {}))
+            self.ext.run_mhc_packets(*args,packets,weight is packed, **({"expand_fn": True} if expand_fn else {}))
         self.executed.add(key)
+        if expand_fn:
+            self.expanded_executed.add((key, n))
         return rc,pm,cm,li
 
 

@@ -39,6 +39,29 @@ class InputPackTests(unittest.TestCase):
         net.mhc_input_packs = False
         self.assertEqual(report(net)['mhc_input_packs'], {})
 
+    def test_next_candidates_require_the_bound_consumers(self):
+        path = Path(__file__).resolve().parents[1] / 'engine/profiles/glm53/boot.py'
+        fn = next(n for n in ast.parse(path.read_text()).body
+                  if isinstance(n, ast.FunctionDef) and n.name == 'next_k_cost_report')
+        fn.body = [n for n in fn.body if not isinstance(n, ast.ImportFrom)]
+        mla = NS(ENABLE_MLA_DIRECT_CVT=True, _DECODE_CELLS_EXECUTED={(8, 10), (16, 12)})
+        scope = {'mla': mla}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), 'exec'), scope)
+        net = NS(decode_fastpath_rows=(8, 16),
+                 dense={'L0.kda.in_proj': NS(input_pack_rows=lambda n: n == 8)},
+                 mhc=NS(EXPAND_FN=True, expanded_executed={('L0.hc.attn_fn', 8)}))
+        report = scope['next_k_cost_report']
+        self.assertEqual(report(net)['mla_direct'], [(8, 10), (16, 12)])
+        net.mhc.expanded_executed.clear()
+        with self.assertRaisesRegex(RuntimeError, 'mHC'):
+            report(net)
+        net.mhc.EXPAND_FN = False
+        mla._DECODE_CELLS_EXECUTED.remove((16, 12))
+        with self.assertRaisesRegex(RuntimeError, 'MLA'):
+            report(net)
+        mla.ENABLE_MLA_DIRECT_CVT = False
+        report(net)
+
     def test_bound_forward_consumes_the_exact_owned_pack(self):
         layer = writer(4096)
         x = torch.zeros(8, 4096, dtype=torch.bfloat16)

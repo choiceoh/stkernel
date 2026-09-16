@@ -123,8 +123,6 @@ class MoEStaticKernelV4:
         l2_prefetch_fc1: bool = True,
         bulk_b: bool = False,
         input_vec16: bool = False,
-        input_amax_tree: bool = False,
-        input_pair_reuse: bool = False,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -285,8 +283,6 @@ class MoEStaticKernelV4:
         self.sf6_registers = bool(sf6_registers and self.compact_staging)
         self.scatter_reuse = bool(scatter_reuse)
         self.input_vec16 = bool(input_vec16)
-        self.input_amax_tree = bool(input_amax_tree)
-        self.input_pair_reuse = bool(input_pair_reuse)
         if self.input_vec16 and sf_vec_size != 16:
             raise ValueError("vector input loads require complete BF16x16 scale groups")
         if self.scatter_reuse and not (self.direct_scatter and self.sf6_registers
@@ -1195,7 +1191,7 @@ class MoEStaticKernelV4:
 
         @cute.struct
         class Storage:
-            ctrl: cute.struct.MemRange[cutlass.Int32, 4 if self.input_pair_reuse else 2]
+            ctrl: cute.struct.MemRange[cutlass.Int32, 2]
             fc1_bars: cute.struct.MemRange[cutlass.Int64, self.fc1_stages * 2]
             fc2_bars: cute.struct.MemRange[cutlass.Int64, self.fc2_stages * 2]
             a_bars: cute.struct.MemRange[cutlass.Int64, self.a_barrier_count]
@@ -1411,276 +1407,116 @@ class MoEStaticKernelV4:
                     cute.arch.globaltimer(),
                 )
 
-        if cutlass.const_expr(self.input_pair_reuse):
-            # Register adjacent routes first. Each input scale block is loaded
-            # once, then quantized separately for the two expert scales.
-            # Pair only the surplus routes: every CTA keeps work and the
-            # longest CTA still owns ceil(total_pairs/grid) routes. Pure
-            # pairing would leave 16 CTAs idle at C1 and add a wave at C2.
-            paired_ctas = total_pairs - Int32(gdim_z)
-            if paired_ctas < Int32(0):
-                paired_ctas = Int32(0)
-            if paired_ctas > Int32(gdim_z):
-                paired_ctas = Int32(gdim_z)
-            first_wave = Int32(gdim_z) + paired_ctas
-            pair_idx = Int32(bidz) + paired_ctas
-            routes_here = Int32(1)
-            if Int32(bidz) < paired_ctas:
-                pair_idx = Int32(bidz) * Int32(2)
-                routes_here = Int32(2)
-            while pair_idx < total_pairs:
-                for route_in_pair in cutlass.range_constexpr(2):
-                    if Int32(route_in_pair) < routes_here:
-                        route_pair = pair_idx + Int32(route_in_pair)
-                        expert_id = topk_ids[route_pair].to(Int32)
-                        token_idx = route_pair // num_topk
-                        weight = topk_weights[route_pair].to(cutlass.Float32)
-                        local_expert_id = Int32(0)
-                        row = Int32(0)
-                        if is_cta_leader > Int32(0):
-                            prior_local_expert_id = _atomic_cas_global_i32(
-                                get_ptr_as_int64(global_to_local_expert, expert_id),
-                                Int32(-1),
-                                Int32(-2),
-                            )
-                            if prior_local_expert_id == Int32(-1):
-                                local_expert_id = atomic_add_global_i32(
-                                    get_ptr_as_int64(active_expert_count, Int32(0)),
-                                    Int32(1),
-                                )
-                                weight_expert_ids[local_expert_id] = expert_id
-                                _st_global_release_i32(
-                                    get_ptr_as_int64(global_to_local_expert, expert_id),
-                                    local_expert_id,
-                                )
-                            else:
-                                if prior_local_expert_id == Int32(-2):
-                                    _spin_wait_global_eq_i32(
-                                        get_ptr_as_int64(global_to_local_expert, expert_id),
-                                        Int32(-2),
-                                    )
-                                    prior_local_expert_id = _ld_global_acquire_i32(
-                                        get_ptr_as_int64(global_to_local_expert, expert_id),
-                                    )
-                                local_expert_id = prior_local_expert_id
-                            row = atomic_add_global_i32(
-                                get_ptr_as_int64(row_counts, local_expert_id),
-                                Int32(1),
-                            )
-                            if cutlass.const_expr(self.even or self.split):
-                                if row % Int32(self.tile_m) == Int32(0):
-                                    atomic_add_global_i32(
-                                        get_ptr_as_int64(next_item, Int32(0)),
-                                        Int32(self.output_tile_count_n),
-                                    )
-                            map_idx = local_expert_id * max_rows + row
-                            scatter_row = route_pair if cutlass.const_expr(self.route_scatter) else token_idx
-                            st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
-                            st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
-                            _st_shared_i32(ctrl_base_addr + Int32(route_in_pair * 8), local_expert_id)
-                            _st_shared_i32(ctrl_base_addr + Int32(route_in_pair * 8 + 4), row)
-                cute.arch.sync_threads()
-                token_idx = pair_idx // num_topk
-                sf_idx = Int32(tidx)
-                while sf_idx < sf_blocks_per_row:
-                    block_start = sf_idx * Int32(self.sf_vec_size)
-                    values = cute.make_rmem_tensor((self.sf_vec_size,), cutlass.Float32)
-                    block_max = cutlass.Float32(0.0)
-                    if cutlass.const_expr(self.input_vec16):
-                        loaded = load_global_bf16x16_to_f32x16(
-                            get_ptr_as_int64(a_input, token_idx * cols + block_start))
-                    for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
-                        if cutlass.const_expr(self.input_vec16):
-                            value = loaded[elem_idx]
-                        else:
-                            value = cutlass.Float32(a_input[token_idx, block_start + Int32(elem_idx)])
-                        values[elem_idx] = value
-                        if cutlass.const_expr(not self.input_amax_tree):
-                            block_max = fmax_f32(block_max, fabs_f32(value))
-                    if cutlass.const_expr(self.input_amax_tree):
-                        # Abs/max is exact; balance the dependency tree without
-                        # changing the values or the expert-specific quantizer.
-                        peaks = cute.make_rmem_tensor((8,), cutlass.Float32)
-                        for i in cutlass.range_constexpr(8):
-                            peaks[i] = fmax_f32(fabs_f32(values[2*i]), fabs_f32(values[2*i+1]))
-                        for i in cutlass.range_constexpr(4):
-                            peaks[i] = fmax_f32(peaks[2*i], peaks[2*i+1])
-                        for i in cutlass.range_constexpr(2):
-                            peaks[i] = fmax_f32(peaks[2*i], peaks[2*i+1])
-                        block_max = fmax_f32(peaks[0], peaks[1])
-                    for route_in_pair in cutlass.range_constexpr(2):
-                        if Int32(route_in_pair) < routes_here:
-                            expert_id = topk_ids[pair_idx + Int32(route_in_pair)].to(Int32)
-                            local_expert_id = _ld_shared_i32(ctrl_base_addr + Int32(route_in_pair * 8))
-                            row = _ld_shared_i32(ctrl_base_addr + Int32(route_in_pair * 8 + 4))
-                            gs_value = input_global_scale[expert_id].to(cutlass.Float32)
-                            if self.input_scales_are_reciprocal and gs_value != cutlass.Float32(0.0):
-                                if self.fast_math:
-                                    gs_value = rcp_approx_ftz(gs_value)
-                                else:
-                                    gs_value = cutlass.Float32(1.0) / gs_value
-                            scale_byte = Uint8(0)
-                            packed_lo = Uint64(0)
-                            if self.fast_math:
-                                packed_lo, scale_byte = quantize_block_fp4_fast(
-                                    values, block_max, gs_value
-                                )
-                            else:
-                                packed_lo, scale_byte = quantize_block_fp4(
-                                    values, block_max, gs_value
-                                )
-                            output_offset = (
-                                local_expert_id * max_rows * output_bytes_per_row
-                                + row * output_bytes_per_row
-                                + sf_idx * Int32(self.sf_vec_size // 2)
-                            )
-                            st_global_u64(
-                                get_ptr_as_int64(packed_a_storage, output_offset), packed_lo
-                            )
-                            m_tile_idx = row // Int32(32 * 4)
-                            k_tile_idx = sf_idx // Int32(4)
-                            outer_m_idx = row % Int32(32)
-                            inner_m_idx = (row % Int32(32 * 4)) // Int32(32)
-                            inner_k_idx = sf_idx % Int32(4)
-                            scale_offset = (
-                                local_expert_id * expert_scale_stride
-                                + m_tile_idx * num_k_tiles * Int32(32 * 4 * 4)
-                                + k_tile_idx * Int32(32 * 4 * 4)
-                                + outer_m_idx * Int32(4 * 4)
-                                + inner_m_idx * Int32(4)
-                                + inner_k_idx
-                            )
-                            scale_storage[scale_offset] = scale_byte
-                    sf_idx += Int32(self.threads_per_cta)
-                cute.arch.sync_threads()
-                if pair_idx < first_wave:
-                    pair_idx = first_wave + Int32(bidz)
-                else:
-                    pair_idx += Int32(gdim_z)
-                routes_here = Int32(1)
-        else:
-            pair_idx = Int32(bidz)
-            while pair_idx < total_pairs:
-                expert_id = topk_ids[pair_idx].to(Int32)
-                token_idx = pair_idx // num_topk
-                weight = topk_weights[pair_idx].to(cutlass.Float32)
-                local_expert_id = Int32(0)
-                row = Int32(0)
-                if is_cta_leader > Int32(0):
-                    prior_local_expert_id = _atomic_cas_global_i32(
-                        get_ptr_as_int64(global_to_local_expert, expert_id),
-                        Int32(-1),
-                        Int32(-2),
-                    )
-                    if prior_local_expert_id == Int32(-1):
-                        local_expert_id = atomic_add_global_i32(
-                            get_ptr_as_int64(active_expert_count, Int32(0)),
-                            Int32(1),
-                        )
-                        weight_expert_ids[local_expert_id] = expert_id
-                        _st_global_release_i32(
-                            get_ptr_as_int64(global_to_local_expert, expert_id),
-                            local_expert_id,
-                        )
-                    else:
-                        if prior_local_expert_id == Int32(-2):
-                            _spin_wait_global_eq_i32(
-                                get_ptr_as_int64(global_to_local_expert, expert_id),
-                                Int32(-2),
-                            )
-                            prior_local_expert_id = _ld_global_acquire_i32(
-                                get_ptr_as_int64(global_to_local_expert, expert_id),
-                            )
-                        local_expert_id = prior_local_expert_id
-                    row = atomic_add_global_i32(
-                        get_ptr_as_int64(row_counts, local_expert_id),
+        pair_idx = Int32(bidz)
+        while pair_idx < total_pairs:
+            expert_id = topk_ids[pair_idx].to(Int32)
+            token_idx = pair_idx // num_topk
+            weight = topk_weights[pair_idx].to(cutlass.Float32)
+            local_expert_id = Int32(0)
+            row = Int32(0)
+            if is_cta_leader > Int32(0):
+                prior_local_expert_id = _atomic_cas_global_i32(
+                    get_ptr_as_int64(global_to_local_expert, expert_id),
+                    Int32(-1),
+                    Int32(-2),
+                )
+                if prior_local_expert_id == Int32(-1):
+                    local_expert_id = atomic_add_global_i32(
+                        get_ptr_as_int64(active_expert_count, Int32(0)),
                         Int32(1),
                     )
-                    if cutlass.const_expr(self.even or self.split):
-                        if row % Int32(self.tile_m) == Int32(0):
-                            atomic_add_global_i32(
-                                get_ptr_as_int64(next_item, Int32(0)),
-                                Int32(self.output_tile_count_n),
-                            )
-                    map_idx = local_expert_id * max_rows + row
-                    scatter_row = pair_idx if cutlass.const_expr(self.route_scatter) else token_idx
-                    st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
-                    st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
-                    _st_shared_i32(ctrl_base_addr + Int32(0), local_expert_id)
-                    _st_shared_i32(ctrl_base_addr + Int32(4), row)
-                cute.arch.sync_threads()
-                local_expert_id = _ld_shared_i32(ctrl_base_addr + Int32(0))
-                row = _ld_shared_i32(ctrl_base_addr + Int32(4))
+                    weight_expert_ids[local_expert_id] = expert_id
+                    _st_global_release_i32(
+                        get_ptr_as_int64(global_to_local_expert, expert_id),
+                        local_expert_id,
+                    )
+                else:
+                    if prior_local_expert_id == Int32(-2):
+                        _spin_wait_global_eq_i32(
+                            get_ptr_as_int64(global_to_local_expert, expert_id),
+                            Int32(-2),
+                        )
+                        prior_local_expert_id = _ld_global_acquire_i32(
+                            get_ptr_as_int64(global_to_local_expert, expert_id),
+                        )
+                    local_expert_id = prior_local_expert_id
+                row = atomic_add_global_i32(
+                    get_ptr_as_int64(row_counts, local_expert_id),
+                    Int32(1),
+                )
+                if cutlass.const_expr(self.even or self.split):
+                    if row % Int32(self.tile_m) == Int32(0):
+                        atomic_add_global_i32(
+                            get_ptr_as_int64(next_item, Int32(0)),
+                            Int32(self.output_tile_count_n),
+                        )
+                map_idx = local_expert_id * max_rows + row
+                scatter_row = pair_idx if cutlass.const_expr(self.route_scatter) else token_idx
+                st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
+                st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
+                _st_shared_i32(ctrl_base_addr + Int32(0), local_expert_id)
+                _st_shared_i32(ctrl_base_addr + Int32(4), row)
+            cute.arch.sync_threads()
+            local_expert_id = _ld_shared_i32(ctrl_base_addr + Int32(0))
+            row = _ld_shared_i32(ctrl_base_addr + Int32(4))
 
-                gs_value = input_global_scale[expert_id].to(cutlass.Float32)
-                if self.input_scales_are_reciprocal and gs_value != cutlass.Float32(0.0):
-                    if self.fast_math:
-                        gs_value = rcp_approx_ftz(gs_value)
-                    else:
-                        gs_value = cutlass.Float32(1.0) / gs_value
-                sf_idx = Int32(tidx)
-                while sf_idx < sf_blocks_per_row:
-                    block_start = sf_idx * Int32(self.sf_vec_size)
-                    values = cute.make_rmem_tensor((self.sf_vec_size,), cutlass.Float32)
-                    block_max = cutlass.Float32(0.0)
+            gs_value = input_global_scale[expert_id].to(cutlass.Float32)
+            if self.input_scales_are_reciprocal and gs_value != cutlass.Float32(0.0):
+                if self.fast_math:
+                    gs_value = rcp_approx_ftz(gs_value)
+                else:
+                    gs_value = cutlass.Float32(1.0) / gs_value
+            sf_idx = Int32(tidx)
+            while sf_idx < sf_blocks_per_row:
+                block_start = sf_idx * Int32(self.sf_vec_size)
+                values = cute.make_rmem_tensor((self.sf_vec_size,), cutlass.Float32)
+                block_max = cutlass.Float32(0.0)
+                if cutlass.const_expr(self.input_vec16):
+                    loaded = load_global_bf16x16_to_f32x16(
+                        get_ptr_as_int64(a_input, token_idx * cols + block_start))
+                for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
                     if cutlass.const_expr(self.input_vec16):
-                        loaded = load_global_bf16x16_to_f32x16(
-                            get_ptr_as_int64(a_input, token_idx * cols + block_start))
-                    for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
-                        if cutlass.const_expr(self.input_vec16):
-                            value = loaded[elem_idx]
-                        else:
-                            value = cutlass.Float32(a_input[token_idx, block_start + Int32(elem_idx)])
-                        values[elem_idx] = value
-                        if cutlass.const_expr(not self.input_amax_tree):
-                            block_max = fmax_f32(block_max, fabs_f32(value))
-                    if cutlass.const_expr(self.input_amax_tree):
-                        # Abs/max is exact; balance the dependency tree without
-                        # changing the values or the expert-specific quantizer.
-                        peaks = cute.make_rmem_tensor((8,), cutlass.Float32)
-                        for i in cutlass.range_constexpr(8):
-                            peaks[i] = fmax_f32(fabs_f32(values[2*i]), fabs_f32(values[2*i+1]))
-                        for i in cutlass.range_constexpr(4):
-                            peaks[i] = fmax_f32(peaks[2*i], peaks[2*i+1])
-                        for i in cutlass.range_constexpr(2):
-                            peaks[i] = fmax_f32(peaks[2*i], peaks[2*i+1])
-                        block_max = fmax_f32(peaks[0], peaks[1])
-                    scale_byte = Uint8(0)
-                    packed_lo = Uint64(0)
-                    if self.fast_math:
-                        packed_lo, scale_byte = quantize_block_fp4_fast(
-                            values, block_max, gs_value
-                        )
+                        value = loaded[elem_idx]
                     else:
-                        packed_lo, scale_byte = quantize_block_fp4(
-                            values, block_max, gs_value
-                        )
-                    output_offset = (
-                        local_expert_id * max_rows * output_bytes_per_row
-                        + row * output_bytes_per_row
-                        + sf_idx * Int32(self.sf_vec_size // 2)
+                        value = cutlass.Float32(a_input[token_idx, block_start + Int32(elem_idx)])
+                    values[elem_idx] = value
+                    block_max = fmax_f32(block_max, fabs_f32(value))
+                scale_byte = Uint8(0)
+                packed_lo = Uint64(0)
+                if self.fast_math:
+                    packed_lo, scale_byte = quantize_block_fp4_fast(
+                        values, block_max, gs_value
                     )
-                    st_global_u64(
-                        get_ptr_as_int64(packed_a_storage, output_offset), packed_lo
+                else:
+                    packed_lo, scale_byte = quantize_block_fp4(
+                        values, block_max, gs_value
                     )
-                    m_tile_idx = row // Int32(32 * 4)
-                    k_tile_idx = sf_idx // Int32(4)
-                    outer_m_idx = row % Int32(32)
-                    inner_m_idx = (row % Int32(32 * 4)) // Int32(32)
-                    inner_k_idx = sf_idx % Int32(4)
-                    scale_offset = (
-                        local_expert_id * expert_scale_stride
-                        + m_tile_idx * num_k_tiles * Int32(32 * 4 * 4)
-                        + k_tile_idx * Int32(32 * 4 * 4)
-                        + outer_m_idx * Int32(4 * 4)
-                        + inner_m_idx * Int32(4)
-                        + inner_k_idx
-                    )
-                    scale_storage[scale_offset] = scale_byte
-                    sf_idx += Int32(self.threads_per_cta)
+                output_offset = (
+                    local_expert_id * max_rows * output_bytes_per_row
+                    + row * output_bytes_per_row
+                    + sf_idx * Int32(self.sf_vec_size // 2)
+                )
+                st_global_u64(
+                    get_ptr_as_int64(packed_a_storage, output_offset), packed_lo
+                )
+                m_tile_idx = row // Int32(32 * 4)
+                k_tile_idx = sf_idx // Int32(4)
+                outer_m_idx = row % Int32(32)
+                inner_m_idx = (row % Int32(32 * 4)) // Int32(32)
+                inner_k_idx = sf_idx % Int32(4)
+                scale_offset = (
+                    local_expert_id * expert_scale_stride
+                    + m_tile_idx * num_k_tiles * Int32(32 * 4 * 4)
+                    + k_tile_idx * Int32(32 * 4 * 4)
+                    + outer_m_idx * Int32(4 * 4)
+                    + inner_m_idx * Int32(4)
+                    + inner_k_idx
+                )
+                scale_storage[scale_offset] = scale_byte
+                sf_idx += Int32(self.threads_per_cta)
 
-                cute.arch.sync_threads()
-                pair_idx += Int32(gdim_z)
+            cute.arch.sync_threads()
+            pair_idx += Int32(gdim_z)
 
         self._resident_grid_barrier(
             barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader

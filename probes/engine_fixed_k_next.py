@@ -24,23 +24,10 @@ def compile_check(report):
     for name, module in (('dense', dense.build()), ('mla', mla._build())):
         report('compile', component=name, module=module.__file__,
                binary_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest())
-    os.environ['CUTE_DSL_ARCH'] = 'sm_121a'
-    with patch.object(torch.cuda, 'is_available', return_value=True), \
-            patch.object(torch.cuda, 'get_device_capability', return_value=(12, 1)):
-        from engine.kernels.b12x import moe_dispatch as md
-        with patch.object(md, 'get_num_sm', return_value=48), \
-                patch.object(md, 'get_max_active_clusters', return_value=48), \
-                patch.object(md, 'build_and_load_cute_dsl_kernel', side_effect=lambda module, name, build, **kw: build()):
-            for rows in (8, 16):
-                for cell, enabled, paired in (('base', False, False), ('tree', True, False),
-                                               ('pair', False, True), ('pair_tree', True, True)):
-                    cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True,
-                               input_amax_tree=enabled, input_pair_reuse=paired)
-                    md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8, config=cfg,
-                                            mac_override=48, w13_chunk=256,
-                                            activation='swigluoai_uninterleave',
-                                            swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
-                    report('compile', component='moe', rows=rows, cell=cell, input_amax_tree=enabled, input_pair_reuse=paired)
+    from engine.kernels.router_fused import build
+    module = build()
+    report('compile', component='router_fused', module=module.__file__,
+           binary_sha256=hashlib.sha256(Path(module.__file__).read_bytes()).hexdigest())
     if torch.cuda.is_initialized():
         raise RuntimeError('compile gate initialized CUDA')
 
@@ -56,7 +43,7 @@ def mhc_check(report, ranks):
     projections = [DenseLinear(projection_weights[f'L{i}.kda.in_proj'], prefill=False) for i in (0, 1, 2)]
     for p in projections:
         p.decode_input_rows = (8, 16)
-    for rows in (8, 16):
+    for rows in (8,):
         data = Rows(rows)
         for packets in (False, True):
             def call(enabled, subset=keys, project=False):
@@ -118,112 +105,7 @@ def mhc_check(report, ranks):
 
 def mla_check(report):
     from probes.engine_fixed_k_cost import mla_check as check
-    check(report, sync_cleanup=True)
-
-
-def moe_frontend_check(report, ranks):
-    """Compare registered route bytes before blaming downstream MMA arithmetic."""
-    from probes import engine_moe_c2_cells as cells
-    from engine.profiles.glm53.weights import rank_loader
-    from engine.profiles.glm53.lanes import served
-    from engine.kernels.b12x import moe_dispatch as md
-    layer = cells.Layer(rank_loader(Path(ranks)), set(rank_loader(Path(ranks)).keys()),
-                        3, served(moe_static='t,r,sf6,batch,q0'), (256,))
-    get_kernel = md._get_static_kernel_v2
-    captured = []
-    class Observe:
-        def __init__(self, kernel): self.kernel = kernel
-        def __getattr__(self, name): return getattr(self.kernel, name)
-        def __call__(self, *args):
-            result = self.kernel(*args)
-            captured.append(args)
-            return result
-    def observe(*args, **kwargs):
-        kernel, mac = get_kernel(*args, **kwargs)
-        return Observe(kernel), mac
-    def snapshot(args):
-        active = int(args[14].item())
-        counts, experts, tokens = (args[i].cpu() for i in (13, 15, 22))
-        rows = tokens.shape[1]
-        packed = args[5].view(288, rows, 2048).cpu()
-        scale = args[6].view(288, -1).cpu()
-        block = torch.arange(256)
-        result = {}
-        for local in range(active):
-            for row in range(int(counts[local])):
-                token = int(tokens[local, row])
-                offsets = ((row // 128) * 32768 + (block // 4) * 512
-                           + (row % 32) * 16 + ((row % 128) // 32) * 4 + block % 4)
-                result[(int(experts[local]), token)] = (packed[local, row].clone(), scale[local, offsets].clone())
-        return result
-    for rows in (8, 16):
-        fx = cells.Fixtures([layer], rows)
-        fx.load(('independent', rows, rows, 1.), 41)
-        snapshots = {}
-        for name, paired in (('base', False), ('pair', True)):
-            cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True, input_pair_reuse=paired)
-            with patch.object(md, '_STATIC_V2_OVERRIDE', cfg), patch.object(md, '_get_static_kernel_v2', observe):
-                layer.moe(256, fx.x, fx.ids[0], fx.routes[0])
-            torch.cuda.synchronize()
-            snapshots[name] = snapshot(captured[-1])
-            captured.clear()
-        base, pair = snapshots['base'], snapshots['pair']
-        diff = []
-        for route in sorted(base.keys() & pair.keys()):
-            changes = [int((a != b).sum()) for a, b in zip(base[route], pair[route])]
-            if any(changes):
-                diff.append(dict(expert=route[0], token=route[1], packed_bytes=changes[0], scale_bytes=changes[1],
-                                 first_pack_indices=(base[route][0] != pair[route][0]).nonzero().flatten()[:8].tolist()))
-        report('frontend_bytes', rows=rows, missing=sorted(base.keys()-pair.keys()),
-               extra=sorted(pair.keys()-base.keys()), routes=len(base), mismatched_routes=diff)
-
-
-def moe_check(report, ranks, *, pair_reuse=False):
-    from probes import engine_moe_c2_cells as cells
-    from engine.profiles.glm53.weights import rank_loader
-    from engine.profiles.glm53.lanes import served
-    from engine.kernels.b12x import moe_dispatch as md
-    path = Path(ranks)
-    if path.suffix != '.safetensors':
-        path = path / 'rank0of4.safetensors'
-    loader = rank_loader(path)
-    lane = served(moe_static='t,r,sf6,batch,q0')
-    chunk = md._w13_tile_chunk()
-    layers = [cells.Layer(loader, set(loader.keys()), i, lane, (chunk,)) for i in (3, 4, 5)]
-    report('weights', component='moe', layers=[layer.identity for layer in layers],
-           allocated_bytes=torch.cuda.memory_allocated())
-    spread = cells.calibrate(layers, report)
-    base = md._parse_glm53_static_v2('t,r,sf6,batch')
-    choices = [('base', False, False), ('tree', True, False), ('repeat', False, False)]
-    if pair_reuse:
-        choices = [('base', False, False), ('pair', False, True), ('pair_tree', True, True), ('repeat', False, False)]
-    candidates = [name for name, _, _ in choices if name not in ('base', 'repeat')]
-    arms = [(name, chunk, dict(base, input_vec16=True, input_amax_tree=tree, input_pair_reuse=paired))
-            for name, tree, paired in choices]
-    failures = []
-    for rows in (8, 16):
-        fixtures = [(f'c{rows//8}_requests', rows, rows//8, spread),
-                    (f'm{rows}_independent', rows, rows, 1.), (f'm{rows}_shared', rows, 1, 0.)]
-        fx = cells.Fixtures(layers, rows)
-        fx.load(fixtures[0], 1)
-        for scope, group in (('single', layers[:1]), ('chain', layers)):
-            graphs, accs = cells.capture_arms(group, fx, arms)
-            try:
-                failed = cells.exact_arms(report, group, fx, fixtures, graphs, accs,
-                                          'base', 'repeat', candidates, scope=scope)
-                failures.extend(failed)
-                if not failed:
-                    uniques = fx.load(fixtures[0], 7)[:len(group)]
-                    for candidate in candidates:
-                        cells.bracket(report, graphs, 'base', candidate, brackets=3,
-                                      fixture=fixtures[0][0], rows=rows, scope=scope,
-                                      layers=len(group), unique_experts=uniques)
-            finally:
-                for graph in graphs.values():
-                    graph.reset()
-        cells.stamp_cells(report, layers, arms[:-1], spread, rows=rows)
-    if failures:
-        raise RuntimeError(f'MoE tree-max failed: {failures}')
+    check(report, direct_cvt=True)
 
 
 def run(output, ranks, *, compile_only=False, sections=()):
@@ -244,15 +126,10 @@ def run(output, ranks, *, compile_only=False, sections=()):
             compile_check(report)
         else:
             torch.manual_seed(91718)
-            wanted = set(sections) or {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair'}
-            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair', 'moe_debug', 'mla_direct'}:
+            wanted = set(sections) or {'mla', 'mhc'}
+            if wanted - {'mla', 'mhc'}:
                 raise ValueError(f'unknown component: {wanted}')
-            for name, fn in (('mla', lambda: mla_check(report)), ('mhc', lambda: mhc_check(report, ranks)),
-                             ('moe', lambda: moe_check(report, ranks)),
-                             ('moe_debug', lambda: moe_frontend_check(report, ranks)),
-                             ('moe_pair', lambda: moe_check(report, ranks, pair_reuse=True)),
-                             ('mla_direct', lambda: __import__('probes.engine_fixed_k_cost', fromlist=['mla_check']).mla_check(report, direct_cvt=True)),
-                             ('mla_bf16', lambda: __import__('probes.engine_fixed_k_cost', fromlist=['mla_check']).mla_check(report, bf16_tile=True))):
+            for name, fn in (('mla', lambda: mla_check(report)), ('mhc', lambda: mhc_check(report, ranks))):
                 if name in wanted:
                     try:
                         fn()

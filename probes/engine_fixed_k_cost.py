@@ -161,13 +161,13 @@ def _mhc_rows_check(report, path, keys, owner, coeff, digest, rows):
                 graph.reset()
 
 
-def mla_check(report, *, sync_cleanup=False, bf16_tile=False, direct_cvt=False):
+def mla_check(report, *, direct_cvt=False):
     from engine.kernels import mla
     from probes.engine_decode_fusions import _capture
     mla._build()
-    label = "mla_direct_cvt" if direct_cvt else "mla_bf16_tile" if bf16_tile else "mla_sync_cleanup" if sync_cleanup else "mla_tile32"
+    label = "mla_direct_cvt" if direct_cvt else "mla_tile32"
     def call(enabled, *args, **kwargs):
-        with patch.object(mla, 'ENABLE_MLA_DIRECT_CVT' if direct_cvt else 'ENABLE_MLA_BF16_TILE' if bf16_tile else 'ENABLE_MLA_SYNC_CLEAN' if sync_cleanup else 'ENABLE_MLA_QREG', enabled):
+        with patch.object(mla, 'ENABLE_MLA_DIRECT_CVT' if direct_cvt else 'ENABLE_MLA_QREG', enabled):
             return mla.mla_decode(*args, **kwargs)
     cache = torch.randn(32768, 512, device='cuda').to(torch.float8_e4m3fn)
     for rows in (8, 16):
@@ -207,7 +207,7 @@ def mla_check(report, *, sync_cleanup=False, bf16_tile=False, direct_cvt=False):
                         if max(errors) > .02 or any(not out.isfinite().all().item() for out in outputs):
                             raise AssertionError(f'MLA {rows=} {width=} {case=}: {errors=}')
                     bitwise = torch.equal(outputs[0], outputs[1])
-                    if (direct_cvt or sync_cleanup or (bf16_tile and rows == 8)) and not bitwise:
+                    if direct_cvt and not bitwise:
                         raise AssertionError('MLA synchronization change is not bitwise')
                     if errors[1] > errors[0] + .002:
                         raise AssertionError(f'MLA tile32 worsened independent accuracy: {errors=}')
