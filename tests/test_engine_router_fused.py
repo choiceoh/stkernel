@@ -41,14 +41,11 @@ class RouterFusedTests(unittest.TestCase):
 
     def test_kernel_source_keeps_the_contract_the_cell_measures(self):
         src = (ROOT / 'engine/kernels/router_fused.cu').read_text()
-        for needle in ('#define ST_RT_CTAS 48', '#define ST_RT_PER_CTA 6', '#define ST_RT_TOPK 8',
+        for needle in ('#define ST_RT_CTAS 96', '#define ST_RT_PER_CTA 3', '#define ST_RT_TOPK 8',
+                       '__launch_bounds__(ST_RT_THREADS, 2)', 'float4 g[ST_RT_LANE_CHUNKS][ST_RT_PER_CTA];',
                        'atomicAdd(ticket, 1u) == gridDim.x - 1', '*ticket = 0u;', '__threadfence();',
-                       '__fdiv_rn(1.0f, 1.0f + expf(-v))', '__fdiv_rn(s, sum + 1e-20f) * scale',
-                       'ob > best || (ob == best && oe < be)', 'fmaf(g[e].x, a, s)',
-                       'cp.async.bulk.shared::cluster.global.mbarrier::complete_tx::bytes',
-                       'mbarrier.arrive.expect_tx.shared::cta.b64', 'mbarrier.try_wait.parity.shared::cta.b64',
-                       '#define ST_RT_STAGE_BYTES (ST_RT_PER_CTA * ST_RT_ROW_BYTES)',
-                       'cudaFuncAttributeMaxDynamicSharedMemorySize'):
+                       '__fdiv_rn(1.0f, 1.0f + expf(-v))', '__fdiv_rn(s, sum + 1e-20f) * scale', '__ldcs(',
+                       'ob > best || (ob == best && oe < be)', 'fmaf(g[j][e].x, a, s)'):
             self.assertIn(needle, src)
         self.assertNotIn('__expf', src)          # the accurate libdevice exp, as Triton's libdevice.exp
         self.assertNotIn('__fdividef', src)
