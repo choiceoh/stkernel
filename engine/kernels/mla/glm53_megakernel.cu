@@ -3115,7 +3115,9 @@ int mk_gemm_input_mode() {
 }
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
   // n is the logical output width; the real KDA projection pads 6416 to 6528.
-  return !bg && !lr && m == 6 && k == 4096 &&
+  // Six rows was k=5 C=1; K=7 serves eight. Operator 2026-09-16: admit eight
+  // unmeasured. Rollback: drop the m == 8 term.
+  return !bg && !lr && (m == 6 || m == 8) && k == 4096 &&
       (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
 }
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
@@ -3135,7 +3137,9 @@ int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 // More residency alone lost on the small shared-expert GEMMs and on the
 // 51-tile in-projection. They retain the two-block transposed kernel.
 bool mk_use_compact_m8(int m, int n, int k, bool lr = false) {
-  return MK_COMPACT_M8 && !lr && m == 6 &&
+  // Same eight-row adoption as the dense package: c2.m <= 8 is one
+  // instantiation and the partial clamp follows m. Operator 2026-09-16.
+  return MK_COMPACT_M8 && !lr && (m == 6 || m == 8) &&
          ((n == 4096 && k == 2048) || (n == 6144 && k == 4096));
 }
 

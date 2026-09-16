@@ -3317,16 +3317,18 @@ int mk_gemm_input_cta_mode() {
 }
 int g_input_reuse_mode = -1;
 int mk_gemm_input_mode() {
-  if (g_input_reuse_mode < 0) {
-    const char* value = "1";
-    g_input_reuse_mode = value && value[0] == '1' && value[1] == '\0' ? 1 : 0;
-  }
+  // K=7 serves eight verification rows at C=1, so the six/seven-row gate mode 1
+  // allows never matches the shape production runs; mode 2 is the branch that
+  // admits eight. Bound cells already reuse through bound_c1 -- this is the
+  // automatic gate. Operator 2026-09-16: adopt it as the code default without
+  // waiting for the paired GPU gate. Rollback: set_gemm_input(1).
+  if (g_input_reuse_mode < 0) g_input_reuse_mode = 2;
   return g_input_reuse_mode;
 }
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
   // n is the logical output width; the real KDA projection pads 6416 to 6528.
   // Mode 2 qualifies K=7's eight verification rows with the existing pack/MMA.
-  // Mode 1 remains the measured serving set until the paired GPU gate wins.
+  // Operator 2026-09-16: mode 2 is the default, so eight rows qualify here.
   return !bg && !lr && (m == 6 || m == 7 || (m == 8 && mk_gemm_input_mode() == 2)) && k == 4096 &&
       (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
 }
@@ -3347,7 +3349,12 @@ int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 // More residency alone lost on the small shared-expert GEMMs and on the
 // 51-tile in-projection. They retain the two-block transposed kernel.
 bool mk_use_compact_m8(int m, int n, int k, bool lr = false) {
-  return MK_COMPACT_M8 && !lr && m == 6 &&
+  // The two shapes won their A/B at six rows (k=5 C=1). K=7 serves eight, and
+  // eight takes the same instantiation (mk_launch_gemm2 dispatches c2.m <= 8)
+  // with A_ROWS = 8 exactly filled instead of padded; mk_choose_ksr2 follows m
+  // through its m x n x ksr partial clamp. Operator 2026-09-16: admit eight
+  // rows unmeasured. Rollback: drop the m == 8 term.
+  return MK_COMPACT_M8 && !lr && (m == 6 || m == 8) &&
          ((n == 4096 && k == 2048) || (n == 6144 && k == 4096));
 }
 
