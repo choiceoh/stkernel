@@ -288,3 +288,56 @@ class ContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrapReadingTests(unittest.TestCase):
+    """`unspecified launch failure` is this stack's own watchdog far more often than it is a GPU.
+
+    `dsv4_oneshot_ar.cu` calls `__trap()` after 30 s of one spin, on purpose. That reaches python as
+    `cudaErrorLaunchFailure` and the driver logs an Xid 43 beside it. On 2026-09-16 that pair was read
+    as a broken srv1 three times over -- by the supervisor's forensics, by another session's summary
+    and by this one -- while the line that named the missing peers sat three lines above it.
+    """
+
+    ULF = "CUDA error: unspecified launch failure" + chr(10) + "Search for `cudaErrorLaunchFailure'"
+
+    def note(self, message, say=None):
+        from engine.base import tripwire
+        exc = type("AcceleratorError", (RuntimeError,), {})(message)
+        return tripwire.death_note(None, 1, exc, phase="boot", say=say or (lambda *a, **k: None))
+
+    def test_the_trap_is_named_where_the_reading_happens(self):
+        note = self.note(self.ULF)
+        self.assertIn("likely", note)
+        for said in ("one-shot", "30 s", "STALL", "Xid 43"):
+            self.assertIn(said, note["likely"])
+
+    def test_the_symbol_alone_is_enough(self):
+        self.assertIn("likely", self.note("CUDA error: cudaErrorLaunchFailure at foo.cu:12"))
+
+    def test_an_ordinary_failure_is_not_annotated(self):
+        for message in ("boom", "CUDA error: out of memory", "illegal memory access was encountered"):
+            with self.subTest(message=message):
+                self.assertNotIn("likely", self.note(message))
+
+    def test_it_does_not_change_what_the_note_says_this_rank_is(self):
+        """The reading is a hint beside the verdict, never the verdict: peers still report peer-left."""
+        note = self.note(self.ULF)
+        self.assertEqual(note["kind"], "local")
+        self.assertIn("this rank's own failure", note["meaning"])
+
+    def test_the_line_is_printed_and_not_only_filed(self):
+        said = []
+        self.note(self.ULF, say=lambda text, **k: said.append(text))
+        self.assertEqual(len(said), 2)
+        self.assertIn("one-shot watchdog", said[1])
+
+    def test_the_trap_threshold_this_quotes_is_the_one_the_kernel_uses(self):
+        """A number repeated in prose is a number that rots. This one is checked against the source."""
+        import re
+        from engine.base import tripwire
+        source = (ROOT / "engine/kernels/oneshot/dsv4_oneshot_ar.cu").read_text(encoding="utf-8")
+        found = re.search(r"#define OSAR_STALL_TRAP_S (\d+)", source)
+        self.assertIsNotNone(found, "the trap threshold moved or was renamed")
+        self.assertIn(found.group(1) + " s", tripwire.TRAP_MEANING)
+        self.assertIn("__trap()", source)

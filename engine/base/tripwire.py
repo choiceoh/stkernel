@@ -103,6 +103,31 @@ PEER_LEFT = ("Connection closed by peer", "Connection reset", "recvValue failed"
              "NCCL", "ncclRemoteError", "ncclSystemError", "timed out", "Timeout", "RankLeft", "rank left")
 
 
+# What the one-shot transport's own watchdog looks like from python, and what it is NOT.
+#
+# `engine/kernels/oneshot/dsv4_oneshot_ar.cu` spins on peer flags and calls `__trap()` after
+# OSAR_STALL_TRAP_S (30 s) of one spin, on purpose: "the engine dies in seconds with the line above,
+# not after a 5-minute RPC timeout with nothing". A `__trap()` reaches the host as
+# `cudaErrorLaunchFailure` -- "unspecified launch failure" -- and the driver logs an Xid 43 for it.
+#
+# So this string is, on this stack, USUALLY OUR OWN WATCHDOG and not a device fault. On 2026-09-16 it
+# was read as a broken GPU three times over, by three different readers, because nothing said so at
+# the place the reading happens. The stall's own line is three lines up in the same log.
+TRAP_MARKS = ("unspecified launch failure", "cudaErrorLaunchFailure")
+TRAP_MEANING = (
+    "usually this stack's OWN one-shot watchdog, not a device fault: the transport traps after 30 s "
+    "of one spin (OSAR_STALL_TRAP_S). Look just above for '[oneshot] STALL rank=... missing_peer_mask' "
+    "-- it names the sequence, the slot and which peers never arrived. The cause is in THEIR logs: a "
+    "rank that traps here was the one still waiting. An Xid 43 beside it is that trap, not a fault."
+)
+
+
+def traps_itself(exc: BaseException) -> bool:
+    """Whether this error is what the one-shot watchdog's `__trap()` looks like from python."""
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(mark.lower() in text for mark in TRAP_MARKS)
+
+
 def classify(exc: BaseException) -> str:
     """'divergence' | 'peer-left' | 'stalled' | 'local' -- what a rank's death certificate should say."""
     if isinstance(exc, CollectiveDivergence):
@@ -123,10 +148,15 @@ def death_note(directory, rank: int, exc: BaseException, *, phase=None, calls=No
                 meaning={"divergence": "this rank and its peers reached different collectives; every rank has this note",
                          "peer-left": "a peer died or stalled first; the cause is in that rank's log and note",
                          "local": "this rank's own failure; peers will report peer-left"}[kind])
+    if traps_itself(exc):
+        note["likely"] = TRAP_MEANING
     if isinstance(exc, CollectiveDivergence) and exc.details is not None:
         # Keep the complete differing rows even when the exception summary is truncated.
         note["divergence"] = exc.details
     say(f"[serve] death rank={rank} kind={kind} phase={phase!r}: {note['error'].splitlines()[0][:300]}", flush=True)
+    if "likely" in note:
+        # On the line the supervisor's forensics and the next reader actually see, not only in the file.
+        say(f"[serve] death rank={rank}: {note['likely']}", flush=True)
     if directory is None:
         return note
     try:
