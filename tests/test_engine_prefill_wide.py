@@ -32,6 +32,7 @@ class WidePrefillTests(unittest.TestCase):
         def fallback(*a):
             raise Fallback()
         self.ns = dict(MLA_H=16, MLA_D=512, ENABLE_MLA_PREFILL32=True,
+                       ENABLE_MLA_DECODE_PAIR=True,
                        _mla_prefill32=lambda *a: 'prefill', mla_splits=fallback,
                        logger=types.SimpleNamespace(warning=lambda *a: None))
         exec(compile(ast.Module(body=[fn], type_ignores=[]), str(source), 'exec'), self.ns)
