@@ -679,3 +679,73 @@ class QueueGraceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CachedBaselineTests(unittest.TestCase):
+    """The gate ran the suite twice, and the second run was a value it already had.
+
+    10m55s, 11m00s and 11m03s on 2026-09-16, and the deploy that followed each took 16 seconds. Half
+    of that gate is the deployed commit's verdicts -- which this watcher measured itself, on the same
+    commit, the same seed image and the same box, on the cycle that deployed it.
+    """
+
+    def tree(self, image="sha256:seed"):
+        import json
+        import tempfile
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, root, True)
+        (root / "engine/runtime").mkdir(parents=True)
+        (root / "engine/runtime/dependencies.json").write_text(json.dumps({"seed_image_id": image}))
+        return root
+
+    def held(self, **over):
+        verdicts = {"test_engine_a": "OK", "test_engine_b": "FAILED (errors=1)"}
+        base = {"deployed": "a" * 40,
+                "gate": {"sha": "a" * 40, "image": "sha256:seed", "verdicts": verdicts, "at": 0}}
+        return {**base, **over}
+
+    def test_the_verdicts_are_reused_when_the_sha_and_the_image_still_hold(self):
+        logs = []
+        before, why = watch.cached_baseline(self.held(), self.tree(), logs.append)
+        self.assertEqual(why, "cached")
+        self.assertEqual(before, {"test_engine_a": "OK", "test_engine_b": "FAILED (errors=1)"})
+        self.assertIn("not re-run", logs[0])
+
+    def test_a_baseline_for_another_commit_is_not_this_one_s(self):
+        before, why = watch.cached_baseline(self.held(deployed="b" * 40), self.tree(), print)
+        self.assertIsNone(before)
+        self.assertIn("aaaaaaaaaaaa", why)
+
+    def test_a_new_seed_image_runs_it_again(self):
+        """The tests run inside the image the tree pins, so a moved image is a different answer."""
+        before, why = watch.cached_baseline(self.held(), self.tree(image="sha256:other"), print)
+        self.assertIsNone(before)
+        self.assertEqual(why, "the seed image moved")
+
+    def test_nothing_recorded_and_a_half_written_record_both_run_it(self):
+        for cache in (None, {}, {"sha": "a" * 40, "image": "sha256:seed"}, {"verdicts": "not a mapping"}):
+            with self.subTest(cache=cache):
+                before, why = watch.cached_baseline(self.held(gate=cache), self.tree(), print)
+                self.assertIsNone(before)
+                self.assertTrue(why)
+
+    def test_an_unreadable_pin_runs_it_rather_than_trusting_the_cache(self):
+        root = self.tree()
+        (root / "engine/runtime/dependencies.json").unlink()
+        before, why = watch.cached_baseline(self.held(), root, print)
+        self.assertIsNone(before)
+        self.assertIn("unreadable", why)
+
+    def test_the_gate_asks_for_the_cache_before_it_extracts_the_other_commit(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text(encoding="utf-8")
+        body = source[source.index("    if a.gate and deployed_tree is not None:"):source.index("    elif a.gate:")]
+        self.assertLess(body.index("cached_baseline(held, deployed_tree, log)"),
+                        body.index('gate_tree(held["deployed"], log)'))
+        self.assertIn("failures(judged", body)          # the candidate is always measured, never cached
+
+    def test_a_deploy_records_what_it_measured_and_a_failed_launch_drops_it(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text(encoding="utf-8")
+        kept = source[source.index('state = {"deployed": head'):source.index("STATE.write_text(json.dumps(state")]
+        self.assertIn('state["gate"] = {"sha": head, "image": gate_image(judged), "verdicts": after', kept)
+        dropped = source[source.index('"rejected_by": "launch"') - 400:source.index('"rejected_by": "launch"')]
+        self.assertIn('if k != "gate"', dropped)

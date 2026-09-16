@@ -248,6 +248,29 @@ def failures(tree: Path, timeout: int) -> "dict[str, str]":
     return out
 
 
+def cached_baseline(held: dict, deployed_tree: Path, log) -> "tuple[dict | None, str]":
+    """The deployed commit's verdicts from the cycle that deployed it, or None to run them again.
+
+    Three things have to still be true, and each one that is not says so in the log rather than being
+    silently ignored: the cache is for the sha that is deployed, it was taken on the seed image that
+    tree pins, and it is a mapping of verdicts rather than whatever a half-written state file holds.
+    """
+    cache = held.get("gate")
+    if not isinstance(cache, dict) or not isinstance(cache.get("verdicts"), dict):
+        return None, "no baseline recorded"
+    if cache.get("sha") != held.get("deployed"):
+        return None, f"the baseline is for {str(cache.get('sha'))[:12]}"
+    try:
+        image = gate_image(deployed_tree)
+    except (OSError, ValueError, KeyError) as exc:                  # noqa: BLE001 -- unreadable pin: run it
+        return None, f"the deployed tree's seed image is unreadable ({type(exc).__name__})"
+    if cache.get("image") != image:
+        return None, "the seed image moved"
+    log(f"    baseline: the {len(cache['verdicts'])} verdicts this watcher took on "
+        f"{str(cache['sha'])[:12]} when it deployed it; not re-run")
+    return dict(cache["verdicts"]), "cached"
+
+
 def regressed(deployed: "dict[str, str]", candidate: "dict[str, str]") -> "list[str]":
     """The files that fail on the candidate and did not, or fail differently than, on what is deployed."""
     return sorted(name for name, verdict in candidate.items() if deployed.get(name) != verdict)
@@ -401,12 +424,28 @@ def cycle(a, log) -> int:
     deployed_tree = Path(held["release"]) if held.get("release") and Path(held["release"]).exists() else None
     if a.gate and deployed_tree is not None:
         log("  gate: the engine suite over the candidate and over what is deployed, each commit whole")
-        judged, baseline = gate_tree(head, log), gate_tree(held["deployed"], log) if held.get("deployed") else None
-        if judged is None or baseline is None:
+        judged = gate_tree(head, log)
+        if judged is None:
             log("  REFUSED: the gate could not extract both commits; nothing recorded, the next cycle tries again")
             return 1
         after = failures(judged, a.test_timeout)
-        before = failures(baseline, a.test_timeout)
+        # The baseline is a value this watcher has already computed. The deployed commit's verdicts were
+        # `after` on the cycle that deployed it -- same tree, same seed image, same box, minutes before --
+        # so they are carried in the state file and re-run only when something they depend on moved. That
+        # halves the gate: 10m55s, 11m00s and 11m03s on 2026-09-16, of which the baseline was half.
+        #
+        # Drift is why this is safe to cache rather than dangerous. The baseline exists to SUBTRACT the
+        # box's own failures from the candidate's, so a baseline that has gone stale can only make the
+        # difference look WORSE -- a refused deploy and a line naming the files, not a bad one waved
+        # through. The image id is keyed on because a new seed image changes what the tests import.
+        before, why_baseline = cached_baseline(held, deployed_tree, log)
+        if before is None:
+            log(f"    baseline: running it -- {why_baseline}")
+            baseline = gate_tree(held["deployed"], log) if held.get("deployed") else None
+            if baseline is None:
+                log("  REFUSED: the gate could not extract both commits; nothing recorded, the next cycle tries again")
+                return 1
+            before = failures(baseline, a.test_timeout)
         prune_gate_trees((head, held.get("deployed")))
         worse = regressed(before, after)
         if worse:
@@ -446,13 +485,23 @@ def cycle(a, log) -> int:
         # BEFORE the step that failed, so what the supervisor recovered onto is the candidate if the
         # rsync got that far and the old tree if it did not -- nobody knows which. A gate run against
         # a guess is worse than no gate, so the next cycle refuses until a person says what is up.
-        STATE.write_text(json.dumps({**held, "release": None, "rejected": head,
-                                     "rejected_at": time.time(), "rejected_by": "launch"}, indent=1))
+        # The baseline's cache goes with the baseline: if nobody knows which tree is on the nodes,
+        # a recorded set of verdicts for one of them is worse than none.
+        STATE.write_text(json.dumps({**{k: v for k, v in held.items() if k != "gate"}, "release": None,
+                                     "rejected": head, "rejected_at": time.time(),
+                                     "rejected_by": "launch"}, indent=1))
         log(f"  {head[:12]} did not launch; not recorded as deployed, and the gate's baseline is dropped")
         log(f"  (the tree on the nodes is no longer known: --seed once someone has looked)")
         return 1
-    STATE.write_text(json.dumps({"deployed": head, "release": str(release), "deployed_at": time.time(),
-                                 "launched_ok": True}, indent=1))
+    # What the gate just measured on this tree IS the next cycle's baseline: same commit, same image,
+    # same box. Recording it is the whole of the saving -- the next gate runs one suite, not two.
+    state = {"deployed": head, "release": str(release), "deployed_at": time.time(), "launched_ok": True}
+    if a.gate and deployed_tree is not None and judged is not None:
+        try:
+            state["gate"] = {"sha": head, "image": gate_image(judged), "verdicts": after, "at": time.time()}
+        except (OSError, ValueError, KeyError) as exc:              # noqa: BLE001 -- no cache, so the next gate runs both
+            log(f"  the gate's verdicts were not recorded for the next cycle ({type(exc).__name__})")
+    STATE.write_text(json.dumps(state, indent=1))
     log(f"  deployed {head[:12]} from {release}")
     after_deploy(head, a, log)
     return 0
