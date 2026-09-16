@@ -118,6 +118,30 @@ class DumpTests(unittest.TestCase):
         self.assertEqual(rows["load"]["counters"], {"direct": 1, "bytes": 44 << 30})
 
 
+class RunWidthTests(unittest.TestCase):
+    """45차 §49 measured the width; `load` had its own default and never used it."""
+
+    def loader(self):
+        from engine.base import loader
+        return loader
+
+    def test_load_coalesces_to_the_width_the_module_declares(self):
+        import inspect
+        loader = self.loader()
+        default = inspect.signature(loader.RankLoader.load).parameters["max_run"].default
+        self.assertEqual(default, loader.MAX_RUN)
+        self.assertEqual(default, inspect.signature(loader.RankLoader.runs).parameters["max_run"].default)
+
+    def test_the_width_is_the_measured_one(self):
+        """512 MiB: the widest tensor is 576 MiB, so this is "the tensor, not a coalesced gigabyte"."""
+        self.assertEqual(self.loader().MAX_RUN, 512 << 20)
+
+    def test_a_caller_that_names_a_width_still_gets_it(self):
+        import inspect
+        source = inspect.getsource(self.loader().RankLoader.load)
+        self.assertIn("self.runs(keys, max_run=max_run)", source)
+
+
 class WiringTests(unittest.TestCase):
     """Where the three go in the boot -- and that the loader now says which path it read by."""
 
@@ -142,7 +166,9 @@ class WiringTests(unittest.TestCase):
 
     def test_the_load_row_says_which_path_it_read_by_and_where_the_phase_went(self):
         for gauge in ('recorder.gauge("direct", int(self.direct))', 'recorder.gauge("wait_s"',
-                      'recorder.gauge("copy_s"', 'recorder.gauge("read_bytes"'):
+                      'recorder.gauge("copy_s"', 'recorder.gauge("read_bytes"',
+                      'recorder.gauge("stage_s"', 'recorder.gauge("views_s"',
+                      'recorder.gauge("tensors"'):
             self.assertIn(gauge, self.loader)
         # the wait is measured around the read's result, not around the whole iteration
         body = self.loader[self.loader.index("blocked = time.perf_counter()"):]
