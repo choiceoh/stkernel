@@ -121,6 +121,63 @@ def mla_check(report):
     check(report, sync_cleanup=True)
 
 
+def moe_frontend_check(report, ranks):
+    """Compare registered route bytes before blaming downstream MMA arithmetic."""
+    from probes import engine_moe_c2_cells as cells
+    from engine.profiles.glm53.weights import rank_loader
+    from engine.profiles.glm53.lanes import served
+    from engine.kernels.b12x import moe_dispatch as md
+    layer = cells.Layer(rank_loader(Path(ranks)), set(rank_loader(Path(ranks)).keys()),
+                        3, served(moe_static='t,r,sf6,batch,q0'), (256,))
+    get_kernel = md._get_static_kernel_v2
+    captured = []
+    class Observe:
+        def __init__(self, kernel): self.kernel = kernel
+        def __getattr__(self, name): return getattr(self.kernel, name)
+        def __call__(self, *args):
+            result = self.kernel(*args)
+            captured.append(args)
+            return result
+    def observe(*args, **kwargs):
+        kernel, mac = get_kernel(*args, **kwargs)
+        return Observe(kernel), mac
+    def snapshot(args):
+        active = int(args[14].item())
+        counts, experts, tokens = (args[i].cpu() for i in (13, 15, 22))
+        rows = tokens.shape[1]
+        packed = args[5].view(288, rows, 2048).cpu()
+        scale = args[6].view(288, -1).cpu()
+        block = torch.arange(256)
+        result = {}
+        for local in range(active):
+            for row in range(int(counts[local])):
+                token = int(tokens[local, row])
+                offsets = ((row // 128) * 32768 + (block // 4) * 512
+                           + (row % 32) * 16 + ((row % 128) // 32) * 4 + block % 4)
+                result[(int(experts[local]), token)] = (packed[local, row].clone(), scale[local, offsets].clone())
+        return result
+    for rows in (8, 16):
+        fx = cells.Fixtures([layer], rows)
+        fx.load(('independent', rows, rows, 1.), 41)
+        snapshots = {}
+        for name, paired in (('base', False), ('pair', True)):
+            cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True, input_pair_reuse=paired)
+            with patch.object(md, '_STATIC_V2_OVERRIDE', cfg), patch.object(md, '_get_static_kernel_v2', observe):
+                layer.moe(256, fx.x, fx.ids[0], fx.routes[0])
+            torch.cuda.synchronize()
+            snapshots[name] = snapshot(captured[-1])
+            captured.clear()
+        base, pair = snapshots['base'], snapshots['pair']
+        diff = []
+        for route in sorted(base.keys() & pair.keys()):
+            changes = [int((a != b).sum()) for a, b in zip(base[route], pair[route])]
+            if any(changes):
+                diff.append(dict(expert=route[0], token=route[1], packed_bytes=changes[0], scale_bytes=changes[1],
+                                 first_pack_indices=(base[route][0] != pair[route][0]).nonzero().flatten()[:8].tolist()))
+        report('frontend_bytes', rows=rows, missing=sorted(base.keys()-pair.keys()),
+               extra=sorted(pair.keys()-base.keys()), routes=len(base), mismatched_routes=diff)
+
+
 def moe_check(report, ranks, *, pair_reuse=False):
     from probes import engine_moe_c2_cells as cells
     from engine.profiles.glm53.weights import rank_loader
@@ -188,10 +245,11 @@ def run(output, ranks, *, compile_only=False, sections=()):
         else:
             torch.manual_seed(91718)
             wanted = set(sections) or {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair'}
-            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair'}:
+            if wanted - {'mla', 'mhc', 'moe', 'mla_bf16', 'moe_pair', 'moe_debug'}:
                 raise ValueError(f'unknown component: {wanted}')
             for name, fn in (('mla', lambda: mla_check(report)), ('mhc', lambda: mhc_check(report, ranks)),
                              ('moe', lambda: moe_check(report, ranks)),
+                             ('moe_debug', lambda: moe_frontend_check(report, ranks)),
                              ('moe_pair', lambda: moe_check(report, ranks, pair_reuse=True)),
                              ('mla_bf16', lambda: __import__('probes.engine_fixed_k_cost', fromlist=['mla_check']).mla_check(report, bf16_tile=True))):
                 if name in wanted:

@@ -1906,7 +1906,7 @@ __device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
       const float inv = SHARED_RCP ? __fdividef(1.0f, rs) : 0.0f;
 #pragma unroll
       for (int k = 0; k < HC; ++k)
-        m[j][k] = (SHARED_RCP ? __fmul_rn(m[j][k], inv) : __fdividef(m[j][k], rs)) + a.sinkhorn_eps;
+        m[j][k] = (SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], rs)) + a.sinkhorn_eps;
     }
 #pragma unroll
     for (int k = 0; k < HC; ++k) {
@@ -1916,7 +1916,7 @@ __device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
       const float inv = SHARED_RCP ? __fdividef(1.0f, cs + a.sinkhorn_eps) : 0.0f;
 #pragma unroll
       for (int j = 0; j < HC; ++j)
-        m[j][k] = SHARED_RCP ? __fmul_rn(m[j][k], inv) : __fdividef(m[j][k], cs + a.sinkhorn_eps);
+        m[j][k] = SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], cs + a.sinkhorn_eps);
     }
     for (int it = 0; it < a.sinkhorn_repeat - 1; ++it) {
 #pragma unroll
@@ -1927,7 +1927,7 @@ __device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
         const float inv = SHARED_RCP ? __fdividef(1.0f, rs + a.sinkhorn_eps) : 0.0f;
 #pragma unroll
         for (int k = 0; k < HC; ++k)
-          m[j][k] = SHARED_RCP ? __fmul_rn(m[j][k], inv) : __fdividef(m[j][k], rs + a.sinkhorn_eps);
+          m[j][k] = SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], rs + a.sinkhorn_eps);
       }
 #pragma unroll
       for (int k = 0; k < HC; ++k) {
@@ -1937,7 +1937,7 @@ __device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
         const float inv = SHARED_RCP ? __fdividef(1.0f, cs + a.sinkhorn_eps) : 0.0f;
 #pragma unroll
         for (int j = 0; j < HC; ++j)
-          m[j][k] = SHARED_RCP ? __fmul_rn(m[j][k], inv) : __fdividef(m[j][k], cs + a.sinkhorn_eps);
+          m[j][k] = SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], cs + a.sinkhorn_eps);
       }
     }
     MK_MHC_PROBE(3);  // sinkhorn done

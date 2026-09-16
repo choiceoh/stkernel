@@ -2238,7 +2238,7 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
 }
 
 template <bool CLUSTER = false, bool TREE = false, bool QREG = false, int TILE = 16, bool SYNC_CLEAN = false, bool BF16_TILE = false>
-__global__ __launch_bounds__(MK_THREADS, TILE == 32 ? 2 : 1) void mk_mla_kernel(const MKMlaArgs a) {
+__global__ __launch_bounds__(MK_THREADS, (TILE == 32 || BF16_TILE) ? 2 : 1) void mk_mla_kernel(const MKMlaArgs a) {
   static_assert(TILE == 16 || (TILE == 32 && QREG && !CLUSTER && !TREE));
   static_assert(!BF16_TILE || (TILE == 16 && QREG && !CLUSTER && !TREE));
   constexpr int MLA_TILE = TILE;

@@ -2382,7 +2382,7 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
     if config.get("input_amax_tree", False):
         cfg += ("input_amax_tree_v1",)
     if config.get("input_pair_reuse", False):
-        cfg += ("input_pair_reuse_v1",)
+        cfg += ("input_pair_reuse_v2",)
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2758,7 +2758,7 @@ def _get_static_kernel_v2(
         f"{'sync' if config.get('sync_cleanup') else ''}"
         f"{'inputv16' if config.get('input_vec16') else ''}"
         f"{'amaxtree' if config.get('input_amax_tree') else ''}"
-        f"{'inputpair' if config.get('input_pair_reuse') else ''}"
+        f"{'inputpairbalanced' if config.get('input_pair_reuse') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )

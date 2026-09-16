@@ -165,6 +165,7 @@ def mla_check(report, *, sync_cleanup=False, bf16_tile=False):
     from engine.kernels import mla
     from probes.engine_decode_fusions import _capture
     mla._build()
+    label = "mla_bf16_tile" if bf16_tile else "mla_sync_cleanup" if sync_cleanup else "mla_tile32"
     def call(enabled, *args, **kwargs):
         with patch.object(mla, 'ENABLE_MLA_BF16_TILE' if bf16_tile else 'ENABLE_MLA_SYNC_CLEAN' if sync_cleanup else 'ENABLE_MLA_QREG', enabled):
             return mla.mla_decode(*args, **kwargs)
@@ -210,9 +211,9 @@ def mla_check(report, *, sync_cleanup=False, bf16_tile=False):
                         raise AssertionError('MLA synchronization change is not bitwise')
                     if errors[1] > errors[0] + .002:
                         raise AssertionError(f'MLA tile32 worsened independent accuracy: {errors=}')
-                    report('numerics', component='mla_tile32', bitwise=bitwise, rows=rows, width=width, case=case, errors=errors)
+                    report('numerics', component=label, bitwise=bitwise, rows=rows, width=width, case=case, errors=errors)
                     if width == 2048:
-                        timings(report, 'mla_tile32', graphs, rows=rows, width=width, case=case)
+                        timings(report, label, graphs, rows=rows, width=width, case=case)
             finally:
                 for graph in graphs:
                     graph.reset()
