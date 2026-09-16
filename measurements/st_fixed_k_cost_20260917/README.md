@@ -68,3 +68,12 @@ clear win (U40 evicted 679.47 -> 679.21 us). These are component intervals,
 not consumer tok/s. The second candidate removes repeated mHC conversion,
 specializes pack-writing consumers, and adopts the stock decode kernel's
 shared-Q and matrix-load instructions for MLA. Its qualification is pending.
+
+## Second GPU verdict (`a236b5fa`)
+
+`gpu-v2.jsonl` passes every numerical/replay gate. Revised C1 MLA improves
+from 142.99 to 85.49 us for identical selections, but its matched control
+is 43.17 us; it is still rejected for speed. C2 is 61.72 -> 107.15 us.
+Packet mHC is 19.40 -> 20.50 us (+5.66%). The third candidate assigns one
+warp group to each MLA query and transposes completed mHC values for
+warp-local packing. The MLA profiler runs only after all unprofiled timings.

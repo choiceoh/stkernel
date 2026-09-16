@@ -128,6 +128,33 @@ def mla_check(report):
                     graph.reset()
 
 
+def mla_profile(report):
+    """Diagnostic attribution only, after all unprofiled comparison intervals."""
+    from engine.kernels import mla
+    from probes.engine_decode_fusions import _capture
+    q = torch.randn(8, 16, 512, device='cuda', dtype=torch.bfloat16)
+    cache = torch.randn(32768, 512, device='cuda').to(torch.float8_e4m3fn)
+    slots = torch.randint(32768, (8, 2048), device='cuda', dtype=torch.int32)
+    lens = torch.full((8,), 2048, device='cuda', dtype=torch.int32)
+    for case in ('identical', 'partial', 'disjoint'):
+        slots.random_(32768)
+        shared = {'identical': 2048, 'partial': 1536, 'disjoint': 0}[case]
+        slots[1::2, :shared].copy_(slots[::2, :shared])
+        graph, output = _capture(lambda: mla.mla_decode_pair(q, cache, slots, lens, 512**-.5, 1.))
+        try:
+            with torch.profiler.profile(activities=[torch.profiler.ProfilerActivity.CUDA]) as prof:
+                for _ in range(4):
+                    graph.replay()
+                torch.cuda.synchronize()
+            for event in prof.key_averages():
+                total = getattr(event, 'self_device_time_total', 0.) or 0.
+                if total > 0:
+                    report('profile', component='mla', case=case, kernel=event.key,
+                           calls=event.count, total_us=total, diagnostic_only=True)
+        finally:
+            graph.reset()
+
+
 def run(output=None, ranks=None, *, compile_only=False):
     records = []
     def report(kind, **values):
@@ -149,4 +176,5 @@ def run(output=None, ranks=None, *, compile_only=False):
         mla_check(report)
         from probes.engine_decode_scatter_check import moe_check
         moe_check(report, ranks, 'moe_resident_waves')
+        mla_profile(report)
     report('complete', passed=True, scope='compile only' if compile_only else 'components only; consumer pending')

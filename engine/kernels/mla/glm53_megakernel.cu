@@ -2784,16 +2784,17 @@ __device__ __forceinline__ void mla_pair_attention(
     const MKMlaPairArgs& p, int t, int length, const int* selected,
     const int* bits, unsigned char* smem, int split = 0) {
   const MKMlaArgs& a = p.a;
+  constexpr bool parallel_pair = PARTIAL && ROWS == 1 && GROUP_ROWS == 2;
   constexpr int shared_rows = GROUP_ROWS == 4 ? 4 : 2;
-  constexpr int load_warps = GROUP_ROWS == 4 ? 16 : MLA_WARPS;
+  constexpr int load_warps = (GROUP_ROWS == 4 || parallel_pair) ? 16 : MLA_WARPS;
   uint8_t* ring = smem;
   float* ss = (float*)(ring + MLA_SMEM_RING);
   __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + shared_rows * MLA_SMEM_S);
   float* scorr = (float*)((uint8_t*)sp + shared_rows * MLA_SMEM_P);
   const int lane = threadIdx.x & 31, cta_warp = threadIdx.x >> 5;
   const int warp = cta_warp % MLA_WARPS;
-  const int row_base = GROUP_ROWS == 4 ? (cta_warp / MLA_WARPS) * ROWS : 0;
-  const int load_warp = GROUP_ROWS == 4 ? cta_warp : warp;
+  const int row_base = (GROUP_ROWS == 4 || parallel_pair) ? (cta_warp / MLA_WARPS) * ROWS : 0;
+  const int load_warp = (GROUP_ROWS == 4 || parallel_pair) ? cta_warp : warp;
   const int g = lane >> 2, q4 = lane & 3;
   float acc[ROWS][8][4];
   float m0[ROWS], m1[ROWS], l0[ROWS], l1[ROWS];
@@ -2809,7 +2810,8 @@ __device__ __forceinline__ void mla_pair_attention(
   __nv_bfloat16* sq = (__nv_bfloat16*)(smem + MLA_PAIR_SMEM);
   if constexpr (PARTIAL) {
     if (length > 0) {
-      for (int i = threadIdx.x; i < ROWS * MLA_H * (MLA_D / 8); i += MK_THREADS) {
+      for (int i = threadIdx.x; i < (parallel_pair ? 2 : ROWS) * MLA_H * (MLA_D / 8);
+           i += (parallel_pair ? 2 : 1) * MK_THREADS) {
         const int h = i / (MLA_D / 8), col = (i % (MLA_D / 8)) * 8;
         const uint32_t dst = static_cast<uint32_t>(__cvta_generic_to_shared(sq + h * MLA_CP + col));
         const __nv_bfloat16* src = a.q + ((size_t)t * MLA_H + h) * MLA_D + col;
@@ -2853,7 +2855,7 @@ __device__ __forceinline__ void mla_pair_attention(
         uint32_t a0, a1, a2, a3;
         if constexpr (PARTIAL) {
           const uint32_t addr = static_cast<uint32_t>(__cvta_generic_to_shared(
-              sq + (row * MLA_H + (lane & 15)) * MLA_CP
+              sq + ((row_base + row) * MLA_H + (lane & 15)) * MLA_CP
                  + kq * (MLA_D / MLA_KQ) + ks * 16 + (lane >> 4) * 8));
           asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
                        : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(addr));
@@ -2877,7 +2879,7 @@ __device__ __forceinline__ void mla_pair_attention(
     for (int row = 0; row < ROWS; ++row) {
       const int h0 = warp * 2;
       bool ok = lane < kmax;
-      if constexpr (ROWS == 2) {
+      if constexpr (ROWS == 2 || parallel_pair) {
         const int owned = ok ? bits[ti * MLA_TILE + lane] : 0;
         ok = ok && ((owned & (1 << (row_base + row))) != 0);
       }
@@ -2921,7 +2923,7 @@ __device__ __forceinline__ void mla_pair_attention(
         }
         uint32_t a0, a1, a2, a3;
         const uint32_t pa = static_cast<uint32_t>(__cvta_generic_to_shared(
-            sp + row * (MLA_SMEM_P / sizeof(__nv_bfloat16)) + (lane & 15) * MLA_PP + (lane >> 4) * 8));
+            sp + (row_base + row) * (MLA_SMEM_P / sizeof(__nv_bfloat16)) + (lane & 15) * MLA_PP + (lane >> 4) * 8));
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
                      : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(pa));
 #if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 1210
@@ -2973,7 +2975,7 @@ __device__ __forceinline__ void mla_pair_attention(
   if constexpr (PARTIAL) {
 #pragma unroll
     for (int row = 0; row < ROWS; ++row) {
-      const size_t base = ((size_t)(t + row) * a.splits + split) * MLA_H;
+      const size_t base = ((size_t)(t + row_base + row) * a.splits + split) * MLA_H;
       if (lane == 0) {
         float* ml = a.pml + (base + warp * 2) * 2;
         ml[0] = m0[row]; ml[1] = l0[row]; ml[2] = m1[row]; ml[3] = l1[row];
@@ -3013,7 +3015,7 @@ __device__ __forceinline__ void mla_pair_attention(
 
 // Decode needs many context shards even for four query pairs. Each shard
 // writes FP32 unnormalized accumulators; only the final merge rounds BF16.
-__global__ __launch_bounds__(MK_THREADS) void mk_mla_decode_pair_kernel(const MKMlaPairArgs p) {
+__global__ __launch_bounds__(2 * MK_THREADS) void mk_mla_decode_pair_kernel(const MKMlaPairArgs p) {
   extern __shared__ __align__(16) unsigned char smem[];
   asm volatile("griddepcontrol.launch_dependents;");
   asm volatile("griddepcontrol.wait;" ::: "memory");
@@ -3024,14 +3026,16 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_decode_pair_kernel(const MK
     const int first = tiles * split / p.a.splits * MLA_TILE;
     const int end = min(n, tiles * (split + 1) / p.a.splits * MLA_TILE);
     const size_t base = (size_t)group * (2 * p.a.W) + first;
-    mla_pair_attention<2, 2, false, true>(p, t, max(0, end-first),
+    mla_pair_attention<1, 2, false, true>(p, t, max(0, end-first),
         p.pair_slots + base, p.membership + base, smem, split);
-  } else {
+  } else if (threadIdx.x < MK_THREADS) {
+    // Independent-list cells retain one 256-thread group and its exact
+    // named barrier. The other half does no work or barrier arrivals.
     for (int row = t; row < t + 2; ++row) {
       const int length = p.a.lens[row], tiles = (length + MLA_TILE - 1) / MLA_TILE;
       const int first = tiles * split / p.a.splits * MLA_TILE;
       const int end = min(length, tiles * (split + 1) / p.a.splits * MLA_TILE);
-      mla_pair_attention<1, 1, false, true>(p, row, max(0, end-first),
+      mla_pair_attention<1, 1, true, true>(p, row, max(0, end-first),
           p.a.slots + (size_t)row * p.a.W + first, nullptr, smem, split);
     }
   }
@@ -3974,7 +3978,7 @@ void mk_run_mla_decode_pair(std::vector<int64_t> ptrs, std::vector<double> scala
   p.groups = p.a.T / 2; p.a.sm_scale = scalars[0]; p.a.ckv_scale = scalars[1];
   auto stream = c10::cuda::getCurrentCUDAStream();
   mk_launch(mk_mla_pair_prepare, p.groups, MLA_PAIR_PREP_SMEM, stream, p);
-  mk_launch(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_DECODE_PAIR_SMEM, stream, p);
+  mk_launch<2 * MK_THREADS>(mk_mla_decode_pair_kernel, p.groups * p.a.splits, MLA_DECODE_PAIR_SMEM, stream, p);
   mk_mla_decode_pair_merge<<<dim3(p.a.T, MLA_H / MLA_WARPS), MK_THREADS, 0, stream>>>(p.a);
   MK_CHECK_CUDA(cudaGetLastError());
 }
