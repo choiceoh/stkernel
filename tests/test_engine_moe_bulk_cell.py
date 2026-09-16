@@ -65,11 +65,28 @@ class BulkCellTests(unittest.TestCase):
         self.assertTrue(torch.equal(again2, w2))
         with self.assertRaises(ValueError):
             swizzle(torch.zeros(1, 1, 128, 256, dtype=torch.uint8), w2)   # the 512 chunk has no 128 B rows
+        # the diagnostics' other two orders: the nibble swizzle moves 8 B units by (2r + half) % 8 (FC1) and r % 4
+        # (FC2) and is an involution too; plain is the identity
+        n13, n2 = swizzle(w13, w2, kind='nibble')
+        for r in (0, 1, 3, 4, 127):
+            for u in range(16):
+                src = u ^ ((2 * r + (u >> 3)) % 8)
+                self.assertTrue(torch.equal(n13[0, 0, r, u * 8:u * 8 + 8], w13[0, 0, r, src * 8:src * 8 + 8]), (r, u))
+        for r in (0, 1, 2, 3, 255):
+            for u in range(8):
+                src = u ^ (r % 4)
+                self.assertTrue(torch.equal(n2[1, 1, r, u * 8:u * 8 + 8], w2[1, 1, r, src * 8:src * 8 + 8]), (r, u))
+        back13, back2 = swizzle(n13, n2, kind='nibble')
+        self.assertTrue(torch.equal(back13, w13) and torch.equal(back2, w2))
+        p13, p2 = swizzle(w13, w2, kind='plain')
+        self.assertTrue(torch.equal(p13, w13) and torch.equal(p2, w2))
+        with self.assertRaises(ValueError):
+            swizzle(w13, w2, kind='other')
 
     def test_kernel_lands_each_b_stage_with_one_bulk_copy_from_the_dma_lane(self):
         source = (ROOT / 'engine/kernels/b12x/moe_static_kernel_v4.py').read_text()
-        self.assertIn('sb1_base_addr = shared_ptr_to_u32(storage.sB1.data_ptr())', source)
-        self.assertIn('sb2_base_addr = shared_ptr_to_u32(storage.sB2.data_ptr())', source)
+        self.assertIn('sb1_base_addr = shared_ptr_to_u32(cute.recast_ptr(storage.sB1.data_ptr(), dtype=cutlass.Uint8))', source)
+        self.assertIn('sb2_base_addr = shared_ptr_to_u32(cute.recast_ptr(storage.sB2.data_ptr(), dtype=cutlass.Uint8))', source)
         self.assertEqual(source.count('if cutlass.const_expr(self.bulk_b):'), 2)
         for stage, box in (('sb1_base_addr + fc1_prod_state.index * fc1_box_bytes', 'fc1_box_bytes, shared_ptr_to_u32(bar))'),
                            ('sb2_base_addr + fc2_prod_state.index * fc2_box_bytes', 'fc2_box_bytes, shared_ptr_to_u32(bar2))')):
