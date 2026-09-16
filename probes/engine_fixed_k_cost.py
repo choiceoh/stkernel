@@ -83,6 +83,30 @@ def mhc_check(report, ranks):
             finally:
                 for graph in graphs:
                     graph.reset()
+    # Distinct real coefficients exceed L2 and expose the production weight
+    # stream. Single-layer hot replay alone cannot judge this boundary.
+    from probes.engine_decode_fusions import _time
+    for packets in (False, True):
+        pack = torch.empty(producer_pack_nbytes(8, 4096), dtype=torch.uint8, device='cuda')
+        def chain(fused):
+            for key in keys:
+                values = owner(key, data.meta if packets else data.x, data.res, data.post, data.comb,
+                               *coeff[key], *SCALARS, packets=data.descriptor if packets else None,
+                               output_pack=pack if fused else None)
+                if not fused:
+                    owner.ext.run_input_pack(values[-1], pack)
+            return values
+        graphs, outputs = zip(*[_capture(lambda fused=fused: chain(fused)) for fused in (False, True)])
+        try:
+            samples = []
+            for _ in range(3):
+                for arm in (0, 1, 1, 0):
+                    samples.append(dict(arm=arm, us=_time(graphs[arm], iterations=8)*1000))
+            report('timing', component='mhc_model_chain', packets=packets, boundaries=len(keys),
+                   samples=samples, weights_sha256=digest, scope='distinct real coefficients; component only')
+        finally:
+            for graph in graphs:
+                graph.reset()
 
 
 def mla_check(report):
