@@ -504,7 +504,7 @@ print('{}')
 
         A boot begins with nothing cached, so every relaunch -- three on 2026-09-16 -- made the first
         conversation prefill the prompt every conversation shares. And the shared boundary is the one
-        the tier could not keep either until PR #1045: it stops being a leaf as soon as anyone writes
+        the tier could not keep either until PR #1046: it stops being a leaf as soon as anyone writes
         past it.
         """
         self.warm_file()
