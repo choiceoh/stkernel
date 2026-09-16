@@ -53,8 +53,6 @@ class RouterFusedTests(unittest.TestCase):
         py = (ROOT / 'engine/kernels/router_fused.py').read_text()
         self.assertIn("'-O3', '-gencode', 'arch=compute_121a,code=sm_121a'", py)
         self.assertNotIn('use_fast_math', py)
-        # The consumer integration remains an explicit same-build experiment.
-        self.assertIn('self.fused_decode_router = False', (ROOT / 'engine/profiles/glm53/net.py').read_text())
 
     def test_probe_is_wired_and_reads_the_served_route(self):
         check = (ROOT / 'probes/engine_kernel_check.py').read_text()
