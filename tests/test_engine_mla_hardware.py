@@ -24,6 +24,7 @@ class MlaHardwareTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("mla_hardware_test", path)
         self.mla = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.mla)
+        self.mla.ENABLE_MLA_DIRECT_CVT = False
         self.mla.ENABLE_MLA_CLUSTER = True
         self.mla._MLA_CLUSTER_MAX = 8
         self.calls = []

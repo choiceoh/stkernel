@@ -2,8 +2,8 @@
 
 The served chain is seven launches per MoE layer (`glm_pointwise.router_logits` + `route_weights`). This
 kernel takes the same IEEE FP32 products and the same formulas in another add order, so its logits move
-by a few ulps and a near-tied top-8 boundary can flip. It is NOT bound into any lane: adoption is a
-bracket, and `probes/engine_router_cells.py` sizes the prize and the flip rate first.
+by a few ulps and a near-tied top-8 boundary can flip. The GLM53 consumer can bind it at eight/sixteen
+decode rows; adoption requires the full consumer bracket as well as `probes/engine_router_cells.py`.
 """
 from pathlib import Path
 
