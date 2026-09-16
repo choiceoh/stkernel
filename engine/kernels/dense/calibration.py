@@ -20,7 +20,22 @@ from pathlib import Path
 
 import torch
 
-ROWS_TARGET = 32768        # rows per blob before the sums are filed on their own (33차: 33K tokens)
+ROWS_TARGET = 131072       # rows per blob before the sums are filed on their own -- see below
+# A blob is filed ONCE. `adapter.housekeeping` files the moment `progress()` reaches this and disarms the
+# observer, a filed blob reads as present on the next boot, and nothing adds tokens to a blob that exists --
+# so this constant is not a checkpoint interval, it is the thickness a rank lives with until someone moves its
+# blobs aside and spends a fleet window. 33K was thin for a K=4096 Hessian: 8x its own width.
+#
+# Measured 2026-09-16 (measurements/st_site_lane_table_20260916/thickness_curve.py) on 30 sites that have real
+# dumps at three thicknesses, every arm scored on the thickest: going 17K -> 87K buys a MEDIAN 89% of the whole
+# 17K -> 330K span, so the knee sits near 90K and everything above it is nearly indistinguishable on that metric.
+# 131072 is not an optimum -- the metric cannot separate anything above the knee. It is the knee cleared 1.5x,
+# 32x the widest K, and the closest round number to the 87K that was actually measured, so it extrapolates least.
+# Reachability decided the rest: a boot that never reaches the target files whatever it had at shutdown, so a
+# target buys a thickness only if serving actually gets there -- about a minute of prefill here (33차: 50,696
+# tokens in 23 s). A larger value would give the worst site more margin (87K bought 78% of the span there, against
+# a 89% median over 24 sites) but that is insurance, not a measured gain. Whether more than 330K helps again is
+# unmeasured rather than refuted: every arm was scored on the 330K blob, so the metric is blind past it.
 ROWS_FLOOR = 4096          # fewer than this at shutdown is not filed: a starved Hessian would pack worse than none
 BUDGET_BYTES = 8 << 30     # per rank, from the arena; the rest waits for a later boot -- see below
 # Every target Hessian a GLM-5.3 rank needs sums to 7.25 GiB (102 blobs at K=4096, 34 at 2048, 22 at 1536,

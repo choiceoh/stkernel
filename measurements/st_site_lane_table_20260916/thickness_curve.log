@@ -1,0 +1,43 @@
+# Calibration thickness curve -- 30 sites, three real Hessians each, every arm scored on the thickest (329,412).
+# The THICK column is IN-SAMPLE (scored on its own blob): a floor, not an achievable number.
+# The OWN column is each site production blob, whose thickness VARIES -- 17,18x on 24 sites, 41,739 on one,
+# 164,409 on five. The 87K/330K blobs are uniform (86,580 / 329,412).
+
+site                    own tok        RTN        own        87K      330K*  87K buys
+L11.mla.qkv_a             17181  5.517e-02  6.109e-02  4.276e-02  4.060e-02       89%
+L4.moe.sh_gate_up         17185  4.790e-02  4.935e-02  3.725e-02  3.490e-02       84%
+L5.moe.sh_gate_up         17185  5.200e-02  5.550e-02  4.151e-02  3.927e-02       86%
+L7.mla.qkv_a              17185  6.680e-02  7.357e-02  5.214e-02  4.948e-02       89%
+L0.kda.in_proj            17189  3.716e-02  3.327e-02  2.379e-02  2.115e-02       78%
+L0.kda.o_proj             17189  8.288e-02  7.888e-02  6.143e-02  5.865e-02       86%
+L0.mlp.down               17189  6.483e-02  5.276e-02  3.859e-02  3.675e-02       88%
+L0.mlp.gate_up            17189  5.025e-02  2.804e-02  1.889e-02  1.784e-02       90%
+L1.kda.in_proj            17189  3.591e-02  3.162e-02  2.315e-02  2.112e-02       81%
+L1.kda.o_proj             17189  7.482e-02  7.810e-02  5.083e-02  4.819e-02       91%
+L1.mlp.down               17189  6.282e-02  6.020e-02  3.815e-02  3.633e-02       92%
+L1.mlp.gate_up            17189  4.743e-02  3.118e-02  1.970e-02  1.871e-02       92%
+L11.mla.o_proj            17189  5.268e-02  4.338e-02  2.153e-02  1.918e-02       90%
+L2.kda.in_proj            17189  3.310e-02  3.214e-02  2.104e-02  1.971e-02       89%
+L2.kda.o_proj             17189  6.421e-02  6.406e-02  3.749e-02  3.573e-02       94%
+L2.mlp.down               17189  5.620e-02  5.040e-02  3.478e-02  3.277e-02       89%
+L2.mlp.gate_up            17189  5.206e-02  4.623e-02  3.218e-02  3.013e-02       87%
+L3.mla.o_proj             17189  4.349e-02  3.357e-02  1.615e-02  1.310e-02       85%
+L3.mla.qkv_a              17189  5.372e-02  4.739e-02  2.994e-02  2.821e-02       91%
+L3.moe.sh_down            17189  7.355e-02  9.233e-02  5.792e-02  5.602e-02       95%
+L3.moe.sh_gate_up         17189  3.866e-02  3.608e-02  2.511e-02  2.324e-02       85%
+L4.moe.sh_down            17189  6.729e-02  7.103e-02  5.241e-02  5.143e-02       95%
+L5.moe.sh_down            17189  6.280e-02  6.232e-02  5.004e-02  4.931e-02       94%
+L7.mla.o_proj             17189  4.975e-02  4.440e-02  1.810e-02  1.283e-02       83%
+L11.idx.wq_b              41739  3.707e-02  2.476e-02  2.152e-02  2.098e-02       86%
+L11.mla.q_b              164409  4.371e-02  3.056e-02  2.650e-02  2.582e-02       86%
+L3.idx.wq_b              164409  3.379e-02  1.594e-02  1.087e-02  1.051e-02       93%
+L3.mla.q_b               164409  3.982e-02  1.936e-02  1.325e-02  1.282e-02       93%
+L7.idx.wq_b              164409  3.280e-02  1.977e-02  1.689e-02  1.648e-02       87%
+L7.mla.q_b               164409  4.132e-02  2.592e-02  2.221e-02  2.167e-02       87%
+
+Over the 24 sites whose own blob really is ~17K: 87K buys a MEDIAN 89% of the own->330K span (range 78-95%).
+The knee is near 90K. Above it the arms are nearly indistinguishable on this metric.
+
+The six sites whose own blob is ALREADY 42K-164K still lose to the 86,580 blob (e.g. L3.idx.wq_b 1.594e-2
+vs 1.087e-2 at less than half the tokens). Thickness cannot explain that -- it is the distribution the blob
+was summed under, the same provenance effect measured in st_pack_levers_20260916.
