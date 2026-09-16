@@ -3968,3 +3968,29 @@ o_proj 기준 오늘 잰 것 전부:
   - `warm_cache` 만 Git Bash 로 떼어내 네 경우를 확인했고, 그 확인이 버그를 잡았다: 처음 쓴 것은 `$what` 을 인자로 안 받고 호출자의 `local` 에 기대고 있었다. 슈퍼바이저는 `set -u` 다.
 - **검증.** CPU 새 테스트 다섯. 공유 경계 둘은 **예전 규칙으로 되돌리면 떨어지는 것을 확인**했다. 7 모듈 364 테스트에서 이 상자의 실패 집합은 손대기 전과 같다(환경).
 - **미측정.** **워밍 파일의 내용** — 무엇을 데울지는 데네브가 보내는 것을 아는 사람의 결정이라 짐작하지 않았다. 파일이 생기기 전까지 고침 2 는 아무 일도 안 한다. **티어 예산 16 / 64** — 경계 몫은 페이드가 드물다는 전제인데 `fades_total` 은 아직 0 이라 티어가 도는 것을 보고 정한다. **프로덕션 효과** — `prefix_tier_entries`·`prefix_tier_restores_total`·`prefix_cache_fades_total` 이 답하고 지금 셋 다 0 이다. 기록: `measurements/st_shared_boundary_20260916/`.
+### 하이브리드 팔은 지금 부팅이 안 된다 — #911 의 판정을 갱신하지 못했다 (2026-09-16, 격리 부팅 2회)
+
+- **하려던 것.** #911 하이브리드를 **재교정한 블롭 위에서** head NLL 로 다시 재기. 같은 sha
+  `a0e9221cb`(= `origin/main` + `EXPERT_CAPTURE = True`), 같은 레인 `t,r,sf6,batch,q0`, 같은 창으로
+  두 팔을 띄웠다.
+- **팔 A (프로덕션 랭크, `st-glm53-b12x-up-gate-v1`).** 15:20:21 문 열림, 코퍼스 133 대화 ·
+  417,189 프롬프트 토큰 · 204 s, `head.jsonl` 133 행. 남겼다: `~/glm53-logs/headnll2/armA.head.jsonl`.
+- **팔 B (하이브리드 랭크, `st-glm53-modelopt-up-gate-bf16-dense-v1`).** 부팅 중 죽음 —
+  `ValueError: private scatter requires packed FP32 output without split work`
+  (`moe_static_kernel_v4.py:159`, `warmup_decode_experts` 에서). **비교 대상이 없다.**
+- **어디서.** 디코드 그래프 캡처는 행마다 레인을 둘 세운다 — sf6 쓰는 것과 안 쓰는 동반 레인(`q0`).
+  m=1·8·64 는 둘 다 섰고 **m=16 의 동반 레인에서** 죽었다. m=16 에서만 `batch` 셀이
+  `direct_scatter` 를 켜는데(`_static_v2_config_for`: `reform and m == 16 and batch_reform and
+  c2_direct_scatter`), 커널 생성자는 `direct_scatter` 에 `reform_sf_pack` 을 요구한다 —
+  동반 레인엔 그게 없다. #1054 의 `mk_use_compact_m8` 과 같은 모양이다: 한 셀에서 두 계약이 어긋난다.
+- **안 가린 것.** 팔 B 는 팔 A 와 **두 가지**가 다르다 — 하이브리드 랭크인 것, 그리고 **교정
+  부팅**인 것(`collecting 0/131072 rows over 176 blobs`). #1045 가드가 하이브리드에게 프로덕션
+  블롭을 미교정으로 읽히니 하이브리드는 교정 부팅으로 시작할 수밖에 없고, `calibration` 은 레인
+  아이덴티티의 일부다(부팅 로그 memory gate 줄). **이 관측 하나로 원인을 하이브리드 기하로 돌릴 수
+  없다.** 가리는 실험은 한 부팅 — 프로덕션 랭크 + 교정 부팅을 이 sha 로. 오늘은 안 했다.
+- **따라서.** #911 하이브리드의 2026-09-14 판정(+0.050 nats, 같은 날 항목)은 **오늘 갱신되지 않았다.**
+  재교정 블롭 위에서 다시 재려면 위 결함을 먼저 넘어야 한다.
+- **프로덕션.** 팔 B 가 자기 블롭을 합산해야 해서(레이아웃이 달라 가드가 거부) 네 랭크의
+  `mkcalib/rank$R` 을 `.prod-0916` 으로 치웠다가 되돌렸다 — 476 개씩, 오늘 재교정본 그대로.
+  팔 B 는 교정에 도달하지 못해 **아무것도 덮지 않았다**(scratch 0 블롭). 원시 출력:
+  `measurements/st_hybrid_boot_block_20260916/`.
