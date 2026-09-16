@@ -1,0 +1,17 @@
+request 0: context=32768 actual_tokens=34138 cases_before=0
+{"index": 0, "context_label": 32768, "corpus_seed": 91600, "prompt_tokens": 34138, "completion_tokens": 512, "seq": 0, "output_ids_sha256": "22b91945930a9c72d2945434673047073e2a268427baee2abab3882f51736c7d", "wall_seconds": 18.09412862098543, "cases_added": 2, "performance_baseline": false}
+request 1: context=131072 actual_tokens=133044 cases_before=2
+{"index": 1, "context_label": 131072, "corpus_seed": 91601, "prompt_tokens": 133044, "completion_tokens": 512, "seq": 1, "output_ids_sha256": "81660b74bd6f093b5c2a4e08c74be948bdcbf860bac3cfd22b123a0d16136cf3", "wall_seconds": 44.52236838301178, "cases_added": 2, "performance_baseline": false}
+request 2: context=2048 actual_tokens=3429 cases_before=4
+{"index": 2, "context_label": 2048, "corpus_seed": 91602, "prompt_tokens": 3429, "completion_tokens": 512, "seq": 2, "output_ids_sha256": "041267688c944194c8dc87f39e876e00b86f5913be98ef8f842ee834b4d1bded", "wall_seconds": 7.64099400001578, "cases_added": 2, "performance_baseline": false}
+request 3: context=2048 actual_tokens=3468 cases_before=6
+{"index": 3, "context_label": 2048, "corpus_seed": 91603, "prompt_tokens": 3468, "completion_tokens": 512, "seq": 3, "output_ids_sha256": "ebfb4d2591d1d5683adf9890f737196fdfac14502c3aac85f831d0e82a75bd87", "wall_seconds": 8.385237294947729, "cases_added": 2, "performance_baseline": false}
+request 4: context=32768 actual_tokens=34549 cases_before=8
+{"index": 4, "context_label": 32768, "corpus_seed": 91604, "prompt_tokens": 34549, "completion_tokens": 512, "seq": 4, "output_ids_sha256": "7ee54094836d54dffb43d43dcffd5e53452c4588a6b5538c0a0ecbca64b81680", "wall_seconds": 17.02771058899816, "cases_added": 2, "performance_baseline": false}
+request 5: context=2048 actual_tokens=3461 cases_before=10
+{"index": 5, "context_label": 2048, "corpus_seed": 91605, "prompt_tokens": 3461, "completion_tokens": 512, "seq": 5, "output_ids_sha256": "61d8f69ca51246b0786c714e1ed11946684f05b8463b8ce60ba70363abb24978", "wall_seconds": 6.781448760011699, "cases_added": 2, "performance_baseline": false}
+request 6: context=131072 actual_tokens=133196 cases_before=12
+{"index": 6, "context_label": 131072, "corpus_seed": 91606, "prompt_tokens": 133196, "completion_tokens": 512, "seq": 6, "output_ids_sha256": "cc0f560836a4a7fb85fda3907ca8aec0890520664878911e246e6fe62bef23c9", "wall_seconds": 47.55132791004144, "cases_added": 2, "performance_baseline": false}
+request 7: context=2048 actual_tokens=3455 cases_before=14
+{"index": 7, "context_label": 2048, "corpus_seed": 91607, "prompt_tokens": 3455, "completion_tokens": 512, "seq": 7, "output_ids_sha256": "6791f1cca7265cb791c3dc05e8ccf37646696c30f207fcba29cdd2172fcab576", "wall_seconds": 8.071480077051092, "cases_added": 2, "performance_baseline": false}
+{"requests": 8, "cases": 16, "complete": 16, "state_sha256": "17c0fd1778e9bebe6760a8cce7eed5d5780737d242f4db7f3361ed3c4761398a", "performance_baseline": false}

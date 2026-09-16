@@ -1,0 +1,35 @@
+preflight draftreplay3-0916 [boot]:
+{"entry": "bench/st_bracket.sh", "gpus": 4, "kind": "boot", "policy": "onepass-only"}
+  PASS /home/choiceoh/glm53-logs/ab-lever2.sh == repo
+  PASS /home/choiceoh/glm53-logs/fleet.sh == repo
+  PASS syntax /home/choiceoh/st-worktrees/draft-replay-0916/bench/st_bracket.sh
+  PASS knobs declared in origin/main: 
+  baseline: none for build 8d58020ab5a9; 7 candidate run(s) on it
+  -> PASS
+[{"target": {"profile": "glm53", "repo": "/home/choiceoh/st-worktrees/draft-replay-0916"}, "validation": {"artifacts": {"a6e215c0de89b2b9905a890ec17f81f44ccb1bcfcdc0665f388af4d7571c875f.log": "eef736bb110b9ebee0afc2054ae8a077920cea4f86ef8c85f38393664659b0a3", "a6e215c0de89b2b9905a890ec17f81f44ccb1bcfcdc0665f388af4d7571c875f.report.json": "cc4b40529b7b71d43621c04aee87a651171698d9abc122e8de6a14ca9d7eb7d3"}, "completed_at": 1789568718.922502, "context": {"checker": "f232834ae5e341fdee5e217efcfd50e64bd050be4947969adc936563866d4bca", "gate": "overlay-admission", "profile": "glm53", "selected": ["shell-syntax", "selected-profile-compose", "overlay-manifest-syntax"], "validator": "96bd377756269c7d8809fc4bde9c535e4d179ed01e86f96d7efd25a4e1ba7351", "version": 1}, "coverage_complete": true, "key": "a6e215c0de89b2b9905a890ec17f81f44ccb1bcfcdc0665f388af4d7571c875f", "passed": true, "profile": "glm53", "receipt": "/home/choiceoh/glm53-logs/fleet/validation/receipts/a6e215c0de89b2b9905a890ec17f81f44ccb1bcfcdc0665f388af4d7571c875f.json", "reused": false, "scope": "admission-full-tree", "source": "efcc09a8c50faf72d488c98d8f96b18a841bbe92", "started_at": 1789568718.2906184, "tests_run": 3, "version": 1}}]
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "5a9e19a295224242b3d1b082022a42aa", "phase": "waiting", "reason": "enqueue", "since": 442858.980811506, "updated_at": 1789568719.0886176, "version": 1}
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-draftreplay3-0916-20260916-232519.txt
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "96fd5026fa704a99862fa3e84efb0901", "phase": "waiting", "reason": "dequeue", "since": 442859.587092505, "updated_at": 1789568719.6949046, "version": 1}
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-draftreplay3-0916-20260916-232519.txt
+GO draftreplay3-0916 2026-09-16_23:25:19
+  node 10.10.10.1: gpu=ok stray=3 ram=98G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=100G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=94G path=ok 
+  cut /home/choiceoh/st-releases/efcc09a8c50f
+== 23:25:21 arm hold-efcc09a8c50f = efcc09a8c50faf72d488c98d8f96b18a841bbe92 -> /home/choiceoh/st-releases/efcc09a8c50f (port 8001)
+== 23:29:03 rank 0 (10.10.10.2) died during boot: exit=1 oom=false
+== 23:29:03 rank 1 (10.10.10.1) died during boot: exit=1 oom=false
+== 23:29:03 rank 2 (10.10.10.3) died during boot: exit=1 oom=false
+== 23:29:03 rank 3 (10.10.10.4) died during boot: exit=1 oom=false
+== 23:29:05 forensics: /home/choiceoh/glm53-logs/st-bracket-dumps/draftreplay3-0916-hold-efcc09a8c50f
+== 23:29:05 rank 0 said: [rank0]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)
+== 23:29:05 rank 1 said: [rank1]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)
+== 23:29:05 rank 2 said: [rank2]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)
+== 23:29:05 rank 3 said: [rank3]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)
+== 23:29:05 (rank logs: /home/choiceoh/glm53-logs/st-bracket-dumps/draftreplay3-0916-hold-efcc09a8c50f; launcher: /home/choiceoh/glm53-logs/st-bracket/draftreplay3-0916/boot-hold-efcc09a8c50f.log)
+== 23:29:08 tier draftreplay3-0916-hold-efcc09a8c50f on 10.10.10.2: dropped
+== 23:29:09 tier draftreplay3-0916-hold-efcc09a8c50f on 10.10.10.1: dropped
+== 23:29:09 tier draftreplay3-0916-hold-efcc09a8c50f on 10.10.10.3: dropped
+== 23:29:10 tier draftreplay3-0916-hold-efcc09a8c50f on 10.10.10.4: dropped
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "b0286a529ba4443c95cd60792efa06a2", "phase": "waiting", "reason": "release", "since": 443090.468248426, "updated_at": 1789568950.5760546, "version": 1}

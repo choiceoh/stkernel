@@ -1,0 +1,10 @@
+#8 naming to docker.io/library/st-engine:bracket-4e6698a1a47f done
+#8 DONE 0.1s
+10.10.10.4: file cache returned: MemFree 89.5 GiB, MemAvailable 92.7 GiB, Cached 4.6 GiB -> MemFree 92.6 GiB, MemAvailable 92.7 GiB, Cached 1.8 GiB; commit: overcommit_memory 0, CommitLimit 76.8 GiB, Committed_AS 38.4 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 2586403)
+10.10.10.4: started
+head: http://10.10.10.2:8001/v1/chat/completions (OpenAI), /v1/engine/completions (engine dialect), GET / for status
+10.10.10.2: stopped
+10.10.10.1: stopped
+10.10.10.3: stopped
+10.10.10.4: stopped

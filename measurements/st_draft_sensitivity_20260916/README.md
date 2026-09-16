@@ -1,13 +1,13 @@
 # DFlash 층별 수용 민감도와 추가 비용을 비교하는 하니스
 
-**구현 및 CPU 검증 완료. 실제 층별 수용 효과와 GPU 비용은 아직 미측정이다.** 엔진을 부팅하거나 GPU 작업을 실행하지 않았다. 기존 Hessian/selector-feature 파일에는 proposal을 다시 실행할 입력·상태가 없으므로 가상의 순위를 만들지 않았다.
+**구현·CPU 검증 및 실제 캡처 완료.** 사용자 요청에 따라 측정용 엔진을 부팅해 C=1 요청 8개에서 16사례를 4개 rank에 수집했다. 32K·128K 문맥을 포함하며 파일 해시, rank 간 일치, 실제 출력과 정답 토큰 일치를 확인했다. [캡처 결과와 보관 경로](live/README.md). 실제 층별 수용 효과와 GPU replay 비용은 아직 미측정이다.
 
 이 하니스는 한 번 확보한 실제 입력·상태에서 블록 연산 하나씩 FP8 RTN 또는 BF16로 바꿔, 뒤의 block·head·selector까지 다시 실행한다. 실제 수용 길이의 민감도와 추가 지연·가중치 저장량을 같이 본다. 이전 [층별 양자화 오차](../st_dflash_pack_error_20260916/README.md)는 교체 순위로 사용하지 않는다.
 
 ## 구현
 
 - `engine/profiles/glm53/draft_replay.py`: 준비된 실제 W4/FP8 팩, 스무딩된 norm, conv·selector 가중치, 실제 FP8 head, kernel shape와 collective 설정을 rank별로 저장한다. 사례마다 proposal 직전 context ring 및 anchor/mask embedding을 저장한다. 원본 drafter checkpoint와 실행 소스, 상태·사례 파일의 SHA-256을 남긴다.
-- `engine/profiles/glm53/boot.py`: 사용자 요청으로 이 측정 작업본의 `DRAFT_REPLAY_CASES = 16`을 켰다. 이 소스로 다음 실행할 때 적용된다. warmup 이후 붙으며, 캡처 중 host decode를 사용한다. **캡처 요청의 지연을 성능 baseline으로 사용하면 안 된다.** 현재 실행 중인 서비스에 삽입하거나 재시작하지 않았다.
+- `engine/profiles/glm53/boot.py`: 사용자 요청으로 이 측정 작업본의 `DRAFT_REPLAY_CASES = 16`을 켰다. warmup 이후 붙으며, 캡처 중 host decode를 사용한다. **캡처 요청의 지연을 성능 baseline으로 사용하면 안 된다.** fleet 세션 `draftreplay4-0916`에서 수집 후 측정용 서버를 종료했다. 별도 FC 자동 수집은 BF16 source 부재로 부팅을 실패시켜 이 측정 arm에서 껐다.
 - `probes/draft_sensitivity.py`: 전체 타깃 모델을 띄우지 않고 캡처된 drafter와 head만 구성한다. TP4 전체에서 같은 연산 하나를 교체한다. 기존 GPU kernel과 collective 설정으로 실행하고 baseline draft를 정확히 재현하지 못하면 분석을 거부한다.
 
 캡처는 C=1, temperature=0, 추가 샘플링 제약이 없는 요청에 한정한다. 기본 간격은 요청별 eligible step 16개마다, 요청당 최대 2사례, 전체 최대 16사례다. 긴 요청 하나가 예산을 모두 사용하지 않는다. 최대 사례 수는 128로 제한한다. 설정한 사례를 모으고 pending label을 모두 확보하면 비동기 경로를 되돌린다. 파일 쓰기 실패는 rank 간 공유해 한 rank만 다음 collective로 진행하지 않게 한다.
@@ -39,7 +39,7 @@ JSON에는 다음이 남는다.
 
 ## 실행 순서
 
-1. 이 작업본에는 `DRAFT_REPLAY_CASES = 16`이 설정되어 있다. 다음 **이미 예정된 측정용 부팅**에서 실제 C=1 greedy 요청을 여러 개 보내며 32K·128K 등 목표 context를 포함한다. 모델 출력 품질용 corpus와 요청 단위 holdout도 분리한다. 저장 위치는 `<dump-dir>/draft-replay/rankN/`이다. 설정만 변경했으며 부팅과 사례 수집은 이번 작업에서 실행하지 않았다.
+1. 이 작업본에는 `DRAFT_REPLAY_CASES = 16`이 설정되어 있다. 실제 C=1 greedy 요청을 여러 개 보내며 32K·128K 등 목표 context를 포함한다. 모델 출력 품질용 corpus와 요청 단위 holdout도 분리한다. 저장 위치는 `<dump-dir>/draft-replay/rankN/`이며 매 실행마다 새 디렉터리를 사용한다. 이번 캡처는 완료되어 [별도 보관 위치](live/README.md)에 있다.
 2. 4개 rank의 파일을 보존한다. 각 rank에는 `state.pt`, `manifest.json`, `case-NNNNN.pt`, 대응하는 `.json` 정답이 있어야 한다. 같은 소스·PyTorch·GPU architecture와 원본 drafter checkpoint를 사용한다.
 3. GPU 실행은 기존 fleet admission과 TP4 환경으로 준비하되, 서버 엔진을 띄우지 않고 각 rank에서 아래 probe를 실행한다. `WORLD_SIZE`, `RANK`, rendezvous 환경은 기존 fleet launcher가 제공해야 한다. world=1로 rank 0만 실행하는 것은 거부한다.
 
@@ -61,7 +61,7 @@ CPU 테스트는 실제 요청의 개선 수치를 만들지 않는다. 작은 D
 
 검증 환경: srv2 CPU-only Docker, 이미지 `sha256:1b2b41d014c59caa52d81d73bf9d359f8047f51284da2b9da88b7fc801397040`, CPU 2개, 메모리 4 GiB, `--network none`, `NVIDIA_VISIBLE_DEVICES=void`, `CUDA_VISIBLE_DEVICES=`. **18개 테스트 통과**, CUDA 미초기화 확인. [CPU 결과](cpu-tests.log), [소스 해시와 검증 기록](validation.json).
 
-위 검증 기록은 캡처 설정을 0에서 16으로 켜기 전 소스에 대한 기록이다. 이후 설정 변경은 Python 구문 및 상수 값 확인만 수행했으며, 이전 테스트 기록의 해시를 덮어쓰지 않았다.
+위 `validation.json`은 캡처 설정을 0에서 16으로 켜기 전 소스에 대한 기록이다. 이후 main 변경을 병합하고 관련 CPU 테스트 18개를 다시 통과했다([로그](cpu-tests-after-merge.log)). 실제 캡처 커밋은 `4e6698a1a47ffe447c4293d3cfc3122065bc1c69`이며 [실제 파일 검증 기록](live/audit.json)을 별도로 남겼다. 이전 테스트 기록의 해시는 덮어쓰지 않았다.
 
 ```sh
 python3 -m unittest tests.test_draft_sensitivity -v

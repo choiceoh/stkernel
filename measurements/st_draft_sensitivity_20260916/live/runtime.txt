@@ -1,0 +1,3 @@
+{"Status":"running","Running":true,"Paused":false,"Restarting":false,"OOMKilled":false,"Dead":false,"Pid":2780923,"ExitCode":0,"Error":"","StartedAt":"2026-09-16T14:30:39.753322838Z","FinishedAt":"0001-01-01T00:00:00Z"}
+sha256:ff1bc40422a0755b5d9810bab4edec2239d386ef33200728cd9aef17ff8b821a
+4e6698a1a47f

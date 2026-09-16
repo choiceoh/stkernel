@@ -1,0 +1,18 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-draftreplay4-0916-20260916-233031.txt
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "7b970bc50c4f40e2ab8b0c77d88f57c6", "phase": "waiting", "reason": "dequeue", "since": 443171.361106887, "updated_at": 1789569031.4689133, "version": 1}
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-draftreplay4-0916-20260916-233031.txt
+GO draftreplay4-0916 2026-09-16_23:30:31
+  node 10.10.10.1: gpu=ok stray=3 ram=97G path=ok 
+  node 10.10.10.2: ssh=FAIL
+  node 10.10.10.3: gpu=ok stray=1 ram=98G path=ok 
+  node 10.10.10.4: gpu=ok stray=14 ram=92G path=ok 
+  cut /home/choiceoh/st-releases/4e6698a1a47f
+== 23:30:33 arm hold-4e6698a1a47f = 4e6698a1a47ffe447c4293d3cfc3122065bc1c69 -> /home/choiceoh/st-releases/4e6698a1a47f (port 8001)
+== 23:33:18 door up: http://127.0.0.1:8001
+== 23:33:18 holding 4e6698a1a47f on http://127.0.0.1:8001 for up to 12m -- end early with: bash bench/fleet.sh cancel draftreplay4-0916   (or: touch /home/choiceoh/glm53-logs/st-bracket/draftreplay4-0916/stop)
+== 23:36:48 hold over after 3m
+== 23:36:57 tier draftreplay4-0916-hold-4e6698a1a47f on 10.10.10.2: dropped
+== 23:36:57 tier draftreplay4-0916-hold-4e6698a1a47f on 10.10.10.1: dropped
+== 23:36:58 tier draftreplay4-0916-hold-4e6698a1a47f on 10.10.10.3: dropped
+== 23:36:58 tier draftreplay4-0916-hold-4e6698a1a47f on 10.10.10.4: dropped
+{"boot_id": "faa1f53e-3dd5-488f-9619-cedaf51c3bb2", "generation": "5462640e8c2f42cfbb0781e9d49630c4", "phase": "waiting", "reason": "release", "since": 443558.887256512, "updated_at": 1789569418.9950626, "version": 1}

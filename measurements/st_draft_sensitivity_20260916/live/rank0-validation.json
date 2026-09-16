@@ -1,0 +1,686 @@
+{
+  "rank": 0,
+  "world": 4,
+  "torch": "2.13.0+cu132",
+  "state_sha256": "17c0fd1778e9bebe6760a8cce7eed5d5780737d242f4db7f3361ed3c4761398a",
+  "state_bytes": 479992427,
+  "checkpoint_sha256": "b33c03475ba7322cf398828f2d8d1be376df30dc05c6b40c28c8ea8da23e410b",
+  "readers": [
+    "layers.0.attention_conv.kernel_projection.weight",
+    "layers.0.mlp.down_proj.weight",
+    "layers.0.mlp.gate_up",
+    "layers.0.mlp_conv.kernel_projection.weight",
+    "layers.0.self_attn.o_proj.weight",
+    "layers.0.self_attn.qkv",
+    "layers.1.attention_conv.kernel_projection.weight",
+    "layers.1.mlp.down_proj.weight",
+    "layers.1.mlp.gate_up",
+    "layers.1.mlp_conv.kernel_projection.weight",
+    "layers.1.self_attn.o_proj.weight",
+    "layers.1.self_attn.qkv",
+    "layers.2.attention_conv.kernel_projection.weight",
+    "layers.2.mlp.down_proj.weight",
+    "layers.2.mlp.gate_up",
+    "layers.2.mlp_conv.kernel_projection.weight",
+    "layers.2.self_attn.o_proj.weight",
+    "layers.2.self_attn.qkv",
+    "layers.3.attention_conv.kernel_projection.weight",
+    "layers.3.mlp.down_proj.weight",
+    "layers.3.mlp.gate_up",
+    "layers.3.mlp_conv.kernel_projection.weight",
+    "layers.3.self_attn.o_proj.weight",
+    "layers.3.self_attn.qkv",
+    "layers.4.attention_conv.kernel_projection.weight",
+    "layers.4.mlp.down_proj.weight",
+    "layers.4.mlp.gate_up",
+    "layers.4.mlp_conv.kernel_projection.weight",
+    "layers.4.self_attn.o_proj.weight",
+    "layers.4.self_attn.qkv"
+  ],
+  "source_sha256": {
+    "engine/profiles/glm53/drafter.py": "8fe4209db039c3a5322552ac552d4db1355a905236f95e6a94573c51e6ca222d",
+    "engine/profiles/glm53/draft_replay.py": "f54980959e9cbdf9c776f63b2e7672469884779725c978abeeda4bbf703cdd32",
+    "engine/kernels/dense/__init__.py": "bce2631587030e36aee722124461059401c75cb0a0084d805827d5286063063d",
+    "engine/kernels/dense/packing.py": "a35a1792df2d99720b7e618d3a3fc11ac9c24570791cd6f6ea49898ea3eef4fe",
+    "engine/kernels/dense/kernels.cu": "467b87998b1b8e64bb85a7bc7e87a3c2694813b2185aa818e06653476872b4fc",
+    "engine/kernels/dense/fp8.py": "e2735f882ded060a7db99dd265c7f809d3024840500bcb26a0636f96498ade1f",
+    "engine/kernels/draft_attention.py": "a0a433a21733daed351e822b3b419e203a147e8300f3dfd712f22c0c59edee10",
+    "engine/kernels/draft_conv.py": "d31e4c1393c0906fedcb907b59c6e082f897f39f64ea7377dc143f4e596df532",
+    "engine/kernels/draft_select.py": "8a24b90224d4aaded645826a9a6157086e4bde3f21c232a9899296482c4ae613",
+    "engine/modules/draft_projection.py": "9e7569debc02fdd6d69c170ec1439a711d8a1c73aaf2004cf8e835b336c20d5f",
+    "engine/kernels/common/norm_rope.py": "4dc8f14581be4e6f30e0bfc69a3e3e86746d192965a0791f2ebfbfa2bc30e583",
+    "engine/kernels/common/swiglu.py": "5cdae64217bd2995592f00dbe77c5a05e389d8bb7f7ddddb1a7acd7a7df1eb6a",
+    "engine/kernels/common/vocab_candidates.py": "8a630d66050f7ca040680d524677069801be5fae77c9f219b0adc85aef691326",
+    "engine/modules/vocab.py": "e757b852b01f31dcc0c420c4eb0a5b174135c30baf047ce2b8a8e0128a5994c5",
+    "engine/base/comm.py": "0d49990e43a755a1c9a1b24a58f0cdcd1d2f4639b3e22f2105a52676fbce4666",
+    "engine/kernels/oneshot/__init__.py": "92aeee4e0f62facf8735c1235c57b93bcfa6b5f40757f9c9812376793ee47566"
+  },
+  "cases": [
+    {
+      "case_id": "case-00000",
+      "seq": 0,
+      "request_key": "0:1",
+      "start": 34139,
+      "position": 34138,
+      "k": 7,
+      "baseline_drafts": [
+        46645,
+        25,
+        154843,
+        2236,
+        271,
+        154843,
+        2236
+      ],
+      "target": [
+        10759,
+        240,
+        146836,
+        271,
+        565,
+        69782,
+        271
+      ],
+      "snapshot_sha256": "1c1e347a7a1d39a962a1df19e4173101bfbc0416ae4f46c2169efcf6bdf4465f",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00001",
+      "seq": 0,
+      "request_key": "0:1",
+      "start": 34188,
+      "position": 34187,
+      "k": 7,
+      "baseline_drafts": [
+        132919,
+        11,
+        94772,
+        88322,
+        72952,
+        29172,
+        53323
+      ],
+      "target": [
+        132919,
+        11,
+        77746,
+        33542,
+        136014,
+        53086,
+        16544
+      ],
+      "snapshot_sha256": "0abff50e26158ea15f9e797f6b18228c4c487c90ee8e1110b1bfee25ba198e4e",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00002",
+      "seq": 0,
+      "request_key": "0:2",
+      "start": 133045,
+      "position": 133044,
+      "k": 7,
+      "baseline_drafts": [
+        2236,
+        198,
+        515,
+        220,
+        330,
+        50371,
+        788
+      ],
+      "target": [
+        2236,
+        198,
+        515,
+        220,
+        330,
+        50371,
+        788
+      ],
+      "snapshot_sha256": "0573ec586ce6b9db4532128e2cfbf126525781aa3e1fb6a065b4515f89e32094",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00003",
+      "seq": 0,
+      "request_key": "0:2",
+      "start": 133146,
+      "position": 133145,
+      "k": 7,
+      "baseline_drafts": [
+        27388,
+        788,
+        341,
+        414,
+        330,
+        23552,
+        788
+      ],
+      "target": [
+        27388,
+        788,
+        341,
+        414,
+        330,
+        23552,
+        788
+      ],
+      "snapshot_sha256": "abd37fa4b2ac8311d9012fa69d2ea7d03564493dd0b49d81e0663e5b6598a72d",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00004",
+      "seq": 0,
+      "request_key": "0:3",
+      "start": 3430,
+      "position": 3429,
+      "k": 7,
+      "baseline_drafts": [
+        50371,
+        788,
+        5212,
+        1382,
+        788,
+        330,
+        10329
+      ],
+      "target": [
+        50371,
+        22260,
+        1382,
+        22260,
+        10329,
+        788,
+        99619
+      ],
+      "snapshot_sha256": "a35704e36838097924e2178d080cf00a8c22db93211357aebf5d621616a61436",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00005",
+      "seq": 0,
+      "request_key": "0:3",
+      "start": 3511,
+      "position": 3510,
+      "k": 7,
+      "baseline_drafts": [
+        43,
+        17,
+        2198,
+        43,
+        18,
+        68379,
+        63481
+      ],
+      "target": [
+        43,
+        17,
+        2198,
+        43,
+        18,
+        68379,
+        63481
+      ],
+      "snapshot_sha256": "a6c87d049cb548a6debb61d257709fa76122d4fd3b245b67d1389919ea652f2c",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00006",
+      "seq": 0,
+      "request_key": "0:4",
+      "start": 3469,
+      "position": 3468,
+      "k": 7,
+      "baseline_drafts": [
+        46645,
+        271,
+        565,
+        69782,
+        271,
+        565,
+        69782
+      ],
+      "target": [
+        10759,
+        240,
+        146836,
+        271,
+        565,
+        220,
+        16
+      ],
+      "snapshot_sha256": "16e984dba2971a082810d028af45e9b60048258ff7795e58a09de6b2537780b2",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00007",
+      "seq": 0,
+      "request_key": "0:4",
+      "start": 3516,
+      "position": 3515,
+      "k": 7,
+      "baseline_drafts": [
+        142457,
+        94772,
+        142408,
+        8,
+        55798,
+        91,
+        36870
+      ],
+      "target": [
+        142457,
+        94772,
+        142408,
+        23021,
+        65385,
+        32151,
+        271
+      ],
+      "snapshot_sha256": "e27ff114b0462c7b8be9bbc132a1069b9b6f3bcf08768a1ad948bc3298404bac",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00008",
+      "seq": 0,
+      "request_key": "0:5",
+      "start": 34550,
+      "position": 34549,
+      "k": 7,
+      "baseline_drafts": [
+        136014,
+        79920,
+        141498,
+        271,
+        565,
+        154850,
+        154847
+      ],
+      "target": [
+        10759,
+        240,
+        146836,
+        271,
+        565,
+        220,
+        16
+      ],
+      "snapshot_sha256": "613031ac14af552599dd78ab33cd2e4e87f10f47ff33e31f7445470487ab31de",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00009",
+      "seq": 0,
+      "request_key": "0:5",
+      "start": 34590,
+      "position": 34589,
+      "k": 7,
+      "baseline_drafts": [
+        239,
+        25,
+        444,
+        98668,
+        25,
+        220,
+        98668
+      ],
+      "target": [
+        239,
+        25,
+        72952,
+        29172,
+        16,
+        4957,
+        98668
+      ],
+      "snapshot_sha256": "e693744cb711e26f6774ddd1e3797f5589aa9b89d707f067615c29ff94f3bb7a",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00010",
+      "seq": 0,
+      "request_key": "0:6",
+      "start": 3462,
+      "position": 3461,
+      "k": 7,
+      "baseline_drafts": [
+        2236,
+        198,
+        515,
+        220,
+        330,
+        50371,
+        788
+      ],
+      "target": [
+        2236,
+        198,
+        515,
+        220,
+        330,
+        50371,
+        788
+      ],
+      "snapshot_sha256": "6f42ea9101d98ccbc48133581d8c75f3d7eaff2972ddd94b295db8ad5c7ce1ad",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00011",
+      "seq": 0,
+      "request_key": "0:6",
+      "start": 3574,
+      "position": 3573,
+      "k": 7,
+      "baseline_drafts": [
+        497,
+        330,
+        43,
+        98886,
+        497,
+        330,
+        43
+      ],
+      "target": [
+        497,
+        330,
+        43,
+        98886,
+        497,
+        330,
+        43
+      ],
+      "snapshot_sha256": "575b6c255dd81904e8602bd0aa9bbac21f3719a7b144c91e2a19c11b5253f75b",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00012",
+      "seq": 0,
+      "request_key": "0:7",
+      "start": 133197,
+      "position": 133196,
+      "k": 7,
+      "baseline_drafts": [
+        69782,
+        79920,
+        137287,
+        136241,
+        271,
+        154843,
+        131912
+      ],
+      "target": [
+        10759,
+        240,
+        146836,
+        271,
+        565,
+        220,
+        16
+      ],
+      "snapshot_sha256": "3446c649e65b4c47b3836859bc23b13c1cdeb9ea81ca213c1a86ae938486c04c",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00013",
+      "seq": 0,
+      "request_key": "0:7",
+      "start": 133244,
+      "position": 133243,
+      "k": 7,
+      "baseline_drafts": [
+        133460,
+        132538,
+        11,
+        80515,
+        29172,
+        138929,
+        49226
+      ],
+      "target": [
+        133460,
+        132919,
+        11,
+        77746,
+        33542,
+        136014,
+        53086
+      ],
+      "snapshot_sha256": "2b74fe823d5800623cac3fc5559fbdef1ec49bfe4e9bd5c800d1b2743c372aaa",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00014",
+      "seq": 0,
+      "request_key": "0:8",
+      "start": 3456,
+      "position": 3455,
+      "k": 7,
+      "baseline_drafts": [
+        69782,
+        271,
+        565,
+        69782,
+        271,
+        10056,
+        330
+      ],
+      "target": [
+        10759,
+        240,
+        146836,
+        271,
+        565,
+        69782,
+        271
+      ],
+      "snapshot_sha256": "ee246504ed3c6228b76f08dd6b759b111e0188bbf720d1d5fb12d264f74f9b2c",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    },
+    {
+      "case_id": "case-00015",
+      "seq": 0,
+      "request_key": "0:8",
+      "start": 3500,
+      "position": 3499,
+      "k": 7,
+      "baseline_drafts": [
+        53086,
+        16544,
+        80515,
+        129422,
+        83925,
+        21279,
+        29172
+      ],
+      "target": [
+        53086,
+        16544,
+        142908,
+        33542,
+        145806,
+        70410,
+        80515
+      ],
+      "snapshot_sha256": "f18acf5ac0548299218e77422bc54890e60dedb07063115d7699df2b18d77d85",
+      "bytes": 10553852,
+      "ring_shape": [
+        5,
+        2,
+        2048,
+        2,
+        128
+      ],
+      "embedding_shape": [
+        8,
+        4096
+      ]
+    }
+  ],
+  "cuda_initialized": false,
+  "native_replay_executed": false
+}

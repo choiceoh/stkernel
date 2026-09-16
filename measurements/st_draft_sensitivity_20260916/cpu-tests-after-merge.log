@@ -1,0 +1,23 @@
+test_full_prepared_snapshot_loads_without_boot_or_gpu (tests.test_draft_sensitivity.Readers.test_full_prepared_snapshot_loads_without_boot_or_gpu) ... ok
+test_local_file_failure_is_reported_to_every_rank (tests.test_draft_sensitivity.Readers.test_local_file_failure_is_reported_to_every_rank) ... ok
+test_prepared_dense_roundtrip_preserves_bytes_and_dispatch (tests.test_draft_sensitivity.Readers.test_prepared_dense_roundtrip_preserves_bytes_and_dispatch) ... ok
+test_reader_replacement_recomputes_downstream_and_restores_on_error (tests.test_draft_sensitivity.Readers.test_reader_replacement_recomputes_downstream_and_restores_on_error) ... ok
+test_small_drafter_recomputes_blocks_head_and_selector_after_one_reader_change (tests.test_draft_sensitivity.Readers.test_small_drafter_recomputes_blocks_head_and_selector_after_one_reader_change) ... ok
+test_tp_qkv_shards_each_projection_before_concatenating_and_applies_smoothing (tests.test_draft_sensitivity.Readers.test_tp_qkv_shards_each_projection_before_concatenating_and_applies_smoothing) ... ok
+test_c1_capture_does_not_include_multi_request_batches (tests.test_draft_sensitivity.Recorder.test_c1_capture_does_not_include_multi_request_batches) ... ok
+test_close_preserves_censored_case_and_missing_labels_fail_closed (tests.test_draft_sensitivity.Recorder.test_close_preserves_censored_case_and_missing_labels_fail_closed) ... ok
+test_cpu_snapshot_does_not_serialize_a_shared_arena (tests.test_draft_sensitivity.Recorder.test_cpu_snapshot_does_not_serialize_a_shared_arena) ... ok
+test_empty_directory_does_not_fabricate_cases (tests.test_draft_sensitivity.Recorder.test_empty_directory_does_not_fabricate_cases) ... ok
+test_future_committed_tokens_supply_labels_and_completed_capture_restores_async (tests.test_draft_sensitivity.Recorder.test_future_committed_tokens_supply_labels_and_completed_capture_restores_async) ... ok
+test_one_request_cannot_consume_the_whole_capture_budget (tests.test_draft_sensitivity.Recorder.test_one_request_cannot_consume_the_whole_capture_budget) ... ok
+test_sampled_and_modified_requests_do_not_enter_greedy_dataset (tests.test_draft_sensitivity.Recorder.test_sampled_and_modified_requests_do_not_enter_greedy_dataset) ... ok
+test_censored_labels_are_bounds_not_fake_rejections_or_baseline_labels (tests.test_draft_sensitivity.Scores.test_censored_labels_are_bounds_not_fake_rejections_or_baseline_labels) ... ok
+test_cost_is_native_latency_and_prefix_gain_not_weight_error (tests.test_draft_sensitivity.Scores.test_cost_is_native_latency_and_prefix_gain_not_weight_error) ... ok
+test_cost_screen_does_not_prefer_expensive_low_impact_reader (tests.test_draft_sensitivity.Scores.test_cost_screen_does_not_prefer_expensive_low_impact_reader) ... ok
+test_late_matches_do_not_count_after_first_rejection (tests.test_draft_sensitivity.Scores.test_late_matches_do_not_count_after_first_rejection) ... ok
+test_rejects_baseline_drift_and_sampled_or_off_prefix_labels (tests.test_draft_sensitivity.Scores.test_rejects_baseline_drift_and_sampled_or_off_prefix_labels) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.298s
+
+OK
