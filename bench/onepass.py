@@ -1009,9 +1009,18 @@ def _main() -> int:
         fixed_items = fixed_concurrency_items(args.seed, cq, tokens)
         releases = fixed_concurrency_groups(fixed_items, many)
         print(f'fixed concurrency: four 2K prompts, exactly {tokens} output tokens each; C=1 then C={many}', flush=True)
+        # Prepare at BOTH widths. Preparing only at C=N left the C=1 leg to JIT the width-1
+        # shapes while it was being measured: 2026-09-16 (onepass-iso-0916, ST-3bff59a76e69)
+        # counted specializations 55 -> 59 inside measure-fixed-c1 against 59 -> 61 inside
+        # measure-fixed-c{N}. Both legs then failed steady_errors, and the multiplier they
+        # printed was biased UP: the arm that paid more compile time is the denominator.
         run.begin(f'prepare-fixed-c{many}', many)
         for release in releases:
             group(run, ask_stream, bd.URL, cq.MODEL, [preparation_request(item, args.num_spec) for item in release], many)
+        run.end()
+        run.begin('prepare-fixed-c1')
+        for item in fixed_items:
+            group(run, ask_stream, bd.URL, cq.MODEL, preparation_request(item, args.num_spec), 1)
         run.end()
         run.begin('measure-fixed-c1')
         before = traffic_state(_metrics_text(bd.METRICS))
