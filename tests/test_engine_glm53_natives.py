@@ -14,7 +14,8 @@ def native_modules():
     """Dotted names of the kernel modules that JIT-build a torch extension."""
     out = set()
     for path in KERNELS.rglob("*.py"):
-        if "cpp_extension import load" in path.read_text():
+        if any(isinstance(n, ast.ImportFrom) and n.module == "torch.utils.cpp_extension"
+               and any(a.name == "load" for a in n.names) for n in ast.walk(ast.parse(path.read_text()))):
             relative = path.relative_to(ROOT).with_suffix("")
             parts = relative.parts[:-1] if relative.name == "__init__" else relative.parts
             out.add(".".join(parts))
@@ -24,7 +25,7 @@ def native_modules():
 class NativeListTests(unittest.TestCase):
     def test_every_native_extension_under_kernels_is_built_before_the_first_collective(self):
         from engine.profiles.glm53 import natives
-        listed = {module: entry for _, module, entry in natives.MODULES + (natives.ONESHOT,)}
+        listed = {module: entry for _, module, entry in natives.MODULES + (natives.ONESHOT,) + natives.PROBE_MODULES}
         self.assertEqual(set(listed), native_modules(),
                          "a native built at its first use makes the ranks wait for its compile inside a collective")
         for module, entry in listed.items():
