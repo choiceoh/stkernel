@@ -1,0 +1,43 @@
+# head_compare: production vs the GPTQ-expert hybrid, each on its OWN calibration   (run 2026-09-16)
+#
+# Both arms are the same commit cc7abde71a472b84ed4ab6b2c734812b810f6be9
+# (= origin/main at ad87ebb73 + EXPERT_CAPTURE = True), the same lane t,r,sf6,batch,q0, the same
+# fleet, the same window, and the same corpus fed the same way (133 conversations, 417,189 prompt
+# tokens). Neither boot was calibrating: POST /v1/engine/calibration answered 404 "every pack it
+# serves was already calibrated" on both, and neither printed a foreign/RTN warning.
+#
+#   A   production ranks  st-glm53-9391-up-gate-full      (st-glm53-b12x-up-gate-v1)
+#                         476 blobs, today's recalibration
+#   B   hybrid ranks      st-glm53-hybrid-gptq-v1         (st-glm53-modelopt-up-gate-bf16-dense-v1)
+#                         235 blobs, summed on THIS arm's own weights over three boots
+#
+# B2partial is the same hybrid arm one boot earlier: 176 of its 235 sites calibrated, the other 59
+# still RTN (they were deferred by the calibration budget on the first boot).
+
+## A vs B   -- the hybrid, fully calibrated on its own weights
+split                docs positions     nll A     nll B       B-A                95% CI  B better |    bf16 A    bf16 B      diff                95% CI |      kl A      kl B
+fit                   108     27631   2.78264   2.84694  +0.06430 [ +0.03921, +0.09066]     0.532 |   2.78407   2.84909  +0.06502 [ +0.03980, +0.09127] |  5.78e-04  4.91e-04
+heldout                25      6400   2.99928   3.13285  +0.13357 [ +0.07241, +0.20504]     0.501 |   3.00119   3.13617  +0.13499 [ +0.07348, +0.20636] |  5.85e-04  5.09e-04
+heldout-no-onepass     22      5632   2.99250   3.09967  +0.10717 [ +0.05324, +0.16868]     0.511 |   2.99428   3.10296  +0.10867 [ +0.05454, +0.17026] |  5.98e-04  5.22e-04
+
+## A vs B2partial   -- the same hybrid with 59 sites still RTN
+split                docs positions     nll A     nll B       B-A                95% CI  B better |    bf16 A    bf16 B      diff                95% CI |      kl A      kl B
+fit                   108     27631   2.78264   2.83855  +0.05591 [ +0.03053, +0.08111]     0.530 |   2.78407   2.84057  +0.05650 [ +0.03108, +0.08189] |  5.78e-04  6.76e-04
+heldout                25      6400   2.99928   3.12427  +0.12499 [ +0.06854, +0.18957]     0.523 |   3.00119   3.12664  +0.12545 [ +0.06887, +0.19066] |  5.85e-04  7.17e-04
+heldout-no-onepass     22      5632   2.99250   3.09698  +0.10448 [ +0.05138, +0.16302]     0.532 |   2.99428   3.09901  +0.10473 [ +0.05182, +0.16293] |  5.98e-04  7.31e-04
+
+## B2partial vs B   -- what calibrating the last 59 sites bought the hybrid
+split                docs positions     nll A     nll B       B-A                95% CI  B better |    bf16 A    bf16 B      diff                95% CI |      kl A      kl B
+fit                   108     27631   2.83855   2.84694  +0.00839 [ +0.00273, +0.01479]     0.492 |   2.84057   2.84909  +0.00852 [ +0.00290, +0.01473] |  6.76e-04  4.91e-04
+heldout                25      6400   3.12427   3.13285  +0.00858 [ -0.00136, +0.02006]     0.485 |   3.12664   3.13617  +0.00954 [ -0.00022, +0.02026] |  7.17e-04  5.09e-04
+heldout-no-onepass     22      5632   3.09698   3.09967  +0.00269 [ -0.00544, +0.01106]     0.493 |   3.09901   3.10296  +0.00394 [ -0.00435, +0.01243] |  7.31e-04  5.22e-04
+
+## OLD vs NEW   -- production before today's recalibration (eval-A, 2026-09-13 23:03, 17,189-row blobs)
+##                against production today (arm A, 131K recalibration). Only positions BOTH boots
+##                scored with the same target count, and the two boots sampled different positions:
+##                4,171 of the 27,631 today's A-vs-B comparison had. The two boots also differ by two
+##                days of engine commits, not only by their blobs.
+split                docs positions   nll OLD   nll NEW   NEW-OLD                95% CI NEW better |  bf16 OLD  bf16 NEW      diff                95% CI |    kl OLD    kl NEW
+fit                   108      4171   3.22092   3.22892  +0.00800 [ -0.02014, +0.03569]     0.514 |   3.22248   3.23159  +0.00912 [ -0.01884, +0.03643] |  6.84e-04  6.34e-04
+heldout                25      1192   4.00316   3.97816  -0.02500 [ -0.06834, +0.02061]     0.518 |   4.00471   3.98153  -0.02318 [ -0.06806, +0.02460] |  8.16e-04  7.41e-04
+heldout-no-onepass     22      1128   3.88948   3.86641  -0.02307 [ -0.05921, +0.01312]     0.516 |   3.89114   3.86950  -0.02164 [ -0.05855, +0.01730] |  8.23e-04  7.51e-04
