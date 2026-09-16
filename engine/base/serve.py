@@ -1561,6 +1561,15 @@ class Server:
         # 2026-09-13 04:57 and 05:24, ranks 0/1 in _settle's vote, ranks 2/3 in the one-shot
         # all-reduce until its stall trap (Xid 43, "unspecified launch failure").
         self._failed_begins = set()
+        # A prefix-tier restore is admitted only when EVERY rank holds the boundary; otherwise the
+        # request quietly prefills and nothing said so. Two ways it happens and they want different
+        # answers, so the tally is kept as well as the count: 0 of 4 is the boundary going out of
+        # every rank's tier between rank 0 proposing it and admission (or memory taking it back),
+        # and 3 of 4 is the ranks holding DIFFERENT tiers -- spills land per rank, on each rank's
+        # own thread, so the four sets agree only in the limit. Without this the tier can look busy
+        # (`spills`, `entries`) and never serve a single restore.
+        self.tier_restore_denials = 0                # proposals dropped because the ranks did not all hold it
+        self.tier_restore_denial_ranks = 0           # ranks that DID hold them, summed: /denials is the average agreement
         self._deferred = set()                     # requests waiting for a running prefill to cache the prefix they share (B)
         self.controls = queue.Queue()              # rank 0's cache controls (pin / unpin / reset), broadcast with the arrivals (C)
         # A decode step runs inside a captured graph, so its stages cannot be timed with CUDA events from
@@ -2428,7 +2437,8 @@ class Server:
                 # above already holds this request's blocks; the restore takes the first of them now.
                 tokens, h = int(tier[0]), bytes.fromhex(tier[1])
                 have = h in self.runner.prefix.tier_keys and not self.runner.prefix.has(h)
-                if self._votes([have], "admit:restore")[0] == world:
+                held = self._votes([have], "admit:restore")[0]
+                if held == world:
                     row = heapq.heappop(self._free_rows)
                     try:
                         self.runner.restore_begin(row, h, tokens)
@@ -2439,6 +2449,8 @@ class Server:
                                                 cancelled=None)
                     self._waiting.popleft()
                     continue
+                self.tier_restore_denials += 1        # every rank counts the same vote, so every rank counts this
+                self.tier_restore_denial_ranks += held
                 self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, None, chain, salt)
                 continue
             if conversation is None:
@@ -2889,6 +2901,12 @@ class Server:
                 ("gauge", "st:prefix_tier_entries", "boundaries the prefix tier holds", len(prefix.tier_keys)),
                 ("counter", "st:prefix_tier_spills_total", "boundaries written to the prefix tier", getattr(runner, "prefix_spills", 0)),
                 ("counter", "st:prefix_tier_restores_total", "boundaries read back from the prefix tier", getattr(runner, "prefix_restores", 0)),
+                ("counter", "st:prefix_tier_restore_denials_total",
+                 "tier restores proposed and dropped because the ranks did not all hold the boundary",
+                 self.tier_restore_denials),
+                ("counter", "st:prefix_tier_restore_denial_ranks_total",
+                 "ranks that did hold those boundaries, summed: over the denials, the average agreement",
+                 self.tier_restore_denial_ranks),
                 ("counter", "st:prefix_dedup_waits_total", "requests that waited for a running prefill's boundary instead of computing it",
                  getattr(runner, "dedup_waits", 0)),
                 ("gauge", "st:prefix_snapshots_free", "snapshot slots no boundary holds: what the next block boundary can take",

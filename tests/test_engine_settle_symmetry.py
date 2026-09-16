@@ -124,6 +124,40 @@ class SettleSymmetryTests(unittest.TestCase):
         self.assertIsNotNone(out)
         s.runner.restore_begin = real
 
+    def test_a_restore_the_ranks_do_not_all_hold_is_counted_and_not_merely_dropped(self):
+        """A tier restore needs every rank. When they disagree the request quietly prefills.
+
+        Two ways it happens and they want different answers, so the tally is kept as well as the
+        count: 0 of 4 is the boundary leaving every rank's tier between rank 0 proposing it and
+        admission, and 3 of 4 is the ranks holding DIFFERENT tiers -- spills land per rank, on each
+        rank's own thread, so the four sets agree only in the limit. Without this the tier can look
+        busy (`spills`, `entries`) and never serve a single restore, and nothing would say so.
+        """
+        s = T.server(rows=2, prefix=3, prefix_tier=True)
+        s.runner.spill_low_water = 10
+        prompt = [11, 12, 13, 14, 15, 16, 17, 18]
+        first, _ = s.submit(prompt, 1, 0)
+        settle(s)
+        s.take_result(first)
+        for _ in range(4):
+            s.once()
+        self.assertEqual(len(s.runner.prefix.tier_keys), 1)
+        other, _ = s.submit([31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42], 1, 0)   # only the tier holds 8 now
+        settle(s)
+        s.take_result(other)
+        self.assertEqual((s.tier_restore_denials, s.tier_restore_denial_ranks), (0, 0))
+
+        again, _ = s.submit(prompt + [21, 22], 1, 0)      # rank 0 proposes the 8-token boundary here
+        s.runner.prefix.tier_keys.clear()                 # ... and it is gone by the time admission votes
+        settle(s)
+        self.assertIsNotNone(s.take_result(again), "the request is still answered, by a plain prefill")
+        self.assertEqual(s.tier_restore_denials, 1)
+        self.assertEqual(s.tier_restore_denial_ranks, 0, "nobody held it: 0 of world, not a divergence")
+        self.assertEqual(s.runner.prefix_restores, 0)
+        self.assertFalse(s._restoring or s._failed_begins or s._waiting)
+        self.assertIn('st:prefix_tier_restore_denials_total{engine="st"} 1', s.metrics())
+        self.assertIn('st:prefix_tier_restore_denial_ranks_total{engine="st"} 0', s.metrics())
+
     def test_a_resume_that_cannot_begin_here_is_refused_everywhere_instead_of_killing_this_rank(self):
         s = T.server(rows=2, keep_idle=True, tier=MemoryTier())
         first, _ = s.submit([3], 1, 0)
