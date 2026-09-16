@@ -1,6 +1,5 @@
 """Build the complete native dense extension and report mHC resources, no GPU."""
 import argparse
-import ast
 import hashlib
 import json
 import os
@@ -29,21 +28,17 @@ def main():
         raise RuntimeError('this compile gate requires CUDA_VISIBLE_DEVICES=')
     root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(root))
+    # the served build itself: engine.kernels.dense.build compiles with the fleet's gencode and touches no
+    # device (its root comes from ST_DENSE_BUILD_ROOT); the AST scrape it replaced went stale when the flags
+    # moved from `extension` into `build` (2026-09-16, StopIteration)
+    os.environ['ST_DENSE_BUILD_ROOT'] = str(args.build_root)
     import torch
-    from torch.utils.cpp_extension import load
-    from engine.kernels.common.native_cache import prepare_sources
     if torch.cuda.is_initialized():
         raise RuntimeError('a GPU was already initialized')
     directory = root / 'engine/kernels/dense'
-    tree = ast.parse((directory / '__init__.py').read_text())
-    function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'extension')
-    flags_node = next(n.value for n in function.body if isinstance(n, ast.Assign)
-                      and any(isinstance(t, ast.Name) and t.id == 'flags' for t in n.targets))
-    flags = ast.literal_eval(flags_node)
-    key, build, sources = prepare_sources(args.build_root, [directory / 'kernels.cu'],
-                                          (flags, torch.__version__, torch.version.cuda))
-    extension = load(name='st_dense_' + key, sources=list(sources), extra_cuda_cflags=flags,
-                     build_directory=str(build), verbose=False)
+    from engine.kernels.dense import build, flags_for
+    flags = flags_for()
+    extension = build()
     for name in ('run_mhc', 'run_gemm', 'run_smlp2', 'run_gemm_bound_input'):
         if not callable(getattr(extension, name, None)):
             raise RuntimeError(f'the full extension did not bind {name}')
