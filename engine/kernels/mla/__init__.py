@@ -39,7 +39,7 @@ PREFILL_MODES = ("stock", "tile32")
 # short selection widths keep their old cell (same-build component records
 # in measurements/st_fixed_k_cost_followup_20260917; consumer proof separate).
 ENABLE_MLA_QREG = True
-ENABLE_MLA_DIRECT_CVT = False
+ENABLE_MLA_DIRECT_CVT = True
 _DECODE_CELLS_EXECUTED = set()
 ENABLE_MLA_CLUSTER = True
 ENABLE_MLA_PREFILL32 = False
