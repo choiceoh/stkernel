@@ -61,7 +61,7 @@ def mhc_check(report, ranks):
         for packets in (False, True):
             def call(enabled, subset=keys, project=False):
                 result = []
-                with patch.object(owner, 'SHARED_RCP', enabled):
+                with patch.object(owner, 'EXPAND_FN', enabled):
                     for i, key in enumerate(subset):
                         packed = (torch.empty(producer_pack_nbytes(rows, 4096), device='cuda', dtype=torch.uint8)
                                   if rows == 8 else None)
@@ -84,10 +84,10 @@ def mhc_check(report, ranks):
                         for graph in order:
                             graph.replay()
                         for key, want, got in zip(keys, *outputs):
-                            compare([want[:4]], [got[:4]], f'mHC reciprocal {key}')
+                            compare([want[:4]], [got[:4]], f'mHC coefficient reuse {key}')
                             if rows == 8 and not torch.equal(want[4], got[4]):
                                 raise AssertionError(f'{key}: producer pack differs')
-                report('numerics', component='mhc_shared_rcp', rows=rows, packets=packets,
+                report('numerics', component='mhc_expand_fn', rows=rows, packets=packets,
                        bitwise=True, coefficients=len(keys), magnitudes=4, orders='forward/reverse',
                        weights_sha256=digest)
                 samples = []
