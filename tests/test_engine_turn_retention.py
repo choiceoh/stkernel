@@ -75,6 +75,20 @@ class RetentionTests(unittest.TestCase):
         settle(s)
         self.assertEqual(tier.keys(), [chat], "an ordinary turn is still parked")
 
+    def test_the_warm_marker_is_an_option_the_engine_actually_serves(self):
+        """The door validates a request's options before enqueueing (D3), and this one rides there.
+
+        `_warm` was not in OPTION_KEYS when it was first written, so production would have refused
+        every `/v1/prefix/warm` as an unknown sampling option -- and the supervisor treats a failed
+        warm as non-fatal, so post-boot warming would have quietly never worked. The serve harness
+        has no `validate_options`, which is why its own warm test could not see this.
+        """
+        from engine.base.sampler import OPTION_KEYS, validate_options
+        self.assertIn("_warm", OPTION_KEYS)
+        validate_options({"_warm": True})
+        with self.assertRaisesRegex(ValueError, "warm marker must be boolean"):
+            validate_options({"_warm": 1})
+
     def test_a_turn_shorter_than_the_floor_is_released_and_one_at_the_floor_is_parked(self):
         tier = MemoryTier()
         s = T.server(rows=2, keep_idle=True, tier=tier)
