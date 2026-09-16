@@ -1,0 +1,19 @@
+Tencent HPC-Ops exact Top-K, vendored unmodified for a component comparison probe only (probes/engine_topk_hpcops.py).
+Nothing under engine/ imports it; it is not served.
+
+upstream   https://github.com/Tencent/hpc-ops
+commit     2a2e26562433a8ba4b504858f1c938eb7612c901 (2026-09-07, "refactor(topk): simplify the public API (#99)" lineage)
+license    MIT, see LICENSE.txt (text verbatim; CRLF line ends normalised to LF)
+paper      arXiv:2609.08450, "Sample-Guided Exact Top-K Selection for Long-Context Sparse Attention"
+
+Built by the probe with torch.utils.cpp_extension for sm_121a (-DHPC_TARGET_ARCH=121, -std=c++20,
+--expt-relaxed-constexpr); upstream CMake targets sm_90/100/103 only.
+
+sha256
+1cdc85f0023676896fd6d8fb76b4c74b2ef732b86f0594a818bb71bd82a56fb5  src/topk/entry.cc
+91ab7e40e992794c959079daf891dbed5f6b1b2f87c94389099e25184ca4b001  src/topk/topk.h
+a5d386f858f21933d421b795c8fa1d95334b97c47689a956170076e3173eb9ff  src/topk/topk_filtered.cu
+056fa5e3dfc320c59426b7ce56405daa09f53ad18a093c5fd8a013dbee9d235d  src/topk/topk_filtered_boundary.cuh
+1f3a63b450426c1564bbcead9b18cf4160a35e4331ff41283814df771609cdbf  src/utils/utils.h
+192aaf5f341dbf9ac100c9fc2bdd015e74c9c84d100b339aa7c4285bcd1a96c3  src/utils/utils.cc
+924091d1864854251e2dd5914a5e69f5ff8252bfc65794cd5c7a6306c0065ad2  LICENSE.txt

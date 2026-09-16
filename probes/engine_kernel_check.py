@@ -111,6 +111,11 @@ def main():
         if args.output:
             args.output.write_text(''.join(json.dumps(row) + '\n' for row in rows))
         return
+    if args.lanes == 'topk_hpcops':
+        # component only: HPC-Ops' exact top-k (vendored, MIT) against st_dsa_select / prefill_topk and a read floor
+        from probes.engine_topk_hpcops import run as topk_hpcops_check
+        topk_hpcops_check(args.output)
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check
