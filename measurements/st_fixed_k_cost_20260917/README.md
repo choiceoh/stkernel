@@ -52,3 +52,19 @@ It waits in the shared fleet queue; no GPU result is inferred from admission.
 The subsequent proof-only changes expose and require actual target execution
 in `ST_NATIVE_EXECUTION.fixed_k_cost`. The compile artifact records its own
 source and native binary hashes.
+
+## First GPU verdict (`18e14162`)
+
+`gpu-v1.jsonl`: all 90 real mHC coefficient sets pass bitwise output and
+pack equality at four magnitudes, with and without changing TP4 packet
+descriptors. MLA passes all 30 geometry/selection fixtures and repeated
+graph replay, with relative L2 error below 0.0021. Real L3 MoE passes
+changed routing and zero-output replay with no observed output difference.
+
+Performance is rejected for the first fused mHC/MLA implementation:
+packet mHC +2.11% (20.19 -> 20.61 us), C1 MLA identical selection
+43.11 -> 142.99 us, C2 59.84 -> 222.99 us. The MoE wave change has no
+clear win (U40 evicted 679.47 -> 679.21 us). These are component intervals,
+not consumer tok/s. The second candidate removes repeated mHC conversion,
+specializes pack-writing consumers, and adopts the stock decode kernel's
+shared-Q and matrix-load instructions for MLA. Its qualification is pending.
