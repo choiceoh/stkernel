@@ -154,8 +154,18 @@ class MoEStaticKernelV4:
         self.scatter_fp32 = bool(scatter_fp32)
         self.route_scatter = bool(route_scatter)
         self.direct_scatter = bool(direct_scatter)
-        if (self.route_scatter or self.direct_scatter) and not (
-                scatter_fp32 and reform_sf_pack and not split):
+        # What private scatter needs is the packed FP32 output and an unsplit epilogue:
+        # `_validate_direct_scatter_layout` binds register pairs to the epilogue tile
+        # (`epi_tile = (tile_m, fc2_tile_n)`) and reads no scale state at all. reform_sf_pack is
+        # the FC1 *scale* packing on the input side -- it sizes sf1_block_bytes/sf1_stage_bytes and
+        # nothing the scatter touches. Requiring it here refused the companion lane that a
+        # mixed-provenance checkpoint builds beside every sf6 lane, and at m=16 (where `batch`
+        # turns direct scatter on) that refusal killed the boot in warmup_decode_experts
+        # (measurements/st_hybrid_boot_block_20260916). route_scatter keeps the original pairing:
+        # it re-indexes the output by route and has only ever been built on the sf6 tile.
+        if self.route_scatter and not (scatter_fp32 and reform_sf_pack and not split):
+            raise ValueError("route scatter requires packed FP32 output without split work")
+        if self.direct_scatter and not (scatter_fp32 and not split):
             raise ValueError("private scatter requires packed FP32 output without split work")
         self.sf_vec_size = sf_vec_size
         self.input_scales_are_reciprocal = input_scales_are_reciprocal
