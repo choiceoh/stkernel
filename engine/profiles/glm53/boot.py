@@ -113,7 +113,7 @@ EXPERT_CAPTURE = False
 # production runs with draft_fc_bias_status="missing". A collecting boot serves normally and
 # writes one bundle per rank; `reader_identity` pins the executed pack, so it cannot be fitted
 # anywhere but inside the boot that will be corrected.
-DRAFT_FC_CAPTURE = False
+DRAFT_FC_CAPTURE = True                          # MEASUREMENT ARM -- never merged; main keeps this False
 DRAFT_FC_CAPTURE_ROWS = 4096
 CAPTURE_SECTIONS = ("head",)                     # what the capture records (capture.ALL_SECTIONS)
 CAPTURE_HEAD_ROWS = 256                          # head positions scored per prefill chunk (at most the chunk's length - 1)
