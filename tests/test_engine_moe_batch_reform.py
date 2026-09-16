@@ -30,6 +30,27 @@ class BatchReformTests(unittest.TestCase):
             retained = choose(dict(candidate, c2_fc2_prefetch=False), rows)
             self.assertEqual(key(retained, m=rows) != key(new, m=rows), changed)
 
+    def test_the_companion_lane_without_sf6_never_asks_for_private_scatter(self):
+        """A mixed-provenance checkpoint builds a reform_sf_pack=False lane beside every sf6 lane.
+
+        moe_static_kernel_v4.__init__ refuses `direct_scatter` without the packed FP32 output, and
+        only m=16 turned it on, so that companion killed the boot in warmup_decode_experts
+        (measurements/st_hybrid_boot_block_20260916). Production carries sf6 on every lane, so the
+        sf6 column below is the served one and must keep the m=16 cell it was measured with.
+        """
+        ns = namespace()
+        choose = ns['_static_v2_decode_config']
+        served = ns['_parse_glm53_static_v2']('t,r,sf6,batch')
+        companion = dict(served, reform_sf_pack=False)
+        for rows in range(129):
+            with self.subTest(rows=rows):
+                self.assertFalse(choose(companion, rows)['c2_direct_scatter'])
+                self.assertFalse(choose(companion, rows)['c2_scatter_reuse'])
+                self.assertFalse(choose(companion, rows)['c2_fc2_prefetch'])
+                self.assertEqual(choose(served, rows)['c2_direct_scatter'], rows == 16)
+            chosen = choose(companion, rows)
+            self.assertEqual(choose(chosen, rows), chosen, 'capture/compile normalize twice')
+
     def test_recipe_requires_the_existing_packed_reform_contract(self):
         parse = namespace()['_parse_glm53_static_v2']
         for recipe in ('batch', 'u,batch', 't,batch', 't,r,batch', 't,r,sf6,batch,f4'):
