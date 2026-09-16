@@ -1,5 +1,6 @@
 """C2 expert tiles preserve capacity and every other row-count's kernel identity."""
 import unittest
+from pathlib import Path
 
 from tests.test_engine_moe_scatter_config import namespace
 
@@ -30,13 +31,15 @@ class BatchReformTests(unittest.TestCase):
             retained = choose(dict(candidate, c2_fc2_prefetch=False), rows)
             self.assertEqual(key(retained, m=rows) != key(new, m=rows), changed)
 
-    def test_the_companion_lane_without_sf6_never_asks_for_private_scatter(self):
+    def test_the_companion_lane_keeps_the_m16_cell_without_sf6(self):
         """A mixed-provenance checkpoint builds a reform_sf_pack=False lane beside every sf6 lane.
 
-        moe_static_kernel_v4.__init__ refuses `direct_scatter` without the packed FP32 output, and
-        only m=16 turned it on, so that companion killed the boot in warmup_decode_experts
-        (measurements/st_hybrid_boot_block_20260916). Production carries sf6 on every lane, so the
-        sf6 column below is the served one and must keep the m=16 cell it was measured with.
+        At m=16 `batch` turns direct register scatter on for that companion too. The kernel used to
+        refuse the pair and the boot died in warmup_decode_experts
+        (measurements/st_hybrid_boot_block_20260916); #1056 bought the boot by refusing the companion
+        the scatter. It now keeps it: private scatter writes from the MMA registers to the packed
+        FP32 output and reads no scale state, so reform_sf_pack -- the FC1 *scale* packing -- was
+        never its business. What still needs sf6 is the reuse ring, and that stays off.
         """
         ns = namespace()
         choose = ns['_static_v2_decode_config']
@@ -44,12 +47,33 @@ class BatchReformTests(unittest.TestCase):
         companion = dict(served, reform_sf_pack=False)
         for rows in range(129):
             with self.subTest(rows=rows):
-                self.assertFalse(choose(companion, rows)['c2_direct_scatter'])
-                self.assertFalse(choose(companion, rows)['c2_scatter_reuse'])
-                self.assertFalse(choose(companion, rows)['c2_fc2_prefetch'])
+                c = choose(companion, rows)
+                self.assertEqual(c['c2_direct_scatter'], rows == 16)
                 self.assertEqual(choose(served, rows)['c2_direct_scatter'], rows == 16)
-            chosen = choose(companion, rows)
-            self.assertEqual(choose(chosen, rows), chosen, 'capture/compile normalize twice')
+                # the reuse ring and its prefetch read sf6 registers: never the companion's
+                self.assertFalse(c['c2_scatter_reuse'])
+                self.assertFalse(c['c2_fc2_prefetch'])
+                self.assertFalse(c['sf6_registers'])
+                self.assertEqual(choose(c, rows), c, 'capture/compile normalize twice')
+
+    def test_the_kernel_asks_private_scatter_only_for_the_output_it_writes(self):
+        """The guard that refused the companion, pinned so it cannot be re-tightened.
+
+        `_validate_direct_scatter_layout` binds register pairs to `epi_tile = (tile_m, fc2_tile_n)`
+        and touches no scale state, so direct scatter's requirement is the packed FP32 output and an
+        unsplit epilogue. route_scatter re-indexes the output by route and has only been built on the
+        sf6 tile, so it keeps the original pairing.
+        """
+        source = (Path(__file__).resolve().parents[1]
+                  / 'engine/kernels/b12x/moe_static_kernel_v4.py').read_text()
+        body = source.split('def __init__(', 1)[1].split('\n    def ', 1)[0]
+        code = ' '.join(l.split('#')[0] for l in body.splitlines())   # comments name it to explain it
+        direct = code.split('if self.direct_scatter and not (', 1)[1].split(')', 1)[0]
+        route = code.split('if self.route_scatter and not (', 1)[1].split(')', 1)[0]
+        self.assertIn('scatter_fp32', direct)
+        self.assertIn('not split', direct)
+        self.assertNotIn('reform_sf_pack', direct)
+        self.assertIn('reform_sf_pack', route)
 
     def test_recipe_requires_the_existing_packed_reform_contract(self):
         parse = namespace()['_parse_glm53_static_v2']
