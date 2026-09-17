@@ -14,7 +14,11 @@ are unchanged. What changed around them (engine/kernels/SOURCES.json lists it):
   the kernel package reads no knobs). Whether GB10 wants fewer splits is the wizard's measurement, not a default;
 - `norm_rope_partial` is new: Qwen3.8 normalises query and key heads with a unit-offset weight and rotates only the
   first `rotary_dim` channels (64 of 256, 64 of the indexer's 128) as neox halves -- engine/kernels/common/norm_rope
-  rotates the whole head and weights plainly.
+  rotates the whole head and weights plainly;
+- the sparse attention can read the chosen blocks themselves (FROM_BLOCKS: `qsa_select_paged_blocks` then
+  `qsa_sparse_paged_attention_blocks`): each tile computes its columns' positions with the expansion kernel's
+  arithmetic instead of loading them from an expanded buffer -- the same int32 positions on the same tiles, so the
+  attention's bytes are the expanded path's, without the expansion launch and its [rows, top-k + ratio - 1] buffer.
 
 The references are engine/modules: attention.Attention(select=QSA) and sparse_indexer.qsa_select. Paged caches here are
 [pages, page_size, heads, dim] with a page table of physical pages per request -- the served caches present their
@@ -242,12 +246,37 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     NUM_TILES: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    query_positions_ptr=None,
+    sequence_lengths_ptr=None,
+    num_lengths=0,
+    FROM_BLOCKS: tl.constexpr = False,
+    BLOCK_TOPK: tl.constexpr = 0,
+    COMPRESS_RATIO: tl.constexpr = 1,
 ) -> None:
     row = tl.program_id(0)
     kv_head = tl.program_id(1)
     split_id = tl.program_id(2)
     request = tl.load(token_to_req_ptr + row)
     safe_request = tl.minimum(tl.maximum(request, 0), num_requests - 1)
+    if FROM_BLOCKS:
+        # ST: indices_ptr holds the row's chosen blocks [rows, BLOCK_TOPK]; the positions they expand to are computed
+        # tile by tile below with _expand_qsa_indices_kernel's arithmetic (TOPK is its output width)
+        query_position = tl.load(query_positions_ptr + row)
+        sequence_length = tl.load(
+            sequence_lengths_ptr + tl.minimum(tl.maximum(request, 0), num_lengths - 1),
+            mask=(request >= 0) & (request < num_lengths),
+            other=0,
+        )
+        complete_blocks = tl.minimum(
+            tl.minimum(
+                (query_position + 1) // COMPRESS_RATIO,
+                sequence_length // COMPRESS_RATIO,
+            ),
+            BLOCK_TOPK,
+        )
+        expanded_count = complete_blocks * COMPRESS_RATIO
+        tail_start = ((query_position + 1) // COMPRESS_RATIO) * COMPRESS_RATIO
+        tail_count = (query_position + 1) - tail_start
 
     head_offsets = tl.arange(0, BLOCK_M)
     dim_offsets = tl.arange(0, HEAD_DIM)
@@ -272,11 +301,37 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     split_tile_end = (split_id + 1) * NUM_TILES // NUM_SPLITS
     for tile in range(split_tile_start, split_tile_end):
         columns = tile * BLOCK_N + column_offsets
-        logical_token = tl.load(
-            indices_ptr + row * stride_indices_row + columns,
-            mask=columns < TOPK,
-            other=-1,
-        )
+        if FROM_BLOCKS:
+            is_expanded = columns < expanded_count
+            block = tl.load(
+                indices_ptr
+                + row * stride_indices_row
+                + tl.minimum(columns // COMPRESS_RATIO, BLOCK_TOPK - 1),
+                mask=is_expanded,
+                other=-1,
+            )
+            expanded = block * COMPRESS_RATIO + columns % COMPRESS_RATIO
+            tail_offset = columns - expanded_count
+            is_tail = (
+                (columns >= expanded_count)
+                & (tail_offset < tail_count)
+                & (tail_offset < COMPRESS_RATIO - 1)
+            )
+            token = tl.where(is_expanded, expanded, tail_start + tail_offset)
+            logical_token = tl.where(
+                (columns < TOPK)
+                & (is_expanded | is_tail)
+                & (token >= 0)
+                & (token < sequence_length),
+                token,
+                -1,
+            )
+        else:
+            logical_token = tl.load(
+                indices_ptr + row * stride_indices_row + columns,
+                mask=columns < TOPK,
+                other=-1,
+            )
         safe_token = tl.maximum(logical_token, 0)
         logical_page = safe_token // PAGE_SIZE
         page_offset = safe_token % PAGE_SIZE
@@ -815,9 +870,68 @@ def qsa_select_paged_tokens(q, k_cache, page_table, token_to_req, query_position
     return out
 
 
+def qsa_select_paged_blocks(q, k_cache, page_table, token_to_req, query_positions, sequence_lengths, token_topk,
+                            compress_ratio, out=None):
+    """`qsa_select_paged_tokens` without its expansion: the chosen blocks, int32 [rows, token_topk // compress_ratio]
+    (-1 past a row's visible blocks), for `qsa_sparse_paged_attention_blocks` to expand inside its tiles. The scoring
+    chunks and the selection are `qsa_select_paged_tokens`' own, writing each chunk's rows in place."""
+    if token_topk <= 0 or compress_ratio <= 0 or token_topk % compress_ratio:
+        raise ValueError("QSA token top-k must be divisible by compression ratio")
+    rows = q.shape[0]
+    block_topk = token_topk // compress_ratio
+    if out is None:
+        out = torch.empty((rows, block_topk), dtype=torch.int32, device=q.device)
+    if out.shape != (rows, block_topk):
+        raise ValueError("QSA block selection output has an invalid shape")
+    if not rows:
+        return out
+    columns = page_table.shape[1] * k_cache.shape[1]
+    rows_per_chunk = max(1, _LOGITS_WORKSPACE_BYTES // max(columns * 4, 1))
+    for row_start in range(0, rows, rows_per_chunk):
+        row_slice = slice(row_start, min(row_start + rows_per_chunk, rows))
+        logits, visible_blocks = qsa_mqa_paged(q[row_slice], k_cache, page_table, token_to_req[row_slice],
+                                               query_positions[row_slice], sequence_lengths, compress_ratio)
+        select_blocks(logits, visible_blocks, block_topk, out[row_slice])
+    return out
+
+
 def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out=None):
     """Sparse GQA over paged BF16 K/V caches [blocks, page_size, kv_heads, head_dim] at the selected positions
     (int32 [rows, width], -1 skipped): softmax(q . k / sqrt(head_dim)) v per query head, [rows, heads, head_dim]."""
+    width = logical_indices.shape[1] if logical_indices.ndim == 2 else 0
+    return _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width)
+
+
+def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_positions, sequence_lengths,
+                                      compress_ratio, token_topk, block_table, token_to_req, out=None):
+    """`qsa_sparse_paged_attention` at the positions `expand_qsa_block_indices_cuda` expands the chosen blocks to --
+    int32 [rows, token_topk // compress_ratio] as `qsa_select_paged_blocks` writes them -- computed tile by tile in the
+    attention's own launch (FROM_BLOCKS): the same positions on the same tiles, so the same bytes, without the expansion
+    launch and its [rows, token_topk + compress_ratio - 1] buffer."""
+    if token_topk <= 0 or compress_ratio <= 0 or token_topk % compress_ratio:
+        raise ValueError("QSA token top-k must be divisible by compression ratio")
+    block_topk = token_topk // compress_ratio
+    rows = q.shape[0] if q.ndim == 3 else -1
+    if block_indices.shape != (rows, block_topk):
+        raise ValueError("QSA compressed top-k has an invalid shape")
+    if query_positions.shape != (rows,):
+        raise ValueError("QSA request mapping must match query positions")
+    if sequence_lengths.ndim != 1 or not sequence_lengths.shape[0]:
+        raise ValueError("QSA request sequence lengths must be nonempty")
+    if not (block_indices.dtype == query_positions.dtype == sequence_lengths.dtype == torch.int32):
+        raise ValueError("QSA sparse attention metadata is int32")
+    if query_positions.device != q.device or sequence_lengths.device != q.device:
+        raise ValueError("QSA sparse attention tensors share one device")
+    _packed_rows("QSA sparse attention", query_positions, sequence_lengths)
+    return _sparse_paged_attention(q, k_cache, v_cache, block_indices, block_table, token_to_req, out,
+                                   token_topk + compress_ratio - 1,
+                                   blocks=(query_positions, sequence_lengths, compress_ratio, block_topk))
+
+
+def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width, blocks=None):
+    """The launch of both entries: `logical_indices` holds the positions at `width` columns, or (with `blocks` --
+    query positions, sequence lengths, the compression ratio and the block top-k) the chosen blocks whose expansion
+    is `width` columns wide."""
     if not q.is_cuda:
         raise RuntimeError("paged QSA sparse attention runs on CUDA")
     if q.ndim != 3 or k_cache.ndim != 4 or v_cache.shape != k_cache.shape:
@@ -828,7 +942,7 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
         raise ValueError("QSA sparse attention metadata has invalid shapes")
     if not all(k_cache.shape[:3]) or not all(block_table.shape):
         raise ValueError("QSA sparse attention cache and block table must be nonempty")
-    if logical_indices.shape[1] <= 0:
+    if width <= 0:
         raise ValueError("QSA sparse attention requires a positive selection width")
     if q.shape[2] != k_cache.shape[3] or q.shape[1] % k_cache.shape[2]:
         raise ValueError("QSA sparse attention requires valid grouped-query heads")
@@ -868,7 +982,7 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
         block_n, target_splits, partial_warps = 64, 4, 2
     else:
         block_n, target_splits, partial_warps = 64, 1, 2
-    num_tiles = triton.cdiv(logical_indices.shape[1], block_n)
+    num_tiles = triton.cdiv(width, block_n)
     max_useful_splits = 1 << (num_tiles.bit_length() - 1)
     num_splits = min(max_useful_splits, target_splits)
     if num_splits == 1:
@@ -877,14 +991,20 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
     else:
         partial_output = torch.empty((num_splits, *q.shape), dtype=torch.float32, device=q.device)
         partial_lse = torch.empty((num_splits, q.shape[0], q.shape[1]), dtype=torch.float32, device=q.device)
+    expansion = {}
+    if blocks is not None:
+        query_positions, sequence_lengths, compress_ratio, block_topk = blocks
+        expansion = dict(query_positions_ptr=query_positions, sequence_lengths_ptr=sequence_lengths,
+                         num_lengths=sequence_lengths.shape[0], FROM_BLOCKS=True, BLOCK_TOPK=block_topk,
+                         COMPRESS_RATIO=compress_ratio)
     _qsa_sparse_paged_gqa_splitk_kernel[(q.shape[0], k_cache.shape[2], num_splits)](
         q, k_cache, v_cache, logical_indices, block_table, token_to_req, partial_output, partial_lse, out,
         q.stride(0), q.stride(1), k_cache.stride(0), k_cache.stride(1), k_cache.stride(2),
         v_cache.stride(0), v_cache.stride(1), v_cache.stride(2), logical_indices.stride(0), block_table.stride(0),
         out.stride(0), out.stride(1), q.shape[0], k_cache.shape[0], block_table.shape[0],
-        TOPK=logical_indices.shape[1], PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=block_table.shape[1],
+        TOPK=width, PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=block_table.shape[1],
         GROUP_SIZE=group_size, HEAD_DIM=q.shape[2], NUM_QUERY_HEADS=q.shape[1], NUM_SPLITS=num_splits,
-        NUM_TILES=num_tiles, BLOCK_M=block_m, BLOCK_N=block_n, num_warps=partial_warps, num_stages=2,
+        NUM_TILES=num_tiles, BLOCK_M=block_m, BLOCK_N=block_n, num_warps=partial_warps, num_stages=2, **expansion,
     )
     if num_splits == 1:
         return out
@@ -1011,5 +1131,5 @@ def qualify(device, *, heads=((6, 256), (4, 128)), rotary_dim: int, theta: float
 
 
 __all__ = ["norm_rope_partial", "qsa_mqa_paged", "expand_qsa_block_indices_cuda", "select_blocks",
-           "qsa_select_paged_tokens", "qsa_sparse_paged_attention", "qsa_store_cache_rows",
-           "qsa_compress_groups_with_ratio", "qualify"]
+           "qsa_select_paged_tokens", "qsa_select_paged_blocks", "qsa_sparse_paged_attention",
+           "qsa_sparse_paged_attention_blocks", "qsa_store_cache_rows", "qsa_compress_groups_with_ratio", "qualify"]

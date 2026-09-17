@@ -395,7 +395,7 @@
       "source": "overlay/modules/qwen38_qsa/ops_qsa.py",
       "sha256": "8c99d362ec6c168f83a1f7f55a2834b495fb417a9fea983dee1e5d8d4c241dd0",
       "origin": "repository",
-      "local_sha256": "972bb4d3fb604a389beba5d639f2c4feaccb5bc89b2bb823cca8d55b435ab495",
+      "local_sha256": "bb67329ef4146cf4e1c274edb988bcdfcb00a5d32d21cb62e1041107e839400f",
       "local_modifications": [
         "2026-09-15 engine port: Triton kernel bodies unchanged; imports are triton's own (no vllm.triton_utils, no vllm.platforms)",
         "2026-09-15 block selection: engine/kernels/prefill_topk where it admits the shape, torch.topk over masked logits otherwise, instead of vLLM's persistent_topk/cooperative_topk C++ ops",
@@ -404,7 +404,8 @@
         "2026-09-15 store rows: the page index is widened to int64 before the page stride (engine slot mappings are int32; vLLM's are int64)",
         "2026-09-15 qualify: holds norm_rope_partial to engine/modules at boot within a few BF16 steps",
         "2026-09-17 packed row metadata: scoring, expansion, compression and stores refuse a strided one-dimensional row mapping (the kernels load it at ptr + row); kernel bodies unchanged",
-        "2026-09-17 norm_rope_partial reads positions through their stride (a group's first positions are a column of [rows, 3]); the wrapper no longer copies them. Same arithmetic, same bytes"
+        "2026-09-17 norm_rope_partial reads positions through their stride (a group's first positions are a column of [rows, 3]); the wrapper no longer copies them. Same arithmetic, same bytes",
+        "2026-09-17 FROM_BLOCKS (Qwen3.8 carry Q5): _qsa_sparse_paged_gqa_splitk_kernel can read the chosen blocks and compute each tile's positions with _expand_qsa_indices_kernel's int32 arithmetic instead of loading them (qsa_select_paged_blocks, qsa_sparse_paged_attention_blocks); off by default, the expanded path's launch is unchanged."
       ]
     }
   }

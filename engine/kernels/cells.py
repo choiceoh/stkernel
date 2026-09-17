@@ -558,7 +558,8 @@ def _serve_attention(a, i):
     is the work."""
     qsa = i is not None and i.compress == "qsa"
     qsa_op = ("qsa_sparse_paged_attention in engine/kernels/qsa.py (vLLM's Triton QSA sparse paged GQA attention, the "
-              "kernel that served Qwen3.8 in the vLLM stack, ported: BF16 KV)")
+              "kernel that served Qwen3.8 in the vLLM stack, ported: BF16 KV; its blocks entry expands the chosen blocks "
+              "inside its tiles)")
     if a.kind != "mla":
         packed = 2 * a.head_dim <= MLA_LATENT
         if a.sink is None:
@@ -628,7 +629,7 @@ def _serve_indexer(i):
     """The fastest kernels for an indexer the kpool lane refuses."""
     if i.compress == "qsa":
         return _serve(SPECIALIZED, "engine/kernels/qsa (qsa_compress_groups_with_ratio, qsa_mqa_paged and "
-                      "qsa_select_paged_tokens: vLLM's Triton QSA ops, ported, with the engine's top-k)", False,
+                      "qsa_select_paged_blocks: vLLM's Triton QSA ops, ported, with the engine's top-k)", False,
                       "judge the compression against modules/sparse_indexer.qsa_select and the scoring against its relu "
                       "sum over the index heads; unjudged on a GPU")
     if i.compress == "ced":

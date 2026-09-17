@@ -492,9 +492,11 @@ class Qwen38Net:
         keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0], F.rope_theta, F.rotary_dim)
         lanes.qsa_store(caches.index_keys(cache_layer), meta.key_slots, keys[:, 0])
         lanes.qsa_store(ring, meta.ring_slots, ik)
-        selected = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
-                                    meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
-        attended = lanes.qsa_attend(q.contiguous(), K, V, selected, meta.page_table, meta.rows_req)
+        # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer)
+        blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
+                                  meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
+        attended = lanes.qsa_attend(q.contiguous(), K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
+                                    F.idx_budget, meta.page_table, meta.rows_req)
         out = (attended.float() * torch.sigmoid(gate.float())).to(x.dtype).reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 
