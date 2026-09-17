@@ -13,7 +13,10 @@ builds one long agentic context in the shape the product sends -- system prompt,
 memory/session records, `[ctx] [assistant]` reasoning records, tool JSON,
 document text -- buries one exact fact (a code, a date) in the oldest third, adds
 three decoys in the newest third, and requires the answer to state that fact and
-neither decoy. Glyph counters are reported beside it, so one run shows both.
+neither decoy. The question names the record the fact sits in: the first live run
+scored 0/2 because same-kind decoys made answering with the newest one reasonable,
+which is a broken case rather than a finding. Glyph counters are reported beside
+the verdict, so one run shows both gates.
 
     python3 bench/agentic-recall.py 2 40000 --url http://127.0.0.1:8000
 
@@ -32,7 +35,6 @@ import urllib.request
 
 DEFAULT_URL = "http://127.0.0.1:8000"
 DECOYS = 3
-QUESTION = "위 기록들에서 이번 분기 예산 코드와 확정일 두 값만 정확히 알려줘. 다른 값과 섞지 말고 한 줄로."
 SYSTEM = "You are a Korean assistant working from the session records below. Answer in Korean."
 
 RECORD_TEMPLATES = (
@@ -56,7 +58,14 @@ ASKS = ("예산 코드가 뭐였지", "확정일 언제였지", "이번 분기 �
 
 
 def build(seed: int, chars: int) -> dict:
-    """A deterministic long agentic context carrying one fact and three decoys."""
+    """A deterministic long agentic context carrying one fact and three decoys.
+
+    The question names the record the fact sits in. That is the whole point: the
+    first run of this gate scored 0/2 because the decoys were the same kind of
+    record as the fact, so answering with the newest one was a reasonable reading
+    rather than a wrong answer. Naming the record makes a decoy answer wrong, and
+    the case a retrieval of one exact record out of a long context.
+    """
     rng = random.Random(seed)
     code = f"TS-{rng.randrange(1000, 10000)}"
     date = "2026-11-03"
@@ -80,9 +89,13 @@ def build(seed: int, chars: int) -> dict:
                 buried[index] = True
                 fact_code, fact_date = facts[index]
                 records.append(f'  cl:main#{n}/user 이번 분기 예산 코드는 {fact_code}, 확정일은 {fact_date}로 확정한다.\n')
+                if index == 0:
+                    ref = f"main#{n}/user"
     body = "".join(records)
     return dict(code=code, date=date, decoys=[c for c, _ in facts[1:]], decoy_dates=[d for _, d in facts[1:]],
-                system=SYSTEM, body=body, question=QUESTION)
+                needle_ref=ref, system=SYSTEM, body=body,
+                question=f"기록 `{ref}`에 적힌 이번 분기 예산 코드와 확정일 두 값만 정확히 알려줘. "
+                         f"다른 기록의 값과 섞지 말고 한 줄로.")
 
 
 def grade(case: dict, answer: str) -> dict:
