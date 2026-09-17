@@ -466,6 +466,8 @@ class Glm53Net:
             weight = self.p[key]
             packed, smooth = smoothed.get(key, (weight, None))
             self.dense[key] = DenseLinear(packed, store=store, name=name, smooth=smooth)
+            if key.endswith('.kda.in_proj') and tuple(packed.shape) == (6416, 4096):
+                self.dense[key].prepare_cta_layout()
             if consume_weights:
                 self.dense[key].consume_weight(weight)
                 self.p[key]=None

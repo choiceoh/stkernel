@@ -1063,7 +1063,10 @@ def decode_fastpath_report(net):
         raise RuntimeError(f'bound decode fastpaths were not executed: pairs={sorted(expected_pairs - pairs)}, dense={missing}')
     input_packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
                    if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
-    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs)
+    weight_tiles = {name: list(layer.packs[0].data.shape) for name, layer in net.dense.items()
+                    if name in dense and getattr(layer.packs[0], 'data', None) is not None}
+    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs,
+                resident_w4_tiles=weight_tiles)
 
 
 def fixed_k_cost_report(net):

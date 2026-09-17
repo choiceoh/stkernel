@@ -528,7 +528,8 @@ struct MKGemm2Ctx {
   int64_t x_stride = 0;    // 0 means dense; split projections may retain a wider parent row
   __nv_bfloat16* out;      // [m, n_orig]
   const int64_t* out_address = nullptr;  // replay-time reserved TX slot
-  const uint8_t* wq4;      // tile-major W4 pack [n/128, k/128, 128, 64]
+  const uint8_t* wq4;      // resident [n/tile_rows, k/128, tile_rows, 64]
+  bool w4_cta16 = false;  // explicit tensor layout, fixed before graph capture
   const int8_t* ws4;
   float wgs;
   const float* rgs = nullptr;  // per-row 2^-shift (33차 lever 3), 0 = wgs only
@@ -563,6 +564,14 @@ struct MKGemm2Ctx {
   float act_limit = 0.0f, act_alpha = 1.0f, act_beta = 0.0f;
 };
 
+
+// Offset of a logical output row in either resident layout. A 16B load
+// never crosses a 16-row boundary (scales copy two rows at a time).
+template <int BYTES>
+__device__ __forceinline__ size_t mk_w4_row(const MKGemm2Ctx& c,int row,int kb,int kblk) {
+  if(c.w4_cta16) return (((size_t)(row/16)*kblk+kb)*16+row%16)*BYTES;
+  return (((size_t)(row/128)*kblk+kb)*128+row%128)*BYTES;
+}
 
 // RQ = rows each warp quantizes per k-block (1, 2, 4 for m <= 8, 16, 32):
 // MT (m-tiles in the mma) and the x lane mapping follow it at compile time,
@@ -692,10 +701,6 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
   // fragment loads below (eight rows, one word each, 64 B row pitch) hit
   // 32 distinct banks.
   auto stage_raw = [&](int kb, int buf) {
-    const uint8_t* nsrc =
-        c.wq4 + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 64);
-    const uint8_t* ssrc = (const uint8_t*)c.ws4 +
-        ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);
     uint8_t* d = sraw + buf * W4_RAW_BYTES;
     // two chunks per thread, unrolled: the swizzled destinations are
     // per-thread constants (a runtime loop recomputed them every k-block)
@@ -705,11 +710,11 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
       const int t = (int)threadIdx.x + u * MK_THREADS;
       const int r = t >> 2, ch = t & 3;
       mk_cp_async16(d + r * W4_RAW_PITCH + ((ch ^ ((r >> 1) & 3)) << 4),
-                    nsrc + (size_t)t * 16);
+                    c.wq4 + mk_w4_row<64>(c,nt*128+r,kb,kblk) + ch*16);
     }
     if (threadIdx.x < SMEM_W_ROWS * 8 / 16)
       mk_cp_async16(d + W4_RAW_NIB + threadIdx.x * 16,
-                    ssrc + (size_t)threadIdx.x * 16);
+                    (const uint8_t*)c.ws4 + mk_w4_row<8>(c,nt*128+threadIdx.x*2,kb,kblk));
     mk_cp_commit();
   };
 
@@ -962,10 +967,11 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
     // the slice's records are consecutive (tile-major [n/128][k/128] pack):
     // one bulk request for W and one for the scales, before the PDL wait
     const int nkb = min(kbn - kb0, MK2_L2_PREFETCH_KB);
-    mk_prefetch_l2(c.wq4 + ((size_t)nt * kblk + kb0) * (SMEM_W_ROWS * 64),
-                   (unsigned)nkb * (SMEM_W_ROWS * 64));
-    mk_prefetch_l2((const uint8_t*)c.ws4 + ((size_t)nt * kblk + kb0) * (SMEM_W_ROWS * 8),
-                   (unsigned)nkb * (SMEM_W_ROWS * 8));
+    const int tile_rows=c.w4_cta16?16:128;
+    for(int row=nt*128;row<(nt+1)*128;row+=tile_rows) {
+      mk_prefetch_l2(c.wq4+mk_w4_row<64>(c,row,kb0,kblk),(unsigned)nkb*tile_rows*64);
+      mk_prefetch_l2((const uint8_t*)c.ws4+mk_w4_row<8>(c,row,kb0,kblk),(unsigned)nkb*tile_rows*8);
+    }
   }
 #pragma unroll
   for (int d = 0; d < DIST; ++d)
@@ -1268,17 +1274,17 @@ mk_gemm_input_kernel(MKGemm2Ctx c) {
   auto stage_raw=[&](int kb,int buf) {
     // The final 6416-wide tile has only one real 16-row warp.
     if(!live_warp) {mk_cp_commit();return;}
-    const uint8_t* w=c.wq4+((size_t)nt*kblk+kb)*8192;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)nt*kblk+kb)*1024;
+    const uint8_t* w=c.wq4+mk_w4_row<64>(c,nt*128+warp*16,kb,kblk);
+    const uint8_t* s=(const uint8_t*)c.ws4+mk_w4_row<8>(c,nt*128+warp*16,kb,kblk);
     uint8_t* d=sraw+buf*W4_RAW_BYTES;
 #pragma unroll
     for(int u=0;u<2;++u) {
       const int t=warp*64+lane+u*32,r=t>>2,ch=t&3;
-      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)t*16);
+      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)(lane+u*32)*16);
     }
     if(lane<8) {
       const int st=warp*8+lane;
-      mk_cp_async16(d+W4_RAW_NIB+st*16,s+(size_t)st*16);
+      mk_cp_async16(d+W4_RAW_NIB+st*16,s+(size_t)lane*16);
     }
     mk_cp_commit();
   };
@@ -1385,7 +1391,7 @@ mk_gemm_input_kernel(MKGemm2Ctx c) {
 // W4 packs, FP8 preparation, per-slice arithmetic and reduction order are unchanged.
 // Exact route only: M6 or M7 / N6416 / K4096 and split8; two W staging buffers.
 // MODE 0 retains runtime geometry; MODE 1/2 specialize it, with 3/4 blocks per SM.
-template <int MODE, bool DIRECT = false, bool ORDERED=false, int KBLKS=32, int SLICES=8>
+template <int MODE, bool DIRECT = false, bool ORDERED=false, int KBLKS=32, int SLICES=8, bool CTA16=false>
 __global__ void __launch_bounds__(MK_THREADS,ORDERED?2:MODE==2?4:3)
 mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
   constexpr int NB=2;
@@ -1402,8 +1408,8 @@ mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
   const int kbn=ORDERED?KBLKS*(warp+1)/8:MODE?kb0+4:kblk*(slice+1)/c.ksr;
   constexpr int DIST=NB-1;
   auto stage_raw=[&](int kb,int buf) {
-    const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+    const uint8_t* w=c.wq4+(CTA16?((size_t)nt*kblk+kb)*1024:mk_w4_row<64>(c,nt*16,kb,kblk));
+    const uint8_t* s=(const uint8_t*)c.ws4+(CTA16?((size_t)nt*kblk+kb)*128:mk_w4_row<8>(c,nt*16,kb,kblk));
     uint8_t* d=sraw+buf*W4_RAW_BYTES;
 #pragma unroll
     for(int u=0;u<2;++u) {
@@ -1544,8 +1550,8 @@ __device__ __forceinline__ void mk_gemm_input_cta3_body(MKGemm2Ctx c,int block) 
   const int kb0=KBLKS*slice/SLICES,kbn=KBLKS*(slice+1)/SLICES;
   constexpr int DIST=NB-1;
   auto stage_raw=[&](int kb,int buf) {
-    const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+    const uint8_t* w=c.wq4+mk_w4_row<64>(c,nt*16,kb,kblk);
+    const uint8_t* s=(const uint8_t*)c.ws4+mk_w4_row<8>(c,nt*16,kb,kblk);
     uint8_t* d=sraw+buf*RAW_BYTES;
 #pragma unroll
     for(int u=0;u<2;++u) {
@@ -1684,8 +1690,8 @@ __device__ __forceinline__ void mk_gemm_rows16_body(MKGemm2Ctx c,int block) {
   const int kb0=KBLKS*warp/8, kbn=KBLKS*(warp+1)/8;
   // Tile nt/16, W rows (nt%16)*8..+7: lane (g,q) copies row g's chunk q.
   auto stage_raw=[&](int kb,int buf) {
-    const uint8_t* w=c.wq4+((size_t)(nt/16)*KBLKS+kb)*8192+(nt%16)*512;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/16)*KBLKS+kb)*1024+(nt%16)*64;
+    const uint8_t* w=c.wq4+mk_w4_row<64>(c,nt*8,kb,KBLKS);
+    const uint8_t* s=(const uint8_t*)c.ws4+mk_w4_row<8>(c,nt*8,kb,KBLKS);
     uint8_t* d=sraw+buf*ROWS16_RAW_BYTES;
     mk_cp_async16(d+r*W4_RAW_PITCH+((q^((r>>1)&3))<<4),w+(size_t)lane*16);
     if(lane<4) mk_cp_async16(d+ROWS16_RAW_NIB+(warp*4+lane)*16,s+(size_t)lane*16);
@@ -3215,6 +3221,8 @@ void set_kernel_attrs() {
   input_cta_attrs(mk_gemm_input_cta_kernel<0>,0);
   input_cta_attrs(mk_gemm_input_cta_kernel<1>,1);
   input_cta_attrs(mk_gemm_input_cta_kernel<2>,2);
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta_kernel<1,false,false,32,8,true>,
+      cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_kernel<>,
       cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_INPUT_SMEM));
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -3563,14 +3571,17 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
               "x must have contiguous columns and disjoint 8 B aligned rows");
   // Tile-major packs -- see stage_raw. The shape is the only thing
   // standing between a stale row-major pack and silently wrong output.
-  TORCH_CHECK(wq4.dim() == 4 && wq4.size(2) == SMEM_W_ROWS
+  TORCH_CHECK(wq4.dim() == 4 && (wq4.size(2) == SMEM_W_ROWS ||
+                  (wq4.size(2) == 16 && n_orig == 6416 && c2.k == 4096))
                   && wq4.size(3) == 64 && wq4.is_contiguous(),
-              "wq4 must be a contiguous [n/128, k/128, 128, 64] pack");
+              "wq4 must identify a contiguous 128-row pack or target KDA 16-row pack");
   TORCH_CHECK(ws4.dim() == 4 && ws4.size(0) == wq4.size(0)
-                  && ws4.size(1) == wq4.size(1) && ws4.size(2) == SMEM_W_ROWS
+                  && ws4.size(1) == wq4.size(1) && ws4.size(2) == wq4.size(2)
                   && ws4.size(3) == 8 && ws4.is_contiguous(),
-              "ws4 must be a contiguous [n/128, k/128, 128, 8] pack");
-  c2.n = (int)wq4.size(0) * SMEM_W_ROWS;
+              "ws4 must match the resident W4 tile layout");
+  c2.w4_cta16 = wq4.size(2) == 16;
+  c2.n = (int)wq4.size(0) * (int)wq4.size(2);
+  TORCH_CHECK(c2.n == ((n_orig+127)/128)*128, "W4 padded rows disagree with output");
   c2.n_orig = (int)n_orig;
   TORCH_CHECK(c2.k % KSTEP == 0 && c2.k <= KBLK_LIMIT * KSTEP, "k out of contract");
   TORCH_CHECK(!c2.a_ready && !c2.pair_act, "the staged-A path is smlp2's, not a plain launch");
@@ -3677,6 +3688,12 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     } else if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
       mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
     } else if (cta && c2.ksr==8) {
+      if constexpr (!DIRECT) {
+        if(c2.w4_cta16 && bound_c1) {
+          mk_launch(mk_gemm_input_cta_kernel<1,false,false,32,8,true>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+          return;
+        }
+      }
       if (cta==1)
         mk_launch(mk_gemm_input_cta_kernel<0,DIRECT>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
       else if (cta==2 || cta==4)
@@ -3864,7 +3881,8 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
   TORCH_CHECK((c1 || wide) && rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device() &&
               wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8,
               "bound input requires a declared W4 cell and row scales");
-  TORCH_CHECK(wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128,
+  TORCH_CHECK(wq4.dim() == 4 && (wq4.size(2) == 128 || (wq4.size(2) == 16 && n == 6416 && k == 4096))
+              && wq4.size(0)*wq4.size(2) == ((n + 127) / 128)*128,
               "bound input pack rows must match the declared output");
   const uint8_t* producer_q = nullptr;
   const float* producer_s = nullptr;
@@ -3970,10 +3988,11 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
               "sixteen-row cells: KDA input, gate/up, qkv_a and MLP down to a matrix; KDA/MLA outputs and MLP down to a TX slot");
   TORCH_CHECK(rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device()
               && wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8
-              && wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128 && wq4.size(1) == k / KSTEP
-              && wq4.size(2) == SMEM_W_ROWS && wq4.size(3) == 64 && wq4.is_contiguous()
+              && wq4.dim() == 4 && (wq4.size(2) == 128 || (wq4.size(2) == 16 && n == 6416 && k == 4096))
+              && wq4.size(0)*wq4.size(2) == ((n + 127) / 128)*128 && wq4.size(1) == k / KSTEP
+              && wq4.size(3) == 64 && wq4.is_contiguous()
               && ws4.dim() == 4 && ws4.size(0) == wq4.size(0) && ws4.size(1) == wq4.size(1)
-              && ws4.size(2) == SMEM_W_ROWS && ws4.size(3) == 8 && ws4.is_contiguous(),
+              && ws4.size(2) == wq4.size(2) && ws4.size(3) == 8 && ws4.is_contiguous(),
               "sixteen-row cells need the bound tile-major W4 pack and its row scales");
   set_kernel_attrs();
   mk_rows16_attrs();
@@ -3984,7 +4003,8 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
   c.ws4 = (const int8_t*)ws4.data_ptr();
   c.wgs = 1.f;
   c.rgs = (const float*)rgs_ptr;
-  c.m = 16; c.k = (int)k; c.n = (int)wq4.size(0) * SMEM_W_ROWS; c.n_orig = (int)n;
+  c.w4_cta16 = wq4.size(2) == 16;
+  c.m = 16; c.k = (int)k; c.n = (int)wq4.size(0) * (int)wq4.size(2); c.n_orig = (int)n;
   c.ksr = mk_choose_ksr2(16, c.n, c.k);
   const int slices = n == 6416 ? 8 : n == 6144 ? 2 : n == 2048 ? 6 : 3;
   TORCH_CHECK(c.ksr == slices, "sixteen-row cells require the ordinary lane's K slices");
