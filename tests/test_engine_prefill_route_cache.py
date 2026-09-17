@@ -1,4 +1,4 @@
-"""Keep route-cache publication intact while bounding BF16 output zeroing."""
+"""Keep route-cache publication intact while the FP32 accumulator clears every word."""
 import ast
 import copy
 import hashlib
@@ -13,7 +13,7 @@ def method(tree, name):
 
 
 class PrefillRouteCacheTests(unittest.TestCase):
-    def test_complete_route_producer_changes_only_the_zeroed_word_extent(self):
+    def test_complete_route_producer_matches_q0_and_the_epilogue_is_the_pinned_fp32_graft(self):
         original_path = ROOT/'moe_dynamic_gated_sf6_q0.py'
         original = ast.parse(original_path.read_text())
         candidate = ast.parse((ROOT/'moe_dynamic_gated_sf6_prefill.py').read_text())
@@ -25,14 +25,26 @@ class PrefillRouteCacheTests(unittest.TestCase):
         changed = [n for n in ast.walk(b) if isinstance(n,ast.Assign)
                    and any(isinstance(t,ast.Name) and t.id == 'cols_u32' for t in n.targets)]
         self.assertEqual(len(changed),1)
-        self.assertEqual(ast.unparse(changed[0].value),'cols // Int32(2)')
-        changed[0].value = ast.Name('cols',ast.Load())
+        # The FP32 accumulator plane clears every word, exactly like the Q0 parent.
+        self.assertEqual(ast.unparse(changed[0].value),'cols')
         self.assertEqual(ast.dump(a,include_attributes=False),ast.dump(b,include_attributes=False))
         cls = next(n for n in candidate.body if isinstance(n,ast.ClassDef))
         self.assertEqual([ast.unparse(n) for n in cls.bases],['MoEGatedDynamicKernelSF6Words'])
-        self.assertNotIn('scatter_sC_to_gmem', [getattr(n,'name',None) for n in cls.body])
+        grafts = [n for n in cls.body if isinstance(n,ast.Assign)
+                  and any(isinstance(t,ast.Name) and t.id == 'scatter_sC_to_gmem' for t in n.targets)]
+        self.assertEqual(len(grafts),1)
+        self.assertEqual(ast.unparse(grafts[0].value),'MoEGatedEPLocalKernel.scatter_sC_to_gmem')
 
-    def test_zeroing_covers_bf16_output_without_crossing_its_last_byte(self):
+    def test_grafted_epilogue_source_is_pinned(self):
+        candidate = ast.parse((ROOT/'moe_dynamic_gated_sf6_prefill.py').read_text())
+        expected = next(ast.literal_eval(n.value) for n in candidate.body if isinstance(n,ast.Assign)
+                        and any(isinstance(t,ast.Name) and t.id == 'EP_LOCAL_SOURCE_SHA256' for t in n.targets))
+        self.assertEqual(hashlib.sha256((ROOT/'moe_dynamic_ep_local.py').read_bytes()).hexdigest(), expected)
+        body = method(candidate,'stock_contract_matches')
+        referenced = {ast.unparse(n) for n in ast.walk(body) if isinstance(n,ast.Compare)}
+        self.assertTrue(any('EP_LOCAL_SOURCE_SHA256' in c for c in referenced))
+
+    def test_zeroing_covers_fp32_accumulator_without_crossing_its_last_byte(self):
         tree = ast.parse((ROOT/'moe_dynamic_gated_sf6_prefill.py').read_text())
         body = method(tree,'initialize_route_q0_and_publish')
         wanted = {'cols_u32','scatter_total_u32','scatter_vecs'}
@@ -42,14 +54,14 @@ class PrefillRouteCacheTests(unittest.TestCase):
         for rows in (8193,9216,16128,32256,32768):
             ns = dict(Int32=int,cols=4096,num_tokens=rows)
             exec(code,ns)
-            self.assertEqual(ns['scatter_total_u32']*4,rows*4096*2)
-            self.assertEqual(ns['scatter_vecs']*16,rows*4096*2)
+            self.assertEqual(ns['scatter_total_u32']*4,rows*4096*4)
+            self.assertEqual(ns['scatter_vecs']*16,rows*4096*4)
             # Each thread owns one arithmetic progression of vector indices.
             total, stride = ns['scatter_vecs'],48*288
             counts = [max(0,(total-1-tid)//stride+1) for tid in range(stride)]
             self.assertEqual(sum(counts),total)
             last = max(tid+(count-1)*stride for tid,count in enumerate(counts) if count)
-            self.assertEqual((last+1)*16,rows*4096*2)
+            self.assertEqual((last+1)*16,rows*4096*4)
 
 
 if __name__ == '__main__':

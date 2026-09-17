@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reuse Q0 routing metadata in long prefill with FP32 route accumulation.
 
-The pinned Q0 producer and epilogue preserve each rounded BF16 contribution,
-accumulate in FP32, and round once when publishing the output. Word scale decoding uses the
-separate prototype producer specialization; GPU qualification is pending.
+The pinned Q0 producer preserves each rounded BF16 contribution, the pinned
+EP-local epilogue (the graft below) accumulates those contributions in FP32 and
+rounds once when publishing the output. Word scale decoding uses the separate
+prototype producer specialization. The FP32 plane doubles scatter atomic
+traffic and adds one [T,4096] FP32->BF16 conversion per layer chunk; both
+input ABIs compile on CPU, and GPU qualification of this combined
+scale-search + FP32 tree is pending.
 """
 from functools import lru_cache
 import hashlib
@@ -30,13 +34,18 @@ from .moe_dynamic_gated_sf6_words import MoEGatedDynamicKernelSF6Words
 from .moe_dynamic_ep_local import MoEGatedEPLocalKernel
 
 Q0_SOURCE_SHA256 = '427e73dd5391cedd640441efd0df3f64741a67942721d42d1c56faafb0107616'
+# The epilogue is grafted from the EP-local kernel: its method body is part of
+# this kernel's arithmetic, so its source is pinned exactly like the Q0 parent's.
+EP_LOCAL_SOURCE_SHA256 = '34c6bf3c5eeb824b294a9577b62ae1dcd762a14de563aaf25deb0d6d5cd1830b'
 
 
 @lru_cache(maxsize=1)
 def stock_contract_matches():
+    from . import moe_dynamic_ep_local as ep_local
     from . import moe_dynamic_gated_sf6_q0 as q0
     return (q0.stock_contract_matches()
-            and hashlib.sha256(Path(q0.__file__).read_bytes()).hexdigest() == Q0_SOURCE_SHA256)
+            and hashlib.sha256(Path(q0.__file__).read_bytes()).hexdigest() == Q0_SOURCE_SHA256
+            and hashlib.sha256(Path(ep_local.__file__).read_bytes()).hexdigest() == EP_LOCAL_SOURCE_SHA256)
 
 
 class MoEGatedDynamicKernelSF6Prefill(MoEGatedDynamicKernelSF6Words):
