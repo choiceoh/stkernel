@@ -28,7 +28,7 @@ prefix caching cannot hit whatever PREFIX_CACHE is.
 
   python3 probes/prefill_chunk_sweep.py [--ctx 32000,128000] [--reps 2]
       [--long-reps 1] [--chunks 1152,2304,4608,8192] [--chunk-file PATH]
-      [--trace-chunks 8192,1152] [--json OUT]
+      [--trace-ctxs 32000,128000] [--json OUT]
 """
 from __future__ import annotations
 

@@ -108,11 +108,9 @@ def main() -> int:
 
     model_py = Path(args.model_py) if args.model_py else None
     if model_py is None:
-        for cand in (HERE / "probes/_dsv41_model.py",
-                     Path("/home/choiceoh/models/DeepSeek-V4.1-Flash/inference/model.py")):
-            if cand.is_file():
-                model_py = cand
-                break
+        cand = Path("/home/choiceoh/models/DeepSeek-V4.1-Flash/inference/model.py")
+        if cand.is_file():
+            model_py = cand
     if model_py is None or not model_py.is_file():
         raise SystemExit(
             "need the checkpoint's inference/model.py (--model-py). Without it "

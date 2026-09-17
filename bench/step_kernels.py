@@ -19,14 +19,13 @@ step_sim 은 장치 시간을 실측 상수로 폴딩한다(한 판이 상수의
                  상태 슬롯 247.2 MiB (recurrent 204 + 드래프터 링 40 + conv 3.2)
   스텝당         all-reduce(k_oneshot) 102 회 — 실측 확정(STEP_KERNEL_MAP)
 
-검증 스텝은 1+k 토큰을 한 번에 본다(k=6 → 7 토큰): 전문가 읽기는 그 7 토큰이 뽑는
-*서로 다른* 전문가 수(기댓값 288×(1−(1−8/288)⁷) ≈ 51.6 + 공유 1)로 정해지고, 어텐션
-KV 는 컨텍스트에, KDA 상태는 행 수에 정확히 비례한다. GB10 통합메모리 공칭 대역폭
-273 GB/s 에 도달률 하나(`--eff`, 기본 0.85)와 집합통신 지연 하나(`--ar-ms`)가 이 모형의
-전부다 — 둘 다 한 기록의 decode ms 에 맞춰 폼하고(calibrate), 나머지는 예측이다.
+검증 스텝은 1+k 토큰을 한 번에 본다(k=SPEC_K → k+1 토큰): 전문가 읽기는 그 k+1 토큰이
+뽑는 *서로 다른* 전문가 수(기댓값 288×(1−(1−8/288)^(k+1)) + 공유 1)로 정해지고, 어텐션
+KV 는 컨텍스트에, KDA 상태는 행 수에 정확히 비례한다. 대역폭 도달률과 집합통신 지연은
+따로 노브로 받지 않는다 — 한 기록의 decode ms 에 맞춰 폼한다(calibrate), 나머지는 예측이다.
 
     python3 bench/step_kernels.py                    # 분해표 + 기록 대비
-    python3 bench/step_kernels.py --eff 0.8 --ar-ms 0.08
+    python3 bench/step_kernels.py --model glm53 --k 7
     python3 bench/step_kernels.py --ctx 2000,32000,128000 --width 1,4
 
 정직한 자리: 커널 미시구조(점유율·캐시)는 흉내 내지 않는다 — 바이트 예산과 도달률이다.
@@ -104,7 +103,7 @@ class EngineBytes:
     moe_layers: int = 42
     spec_k: int = 7
     tp: int = 4
-    bw_bytes_s: float = 273e9                  # GB10 통합메모리 공칭(도달률은 --eff)
+    bw_bytes_s: float = 273e9                  # GB10 통합메모리 공칭
     # ---- PR #838(c4_scaling_20260913) 실측 정정: 바이트는 맞았으나 셋이 틀렸다 ----
     expert_mb: float = 2.10 + 1.05 + 0.30      # w13 2.10 + w2 1.05 + SF6 0.30 MB/전문가/랭크 (3.44; 아레나 표 평균 3.54 와 3%)
     moe_bw: float = 207e9                      # 정적 MoE 커널 실측 207 GB/s = 공칭의 76% (§6 CUPTI)
@@ -396,7 +395,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ctx", default="2000,32000,128000")
     ap.add_argument("--width", default="1", help="행 수(폭) — C=4 예측은 --width 1,4")
-    ap.add_argument("--k", type=int, help="드래프트 k (기본 6)")
+    ap.add_argument("--k", type=int, help="드래프트 k (기본 facts.py 의 SPEC_K; glm53=7)")
     ap.add_argument("--model", default="glm53", choices=sorted(MODEL_REGISTRY),
                     help="ST 오라클의 대상 모델(기본 glm53) — 레지스트리에 없으면 거부")
     ap.add_argument("--partial", action="store_true",
@@ -423,7 +422,7 @@ def main() -> int:
     if facts:
         b.spec_k = facts["spec_k"]
         b.tp = facts["tp"]
-    fallback = ("문서 폴백(288 전문가·42층·k=6·TP=4)" if args.model == "glm53"
+    fallback = ("문서 폴백(288 전문가·42층·k=7·TP=4)" if args.model == "glm53"
                 else f"facts.py 없음 — 레지스트리+구간({args.model})")
     provenance = [f"ST-Oracle · 모델: {args.model} · 형상: {facts.get('source', fallback)}"
                   + (f" [k={b.spec_k}, TP={b.tp}, 청크 {facts['chunk_align']} 정렬]" if facts else "")]

@@ -2,12 +2,13 @@
 # Preserve the canonical onepass gates while retaining its separate SSE channels.
 set -euo pipefail
 name=${1:?}; knobs=${2:-}; out=${MOE_ONEPASS_OUT:?}
-# Empty knobs mean the current profile default, including recovery arms.
+# This harness models only the t and t,r recovery arms; the profile default is
+# now t,r,sf6, so pass a knob explicitly instead of relying on the default.
 mode=$(sed -n 's/^VLLM_GLM53_B12X_STATIC_V2=\([^[:space:]]*\)[[:space:]]*$/\1/p' "$REPO/profiles/glm53.env" | tail -1)
 for pair in $knobs; do
   [[ $pair != VLLM_GLM53_B12X_STATIC_V2=* ]] || mode=${pair#*=}
 done
-[[ $mode == t || $mode == t,r ]] || exit 2
+[[ $mode == t || $mode == t,r ]] || { echo "ABORT: moe_reform_lever models only t or t,r (got: $mode)" >&2; exit 2; }
 cta=$(sed -n 's/^VLLM_GLM53_MK_INPUT_CTA=\([0-9]\+\)[[:space:]]*$/\1/p' "$REPO/profiles/glm53.env" | tail -1)
 [[ $cta == 2 || $cta == 4 ]] || exit 2
 v4_sha=$(sha256sum "$REPO/overlay/modules/glm53_moe/moe_static_kernel_v4.py" | cut -d ' ' -f 1)

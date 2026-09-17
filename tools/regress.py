@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import pathlib
 import subprocess
 import sys
@@ -58,6 +57,7 @@ def main() -> int:
         if not (base / "tools" / "check.py").exists():                # the reference predates this tool: lend it ours
             (base / "tools").mkdir(exist_ok=True)
             (base / "tools" / "check.py").write_bytes((ROOT / "tools" / "check.py").read_bytes())
+            (base / "tests").mkdir(exist_ok=True)
             (base / "tests" / "__init__.py").write_bytes((ROOT / "tests" / "__init__.py").read_bytes())
         print(f"  running both trees ({a.ref} and the working tree) ...", flush=True)
         was, now = verdicts(base, a.pattern, a.jobs, a.gpu), verdicts(ROOT, a.pattern, a.jobs, a.gpu)

@@ -26,7 +26,12 @@ import __future__
 # literal "--probe" that an earlier `case` refactor had removed, so the whole
 # suite exited at that check before reaching the audited helpers. Only that pin
 # changed; the three audited helpers above are AST-identical.
-LOGIC_AUDIT = 'b77a4c83b128dfb55ec4b164affc7c25d530cd89ca769210046dc6f05be37af2'
+#
+# Re-pinned again 2026-09-17: hy4 now derives its overlay root from
+# TARGET_PREFIX like glm53 (the dsv41 profile binds at the site-packages root),
+# and the dsv41_preshard guard checks the real `rank_of_expert` name. The three
+# audited helpers remain AST-identical.
+LOGIC_AUDIT = 'a85748e0dfd03134b77b84e0845f32c83b2cf8291a99642e9ff99b322e04cc36'
 CONTRACTS = {
     'math': ('test_prefill_chunker','overlay/modules/mla_indexer/indexer.py','split_indexer_prefill_chunks'),
     'layout': ('test_sp_ranges','overlay/modules/dsv4_attention/attention.py','_indexer_sp_owned_ranges'),
