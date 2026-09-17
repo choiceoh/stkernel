@@ -21,7 +21,13 @@ and the PR remains a draft. A further context ablation rules the
 assistant-provenance memory records out as the differentiator: neutralizing them
 at the id level (same token count, everything else byte-identical) leaves the
 failure intact in both arms, and all three outputs score clean on the canonical
-Korean glyph counters while being semantically broken. See
+Korean glyph counters while being semantically broken. As of 2026-09-18 the
+exact original request's **glyph-level texture improves into the normal band**
+on tree `048b682d75f9` (unseen(ko) 0.103 native vs 0.26 on the same morning's
+boot) — but texture is not recovery: an ablation arm that scored 0.108 still
+contains welded non-words, a follow-up on a #1157 build through the general
+inference path corrupted again, and the #1157 causal effect remains
+unverified — see [the clues0918 campaign](code-audit.md). See
 [the follow-up audit](code-audit.md),
 [the production replay receipts](merged-production-replay-evidence.json) and
 [the shared-smoothing replay](shared-smoothing-replay-evidence.json).
