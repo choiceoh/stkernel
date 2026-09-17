@@ -519,6 +519,13 @@ by counts glyph damage; this failure is semantic, and the gate has no case that
 can see it — the incident needs a graded semantic case over a long agentic
 context.
 
+The gate this incident lacks is `bench/agentic-recall.py`: it builds one long
+agentic context in the product's shape, buries one exact fact (a code, a date) in
+the oldest third, puts three decoys in the newest third, and requires the answer
+to state the fact and neither decoy -- deterministically, without a judge, beside
+the glyph counters of `bench/korean-corruption.py` that scored these answers
+clean.
+
 **Ruled out:** the assistant-reasoning memory records are not the differentiator.
 Neutralizing either set leaves the failure intact, so "strip the records" is
 hygiene rather than the incident repair. The next causal step is the measurement
