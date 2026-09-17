@@ -17,7 +17,7 @@ def compile_check(report):
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', side_effect=lambda module, name, build, **kw: build()):
             for rows in (8, 16):
-                for mode in (0, 1, 2):
+                for mode in (0, 1, 2, 3):
                     cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True, input_reuse=mode)
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8, config=cfg,
                                             mac_override=48, w13_chunk=256,
@@ -82,14 +82,14 @@ def moe_frontend_check(report, ranks):
             elif scale_case == 'uniform_shared':
                 fx.ids[0].copy_(torch.arange(8, device='cuda').expand(rows, 8))
             snapshots = {}
-            for mode in (0, 1, 2):
+            for mode in (0, 1, 2, 3):
                 cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True, input_reuse=mode)
                 with patch.object(md, '_STATIC_V2_OVERRIDE', cfg), patch.object(md, '_get_static_kernel_v2', observe):
                     layer.moe(256, fx.x, fx.ids[0], fx.routes[0])
                 torch.cuda.synchronize()
                 snapshots[mode] = snapshot(captured[-1])
                 captured.clear()
-            for mode in (1, 2):
+            for mode in (1, 2, 3):
                 base, got = snapshots[0], snapshots[mode]
                 if base.keys() != got.keys():
                     raise AssertionError(f'{scale_case} rows={rows} mode={mode}: routed rows changed')
@@ -119,9 +119,9 @@ def moe_check(report, ranks):
            allocated_bytes=torch.cuda.memory_allocated())
     spread = cells.calibrate(layers, report)
     base = md._parse_glm53_static_v2('t,r,sf6,batch')
-    candidates = ['reuse', 'striped']
+    candidates = ['reuse', 'striped', 'routes']
     arms = [(name, chunk, dict(base, input_vec16=True, input_reuse=mode))
-            for name, mode in (('base', 0), ('reuse', 1), ('striped', 2), ('repeat', 0))]
+            for name, mode in (('base', 0), ('reuse', 1), ('striped', 2), ('routes', 3), ('repeat', 0))]
     failures = []
     for rows in (8, 16):
         fixtures = [(f'c{rows//8}_requests', rows, rows//8, spread),

@@ -51,13 +51,13 @@ def main():
                 patch.object(md, 'get_max_active_clusters', return_value=48), \
                 patch.object(md, 'build_and_load_cute_dsl_kernel', build_resources):
             for rows in (8, 16):
-                for mode in ((0,) if args.control_only else (0, 1, 2)):
+                for mode in ((0,) if args.control_only else (0, 1, 2, 3)):
                     cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True, input_reuse=mode)
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8, config=cfg,
                         mac_override=48, w13_chunk=256, activation='swigluoai_uninterleave',
                         swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
                     records[-1].update(rows=rows, input_reuse=mode)
-    if torch.cuda.is_initialized() or len(records) != (2 if args.control_only else 6):
+    if torch.cuda.is_initialized() or len(records) != (2 if args.control_only else 8):
         raise RuntimeError('missing cells or unexpectedly initialized CUDA context')
     sources = ('engine/kernels/b12x/moe_static_kernel_v4.py', 'engine/kernels/b12x/moe_dispatch.py')
     args.output.write_text(json.dumps(dict(gpu_used=False, scope='static native resources only', kernels=records,

@@ -285,7 +285,7 @@ class MoEStaticKernelV4:
         self.scatter_reuse = bool(scatter_reuse)
         self.input_vec16 = bool(input_vec16)
         self.input_reuse = int(input_reuse)
-        if self.input_reuse not in (0, 1, 2) or (self.input_reuse and not self.input_vec16):
+        if self.input_reuse not in (0, 1, 2, 3) or (self.input_reuse and not self.input_vec16):
             raise ValueError("input reuse requires a bounded BF16x16 cache cell")
         if self.input_vec16 and sf_vec_size != 16:
             raise ValueError("vector input loads require complete BF16x16 scale groups")
@@ -914,6 +914,60 @@ class MoEStaticKernelV4:
         print(f"REFORM_SF6_LAYOUT_PASS FC1={self.sf1_block_bytes} FC2={self.sf2_block_bytes}", flush=True)
 
     @cute.jit
+    def _prepare_token_routes(self, tid: Int32, smem, ids: cute.Tensor,
+                              weights: cute.Tensor, counts: cute.Tensor,
+                              active: cute.Tensor, experts: cute.Tensor,
+                              global_to_local: cute.Tensor, tokens: cute.Tensor,
+                              route_weights: cute.Tensor, metadata: cute.Tensor,
+                              topk: Int32):
+        # One CTA prepares the small K7 route table while the other resident
+        # CTAs quantize inputs. The ordinary phase-0 grid fence publishes both.
+        # First-occurrence order gives every expert a compact ID and each
+        # route a unique row, without global CAS, spins or row-count atomics.
+        pairs = Int32(ids.shape[0])
+        expert = Int32(-1)
+        row = Int32(0)
+        count = Int32(0)
+        first = tid
+        if tid < pairs:
+            expert = ids[tid].to(Int32)
+            _st_shared_i32(smem + tid * Int32(4), expert)
+        cute.arch.sync_threads()
+        if tid < pairs:
+            j = Int32(0)
+            while j < pairs:
+                other = _ld_shared_i32(smem + j * Int32(4))
+                if other == expert:
+                    count += Int32(1)
+                    if j < tid:
+                        row += Int32(1)
+                    if j < first:
+                        first = j
+                j += Int32(1)
+            _st_shared_i32(smem + (pairs + tid) * Int32(4), Int32(row == 0))
+        cute.arch.sync_threads()
+        if tid < pairs:
+            local = Int32(0)
+            total = Int32(0)
+            j = Int32(0)
+            while j < pairs:
+                flag = _ld_shared_i32(smem + (pairs + j) * Int32(4))
+                total += flag
+                if j < first:
+                    local += flag
+                j += Int32(1)
+            if tid == Int32(0):
+                active[Int32(0)] = total
+            if row == Int32(0):
+                counts[local] = count
+                experts[local] = expert
+                global_to_local[expert] = local
+            tokens[local, row] = tid // topk
+            route_weights[local, row] = weights[tid]
+            metadata[tid, 0] = local
+            metadata[tid, 1] = row
+
+    @cute.jit
     def _resident_grid_barrier(
         self,
         barrier_count: cute.Tensor,
@@ -1379,26 +1433,33 @@ class MoEStaticKernelV4:
             # routed slot selects a different expert. No new allocation or
             # barrier: phase 0 publishes the cache at the existing grid fence.
             reuse_bytes = num_tokens * (cols // Int32(2) + sf_blocks_per_row)
+            if cutlass.const_expr(self.input_reuse == 3):
+                reuse_bytes += total_pairs * Int32(8)
             reuse_base = packed_a_storage.iterator + (Int32(packed_a_storage.shape[0]) - reuse_bytes)
             reuse_layout = cute.make_layout((num_tokens, sf_blocks_per_row), stride=(sf_blocks_per_row, 1))
             reuse_packed = cute.make_tensor(cute.recast_ptr(reuse_base, dtype=Uint64), reuse_layout)
             reuse_scales = cute.make_tensor(reuse_base + num_tokens * (cols // Int32(2)), reuse_layout)
+            if cutlass.const_expr(self.input_reuse == 3):
+                route_base = reuse_base + num_tokens * (cols // Int32(2) + sf_blocks_per_row)
+                reuse_routes = cute.make_tensor(cute.recast_ptr(route_base, dtype=Int32),
+                    cute.make_layout((total_pairs, 2), stride=(2, 1)))
 
         # ------------------------------------------------------------------
         # Phase 0 / Phase 1 (stock frontend)
         # ------------------------------------------------------------------
-        i = flat_tid
-        while i < num_experts:
-            row_counts[i] = Int32(0)
-            i += flat_stride
-        i = flat_tid
-        while i < num_global_experts:
-            global_to_local_expert[i] = Int32(-1)
-            i += flat_stride
-        if flat_tid == Int32(0):
-            active_expert_count[Int32(0)] = Int32(0)
-            if cutlass.const_expr(self.even or self.split):
-                next_item[Int32(0)] = Int32(0)
+        if cutlass.const_expr(self.input_reuse != 3):
+            i = flat_tid
+            while i < num_experts:
+                row_counts[i] = Int32(0)
+                i += flat_stride
+            i = flat_tid
+            while i < num_global_experts:
+                global_to_local_expert[i] = Int32(-1)
+                i += flat_stride
+            if flat_tid == Int32(0):
+                active_expert_count[Int32(0)] = Int32(0)
+                if cutlass.const_expr(self.even or self.split):
+                    next_item[Int32(0)] = Int32(0)
         # Each route/128-wide intermediate part owns a complete output row.
         # All routes, including zero weights, are computed below. The private
         # reduction runs after this kernel, so no clear/atomic scatter is needed.
@@ -1412,7 +1473,7 @@ class MoEStaticKernelV4:
             j += flat_stride
         if cutlass.const_expr(self.input_reuse):
             reuse_idx = flat_tid
-            if cutlass.const_expr(self.input_reuse == 2):
+            if cutlass.const_expr(self.input_reuse in (2, 3)):
                 reuse_idx = (Int32(tidx) // Int32(32) * Int32(gdim_z) + Int32(bidz)) * Int32(32) + Int32(tidx) % Int32(32)
             while reuse_idx < num_tokens * sf_blocks_per_row:
                 token_idx = reuse_idx // sf_blocks_per_row
@@ -1440,6 +1501,15 @@ class MoEStaticKernelV4:
                 reuse_packed[token_idx, block_idx] = packed
                 reuse_scales[token_idx, block_idx] = scale
                 reuse_idx += flat_stride
+        if cutlass.const_expr(self.input_reuse == 3):
+            assert cute.size_in_bytes(self.b_dtype, b2_smem_staged) >= 8 * cute.size(topk_ids)
+            if Int32(bidz) == Int32(0):
+                # FC2 weights have not been loaded yet. Its stage storage
+                # exists in both cells, unlike C2's eliminated sC buffer.
+                self._prepare_token_routes(Int32(tidx), shared_ptr_to_u32(storage.sB2.data_ptr()),
+                    topk_ids, topk_weights, row_counts, active_expert_count,
+                    weight_expert_ids, global_to_local_expert, token_map, token_weights,
+                    reuse_routes, num_topk)
         cute.arch.sync_threads()
         self._resident_grid_barrier(
             barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
@@ -1458,51 +1528,55 @@ class MoEStaticKernelV4:
             weight = topk_weights[pair_idx].to(cutlass.Float32)
             local_expert_id = Int32(0)
             row = Int32(0)
-            if is_cta_leader > Int32(0):
-                prior_local_expert_id = _atomic_cas_global_i32(
-                    get_ptr_as_int64(global_to_local_expert, expert_id),
-                    Int32(-1),
-                    Int32(-2),
-                )
-                if prior_local_expert_id == Int32(-1):
-                    local_expert_id = atomic_add_global_i32(
-                        get_ptr_as_int64(active_expert_count, Int32(0)),
+            if cutlass.const_expr(self.input_reuse == 3):
+                local_expert_id = reuse_routes[pair_idx, 0]
+                row = reuse_routes[pair_idx, 1]
+            else:
+                if is_cta_leader > Int32(0):
+                    prior_local_expert_id = _atomic_cas_global_i32(
+                        get_ptr_as_int64(global_to_local_expert, expert_id),
+                        Int32(-1),
+                        Int32(-2),
+                    )
+                    if prior_local_expert_id == Int32(-1):
+                        local_expert_id = atomic_add_global_i32(
+                            get_ptr_as_int64(active_expert_count, Int32(0)),
+                            Int32(1),
+                        )
+                        weight_expert_ids[local_expert_id] = expert_id
+                        _st_global_release_i32(
+                            get_ptr_as_int64(global_to_local_expert, expert_id),
+                            local_expert_id,
+                        )
+                    else:
+                        if prior_local_expert_id == Int32(-2):
+                            _spin_wait_global_eq_i32(
+                                get_ptr_as_int64(global_to_local_expert, expert_id),
+                                Int32(-2),
+                            )
+                            prior_local_expert_id = _ld_global_acquire_i32(
+                                get_ptr_as_int64(global_to_local_expert, expert_id),
+                            )
+                        local_expert_id = prior_local_expert_id
+                    row = atomic_add_global_i32(
+                        get_ptr_as_int64(row_counts, local_expert_id),
                         Int32(1),
                     )
-                    weight_expert_ids[local_expert_id] = expert_id
-                    _st_global_release_i32(
-                        get_ptr_as_int64(global_to_local_expert, expert_id),
-                        local_expert_id,
-                    )
-                else:
-                    if prior_local_expert_id == Int32(-2):
-                        _spin_wait_global_eq_i32(
-                            get_ptr_as_int64(global_to_local_expert, expert_id),
-                            Int32(-2),
-                        )
-                        prior_local_expert_id = _ld_global_acquire_i32(
-                            get_ptr_as_int64(global_to_local_expert, expert_id),
-                        )
-                    local_expert_id = prior_local_expert_id
-                row = atomic_add_global_i32(
-                    get_ptr_as_int64(row_counts, local_expert_id),
-                    Int32(1),
-                )
-                if cutlass.const_expr(self.even or self.split):
-                    if row % Int32(self.tile_m) == Int32(0):
-                        atomic_add_global_i32(
-                            get_ptr_as_int64(next_item, Int32(0)),
-                            Int32(self.output_tile_count_n),
-                        )
-                map_idx = local_expert_id * max_rows + row
-                scatter_row = pair_idx if cutlass.const_expr(self.route_scatter) else token_idx
-                st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
-                st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
-                _st_shared_i32(ctrl_base_addr + Int32(0), local_expert_id)
-                _st_shared_i32(ctrl_base_addr + Int32(4), row)
-            cute.arch.sync_threads()
-            local_expert_id = _ld_shared_i32(ctrl_base_addr + Int32(0))
-            row = _ld_shared_i32(ctrl_base_addr + Int32(4))
+                    if cutlass.const_expr(self.even or self.split):
+                        if row % Int32(self.tile_m) == Int32(0):
+                            atomic_add_global_i32(
+                                get_ptr_as_int64(next_item, Int32(0)),
+                                Int32(self.output_tile_count_n),
+                            )
+                    map_idx = local_expert_id * max_rows + row
+                    scatter_row = pair_idx if cutlass.const_expr(self.route_scatter) else token_idx
+                    st_global_i32(get_ptr_as_int64(token_map, map_idx), scatter_row)
+                    st_global_f32(get_ptr_as_int64(token_weights, map_idx), weight)
+                    _st_shared_i32(ctrl_base_addr + Int32(0), local_expert_id)
+                    _st_shared_i32(ctrl_base_addr + Int32(4), row)
+                cute.arch.sync_threads()
+                local_expert_id = _ld_shared_i32(ctrl_base_addr + Int32(0))
+                row = _ld_shared_i32(ctrl_base_addr + Int32(4))
 
             gs_value = input_global_scale[expert_id].to(cutlass.Float32)
             reuse_this = Int32(0)
@@ -1568,7 +1642,8 @@ class MoEStaticKernelV4:
                 scale_storage[scale_offset] = scale_byte
                 sf_idx += Int32(self.threads_per_cta)
 
-            cute.arch.sync_threads()
+            if cutlass.const_expr(self.input_reuse != 3):
+                cute.arch.sync_threads()
             pair_idx += Int32(gdim_z)
 
         self._resident_grid_barrier(

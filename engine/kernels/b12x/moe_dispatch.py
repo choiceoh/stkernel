@@ -2418,8 +2418,10 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
         1 <= m <= 8 or (config.get("batch_reform", False) and m == 16)
         or bool(config.get("reform_every_static", False)))
     reuse = int(config.get("input_reuse", 0))
-    if reuse not in (0, 1, 2) or (reuse and not (reform and m in (8, 16) and config.get("input_vec16", True))):
+    if reuse not in (0, 1, 2, 3) or (reuse and not (reform and m in (8, 16) and config.get("input_vec16", True))):
         raise ValueError("input reuse requires the eight/sixteen-row vector-input reform cell")
+    if reuse == 3 and any(config.get(k) for k in ("even", "split", "probe_route_scatter")):
+        raise ValueError("input reuse route preparation requires the ordinary resident scheduler")
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))
@@ -2509,6 +2511,8 @@ def _get_static_kernel_v2(
     config = _static_v2_decode_config(config, m)
     if config.get("input_reuse", 0):
         cache_bytes = m * (k // 2 + k // 16)
+        if config["input_reuse"] == 3:
+            cache_bytes += m * num_topk * 8
         spare_bytes = (state_E - m * num_topk) * max_rows * (k // 2)
         if ((state_E, weight_E, k, n, num_topk) != (288, 288, 4096, 512, 8)
                 or max_rows < m or cache_bytes > spare_bytes):
