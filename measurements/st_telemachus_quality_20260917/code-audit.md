@@ -613,3 +613,52 @@ question still matters, the decisive experiment is a hold on `746b9f695a13`
 running the original thinking-on request through the general inference path,
 graded semantically — corruption there, beside a pass on 048b682d, would
 isolate #1157; corruption on both would close the as2 hypothesis.
+
+## Determinism, the cleared surfaces, and the margin instrument, 2026-09-18
+
+Three findings from the captured evidence, and the tool the next arm comparison needs.
+
+**The engine is deterministic.** A repeat of one arm is bit-identical over all 90
+prefill stages (`rank0-pass21.pt` vs `pass23.pt`, mode 0, rows 17,257: rel 0.00000
+in every stage, `layers` and `stage_tail` alike), and mode 5 (eager single-position)
+against mode 0 (default) on the same chunk (`pass1.pt` vs `pass27.pt`, rows 17,749,
+ctx 32,256) is bit-identical too. That is the frame the arm comparisons need: **when
+two arms produce different text, whatever changed between them caused it** -- not a
+race, not scheduling.
+
+**The weight store is faithful where it can be checked.** The served pack
+(`st-glm53-9391-up-gate-full`, layout `st-glm53-b12x-up-gate-v1`) against the
+verified preshard (`st-glm53-nvidia-tp4-9391`, `source_revision 09b04e5e`, "all
+source tensors accounted for", byte-exact rank files):
+
+- 946 tensors share a non-quantised dtype; the 20 sampled across layers 0/1/3/11/20/44
+  (mHC parameters, norms, `kda.o_proj`, `qkv_a`, `idx.w_heads`, `sh_gate_up`) are
+  **bit-identical** (rel_l2 0.000000, max|d| 0.0000).
+- The fp4 payloads are a **re-encode** of the same weights (two quantiser runs differ
+  in every byte histogram bin by ~1%), and the block scales are that re-encode's own
+  -- with the checkpoint's per-tensor alpha **folded in** (pack/check scale ratio =
+  `alpha` within 5%, experts 0/73/287 × FC1/FC2).
+- The activation quantiser's *rule* matches: both sides produce the base code
+  `e4m3(amax / 6)` per block (e.g. captured `amax` 1.8672 -> engine code 42 = 0.3125,
+  checkpoint `a13_scale` 0.00113932 -> code 121 x 0.00113932 = 0.3281).
+
+**One class of constant is not carried over, and it is the one now being restored.**
+The served pack contains **no** ModelOpt scale tensors at all (the checkpoint has 180:
+`a13_scale`, `a2_scale`, `*_alpha`), and in the preshard every per-expert input scale
+is a **single constant** (`L3.moe.a13_scale`: 288 values, 1 distinct). The original
+checkpoint's per-expert input globals -- 36,288 values -- were fetched separately and
+an isolated restore control is being measured in the campaign (see that session's
+`probe(glm53): restore calibrated input globals in isolated scale control`).
+
+**The margin instrument: `tools/incident_logit_margin.py`.** Reads the
+`incident-logits/*.pt` captures and reports, per (admission, generation), the chosen
+token's probability and its margin over the runner-up; `--compare` reports the shared
+rows whose top-1 differs with each side's margin. The attribution rule it encodes:
+**a flip at a tight margin is the knife edge; a flip at a wide margin is a different
+computation.** On the two captures in hand (whose prompts differ by one token, so the
+wide-margin flips are expected): `clues` gen 0 chosen with p 0.254 / margin 0.500,
+`causal` 0.701 / 2.375; median chosen probability 0.980 over 42 captures, only 3 under
+0.5; the tightest flips sit at margins 0.250-0.500 (gens 0, 116, 117), the rest at
+1.6-5.5. A restore control that flips the text with its first divergence at a tight
+margin has moved a knife edge; one that flips it at a wide margin has changed the
+function, and the surface above says which constants can do that.
