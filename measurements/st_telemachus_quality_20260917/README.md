@@ -140,8 +140,10 @@ NVIDIA FP32 tensors rounded through BF16. All 42 router gate matrices match
 the original. With actual inputs held fixed, restoring just the FP32 bias changes
 115 of 210 selected expert sets, replacing 149 expert slots. This includes
 58 of 84 sampled prefill selections and 57 of 126 decode selections.
-The same-boot original-request quality control is queued. Do not call this a
-root cause until the response quality gate passes.
+The exclusive quality controls have now completed on `cf04150e458a`: restoring
+the original FP32 router biases, KDA constants, or both did not recover response
+quality. All seven controls failed manual review, including the unchanged
+50,005-ID thinking-on request. The restoration prototype is not adopted.
 
 [Sanitized operands and constant evidence](causal-operands-0918.json) contains
 the runtime hashes, numerical comparisons and replay receipts. Private inputs,
@@ -154,3 +156,36 @@ layer to 6–11. For example, layer 37 has 272 distinct original values and only
 6 rounded values. Promoting those rounded values back to FP32 does not restore
 the lost relative corrections. The actual-input selection counterfactual above
 measures the resulting effect; average uncentered weight error alone hides it.
+
+## Post-#1157 native recheck and PR #1162 review
+
+The incident remains unresolved on unmodified main `16485beedd97`. Exclusive
+session `st-native1157-0918` replayed the original 50,005 IDs at T=1, seeds 7 and
+11, without diagnostic capture code. Both requests used a fresh cache namespace,
+reported zero reused tokens, and independently advanced the served count by one.
+They ended naturally at 376 and 455 tokens, respectively, but both still contain
+malformed Korean or incoherent semantic relationships. Forty source hashes
+across four ranks match the committed main tree, including `lanes.py`'s `as2`
+recipe, and no incident helper modules were present. All four serving tiers
+were dropped and the lease released at 07:44:49 KST.
+
+PR [#1162](https://github.com/choiceoh/stkernel/pull/1162)'s initial recovery claim
+was not supported by its private outputs. Its scalar sample was capped at 130
+tokens, while two supposedly clean ablation arms contain incoherent Korean at
+unseen(ko) scores of 0.108 and 0.132. The native 530-token sample also has malformed
+word choices and semantic errors. Matching output-ID hashes confirm these are
+the exact samples in that PR's receipts. During this review the PR was corrected
+and merged as `87bb6c02caf1`: it now states that texture improves but response
+recovery and the causal effect of #1157 remain unverified.
+
+This native recheck includes later tail-selection fixes and therefore does not
+isolate the effect of changing `as1` to `as2`. It establishes that the current
+language-quality failure persists without the diagnostic instrumentation.
+The differing prompts and precision controls in the older cross-build comparison
+also prevent attributing recovery to #1157. Original FP32-constant restoration
+is likewise insufficient; no checkpoint or precision change is promoted as a
+solution.
+
+[Sanitized review and live replay receipts](post1157-quality-evidence.json)
+preserve identities, output hashes, parameters and manual quality verdicts.
+Private prompts, output token arrays and decoded prose remain outside Git.

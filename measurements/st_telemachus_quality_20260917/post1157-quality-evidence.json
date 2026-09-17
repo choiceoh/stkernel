@@ -1,0 +1,470 @@
+{
+  "date": "2026-09-18",
+  "incident_status": "unresolved",
+  "scope": "Review of PR 1162 recovery claim, completed FP32-constant controls, and fresh unmodified-main native replays. Private prompts, token arrays and decoded text are excluded.",
+  "pr1162": {
+    "url": "https://github.com/choiceoh/stkernel/pull/1162",
+    "initial_reviewed_head": "43435587b31bef27c672f7c83203f418b47c3c1d",
+    "corrected_head": "146c18dbd81f15de575e8fb3d009170a4d349ef7",
+    "corrected_state": "MERGED",
+    "merge_commit": "87bb6c02caf16b72ada1147d83e14f3b5b2614ea",
+    "merged_at": "2026-09-17T22:46:15Z",
+    "current_conclusion": "Texture improves; response recovery and the PR 1157 causal effect are unverified. The initial no-longer-reproduces claim was withdrawn.",
+    "initial_evidence_sha256": "c0e5e63fe97da442d70509a0ee34354632e9bb2a1f386e830c5d2705b2fde18e",
+    "cases": [
+      {
+        "case": "orig-baseline",
+        "seed": 5007,
+        "mode": 5,
+        "max_tokens": 130,
+        "prompt_tokens": 50005,
+        "completion_tokens": 130,
+        "cap_hit": true,
+        "cached_tokens": 0,
+        "unseen_ko": 0.051,
+        "ids_sha256": "a2a034b0efd5f4f2b09577f9e29ad0b2a3d90805ab60387001cbb1d369bc234f",
+        "output_text_sha256": "dd4e37d268157c540d6a0ee064193cf32d2bf99880b9dd8b511718bdca79c873",
+        "manual_quality_review": "incomplete_not_a_recovery_pass"
+      },
+      {
+        "case": "orig-native1024",
+        "seed": 7,
+        "mode": 0,
+        "max_tokens": 1024,
+        "prompt_tokens": 50005,
+        "completion_tokens": 530,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "unseen_ko": 0.103,
+        "ids_sha256": "a104456f19e3208082fb4ef8c1174500ccbb09b81e7d13251e053e184ac5a869",
+        "output_text_sha256": "b4b09f0fada0113bda2766203757d7d7ad3128246d82c68a979a2befd3f858d0",
+        "manual_quality_review": "malformed_word_choices_and_semantic_errors"
+      },
+      {
+        "case": "excise-prior",
+        "seed": 7,
+        "mode": 0,
+        "max_tokens": 1024,
+        "prompt_tokens": 49513,
+        "completion_tokens": 994,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "unseen_ko": 0.132,
+        "ids_sha256": "63a3ecbbf4f1fff730261edd7f2a0f28304364e5c27af2495e8688c9a7d17070",
+        "output_text_sha256": "c28bc1dc7c6875351dad19782739112a01ccaa4ab47ca9b634001399a297bbd5",
+        "manual_quality_review": "incoherent_korean"
+      },
+      {
+        "case": "excise-span",
+        "seed": 7,
+        "mode": 0,
+        "max_tokens": 1024,
+        "prompt_tokens": 49513,
+        "completion_tokens": 1024,
+        "cap_hit": true,
+        "cached_tokens": 0,
+        "unseen_ko": 0.136,
+        "ids_sha256": "fa37aae244469658e2a9b6116feca05506f1ce3699ba5087bc8fd369dc0b48a3",
+        "output_text_sha256": "376eea42a4366eec2bfa311c8d23932767cfc003e1d92df9b638783767500c4a",
+        "manual_quality_review": "not_regraded_in_this_review"
+      },
+      {
+        "case": "reverse-inject",
+        "seed": 7,
+        "mode": 0,
+        "max_tokens": 1024,
+        "prompt_tokens": 52898,
+        "completion_tokens": 677,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "unseen_ko": 0.108,
+        "ids_sha256": "3aa33688f403b86a2e2e961b9064d71497f1be1d5c9f03c397b3bc3a9db9a57d",
+        "output_text_sha256": "21ded5393a7c7824f22804de319c0ff97fc740cf2262a24b82a753ba6ce1d7e7",
+        "manual_quality_review": "incoherent_korean_and_malformed_text"
+      }
+    ],
+    "findings": [
+      "The 130-token scalar sample was capped before a complete answer.",
+      "The reverse-inject and excise-prior outputs contain incoherent Korean despite unseen_ko within the claimed clean band.",
+      "The 530-token native output also has malformed word choices and semantic errors.",
+      "The thinking-off BF16-dense control on another build does not isolate the effect of as2 on the original thinking-on native request."
+    ]
+  },
+  "unmodified_main": {
+    "source": "16485beedd97b4442c720d28a000b4f8957a4fcf",
+    "owner": "queue/st-native1157-0918",
+    "runtime_identity": {
+      "source": "16485beedd97b4442c720d28a000b4f8957a4fcf",
+      "owner": "queue/st-native1157-0918",
+      "ranks": {
+        "0": {
+          "release": "16485beedd97",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+            "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+            "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+            "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+            "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "incident_modules": [],
+          "as2_line": [
+            "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+          ],
+          "image": "st-engine:bracket-16485beedd97 sha256:d10d3cf1cd1130551250d55bf688abf4e6d56f8c956fe2ad9c5d2203fe4afe3b"
+        },
+        "1": {
+          "release": "16485beedd97",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+            "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+            "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+            "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+            "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "incident_modules": [],
+          "as2_line": [
+            "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+          ],
+          "image": "st-engine:bracket-16485beedd97 sha256:0791e4742e7377d9bcdfec434a515a87841c6c824abfa1a4f7610f08224bfefb"
+        },
+        "2": {
+          "release": "16485beedd97",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+            "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+            "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+            "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+            "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "incident_modules": [],
+          "as2_line": [
+            "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+          ],
+          "image": "st-engine:bracket-16485beedd97 sha256:8a83039c8610b7b4e0ac59dfc8c9aa6f3391e971b892a7927bfda4f37450cb68"
+        },
+        "3": {
+          "release": "16485beedd97",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+            "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+            "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+            "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+            "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "incident_modules": [],
+          "as2_line": [
+            "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+          ],
+          "image": "st-engine:bracket-16485beedd97 sha256:ea91162b2f5c988895bfe81c6e18edc4fb14df84b40fca8e53eec9c23b77ddc6"
+        }
+      }
+    },
+    "cases": [
+      {
+        "source": "16485beedd97b4442c720d28a000b4f8957a4fcf",
+        "owner": "queue/st-native1157-0918",
+        "mode": "unmodified-native",
+        "seed": 11,
+        "temperature": 1,
+        "top_p": 1,
+        "top_k": -1,
+        "prompt_tokens": 50005,
+        "completion_tokens": 455,
+        "max_tokens": 2048,
+        "cap_hit": false,
+        "seconds": 37.29821878008079,
+        "cached_tokens": 0,
+        "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+        "output_ids_sha256": "5a4a7b8244ae70518c2950de4f95425caf61d49b290eb4f8821ba353511a3786",
+        "output_text_sha256": "58b01527b28773d1bd862ce6adec4660dfbd553a57bb9b88174f9533d0f85fb1",
+        "served_before": 1,
+        "served_after": 2,
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      },
+      {
+        "source": "16485beedd97b4442c720d28a000b4f8957a4fcf",
+        "owner": "queue/st-native1157-0918",
+        "mode": "unmodified-native",
+        "seed": 7,
+        "temperature": 1,
+        "top_p": 1,
+        "top_k": -1,
+        "prompt_tokens": 50005,
+        "completion_tokens": 376,
+        "max_tokens": 2048,
+        "cap_hit": false,
+        "seconds": 32.665701337042265,
+        "cached_tokens": 0,
+        "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+        "output_ids_sha256": "87a5d14334c671c475a36518a24e997daac2a73aec0c31b30e0f5e3bd21fecc6",
+        "output_text_sha256": "288a64d255c092ab2f98f946fc76e62a665e3d7470f326202b1ec0e837ab6369",
+        "served_before": 0,
+        "served_after": 1,
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      }
+    ],
+    "release": {
+      "hold_ended_kst": "2026-09-18 07:44:37",
+      "all_four_tiers_dropped_by_kst": "2026-09-18 07:44:49",
+      "lease_released": true
+    },
+    "limitations": [
+      "This is a later main build with tail-selection changes after PR 1157, not a controlled as1/as2 A/B.",
+      "Both outputs ended naturally but failed manual language-quality review; output lengths and script counters alone do not establish recovery.",
+      "Request wall times include prefill and generation and are not decode throughput measurements."
+    ]
+  },
+  "fp32_constant_controls": {
+    "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+    "owner": "queue/st-fp32constants0918f",
+    "cases": [
+      {
+        "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+        "mode": 0,
+        "seed": 7,
+        "temperature": 1,
+        "thinking": "original",
+        "prompt_tokens": 50005,
+        "completion_tokens": 415,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "served_delta": 1,
+        "seconds": 35.70128765294794,
+        "output_text_sha256": "b301c6a3bb2d65764839ddafbe9077328cac1a22224fc5d67c5a9fd1dbf9e3ce",
+        "case": "mode0-original-seed7",
+        "output_ids_sha256": "2261788fb18f14df8c60c1a2946261b03d46f964ab2e3f1f5cff2a6d85d5b05e",
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      },
+      {
+        "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+        "owner": "queue/st-fp32constants0918f",
+        "mode": 15,
+        "seed": 7,
+        "thinking": "off",
+        "temperature": 1,
+        "prompt_tokens": 50006,
+        "completion_tokens": 1024,
+        "max_tokens": 1024,
+        "cap_hit": true,
+        "seconds": 158.98796075000428,
+        "cached_tokens": 0,
+        "prompt_sha256": "a5c267f68dac71d35602e68f1df7fdf5f4adabd5322d857da1cfc5d1ab3a6375",
+        "output_text_sha256": "45b2498c43a735a5c483993ef0a456ab64beee1d30c89ab42a186a8f3726ea31",
+        "case": "mode15-off-seed7",
+        "output_ids_sha256": "a67d08f578811585c916d4673761fd20160280ec2888866dcd8a0f0a566d4813",
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      },
+      {
+        "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+        "owner": "queue/st-fp32constants0918f",
+        "mode": 16,
+        "seed": 7,
+        "thinking": "original",
+        "temperature": 1,
+        "prompt_tokens": 50005,
+        "completion_tokens": 620,
+        "max_tokens": 2048,
+        "cap_hit": false,
+        "seconds": 103.15068045502994,
+        "cached_tokens": 0,
+        "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+        "output_text_sha256": "d88e2a81029e33b27c9229484cb29734dcfbbc954d23588c42039dda6b4ed833",
+        "case": "mode16-original-seed7",
+        "output_ids_sha256": "14f2e91bc06cb347ed34392d596f53a7108184946f6c58e74d18e878bfb0c143",
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      },
+      {
+        "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+        "owner": "queue/st-fp32constants0918f",
+        "mode": 5,
+        "seed": 7,
+        "thinking": "original",
+        "temperature": 1,
+        "prompt_tokens": 50005,
+        "completion_tokens": 477,
+        "max_tokens": 2048,
+        "cap_hit": false,
+        "seconds": 83.10426009795628,
+        "cached_tokens": 0,
+        "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+        "output_text_sha256": "52b90baed704ef9913facc3b770c111238a11491f8b84121a11dddf85c7ac3f0",
+        "case": "mode5-original-seed7",
+        "output_ids_sha256": "047edbf52908cc0d514a0451f0373eba33fc644fc42edbe0577714c08dec949f",
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      },
+      {
+        "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+        "owner": "queue/st-fp32constants0918f",
+        "case": "native-as2-tailpin",
+        "mode": 5,
+        "seed": 7,
+        "temperature": 1,
+        "prompt_tokens": 50006,
+        "completion_tokens": 342,
+        "max_tokens": 1024,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "served_delta": 1,
+        "seconds": 83.44474065001123,
+        "prompt_sha256": "a5c267f68dac71d35602e68f1df7fdf5f4adabd5322d857da1cfc5d1ab3a6375",
+        "output_text_sha256": "516d8f00f204e485597cb8836c99c1f9070e9b98a44c71fc0c7b79cb243f8561",
+        "output_ids_sha256": "034e4d485c8859f05585a6426003e203db3c2eef9a904ea378d5518495a057e0",
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      },
+      {
+        "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+        "owner": "queue/st-fp32constants0918f",
+        "case": "original-fp32-router-kda",
+        "mode": 16,
+        "seed": 7,
+        "temperature": 1,
+        "prompt_tokens": 50006,
+        "completion_tokens": 126,
+        "max_tokens": 1024,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "served_delta": 1,
+        "seconds": 34.00740329292603,
+        "prompt_sha256": "a5c267f68dac71d35602e68f1df7fdf5f4adabd5322d857da1cfc5d1ab3a6375",
+        "output_text_sha256": "169635dd50372519cae3035ca1dfc44317766974c83a274b7c3f5b3f3d9b50ed",
+        "output_ids_sha256": "e2d565014d248d9cfddcf4304b8cbda7414f09139aaf28407a46e6b57f5242c2",
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      },
+      {
+        "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+        "owner": "queue/st-fp32constants0918f",
+        "case": "original-fp32-router",
+        "mode": 14,
+        "seed": 7,
+        "temperature": 1,
+        "prompt_tokens": 50006,
+        "completion_tokens": 368,
+        "max_tokens": 1024,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "served_delta": 1,
+        "seconds": 67.25096365204081,
+        "prompt_sha256": "a5c267f68dac71d35602e68f1df7fdf5f4adabd5322d857da1cfc5d1ab3a6375",
+        "output_text_sha256": "81b219bfb281a0ea4dbf980a9d94ac67d739ab48c699f41af76c9288531ba0eb",
+        "output_ids_sha256": "bfb15c96e6eaf741afe3a328ab2d19bda0556c7882053be393a42fc7cd7cce23",
+        "quality_pass": false,
+        "quality_method": "manual review of decoded private output"
+      }
+    ],
+    "verdict": "Restoring original FP32 router biases, KDA constants, or both did not restore response quality. Prototype not adopted.",
+    "runtime_identity": {
+      "source": "cf04150e458a35b7a54cb243596e14d7e51d3125",
+      "owner": "queue/st-fp32constants0918f",
+      "ranks": {
+        "0": {
+          "release": "cf04150e458a",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "7799f28bdd30564bebbf95987df36c32790697ec3460589e7da38da46b76b584",
+            "engine/profiles/glm53/adapter.py": "51b5b2808b9b1a460233e286cf65aa1ec444df4ecfe3c64914539c13aaa0f719",
+            "engine/profiles/glm53/boot.py": "03cc255e9ddbc03e22fec51103ee055cb87d55e423baaf04df319c1d8fbd7013",
+            "engine/profiles/glm53/incident_operands.py": "4588830df32ea2d1d5fbc5951f8110f707ec17a834ca57f6acc7660f344a6c21",
+            "engine/profiles/glm53/incident_kda.py": "db4207ed50ae6fdedbee04f1bb9d44a4e95674001ac689f7d2cc2f2c407b7722",
+            "engine/profiles/glm53/incident_reference.py": "0a83884c9e947abd8713b38f527cb6e7cf19ddb82f3288429b331969a06ee1e1",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "image": "st-engine:bracket-cf04150e458a sha256:7763c60ac9794be48b1c4868e295c3c6ed15be1a14518efc4d6a8f046931be6a",
+          "host": "10.10.10.2"
+        },
+        "1": {
+          "release": "cf04150e458a",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "7799f28bdd30564bebbf95987df36c32790697ec3460589e7da38da46b76b584",
+            "engine/profiles/glm53/adapter.py": "51b5b2808b9b1a460233e286cf65aa1ec444df4ecfe3c64914539c13aaa0f719",
+            "engine/profiles/glm53/boot.py": "03cc255e9ddbc03e22fec51103ee055cb87d55e423baaf04df319c1d8fbd7013",
+            "engine/profiles/glm53/incident_operands.py": "4588830df32ea2d1d5fbc5951f8110f707ec17a834ca57f6acc7660f344a6c21",
+            "engine/profiles/glm53/incident_kda.py": "db4207ed50ae6fdedbee04f1bb9d44a4e95674001ac689f7d2cc2f2c407b7722",
+            "engine/profiles/glm53/incident_reference.py": "0a83884c9e947abd8713b38f527cb6e7cf19ddb82f3288429b331969a06ee1e1",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "image": "st-engine:bracket-cf04150e458a sha256:2ead2f53e14b1d165da22ea0c4073ab6f2b13b8320266331d4f47b99869ace50",
+          "host": "10.10.10.1"
+        },
+        "2": {
+          "release": "cf04150e458a",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "7799f28bdd30564bebbf95987df36c32790697ec3460589e7da38da46b76b584",
+            "engine/profiles/glm53/adapter.py": "51b5b2808b9b1a460233e286cf65aa1ec444df4ecfe3c64914539c13aaa0f719",
+            "engine/profiles/glm53/boot.py": "03cc255e9ddbc03e22fec51103ee055cb87d55e423baaf04df319c1d8fbd7013",
+            "engine/profiles/glm53/incident_operands.py": "4588830df32ea2d1d5fbc5951f8110f707ec17a834ca57f6acc7660f344a6c21",
+            "engine/profiles/glm53/incident_kda.py": "db4207ed50ae6fdedbee04f1bb9d44a4e95674001ac689f7d2cc2f2c407b7722",
+            "engine/profiles/glm53/incident_reference.py": "0a83884c9e947abd8713b38f527cb6e7cf19ddb82f3288429b331969a06ee1e1",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "image": "st-engine:bracket-cf04150e458a sha256:f0970dc3c33bc8ab8ea9a93ecdfe42fa98075e8fa25a6f995dbe97fbae88ab45",
+          "host": "10.10.10.3"
+        },
+        "3": {
+          "release": "cf04150e458a",
+          "runtime_root": "/repo",
+          "hashes": {
+            "engine/profiles/glm53/net.py": "7799f28bdd30564bebbf95987df36c32790697ec3460589e7da38da46b76b584",
+            "engine/profiles/glm53/adapter.py": "51b5b2808b9b1a460233e286cf65aa1ec444df4ecfe3c64914539c13aaa0f719",
+            "engine/profiles/glm53/boot.py": "03cc255e9ddbc03e22fec51103ee055cb87d55e423baaf04df319c1d8fbd7013",
+            "engine/profiles/glm53/incident_operands.py": "4588830df32ea2d1d5fbc5951f8110f707ec17a834ca57f6acc7660f344a6c21",
+            "engine/profiles/glm53/incident_kda.py": "db4207ed50ae6fdedbee04f1bb9d44a4e95674001ac689f7d2cc2f2c407b7722",
+            "engine/profiles/glm53/incident_reference.py": "0a83884c9e947abd8713b38f527cb6e7cf19ddb82f3288429b331969a06ee1e1",
+            "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+            "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+            "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+            "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+            "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+          },
+          "image": "st-engine:bracket-cf04150e458a sha256:cfafb227dffd266296ce4db0c43cf18160c52d96ee368909c6ca29c6e3050327",
+          "host": "10.10.10.4"
+        }
+      }
+    }
+  }
+}
