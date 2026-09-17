@@ -4447,7 +4447,7 @@ head 시드는 문서 번호 기준). main `ffc8b664` + 노브 + 디버그 팔 `
 - **다음(미착수).** 긴 행 KV-split(클러스터 공유 히스토그램) 또는 동점 규칙을 바꾼 HPC-Ops. 디코드 이득은 문맥 128K ~0.15 ms, ~524K ~1.9 ms,
   ~944K ~3.3 ms/스텝(합성)이라 긴 문맥 전용이다. [표·장치 사실·패치](measurements/st_topk_params_20260917/README.md).
 
-### Qwen3.8 이식 — 단일 GPU 레인 첫 실행: 자체 레인 qualify 통과, FP8 320×2560 4행 22% 오차, 정적 MoE 프리필 반복 불일치 (2026-09-17, srv4 단일 GPU 레인 4회, PR #PR)
+### Qwen3.8 이식 — 단일 GPU 레인 첫 실행: 자체 레인 qualify 통과, FP8 320×2560 4행 22% 오차, 정적 MoE 프리필 반복 불일치 (2026-09-17, srv4 단일 GPU 레인 4회, PR #1107)
 
 `engine/QWEN38_CARRY.md` C1·C2·C4·C6 티켓. 체크포인트 없이 `probes/qwen38_config.json` 형상, 합성 가중치다. 속도 주장 없음.
 - **C6 qualify(GB10):** 게이트 잔차 max ≤0.0063, GDN decay 1.9e-7, QSA norm+rope ≤0.0069(대역 5e-2).
