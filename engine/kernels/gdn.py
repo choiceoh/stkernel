@@ -1,12 +1,13 @@
 """GatedDeltaNet's per-token arithmetic around the delta rule, in one launch each (Qwen3.8's linear attention).
 
-The delta rule itself runs on engine/kernels/kda: ring.recurrent_decay_ring(_rows) for decode and verify and
-chunk_decay.chunk_kda_with_decay for prefill, both with the decay computed outside the kernel -- the wizard's glue for a
+The delta rule itself runs on engine/kernels/kda: ring.recurrent_gdn_ring(_rows) for decode and verify, which computes
+`gates`' decay and beta from the raw projection inside its own launch (HEAD_GATE in kda/fused_recurrent.py, this file's
+arithmetic), and chunk_decay.chunk_kda_with_decay for prefill, with the decay computed here -- the wizard's glue for a
 per-head decay. What those kernels do not compute is the model's own arithmetic before and after them:
 
     gates        decay = -exp(A_log) * softplus(a + dt_bias) per value head, in fp32
                  (engine/modules/linear_attention.gdn_decay), and beta = sigmoid(b) when the consumer wants it applied
-                 (the chunk kernel; the ring kernel applies its own sigmoid to the raw logits)
+                 (the chunk kernel; the ring kernels apply their own sigmoid to the raw logits)
     gated_norm   the output norm with GDN's rounding: RMS over each head in fp32 rounded to the activations' dtype,
                  times the plain weight (rounds), times sigmoid(z) in fp32, rounded once
                  (engine/modules/norm.rmsnorm_gated, "rounded"; GLM's KDA output norm rounds only at the end,

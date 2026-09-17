@@ -10,8 +10,10 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
 
     hyper-connection site     5 launches: the previous leave joined to the stream norm, down+inject in one GEMM,
                               the gates, up, the stream mean (engine/kernels/gated_residual)
-    GatedDeltaNet             one GEMM for q|k|v|z|b|a (merged at preshard), one launch for decay and beta, the conv
-                              and the delta rule on their ring kernels, the output norm in one launch, out_proj
+    GatedDeltaNet             one GEMM for q|k|v|z|b|a (merged at preshard), the conv and the delta rule on their ring
+                              kernels (the delta rule's launch computes the decay and beta from the projection's
+                              columns; a prefill chunk's gates are one launch before its chunk kernel), the output norm
+                              in one launch, out_proj
     attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
                               the query heads, one for the key head, one for the index queries; the QSA ops
     MoE                       the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
@@ -397,8 +399,9 @@ class Qwen38Net:
         proj = self.linear(x, n + "in_proj")
         qkv, z, b, a = proj.split([F.qkv_local, Hv * D, Hv, Hv], dim=-1)
         wc, wr = self.conv_ring, self.rec_ring
-        decode = all(s.length <= wr for s in step.segments)
-        decay, beta = lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=not decode)
+        # the ring lane computes the decay and beta from a and b in its own launch; the chunk lane takes them computed
+        decay, beta = ((None, None) if all(s.length <= wr for s in step.segments) else
+                       lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=True))
         core = torch.empty(N, Hv, D, dtype=x.dtype, device=x.device)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
@@ -406,7 +409,8 @@ class Qwen38Net:
             if s.length <= wr:
                 y = lanes.conv_ring(qkv[sl], p[n + "conv"], conv[None], 0, s.ctx)
                 q, k, v = self._heads(y, s.length)
-                o = lanes.gdn_ring(q, k, v, decay[sl][None], beta[sl][None], rec[None], 0, s.ctx)
+                o = lanes.gdn_ring(q, k, v, a[sl][None], b[sl][None], p[n + "A_log"], p[n + "dt_bias"], rec[None], 0,
+                                   s.ctx)
             else:
                 hist_pos = s.ctx + torch.arange(-(F.conv - 1), 0, device=x.device)
                 hist = conv[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0) if s.ctx else None
@@ -442,11 +446,12 @@ class Qwen38Net:
             raise ValueError(f"a captured GDN step holds at most {min(self.rec_ring, self.conv_ring, 8)} tokens a row")
         proj = self.linear(x, n + "in_proj")
         qkv, z, b, a = proj.split([F.qkv_local, Hv * D, Hv, Hv], dim=-1)
-        decay, beta = lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=False)
         conv, rec = caches.gdn_fields(L)
         y = lanes.conv_ring_rows(qkv, p[n + "conv"], conv, step.slots, step.contexts)
         q, k, v = self._heads(y, N)
-        o = lanes.gdn_ring_rows(q, k, v, decay[None], beta[None], rec, step.slots, step.contexts)
+        # the decay and beta come from a and b, read through their strides, in the delta rule's own launch
+        o = lanes.gdn_ring_rows(q, k, v, a[None], b[None], p[n + "A_log"], p[n + "dt_bias"], rec, step.slots,
+                                step.contexts)
         out = lanes.gdn_norm(o[0], z.view(N, Hv, D), p[n + "norm"], F.rms_eps)
         return self.comm.all_reduce(self.linear(out, n + "out_proj"))
 

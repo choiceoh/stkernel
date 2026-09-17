@@ -52,8 +52,8 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 |---|---|---|---|---|---|---|
 | C1 | 셀 판정 프로브 모드(`engine_kernel_check --lanes qwen38_cells`). 단일 레인 티켓은 main 에 있는 프로브만 돌린다 | `probes/engine_qwen38_cells.py` | fix | cpu | 시간 | 머지 #1089, 티켓 `qwen38-cells-0917` 대기 |
 | C2 | dense 패딩 어댑터 GPU 판정 + W4A8/FP8 전환 행 수 실측: Qwen3.8 hidden 2560 · 중간 160, DSv4.1 576 | `kernels/dense`, `cells.py` | measure | gpu | 시간 | 프로브 머지 #1096, 티켓 `qwen38-dense-0917` 대기 |
-| C3 | KDA decay 어댑터(ring·chunk·recurrent) GPU 판정 + BV 8/16/32 스윕(4/12×128×128, T=2, 1–4 행, 정확 롤백 게이트) | `kernels/kda`, `cells.KDA_MEASURED_CELLS` | measure | gpu | 시간 | 프로브 머지 #1098, 티켓은 K1 뒤(서빙 진입점을 잰다) |
-| C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 프로브 이 PR |
+| C3 | KDA decay 어댑터(ring·chunk·recurrent) GPU 판정 + BV 8/16/32 스윕(4/12×128×128, T=2, 1–4 행, 정확 롤백 게이트) | `kernels/kda`, `cells.KDA_MEASURED_CELLS` | measure | gpu | 시간 | 프로브 머지 #1098, 서빙 GDN 진입점을 재도록 K1 PR 에서 바꿈, 티켓은 그 뒤 |
+| C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 프로브 머지 #1100, 티켓 `qwen38-moe-0917` 대기 |
 | C5 | DSv4.1 mHC V41 이음매(`MHCV41`) GPU 판정 | `kernels/dense/mhc.py`, `cells.py` | measure | gpu | 시간 | 열림 |
 | C6 | Qwen3.8 자체 레인 GPU `qualify`(게이트 잔차·QSA·GDN). 수치 변경 작업의 기준점 | `profiles/qwen38/lanes.py` | measure | gpu | 시간 | 열림 |
 | C7 | `cells.py`: 측정된 어댑터 셀을 `admitted` 로(Q3). `summarize.py` 는 서빙 커널이 PR 이 최적화한 커널과 같을 때만 '그대로' 로 셈. 재집계 | `kernels/cells.py`, `measurements/st_model_dependence_20260917/summarize.py` | fix | cpu | 시간 | 장치는 머지 #1095(측정 튜플 넷은 기록이 붙을 때 채움) |
@@ -105,7 +105,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
-| K1 | GDN 게이트를 링 커널 안에서 계산(in_proj 조각을 stride 로 읽음) | #569 #571 | `kernels/kda/ring.py`, `fused_recurrent.py`, `net.py:_gdn_rows` | native | −36 발사 | cpu·glm | 시간 | 열림 |
+| K1 | GDN 게이트를 링 커널 안에서 계산(in_proj 조각을 stride 로 읽음) | #569 #571 | `kernels/kda/ring.py`, `fused_recurrent.py`, `net.py:_gdn_rows` | native | −36 발사 | cpu·gpu | 시간 | 이 PR |
 | K2 | `gated_norm` 이 z 를 stride 로 읽음 | #569 | `kernels/gdn.py` | fold | −36 발사·복사 | cpu | 시간 | 머지 #1091 |
 | K3 | chunk 파이프라인이 헤드별 decay 를 네이티브로(widen·repeat_interleave 제거) | #615 #811 | `kernels/kda/chunk_decay.py`, `kda.py` | native | 프리필 청크당 약 −20 GiB 쓰기 | cpu·glm | 일 | 열림 |
 | K4 | strided q/k l2norm 을 4 헤드에서도 admit | #811 | `kda.py:_glm53_qk_l2norm_strided` | fold | 프리필 층당 −3 발사 | cpu·glm | 시간 | 열림 |
