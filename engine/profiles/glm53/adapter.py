@@ -691,7 +691,8 @@ class Glm53Engine:
         code = int(options.get("seed") or 0)
         # Follow-up single-position controls: 7 FP8 dense decode, 8 BF16
         # prefill transport, 9 both. Every change is restored after forward.
-        mode = code // 1000 if 1000 <= code < 10000 else 0
+        # 10 retains scalar W4 target computation and uses the torch sampling oracle.
+        mode = code // 1000 if 1000 <= code < 11000 else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -976,7 +977,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1393,6 +1394,10 @@ class Glm53Engine:
         for the 24 rows of one step.
         """
         from engine.base.sampler import block_verify, speculative_pick, rows as sampler_rows, top_logprobs_batch
+        if any(self.incident_modes.get(seq) == 10 for seq, _, _, _ in jobs):
+            if len(jobs) != 1:
+                raise ValueError('incident torch sampler requires one isolated request')
+            from engine.base.sampler import _rows_by_sorting as sampler_rows
         # Incident control: retain K7 target computation and state geometry,
         # but sample only its first distribution and commit exactly one token.
         jobs = [(seq, raw[:1], [], None) if self.incident_modes.get(seq) == 2 else (seq, raw, drafts, q)
@@ -1551,7 +1556,7 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
-        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9) for seq in seqs):
+        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10) for seq in seqs):
             if len(seqs) != 1:
                 raise ValueError('incident single-token control requires an isolated request')
             seq, slot = seqs[0], slots[0]
