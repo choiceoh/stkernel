@@ -599,6 +599,8 @@ class Runner:
         before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
         latency = getattr(self, 'latency', None)
         resolve_start = time.perf_counter() if latency is not None and latency.active else None
+        diagnostic = getattr(self, 'diagnostic_metrics', None)
+        diagnostic_before = diagnostic.begin(step.seqs) if diagnostic is not None else None
         done = pending.resolve()
         if resolve_start is not None:
             latency.row(kind='host_wait', operation='resolve', phase='decode', rows=list(step.seqs),
@@ -623,6 +625,11 @@ class Runner:
                     latency.row(kind='gpu_iteration', operation='bounded_decode', phase='decode',
                                 rows=list(step.seqs), iteration=index, duration_us=seconds * 1e6,
                                 timing_scope='device body and TP4 stop agreement; globaltimer', **record)
+        if diagnostic is not None:
+            diagnostic.end(diagnostic_before,
+                           sum(iteration_seconds) if iteration_seconds is not None else time.perf_counter() - launched,
+                           len(iteration_seconds) if iteration_seconds is not None else 1,
+                           'device_burst' if iteration_seconds is not None else 'async_residency')
         for seq, finished in zip(step.seqs, done):
             if seq in before and seq in self.slot_of and seq in self.state.running:
                 self._generated_boundaries(seq, before[seq], self.model.context(seq))
@@ -929,6 +936,7 @@ class Runner:
     @_record_step
     def _run(self, step) -> "sched.Step":
         t0 = time.perf_counter()
+        diagnostic = getattr(self, 'diagnostic_metrics', None)
         with self.rec.phase(step.kind, aggregate=True):
             if step.kind == sched.PREFILL:
                 (seq,) = step.seqs
@@ -937,6 +945,8 @@ class Runner:
                 try:
                     finished = self.model.prefill(seq, start, step.tokens, self.kv.row(seq), self.slot_of[seq],
                                                   **({"marks": marks} if marks else {}))
+                    if diagnostic is not None:
+                        diagnostic.prefill(step.tokens, time.perf_counter() - t0)
                 except BaseException:
                     for snap in marks.values():
                         self.prefix.give_snapshot(snap)
@@ -950,8 +960,11 @@ class Runner:
             else:
                 self.kv.reserve_to(step.seqs, [self.model.horizon(s) for s in step.seqs])
                 before = {s: self.model.context(s) for s in self._tracked(step.seqs)}
+                diagnostic_before = diagnostic.begin(step.seqs) if diagnostic is not None else None
                 done = self.model.decode(step.seqs, [self.kv.row(s) for s in step.seqs],
                                          [self.slot_of[s] for s in step.seqs])
+                if diagnostic is not None:
+                    diagnostic.end(diagnostic_before, time.perf_counter() - t0)
                 if len(done) != len(step.seqs):
                     raise ValueError("decode must return one completion flag per sequence")
                 for seq in before:
