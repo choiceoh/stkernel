@@ -302,6 +302,14 @@ class Qwen38Net:
         cells more than once in one launch, and which write lands is not defined."""
         F = self.F
         dev = step.ids.device
+        from engine.profiles.qwen38.caches import QSA_KEY_RING
+        if getattr(step, "captured", False) and step.ids.is_cuda:
+            # one launch for what the composition below spells in about forty (engine/kernels/step_addresses); the
+            # composition stays the CPU's form and the reference the kernel is held to
+            from engine.kernels import step_addresses
+            return StepMeta(*step_addresses.captured(step.contexts, step.slots, step.seqs, caches.block_table,
+                                                     tokens=step.tokens, blocks=step.blocks, block=F.block,
+                                                     ratio=F.idx_ratio, ring=QSA_KEY_RING))
         if getattr(step, "captured", False):
             n, t = step.rows, step.tokens
             positions = (step.contexts[:, None] + iota(t, dev)).reshape(-1)
@@ -333,7 +341,6 @@ class Qwen38Net:
         key_pages = page_table[rr, group // per_group]
         key_slots = torch.where(closes, key_pages.long() * per_group + group % per_group,
                                 torch.full_like(positions, -1)).to(torch.int32)
-        from engine.profiles.qwen38.caches import QSA_KEY_RING
         ring_slots = torch.where(positions >= lengths[rr] - QSA_KEY_RING,
                                  slot_table[rr, 0].long() * QSA_KEY_RING + positions % QSA_KEY_RING,
                                  torch.full_like(positions, -1)).to(torch.int32)

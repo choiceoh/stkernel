@@ -56,7 +56,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 열림 |
 | C5 | DSv4.1 mHC V41 이음매(`MHCV41`) GPU 판정 | `kernels/dense/mhc.py`, `cells.py` | measure | gpu | 시간 | 열림 |
 | C6 | Qwen3.8 자체 레인 GPU `qualify`(게이트 잔차·QSA·GDN). 수치 변경 작업의 기준점 | `profiles/qwen38/lanes.py` | measure | gpu | 시간 | 열림 |
-| C7 | `cells.py`: 측정된 어댑터 셀을 `admitted` 로(Q3). `summarize.py` 는 서빙 커널이 PR 이 최적화한 커널과 같을 때만 '그대로' 로 셈. 재집계 | `kernels/cells.py`, `measurements/st_model_dependence_20260917/summarize.py` | fix | cpu | 시간 | 장치는 이 PR(측정 튜플 넷은 기록이 붙을 때 채움) |
+| C7 | `cells.py`: 측정된 어댑터 셀을 `admitted` 로(Q3). `summarize.py` 는 서빙 커널이 PR 이 최적화한 커널과 같을 때만 '그대로' 로 셈. 재집계 | `kernels/cells.py`, `measurements/st_model_dependence_20260917/summarize.py` | fix | cpu | 시간 | 장치는 머지 #1095(측정 튜플 넷은 기록이 붙을 때 채움) |
 
 플릿이 필요해 이번 목록에서 뺀 것: one-shot·프리필 통신의 hidden 2560 실측(4랭크), Qwen3.8 부팅 onepass(D17 속도 기록).
 
@@ -65,7 +65,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
 | Q1 | 죽은 글루 복사 제거: 읽히지 않는 `positions…expand(N,1,3).contiguous()`, `ik.contiguous()`, `first[:,0].contiguous()` 등 | #547 #926 #933 | `net.py:_qsa`, `qsa.py:norm_rope_partial` | fold | −39 발사 | cpu | 시간 | 머지 #1090 |
-| Q2 | 캡처 `step_meta` 를 Triton 한 발사로(타깃·드래프트 두 번) | #543 #546 #819 #821 | `net.py:step_meta` | fold | 약 −80 발사 | cpu | 시간 | 열림 |
+| Q2 | 캡처 `step_meta` 를 Triton 한 발사로(타깃·드래프트 두 번) | #543 #546 #819 #821 | `net.py:step_meta`, `kernels/step_addresses.py` | fold | 약 −80 발사 | cpu | 시간 | 이 PR |
 | Q3 | QSA 입력 융합: q/k norm+rope 와 K/V 저장을 (행, 헤드)당 한 발사로, 압축→norm→rope→인덱스 키 쓰기를 한 발사로, 링 쓰기를 K/V 저장에 합침 | #914 #936 #547 #582 #921 | `qsa.py`, `net.py:_qsa` | fold | 층당 11→1, 약 −130 발사 | cpu | 일 | 열림 |
 | Q4 | 출력 게이트를 어텐션 최종 저장 안에서 적용 | #919 #899 | `qsa.py:qsa_sparse_paged_attention` | fold | −65 발사, 프리필 청크당 −21.6 GiB | gpu | 시간 | 열림 |
 | Q5 | 어텐션이 블록 id 를 타일 루프 안에서 위치로 확장(확장 발사 제거) | #819 #887 | `qsa.py` 선택·어텐션 | fold | −13 발사, 프리필 청크당 −8 GiB | cpu | 시간 | 열림 |
