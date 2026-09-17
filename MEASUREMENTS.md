@@ -4394,3 +4394,29 @@ speedups. Eight shapes pass exact bytes/logits, changed-input graphs and
 independent output checks; 62 CPU pass/6 skip and 115 SM121 compile variants.
 No persistent memory growth, queue or deployment. GB10/TP4 speed and acceptance
 unmeasured. [Receipts and limitations](measurements/st_cublaslt_producer_20260917/README.md).
+
+## 2026-09-17 — Drafter post-convolution residual/RMS fusion, K=7 unchanged
+
+The default drafter path fuses five post-attention and four interlayer MLP
+boundaries, preserving BF16 rounding and the existing final head producer.
+RTX 5050 synthetic width-4096, rows/block=8/8: group16 single-boundary
+2.462 → 1.819 µs and nine-boundary chain 24.622 → 17.365 µs; group256 chain
+22.614 → 16.269 µs. These are component savings, **not whole-drafter or
+engine speedups**. Seven cases pass exact outputs and changed-input graph
+replays; CPU 41 pass/8 skip and seven offline SM121 specializations pass.
+No queue/deployment; GB10/TP4 step/s and acceptance unmeasured. The measured
+microseconds do not resolve the historical millisecond-scale K sensitivity.
+[Raw brackets, hashes and reproduction](measurements/st_draft_post_norm_20260917/README.md).
+
+## 2026-09-17 — Default sampled selector: batch probabilities and fuse the K-position walk
+
+K=7 actual `propose_rows` selector code, with model/head outputs held fixed
+and synthetic codebooks on RTX 5050: C=1 **142.390 → 19.321 µs (−86.43%)**,
+C=2 143.676 → 20.892, C=4 156.297 → 24.810, C=8 160.743 → 34.658 µs.
+This removes ~123–131 µs from the measured component; it is not full-drafter
+or engine speed. Fourteen GPU shape/policy cases, changed-input graphs and
+exact CDF-boundary uniforms pass; CPU 50 pass/9 skip; 16 offline SM121 builds
+pass. The initially batched C=1 CDF changed rounding at exact cut points and
+was corrected to the former serial order. A separate attention tile split
+was slower and rejected. No queue/deployment; GB10/TP4 speed and acceptance
+unmeasured. [Receipts and limits](measurements/st_draft_sample_20260917/README.md).
