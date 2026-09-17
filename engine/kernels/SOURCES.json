@@ -136,7 +136,8 @@
       "origin": "image",
       "local_sha256": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
       "local_modifications": [
-        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
+        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
       ]
     },
     "b12x/moe_activation.py": {
@@ -158,7 +159,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "38a6c647a9adc018e10a8dbf24a0cd6049df923729f0b269dd489af8003a7773",
+      "local_sha256": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -190,7 +191,8 @@
         "2026-09-17 Qwen3.8 EP decode cell (probes/engine_qwen38_moe.py): _MICRO_TILE_M_OVERRIDE / _MICRO_MAC_OVERRIDE probe hooks pin the micro kernel's M tile (32/64/128) and MAC (<= the SM count); the launcher's micro MAC arithmetic moves unchanged into _select_micro_mac. None keeps every selection.",
         "2026-09-17 private input fanout: cache only compact route metadata, reuse the quantized block in registers across equal-scale experts; separately keyed and disabled pending GPU and consumer qualification.",
         "2026-09-17 adopt numerically qualified fixed-K bundle by user decision; small or inconclusive component gains are retained with explicit controls. See st_fixed_k_next and st_moe_input_reuse measurements.",
-        "2026-09-17 final input reuse: select qualified compact-cache mode 3 for C1 and register-fanout mode 4 for C2; 56 raw-byte cases and 60 output comparisons pass. Whole-MoE gains remain small and cache-dependent; explicit mode 0 is retained."
+        "2026-09-17 final input reuse: select qualified compact-cache mode 3 for C1 and register-fanout mode 4 for C2; 56 raw-byte cases and 60 output comparisons pass. Whole-MoE gains remain small and cache-dependent; explicit mode 0 is retained.",
+        "2026-09-17: long-prefill SF6 and packet readers accumulate rounded route contributions in FP32 and cast once; shared workspace supports the declared 32768-row limit."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -206,7 +208,8 @@
       "local_modifications": [
         "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic.",
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
-        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
+        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
       ]
     },
     "b12x/moe_static_kernel.py": {
@@ -216,7 +219,8 @@
       "local_sha256": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
       "local_modifications": [
         "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic.",
-        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
+        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
       ]
     },
     "b12x/moe_w4a16_activations.py": {

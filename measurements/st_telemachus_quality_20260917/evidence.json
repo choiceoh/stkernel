@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "incident": "2026-09-17 Deneb Telemachus",
+  "deployed_sha": "fd99f82e2a12e533047159b58ebd74b601d70a90",
+  "image": "sha256:701f9919e2d674884797245d8212aafa7a8d9d951c41ef7dc79a0611c407eb55",
+  "container_started": "2026-09-17T11:39:00.297032974Z",
+  "original": {
+    "engine_seq": 21,
+    "deneb_run": "stream_0043",
+    "prompt_tokens": 50005,
+    "cached_tokens": 47663,
+    "temperature": 1.0,
+    "completion_tokens": 907,
+    "engine_and_deneb_final_sha256": "ef529aa06c55f3c02b3045f81ffbc149aec2de38526b1b67a925d1ab1330b154"
+  },
+  "cases": [
+    {
+      "name": "short-t1",
+      "temperature": 1.0,
+      "seed": 7,
+      "prompt_tokens": 63,
+      "cached_tokens": 0,
+      "completion_tokens": 529,
+      "max_tokens": 1024,
+      "reasoning_budget": 256,
+      "text_sha256": "07c26e1062b7aaf9dc5f0de43ab48fb9979cf0337782aa9feacc48c406805358",
+      "text": "텔레마코스는 이타카의 왕 오디세우스와 페넬로페의 아들이에요. 오디세우스가 트로이 전쟁과 20년간의 항해로 집을 비운 동안 어머니와 함께 이타카에서 성장하고, 집에 자리 잡은 구혼자들과 어머니를 지켜야 하는 어린 귀족이자 주인공입니다. 처음에는 아버지를 잃어 불안하지만, 아테나의 권유로 항해를 시작하며 용기와 책임감, 유능한 지도자의 길로 성장해요.Odyssey에서 그는 파이로스와 스파르타를 방문해 모험의 가치를 배우고, 나중에는 몰래 도와 그를 도와 장면에서 화려하고 인용되는 인물이 됩니다. 오디시아 여정에서 그는 Odysseus의 아들뿐만 아니라 다가오는 시련을 극복할 성숙한 인물로 자리매김합니다."
+    },
+    {
+      "name": "short-t0",
+      "temperature": 0.0,
+      "seed": 7,
+      "prompt_tokens": 63,
+      "cached_tokens": 0,
+      "completion_tokens": 956,
+      "max_tokens": 1024,
+      "reasoning_budget": 256,
+      "text_sha256": "6644d5821f7f1037dc47decabc9c6268a6d03f04c561021ee438855e592d37da",
+      "text": "텔레마코스는 그리스 신화, 특히 《오디세이아》에 나오는 이타카의 왕자로, 오디세우스와 페넬로페의 아들이에요. 아버지가 트로이 전쟁 후 오랫동안 돌아오지 않자, 집을 노리는 구혼자들에게 둘러싸인 어머니를 지키기 위해 성장해 나가요. 아테나의 도움을 받아 아버지의 소식을 찾아 떠나는 여정을 통해 소년에서 성인으로 maturity를 갖춘 인물로 그려져요. 처음에는 망설이고 미숙하지만, 점차 용기와 책임감을 배우며 아버지의 귀환을 돕는 중요한 역할을 해요. 결국 오디세우스와 재회해 함께 구혼자들에 맞서는 등, 이야기의 연결고리가 되는 인물이에요.We need answer Korean 3-5 sentences. Need understand \"이타카 이야기의 연속이야\" maybe \"Ithaca story\" maybe Odyssey? Telemachus is son of Odysseus and Penelope. Need describe. Could mention in Odyssey, young prince of Ithaca, searches for father, matures from boy to man, helped by Athena/Mentes, travels to Nestor and Menelaus, confronts suitors, reunites with Odysseus and helps kill suitors. Need 3-5 sentences in Korean. Need maybe \"텔레마코스는 오디세우스와 페넬로페의 아들이자 이타카의 왕자다.\" etc.\n\nNeed be careful: \"이타카 이야기의 연속이야\" maybe user says \"It's a continuation of the Ithaca story\" maybe they expect \"Telemachus\" from \"The Odyssey\" or \"Ithaca\" poem? Let's answer generally. 3-5 sentences. No extra.</think>텔레마코스는 오디세우스와 페넬로페의 아들이자 이타카의 왕자예요. 아버지가 오랫동안 돌아오지 않자, 집을 차지하려는 구혼자들에 맞서 어머니를 지키려 해요. 아테나의 도움을 받아 아버지의 소식을 찾아 떠나는 여정을 통해 소년에서 성인으로 maturity를 갖춘 인물로 그려져요. 처음에는 망설이고 미숙하지만, 점차 용기와 책임감을 배우며 아버지의 귀환을 돕는 중요한 역할을 해요. 결국 오디세우스와 재회해 함께 구혼자들에 맞서는 등, 이야기의 연결고리가 되는 인물이에요."
+    },
+    {
+      "name": "short-natural-t0",
+      "temperature": 0,
+      "seed": 7,
+      "prompt_tokens": 47,
+      "cached_tokens": 0,
+      "completion_tokens": 876,
+      "max_tokens": 1024,
+      "reasoning_budget": null,
+      "text_sha256": "882e7a7d977271b3398f4d8d1043233189edb37b8478f77650345fdeb68ee9f9",
+      "text": "텔레마코스는 그리스 신화, 특히 호메로스의 **『오디세이아』**에 나오는 인물로, **오디세우스와 페넬로페의 아들**입니다.\n\n- 아버지가 트로이 전쟁 후 20년 가까이 돌아오지 않자, 어머니에게 구혼하러 몰려든 사람들과 함께 집에 지내며 성장했어요.\n- 여신 아테나의 도움으로 용기를 얻어, 아버지의 소식을 찾아 나선 여정을 떠납니다.\n- 아버지가 돌아왔을 때는 그를 도와 구혼자들을 무찌르는 등, 소년에서 어른으로 성장하는 모습을 보여줍니다.\n\n쉽게 말해, **아버지를 찾아 성장해가는 오디세우스의 아들**이라고 할 수 있어요."
+    },
+    {
+      "name": "exact-fresh-t0",
+      "temperature": 0.0,
+      "seed": 7,
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 1200,
+      "max_tokens": 1200,
+      "reasoning_budget": null,
+      "text_sha256": "d89a0a20c7cf3413e25065f124e8d07d497680429fc88965e37ca935f85eecd0",
+      "text": "Follow-up to Ithaca question — Telemachus, Odysseus's son. Answer directly, concise. Stable knowledge, no tools needed.</think>**텔레마코스(Telemachus)** — 오디세우스와 페넬로페의 외아들. 『오디세이아』에서 아버지가 20년째 돌아오지 않자, 이타카에 남아 어머니를 지키며 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 앞 4권(이른바 '텔레마키아')의 주인공으로, 아버지를 찾아 나선다며 피로스·스파르타로 떠나 네스토르·메넬라오스를 만나 아버지의 소식을 듣고, 돌아와서는 수구라 수구라 자라는 청년이에요. 서사시 �"
+    },
+    {
+      "name": "exact-fresh-t1",
+      "temperature": 1.0,
+      "seed": 7,
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 554,
+      "max_tokens": 1200,
+      "reasoning_budget": null,
+      "text_sha256": "c1e738be4c0bed2c7a1ca0aa5532e7da2fdd389262d90b38a5106902ba306786",
+      "text": "Follow-up on Ithaca: Telemachus — Odysseus's son. Stable knowledge, answer directly, concise.</think>**텔레마코스(Telemachus)** — 오디세우스와 페넬로페의 외아들. 오디세우스가 트로이로 떠날 때 갓 출생한 아기였고, 『오디세이아』에서는 약 20세 청년으로 등장해요. 아버지가 20년간 돌아오지 않아 집안은 구설에 올라 — 어머니(페넬로페)에게Apply 구혼하러 들판 난 그리스 귀족 청년 ~100 명이 곳간을 약탈하며 사니고 살고, 학에 가 있는 페넬로페는 이들에게 사니 Principal deadline을 강요당하고 있어요.\n\n서의 재미는 첫 4권, 이른바 '티레마키아'Telemachia가Outline: 아테나의 가르침(로맨티사 방문서아 rms) 아테나 여신이 멘토(s) 얼굴을 하고 찾아와 텔레마코스에게 \"곧ี르 관짝 습식의 데이터 정신을~ 힘 키우며 이웃으로부터는 라떼\"를 두거 위해, 부모와 관계 동의는하고 스파르타의 메넬라오스를 먼금 여행 떠나 어린 청년이 성인으로 성장. 마지막에는 아버와 만나 \"아버지를 다리로 뒤차꾸도世界里 지 요SOEVER\" — 숨어 말하도 짐짓 언을 copy collapsed\n\n아버지의 고향 이타카, 주 리얼 노이로의 오디세우스 모든Lexical connection this is why:\n\n아 뭐런 어어 좀 농-이극식 세계 같이 풀다듬产于. 핀 돌아자 pidfc deliveoven pain 뱅 \n\n**요약:--[[모든(아타] 오드세이어?**\n\n가능하게 처소이: 그릇 '이아도(로맨티 Sty друг 교육 Сп 받은 아 아이들\n\n---"
+    },
+    {
+      "name": "exact-fresh-t0-repeat",
+      "temperature": 0.0,
+      "seed": 7,
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 426,
+      "max_tokens": 1200,
+      "reasoning_budget": null,
+      "text_sha256": "a5edbab9fa3bc99509b06db329b98f0e2f796fa7766d9232b9665bba68e865c5",
+      "text": "Follow-up to Ithaca question — Telemachus, Odysseus's son. Stable knowledge, answer directly, concise.</think>**텔레마코스(Telemachus)** — 오디세우스와 페넬로페의 외아들. 『오디세이아』에서 아버지가 20년째 안 돌아온 동안 이타카에 남아 어른이 된 인물이에요.\n\n- **서사**: 오디세이아 앞 4권(이른바 '텔레마키아')의 주인공. 수구(구혼자)들이 집을 점령하고 재산을 탕진하자, 여신 아테네의 도움을 받아 아버지 소식을 찾아 나선다 — 네스토르(필로스)와 메넬라오(스파르타)를 방문해 아버지의 행방 단서를 얻어요.\n- **의미**: 소년이 성인으로 성장하는 'coming-of-age' 서사의 원형. 아버지의 귀환과 아들의 성장이 맞물려 마지막에 부자가 협력해 수구들을 처단하죠.\n- **파생어**: '텔레마키(Telemachy)'라는 말로 \"아버지를 따라가는 아들의 여정\"을 뜻하는 데 쓰이고, 제임스 조이스 『율리시스』의 첫 3장 제목이기도 해요.\n\n이타카 얘기에 이어서 보면, 오디세이아의 두 축이 바로 \"돌아오는 아버지(오디세우스)\"와 \"기다리며 자라는 아들(텔레마코스)\"이에요."
+    }
+  ],
+  "repeat": {
+    "identical_ids": false,
+    "common_prefix_tokens": 20,
+    "other_completions_during_repeat": 1
+  },
+  "scope": "incident evidence; no throughput or kernel attribution"
+}

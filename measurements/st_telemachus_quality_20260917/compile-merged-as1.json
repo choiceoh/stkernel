@@ -1,0 +1,17 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "recipe": "t,r,sf6,batch,q0,as1",
+  "kernels": [
+    {
+      "packets": false,
+      "kernel": "dynamic_e288_k4096_n512_t8_tiled_c256_24234c94b4cf8902",
+      "seconds": 3.4396687030093744
+    },
+    {
+      "packets": true,
+      "kernel": "dynamic_e288_k4096_n512_t8_tiled_c256_853fc512796b3063",
+      "seconds": 3.0953277610242367
+    }
+  ]
+}

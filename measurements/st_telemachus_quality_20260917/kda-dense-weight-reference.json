@@ -1,0 +1,173 @@
+{
+  "scope": "CPU actual decode inputs; BF16 checkpoint weights with captured smoothing; includes pack quantization error",
+  "cases": [
+    {
+      "layer": 0,
+      "generation": 1,
+      "name": "L0.kda.in_proj",
+      "relative_l2": 0.047273289412260056,
+      "max_abs": 0.07261684536933899
+    },
+    {
+      "layer": 0,
+      "generation": 1,
+      "name": "L0.kda.f_b",
+      "relative_l2": 0.0016231973422691226,
+      "max_abs": 0.0029295682907104492
+    },
+    {
+      "layer": 0,
+      "generation": 1,
+      "name": "L0.kda.g_b",
+      "relative_l2": 0.0016530618304386735,
+      "max_abs": 0.003869771957397461
+    },
+    {
+      "layer": 0,
+      "generation": 1,
+      "name": "L0.kda.o_proj",
+      "relative_l2": 0.07145720720291138,
+      "max_abs": 0.0008076239028014243
+    },
+    {
+      "layer": 0,
+      "generation": 124,
+      "name": "L0.kda.in_proj",
+      "relative_l2": 0.013014957308769226,
+      "max_abs": 0.03359246253967285
+    },
+    {
+      "layer": 0,
+      "generation": 124,
+      "name": "L0.kda.f_b",
+      "relative_l2": 0.0018232520669698715,
+      "max_abs": 0.0066699981689453125
+    },
+    {
+      "layer": 0,
+      "generation": 124,
+      "name": "L0.kda.g_b",
+      "relative_l2": 0.0017222450114786625,
+      "max_abs": 0.007400035858154297
+    },
+    {
+      "layer": 0,
+      "generation": 124,
+      "name": "L0.kda.o_proj",
+      "relative_l2": 0.053946834057569504,
+      "max_abs": 0.0004976222990080714
+    },
+    {
+      "layer": 0,
+      "generation": 125,
+      "name": "L0.kda.in_proj",
+      "relative_l2": 0.06450830399990082,
+      "max_abs": 0.08262944221496582
+    },
+    {
+      "layer": 0,
+      "generation": 125,
+      "name": "L0.kda.f_b",
+      "relative_l2": 0.0016693840734660625,
+      "max_abs": 0.0018445253372192383
+    },
+    {
+      "layer": 0,
+      "generation": 125,
+      "name": "L0.kda.g_b",
+      "relative_l2": 0.0016375182894989848,
+      "max_abs": 0.0029883384704589844
+    },
+    {
+      "layer": 0,
+      "generation": 125,
+      "name": "L0.kda.o_proj",
+      "relative_l2": 0.07539111375808716,
+      "max_abs": 0.0007791053503751755
+    },
+    {
+      "layer": 1,
+      "generation": 1,
+      "name": "L1.kda.in_proj",
+      "relative_l2": 0.03612709417939186,
+      "max_abs": 0.1254901885986328
+    },
+    {
+      "layer": 1,
+      "generation": 1,
+      "name": "L1.kda.f_b",
+      "relative_l2": 0.0016674589132890105,
+      "max_abs": 0.003643512725830078
+    },
+    {
+      "layer": 1,
+      "generation": 1,
+      "name": "L1.kda.g_b",
+      "relative_l2": 0.00161313870921731,
+      "max_abs": 0.007181644439697266
+    },
+    {
+      "layer": 1,
+      "generation": 1,
+      "name": "L1.kda.o_proj",
+      "relative_l2": 0.03611699491739273,
+      "max_abs": 0.0003629913553595543
+    },
+    {
+      "layer": 1,
+      "generation": 124,
+      "name": "L1.kda.in_proj",
+      "relative_l2": 0.013582857325673103,
+      "max_abs": 0.04310429096221924
+    },
+    {
+      "layer": 1,
+      "generation": 124,
+      "name": "L1.kda.f_b",
+      "relative_l2": 0.0016211807960644364,
+      "max_abs": 0.003820180892944336
+    },
+    {
+      "layer": 1,
+      "generation": 124,
+      "name": "L1.kda.g_b",
+      "relative_l2": 0.0016800054581835866,
+      "max_abs": 0.007779359817504883
+    },
+    {
+      "layer": 1,
+      "generation": 124,
+      "name": "L1.kda.o_proj",
+      "relative_l2": 0.03278862684965134,
+      "max_abs": 0.00021792028564959764
+    },
+    {
+      "layer": 1,
+      "generation": 125,
+      "name": "L1.kda.in_proj",
+      "relative_l2": 0.044503916054964066,
+      "max_abs": 0.11649012565612793
+    },
+    {
+      "layer": 1,
+      "generation": 125,
+      "name": "L1.kda.f_b",
+      "relative_l2": 0.0017184336902573705,
+      "max_abs": 0.003819108009338379
+    },
+    {
+      "layer": 1,
+      "generation": 125,
+      "name": "L1.kda.g_b",
+      "relative_l2": 0.0016438319580629468,
+      "max_abs": 0.006737947463989258
+    },
+    {
+      "layer": 1,
+      "generation": 125,
+      "name": "L1.kda.o_proj",
+      "relative_l2": 0.03737279027700424,
+      "max_abs": 0.00026157457614317536
+    }
+  ]
+}

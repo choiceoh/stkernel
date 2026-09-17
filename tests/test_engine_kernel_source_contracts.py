@@ -21,9 +21,9 @@ inheritance), the stock static lane, the micro lane and the dynamic body. The
 prefill *fragment* modules (`moe_dynamic_prefill.py`, `_prefill_m64_bodies.py`,
 `_moe_dynamic/gated.py`, `moe_dynamic_gated_sf6.py`, the packet variants) pack
 inputs and read `tAgA` too, but carry no resident grid barrier of their own: they
-are spliced into a body that has one, so a source-level assertion about the
-fragment would be about the wrong file. Add a lane here only after its
-publication is shown to be its own.
+are spliced into a body that has one, so they carry their own fences (#1141) with
+no publication barrier here to assert the window against. Add a lane to `LANES`
+only once its publication -- stores, barrier and read -- lives in one body.
 """
 import ast
 from pathlib import Path
