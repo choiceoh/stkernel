@@ -4,6 +4,43 @@ The T=1 incident is unresolved. Preserve the original 50,005 input IDs, seed,
 output cap, fresh cache namespace and runtime identity for every causal replay.
 Private prompts, token records and activation tensors remain outside git.
 
+## Indexer smoothing reader omission, 2026-09-18
+
+`Glm53Net.smoothing_groups()` omitted `idx.w_heads` from the consumers of the
+DSA `in_norm` output. The same normalized hidden vector feeds `mla.qkv_a`,
+`idx.wk`, `idx.gate`, and the FP32 head-weight projection. Dividing the norm by
+the channel factor without multiplying `w_heads` changes the head gates used
+to weight pool-selection scores. Both eager execution and the captured owner
+bind these weights after smoothing. This is a function-changing omission,
+not a choice of accumulation precision.
+
+The serving rank-0 calibration contains channel peaks for all 11 DSA layers,
+stamped with the actual `st-glm53-b12x-up-gate-v1` weight layout and 136,806
+calibration tokens. The old scale factors are non-unit in 57 to 4,096 channels
+per layer. The first layer's factors range from 0.25 to 0.5. These files predate
+the failing captured boot and remain in its mounted `/cache` store.
+
+Fix `e6f2cf3200d10b356c18903f42903fba312b7cd2` includes the FP32 reader in both
+the scale calculation and the in-place column fold, preserving its FP32 dtype.
+It also changes the parked-state compatibility tag so that states computed
+with the old attention selection cannot re-enter serving. The dense pack
+cache already keys smoothed weights and calibration factors, so changed
+factors rebuild their packs without deleting unrelated cache entries.
+
+The new regression constructs unequal channel factors and two pools. On the
+old implementation smoothing changes the selected pool from 0 to 1; the fixed
+implementation preserves both the selected pool and the FP32 gate values
+exactly. The smoothing, projection-owner and head-gate suites pass 13 CPU
+tests; their one GB10 GPU-only test is skipped on the CPU runner.
+
+[`indexer-smoothing-invariance.json`](indexer-smoothing-invariance.json) records
+an independent CPU check with actual rank weights and calibration, **synthetic
+inputs**, and the target's actual `smooth_inputs()` method. Every fixed layer
+matches its unsmoothed FP32 head-gate result bit for bit. The old reader omission
+has substantial errors on these synthetic inputs; those errors are not a live
+generation-quality measurement. The isolated original-request replay on
+`03e9c50551666156b89c799d967138a39cbb01d7` is pending.
+
 ## Confirmed numerical defect
 
 Two isolated replays first differed at layer 3 FFN, before speculative decode.
@@ -18,6 +55,18 @@ back to BF16. Its zeroing extent covers every FP32 word. All 180 sampled stage
 comparisons on rank 0, including both final hidden samples, matched bit for bit
 in the repeated candidate replay. The top-20 first-token logprob records also
 matched. This is observed repeatability, not a general deterministic-sum proof.
+
+The original `0bad46c9` and this branch's `6956b29b` have the identical stable
+patch ID `f37d312032e7f6670cd4c52ab25c4e24f89e36cf`. Diagnostic source
+`b11061eb21cf` directly contains `0bad46c9`; the live container's three affected
+source files were SHA-256 matched to that checkout. The fix was not omitted
+from the later failing controls.
+
+The zeroing change must not be described as an existing half-cleared BF16
+buffer: one Uint32 clears two BF16 elements, so the old `cols / 2` words
+covered the whole old buffer. Changing the accumulator to FP32 requires
+`cols` Uint32 words. That is a necessary part of the dtype transition, not
+independent evidence that half of the original BF16 plane was uninitialized.
 
 Private comparison receipts are `comparison-rank0.json` under:
 
@@ -161,6 +210,97 @@ changed common top-20 logprobs by up to 1.87, 1.87 and 3.13 respectively. This i
 not a state-corruption proof: prefill/decode use different arithmetic, and that
 API merges distinct partial-byte token IDs under the same decoded U+FFFD key.
 Further numeric comparisons must preserve token IDs, not decoded labels.
+
+### Full-ID distributions and stage tails, 2026-09-18
+
+Diagnostic source `d30713e09a8a` retained the same arithmetic and captured raw
+logits, processed logits, probabilities, uniforms and picks. Its scalar first
+160 tokens reproduced the earlier baseline exactly. Each fresh-prefill control
+used the exact baseline IDs through offsets 1, 124 or 125, with zero reused
+tokens. At those positions the top-20 **ID** overlap was 16, 13 and 20; probability
+total variation was 0.000180, 0.028883 and 0.157325. The previously reported
+one-entry decoded-label overlap at offset 125 was a byte-token label collision,
+not a one-token vocabulary overlap.
+
+At offset 125, the native pick was 17130, the earlier Torch pick was 17160,
+and FP64 inverse-CDF on the captured logits picks **17113** (ASCII `isan`). All
+three are invalid continuations of the pending bytes `eb a9`. Native probability
+error against FP64 is at most 8.66e-9 on this row. Its chosen interval misses
+the uniform by 5.63e-8 because FP32 cumulative sums round differently. This
+explains the first different sampled ID between implementations, but an exact
+CDF still generates invalid bytes at this draw; it does not explain or repair
+the quality failure. The raw model distribution assigns 0.0006926 mass to
+invalid next-byte continuations. Fresh-prefilling the same prefix assigns
+0.0010481, and at the same uniform selects valid continuation byte `9f`.
+
+Rank 3 stage tails compare the same global final token, including the actual
+last non-padding row of sequence-parallel prefill. Differences start at layer 0
+attention (relative L2 12.5%, 12.4%, 15.0% for the three positions), before routed
+experts. Final hidden relative L2 is 20.6%, 30.5%, 30.7%. This comparison includes
+different dense precision and KDA execution paths; neither path is an independent
+correctness oracle.
+
+A further control freshly prefills through offset 124, forces only the required
+next input token via logit bias, and captures the subsequent one-token forward's
+unbiased **raw** logits and stage outputs. Its consumed input ID is verified equal
+to the original scalar step's input ID. Layer 0 attention differs from full
+prefill by 14.7%, versus 15.0% after 125 scalar steps. The two scalar paths differ
+by 3.65% there. Thus the layer-0 difference is already present at a single
+prefill-to-decode transition; it is not solely accumulation over 125 decode steps.
+No root-cause or quality-recovery claim follows from that localization alone.
+
+Receipts: [exact-logit-analysis.json](exact-logit-analysis.json),
+[utf8-next-mass.json](utf8-next-mass.json),
+[stage-tail-analysis.json](stage-tail-analysis.json),
+[forced-one-step-analysis.json](forced-one-step-analysis.json). Private tensors
+are under `st-bracket-dumps/st-telemachus-logits0917d-hold-d30713e09a8a` on their
+respective ranks. The isolated owner was `queue/st-telemachus-logits0917d`.
+
+### Actual KDA operand audit, 2026-09-18
+
+Source `b11061eb21cf`, owner `queue/st-telemachus-kda0918b`, adds private operand
+capture around layers 0 and 1. It also incorporates main's FC1 TMA proxy-fence
+repair `48a23b02`. The 126-token scalar continuation decodes to the same text as
+the earlier baseline. Three requests advance served count by one each, use zero
+cached tokens, and cover the original scalar continuation, fresh prefill through
+offset 125, and fresh prefill through 124 followed by the exact forced input.
+
+The CPU auditor uses the real convolution inputs/history, actual incoming KDA
+state, Q/K/V, gates, norm operands and resident linear weight packs. It covers
+80 cases across all four ranks. Maximum relative L2 differences are:
+
+| Operation | Prefill | Scalar decode |
+|---|---:|---:|
+| Convolution | 0.00226% | 0.00303% |
+| KDA output | 0.49292% | 0.01622% |
+| KDA final state | 0.23576% | 0.00000834% |
+| Output norm | 0.00393% | 0% |
+
+The largest linear-reader difference from the same quantized-weight arithmetic
+is 0.02602%. The convolution-to-recurrence and recurrence-to-norm handoffs are
+bit-identical. All 24 captured adjacent state/history boundaries match bit for
+bit, including prefill-to-decode and consecutive scalar steps. This does not
+support a large ring-state or kernel-arithmetic error at these first two layers.
+It does not validate the entire incoming prefill history, later layers, routed
+experts or sparse attention. Prefill recurrence checks cover the last 64-token
+kernel chunk (or its partial tail) using its captured starting state.
+
+`probes/audit_engine_kda_capture.py` reproduces the CPU audit from private `.pt`
+files. The diagnostic capture was separately checked on CPU to preserve output,
+marked-state order, ring mutations and the original lane bindings. The result is
+[kda-operands-audit.json](kda-operands-audit.json); private operands are retained
+outside git under `st-telemachus-kda0918b-hold-b11061eb21cf/incident-kda-operands`
+on each rank, with a private collected copy on srv2.
+
+Four additional T=1, seed-7, thinking-off controls finished below their 1,024-token
+cap. A 39-token standalone question produced 434 tokens of readable Korean.
+A 50,094-token prompt containing neutral filler and that same question also
+produced 434 readable tokens. The actual Deneb input with reasoning closed
+(50,006 tokens) still produced malformed Korean; removing the preceding turn
+(43,822 tokens) produced unrelated HTML before tool calls. None is a repair of
+the original request. The neutral control shows that this context length alone
+does not invariably trigger the corruption; it does not separate every effect
+of input content, activation distribution, template or quantization.
 
 ## Accepted-token counter defect found during review
 

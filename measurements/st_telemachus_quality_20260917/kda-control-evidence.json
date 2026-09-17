@@ -1,0 +1,96 @@
+{
+  "source": "b11061eb21cfdcbdef12b972c607e9025124569a",
+  "owner": "queue/st-telemachus-kda0918b",
+  "container": "2588b1fc1af24dc32e80d9103002e897ec97679ae3e168a4d0c63e35e1c65e4c st-engine:bracket-b11061eb21cf sha256:7d3be09944a12460898287695d636c47b7239089aecfc5e92647f79fa6248027",
+  "stop": "2026-09-18T00:47:21+09:00",
+  "operand_controls": [
+    {
+      "case": "scalar-126",
+      "owner": "queue/st-telemachus-kda0918b",
+      "served_before": 0,
+      "served_after": 1,
+      "seconds": 42.80093266104814,
+      "usage": {
+        "prompt_tokens": 50005,
+        "completion_tokens": 126,
+        "total_tokens": 50131,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "prefill-through-125",
+      "owner": "queue/st-telemachus-kda0918b",
+      "served_before": 1,
+      "served_after": 2,
+      "seconds": 16.161958548007533,
+      "usage": {
+        "prompt_tokens": 50130,
+        "completion_tokens": 1,
+        "total_tokens": 50131,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    },
+    {
+      "case": "forced-one-step",
+      "owner": "queue/st-telemachus-kda0918b",
+      "served_before": 2,
+      "served_after": 3,
+      "seconds": 16.14192401699256,
+      "usage": {
+        "prompt_tokens": 50129,
+        "completion_tokens": 2,
+        "total_tokens": 50131,
+        "prompt_tokens_details": {
+          "cached_tokens": 0
+        }
+      }
+    }
+  ],
+  "answer_controls": [
+    {
+      "case": "neutral-long-thinking-off",
+      "prompt_tokens": 50094,
+      "cached_tokens": 0,
+      "completion_tokens": 434,
+      "seconds": 30.275,
+      "text_sha256": "372fa3e2d0665690e56318c2034549bdd6eb9fd656a714b169f2ca24e57e5c92",
+      "ids_sha256": "4e90df3b3bebc3ffa2d93874e0b737567258038761aa270341d0124a150300d0",
+      "cap_hit": false
+    },
+    {
+      "case": "original-thinking-off",
+      "prompt_tokens": 50006,
+      "cached_tokens": 0,
+      "completion_tokens": 508,
+      "seconds": 36.529,
+      "text_sha256": "ce000c79cf2e50749d96749199a08becd2eb1b15ed575a17e3672bf4c994f48c",
+      "ids_sha256": "71d65e66c9696d5962582bdd0512c597707f265deeb0dd84df30b1a062bcc8e5",
+      "cap_hit": false
+    },
+    {
+      "case": "short-thinking-off",
+      "prompt_tokens": 39,
+      "cached_tokens": 0,
+      "completion_tokens": 434,
+      "seconds": 20.919,
+      "text_sha256": "b634ebeaa0705b063c488fbb8ea9cabbd1f5acf0914bb1b784d983ffd7c2c940",
+      "ids_sha256": "d84a29b555809891efc0396a862f655b5dd4b229b27dfd69bf14220a8ba0ee9e",
+      "cap_hit": false
+    },
+    {
+      "case": "without-prior-thinking-off",
+      "prompt_tokens": 43822,
+      "cached_tokens": 0,
+      "completion_tokens": 211,
+      "seconds": 19.593,
+      "text_sha256": "3e1be416820e05adc827d849f1763386635f596825e0bb06e4b6e3901ad8f3ac",
+      "ids_sha256": "24b98e40d553d570cc44454c726a2ccd6067400901d2069598ebe40d0a51b912",
+      "cap_hit": false
+    }
+  ],
+  "scope": "The scalar continuation text matched 126 baseline tokens; the three KDA cases are exact prefix controls. Thinking-off and neutral-filler requests are altered-input diagnostics, not repairs or throughput benchmarks."
+}
