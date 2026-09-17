@@ -29,7 +29,8 @@ TP 기준선80.49 tok/s와의 차이 및 프리필 비교 제한은
 | **그날의 조사** | 그날 참이었다 | **그대로 둔다.** 이후 바뀐 것은 `MEASUREMENTS.md` 가 안다 |
 | **그대로 두는 기록** | 당시의 산출물 | **고치지 않는다.** 고치면 기록이 거짓이 된다 |
 
-배너가 없으면 `tests/test_docs_status.py` 가 거절한다. 2026-09-12 에 스냅샷 크기 "77 MiB" 가 비교 문서 셋에
+배너가 없으면 `engine/`·`bench/`·`docs/`·`profiles/` 에서 `tests/test_docs_status.py` 가 거절한다
+(`overlay/modules/*/README.md`·`probes/*.md` 는 코드 옆에서 늙어가는 것을 전제로 면제된다). 2026-09-12 에 스냅샷 크기 "77 MiB" 가 비교 문서 셋에
 실제 값이 45 가 된 뒤로도 한참 남아 있었다 — 그 문서들이 **참을 유지하겠다고 말한 적이 없어서** 아무도 다시
 읽지 않았기 때문이다.
 
@@ -38,7 +39,7 @@ TP 기준선80.49 tok/s와의 차이 및 프리필 비교 제한은
 | 질문 | 문서 |
 |---|---|
 | 지금 무엇이 켜져 서빙되나 | [`profiles/README.md`](profiles/README.md) — 프로필별 모듈·기본 노브 표 |
-| 이 수치가 실측인가 | [`MEASUREMENTS.md`](MEASUREMENTS.md) — **여기 없으면 미실측**. 맨 앞에 판정 규율 8줄과 찾아보기 |
+| 이 수치가 실측인가 | [`MEASUREMENTS.md`](MEASUREMENTS.md) — **여기 없으면 미실측**. 맨 앞에 판정 규율 9줄과 찾아보기 |
 | 디코드 스텝이 무슨 커널로 이루어지나 | [`STEP_KERNEL_MAP.md`](STEP_KERNEL_MAP.md) — 개수·소유권·시간 구성·꼬리 |
 | 다음에 무엇을 부팅하나 | [`RUNBOOK_KERNEL_CAMPAIGN2.md`](RUNBOOK_KERNEL_CAMPAIGN2.md) — EXP 상태 표(부팅 필요 여부 포함) |
 | 이 모듈은 무엇을 접수하나 | `overlay/modules/<name>/manifest.tsv` + 같은 폴더의 `README.md`(있으면) |

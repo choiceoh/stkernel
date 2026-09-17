@@ -4,7 +4,8 @@ Fused small-M MoE router gate for GB10. Any MoE model on this fleet: the
 image's GateLinear tiers are gated on SM90/SM100 families, so sm_121 always
 takes the bf16 Tier-4 fallback. Measured C=1 +3.5% on DeepSeek-V4-Flash.
 
-Armed by `VLLM_DSV4_GATE_FUSED=1`; M > 32 keeps the stock path.
+Armed by `VLLM_MOE_GATE_FUSED=1` (the glm53 profile's name; the legacy
+`VLLM_DSV4_GATE_FUSED` alias still works); M > 32 keeps the stock path.
 
 ## Tried and rejected: the router's top-k as an epilogue (2026-09-05)
 

@@ -1,7 +1,9 @@
 # GLM53 decode transport and lossless scale candidates
 
 This follow-up implements three opt-in candidates above the adopted AR/MHC
-consumer path. `VLLM_GLM53_AR_CONSUMER_PDL=1` and `t,r` remain the defaults.
+consumer path. `VLLM_GLM53_AR_CONSUMER_PDL=1` stays the profile default; the
+static-v2 scale selection default is now `t,r,sf6` (`VLLM_GLM53_B12X_STATIC_V2`,
+`profiles/glm53.env`), not `t,r`.
 The operator resumed GPU onepass testing on 2026-09-09.
 CPU checks and compiler results establish host contracts and buildability; device numerics, transport
 ordering under RDMA, sanitizer results and step-speed gains remain separate.
@@ -39,8 +41,9 @@ have distinct proof markers; configuration alone does not prove execution.
 ## Scale storage and fallback
 
 `sf6` targets the current reform's FC1 and FC2 layouts, rather than the old
-`q` probe's 4 KiB FC1 stage. The original scales remain available to prefill
-and larger batches. A layer whose scale codes cannot be represented exactly
+`q` probe's 4 KiB FC1 stage. The packed buffers become the only owners: once
+`packed-only owners finalised ... raw_bytes_released` is logged, the original
+scale bytes are gone, not merely hidden. A layer whose scale codes cannot be represented exactly
 uses the uncompressed reform path; no clamping or scale rounding is allowed.
 The packed buffers are owned alongside the weight views and retained for
 captured launches. Legacy `q` remains probe-only and cannot be combined with

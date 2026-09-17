@@ -4,7 +4,7 @@ the pack's twin per forced slice count (ksr), per row count (m), and
 across back-to-back launches (a stale or unreset scratch shows as a
 second launch disagreeing with the first).
 
-    mkprobe.sh probes/mk_lorc_diag.py [--shapes 1024:4096,6416:4096,4096:512]
+    bash probes/run_mk_probe.sh probes/mk_lorc_diag.py [--shapes 1024:4096,6416:4096,4096:512]
 """
 import argparse, os, sys, torch
 

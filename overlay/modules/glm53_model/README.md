@@ -16,7 +16,7 @@ GLM-5.3 모델 배선 — 모델·어텐션·KDA·MLA 파일 접수, 밀집 GEMM
 
 ---
 
-## glm53_model_wiring (was `overlay/modules/glm53_model/`)
+## glm53_model_wiring (was its own flat overlay module — see the table above)
 
 ## glm53_model_wiring
 
@@ -49,7 +49,7 @@ Base contract from `glm53:v13-b12x`.
 
 ---
 
-## glm53_indexer_gate_splitk (was `overlay/modules/glm53_model/`)
+## glm53_indexer_gate_splitk (was its own flat overlay module — see the table above)
 
 ## glm53_indexer_gate_splitk
 
@@ -159,7 +159,7 @@ fastpath optionally imports this module, not the reverse.
 
 ---
 
-## glm53_mk_kda_wiring (was `overlay/modules/glm53_model/`; the MK-KDA takeover was sunset in 34차 §8 -- history)
+## glm53_mk_kda_wiring (was its own flat overlay module — see the table above; the MK-KDA takeover was sunset in 34차 §8 -- history)
 
 ## glm53_mk_kda_wiring
 
@@ -199,7 +199,7 @@ then decide the arm. See `overlay/modules/glm53_megakernel/README.md`.
 
 ---
 
-## glm53_mk_mla_wiring (was `overlay/modules/glm53_model/`)
+## glm53_mk_mla_wiring (was its own flat overlay module — see the table above)
 
 ## glm53_mk_mla_wiring
 
@@ -265,7 +265,7 @@ VLLM_GLM53_MEGAKERNEL=1 VLLM_GLM53_MK_MLA=1 bash launchers/start-glm53-nvfp4-tp4
 
 ---
 
-## glm53_kda_onepass (was `overlay/modules/glm53_model/`)
+## glm53_kda_onepass (was its own flat overlay module — see the table above)
 
 ## glm53_kda_onepass
 
@@ -298,7 +298,7 @@ Checkpoint shape this was written for (`st-glm53-nvidia-tp4-9391`, TP=4):
 verify block `SPEC_K 6 -> 7` tokens, so the merged `in_proj_qkvbfg_a` row is
 `q|k|v (3 x 2048) | beta (16) | f_a (128) | g_a (128) = 6416` columns and the
 conv state holds `3 + 6 = 9` slots per line. The model overlay
-(`glm53_mk_kda_wiring/glm5next_kda.py`) only imports this module when a knob
+(`glm53_model/glm5next_kda.py`) only imports this module when a knob
 is armed (the exact string `1`; the profile's `0` costs no import), calls `resolve()` once and then `gate_gemms()` / `spec_onepass()`;
 every knob, guard, self-test, log line and counter lives here.
 
@@ -428,7 +428,7 @@ keep the stock kernels.
 
 ---
 
-## glm53_fp8_dense (was `overlay/modules/glm53_model/`)
+## glm53_fp8_dense (was its own flat overlay module — see the table above)
 
 ## glm53_fp8_dense
 
@@ -542,7 +542,8 @@ sizing.
 The nvfp4 scheme (`VLLM_GLM53_FP8_DENSE=nvfp4`) replaces the method and so
 turns the MK lane off for every layer it takes (#263). This knob keeps the
 fp8 method and its W4 pack and ATTACHES an nvfp4 pair to it: rows above the
-MK lane's M (32) route to `mm_fp4` in `Fp8DenseMethod.apply`, decode keeps
+MK lane's M (`VLLM_GLM53_FP8_DENSE_PREFILL_NVFP4_MIN_M`, 1024 in the profile)
+route to `mm_fp4` in `Fp8DenseMethod.apply`, decode keeps
 the W4 lane, the fp8 pair stays the fallback. The alpha convention is settled
 once and a sample of layers re-runs the value check, exactly as the scheme
 does; a failed check keeps that layer's prefill on fp8. Cost ~+1 GB/rank of
