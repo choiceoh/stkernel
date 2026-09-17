@@ -692,7 +692,8 @@ class Glm53Engine:
         # Follow-up single-position controls: 7 FP8 dense decode, 8 BF16
         # prefill transport, 9 both. Every change is restored after forward.
         # 10 retains scalar W4 target computation and uses the torch sampling oracle.
-        mode = code // 1000 if 1000 <= code < 11000 else 0
+        # 11 changes only packet FFNs; 12 changes only the shared-MoE fused/overlap path.
+        mode = code // 1000 if 1000 <= code < 13000 else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -977,7 +978,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1140,7 +1141,7 @@ class Glm53Engine:
     def _incident_forward(self, step, *, prefill=False, **kwargs):
         modes = getattr(self, 'incident_modes', {})
         mode = modes.get(step.segments[0].seq, 0)
-        if mode not in (7, 8, 9):
+        if mode not in (7, 8, 9, 11, 12):
             return self._forward(step, **kwargs)
         if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
             raise ValueError('precision controls require one isolated target position')
@@ -1160,9 +1161,13 @@ class Glm53Engine:
                     layer.decode_precision = 'fp8'
                 # SharedMLP bypasses DenseLinear dispatch and reads W4 packs.
                 self.net.shared_overlap = None
+            if not prefill and mode == 12:
+                self.net.shared_overlap = None
             if prefill and mode in (8, 9):
                 transport.FP8_MIN_ROWS = 1 << 60
                 # Packet FFNs always pack FP8, independently of the threshold.
+                self.net.prefill_ffn_packets = False
+            if prefill and mode == 11:
                 self.net.prefill_ffn_packets = False
             seen = getattr(self, '_incident_precision_seen', set())
             key = (step.segments[0].seq, prefill)
@@ -1556,7 +1561,7 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
-        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10) for seq in seqs):
+        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12) for seq in seqs):
             if len(seqs) != 1:
                 raise ValueError('incident single-token control requires an isolated request')
             seq, slot = seqs[0], slots[0]
