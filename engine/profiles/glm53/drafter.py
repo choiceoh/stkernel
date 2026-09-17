@@ -515,18 +515,14 @@ class Drafter:
         F, p = self.F, self.p
         B = ids.shape[0]
         x = self.target.embed(ids)
-        res = None
+        res, h = x, norm(x, p["layers.0.input_layernorm.weight"], F.rms_eps)
         for L in range(F.layers):
             q = f"layers.{L}."
-            if res is None:
-                res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
-            else:
-                res, h = add_norm(res, x, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0])
             h = self._attn(L, h, positions, ring, ctx_len)
-            h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1])
-            res, h = add_norm(res, h, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1],
+                                          res, p[q + "post_attention_layernorm.weight"], B)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0])
             if self.fast_attention:
@@ -537,7 +533,11 @@ class Drafter:
             h = self.linear(h, q + "mlp.down_proj.weight")
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
-            x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
+            if L + 1 < F.layers:
+                res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1],
+                                              res, p[f"layers.{L+1}.input_layernorm.weight"], B)
+            else:
+                x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
         return self._finish_head_input(res, x, B, head_input)
 
     # -- every row of a step at once (45차 §23 GPU 판정 4차) --------------------------------------------
@@ -616,6 +616,10 @@ class Drafter:
             field[rows, L, 0, idx] = torch.where(keep, k, field[rows, L, 0, idx])
             field[rows, L, 1, idx] = torch.where(keep, v, field[rows, L, 1, idx])
 
+    def _post_conv_norm(self, x, delta, base, residual, weight, block):
+        from engine.kernels.draft_conv import tap_add_norm
+        return tap_add_norm(x, delta, base, residual, weight, self.F.rms_eps, self.F.conv_group, block)
+
     def _conv_rows(self, x, delta, base, t: int):
         """`_conv` over the step's blocks of t rows: the taps look back inside a block, never into the one before."""
         from engine.kernels.draft_conv import tap_mix
@@ -673,18 +677,14 @@ class Drafter:
         F, p = self.F, self.p
         rows_ok = alive.repeat_interleave(t) if alive is not None else None
         x = self.target.embed(ids)
-        res = None
+        res, h = x, norm(x, p["layers.0.input_layernorm.weight"], F.rms_eps)
         for L in range(F.layers):
             q = f"layers.{L}."
-            if res is None:
-                res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
-            else:
-                res, h = add_norm(res, x, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], t)
             h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok)
-            h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], t)
-            res, h = add_norm(res, h, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1],
+                                          res, p[q + "post_attention_layernorm.weight"], t)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], t)
             if self.fast_attention:
@@ -695,7 +695,11 @@ class Drafter:
             h = self.linear(h, q + "mlp.down_proj.weight", rows_ok)
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
-            x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
+            if L + 1 < F.layers:
+                res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1],
+                                              res, p[f"layers.{L+1}.input_layernorm.weight"], t)
+            else:
+                x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
         return self._finish_head_input(res, x, t, head_input)
 
     def _packed_head(self):

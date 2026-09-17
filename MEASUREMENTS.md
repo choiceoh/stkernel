@@ -4394,3 +4394,16 @@ speedups. Eight shapes pass exact bytes/logits, changed-input graphs and
 independent output checks; 62 CPU pass/6 skip and 115 SM121 compile variants.
 No persistent memory growth, queue or deployment. GB10/TP4 speed and acceptance
 unmeasured. [Receipts and limitations](measurements/st_cublaslt_producer_20260917/README.md).
+
+## 2026-09-17 — Drafter post-convolution residual/RMS fusion, K=7 unchanged
+
+The default drafter path fuses five post-attention and four interlayer MLP
+boundaries, preserving BF16 rounding and the existing final head producer.
+RTX 5050 synthetic width-4096, rows/block=8/8: group16 single-boundary
+2.462 → 1.819 µs and nine-boundary chain 24.622 → 17.365 µs; group256 chain
+22.614 → 16.269 µs. These are component savings, **not whole-drafter or
+engine speedups**. Seven cases pass exact outputs and changed-input graph
+replays; CPU 41 pass/8 skip and seven offline SM121 specializations pass.
+No queue/deployment; GB10/TP4 step/s and acceptance unmeasured. The measured
+microseconds do not resolve the historical millisecond-scale K sensitivity.
+[Raw brackets, hashes and reproduction](measurements/st_draft_post_norm_20260917/README.md).

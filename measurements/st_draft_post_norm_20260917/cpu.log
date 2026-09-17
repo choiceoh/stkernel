@@ -1,0 +1,64 @@
+test_cpu_matches_the_original_composition_and_preserves_inputs (tests.test_engine_draft_post_norm.PostNormTests.test_cpu_matches_the_original_composition_and_preserves_inputs) ... ok
+test_full_drafter_single_and_batched_blocks_match_unfused_boundaries (tests.test_engine_draft_post_norm.PostNormTests.test_full_drafter_single_and_batched_blocks_match_unfused_boundaries) ... ok
+test_invalid_block_and_shape_are_rejected (tests.test_engine_draft_post_norm.PostNormTests.test_invalid_block_and_shape_are_rejected) ... ok
+test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads (tests.test_engine_drafter.AuxLayerConventionTests.test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads)
+DFlash's ids are 0-based layers whose completed OUTPUT feeds fc: the reference implementation reads ... ok
+test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar (tests.test_engine_drafter.CommittedCountTests.test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar) ... ok
+test_dense_shapes_name_every_prepared_weight_at_this_tp (tests.test_engine_drafter.DrafterTests.test_dense_shapes_name_every_prepared_weight_at_this_tp) ... ok
+test_device_selector_matches_the_scalar_greedy_walk (tests.test_engine_drafter.DrafterTests.test_device_selector_matches_the_scalar_greedy_walk) ... ok
+test_each_block_row_sees_the_context_through_its_own_sliding_window (tests.test_engine_drafter.DrafterTests.test_each_block_row_sees_the_context_through_its_own_sliding_window)
+DFlash's mask (z-lab/dflash _attention_mask): the query at ctx + j sees context position p while ... ok
+test_long_observation_retains_the_newest_window (tests.test_engine_drafter.DrafterTests.test_long_observation_retains_the_newest_window) ... ok
+test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail (tests.test_engine_drafter.DrafterTests.test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail)
+Exercise the merged batched interface with packed readers and no BF16 sources. ... ok
+test_rows_attention_uses_the_same_per_query_window (tests.test_engine_drafter.DrafterTests.test_rows_attention_uses_the_same_per_query_window)
+`_attn_rows` reads the ring in storage order; each cell's position is the newest one congruent to it. ... ok
+test_rows_observe_writes_the_valid_cells_in_place (tests.test_engine_drafter.DrafterTests.test_rows_observe_writes_the_valid_cells_in_place) ... ok
+test_rows_propose_matches_the_per_row_walk (tests.test_engine_drafter.DrafterTests.test_rows_propose_matches_the_per_row_walk)
+Three rows in three slots -- two with a context shorter than the window, one longer -- at once: the same ... ok
+test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions (tests.test_engine_drafter.DrafterTests.test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions) ... ok
+test_the_host_walk_crosses_once_not_twice_a_position (tests.test_engine_drafter.DrafterTests.test_the_host_walk_crosses_once_not_twice_a_position) ... ok
+test_the_masks_of_the_batched_paths_reach_the_packs (tests.test_engine_drafter.DrafterTests.test_the_masks_of_the_batched_paths_reach_the_packs)
+A calibrating pack sums only the rows the drafter says are real: `observe_rows` passes the kept positions, ... ok
+test_the_sampled_walk_hands_back_the_distribution_it_drew_from (tests.test_engine_drafter.DrafterTests.test_the_sampled_walk_hands_back_the_distribution_it_drew_from)
+The accept test divides by this, so it has to be the one the pick came out of. ... ok
+test_the_compute_phase_does_not_depend_on_the_accepted_count (tests.test_engine_drafter.ObserveOverlapTests.test_the_compute_phase_does_not_depend_on_the_accepted_count)
+The overlap starts observe_kv before the commit decides the count. That is only correct because the ... skipped "observe's write phase is a device kernel"
+test_the_split_is_byte_for_byte_the_single_pass (tests.test_engine_drafter.ObserveOverlapTests.test_the_split_is_byte_for_byte_the_single_pass) ... skipped "observe's write phase is a device kernel"
+test_the_reference_keeps_the_taps_inside_a_block (tests.test_engine_draft_conv.ContractTests.test_the_reference_keeps_the_taps_inside_a_block)
+Two blocks of three, the second all zeros: nothing from the first may leak across the boundary. ... ok
+test_what_the_mix_refuses (tests.test_engine_draft_conv.ContractTests.test_what_the_mix_refuses) ... ok
+test_a_delta_that_is_a_slice_of_a_projection_is_read_where_it_lies (tests.test_engine_draft_conv.KernelTests.test_a_delta_that_is_a_slice_of_a_projection_is_read_where_it_lies)
+What the block hands over is `coeff[:, 0]` of a [rows, 2, taps, groups] projection -- a view whose ... skipped 'the fused mix is the CUDA path'
+test_a_row_whose_only_live_tap_is_the_first_is_the_old_answer_exactly (tests.test_engine_draft_conv.KernelTests.test_a_row_whose_only_live_tap_is_the_first_is_the_old_answer_exactly) ... skipped 'the fused mix is the CUDA path'
+test_the_sum_is_within_two_half_steps_of_the_form_that_rounded_every_tap (tests.test_engine_draft_conv.KernelTests.test_the_sum_is_within_two_half_steps_of_the_form_that_rounded_every_tap) ... skipped 'the fused mix is the CUDA path'
+test_the_taps_do_not_cross_a_block_boundary (tests.test_engine_draft_conv.KernelTests.test_the_taps_do_not_cross_a_block_boundary) ... skipped 'the fused mix is the CUDA path'
+test_default_proof_requires_the_drafter_head_producer_to_execute (tests.test_engine_cublaslt_producer.ProducerContracts.test_default_proof_requires_the_drafter_head_producer_to_execute) ... ok
+test_draft_finish_uses_compact_producer_only_for_requested_head_input (tests.test_engine_cublaslt_producer.ProducerContracts.test_draft_finish_uses_compact_producer_only_for_requested_head_input) ... ok
+test_native_mx_rejects_invalid_scale_abi_before_dispatch (tests.test_engine_cublaslt_producer.ProducerContracts.test_native_mx_rejects_invalid_scale_abi_before_dispatch) ... ok
+test_prepared_head_preserves_observer_logical_width_and_out (tests.test_engine_cublaslt_producer.ProducerContracts.test_prepared_head_preserves_observer_logical_width_and_out) ... ok
+test_combined_fp8_is_declared_and_both_packs_are_sent_to_compaction (tests.test_engine_drafter_storage.DrafterStorageTests.test_combined_fp8_is_declared_and_both_packs_are_sent_to_compaction) ... ok
+test_context_phase_survives_early_projection_and_short_commits (tests.test_engine_drafter_storage.DrafterStorageTests.test_context_phase_survives_early_projection_and_short_commits) ... ok
+test_fused_context_norm_is_owned_by_the_declared_compact_region (tests.test_engine_drafter_storage.DrafterStorageTests.test_fused_context_norm_is_owned_by_the_declared_compact_region) ... ok
+test_layout_removes_raw_projections_and_reserves_only_live_readers (tests.test_engine_drafter_storage.DrafterStorageTests.test_layout_removes_raw_projections_and_reserves_only_live_readers) ... ok
+test_packed_reservation_fits_folded_and_unfolded_metadata (tests.test_engine_drafter_storage.DrafterStorageTests.test_packed_reservation_fits_folded_and_unfolded_metadata) ... ok
+test_precision_selection_covers_supported_rows_and_context_prefill (tests.test_engine_drafter_storage.DrafterStorageTests.test_precision_selection_covers_supported_rows_and_context_prefill) ... ok
+test_prepare_uses_the_declared_precision_and_refuses_oversized_blocks (tests.test_engine_drafter_storage.DrafterStorageTests.test_prepare_uses_the_declared_precision_and_refuses_oversized_blocks) ... ok
+test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets (tests.test_engine_draft_tuning_integration.WalkTests.test_cuda_controlled_walk_and_trace_match_cpu_and_replay_changed_packets) ... skipped 'CUDA selector numerics; CPU CI never launches GPUs'
+test_fc_bias_norm_cuda_graph_reads_the_owned_vector (tests.test_engine_draft_tuning_integration.WalkTests.test_fc_bias_norm_cuda_graph_reads_the_owned_vector) ... skipped 'CUDA fused norm numerics; CPU CI never launches GPUs'
+test_fc_bias_norm_preserves_fp32_addition_and_signed_weight (tests.test_engine_draft_tuning_integration.WalkTests.test_fc_bias_norm_preserves_fp32_addition_and_signed_weight) ... ok
+test_position_alpha_and_forced_predecessor_are_used_in_the_actual_walk (tests.test_engine_draft_tuning_integration.WalkTests.test_position_alpha_and_forced_predecessor_are_used_in_the_actual_walk) ... ok
+test_actual_proposal_masks_before_topk_and_sampled_q_matches_the_forced_pick (tests.test_engine_draft_tuning_integration.WiringTests.test_actual_proposal_masks_before_topk_and_sampled_q_matches_the_forced_pick) ... ok
+test_capture_construction_binds_boundary_input_only_when_enabled (tests.test_engine_draft_tuning_integration.WiringTests.test_capture_construction_binds_boundary_input_only_when_enabled) ... ok
+test_fc_bias_follows_decode_phase_even_with_shared_calibration (tests.test_engine_draft_tuning_integration.WiringTests.test_fc_bias_follows_decode_phase_even_with_shared_calibration) ... ok
+test_packet_reuse_resets_to_empty_on_both_graph_entry_points (tests.test_engine_draft_tuning_integration.WiringTests.test_packet_reuse_resets_to_empty_on_both_graph_entry_points) ... ok
+test_preparation_requires_real_statistics_and_binds_only_draft_names (tests.test_engine_draft_tuning_integration.WiringTests.test_preparation_requires_real_statistics_and_binds_only_draft_names) ... ok
+test_projection_precision_reaches_greedy_sampled_and_batched_paths (tests.test_engine_draft_tuning_integration.WiringTests.test_projection_precision_reaches_greedy_sampled_and_batched_paths) ... ok
+test_trace_collection_cannot_run_ahead_and_overwrite_its_proposal (tests.test_engine_draft_tuning_integration.WiringTests.test_trace_collection_cannot_run_ahead_and_overwrite_its_proposal) ... ok
+test_projection_is_identical_and_only_final_retained_rows_calibrate (tests.test_engine_early_observe.EarlyObserveTests.test_projection_is_identical_and_only_final_retained_rows_calibrate) ... ok
+test_subgroups_preserve_slot_mapping_and_unrounded_capacity (tests.test_engine_early_observe.EarlyObserveTests.test_subgroups_preserve_slot_mapping_and_unrounded_capacity) ... ok
+
+----------------------------------------------------------------------
+Ran 49 tests in 1.086s
+
+OK (skipped=8)
