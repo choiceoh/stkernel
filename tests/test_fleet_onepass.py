@@ -6,7 +6,6 @@ import json
 import os
 from pathlib import Path
 import shutil
-import sqlite3
 import sys
 import tempfile
 import unittest
@@ -25,8 +24,7 @@ class OnepassPolicyTests(unittest.TestCase):
         self.controller = self.root / 'controller'
         self.repo = self.root / 'candidate'
         for relative in (*policy.SHELL_ENTRIES, *policy.PYTHON_ENTRIES, *policy.ST_PROBES,
-                         'bench/fleet.sh', 'bench/serving_group.py', 'bench/experiment_baselines.py',
-                         'bench/onepass_deploy.py'):
+                         *policy.ST_BRACKET_DEPENDENCIES, 'bench/fleet.sh'):
             for root in (self.controller, self.repo):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -37,10 +35,9 @@ class OnepassPolicyTests(unittest.TestCase):
         return policy.validate(command, self.repo, self.controller,
                                kwargs.pop('environment', self.environment), **kwargs)
 
-    def test_canonical_pair_chain_arm_and_live_onepass(self):
-        for command in (['bash', 'bench/pair.sh', 'CAND', 'VLLM_X=1'],
-                        ['bash', 'bench/chain.sh', 'A=VLLM_X=1', 'BASE='],
-                        ['bash', 'bench/ab-lever.sh', 'ARM', ''],
+    def test_canonical_bracket_arm_and_live_onepass(self):
+        for command in (['bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'],
+                        ['bash', 'bench/st_bracket.sh', 'hold', '0123456789abcdef', '45'],
                         ['python3', 'bench/onepass.py', '--name', 'LIVE', '--ctx', '2000,32000']):
             with self.subTest(command=command):
                 self.assertEqual(self.validate(command)['policy'], 'onepass-only')
@@ -54,20 +51,14 @@ class OnepassPolicyTests(unittest.TestCase):
             with self.subTest(command=command), self.assertRaisesRegex(ValueError, 'onepass-only'):
                 self.validate(command)
 
-    def test_after_and_boot_only_legs_fail_before_execution(self):
-        for command in (['bash', 'bench/chain.sh', 'A=', '--after', 'A', 'gpu-check'],
-                        ['bash', 'bench/chain.sh', 'A=', '--legs', 'A', 'none'],
-                        ['env', 'LEGS=none', 'bash', 'bench/ab-lever.sh', 'A'],
-                        ['env', 'PREFILL_WARMUP=1', 'bash', 'bench/pair.sh', 'A'],
-                        ['bash', 'bench/ab-lever.sh', 'A', 'PREFILL_WARMUP=1'],
-                        ['env', 'LEGS=onepass,decode', 'bash', 'bench/pair.sh', 'A']):
-            with self.subTest(command=command), self.assertRaisesRegex(ValueError, 'onepass-only'):
-                self.validate(command)
-
-    def test_live_lane_never_allows_boots(self):
-        for entry in policy.SHELL_ENTRIES:
+    def test_the_live_lane_accepts_only_onepass_and_the_bracket_probe(self):
+        self.assertEqual(self.validate(['bash', 'bench/st_bracket.sh', 'probe'], kind='probe')['entry'],
+                         'bench/st_bracket.sh')
+        for entry in ('probes/run_engine_probe.sh', 'probes/run_engine_check.sh'):
             with self.subTest(entry=entry), self.assertRaisesRegex(ValueError, 'live-serving lane'):
                 self.validate(['bash', entry, 'A'], kind='probe')
+        with self.assertRaisesRegex(ValueError, 'live-serving lane'):
+            self.validate(['bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'], kind='probe')
 
     def test_the_st_engine_checks_queue_like_everything_else(self):
         """They take the same four nodes, so they belong in this queue and not behind a
@@ -138,8 +129,8 @@ class OnepassPolicyTests(unittest.TestCase):
         self.assertEqual(self.validate(four)['gpus'], 4)      # one rank per Spark
         with self.assertRaisesRegex(ValueError, 'needs the four Sparks'):
             self.validate(four, kind='single')
-        for command in (['bash', 'bench/pair.sh', 'A'], ['bash', 'bench/chain.sh', 'A='],
-                        ['python3', 'bench/onepass.py'], ['bash', 'probes/run_ar_consumer_campaign.sh']):
+        for command in (['bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'],
+                        ['python3', 'bench/onepass.py']):
             with self.subTest(command=command):
                 self.assertEqual(self.validate(command)['gpus'], 4)
                 with self.assertRaisesRegex(ValueError, 'needs the four Sparks'):
@@ -162,7 +153,7 @@ class OnepassPolicyTests(unittest.TestCase):
         self.assertEqual(budget('probes/run_engine_probe.sh', 'probes/engine_graph_profile.py'), 64)
         self.assertEqual(budget('probes/run_engine_probe.sh', 'probes/engine_kernel_check.py', '--lanes', 'decode_rows'), 8)
         self.assertEqual(budget('probes/run_engine_check.sh', '--layers', '0-4'), 8)
-        self.assertIsNone(budget('bench/pair.sh', 'CAND', 'VLLM_X=1'))          # a fleet boot has no budget beside production
+        self.assertIsNone(budget('bench/st_bracket.sh', 'pair', '0123456789abcdef'))   # a fleet boot has no budget beside production
         self.assertTrue(set(policy.ST_PROBE_BUDGET_GIB) <= set(policy.ST_PROBES), "every budgeted probe is an admitted one")
 
     def test_admitting_the_st_runner_never_admits_an_arbitrary_probe(self):
@@ -191,38 +182,41 @@ class OnepassPolicyTests(unittest.TestCase):
                 path.write_bytes(original)
 
     def test_familiar_filename_cannot_hide_modified_source(self):
-        (self.repo / 'bench/pair.sh').write_text('docker run --gpus all extra\n')
+        (self.repo / 'bench/st_bracket.sh').write_text('docker run --gpus all extra\n')
         with self.assertRaisesRegex(ValueError, 'differs from the current canonical'):
-            self.validate(['bash', 'bench/pair.sh', 'A'])
+            self.validate(['bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'])
 
-    def test_transitive_onepass_or_lever_change_is_rejected(self):
-        for relative in ('bench/ab-lever.sh', 'bench/onepass.py'):
+    def test_transitive_onepass_change_is_rejected(self):
+        """The bracket's byte-pinned dependencies include the judge and the onepass it runs;
+        a stale one in the candidate tree is not the canonical bytes."""
+        for relative in ('bench/onepass.py', 'bench/st_judge.py'):
             with self.subTest(relative=relative):
                 path = self.repo / relative
                 original = path.read_bytes()
                 path.write_bytes(original + b'# stale workload\n')
                 with self.assertRaisesRegex(ValueError, 'differs from the current canonical'):
-                    self.validate(['bash', 'bench/pair.sh', 'A'])
+                    self.validate(['bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'])
                 path.write_bytes(original)
 
     def test_env_prefixes_use_effective_values_and_verify_overrides(self):
-        lever = self.root / 'ab-lever2.sh'
-        shutil.copyfile(self.controller / 'bench/ab-lever.sh', lever)
-        env = dict(self.environment, LEVER=str(lever), FLEET=str(self.controller / 'bench/fleet.sh'))
-        self.validate(['env', '-u', 'LEGS', 'bash', 'bench/pair.sh', 'A'],
+        fleet = self.root / 'custom-fleet.sh'
+        shutil.copyfile(self.controller / 'bench/fleet.sh', fleet)
+        env = dict(self.environment, FLEET=str(self.controller / 'bench/fleet.sh'))
+        self.validate(['env', '-u', 'LEGS', 'bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'],
                       environment=dict(env, LEGS='none'))
-        self.validate(['env', '-i', 'REPO=' + str(self.repo), 'bash', 'bench/pair.sh', 'A'])
-        lever.write_text('custom GPU work\n')
+        self.validate(['env', '-i', 'REPO=' + str(self.repo), 'bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'])
+        fleet.write_text('docker run --gpus all custom work\n')
         with self.assertRaisesRegex(ValueError, 'differs from the current canonical'):
-            self.validate(['env', 'LEVER=' + str(lever), 'bash', 'bench/pair.sh', 'A'])
+            self.validate(['env', 'FLEET=' + str(fleet), 'bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'])
         with self.assertRaisesRegex(ValueError, 'injection setting'):
-            self.validate(['env', 'BASH_ENV=/tmp/custom.sh', 'bash', 'bench/pair.sh', 'A'])
+            self.validate(['env', 'BASH_ENV=/tmp/custom.sh', 'bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef'])
 
-    def test_arm_grammar_rejects_hidden_control_commands_and_duplicates(self):
-        for command in (['bash', 'bench/pair.sh', 'A', 'VLLM_X=1;docker run'],
-                        ['bash', 'bench/pair.sh', 'A', 'LEVER=/tmp/custom'],
-                        ['bash', 'bench/chain.sh', 'A=', 'A=VLLM_X=1'],
-                        ['bash', 'bench/ab-lever.sh', 'A', '', 'extra']):
+    def test_bracket_grammar_rejects_invented_arms_and_bad_shas(self):
+        for command in (['bash', 'bench/st_bracket.sh'],
+                        ['bash', 'bench/st_bracket.sh', 'pair'],
+                        ['bash', 'bench/st_bracket.sh', 'pair', 'nothex'],
+                        ['bash', 'bench/st_bracket.sh', 'chain'],
+                        ['bash', 'bench/st_bracket.sh', 'deploy', '0123456789abcdef']):
             with self.subTest(command=command), self.assertRaises(ValueError):
                 self.validate(command)
 
@@ -239,48 +233,11 @@ class OnepassPolicyTests(unittest.TestCase):
             with self.subTest(args=args), self.assertRaises(ValueError):
                 self.validate(['python3', 'bench/onepass.py', *args])
 
-    def test_only_documented_ar_campaign_arguments_are_allowed(self):
-        for args in ([], ['--baseline-only'], ['--gpu-evidence', '/prior/results'],
-                     ['--gpu-evidence', '/prior/results', '--baseline-only']):
-            self.validate(['bash', 'probes/run_ar_consumer_campaign.sh', *args])
-        for args in (['--gpu-evidence'], ['--after', 'gpu-check'], ['--check-gpu']):
-            with self.assertRaises(ValueError):
-                self.validate(['bash', 'probes/run_ar_consumer_campaign.sh', *args])
-
-    def experiment(self, kind='pair', command=None, repo=None):
-        root = self.root / 'experiments'
-        root.mkdir(exist_ok=True)
-        with contextlib.closing(sqlite3.connect(root / 'experiments.sqlite3')) as connection, connection:
-            connection.execute('CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY,payload TEXT)')
-            payload = dict(repo=str(repo or self.repo), bash='/bin/bash',
-                           spec=dict(kind=kind, command=command or [], knobs={'VLLM_X': '1'}, env={}))
-            connection.execute('INSERT OR REPLACE INTO jobs VALUES (?,?)', ('job1', json.dumps(payload)))
-        return ['python3', 'bench/experiments.py', '--root', str(root), 'execute', 'job1']
-
-    def test_recorded_pair_and_baseline_are_admitted_read_only(self):
-        for kind in ('pair', 'baseline'):
-            self.assertEqual(self.validate(self.experiment(kind))['entry'], 'bench/experiments.py')
-
-    def test_recorded_custom_probe_wrong_repo_and_missing_job_are_rejected(self):
-        for kind in ('probe', 'cpu'):
-            with self.assertRaisesRegex(ValueError, 'standard pair'):
-                self.validate(self.experiment(kind))
-        with self.assertRaisesRegex(ValueError, 'standard pair'):
-            self.validate(self.experiment(command=['bash', 'custom.sh']))
-        with self.assertRaisesRegex(ValueError, 'execution repository'):
-            self.validate(self.experiment(repo=self.controller))
-        command = self.experiment()
-        command[-1] = 'missing'
-        with self.assertRaisesRegex(ValueError, 'unknown experiment'):
-            self.validate(command)
-        with self.assertRaisesRegex(ValueError, 'expected experiments.py'):
-            self.validate(['python3', 'bench/experiments.py', 'worker', 'job1'])
-
-    def test_only_fabricating_helpers_receive_cpu_rehearsal_exemption(self):
+    def test_only_the_bracket_receives_cpu_rehearsal_exemption(self):
         prefix = ['--repo', str(self.controller), '--cwd', str(self.repo), '--rehearsal-only', '--']
         with patch.dict(os.environ, dict(self.environment, FLEET_REHEARSE='1'), clear=True), contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(policy.main([*prefix, 'bash', 'bench/pair.sh', 'A']), 0)
+            self.assertEqual(policy.main([*prefix, 'bash', 'bench/st_bracket.sh', 'pair', '0123456789abcdef']), 0)
             self.assertEqual(policy.main([*prefix, 'python3', 'bench/onepass.py']), 2)
             self.assertEqual(policy.main([*prefix, 'bash', 'probes/run_mk_probe.sh']), 2)
 
@@ -295,8 +252,6 @@ class OnepassPolicyTests(unittest.TestCase):
                 patch('fleet_idle.descendant', return_value=False), \
                 self.assertRaisesRegex(ValueError, 'owning supervisor'):
             policy.authorize_wait(self.root, 'mine', 321)
-            self.assertEqual(policy.main([*prefix, 'env', 'FLEET_REHEARSE=0', 'bash', 'bench/pair.sh', 'A']), 2)
-            self.assertEqual(policy.main([*prefix, 'env', '-u', 'FLEET_REHEARSE', 'bash', 'bench/pair.sh', 'A']), 2)
 
 
 if __name__ == '__main__':

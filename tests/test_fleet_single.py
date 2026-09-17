@@ -288,8 +288,7 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(policy.gpus_needed('probes/run_engine_probe.sh', ['probes/engine_kernel_check.py']), 1)
         self.assertEqual(policy.gpus_needed('probes/run_engine_probe.sh',
                                             ['engine/profiles/glm53/check.py', '--distributed']), 4)
-        for entry in ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh', 'bench/onepass.py',
-                      'bench/experiments.py', 'probes/run_ar_consumer_campaign.sh'):
+        for entry in ('bench/onepass.py', 'bench/st_bracket.sh'):
             self.assertEqual(policy.gpus_needed(entry, []), 4, entry)
 
 
@@ -491,10 +490,11 @@ class RunLaneDecisionTests(unittest.TestCase):
         self.directory = self.logs / 'fleet'
         self.directory.mkdir(parents=True)
         for relative in ('bench/fleet.sh', 'bench/fleet_onepass.py', 'bench/fleet_prepare.py', 'bench/fleet_prepared.py',
-                         'bench/fleet_classify.py', 'bench/fleet_single.py', 'bench/pair.sh', 'bench/chain.sh',
-                         'bench/ab-lever.sh', 'bench/onepass.py', 'bench/onepass_deploy.py', 'bench/measurement_contract.py',
+                         'bench/fleet_classify.py', 'bench/fleet_single.py', 'bench/onepass.py', 'bench/st_bracket.sh',
+                         'bench/measurement_contract.py', 'bench/st_screen.py', 'bench/st_judge.py',
+                         'bench/onepass_recording.py', 'bench/onepass_quality.py',
                          'bench/fleet_handoff.py', 'bench/fleet_pending.py', 'bench/fleet_idle.py',
-                         'probes/run_ar_consumer_campaign.sh', 'probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
+                         'probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
                          *policy.ST_PROBES):
             (self.repo / relative).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / relative, self.repo / relative)
@@ -540,16 +540,15 @@ class RunLaneDecisionTests(unittest.TestCase):
         result = self.run_fleet('run', '--gpu', 'st', '30', 'four ranks', '--', *distributed)
         self.assertNotIn(lane, result.stdout)
         self.assert_stopped_at_preparation(result)
-        result = self.run_fleet('run', '--gpu', 'pair', '25', 'a boot', '--', 'bash', 'bench/pair.sh', 'A', '')
+        result = self.run_fleet('run', '--gpu', 'boot', '25', 'a boot', '--', 'python3', 'bench/onepass.py')
         self.assertNotIn(lane, result.stdout)
         self.assert_stopped_at_preparation(result)
 
     def test_preflight_knows_the_lane_and_refuses_a_boot_in_it(self):
         result = self.run_fleet('preflight', '--single', 'st', '--', 'bash', 'probes/run_engine_check.sh', '--layers', '0-4')
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn('SKIP declared-knob check (single: no launcher in the path)', result.stdout)
         self.assertIn('-> PASS', result.stdout)
-        result = self.run_fleet('preflight', '--single', 'st', '--', 'bash', 'bench/pair.sh', 'A')
+        result = self.run_fleet('preflight', '--single', 'st', '--', 'python3', 'bench/onepass.py')
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn('needs the four Sparks', result.stdout)
         self.assertFalse(self.prepared.exists())

@@ -17,7 +17,6 @@ def build(raw, repo, base=None):
     if type(cpu_jobs) is not int or not 1 <= cpu_jobs <= 8:
         raise ValueError('cpu_jobs must be 1..8')
     suites = gpu.pop('cpu_suites', None)
-    contracts = gpu.pop('cpu_contracts', None)
     tests = gpu.pop('cpu_tests', [])
     preparation = gpu.pop('prepare', [])
     obj = objective(gpu.pop('objective', None))
@@ -32,30 +31,18 @@ def build(raw, repo, base=None):
     if gpu['kind'] != 'pair':
         raise ValueError('plan expects a serving pair configuration')
     changed = git(repo, 'diff', '--name-only', base, 'HEAD').splitlines() if base else []
-    if suites is None and contracts is None and not tests:
-        from cpu_contracts import changed_contracts
-        contracts = changed_contracts(repo,base)
-    contracts = contracts or []
-    if suites is None and contracts:
-        suites = []
-    elif suites is None:
-        suites = ['fleet'] if changed and all(p.startswith('bench/') or p.startswith('tests/test_fleet') for p in changed) else ['logic']
-        if any(p.startswith('launchers/') or p.startswith('profiles/') for p in changed):
-            suites.append('startup')
-    if not isinstance(suites, list) or not isinstance(tests, list) or not isinstance(contracts,list) or not (suites or tests or contracts):
+    # The overlay math contracts retired with the overlay (2026-09-18); the
+    # fleet suite is the one CPU gate this planner still names by default.
+    if suites is None and not tests:
+        suites = ['fleet']
+    if not isinstance(suites, list) or not isinstance(tests, list) or not (suites or tests):
         raise ValueError('plan needs at least one CPU suite/test')
-    from cpu_contracts import CONTRACTS
-    if any(not isinstance(c,str) or c not in CONTRACTS for c in contracts):
-        raise ValueError('unknown CPU contract')
     from cpu_checks import SUITES
     if any(s not in SUITES for s in suites):
         raise ValueError('unknown CPU suite')
     import re
     if any(not isinstance(t, str) or not re.fullmatch(r'tests/test_[A-Za-z0-9_]+\.py', t) or not (repo / t).is_file() for t in tests):
         raise ValueError('CPU tests must name existing tests/test_*.py files')
-    # Keep the aggregate deployment gate unchanged; plans represent its core
-    # and fleet components as independently reusable required jobs.
-    suites = list(dict.fromkeys(part for suite in suites for part in (['core','fleet'] if suite=='logic' else [suite])))
     common = dict(kind='cpu', revision=gpu['revision'], context=gpu['context'], inputs=gpu['inputs'])
     stages = []
     checks = [(suite,['--suite',suite]) for suite in suites]
@@ -66,14 +53,6 @@ def build(raw, repo, base=None):
             command=['python3','bench/cpu_checks.py',*arguments],
             resources={'cpu_slots':cpu_jobs if name=='fleet' else 1}),repo)
         stages.append(dict(name='checks' if len(checks)==1 else 'checks-'+name,manifest=check,requires=[]))
-    for contract in dict.fromkeys(contracts):
-        manifest = normalize(dict(common,hypothesis='CPU '+contract+': '+gpu['hypothesis'],
-                             command=['python3','bench/cpu_checks.py','--contract',contract]),repo)
-        stages.append(dict(name='checks-'+contract,manifest=manifest,requires=[]))
-    if contracts and 'sensitivity' not in suites:
-        manifest = normalize(dict(common,hypothesis='CPU fault sensitivity: '+gpu['hypothesis'],
-                             command=['python3','bench/cpu_checks.py','--suite','sensitivity']),repo)
-        stages.append(dict(name='sensitivity',manifest=manifest,requires=[]))
     if not isinstance(preparation, list) or len(preparation) > 8:
         raise ValueError('prepare must list at most eight CPU build stages')
     for index, step in enumerate(preparation):

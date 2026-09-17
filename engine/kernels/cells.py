@@ -202,7 +202,7 @@ def dense_glue_refusal(cols: int) -> "str | None":
 
 _GPU = "a GPU ticket (bench/fleet.sh run --gpu)"
 _FLEET = "a fleet ticket (bench/fleet.sh run --gpu --fleet: four ranks)"
-_MLA_JUDGE = "probes/mla_check.py vs modules/sparse_attention.mla_sparse_mqa (rel <= 2e-2, the self-test mla.maybe_arm runs)"
+_MLA_JUDGE = "the glue test's mla_sparse_mqa twin vs modules/sparse_attention.mla_sparse_mqa (rel <= 2e-2, the self-test mla.maybe_arm runs; the fork-differential probe retired with the overlay stack)"
 _MOE_JUDGE = ("probes/engine_kernel_check.py --lanes moe vs modules/moe.expert_gemm (rel 2%), then the profile's "
               "quality gate (D4)")
 _KDA_JUDGE = ("probes/linear_attention_check.py vs modules/linear_attention (max |o-HF| 9.8e-4, |state-HF| 2.3e-3 "
@@ -335,7 +335,7 @@ def _recipe_mhc_variant(shape, lane):
     seam = ("engine/kernels/dense/mhc.MHCV41 wraps the megakernel's V4.1 seam (run_mhc_v41): the previous sublayer's "
             "post and comb mixed into the residual, this sublayer's split-sinkhorn mixes projected from it, the layer "
             "input collapsed by the previous sublayer's pre, and this pre carried to the next call")
-    judge = (f"{_GLUE_TEST} on {_GPU} against probes/mk_mhc_geometry_bench.py v41_component_reference (pooled and "
+    judge = (f"{_GLUE_TEST} on {_GPU} against engine/kernels/dense/mhc_reference.py v41_component_reference (pooled and "
              "worst-token rel <= 1e-3), then modules/hyper_connection.hc_split_sinkhorn in the profile's check")
     if lane == "mhc_decode":
         return Recipe("wire", "engine/profiles/<profile>/lanes.py (bind engine/kernels/dense/mhc.MHCV41)",
@@ -363,7 +363,7 @@ def _recipe_mhc(shape, seam="mhc"):
     """The work for a hyper-connection width or hc the compiled segment lacks: `seam` "mhc" is the MK segment (run_mhc,
     GLM-5.3's form), "v41" the megakernel's V4.1 seam (run_mhc_v41, the split-sinkhorn form the MHCV41 glue serves)."""
     v41 = seam == "v41"
-    judge = (f"{_GLUE_TEST} on {_GPU} against probes/mk_mhc_geometry_bench.py v41_component_reference (pooled and "
+    judge = (f"{_GLUE_TEST} on {_GPU} against engine/kernels/dense/mhc_reference.py v41_component_reference (pooled and "
              "worst-token rel <= 1e-3)" if v41 else
              "tests/test_engine_mk_mhc.py vs modules/hyper_connection.mhc_pre/mhc_post (rel < 0.006, captured replay)")
     served = "MHCV41 serves it" if v41 else "the D17 probe boots"
@@ -385,12 +385,12 @@ def _recipe_mhc(shape, seam="mhc"):
                   f"{shape.hidden // 256} are integral (5120 was added this way, PR #518); "
                   + ("engine/kernels/dense/mhc.MHCV41" if v41 else "engine/kernels/dense/mhc.py") + " then admits it "
                   "through cells.MHC_HIDDEN",
-                  judge + ("" if v41 else f" and probes/mk_mhc_geometry_bench.py on {_GPU}"),
+                  judge + ("" if v41 else f" and engine/kernels/dense/mhc_reference.py on {_GPU}"),
                   f"cells.MHC_HIDDEN lists the width and {served}", "hours")
 
 
 def _recipe_mhc_measure(shape):
-    return Recipe("measure", f"probes/mk_mhc_geometry_bench.py on {_GPU}; cells.MHC_MEASURED_HIDDEN",
+    return Recipe("measure", f"engine/kernels/dense/mhc_reference.py on {_GPU}; cells.MHC_MEASURED_HIDDEN",
                   f"the H{shape.hidden} instance is compiled but its GPU probe never ran (measurements/dsv41_mhc_20260910: "
                   "H4096/H5120 x T1..128 against PyTorch references, input immutability, graph replay): run it and record the receipt",
                   "the probe's own gates: pooled and worst-token rel <= 1e-3, exact same-input replay",
@@ -538,7 +538,7 @@ def _v41_measured(shape) -> bool:
             and mhc_v41_refusal(shape) is None)
 
 
-# overlay/modules/dsv4_flashinfer_sparse/flashinfer_sparse.py: the sink-capable DSV4 decode's head size and query heads
+# the retired dsv4 overlay's flashinfer_sparse (git history): the sink-capable DSV4 decode's head size and query heads
 DSV4_SINK_HEAD, DSV4_SINK_MAX_HEADS = 512, 128
 
 
@@ -578,10 +578,10 @@ def _serve_attention(a, i):
     if a.sink:
         if a.head_dim == DSV4_SINK_HEAD and a.heads <= DSV4_SINK_MAX_HEADS:
             return _serve(GENERIC, "flashinfer trtllm_batch_decode_sparse_mla_dsv4, which takes sinks (the V4-Flash call in "
-                          "overlay/modules/dsv4_flashinfer_sparse/flashinfer_sparse.py)", False,
+                          "the retired dsv4 overlay's flashinfer_sparse, git history)", False,
                           "decode only; whether its trtllm-gen kernel runs on sm_121a is part of the judgment")
         return _nothing(f"the sink-capable DSV4 decode takes head size {DSV4_SINK_HEAD} and at most {DSV4_SINK_MAX_HEADS} "
-                        "query heads (overlay/modules/dsv4_flashinfer_sparse/flashinfer_sparse.py); asked "
+                        "query heads (the retired dsv4 overlay's flashinfer_sparse, git history); asked "
                         f"{a.heads} x {a.head_dim}")
     if a.head_dim <= MLA_LATENT:
         return _serve(GLUE, f"engine/kernels/mla/glue.grouped (the megakernel's sparse MLA per group of {MLA_HEADS} heads"
@@ -611,8 +611,8 @@ def _serve_mhc_variant(shape, lane):
                       "its GPU probe never ran (measurements/dsv41_mhc_20260910)")
     return _serve(GLUE, f"engine/kernels/dense/mhc.MHCV41.prefill (run_mhc_v41 in {MHC_MAX_TOK}-token pieces: the seam "
                   "mixes each token alone)", False,
-                  "one launch per piece and unjudged on a GPU; no prefill kernel for the V4.1 pairing exists, the vLLM "
-                  "stack mixed it in torch (overlay/modules/dsv41_vllm/dsv41_mhc.py)")
+                  "one launch per piece and unjudged on a GPU; no prefill kernel for the V4.1 pairing exists — the vLLM "
+                  "stack mixed it in torch, and that overlay module is retired (git history)")
 
 
 def _serve_indexer(i):
@@ -623,7 +623,7 @@ def _serve_indexer(i):
                       "judge the compression against modules/sparse_indexer.qsa_select and the scoring against its relu "
                       "sum over the index heads; unjudged on a GPU")
     if i.compress == "ced":
-        return _nothing("the CED compressor exists only in torch (overlay/modules/dsv41_model/dsv41_compressor.py); its "
+        return _nothing("the CED compressor exists only in torch (the retired dsv41 overlay module, git history); its "
                         "scoring and packed keys have Triton kernels beside it (dsv41_indexer_triton.py, "
                         "dsv41_packed_index_triton.py)")
     return _nothing(f"no Hadamard-{i.head_dim} kernel; the kpool rotation is fixed at {INDEXER_HEAD_DIM}")
@@ -685,7 +685,7 @@ def admission(shape) -> "list[Verdict]":
         elif i.head_dim == INDEXER_HEAD_DIM:
             admit("indexer", f"{INDEXER_KEY_COMPRESS} keys at Hadamard-{INDEXER_HEAD_DIM}, pool {i.pool}, top {i.topk} at launch",
                   _serve(SPECIALIZED, "engine/kernels/kpool.py, engine/kernels/indexer.py and DeepGEMM fp8_fp4_mqa_logits "
-                         "(engine/kernels/deep_gemm.py)", True, "probes/indexer_check.py against modules/sparse_indexer"))
+                         "(engine/kernels/deep_gemm.py)", True, "the retired fork-differential probe against modules/sparse_indexer (removed with the overlay stack)"))
         else:
             refuse("indexer", f"the indexer lanes are written for head_dim {INDEXER_HEAD_DIM}; asked {i.head_dim}",
                    _recipe_indexer(i), _serve_indexer(i))
@@ -707,7 +707,7 @@ def admission(shape) -> "list[Verdict]":
     elif shape.hidden not in MHC_HIDDEN or shape.hc != MHC_HC:
         refuse("mhc_decode", f"MK mHC is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC}; asked hidden {shape.hidden} "
                              f"hc {shape.hc}", _recipe_mhc(shape),
-               _serve(GENERIC, tilelang, True, "the same mhc math, judged at hidden 4096 (probes/mhc_check.py); "
+               _serve(GENERIC, tilelang, True, "the same mhc math, judged at hidden 4096 (the fork-differential probe retired with the overlay stack); "
                       "shape-generic in hidden and hc, its timing unmeasured here"))
     elif shape.hidden not in MHC_MEASURED_HIDDEN:
         unmeasured("mhc_decode", f"the MK mHC instance for hidden {shape.hidden} is compiled; its GPU probe has not run",
@@ -726,7 +726,7 @@ def admission(shape) -> "list[Verdict]":
                _recipe_mhc_variant(shape, "mhc_prefill"), _serve_mhc_variant(shape, "mhc_prefill"))
     else:
         admit("mhc_prefill", "TileLang mixes take hidden and hc from the tensors",
-              _serve(SPECIALIZED, tilelang, True, "probes/mhc_check.py against modules/hyper_connection"))
+              _serve(SPECIALIZED, tilelang, True, "the fork-differential probe (retired with the overlay stack) against modules/hyper_connection"))
 
     oneshot = "engine/kernels/oneshot (the one-shot RDMA all-reduce)"
     if c.world != ONESHOT_WORLD or c.hidden % 8 or c.hidden > ONESHOT_MAX_ELEMENTS:

@@ -406,15 +406,6 @@ class AfterDeployTests(unittest.TestCase):
         self.assertFalse(watch.queue_probe("0" * 40, self.log, self.tmp / "absent"))
         self.assertIn("no D17 probe queued", "\n".join(self.lines))
 
-    def test_the_idle_controller_runs_from_the_checkout_the_hook_moves(self):
-        """fleet-idle-recovery restores production by the queue's rules: those must be the deployed
-        commit's, which is the checkout follow_controller keeps, not whatever ~/stkernel is on."""
-        unit = (Path(__file__).resolve().parents[1] / "launchers/fleet-idle-recovery.service").read_text()
-        self.assertIn("WorkingDirectory=/home/choiceoh/fleet-controller", unit)
-        self.assertIn("ExecStart=/usr/bin/python3 /home/choiceoh/fleet-controller/bench/fleet_idle.py tick", unit)
-        self.assertNotIn("stkernel/bench/fleet_idle.py", unit)
-        self.assertTrue(str(watch.CONTROLLER).endswith("fleet-controller") or "FLEET_CONTROLLER_REPO" in __import__("os").environ)
-
     def test_a_dry_run_and_the_two_flags_hold_it_back(self):
         from types import SimpleNamespace
         from unittest import mock

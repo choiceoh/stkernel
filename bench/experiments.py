@@ -385,10 +385,20 @@ def worker_lock(store, job):
     return stream
 
 
+PAIR_RETIRED = "the pair lane retired with the vLLM overlay stack (2026-09-18); only CPU jobs and the ST lanes remain"
+
+
 def reject_legacy_gpu(store, job, spec):
-    """Old queued custom GPU jobs cannot bypass current admission policy."""
-    if spec.get("kind") in {"cpu", "pair", "baseline"}:
+    """Old queued custom GPU jobs cannot bypass current admission policy.
+
+    The pair/baseline lane booted the overlay stack's launcher, which no longer
+    exists: a queued pair job is blocked, not executed."""
+    if spec.get("kind") == "cpu":
         return False
+    if spec.get("kind") in {"pair", "baseline"}:
+        store.state(job, "blocked", {"reason": PAIR_RETIRED,
+                                     "evidence": "onepass-policy"})
+        return True
     store.state(job, "blocked", {"reason": ONEPASS_ONLY,
                                  "evidence": "onepass-policy"})
     return True

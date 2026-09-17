@@ -20,7 +20,6 @@ import experiment_baselines as baselines
 import experiment_groups as groups
 import experiment_metrics as metrics
 import experiment_retirement as retirement
-import cpu_contracts
 import cpu_evidence
 from measurement_contract import workload
 
@@ -128,21 +127,6 @@ class CoalescingTests(unittest.TestCase):
                     prefill=[dict(ctx=c,cold_s=1) for c in work['ctx']]))
         (self.logs/'onepass.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in records))
 
-    def test_ready_agents_share_a_boot_and_keep_original_record_binding(self):
-        evals=[dict(objective={'metric':'prefill_ttft','ctx':2000},workload={'ctx':[2000]}),
-               dict(objective={'metric':'decode_steps'},workload={'ctx':[32000]})]
-        self.seed_baselines(evals)
-        first=self.submit('first',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=self.pair_context(),evaluations=[evals[0]])
-        second=self.submit('second',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=self.pair_context(),evaluations=[evals[1]])
-        a,b=self.wait(first['id']),self.wait(second['id'])
-        self.assertEqual(a['state'],'succeeded',a)
-        self.assertEqual(b['state'],'succeeded',b)
-        self.assertEqual(a['result']['execution_job'],b['result']['execution_job'])
-        self.assertEqual(a['result']['candidate']['boot_id'],b['result']['candidate']['boot_id'])
-        self.assertEqual(b['result']['candidate']['experiment_id'],a['result']['execution_job'])
-        self.assertEqual((self.logs/'arms').read_text().count('onepass'),1)
-        self.assertEqual(self.cli('stats')['shared_boot_members'],1)
-
     def test_group_seal_separates_late_or_incompatible_requests(self):
         store=ex.Store(self.jobs)
         first=self.manual_job(store,'first',kind='pair',evaluations=[{'workload':{'ctx':[2000]}}])
@@ -166,16 +150,6 @@ class CoalescingTests(unittest.TestCase):
             self.assertEqual(owner==leader,index<6)
         repeat=store.submit('repeat',store.get(leader)['payload'],repeat='independent sample')['id']
         self.assertEqual(groups.register(store,repeat),repeat)
-
-    def test_shared_boot_failure_reaches_every_consumer(self):
-        evals=[{'objective':{'metric':'quality'},'workload':{'ctx':[c]}} for c in (2000,4000)]
-        onepass=self.repo/'bench/onepass.py'
-        onepass.write_text(fixtures.FAKE_ONEPASS.replace("knobs = served['knobs']",
-            "knobs = served['knobs']\n if knobs and name.endswith('-E2'): raise SystemExit(7)"))
-        self.refresh_deployed_fixture();self.seed_baselines(evals)
-        jobs=[self.submit(str(i),kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=self.pair_context(),evaluations=[e]) for i,e in enumerate(evals)]
-        self.assertEqual([self.wait(j['id'])['state'] for j in jobs],['failed','failed'])
-        self.assertEqual((self.logs/'arms').read_text().count('onepass'),1)
 
     def test_only_missing_baseline_workloads_are_measured(self):
         store=ex.Store(self.jobs)
@@ -297,70 +271,7 @@ class CoalescingTests(unittest.TestCase):
                          f'1|exp-{old}|0|1|old|boot|{os.getpid()}\n')
         self.assertFalse((self.fleet/'holder').exists())
 
-    def contract_sources(self):
-        paths=['tests/test_logic.py',*[v[1] for v in cpu_contracts.CONTRACTS.values()]]
-        for path in set(paths):
-            target=self.repo/path;target.parent.mkdir(parents=True,exist_ok=True)
-            shutil.copyfile(ROOT/path,target)
-        self.commit()
-
-    def test_contract_cache_reuses_unrelated_changes_and_invalidates_inputs(self):
-        self.contract_sources()
-        spec=ex.normalize(dict(kind='cpu',revision=self.sha,hypothesis='math',
-                               command=[sys.executable,'bench/cpu_checks.py','--contract','math']),self.repo)
-        env={k:v for k,v in self.env.items() if k in ex.BASE_ENV}
-        first=cpu_evidence.identity(self.repo,spec,env)
-        self.assertEqual(first['scope'],'audited-contracts')
-        (self.repo/'unrelated.py').write_text('value = 1\n');self.commit()
-        self.assertEqual(cpu_evidence.identity(self.repo,spec,env),first)
-        source=self.repo/cpu_contracts.CONTRACTS['math'][1]
-        source.write_text(source.read_text()+'\n# changed dependency\n');self.commit()
-        self.assertNotEqual(cpu_evidence.identity(self.repo,spec,env)['key'],first['key'])
-        logic=self.repo/'tests/test_logic.py'
-        logic.write_text(logic.read_text()+'\n# changed dependency audit\n');self.commit()
-        self.assertEqual(cpu_evidence.identity(self.repo,spec,env)['scope'],'full-tree')
-
-    def test_auto_contract_plan_falls_back_for_unknown_changes_and_blocks_faults(self):
-        self.contract_sources();base=self.sha
-        source=self.repo/cpu_contracts.CONTRACTS['math'][1]
-        source.write_text(source.read_text().replace('max_logits_elems = max_logits_bytes // 4','max_logits_elems = max_logits_bytes'))
-        self.commit()
-        self.assertEqual(cpu_contracts.changed_contracts(self.repo,base),['math'])
-        path=self.root/'plan.json';path.write_text(json.dumps(dict(hypothesis='changed helper',knobs={'VLLM_TEST':'1'},context=self.pair_context())))
-        plan=self.cli('plan','planner',str(path),'--base',base,'--prepare-only')
-        self.assertEqual([s['name'] for s in plan['stages']],['checks-math','sensitivity','gpu'])
-        for stage in plan['stages'][:-1]:
-            self.assertEqual(self.wait(stage['submission']['id'])['state'],'failed')
-        self.assertFalse((self.logs/'arms').exists())
-        (self.repo/'unrelated.py').write_text('value=1\n');self.commit()
-        self.assertIsNone(cpu_contracts.changed_contracts(self.repo,base))
-
-    def test_new_helper_dependencies_disable_narrow_selection_and_cache(self):
-        self.contract_sources();base=self.sha
-        source=self.repo/cpu_contracts.CONTRACTS['math'][1]
-        source.write_text(source.read_text().replace('max_logits_elems = max_logits_bytes // 4',
-            'max_logits_elems = max_logits_bytes // __import__("unreviewed_dependency").width'))
-        self.commit()
-        self.assertIsNone(cpu_contracts.changed_contracts(self.repo,base))
-        spec=ex.normalize(dict(kind='cpu',revision=self.sha,hypothesis='changed dependency',
-            command=[sys.executable,'bench/cpu_checks.py','--contract','math']),self.repo)
-        self.assertEqual(cpu_evidence.identity(self.repo,spec,{})['scope'],'full-tree')
-
-
 class ContractAndTimingTests(unittest.TestCase):
-    def test_faults_are_detected_by_existing_checks_and_survivors_fail(self):
-        report=cpu_contracts.sensitivity(ROOT)
-        self.assertTrue(report['passed'],report)
-        self.assertEqual(report['detected'],4)
-        with tempfile.TemporaryDirectory() as directory:
-            root=Path(directory)
-            for path in {'tests/test_logic.py',*[v[1] for v in cpu_contracts.CONTRACTS.values()]}:
-                target=root/path;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/path,target)
-            path=root/'tests/test_logic.py';path.write_text(path.read_text().replace('if not cond:\n','if False:\n'))
-            weak=cpu_contracts.sensitivity(root)
-            self.assertFalse(weak['passed'])
-            self.assertTrue(any(m['status']=='survived' for m in weak['mutations']))
-
     def test_empirical_estimates_require_matching_successful_samples(self):
         with tempfile.TemporaryDirectory() as directory:
             store=ex.Store(directory)

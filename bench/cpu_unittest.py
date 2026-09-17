@@ -113,9 +113,9 @@ def execute(target, root, jobs=None, shard=None, shard_plan=None):
         raise ValueError('test workers must fit the reserved CPU slots (maximum eight)')
     # Arbitrary test files may share class/module fixtures; only reviewed fleet
     # cases use a separate temporary checkout/DB/queue for every test method.
-    from cpu_evidence import FLEET_AUDIT, sha
-    reviewed = {str(p.relative_to(root)):sha(p) for p in (root/'tests').glob('test_fleet*.py')} == FLEET_AUDIT and bool(FLEET_AUDIT)
-    workers = min(jobs,len(all_cases)) if path.name == 'test_fleet*.py' and shard is None and (reviewed or explicit_jobs) else 1
+    # The reviewed-content registry retired with the overlay stack: sharding
+    # now requires the caller's explicit --jobs.
+    workers = min(jobs,len(all_cases)) if path.name == 'test_fleet*.py' and shard is None and explicit_jobs else 1
     if shard_plan is not None and shard is None:
         raise ValueError('a shard plan requires a shard index')
     info = history(root,all_cases,workers) if path.name == 'test_fleet*.py' and shard is None else None
