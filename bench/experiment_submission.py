@@ -16,8 +16,7 @@ class Context:
         logd = Path(os.environ.get('LOGD','/home/choiceoh/glm53-logs'))
         self.paths = dict(LOGD=str(logd),FLEET_DIR=os.environ.get('FLEET_DIR',str(logd/'fleet')),
             ONEPASS_JSONL=os.environ.get('ONEPASS_JSONL',str(logd/'bracket-onepass.jsonl')),
-            ONEPASS_VERDICTS=os.environ.get('ONEPASS_VERDICTS',str(logd/'verdicts.jsonl')),
-            MK_OVERLAY_STAMP=os.environ.get('MK_OVERLAY_STAMP',str(Path.home()/'glm53-cache/.overlay-sha')))
+            ONEPASS_VERDICTS=os.environ.get('ONEPASS_VERDICTS',str(logd/'verdicts.jsonl')))
         self.memo = {}
         self.snapshots = {}
 
@@ -25,9 +24,9 @@ class Context:
         from experiments import snapshot, encoded
         from cpu_evidence import identity
         # Dependencies/objectives do not change source/deployment attestation.
-        key = encoded({k:spec.get(k) for k in ('kind','revision','context','inputs','probe_contract')})
+        key = encoded({k:spec.get(k) for k in ('kind','revision','context','inputs')})
         if key not in self.snapshots:
-            self.snapshots[key] = snapshot(self.repo,spec,self.paths['MK_OVERLAY_STAMP'])
+            self.snapshots[key] = snapshot(self.repo,spec)
         payload = dict(spec=copy.deepcopy(spec),repo=str(self.repo),paths=self.paths,
                        bash=shutil.which('bash'),environment=self.environment,snapshot=self.snapshots[key])
         if spec['kind'] == 'cpu':

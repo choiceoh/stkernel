@@ -38,8 +38,8 @@ def source(store, session, job):
     if row['payload']['spec']['kind'] == 'probe':
         from experiments import ONEPASS_ONLY
         raise ValueError(ONEPASS_ONLY)
-    if row['payload']['spec']['kind'] not in {'cpu', 'pair'}:
-        raise ValueError('retry the consuming experiment, not its internal baseline reservation')
+    if row['payload']['spec']['kind'] != 'cpu':
+        raise ValueError('only CPU experiments are retried; the pair lane retired')
     from experiments import TERMINAL
     for dependency in row['payload']['spec']['depends_on']:
         state = store.get(dependency)['state']
@@ -79,8 +79,6 @@ def retry(store, session, job, reason, repo=None, *, launch=True):
     if checkout is None:
         raise ValueError('saved revision checkout is unavailable; restore ' + revision + ' before retrying')
     saved = dict(original['payload']['spec'])
-    if saved['kind'] == 'pair' and 'baseline_policy' not in saved:
-        saved['baseline_policy'] = 'confirm'  # Old manifests required three samples.
     spec = normalize(saved, checkout)
     payload = Context(checkout).payload(spec)
     if Context(checkout).payload(spec) != payload:

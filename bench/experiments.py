@@ -28,10 +28,11 @@ import uuid
 
 HERE = Path(__file__).resolve().parent
 TERMINAL = {"succeeded", "failed", "blocked", "incomplete", "interrupted", "retired"}
-RESERVED = {"HOME", "PATH", "PYTHONPATH", "BASH_ENV", "ENV", "REPO", "LOGD",
-            "LEVER", "SKIP_BOOT", "LEGS", "MK_OVERLAY_STAMP", "MK_COLD_COMPILE"}
+RESERVED = {"HOME", "PATH", "PYTHONPATH", "BASH_ENV", "ENV", "REPO", "LOGD"}
 BASE_ENV = ("HOME", "PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "SSH_AUTH_SOCK", "TMPDIR")
-ONEPASS_ONLY = "GPU work is onepass-only; submit kind=pair with knobs and no custom command"
+ONEPASS_ONLY = ("GPU work is onepass-only: it runs through fleet.sh run --gpu, "
+                "the ST bracket lanes, or the live onepass; it is not a stored experiment")
+PAIR_RETIRED = "the pair lane retired with the vLLM overlay stack (2026-09-18); only CPU jobs and the ST lanes remain"
 
 
 class RetiredJob(ValueError):
@@ -55,60 +56,33 @@ def git(repo, *args):
                                    stderr=subprocess.PIPE, timeout=20).strip()
 
 
-def snapshot(repo, spec, stamp):
+def snapshot(repo, spec):
     revision = git(repo, "rev-parse", "HEAD")
     if revision != spec["revision"]:
         raise ValueError("checkout revision changed; commit and submit the intended revision")
     if git(repo, "status", "--porcelain", "--untracked-files=normal"):
         raise ValueError("experiment checkout must be clean (including untracked inputs)")
-    result = {"revision": revision, "inputs": {p: digest(p) for p in spec["inputs"]},
-              "host": platform.node(), "platform": platform.platform(),
-              "python": sys.version, "runner": digest(__file__)}
-    if spec["kind"] != "cpu":
-        build = Path(stamp).read_text().strip()
-        if not re.fullmatch(r"[a-fA-F0-9]{12,64}", build):
-            raise ValueError("GPU submissions need a valid deployed overlay stamp")
-        result["build"] = build
-        if spec["kind"] in {"pair", "baseline"}:
-            profile = dict(line.split("=", 1) for line in (repo / "profiles/glm53.env").read_text().splitlines()
-                           if "=" in line and not line.startswith("#"))
-            overlay = Path(profile.get("PROFILE_OVERLAY_DIR", "/home/choiceoh/overlays/glm53").strip('"\''))
-            manifest = overlay / "manifest.tsv"
-            lines = manifest.read_text().splitlines()
-            if "# source_commit=" + revision not in lines or digest(manifest) != build:
-                raise ValueError("deployed manifest is not this committed build; deploy through the fleet before submitting a pair")
-            result["overlays"] = {line.split("\t")[0]: digest(overlay / line.split("\t")[0])
-                                  for line in lines if line and not line.startswith("#")}
-            modules = profile.get("MODULES", "").strip('"\'').split()
-            for name, sha in result["overlays"].items():
-                sources = [repo / "overlay/modules" / module / name for module in modules
-                           if (repo / "overlay/modules" / module / name).is_file()]
-                if len(sources) != 1 or digest(sources[0]) != sha:
-                    raise ValueError("deployed overlay differs from committed source: " + name)
-            result["image"] = subprocess.check_output(
-                ["docker", "image", "inspect", spec["context"]["image"], "--format", "{{.Id}}"],
-                text=True, stderr=subprocess.PIPE, timeout=15).strip()
-            if result["image"] != spec["context"]["image"]:
-                raise ValueError("context.image must pin the local immutable sha256 image ID")
-    return result
+    return {"revision": revision, "inputs": {p: digest(p) for p in spec["inputs"]},
+            "host": platform.node(), "platform": platform.platform(),
+            "python": sys.version, "runner": digest(__file__)}
 
 
 def normalize(raw, repo):
     if not isinstance(raw, dict):
         raise ValueError("manifest must be a JSON object")
-    allowed = {"kind", "revision", "hypothesis", "command", "knobs", "inputs", "context",
-               "env", "depends_on", "estimate_min", "timeout_s", "probe_contract", "evaluations",
-               "resources", "outputs", "api_port", "baseline_policy"}
-    if set(raw) - allowed:
-        raise ValueError("unknown manifest fields: " + ", ".join(sorted(set(raw) - allowed)))
     kind = raw.get("kind")
     if kind == "probe":
         raise ValueError(ONEPASS_ONLY)
-    if kind not in {"cpu", "pair"}:
-        raise ValueError("kind must be cpu or pair; GPU work is onepass-only")
-    baseline_policy = raw.get('baseline_policy', 'minimal')
-    if baseline_policy not in ('minimal', 'confirm') or ('baseline_policy' in raw and kind != 'pair'):
-        raise ValueError('baseline_policy applies only to pair and must be minimal or confirm')
+    if kind in {"pair", "baseline"}:
+        raise ValueError(PAIR_RETIRED)
+    allowed = {"kind", "revision", "hypothesis", "command", "inputs", "context",
+               "env", "depends_on", "estimate_min", "timeout_s",
+               "resources", "outputs"}
+    if set(raw) - allowed:
+        raise ValueError("unknown manifest fields: " + ", ".join(sorted(set(raw) - allowed)))
+    if kind != "cpu":
+        raise ValueError("kind must be cpu; GPU work runs through fleet.sh run --gpu, "
+                         "the ST bracket lanes, or the live onepass")
     if not isinstance(raw.get("hypothesis"), str) or not raw["hypothesis"].strip():
         raise ValueError("hypothesis must explain what this experiment decides")
     revision = raw.get("revision", "")
@@ -121,28 +95,13 @@ def normalize(raw, repo):
         for k, v in env.items()
     ):
         raise ValueError("env contains invalid values or runner control overrides")
-    command, knobs = raw.get("command", []), raw.get("knobs", {})
+    command = raw.get("command", [])
     if not isinstance(command, list) or any(not isinstance(v, str) or not v or "\0" in v for v in command):
         raise ValueError("command must be an argv array")
-    if kind == 'cpu':
-        from cpu_checks import canonical
-        command = canonical(command, repo)
-    if not isinstance(knobs, dict) or any(
-        not re.fullmatch(r"VLLM_[A-Z0-9_]+", k) or not isinstance(v, str)
-        or not re.fullmatch(r"[A-Za-z0-9_.,:/+%-]+", v) for k, v in knobs.items()
-    ):
-        raise ValueError("knobs must contain literal VLLM_* values")
-    if kind == "pair" and (command or not knobs):
-        raise ValueError("pair takes knobs and runs the standard onepass pair, not a custom command")
-    if kind != "pair" and (not command or knobs):
+    from cpu_checks import canonical
+    command = canonical(command, repo)
+    if not command:
         raise ValueError("cpu takes command, not knobs")
-    # Effective launcher settings must be declared in the pair, not inherited
-    # from an agent's shell. CPU environments are part of their identity.
-    if kind == "pair" and set(env) - {"QUALITY_CTX", "HEALTH_BUDGET_S"}:
-        raise ValueError("pair env supports QUALITY_CTX and HEALTH_BUDGET_S only; use knobs")
-    if kind == "pair" and (not re.fullmatch(r"[0-9]+(?:,[0-9]+)*", env.get("QUALITY_CTX", "2000,32000,128000"))
-                           or not env.get("HEALTH_BUDGET_S", "3000").isdigit()):
-        raise ValueError("pair contexts and health budget must be numeric")
     inputs = raw.get("inputs", [])
     if not isinstance(inputs, list) or any(not isinstance(p, str) for p in inputs):
         raise ValueError("inputs must list external input files to hash")
@@ -150,10 +109,6 @@ def normalize(raw, repo):
     context = raw.get("context", {})
     if not isinstance(context, dict) or any(not isinstance(v, str) for v in context.values()):
         raise ValueError("context must map names to immutable environment identifiers")
-    if kind != "cpu" and not all(context.get(k) for k in ("image", "model", "hardware")):
-        raise ValueError("GPU context must identify immutable image, model and hardware versions")
-    if kind == "pair" and not re.fullmatch(r"sha256:[a-f0-9]{64}", context["image"]):
-        raise ValueError("pair context.image must be an immutable sha256 image ID")
     deps = raw.get("depends_on", [])
     if not isinstance(deps, list) or any(not isinstance(d, str) for d in deps):
         raise ValueError("depends_on must list existing experiment IDs")
@@ -163,29 +118,18 @@ def normalize(raw, repo):
     timeout = raw.get("timeout_s", 900)
     if type(timeout) is not int or not 1 <= timeout <= 86400:
         raise ValueError("timeout_s must be an integer between 1 and 86400 (CPU commands only)")
-    probe_contract = raw.get("probe_contract")
-    if probe_contract is not None:
-        raise ValueError(ONEPASS_ONLY + "; probe_contract is no longer supported")
-    from measurement_contract import evaluations
     from experiment_resources import normalize as resource_spec
-    evals = evaluations(raw) if kind == 'pair' else None
-    if raw.get('evaluations') is not None and kind != 'pair':
-        raise ValueError('evaluations only applies to pair')
     outputs = raw.get('outputs', [])
-    if not isinstance(outputs, list) or any(not isinstance(p, str) for p in outputs) or (outputs and kind != 'cpu'):
+    if not isinstance(outputs, list) or any(not isinstance(p, str) for p in outputs):
         raise ValueError('outputs must be a list of CPU build output paths')
     from prepared_artifacts import output_path
     for output in outputs:
         output_path(repo, output)
-    port = raw.get('api_port', 8000)
-    if type(port) is not int or not 1024 <= port <= 65535 or (kind == 'cpu' and port != 8000):
-        raise ValueError('GPU api_port must be 1024..65535')
     return dict(kind=kind, revision=revision, hypothesis=raw["hypothesis"], command=command,
-                knobs=knobs, env=env, inputs=inputs, context=context,
+                env=env, inputs=inputs, context=context,
                 depends_on=sorted(set(deps)), estimate_min=estimate, timeout_s=timeout,
-                probe_contract=probe_contract, evaluations=evals, resources=resource_spec(raw.get('resources')),
-                outputs=sorted(set(outputs)), api_port=port,
-                **({'baseline_policy':baseline_policy} if kind == 'pair' else {}))
+                resources=resource_spec(raw.get('resources')),
+                outputs=sorted(set(outputs)))
 
 
 class Store:
@@ -234,7 +178,6 @@ class Store:
             CREATE TABLE IF NOT EXISTS timings (
                 job TEXT NOT NULL, phase TEXT NOT NULL, seconds REAL NOT NULL, at REAL NOT NULL, ok INTEGER NOT NULL);
             CREATE INDEX IF NOT EXISTS timing_phases ON timings(phase,at);
-            CREATE TABLE IF NOT EXISTS baseline_demands (job TEXT PRIMARY KEY, evaluations TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS retry_attempts (
                 source TEXT NOT NULL, attempt TEXT NOT NULL, session TEXT NOT NULL,
                 reason TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(source,attempt,session));
@@ -285,7 +228,6 @@ class Store:
                 yield
 
     def state(self, job, state, result=None):
-        retired_baselines = []
         with self.transaction():
             previous = self.get(job)
             if previous['state'] == 'retired' and state != 'retired':
@@ -298,16 +240,6 @@ class Store:
                             (state, encoded(result) if result is not None else None, state,
                              time.time(), state in TERMINAL, time.time(), job))
             self.event(job, state, result or {})
-            if previous['payload']['spec'].get('kind') == 'pair':
-                from experiment_retirement import RELEASE_BASELINE, release_baselines
-                if state in RELEASE_BASELINE:
-                    retired_baselines = release_baselines(self, job)
-        # Queue-file writes happen only after the owning transaction commits.
-        # Nested writers retain logical retirement; managed waiters observe it.
-        if retired_baselines and not self.db.in_transaction:
-            from experiment_retirement import dequeue
-            for baseline in retired_baselines:
-                dequeue(self.get(baseline)['payload'], baseline)
 
     def is_retry(self, job):
         return self.db.execute('SELECT 1 FROM retry_attempts WHERE attempt=? LIMIT 1', (job,)).fetchone() is not None
@@ -330,8 +262,7 @@ class Store:
                         raise ValueError("prerequisite external inputs changed or are not pinned by this request: " + path)
             old = self.db.execute("SELECT id,state FROM jobs WHERE fingerprint=? ORDER BY created DESC LIMIT 1",
                                   (fingerprint,)).fetchone()
-            retryable = old and (old['state'] in {'failed', 'blocked', 'interrupted'}
-                                or payload['spec']['kind'] == 'baseline' and old['state'] == 'incomplete')
+            retryable = old and old['state'] in {'failed', 'blocked', 'interrupted'}
             if old and old['state'] != 'retired' and not repeat and not (retry_failed and retryable):
                 job = old["id"]
                 disposition = "reused" if old["state"] in TERMINAL else "joined"
@@ -385,8 +316,6 @@ def worker_lock(store, job):
     return stream
 
 
-PAIR_RETIRED = "the pair lane retired with the vLLM overlay stack (2026-09-18); only CPU jobs and the ST lanes remain"
-
 
 def reject_legacy_gpu(store, job, spec):
     """Old queued custom GPU jobs cannot bypass current admission policy.
@@ -417,8 +346,7 @@ def ensure_worker(store, job):
         # A worker may finish between the initial read and acquiring its lock.
         if state in TERMINAL:
             return
-        if state not in {"queued", "waiting_dependencies", "waiting_baseline", "waiting_cpu",
-                         "waiting_cpu_evidence", "waiting_group", "ready_pair"}:
+        if state not in {"queued", "waiting_dependencies", "waiting_cpu", "waiting_cpu_evidence"}:
             store.state(job, "interrupted", {"reason": "worker exited without a result; inspect log before an explicit repeat"})
             return
         payload = store.get(job)["payload"]
@@ -454,16 +382,8 @@ def child_env(payload, store, job):
                FLEET_CPU_REPORT=str(store.root / job / "cpu-report.json"),
                FLEET_CONTEXT=encoded(payload["spec"]["context"]))
     env['FLEET_CPU_SLOTS'] = str(payload['spec']['resources']['cpu_slots'])
-    if payload["spec"]["kind"] != "cpu":
-        env["IMAGE"] = payload["spec"]["context"]["image"]
-        env['GLM53_API_PORT'] = str(payload['spec'].get('api_port', 8000))
-        env['HEAD_URL'] = 'http://127.0.0.1:' + env['GLM53_API_PORT']
-    if payload['spec']['kind'] in {'pair', 'baseline'}:
-        from measurement_contract import evaluations, environment
-        env.update(environment(evaluations(payload['spec'])[0]))
     # Always execute the reviewed repo runners, not a stale log-directory copy.
     env["FLEET"] = str(Path(payload["repo"]) / "bench/fleet.sh")
-    env["LEVER"] = str(Path(payload["repo"]) / "bench/ab-lever.sh")
     return env
 
 
@@ -471,86 +391,12 @@ def verify(payload):
     if payload.get('retry_controller'):
         from experiment_retry import controller_path
         controller_path(payload)
-    current = snapshot(Path(payload["repo"]), payload["spec"], payload["paths"]["MK_OVERLAY_STAMP"])
+    current = snapshot(Path(payload["repo"]), payload["spec"])
     if current != payload["snapshot"]:
         raise ValueError("source, build, runner or external inputs changed while queued; resubmit after checking the new context")
     from prepared_artifacts import intact
     if not intact(payload.get('prepared_artifacts', [])):
         raise ValueError('prepared build artifacts changed')
-
-
-def knob_mismatch(record, knobs, repo):
-    profile = {}
-    for line in (Path(repo) / 'profiles/glm53.env').read_text().splitlines():
-        line = line.strip()
-        if line.startswith(('VLLM_', 'SPEC_K=')) and '=' in line:
-            key, value = line.split('=', 1)
-            profile['VLLM_GLM53_SPEC_K' if key == 'SPEC_K' else key] = value.strip().strip('"\'')
-    expected = {k:v for k,v in knobs.items() if v != profile.get(k)}
-    return record.get('knobs') != expected
-
-
-def pair_result_one(payload, job, index=0):
-    from baseline import load
-    from judge import judge
-    rows = load(payload["paths"]["ONEPASS_JSONL"])
-    from measurement_contract import evaluations
-    from serving_group import name_for
-    from experiment_baselines import reference, samples
-    from judge import compatible
-    evaluation = evaluations(payload["spec"])[index]
-    name = name_for("EXP-" + job, payload["spec"], index)
-    producer = job
-    binding = payload.get('measurement_binding')
-    if binding:
-        producer = binding['producer']
-        position = binding['workloads'].index(evaluation['workload'])
-        name = 'EXP-' + producer + (f'-E{position+1}' if position else '')
-    candidates = [r for r in rows if r.get("name") == name and r.get("experiment_id") == producer
-                  and not r.get("rehearsal")]
-    if not candidates:
-        return "incomplete", {"evidence": "none", "reason": "no fresh onepass record for this experiment"}
-    cand = candidates[-1]
-    if (cand.get("overlay") != payload["snapshot"]["build"][:12]
-            or not payload["spec"]["revision"].startswith(cand.get("git") or "MISSING")
-            or not compatible(cand, reference(payload, index))):
-        return "incomplete", {"evidence": "unmatched", "reason": "record build/revision/workload does not match submission"}
-    if knob_mismatch(cand, payload['spec']['knobs'], payload['repo']):
-        return 'incomplete', dict(evidence='unmatched', reason='serving knobs do not exactly match the requested configuration')
-    # Use the same vetted, distinct-boot pool as admission. A newer failed
-    # defaults record must not hide an older usable baseline.
-    bases = samples(payload, index)
-    from measurement_contract import metric_compatible, metric_value
-    obj = evaluation['objective']
-    bases = [b for b in bases if metric_compatible(b, cand, obj)
-             and (obj['metric'] == 'quality' or metric_value(b, obj) is not None)]
-    verdict = judge(cand, bases[-1] if bases else None, rows, evaluation["objective"])
-    result = dict(evidence="gpu-pair", verdict=verdict, candidate=cand, execution_job=producer,
-                  baseline=bases[-1] if bases else None)
-    if payload['spec'].get('baseline_policy') == 'minimal':
-        from experiment_baselines import ready
-        # A completed screen is a measured comparison, not a noise-floor or
-        # promotion verdict. Missing/invalid gates never become a screen pass.
-        complete = ready(payload) and (verdict.get('delta') is not None or
-                                      obj['metric'] == 'quality' and verdict['status'] == 'valid')
-        result.update(evidence='gpu-pair-screen', baseline_policy='minimal',
-                      comparison_complete=complete, promotion_ready=False,
-                      baseline_samples=len(samples(payload,index)),
-                      scope='exploratory comparison; completion is not a promotion decision')
-        return ('succeeded' if complete else 'incomplete'), result
-    return ("succeeded" if verdict["status"] == "valid" else "incomplete"), result
-
-
-def pair_result(payload, job):
-    from measurement_contract import evaluations
-    results = [pair_result_one(payload, job, i) for i, _ in enumerate(evaluations(payload['spec']))]
-    if len(results) == 1:
-        return results[0]
-    state = 'succeeded' if all(s == 'succeeded' for s, _ in results) else 'incomplete'
-    minimal = payload['spec'].get('baseline_policy') == 'minimal'
-    return state, dict(evidence='gpu-pair-screen' if minimal else 'gpu-pair', evaluations=[r for _, r in results],
-                       **(dict(baseline_policy='minimal',comparison_complete=state=='succeeded',promotion_ready=False,
-                               scope='exploratory comparison; completion is not a promotion decision') if minimal else {}))
 
 
 def execute(store, job):
@@ -561,44 +407,7 @@ def execute(store, job):
     payload, spec = row["payload"], row["payload"]["spec"]
     if reject_legacy_gpu(store, job, spec):
         return 4
-    if spec["kind"] != "cpu":
-        holder = Path(payload["paths"]["FLEET_DIR"]) / "holder"
-        if not holder.exists() or holder.read_text().split("|", 1)[0] != "exp-" + job:
-            raise ValueError("execute requires this experiment's fleet hold")
     verify(payload)
-    if spec["kind"] != "cpu":
-        from experiment_resources import readiness
-        with store.db:
-            store.event(job, "admission_ready", {"nodes": readiness(spec["resources"])})
-    if spec['kind'] != 'cpu':
-        store.state(job, "running")
-    if spec["kind"] == "baseline":
-        from experiment_baselines import run, planned
-        from experiment_metrics import timed
-        payload = planned(store,job,payload)
-        with store.db:
-            store.db.execute('UPDATE jobs SET payload=? WHERE id=?',(encoded(payload),job))
-        with timed(store,job,'gpu_run'):
-            state, result = run(store, job, payload)
-        store.state(job, state, result)
-        # Publish completions for earlier candidates even without result polls.
-        for item in store.db.execute("SELECT id FROM jobs WHERE state='incomplete'").fetchall():
-            refresh_result(store, item["id"])
-        return 0 if state == "succeeded" else 4
-    if spec["kind"] == "pair":
-        from serving_group import run_pair
-        from experiment_groups import seal, validate_members, publish
-        effective = seal(store, job, payload)
-        try:
-            validate_members(store, job)
-            from experiment_metrics import timed
-            with timed(store,job,'gpu_run'):
-                state, result = run_pair(store, job, effective)
-        except (OSError, ValueError, subprocess.SubprocessError) as exc:
-            state, result = 'failed', dict(evidence='gpu-pair', reason=str(exc))
-        publish(store, job, state, result)
-        store.state(job, state, result)
-        return 0 if state in {'succeeded', 'incomplete'} else 4
     command = spec['command']
     from experiment_resources import run_cpu
     rc, failure_reason = run_cpu(store, job, command, payload)
@@ -654,9 +463,6 @@ def wait_dependencies(store, job, dependencies):
             raise ValueError('experiment dependency disappeared while waiting')
         if states[job] in TERMINAL:
             return False
-        for dependency in dependencies:
-            if states[dependency] == 'incomplete':
-                states[dependency] = refresh_result(store, dependency)['state']
         bad = [d for d in dependencies if states[d] in TERMINAL and states[d] != 'succeeded']
         if bad:
             store.state(job, 'blocked', dict(reason='prerequisite did not pass', dependencies=bad))
@@ -686,64 +492,48 @@ def worker(store, job):
         with store.db:
             store.db.execute("UPDATE jobs SET worker_pid=? WHERE id=?", (os.getpid(), job))
         try:
-            if spec['kind'] == 'baseline':
-                from experiment_retirement import reclaim_baseline
-                if reclaim_baseline(store, job):
-                    return 0
             if not wait_dependencies(store, job, spec['depends_on']):
                 return 0
             verify(payload)
             env = child_env(payload, store, job)
             fleet = env["FLEET"]
             # Preflight sees the ACTUAL payload. Hiding it behind execute would
-            # defeat the existing --cpu classifier / knob checks.
-            actual = ([payload["bash"], str(Path(payload["repo"]) / "bench/pair.sh"),
-                       "EXP-" + job, " ".join(k + "=" + v for k, v in sorted(spec["knobs"].items()))]
-                      if spec["kind"] == "pair" else
-                      [payload["bash"], str(Path(payload["repo"]) / "bench/ab-lever.sh"), "EXP-" + job + "-BASE", ""]
-                      if spec["kind"] == "baseline" else spec["command"])
-            if spec["kind"] != "cpu":
-                pf = [payload["bash"], fleet, "preflight"]
-                from experiment_metrics import timed
-                with timed(store,job,'preflight'):
-                    rc = subprocess.call([*pf, "exp-" + job, "--", *actual], env=env, cwd=payload["repo"])
-                if rc:
-                    raise ValueError("fleet preflight refused the experiment (see run.log)")
-            else:
-                classification = subprocess.check_output([payload["bash"], fleet, "classify", *actual],
-                                                         env=env, cwd=payload["repo"], text=True).strip()
-                if classification == "gpu":
-                    raise ValueError("CPU experiment shows GPU use; correct the manifest")
-                from experiment_submission import cacheable_dependencies
-                if payload.get("cpu_identity") and cacheable_dependencies(store,payload):
-                    from cpu_evidence import identity
-                    if identity(Path(payload["repo"]), spec, payload["environment"]) != payload["cpu_identity"]:
-                        raise ValueError("CPU environment changed while queued")
-                    from experiment_sharing import cpu_claim, joined_failure
-                    claim, joined = cpu_claim(store, job, payload)
-                    resources.enter_context(claim)
-                    shared_fd = claim.fileno()
-                    verify(payload)
-                    if identity(Path(payload['repo']), spec, payload['environment']) != payload['cpu_identity']:
-                        raise ValueError('CPU environment changed while waiting for shared evidence')
-                    failure = joined_failure(store, joined, payload)
-                    retried_owner = joined and store.db.execute(
-                        'SELECT 1 FROM retry_attempts WHERE attempt=? AND source=? LIMIT 1', (job, joined)).fetchone()
-                    if failure and not store.get(job)['repeat_reason'] and not retried_owner:
-                        store.state(job, 'blocked', failure)
+            # defeat the existing --cpu classifier.
+            actual = spec["command"]
+            classification = subprocess.check_output([payload["bash"], fleet, "classify", *actual],
+                                                     env=env, cwd=payload["repo"], text=True).strip()
+            if classification == "gpu":
+                raise ValueError("CPU experiment shows GPU use; correct the manifest")
+            from experiment_submission import cacheable_dependencies
+            if payload.get("cpu_identity") and cacheable_dependencies(store,payload):
+                from cpu_evidence import identity
+                if identity(Path(payload["repo"]), spec, payload["environment"]) != payload["cpu_identity"]:
+                    raise ValueError("CPU environment changed while queued")
+                from experiment_sharing import cpu_claim, joined_failure
+                claim, joined = cpu_claim(store, job, payload)
+                resources.enter_context(claim)
+                shared_fd = claim.fileno()
+                verify(payload)
+                if identity(Path(payload['repo']), spec, payload['environment']) != payload['cpu_identity']:
+                    raise ValueError('CPU environment changed while waiting for shared evidence')
+                failure = joined_failure(store, joined, payload)
+                retried_owner = joined and store.db.execute(
+                    'SELECT 1 FROM retry_attempts WHERE attempt=? AND source=? LIMIT 1', (job, joined)).fetchone()
+                if failure and not store.get(job)['repeat_reason'] and not retried_owner:
+                    store.state(job, 'blocked', failure)
+                    return 0
+                hit = store.db.execute("SELECT job FROM cpu_cache WHERE key=?", (payload["cpu_identity"]["key"],)).fetchone()
+                if hit and not store.get(job)["repeat_reason"]:
+                    source = store.get(hit["job"])
+                    from prepared_artifacts import intact
+                    if (source["state"] == "succeeded" and intact((source["result"] or {}).get("artifacts", [])) and source["result"].get("checks", {}).get("coverage_complete") is True):
+                        result = dict(source["result"], revision=spec["revision"], cache_source=source["id"],
+                                      tested_revision=source["payload"]["spec"]["revision"],
+                                      cache_identity=payload["cpu_identity"])
+                        verify(payload)
+                        store.state(job, "succeeded", result)
                         return 0
-                    hit = store.db.execute("SELECT job FROM cpu_cache WHERE key=?", (payload["cpu_identity"]["key"],)).fetchone()
-                    if hit and not store.get(job)["repeat_reason"]:
-                        source = store.get(hit["job"])
-                        from prepared_artifacts import intact
-                        if (source["state"] == "succeeded" and intact((source["result"] or {}).get("artifacts", [])) and source["result"].get("checks", {}).get("coverage_complete") is True):
-                            result = dict(source["result"], revision=spec["revision"], cache_source=source["id"],
-                                          tested_revision=source["payload"]["spec"]["revision"],
-                                          cache_identity=payload["cpu_identity"])
-                            verify(payload)
-                            store.state(job, "succeeded", result)
-                            return 0
-            if spec["kind"] != "cpu" or any((store.get(d)['result'] or {}).get('artifacts') for d in spec['depends_on']):
+            if any((store.get(d)['result'] or {}).get('artifacts') for d in spec['depends_on']):
                 from experiment_resources import readiness
                 from prepared_artifacts import materialize
                 from experiment_metrics import timed
@@ -754,60 +544,12 @@ def worker(store, job):
                     store.db.execute('UPDATE jobs SET payload=? WHERE id=?', (encoded(payload), job))
                     store.event(job, 'prepared', {'artifacts': payload['prepared_artifacts'],
                                                 'nodes': nodes})
-            if spec["kind"] == "pair":
-                from experiment_baselines import reserve, samples, ready
-                if not ready(payload):
-                    baseline = reserve(store, job)
-                    store.state(job, "waiting_baseline", {"baseline_job": baseline})
-                    while True:
-                        ensure_worker(store, baseline)
-                        base = store.get(baseline)
-                        if base["state"] in TERMINAL:
-                            if base["state"] != "succeeded":
-                                store.state(job, "blocked", {"reason": "shared baseline did not pass", "baseline_job": baseline})
-                                return 0
-                            break
-                        time.sleep(.2)
-                    verify(payload)
-                    if not ready(payload):
-                        raise ValueError("shared baseline evidence changed; resubmit after checking its ledger")
-                from experiment_groups import register
-                store.state(job,'ready_pair')
-                leader = register(store, job)
-                if leader != job:
-                    with store.db:
-                        store.db.execute('BEGIN IMMEDIATE')
-                        current = store.get(job)
-                        if current['state'] not in TERMINAL and current['started'] is None:
-                            store.state(job,'waiting_group',dict(execution_job=leader))
-                    while store.get(job)['state'] not in TERMINAL:
-                        ensure_worker(store,leader)
-                        source = store.get(leader)
-                        if source['state'] in TERMINAL:
-                            if store.get(job)['state'] not in TERMINAL:
-                                store.state(job,'blocked',dict(reason='shared execution ended without this result',execution_job=leader))
-                            break
-                        time.sleep(.1)
-                    return 0
-                # A bounded burst window; the plan remains open while queued and
-                # is sealed atomically at GO. It never waits while holding GPUs.
-                time.sleep(.5)
-            elif spec["kind"] == "baseline":
-                from experiment_baselines import samples, ready, planned
-                time.sleep(.5)  # bounded collection outside the GPU hold
-                with store.transaction():
-                    effective = planned(store,job,payload)
-                    bases = samples(effective)
-                    if ready(effective):
-                        store.state(job, "succeeded", {"evidence": "gpu-baseline", "samples": len(bases), "baseline": bases})
-                        return 0
             store.state(job, "queued_fleet")
             from experiment_metrics import predict
             estimate = predict(store.db,store.get(job)['payload'])
             with store.db:
                 store.event(job,'duration_estimate',estimate)
-            lane = ["--cpu"] if spec["kind"] == "cpu" else ["--gpu"]
-            command = [payload["bash"], fleet, "run", *lane, "exp-" + job,
+            command = [payload["bash"], fleet, "run", "--cpu", "exp-" + job,
                        str(estimate['minutes']), "experiment " + job, "--", sys.executable,
                        str(HERE / "experiments.py"), "--root", str(store.root), "execute", job]
             # The child retains the lock if the supervisor crashes. Recovery
@@ -823,17 +565,6 @@ def worker(store, job):
                 return 0
             store.state(job, "failed", {"reason": str(exc)})
     return 0
-
-
-def refresh_result(store, job):
-    """A later matching baseline can complete an earlier pair without a boot."""
-    row = store.get(job)
-    if (row["state"] == "incomplete" and row["payload"]["spec"]["kind"] == "pair"
-            and (row["result"] or {}).get("evidence") == "gpu-pair"):
-        state, result = pair_result(row["payload"], job)
-        if result != row["result"]:
-            store.state(job, state, result)
-    return store.get(job)
 
 
 def stats(store):
@@ -864,8 +595,7 @@ def stats(store):
             latencies[prefix + field] = dict(n=len(values), p50=statistics.median(values) if values else None,
                                     p95=values[max(0, math.ceil(.95*len(values))-1)] if values else None)
     from experiment_metrics import summary
-    return dict(by_kind=groups, requests=dispositions, result_consumption=latencies,phases=summary(store),
-                shared_boot_members=store.db.execute('SELECT count(*) FROM group_members WHERE job!=leader').fetchone()[0])
+    return dict(by_kind=groups, requests=dispositions, result_consumption=latencies, phases=summary(store))
 
 
 def collect(store, session, path, repo):
@@ -915,8 +645,7 @@ def main():
     plan.add_argument('--base', help='compare committed changes with this explicit git ref to select CPU suites')
     mode = plan.add_mutually_exclusive_group()
     mode.add_argument('--submit', action='store_true')
-    mode.add_argument('--prepare-only', action='store_true', help='submit CPU stages before deployment; retain the resolved GPU manifest')
-    plan.add_argument('--supersedes',action='append',default=[],metavar='ID',help='replace these old GPU requests when submitting the GPU stage')
+    mode.add_argument('--prepare-only', action='store_true', help='submit the CPU stages; retain the resolved preparation receipts')
     retire = sub.add_parser('retire')
     retire.add_argument('session')
     retire.add_argument('id')
@@ -1007,7 +736,7 @@ def main():
         deadline = time.monotonic() + (max(0, min(args.timeout, 60)) if args.action == "wait" else 0)
         while True:
             ensure_worker(store, args.id)
-            answer = refresh_result(store, args.id)
+            answer = store.get(args.id)
             if answer["state"] in TERMINAL or time.monotonic() >= deadline:
                 break
             time.sleep(.2)

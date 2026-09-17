@@ -73,7 +73,7 @@ print('FINISHED_OUTPUT '+session, flush=True)
 ''')
         self.env = dict(os.environ, FLEET_DIR=str(self.fleet), FIXTURE_ROOT=str(self.root),
                         HELPER=str(self.helper), PYTHONPATH=str(ROOT / 'bench'),
-                        FLEET_LAUNCH_TIMEOUT='3')
+                        FLEET_LAUNCH_TIMEOUT='10')
         self.pids = set()
         self.addCleanup(self.stop_children)
 

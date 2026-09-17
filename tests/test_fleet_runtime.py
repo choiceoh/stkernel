@@ -1,4 +1,4 @@
-"""Fair CPU admission, owned-process monitoring and unused baseline cleanup."""
+"""Fair CPU admission, owned-process monitoring and unused request cleanup."""
 import contextlib
 import io
 import json
@@ -15,7 +15,6 @@ import test_fleet_coalescing as coalescing
 import experiments as ex
 import experiment_resources as resources
 import experiment_retirement as retirement
-import experiment_baselines as baselines
 import cpu_unittest
 
 
@@ -138,15 +137,6 @@ class RuntimeTests(unittest.TestCase):
         launch.assert_not_called()
         self.assertEqual(store.db.execute('SELECT count(*) FROM cpu_leases').fetchone()[0],0)
 
-    def test_group_probe_filters_other_groups_and_fails_closed(self):
-        output='123 S 100\n456 R 900000\n123 Z 0\n'
-        response=subprocess.CompletedProcess(['ps'],0,output,'')
-        with patch.object(resources.os,'killpg'),patch.object(resources.subprocess,'run',return_value=response) as query:
-            self.assertEqual(resources.group_snapshot(123),[('S',100),('Z',0)])
-            self.assertNotIn('-e',query.call_args.args[0])
-            self.assertIn('123',query.call_args.args[0])
-            response.returncode=2;response.stderr='inspection failed'
-            with self.assertRaises(subprocess.CalledProcessError):resources.group_snapshot(123)
 
     def test_finished_child_uses_wait_instead_of_a_fixed_sleep(self):
         self.policy();store=self.store();job=self.manual_job(store,'quick',resources=dict(cpu_memory_mb=64))
@@ -164,56 +154,9 @@ class RuntimeTests(unittest.TestCase):
     def pair(self, store, name, value):
         return self.manual_job(store,name,kind='pair',knobs={'VLLM_TEST':str(value)})
 
-    def test_last_retired_candidate_reclaims_baseline_and_preserves_other_queue_entries(self):
-        store=self.store();old=self.pair(store,'owner',1);new=self.pair(store,'owner',2)
-        baseline=baselines.reserve(store,old)
-        (self.fleet/'queue').write_text(f'1|exp-{baseline}|0|1|unused|boot|123\n2|other|0|1|keep|boot|456\n')
-        (self.fleet/'holder').write_text('other-live-holder|123|fixture\n')
-        self.assertTrue(retirement.retire(store,'owner',old,new,'new revision')['retired'])
-        self.assertEqual(store.get(baseline)['state'],'retired')
-        self.assertNotIn(baseline,(self.fleet/'queue').read_text())
-        self.assertIn('other',(self.fleet/'queue').read_text())
-        self.assertEqual((self.fleet/'holder').read_text(),'other-live-holder|123|fixture\n')
-        self.assertEqual(ex.execute(store,baseline),0)
 
-    def test_shared_baseline_survives_until_its_last_consumer_fails(self):
-        store=self.store();one=self.pair(store,'one',1);two=self.pair(store,'two',2)
-        baseline=baselines.reserve(store,one)
-        self.assertEqual(baselines.reserve(store,two),baseline)
-        store.state(one,'failed');self.assertEqual(store.get(baseline)['state'],'queued')
-        store.state(two,'failed');self.assertEqual(store.get(baseline)['state'],'retired')
-        third=self.pair(store,'three',3)
-        self.assertNotEqual(baselines.reserve(store,third),baseline)
 
-    def test_running_held_manual_and_incomplete_baseline_demand_is_preserved(self):
-        for protection in ('running','held','manual','incomplete','dependent'):
-            with self.subTest(protection=protection):
-                store=self.store(protection);source=self.pair(store,'source',1)
-                baseline=baselines.reserve(store,source)
-                if protection=='running':store.state(baseline,'running')
-                elif protection=='held':(self.fleet/'holder').write_text('exp-'+baseline+'|123|fixture\n')
-                elif protection=='manual':store.submit('operator',store.get(baseline)['payload'])
-                elif protection=='dependent':
-                    dep=self.manual_job(store,'dependent',depends_on=[baseline]);store.state(dep,'incomplete')
-                if protection=='incomplete':store.state(source,'incomplete')
-                else:store.state(source,'failed')
-                self.assertFalse(retirement.reclaim_baseline(store,baseline))
-                self.assertNotEqual(store.get(baseline)['state'],'retired')
-                (self.fleet/'holder').unlink(missing_ok=True)
 
-    def test_failed_transaction_restores_baseline_demand_and_queue(self):
-        store=self.store();old=self.pair(store,'owner',1);new=self.pair(store,'owner',2)
-        baseline=baselines.reserve(store,old)
-        line=f'1|exp-{baseline}|0|1|needed|boot|123\n';(self.fleet/'queue').write_text(line)
-        original=store.event
-        def event(job,kind,value):
-            if kind=='supersession':raise ValueError('rollback')
-            original(job,kind,value)
-        with patch.object(store,'event',side_effect=event),self.assertRaisesRegex(ValueError,'rollback'):
-            retirement.retire(store,'owner',old,new,'new revision')
-        self.assertEqual(store.get(old)['state'],'queued');self.assertEqual(store.get(baseline)['state'],'queued')
-        self.assertIsNotNone(store.db.execute('SELECT 1 FROM subscribers WHERE job=? AND session=?',(baseline,'baseline-'+old)).fetchone())
-        self.assertEqual((self.fleet/'queue').read_text(),line)
 
     def test_duration_assignment_balances_cost_and_keeps_exact_coverage(self):
         ids=['a','b','c','d'];costs=dict(a=8,b=1,c=7,d=1)

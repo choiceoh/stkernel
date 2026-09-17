@@ -370,32 +370,28 @@ evidence identities. `--repeat REASON` requests independent executions.
 
 ## Plan from a decision
 
-`plan` connects the CPU checks, optional CPU compilation, and the eventual GPU
-stage. Manifests stay outside the checkout; every stage uses the same committed
-revision, external inputs and runtime identifiers. The overlay math contracts
-and the startup suite retired with the overlay stack; the fleet suite is the
-planner's default CPU gate, and `cpu_tests` names additional files.
+`plan` is CPU-only: it connects the CPU checks, optional CPU compilation and CPU
+preparation stages into one submitted DAG. The GPU stage left with the pair lane
+(2026-09-18) — GPU work is queued directly through `fleet.sh run --gpu` and the
+ST bracket lanes, so a plan no longer carries a GPU manifest. Manifests stay
+outside the checkout; every stage uses the same committed revision. The overlay
+math contracts and the startup suite retired with the overlay stack; the fleet
+suite is the planner's default CPU gate, and `cpu_tests` names additional files.
 
 ```json
 {
-  "hypothesis": "Reduce 2K prefill TTFT with the ST bracket",
+  "kind": "cpu",
+  "hypothesis": "The route-cache change preserves indexer coverage",
   "revision": "COMMITTED_SHA_OF_THE_CANDIDATE",
-  "command": ["bash", "bench/st_bracket.sh", "pair", "CANDIDATE_SHA"],
-  "context": {
-    "image": "sha256:IMMUTABLE_64_CHARACTER_LOCAL_IMAGE_ID",
-    "model": "IMMUTABLE_MODEL_REVISION",
-    "hardware": "PINNED_GPU_AND_DRIVER_IDENTITIES"
-  },
-  "objective": {"metric": "prefill_ttft", "ctx": 2000},
-  "workload": {"ctx": [2000, 32000, 128000]},
   "cpu_suites": ["fleet"],
+  "cpu_tests": ["tests/test_prefill_route_cache.py"],
   "resources": {
     "nodes": ["local", "choiceoh@10.10.10.1", "choiceoh@10.10.10.3", "choiceoh@10.10.10.4"],
     "disk_path": "/home/choiceoh", "disk_mb": 4096, "node_memory_mb": 4096
-  },
-  "estimate_min": 15
+  }
 }
 ```
+
 ## CPU preparation and resource admission
 
 Individual `python3 tests/test_foo.py` or exact unittest discovery commands are
