@@ -1,0 +1,92 @@
+{
+  "exclusion": {
+    "context": 2000,
+    "case": "ledger",
+    "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219",
+    "scope": "entire 282-unit ledger case, all repeats and C=1/C=2 clients, in both arms"
+  },
+  "policy": "Post-hoc sensitivity analysis at user request; original grades and qualification unchanged. Contexts 32K/128K have different order quantities and remain included.",
+  "source_sha256": {
+    "consumer-baseline.json": "2b2e81d73243fd351a95d556af71e068fd0b7def4f502a889ba27467e943b134",
+    "consumer-candidate.json": "b67e72cae16f1c29e2f215be9532a942fe71f9ad63b291ed37876b5586ab466f",
+    "consumer-speed.json": "8aebedcddd1cdda27e43bb66bdf77801da94d3f639dfa83c350d1d48ceaba4c7"
+  },
+  "comparisons": [
+    {
+      "campaign": "full",
+      "concurrency": "C1",
+      "baseline": {
+        "score": 93,
+        "max_score": 102,
+        "passed": 11,
+        "total": 16,
+        "result_passed": 16
+      },
+      "candidate": {
+        "score": 97,
+        "max_score": 102,
+        "passed": 13,
+        "total": 16,
+        "result_passed": 16
+      },
+      "score_delta": 4
+    },
+    {
+      "campaign": "full",
+      "concurrency": "C2",
+      "baseline": {
+        "score": 59,
+        "max_score": 64,
+        "passed": 7,
+        "total": 10,
+        "result_passed": 10
+      },
+      "candidate": {
+        "score": 64,
+        "max_score": 64,
+        "passed": 10,
+        "total": 10,
+        "result_passed": 10
+      },
+      "score_delta": 5
+    },
+    {
+      "campaign": "2K_recheck",
+      "concurrency": "C1",
+      "baseline": {
+        "score": 13,
+        "max_score": 13,
+        "passed": 2,
+        "total": 2,
+        "result_passed": 2
+      },
+      "candidate": {
+        "score": 12,
+        "max_score": 13,
+        "passed": 1,
+        "total": 2,
+        "result_passed": 2
+      },
+      "score_delta": -1
+    },
+    {
+      "campaign": "2K_recheck",
+      "concurrency": "C2",
+      "baseline": {
+        "score": 26,
+        "max_score": 26,
+        "passed": 4,
+        "total": 4,
+        "result_passed": 4
+      },
+      "candidate": {
+        "score": 26,
+        "max_score": 26,
+        "passed": 4,
+        "total": 4,
+        "result_passed": 4
+      },
+      "score_delta": 0
+    }
+  ]
+}
