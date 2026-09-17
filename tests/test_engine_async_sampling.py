@@ -80,13 +80,39 @@ class CommitBatchTests(unittest.TestCase):
         count, done, accepted, tokens = commit_batch(picks, drafts, alive, generated, limit, ends)
         self.assertEqual(count.tolist(), [4, 2, 2, 2, 0])
         self.assertEqual(done.tolist(), [False, False, True, True, False])
-        self.assertEqual(accepted.tolist(), [3, 1, 1, 1, 0])
+        self.assertEqual(accepted.tolist(), [3, 1, 2, 1, 0])
         self.assertTrue(torch.equal(tokens, picks))
 
     def test_a_row_reaching_its_limit_exactly_is_done(self):
         picks = torch.tensor([[5, 6]]); drafts = torch.tensor([[5]])
         count, done, accepted, _ = commit_batch(picks, drafts, torch.tensor([True]), torch.tensor([3]), torch.tensor([5]), torch.tensor([[-1]]))
         self.assertEqual((count.item(), done.item(), accepted.item()), (2, True, 1))
+
+    def test_clipped_verified_prefix_counts_the_same_drafts_as_host_commit(self):
+        from types import SimpleNamespace
+        from engine.profiles.glm53.adapter import Glm53Engine
+        for sampled in (False, True):
+            for accepted in range(4):
+                for room in range(5):
+                    for end_position in range(5):
+                        with self.subTest(sampled=sampled, accepted=accepted,
+                                          room=room, end_position=end_position):
+                            draft = [10, 11, 12]
+                            picks = draft[:accepted] + [20] + [30] * (3 - accepted)
+                            end = picks[end_position] if end_position < 4 else 99
+                            host = SimpleNamespace(tokens={0: [5]}, limits={0: (room, 1.)},
+                                lps={}, matchers={}, ends={0: {end}}, eos=set(),
+                                accepted_total=0, drafted_total=0, accepted_per_step=[0]*5)
+                            host._generated_count = lambda seq: len(host.tokens[seq]) - 1
+                            emitted, finished = Glm53Engine._commit(
+                                host, 0, accepted, picks[:accepted+1], None, 3)
+                            count, done, kept, tokens = commit_batch(
+                                torch.tensor([picks]), torch.tensor([draft]), torch.tensor([True]),
+                                torch.tensor([0]), torch.tensor([room]), torch.tensor([[end]]),
+                                torch.tensor([accepted]) if sampled else None)
+                            self.assertEqual(tokens[0, :count.item()].tolist(), emitted)
+                            self.assertEqual(done.item(), finished)
+                            self.assertEqual(kept.item(), host.accepted_total)
 
 
 if __name__ == "__main__":
