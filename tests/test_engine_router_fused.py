@@ -151,7 +151,7 @@ class RouterConsumerTests(unittest.TestCase):
         gate = torch.zeros(288, 4096, dtype=torch.bfloat16)
         bias = torch.randn(288).bfloat16()
         net.p = {'L3.moe.gate': gate, 'L3.moe.bias': bias}
-        self.assertTrue(net.fused_decode_router)
+        net.fused_decode_router = True  # exercise opt-in binding independently of the control default
         net.decode_fastpath_rows = (8, 16)
         arena = Arena(net.router_nbytes(), device='cpu')
         net.prepare_routers(arena)
