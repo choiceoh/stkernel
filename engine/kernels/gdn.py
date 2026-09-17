@@ -42,7 +42,7 @@ def _gates(A, B, A_LOG, DT, DECAY, BETA, sA, sB, sD, sE, HV: tl.constexpr, BH: t
 
 
 @triton.jit
-def _gated_norm(X, Z, W, OUT, sX, sZ, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
+def _gated_norm(X, Z, W, OUT, sX, sZr, sZh, sO, EPS, HV: tl.constexpr, D: tl.constexpr, BD: tl.constexpr):
     p = tl.program_id(0)                                   # one program a (row, head): X [rows*heads, D] flat
     d = tl.arange(0, BD)
     m = d < D
@@ -51,7 +51,8 @@ def _gated_norm(X, Z, W, OUT, sX, sZ, sO, EPS, D: tl.constexpr, BD: tl.constexpr
     scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
     normed = (x * scale).to(xr.dtype).to(tl.float32)               # the norm rounds to the activations' dtype
     weighted = (normed * tl.load(W + d, mask=m, other=0.0).to(tl.float32)).to(xr.dtype).to(tl.float32)
-    gate = tl.sigmoid(tl.load(Z + p * sZ + d, mask=m, other=0.0).to(tl.float32))
+    # z is a column slice of the in_proj row: read through its row and head strides rather than a packed copy
+    gate = tl.sigmoid(tl.load(Z + (p // HV) * sZr + (p % HV) * sZh + d, mask=m, other=0.0).to(tl.float32))
     tl.store(OUT + p * sO + d, (weighted * gate).to(OUT.dtype.element_ty), mask=m)
 
 
@@ -83,13 +84,14 @@ def gated_norm(core: torch.Tensor, z: torch.Tensor, weight: torch.Tensor, eps: f
         from engine.modules.norm import rmsnorm_gated
         return rmsnorm_gated(core, z, weight, eps, "sigmoid").reshape(rows, hv * dim)
     x = core.reshape(rows * hv, dim)
-    g = z.reshape(rows * hv, dim)
-    if x.stride(1) != 1 or g.stride(1) != 1:
+    if x.stride(1) != 1 or z.stride(2) != 1:
         raise ValueError("the GDN output norm reads packed heads")
     out = torch.empty(rows * hv, dim, device=core.device, dtype=core.dtype)
     if rows:
-        _gated_norm[(rows * hv,)](x, g, weight, out, x.stride(0), g.stride(0), out.stride(0), eps,
-                                  D=dim, BD=triton.next_power_of_2(dim), num_warps=2)
+        # z is not reshaped: at more than one row its [rows, HV, D] view over the in_proj split has no flat view, and
+        # the reshape would copy it on every GDN layer
+        _gated_norm[(rows * hv,)](x, z, weight, out, x.stride(0), z.stride(0), z.stride(1), out.stride(0), eps,
+                                  HV=hv, D=dim, BD=triton.next_power_of_2(dim), num_warps=2)
     return out.view(rows, hv * dim)
 
 
