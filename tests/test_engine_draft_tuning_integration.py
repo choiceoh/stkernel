@@ -20,6 +20,31 @@ def parts():
             torch.tensor([[0.], [0.], [1.], [0.], [0.]]))
 
 
+class SelectorAlphaCaptureTests(unittest.TestCase):
+    """The sampled walks run inside captured drafter graphs. Turning the alpha list into a device
+    tensor there is a pageable host copy the graph records against memory that is gone on replay,
+    so alpha != 1 could not capture. The tensor is built once, before capture, and reused."""
+
+    def test_no_walk_builds_the_alpha_from_the_host_list(self):
+        import ast
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / "engine/profiles/glm53/drafter.py").read_text()
+        builders = {fn.name for fn in ast.walk(ast.parse(source)) if isinstance(fn, ast.FunctionDef)
+                    for call in ast.walk(fn) if isinstance(call, ast.Call)
+                    and getattr(call.func, "attr", "") == "tensor" and call.args
+                    and "selector_alpha" in ast.unparse(call.args[0])}
+        self.assertEqual(builders, {"selector_alpha_tensor"}, "only the cached builder may build it")
+
+    def test_the_alpha_tensor_is_built_once_and_rebuilt_when_the_alpha_changes(self):
+        owner = SimpleNamespace(selector_alpha=(1., .5, .5))
+        first = Drafter.selector_alpha_tensor(owner, "cpu")
+        self.assertIs(Drafter.selector_alpha_tensor(owner, "cpu"), first)
+        self.assertEqual(first.dtype, torch.float32)
+        self.assertEqual(first.tolist(), [1., .5, .5])
+        owner.selector_alpha = (.75,) * 3
+        self.assertEqual(Drafter.selector_alpha_tensor(owner, "cpu").tolist(), [.75] * 3)
+
+
 class WalkTests(unittest.TestCase):
     def test_fc_bias_norm_preserves_fp32_addition_and_signed_weight(self):
         from engine.kernels.common.norm_rope import norm
