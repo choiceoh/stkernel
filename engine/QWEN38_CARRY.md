@@ -64,8 +64,8 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
-| Q1 | 죽은 글루 복사 제거: 읽히지 않는 `positions…expand(N,1,3).contiguous()`, `ik.contiguous()`, `first[:,0].contiguous()` 등 | #547 #926 #933 | `net.py:_qsa`, `qsa.py:norm_rope_partial` | fold | −39 발사 | cpu | 시간 | 이 PR |
-| Q2 | 캡처 `step_meta` 를 Triton 한 발사로(타깃·드래프트 두 번) | #543 #546 #819 #821 | `net.py:step_meta` | fold | 약 −80 발사 | cpu | 시간 | 열림 |
+| Q1 | 죽은 글루 복사 제거: 읽히지 않는 `positions…expand(N,1,3).contiguous()`, `ik.contiguous()`, `first[:,0].contiguous()` 등 | #547 #926 #933 | `net.py:_qsa`, `qsa.py:norm_rope_partial` | fold | −39 발사 | cpu | 시간 | 머지 #1090 |
+| Q2 | 캡처 `step_meta` 를 Triton 한 발사로(타깃·드래프트 두 번) | #543 #546 #819 #821 | `net.py:step_meta`, `kernels/step_addresses.py` | fold | 약 −80 발사 | cpu | 시간 | 이 PR |
 | Q3 | QSA 입력 융합: q/k norm+rope 와 K/V 저장을 (행, 헤드)당 한 발사로, 압축→norm→rope→인덱스 키 쓰기를 한 발사로, 링 쓰기를 K/V 저장에 합침 | #914 #936 #547 #582 #921 | `qsa.py`, `net.py:_qsa` | fold | 층당 11→1, 약 −130 발사 | cpu | 일 | 열림 |
 | Q4 | 출력 게이트를 어텐션 최종 저장 안에서 적용 | #919 #899 | `qsa.py:qsa_sparse_paged_attention` | fold | −65 발사, 프리필 청크당 −21.6 GiB | gpu | 시간 | 열림 |
 | Q5 | 어텐션이 블록 id 를 타일 루프 안에서 위치로 확장(확장 발사 제거) | #819 #887 | `qsa.py` 선택·어텐션 | fold | −13 발사, 프리필 청크당 −8 GiB | cpu | 시간 | 열림 |
@@ -106,7 +106,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
 | K1 | GDN 게이트를 링 커널 안에서 계산(in_proj 조각을 stride 로 읽음) | #569 #571 | `kernels/kda/ring.py`, `fused_recurrent.py`, `net.py:_gdn_rows` | native | −36 발사 | cpu·glm | 시간 | 열림 |
-| K2 | `gated_norm` 이 z 를 stride 로 읽음 | #569 | `kernels/gdn.py` | fold | −36 발사·복사 | cpu | 시간 | 이 PR |
+| K2 | `gated_norm` 이 z 를 stride 로 읽음 | #569 | `kernels/gdn.py` | fold | −36 발사·복사 | cpu | 시간 | 머지 #1091 |
 | K3 | chunk 파이프라인이 헤드별 decay 를 네이티브로(widen·repeat_interleave 제거) | #615 #811 | `kernels/kda/chunk_decay.py`, `kda.py` | native | 프리필 청크당 약 −20 GiB 쓰기 | cpu·glm | 일 | 열림 |
 | K4 | strided q/k l2norm 을 4 헤드에서도 admit | #811 | `kda.py:_glm53_qk_l2norm_strided` | fold | 프리필 층당 −3 발사 | cpu·glm | 시간 | 열림 |
 | K5 | GDN norm 이 out_proj 의 W4 입력 팩을 씀(S2 뒤) | #968 #978 | `gdn.py`, dense | kernel | −36 발사 | gpu·glm | 일 | 열림 |
