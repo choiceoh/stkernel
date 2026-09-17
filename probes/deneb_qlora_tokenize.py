@@ -7,6 +7,7 @@ import argparse
 import collections
 import importlib.metadata
 import json
+import math
 from pathlib import Path
 
 from probes.deneb_qlora_dataset import SPLITS, dump, jsonl, load_jsonl, private_destination, sha
@@ -30,7 +31,7 @@ def distribution(values):
     values = sorted(values)
     return dict(count=len(values), min=values[0] if values else None,
                 median=values[len(values)//2] if values else None,
-                p95=values[min(len(values)-1,int(len(values)*.95))] if values else None,
+                p95=values[min(len(values)-1, math.ceil(len(values)*.95)-1)] if values else None,
                 max=values[-1] if values else None)
 
 

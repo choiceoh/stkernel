@@ -587,6 +587,8 @@ fi
 KV_FLAG=""; [ "$KV_BYTES" != auto ] && KV_FLAG="--kv-cache-memory-bytes $KV_BYTES"
 if [ "$KV_TOKENS" != auto ] && [ "$KV_TOKENS" != 0 ]; then
   [ "$KV_BYTES" = auto ] || { echo "ABORT: KV_TOKENS and KV_BYTES both set -- they size the same cache"; exit 1; }
+  case "$KV_TOKENS" in *[!0-9]*) echo "ABORT: KV_TOKENS must be a nonnegative integer, 0, or auto (got: $KV_TOKENS)"; exit 1;; esac
+  case "$KV_HYBRID_BLOCKS" in ''|*[!0-9]*) echo "ABORT: KV_HYBRID_BLOCKS must be a nonnegative integer (got: ${KV_HYBRID_BLOCKS:-<unset>})"; exit 1;; esac
   KV_BLOCKS=$(awk "BEGIN{printf \"%d\", int(($KV_TOKENS + 2303) / 2304) + $KV_HYBRID_BLOCKS}")
   KV_FLAG="--num-gpu-blocks-override $KV_BLOCKS"
   echo "  KV pinned: $KV_TOKENS tokens -> $KV_BLOCKS blocks (2304/block + $KV_HYBRID_BLOCKS hybrid)"

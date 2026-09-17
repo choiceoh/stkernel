@@ -49,7 +49,10 @@ ct_load_profile() {
   _vllm_keys=$(grep -oE '^VLLM_[A-Z0-9_]+' "$PROFILE_ENV" 2>/dev/null | sort -u || true)
   local _caller="" _v
   for _v in "$@" $_vllm_keys; do
-    if [ -n "${!_v:-}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
+    # `${!_v+x}` (not `-n`) so an explicitly empty caller value survives: some
+    # knobs use "" as a real arm (glm53's CUSTOM_OPS_AXIS=""), and `-n` let the
+    # profile silently overwrite it with its non-empty default.
+    if [ -n "${!_v+x}" ]; then _caller="$_caller $_v=$(printf %q "${!_v}")"; fi
   done
   # shellcheck disable=SC1090
   . "$PROFILE_ENV"

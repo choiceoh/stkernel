@@ -133,6 +133,7 @@ fi
 SPEC_TOKENS="${SPEC_TOKENS:-0}"
 SPEC_FLAG=""
 if [ "$SPEC_TOKENS" != 0 ]; then
+  case "$SPEC_TOKENS" in *[!0-9]*) echo "ABORT: SPEC_TOKENS must be a nonnegative integer or 0 (got: $SPEC_TOKENS)" >&2; exit 1;; esac
   SPEC_JSON="{\"method\":\"mtp\",\"num_speculative_tokens\":$SPEC_TOKENS"
   [ -n "${DRAFT_TP:-}" ] && SPEC_JSON="$SPEC_JSON,\"draft_tensor_parallel_size\":$DRAFT_TP"
   SPEC_FLAG="--speculative-config '$SPEC_JSON}'"
@@ -187,6 +188,20 @@ echo "  model      $MODEL_PATH"
 echo "  TP=$TP_SIZE  EP=$EXPERT_PARALLEL  moe=${MOE_BACKEND:-marlin(default)}  gmu=$GPU_MEM"
 echo "  PLE offload=$PLE_CPU_OFFLOAD  force_fp8_embed=$FORCE_FP8_EMBED  shared_fuse=$SHARED_FUSE"
 echo "  overlays   $(printf '%s' "$OVMOUNTS" | grep -o ' -v ' | wc -l) file(s)"
+
+# DRY_RUN stops here, before any ssh/docker: the previously unguarded path did
+# `docker rm -f q38 q38-worker` and started the fleet, so a "preview" tore down
+# live production. (The glm53 lane exits the same way.)
+if [ "${DRY_RUN:-0}" = 1 ]; then
+  echo "  head=$HEAD_IP  workers=$WORKERS"
+  for _k in IMAGE MODEL_HOST_PATH SERVED_NAME MOE_BACKEND EXPERT_PARALLEL MAX_MODEL_LEN \
+            MAX_NUM_SEQS MAX_NUM_BATCHED KV_DTYPE GPU_MEM PLE_CPU_OFFLOAD FORCE_FP8_EMBED \
+            CUDAGRAPH_MODE SPEC_TOKENS ADAPTIVE_SPEC NGRAM_FIX QSA_MAX_SPLITS ALL2ALL \
+            ASYNC AUTOTUNE LOAD_FORMAT FUSE SHARED_FUSE; do
+    printf '  %-16s %s\n' "$_k" "${!_k:-<unset>}"
+  done
+  exit 0
+fi
 
 _wips=""; for _w in $WORKERS; do _wips="$_wips ${_w%%:*}"; done
 ct_refuse_foreign_stacks '^(glm53|hy4)(-|$)' Q38 "$SSHOPT" "$HEAD_IP" $_wips

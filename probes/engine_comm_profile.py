@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import socket
@@ -23,7 +24,8 @@ from engine.base.comm import Comm
 
 def stats(values):
     return dict(median_us=statistics.median(values),
-                p95_us=sorted(values)[min(len(values)-1, int(len(values)*.95))], samples_us=values)
+                p95_us=sorted(values)[min(len(values) - 1, math.ceil(len(values) * .95) - 1)],
+                samples_us=values)
 
 
 def capture(fn):
