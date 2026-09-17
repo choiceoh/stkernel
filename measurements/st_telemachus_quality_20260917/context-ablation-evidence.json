@@ -11,10 +11,75 @@
       "broad": "every line carrying assistant provenance: `[ctx] [assistant]`, `[assistant]`, `**[assistant]**`, source=session ref=.../assistant, cl:.../assistant, `[도구`"
     },
     "spans": {
-      "records": [[44738, 44806], [45090, 45158], [45372, 45391], [49530, 49773]],
-      "broad": [[43524, 43556], [43556, 43791], [44738, 44806], [44843, 45002], [45090, 45158], [45372, 45391], [45391, 45403], [45503, 45524], [49366, 49398], [49398, 49484], [49530, 49773]]
+      "records": [
+        [
+          44738,
+          44806
+        ],
+        [
+          45090,
+          45158
+        ],
+        [
+          45372,
+          45391
+        ],
+        [
+          49530,
+          49773
+        ]
+      ],
+      "broad": [
+        [
+          43524,
+          43556
+        ],
+        [
+          43556,
+          43791
+        ],
+        [
+          44738,
+          44806
+        ],
+        [
+          44843,
+          45002
+        ],
+        [
+          45090,
+          45158
+        ],
+        [
+          45372,
+          45391
+        ],
+        [
+          45391,
+          45403
+        ],
+        [
+          45503,
+          45524
+        ],
+        [
+          49366,
+          49398
+        ],
+        [
+          49398,
+          49484
+        ],
+        [
+          49530,
+          49773
+        ]
+      ]
     },
-    "replaced_tokens": {"records": 398, "broad": 975},
+    "replaced_tokens": {
+      "records": 398,
+      "broad": 975
+    },
     "prompt_tokens": 50005,
     "prompt_ids_sha256": "0d27aeed4f3bb5bb66f90aaa7d4cb815411ac7d7fa94b6fa960c3b8108a8a0f3"
   },
@@ -31,7 +96,15 @@
       "cached_tokens": 0,
       "text_sha256": "362a45cd68925fa9e81aba02b00a4f3f12f3c4623ce76829301d77c9f6d34757",
       "verdict": "derailed Korean",
-      "glyph_scan": {"replacement": 0, "welded_jamo": 0, "han": 0, "cyrillic": 0, "thai": 0, "hangul": 393, "chars": 826}
+      "glyph_scan": {
+        "replacement": 0,
+        "welded_jamo": 0,
+        "han": 0,
+        "cyrillic": 0,
+        "thai": 0,
+        "hangul": 393,
+        "chars": 826
+      }
     },
     {
       "case": "records-neutralized",
@@ -39,7 +112,15 @@
       "cached_tokens": 0,
       "text_sha256": "ad6ceb506381a1084168962ab6071cc778d994967bd907dafba77423ed9fc82f",
       "verdict": "derailed Korean",
-      "glyph_scan": {"replacement": 0, "welded_jamo": 0, "han": 2, "cyrillic": 0, "thai": 0, "hangul": 322, "chars": 653}
+      "glyph_scan": {
+        "replacement": 0,
+        "welded_jamo": 0,
+        "han": 2,
+        "cyrillic": 0,
+        "thai": 0,
+        "hangul": 322,
+        "chars": 653
+      }
     },
     {
       "case": "broad-neutralized",
@@ -47,7 +128,15 @@
       "cached_tokens": 0,
       "text_sha256": "953802a59d5f7ce292f3f90bcda89a7076719b36bba6a739a27691beba39d3a8",
       "verdict": "derailed Korean",
-      "glyph_scan": {"replacement": 0, "welded_jamo": 0, "han": 0, "cyrillic": 0, "thai": 0, "hangul": 264, "chars": 561}
+      "glyph_scan": {
+        "replacement": 0,
+        "welded_jamo": 0,
+        "han": 0,
+        "cyrillic": 0,
+        "thai": 0,
+        "hangul": 264,
+        "chars": 561
+      }
     }
   ],
   "structure_finding": {
@@ -62,7 +151,8 @@
   },
   "gate_gap": {
     "observation": "the canonical Korean glyph counters score all three outputs clean (0 replacement characters, 0 welded jamo, no Cyrillic or Thai) while the text is semantically broken",
-    "consequence": "the incident needs a graded semantic case for a long agentic context; the glyph scan cannot see this failure"
+    "consequence": "the incident needs a graded semantic case for a long agentic context; the glyph scan cannot see this failure",
+    "tool": "bench/agentic-recall.py: one exact fact buried in a long agentic context, three decoys after it, graded without a judge"
   },
   "next_causal_gate": {
     "measurement": "real-data selection: capture the sparse indexer's selected pool ids for the incident prefix and compare them with an fp32 reference selection recomputed from the same captured operands (q8, w_eff, keys, scales)",
