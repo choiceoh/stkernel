@@ -1014,13 +1014,17 @@ def _main() -> int:
         # counted specializations 55 -> 59 inside measure-fixed-c1 against 59 -> 61 inside
         # measure-fixed-c{N}. Both legs then failed steady_errors, and the multiplier they
         # printed was biased UP: the arm that paid more compile time is the denominator.
+        # Preserve the full fixed output/reasoning budgets here. A 64-token replay
+        # still missed two C=2 specializations during the 1,024-token measurement
+        # on 2026-09-17. Preparation remains ungraded and separately recorded;
+        # any further specialization in either measured leg still invalidates it.
         run.begin(f'prepare-fixed-c{many}', many)
         for release in releases:
-            group(run, ask_stream, bd.URL, cq.MODEL, [preparation_request(item, args.num_spec) for item in release], many)
+            group(run, ask_stream, bd.URL, cq.MODEL, release, many)
         run.end()
         run.begin('prepare-fixed-c1')
         for item in fixed_items:
-            group(run, ask_stream, bd.URL, cq.MODEL, preparation_request(item, args.num_spec), 1)
+            group(run, ask_stream, bd.URL, cq.MODEL, item, 1)
         run.end()
         run.begin('measure-fixed-c1')
         before = traffic_state(_metrics_text(bd.METRICS))
