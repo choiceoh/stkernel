@@ -1,0 +1,64 @@
+{
+  "status": "PASS",
+  "device": "NVIDIA GeForce RTX 5050",
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "rank": 0,
+  "transport_tested": false,
+  "cells": [
+    {
+      "rows": 8,
+      "group": 256,
+      "taps": 2,
+      "bit_exact": true,
+      "graph_replays": 4,
+      "descriptor_retargeted": true
+    },
+    {
+      "rows": 16,
+      "group": 256,
+      "taps": 2,
+      "bit_exact": true,
+      "graph_replays": 4,
+      "descriptor_retargeted": true
+    },
+    {
+      "rows": 24,
+      "group": 256,
+      "taps": 2,
+      "bit_exact": true,
+      "graph_replays": 4,
+      "descriptor_retargeted": true
+    },
+    {
+      "rows": 32,
+      "group": 256,
+      "taps": 2,
+      "bit_exact": true,
+      "graph_replays": 4,
+      "descriptor_retargeted": true
+    },
+    {
+      "rows": 8,
+      "group": 16,
+      "taps": 2,
+      "bit_exact": true,
+      "graph_replays": 4,
+      "descriptor_retargeted": true
+    },
+    {
+      "rows": 16,
+      "group": 64,
+      "taps": 4,
+      "bit_exact": true,
+      "graph_replays": 4,
+      "descriptor_retargeted": true
+    }
+  ],
+  "scope": "exact consumer arithmetic and graph replay; no throughput measurement",
+  "source_sha256": {
+    "engine/kernels/draft_reduce.py": "9fe040637d11576b316d71b6edbaf625558f76f297bab95fe4bbefb100ae2c44",
+    "engine/profiles/glm53/drafter.py": "a239c1eefccf5894e81780fa7f796c1a084843d80f6d0d873a0f48fed5b51859",
+    "probes/engine_draft_reduce_check.py": "848e90ad79bb519bc0eebbf409f2384abe7c56866fd21c1d9ead3764534c837c"
+  }
+}
