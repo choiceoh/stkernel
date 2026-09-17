@@ -4420,3 +4420,16 @@ pass. The initially batched C=1 CDF changed rounding at exact cut points and
 was corrected to the former serial order. A separate attention tile split
 was slower and rejected. No queue/deployment; GB10/TP4 speed and acceptance
 unmeasured. [Receipts and limits](measurements/st_draft_sample_20260917/README.md).
+
+### 45차 — DSA 디코드 선택의 긴 행 비용은 병렬성이다: 부분빈 분할은 정확하지만 이득 0, #1078 의 장치 사실 정정 (2026-09-17, srv4 단일 GPU 레인 2회, PR #NNNN)
+
+#1078 이 "48 KB 공유 메모리 → 빈 캐시가 빠지고 stash 2,560 → 넓은 빈이 행을 8 번 재독"으로 읽은 절벽을 고쳐 보고 원인을 쟀다. 합성 logits.
+- **정정.** GB10 `shared_memory_per_block_optin` 은 **101,376 B**(예산 93,184). 빈 캐시는 후보 약 76,800 까지 남고 stash 는 32K 에서 3,776,
+  131K 에서 5,824 다. #1078 의 24,576·2,560 은 opt-in 이 아닌 기본 블록 크기로 셈한 틀린 값이다.
+- **부분빈 분할**(넓은 빈을 fp32 키 범위 256 칸으로 한 번 더 나눔, `topkfix-0917`): 일곱 분포에서 불일치 0, 시간은 그대로
+  (8×131,072 indexer 231.7 µs 대 원래 228.4, HPC-Ops 53.0). **머지하지 않는다**(패치만 보관).
+- **매개변수 스윕**(`topkparams-0917`, 새 레인 `topk_params`): 8×131,072 에서 stash 1,024·2,560·5,824 가 2% 안에서 같고, 블록 1,024 → 512 → 256 이
+  226 → 343 → 617 µs. 32K 에서는 빈 캐시가 67.8 → 36.9 µs. **긴 행은 행 하나를 CTA 하나가 맡는 구조의 병렬성에 묶여 있다** — HPC-Ops 는 행을 여러
+  CTA 에 나눠 4 배 빠르다.
+- **다음(미착수).** 긴 행 KV-split(클러스터 공유 히스토그램) 또는 동점 규칙을 바꾼 HPC-Ops. 디코드 이득은 문맥 128K ~0.15 ms, ~524K ~1.9 ms,
+  ~944K ~3.3 ms/스텝(합성)이라 긴 문맥 전용이다. [표·장치 사실·패치](measurements/st_topk_params_20260917/README.md).
