@@ -14,6 +14,9 @@ window is open. Both the production supervisor and deploy-watch read what this w
     fleet_pace.py window DIR s MINUTES   open a campaign window for session s (MINUTES from now)
     fleet_pace.py window DIR s off       close it
     fleet_pace.py show   DIR             the effective grace now: adaptive, window, floor
+
+FLEET_GRACE_FLOOR_S / FLEET_GRACE_CEILING_S / FLEET_GRACE_HOURS override the floor,
+ceiling and sampled window.
 """
 import json
 import os

@@ -99,7 +99,7 @@ def main():
         urllib.request.urlopen = fresh.open
         onepass.ask_stream = fresh.call
         sys.argv = ["onepass.py", "--name", args.name, "--ctx", args.ctx,
-                    "--require-exclusive", "--seed", "7", "--num-spec", "5",
+                    "--require-exclusive", "--seed", "7",
                     "--out", str(args.out / "onepass.jsonl")]
         return onepass.main()
     finally:

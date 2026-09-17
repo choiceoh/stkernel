@@ -23,7 +23,7 @@ set -euo pipefail
 ct_load_profile "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/profiles/dsv4.env" \
   IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS \
   EXTRA_ENV GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL \
-  DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD DECODE_FIRST QUANT
+  DRAFT_BLOCK DRAFT_KV DRAFT_PATH LONG_PREFILL SPEC_METHOD DECODE_FIRST QUANT GPU_MEM
 IMAGE="${IMAGE:-${PROFILE_IMAGE:-}}"
 MODEL_PATH="${MODEL_PATH:-${PROFILE_MODEL_PATH:-}}"
 SERVED_NAME="${SERVED_NAME:-${PROFILE_SERVED_NAME:-}}"
@@ -351,10 +351,11 @@ load_overlay_manifest() {
       *[!A-Za-z0-9._-]*|.*)
         echo "ABORT: unsafe overlay source in manifest: $source"; exit 1 ;;
     esac
-    # Prefix, characters, and .. escape -- see lib/common-tp4.sh. This lane
-    # demands the vllm/ package specifically, which is stricter than the
-    # profile's TARGET_PREFIX, so the root is passed rather than derived.
-    ct_check_overlay_target "$target" "/opt/venv/lib/python3.12/site-packages/vllm/"
+    # Prefix, characters, and .. escape -- see lib/common-tp4.sh. Root comes
+    # from the profile's TARGET_PREFIX: the dsv41 profile this lane reaches
+    # with PROFILE_ENV binds dsv41_vllm.py and deneb_boot_stamps.py at the
+    # site-packages root, outside vllm/.
+    ct_check_overlay_target "$target" "${TARGET_PREFIX:-/opt/venv/lib/python3.12/site-packages/}"
     if [ "$base_contract" != "absent" ] \
         && [[ ! "$base_contract" =~ ^[0-9a-f]{64}$ ]]; then
       echo "ABORT: invalid base preimage contract for $source: $base_contract"
@@ -521,7 +522,7 @@ echo "=== [1.6/5] size GPU_MEM against measured free memory ==="
 # fleet earlyoom floor sits at 6 GiB: a boot that "raises" GPU_MEM against a
 # 3 GiB margin lands the host inside the kill zone, which on 09-04 wedged
 # srv1/srv2/srv3 (sshd accepted TCP, could not fork for 2.5 hours).
-PREFLIGHT=/home/choiceoh/stkernel/launchers/memfree-preflight.sh
+PREFLIGHT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/memfree-preflight.sh"
 if [ "${SKIP_PREFLIGHT:-0}" != 1 ] && [ -x "$PREFLIGHT" ]; then
   _nodes="$HEAD_IP"; for w in $WORKERS; do _nodes="$_nodes ${w%%:*}"; done
   if GPU_MEM_SAFE=$("$PREFLIGHT" 10 $_nodes); then
