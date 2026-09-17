@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -40,8 +41,56 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
+def validate_graph_shape(nodes: list[dict], links: list[dict]) -> None:
+    node_ids = [node.get("id") for node in nodes]
+    if any(not isinstance(node_id, str) or not node_id for node_id in node_ids):
+        fail("graph.json contains a node without a string id")
+    if len(node_ids) != len(set(node_ids)):
+        fail("graph.json contains duplicate node ids")
+
+    known_ids = set(node_ids)
+    broken_links = [
+        link
+        for link in links
+        if link.get("source") not in known_ids or link.get("target") not in known_ids
+    ]
+    if broken_links:
+        sample = broken_links[0]
+        fail(
+            "graph.json contains a link to a missing node "
+            f"({sample.get('source')} -> {sample.get('target')})"
+        )
+
+
+def validate_report(report: str, nodes: list[dict], links: list[dict]) -> None:
+    if "## God Nodes" not in report or "## Suggested Questions" not in report:
+        fail("GRAPH_REPORT.md is missing required sections")
+
+    summary = re.search(
+        r"-\s+(\d+) nodes · (\d+) edges · (\d+) communities detected",
+        report,
+    )
+    if not summary:
+        fail("GRAPH_REPORT.md is missing its graph summary")
+
+    community_ids = {
+        node.get("community") for node in nodes if node.get("community") is not None
+    }
+    expected = (len(nodes), len(links), len(community_ids))
+    reported = tuple(int(value) for value in summary.groups())
+    if reported != expected:
+        fail(f"GRAPH_REPORT.md summary {reported} disagrees with graph {expected}")
+
+
 def main() -> None:
-    required = ["README.md", "GRAPH_REPORT.md", "graph.html", "graph.json", "manifest.json", "source.sha256"]
+    required = [
+        "README.md",
+        "GRAPH_REPORT.md",
+        "graph.html",
+        "graph.json",
+        "manifest.json",
+        "source.sha256",
+    ]
     missing = [name for name in required if not (OUTPUT / name).is_file()]
     if missing:
         fail("missing " + ", ".join(missing))
@@ -60,6 +109,7 @@ def main() -> None:
         fail("graph.json has no links")
     if not isinstance(manifest, dict):
         fail("manifest.json is not an object")
+    validate_graph_shape(nodes, links)
 
     current = {path.relative_to(ROOT).as_posix() for path in source_files()}
     recorded = set(manifest)
@@ -78,14 +128,29 @@ def main() -> None:
     if recorded_digest != actual_digest:
         fail("source.sha256 does not match engine/base; regenerate the graph")
 
+    graph_sources = {
+        node.get("source_file")
+        for node in nodes
+        if node.get("source_file")
+    }
+    stale_sources = sorted(graph_sources - current)
+    if stale_sources:
+        fail("graph.json references missing source files: " + ", ".join(stale_sources[:3]))
+
     report = (OUTPUT / "GRAPH_REPORT.md").read_text()
     html = (OUTPUT / "graph.html").read_text()
-    if "## God Nodes" not in report or "## Suggested Questions" not in report:
-        fail("GRAPH_REPORT.md is missing required sections")
+    community_ids = {
+        node.get("community") for node in nodes if node.get("community") is not None
+    }
+    validate_report(report, nodes, links)
     if "<html" not in html.lower():
         fail("graph.html does not look like an HTML document")
 
-    print(f"graph validation: OK ({len(nodes)} nodes, {len(links)} edges, {len(recorded)} source files)")
+    print(
+        "graph validation: OK "
+        f"({len(nodes)} nodes, {len(links)} edges, "
+        f"{len(community_ids)} communities, {len(recorded)} source files)"
+    )
 
 
 if __name__ == "__main__":
