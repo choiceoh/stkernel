@@ -259,6 +259,8 @@ class Glm53Net:
             if not F.is_moe(L) and not self.dense_nvfp4:
                 continue
             n = f"L{L}." + ('moe.' if F.is_moe(L) else 'mlp.')
+            from engine.profiles.glm53.incident_redhat_scales import load_layer, bind_layer
+            redhat_control = load_layer(self, L)
             kw = {}
             if self.modelopt:
                 from engine.profiles.glm53.modelopt_scales import ModelOptScales
@@ -276,6 +278,7 @@ class Glm53Net:
                             w2_sf=p[n+'w2_sf'], limit=F.swiglu_limit, **kw)
                 self._packet_experts[L] = partial(self.lanes.moe_packets, **args)
                 self._packet_capabilities[L] = partial(self.lanes.moe_packets_supported, **args)
+            bind_layer(self, L, redhat_control)
 
     def warmup_decode_experts(self, rows, device):
         """Load every bound expert variant without tensor-parallel collectives.
@@ -300,6 +303,9 @@ class Glm53Net:
                     weights = torch.full((count, topk), 1. / topk, device=device, dtype=F32)
                     routes[topk] = ids, weights
                 expert(x, *routes[topk])
+                alternate = getattr(self, '_incident_redhat_layers', {}).get(layer)
+                if alternate is not None:
+                    alternate['expert'](x, *routes[topk])
 
     def router_nbytes(self):
         """Replicated FP32 gates, read by every native decode and prefill router."""

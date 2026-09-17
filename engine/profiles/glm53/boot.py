@@ -628,6 +628,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
     net.incident_rank_file = str(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors")
+    net.incident_redhat_prepare = execution == 'native'
     recorder.gauge('weight_layout', F.weight_layout)
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
     reference_snapshot_bytes = snapshot_layout(F, net.layers, draft_shape, state_storage="fp32")[0]
