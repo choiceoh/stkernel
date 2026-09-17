@@ -118,6 +118,23 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 | `STEP_KERNEL_MAP.md` | 디코드 스텝의 커널 지도 — 무엇이 몇 발 돌고 누가 소유하며 어디가 레버인지 |
 | `RUNBOOK_KERNEL_CAMPAIGN2.md` | 부팅이 필요한 실험(EXP-1~24)의 절차·게이트·중단 기준 |
 
+## 개발환경 자가진단
+
+설치나 GPU를 변경하지 않고 현재 checkout이 어떤 작업을 실행할 수 있는지
+확인한다. 기본 모드는 선택적 GPU 의존성 부족을 경고만 하고, CPU 기준 누락만
+`--strict`에서 실패한다.
+
+```bash
+python3 tools/dev_doctor.py
+python3 tools/dev_doctor.py --strict
+python3 tools/dev_doctor.py --gpu --strict
+python3 tools/dev_doctor.py --json
+```
+
+`OK`는 실행 가능, `WARN`은 선택적 경로가 비활성화된 상태, `FAIL`은 strict
+모드에서 막히는 조건이다. 진단 도구는 패키지를 설치하거나 GPU 메모리를
+할당하지 않는다.
+
 ## 매니페스트 합성 · 런타임 경계 감사
 
 **매니페스트가 파일 목록·컨테이너 마운트 목적지·베이스 preimage의 유일한 원본**이다.
