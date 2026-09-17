@@ -85,13 +85,27 @@ def draw_address(row, k=7):
     """
     if row["uniform"] is None or row["seed"] is None or row["nonce"] is None:
         return None
-    from engine.base.draws import row_key, step_layout, uniform as draw_uniform
+    from engine.base.draws import (DRAFT, FRESH, PICK, RICH, VERIFY, row_key, step_layout,
+                                   uniform as draw_uniform)
 
     key = row_key(row["seed"], row["nonce"], row["generation"])
-    for purpose, position in step_layout(k):
+    # The step block is DRAFT/VERIFY/FRESH, but a rich row -- thinking, a budget, penalties,
+    # grammar -- draws its picks from their own words, and missing them here would read a
+    # real draw as a hash disagreement. Search every purpose the engine defines.
+    words = list(step_layout(k))
+    words += [(purpose, position) for purpose in (PICK, RICH, FRESH) for position in range(k + 1)]
+    words += [(DRAFT, position) for position in range(k + 1)]
+    seen = set()
+    for purpose, position in words:
+        if (purpose, position) in seen:
+            continue
+        seen.add((purpose, position))
         if abs(draw_uniform(key, purpose, position) - row["uniform"]) < 1e-12:
             return purpose, position
     return (None, None)
+
+
+PURPOSE_NAMES = {1: "DRAFT", 2: "PICK", 3: "VERIFY", 4: "FRESH", 5: "RICH"}
 
 
 def profile(root: Path):
@@ -168,9 +182,16 @@ def main() -> int:
             named = [(row, a, b) for row, a, b in addresses if a or b]
             if named:
                 print("  draw address, recomputed from each side's own seed/nonce/generation:")
+                def label(address):
+                    if address is None:
+                        return "unverifiable"
+                    purpose, position = address
+                    if purpose is None:
+                        return "matches no word"
+                    return f"{PURPOSE_NAMES.get(purpose, purpose)}@{position}"
                 for row, a, b in named[:args.limit]:
                     print(f"   admit{row['admission']} gen{row['generation']:5d}: "
-                          f"left {a} right {b}"
+                          f"left {label(a)} right {label(b)}"
                           f"{'  <-- ADDRESS DIFFERS' if a != b else ''}")
             unverifiable = [row for row, a, b in addresses if a is None and b is None]
             if unverifiable:
