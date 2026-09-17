@@ -25,9 +25,23 @@ class DiagnosticMetricsTests(unittest.TestCase):
         m.end(before, .1, iterations=2, timing='device_burst')
         out = m.render()
         self.assertIn('cache="mixed",context="131072",sequences="2",timing="device_burst"', out)
-        self.assertIn('st:condition_steps_total{cache="mixed",context="131072",sequences="2",timing="device_burst"} 2', out)
-        self.assertIn('st:condition_tokens_total{cache="mixed",context="131072",sequences="2",timing="device_burst"} 14', out)
+        self.assertIn('st:condition_steps_total{engine="st",cache="mixed",context="131072",sequences="2",timing="device_burst"} 2', out)
+        self.assertIn('st:condition_tokens_total{engine="st",cache="mixed",context="131072",sequences="2",timing="device_burst"} 14', out)
         self.assertIn('precision="w4"', out)
+
+    def test_exposition_covers_populated_counters_and_histograms(self):
+        from tests.test_engine_metrics import _exposition_is_wellformed
+
+        m, model, counts = self.fixture()
+        before = m.begin((1,))
+        counts[1] = 3
+        model.drafted_total, model.accepted_total = 7, 2
+        m.end(before, .05)
+        m.prefill(128, .25)
+        m.response([types.SimpleNamespace(finish_reason=lambda: 'stop', streams={
+            'reasoning_content': types.SimpleNamespace(ids=range(150)),
+            'content': types.SimpleNamespace(ids=range(10))})])
+        _exposition_is_wellformed(self, m.render())
 
     def test_ghost_rows_do_not_mislabel_a_wider_graph_as_c1(self):
         m, _, _ = self.fixture()
@@ -44,15 +58,15 @@ class DiagnosticMetricsTests(unittest.TestCase):
             'content':types.SimpleNamespace(ids=[])})
         m.response([choice])
         out=m.render()
-        self.assertIn('st:response_tokens_bucket{le="+Inf",part="reasoning"} 1',out)
-        self.assertIn('st:response_tokens_bucket{le="131072",part="reasoning"} 0',out)
-        self.assertIn('st:response_tokens_sum{part="answer"} 0',out)
-        self.assertIn('st:response_finished_total{reason="length"} 1',out)
+        self.assertIn('st:response_tokens_bucket{engine="st",le="+Inf",part="reasoning"} 1',out)
+        self.assertIn('st:response_tokens_bucket{engine="st",le="131072",part="reasoning"} 0',out)
+        self.assertIn('st:response_tokens_sum{engine="st",part="answer"} 0',out)
+        self.assertIn('st:response_finished_total{engine="st",reason="length"} 1',out)
 
     def test_prefill_counts_only_computed_chunk(self):
         m, _, _=self.fixture()
         m.prefill(128,.25)
-        self.assertIn('st:prefill_computed_tokens_total{} 128',m.render())
+        self.assertIn('st:prefill_computed_tokens_total{engine="st"} 128',m.render())
         self.assertEqual([context_band(n) for n in (8192,8193,32769,131073)],
                          ['8192','32768','131072','over128k'])
 

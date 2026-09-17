@@ -30,6 +30,18 @@ def build_identity():
 
 class DiagnosticMetrics:
     LENGTH_BOUNDS = (0, 128, 512, 2048, 8192, 32768, 131072, math.inf)
+    FAMILIES = (
+        ('st:runtime_info', 'gauge', 'identity of the serving process and drafter'),
+        ('st:condition_steps_total', 'counter', 'completed decode iterations by execution cohort'),
+        ('st:condition_seconds_total', 'counter', 'decode seconds by execution cohort and timing source'),
+        ('st:condition_tokens_total', 'counter', 'emitted tokens by execution cohort'),
+        ('st:condition_drafted_total', 'counter', 'drafted tokens by execution cohort'),
+        ('st:condition_accepted_total', 'counter', 'accepted draft tokens by execution cohort'),
+        ('st:prefill_computed_tokens_total', 'counter', 'prompt tokens actually computed, excluding cached tokens'),
+        ('st:prefill_compute_seconds_total', 'counter', 'host-observed prefill compute seconds'),
+        ('st:response_finished_total', 'counter', 'completed chat choices by finish reason'),
+        ('st:response_tokens', 'histogram', 'tokens in completed chat choices by response part'),
+    )
 
     def __init__(self, server):
         self.server = server
@@ -95,7 +107,15 @@ class DiagnosticMetrics:
                     k=str(getattr(draft, 'k', 'unknown')), precision=str(getattr(draft, 'decode_precision', 'unknown')))
         with self.lock:
             values = list(self.values.items())
-        out = ['st:runtime_info{' + ','.join(k+'='+json.dumps(v) for k,v in info.items()) + '} 1\n']
-        for (name, labels), value in sorted(values):
-            out.append(name+'{'+','.join(k+'='+json.dumps(v) for k,v in labels)+'} '+str(value)+'\n')
+        out = [f'# HELP {name} {help_text}\n# TYPE {name} {kind}\n'
+               for name, kind, help_text in self.FAMILIES]
+        out.append('st:runtime_info{engine="st",' + ','.join(k+'='+json.dumps(v) for k,v in info.items()) + '} 1\n')
+        # Histogram buckets must be exposed in numeric order, with +Inf last.
+        def series_key(item):
+            (name, labels), _ = item
+            return name, tuple((k, v) for k, v in labels if k != 'le'), float(dict(labels).get('le', '0'))
+
+        for (name, labels), value in sorted(values, key=series_key):
+            suffix = ''.join(','+k+'='+json.dumps(v) for k,v in labels)
+            out.append(name+'{engine="st"'+suffix+'} '+str(value)+'\n')
         return ''.join(out)

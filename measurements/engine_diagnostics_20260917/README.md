@@ -44,3 +44,5 @@ functional assertions, not a measurement of model performance.
 
 Validation used no fleet queue, GPU benchmark, production restart or deployment.
 Merging this host telemetry does not certify a GPU performance change.
+
+PR merge gate: Prometheus HELP/TYPE and engine labels are emitted for every family. Response histogram buckets are numeric and close at +Inf. `exposition-tests.log` records 24 passing diagnostics and serving-metrics tests after the CI-discovered format correction.

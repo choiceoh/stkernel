@@ -1,0 +1,34 @@
+test_actual_joint_cohorts_and_completed_burst_steps (tests.test_engine_diagnostic_metrics.DiagnosticMetricsTests.test_actual_joint_cohorts_and_completed_burst_steps) ... ok
+test_exposition_covers_populated_counters_and_histograms (tests.test_engine_diagnostic_metrics.DiagnosticMetricsTests.test_exposition_covers_populated_counters_and_histograms) ... ok
+test_ghost_rows_do_not_mislabel_a_wider_graph_as_c1 (tests.test_engine_diagnostic_metrics.DiagnosticMetricsTests.test_ghost_rows_do_not_mislabel_a_wider_graph_as_c1) ... ok
+test_lengths_include_zero_and_histogram_overflow (tests.test_engine_diagnostic_metrics.DiagnosticMetricsTests.test_lengths_include_zero_and_histogram_overflow) ... ok
+test_prefill_counts_only_computed_chunk (tests.test_engine_diagnostic_metrics.DiagnosticMetricsTests.test_prefill_counts_only_computed_chunk) ... ok
+test_a_bound_is_inclusive_and_bad_samples_are_dropped (tests.test_engine_metrics.HistogramTests.test_a_bound_is_inclusive_and_bad_samples_are_dropped) ... ok
+test_buckets_are_cumulative_and_the_sum_is_exact (tests.test_engine_metrics.HistogramTests.test_buckets_are_cumulative_and_the_sum_is_exact) ... ok
+test_buckets_stay_monotone_when_a_scrape_lands_mid_observation (tests.test_engine_metrics.HistogramTests.test_buckets_stay_monotone_when_a_scrape_lands_mid_observation)
+The exposition may not emit a bucket smaller than a narrower one, whatever the ... ok
+test_acceptance_is_exposed_as_a_distribution (tests.test_engine_metrics.KernelAndServingTests.test_acceptance_is_exposed_as_a_distribution) ... ok
+test_decode_shape_counters_name_the_graph_that_ran (tests.test_engine_metrics.KernelAndServingTests.test_decode_shape_counters_name_the_graph_that_ran) ... ok
+test_lane_info_says_what_is_actually_bound (tests.test_engine_metrics.KernelAndServingTests.test_lane_info_says_what_is_actually_bound) ... ok
+test_step_seconds_are_split_by_kind_and_counted_once_per_step (tests.test_engine_metrics.KernelAndServingTests.test_step_seconds_are_split_by_kind_and_counted_once_per_step)
+One observation per step, under the kind that step was. The value is host wall ... ok
+test_the_engine_counts_the_shape_it_replayed (tests.test_engine_metrics.KernelAndServingTests.test_the_engine_counts_the_shape_it_replayed)
+The counter comes from the shape the adapter already computed: no extra work. ... ok
+test_the_fleet_boot_publishes_lane_info (tests.test_engine_metrics.KernelAndServingTests.test_the_fleet_boot_publishes_lane_info) ... ok
+test_a_timeout_is_counted_apart_from_other_cancellations (tests.test_engine_metrics.MetricsTests.test_a_timeout_is_counted_apart_from_other_cancellations) ... ok
+test_capacity_gauges_report_raw_occupancy (tests.test_engine_metrics.MetricsTests.test_capacity_gauges_report_raw_occupancy) ... ok
+test_compressed_prefix_metrics_distinguish_ram_from_nvme_bytes (tests.test_engine_metrics.MetricsTests.test_compressed_prefix_metrics_distinguish_ram_from_nvme_bytes) ... ok
+test_latency_is_measured_from_admission_and_split_by_token (tests.test_engine_metrics.MetricsTests.test_latency_is_measured_from_admission_and_split_by_token) ... ok
+test_the_bench_dialect_still_reads_its_counters (tests.test_engine_metrics.MetricsTests.test_the_bench_dialect_still_reads_its_counters) ... ok
+test_the_exposition_is_wellformed (tests.test_engine_metrics.MetricsTests.test_the_exposition_is_wellformed) ... ok
+test_the_prefix_tiers_bytes_are_its_own_and_not_the_conversation_tiers (tests.test_engine_metrics.MetricsTests.test_the_prefix_tiers_bytes_are_its_own_and_not_the_conversation_tiers)
+`st:tier_bytes_*` reads runner.tiered -- the CONVERSATION tier. Everything the boundary ... ok
+test_the_scrape_says_which_reasoning_shape_the_traffic_was_rendered_with (tests.test_engine_metrics.MetricsTests.test_the_scrape_says_which_reasoning_shape_the_traffic_was_rendered_with)
+45차 §81: whether a conversation CAN be continued turns on this and nothing else. With thinking ... ok
+test_the_step_split_adds_up_to_the_step_counter (tests.test_engine_metrics.MetricsTests.test_the_step_split_adds_up_to_the_step_counter) ... ok
+test_the_tier_series_appear_only_with_a_tier (tests.test_engine_metrics.MetricsTests.test_the_tier_series_appear_only_with_a_tier) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 1.225s
+
+OK
