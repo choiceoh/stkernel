@@ -70,7 +70,7 @@ class SmoothingTests(unittest.TestCase):
         net = Glm53Net(F, Comm(4, 0), lanes.reference(), layers=[0, 1, 2])
         groups = net.smoothing_groups()
         self.assertIn(("L0.in_norm", ["L0.kda.in_proj"], []), groups)
-        self.assertIn(("L1.in_norm", ["L1.mla.qkv_a"], ["L1.idx.wk", "L1.idx.gate"]), groups)
+        self.assertIn(("L1.in_norm", ["L1.mla.qkv_a"], ["L1.idx.wk", "L1.idx.gate", "L1.idx.w_heads"]), groups)
         self.assertIn(("L1.mla.q_a_norm", ["L1.mla.q_b", "L1.idx.wq_b"], []), groups)
         self.assertIn(("L2.post_norm", ["L2.mlp.gate_up"], []), groups)
         self.assertEqual(len(groups), 8)
@@ -82,6 +82,7 @@ class SmoothingTests(unittest.TestCase):
         H, Q = F.hidden, F.q_lora
         net.p = {"L1.in_norm": (torch.rand(H, generator=g) + 0.5).bfloat16(), "L1.mla.qkv_a": (torch.randn(Q + F.kv_lora, H, generator=g) * 0.05).bfloat16(),
                  "L1.idx.wk": (torch.randn(F.idx_dim, H, generator=g) * 0.05).bfloat16(), "L1.idx.gate": (torch.randn(F.idx_dim, H, generator=g) * 0.05).bfloat16(),
+                 "L1.idx.w_heads": torch.randn(F.idx_heads, H, generator=g) * 0.05,
                  "L1.mla.q_a_norm": torch.ones(Q).bfloat16(), "L1.mla.q_b": (torch.randn(8, Q, generator=g) * 0.05).bfloat16(), "L1.idx.wq_b": (torch.randn(8, Q, generator=g) * 0.05).bfloat16()}
         names = net.dense_weight_names(net.p)
         amax = {names["L1.mla.qkv_a"]: torch.rand(H, generator=g) * 4 + 0.1, names["L1.mla.q_b"]: torch.rand(Q, generator=g) + 0.1}
@@ -96,6 +97,37 @@ class SmoothingTests(unittest.TestCase):
             w = smoothed[key][0] if key in smoothed else net.p[key]
             self.assertTrue(torch.equal(torch.nn.functional.linear(rmsnorm(x, net.p["L1.in_norm"], 1e-6), w),
                                         torch.nn.functional.linear(rmsnorm(x, originals["L1.in_norm"], 1e-6), originals[key])), key)
+
+    def test_smoothing_preserves_fp32_indexer_head_gates_and_pool_selection(self):
+        from engine.base.comm import Comm
+        from engine.profiles.glm53 import lanes
+        from engine.profiles.glm53.net import Glm53Net, rmsnorm
+        from tests.test_engine_glm53 import tiny_facts
+        F = tiny_facts()
+        net = Glm53Net(F, Comm(4, 0), lanes.reference(), layers=[1])
+        heads = torch.zeros(F.idx_heads, F.hidden, dtype=torch.float32)
+        heads[:2, :2] = torch.tensor([[1., 1.], [1., -1.]])
+        net.p = {"L1.in_norm": torch.ones(F.hidden).bfloat16(),
+                 "L1.mla.qkv_a": torch.full((F.q_lora + F.kv_lora, F.hidden), .5).bfloat16(),
+                 "L1.idx.wk": torch.full((F.idx_dim, F.hidden), .125).bfloat16(),
+                 "L1.idx.gate": torch.full((F.idx_dim, F.hidden), .125).bfloat16(),
+                 "L1.idx.w_heads": heads.clone()}
+        x = torch.zeros(1, F.hidden, dtype=torch.bfloat16)
+        x[0, :2] = 1
+        amax = torch.full((F.hidden,), .5)
+        amax[:2] = torch.tensor([.25, 16.])  # unequal channel scales change head signs/rankings if omitted
+        step = SimpleNamespace(captured=False)
+        before, _ = net._indexer_head_gate(1, rmsnorm(x, net.p["L1.in_norm"], F.rms_eps), step)
+        # Two pools' nonnegative per-head q.k scores, weighted by the head gates.
+        pool_scores = torch.zeros(F.idx_heads, 2)
+        pool_scores[0, 0], pool_scores[1, 1] = 1., 2.
+        smoothed = net.smooth_inputs(lambda name: amax)
+        after, _ = net._indexer_head_gate(1, rmsnorm(x, net.p["L1.in_norm"], F.rms_eps), step)
+        self.assertIn("L1.mla.qkv_a", smoothed)
+        self.assertEqual(net.p["L1.idx.w_heads"].dtype, torch.float32)
+        self.assertEqual((before @ pool_scores).argmax().item(), 0)
+        self.assertEqual((after @ pool_scores).argmax().item(), 0)
+        torch.testing.assert_close(after, before, rtol=0, atol=0)
 
     def test_the_drafter_folds_the_block_path_and_leaves_the_context_projection(self):
         from tests.test_engine_drafter import DrafterTests
