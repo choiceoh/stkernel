@@ -684,9 +684,11 @@ class Glm53Engine:
         options = dict(options or {})
         # Private incident arm only: 1000+seed = host block verification,
         # 2000+seed = target-only, 3000+seed = token-level verification.
-        # All modes use the SAME underlying request seed after this decode.
+        # 4000+seed = device chain with torch block-verification reference;
+        # 6000+seed = device chain with target-only sampling. All modes use
+        # the SAME underlying request seed after this decode.
         code = int(options.get("seed") or 0)
-        mode = code // 1000 if 1000 <= code < 4000 else 0
+        mode = code // 1000 if 1000 <= code < 7000 else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -971,7 +973,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
