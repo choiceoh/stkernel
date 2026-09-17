@@ -45,7 +45,7 @@ import sys
 if '-w' in sys.argv: print('000')
 ''')
         self.write('bench/fleet_entry.py', 'raise SystemExit(0)\n')
-        self.recording_shell('launchers/deploy-overlays.sh', 'deploy')
+        self.write('bench/fleet_approval.py', 'raise SystemExit(0)\n')
         self.recording_shell('bench/pair.sh', 'pair')
         self.recording_shell('bench/ab-lever.sh', 'onepass')
 
@@ -75,7 +75,7 @@ exit "${FIXTURE_ARM_RC:-0}"
     def test_promoted_profile_uses_one_opposite_candidate_and_shared_baseline_ledger(self):
         result, calls = self.run_script('run_ar_consumer_campaign.sh', '--gpu-evidence', '/missing/old-evidence')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual([call['event'] for call in calls], ['deploy', 'pair'])
+        self.assertEqual([call['event'] for call in calls], ['pair'])
         arm = calls[-1]
         self.assertEqual(arm['args'], ['fixtureAR0', 'VLLM_GLM53_AR_CONSUMER_PDL=0'])
         self.assertEqual(arm['lever'], str(self.root / 'bench/ab-lever.sh'))
@@ -93,7 +93,7 @@ exit "${FIXTURE_ARM_RC:-0}"
     def test_baseline_only_dispatches_exactly_one_standard_default_arm(self):
         result, calls = self.run_script('run_ar_consumer_campaign.sh', '--baseline-only')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual([call['event'] for call in calls], ['deploy', 'onepass'])
+        self.assertEqual([call['event'] for call in calls], ['onepass'])
         self.assertEqual(calls[-1]['args'], ['fixtureBASE', ''])
 
     def test_unknown_profile_fails_before_any_serving_mutation(self):
@@ -107,7 +107,7 @@ exit "${FIXTURE_ARM_RC:-0}"
         (self.root / 'evidence').mkdir()
         (self.root / 'logs/glm53.log').write_text('onepass runtime fixture\n')
         names = ['glm53_megakernel.cu', 'glm53_megakernel.py',
-                 'dsv4_oneshot_ar.cu', 'dsv4_oneshot_shim.py']
+                 'dsv4_oneshot_ar.cu', 'dsv4_oneshot_transport.h', 'dsv4_oneshot_shim.py']
         for name in names:
             (self.root / 'build/glm53' / name).write_text('fixture\n')
         (self.root / 'build/glm53/manifest.tsv').write_text(''.join(

@@ -51,7 +51,7 @@
 | `observe_rows` | **캡처된 그래프** |
 | `propose_rows` | **캡처된 그래프** |
 
-**커밋 자리는 오늘 이미 접혔다** — `engine/kernels/decode_commit.py` 가 커밋과 여섯 개의 원소별 갱신을
+**커밋 자리는 오늘 이미 접혔다** — `engine/kernels/common/decode_commit.py` 가 커밋과 여섯 개의 원소별 갱신을
 한 런치로 합쳤고 `pipeline.py:272` 가 CUDA 경로에서 그걸 쓴다. 남은 eager 는 위 표의 나머지,
 특히 **`all_gather` → `distribution_batch` → `note_ceilings` → `block_verify_batch`** 네 덩어리다.
 지시의 *"각각 별도 그래프로 이어 붙이는 수준에서 더 나아가"* 가 가리키는 자리가 그것이다.

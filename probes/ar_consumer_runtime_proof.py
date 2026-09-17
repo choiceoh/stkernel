@@ -18,7 +18,7 @@ obj = json.loads(subprocess.check_output(['docker', 'inspect', name], text=True)
 env = dict(s.split('=', 1) for s in obj['Config']['Env'])
 expected = {'VLLM_GLM53_AR_CONSUMER_PDL': args.mode, 'VLLM_GLM53_MK_PDL': '1',
             'VLLM_GLM53_MK_MHC_BF16': '1', 'VLLM_GLM53_MK_INPUT_CTA': '4',
-            'VLLM_GLM53_MK_INPUT_REUSE': '1', 'VLLM_GLM53_B12X_STATIC_V2': 't,r',
+            'VLLM_GLM53_MK_INPUT_REUSE': '1', 'VLLM_GLM53_B12X_STATIC_V2': 't,r,sf6',
             'VLLM_GLM53_AR_PREFETCH': '0'}
 hashes = {line.split()[1]: line.split()[0] for line in subprocess.check_output(
     ['docker', 'exec', name, 'sha256sum', *files], text=True).splitlines()}

@@ -312,11 +312,6 @@ def cmd_plan(args) -> int:
     return 0
 
 
-def rank_of_expert(expert: int, world: int) -> int:
-    """Contiguous blocks, so a rank's experts are adjacent in the source."""
-    return expert // (384 // world) if world else 0
-
-
 CHUNK = 64 << 20
 
 

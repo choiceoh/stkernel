@@ -109,6 +109,9 @@ def main(argv: list) -> int:
     i = 0
     while i < len(argv):
         if argv[i] == "--diff":
+            if i + 1 >= len(argv):
+                print("usage: --diff needs a trace path", file=sys.stderr)
+                return 2
             diff_path = argv[i + 1]
             i += 2
         else:
@@ -118,6 +121,10 @@ def main(argv: list) -> int:
         print(__doc__)
         return 2
     base = analyze(paths[0])
+    # The documented second positional is the candidate trace; --diff is the
+    # named form. Both mean the same comparison.
+    if diff_path is None and len(paths) > 1:
+        diff_path = paths[1]
     if diff_path:
         diff(base, analyze(diff_path))
     else:

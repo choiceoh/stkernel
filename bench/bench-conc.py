@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Concurrency sweep for the hy4 stack: aggregate decode + prefill at C=1,2,4,8.
+"""Concurrency sweep for the hy4 stack: aggregate decode + prefill at C=1,2,4.
 
 Single-stream numbers are what we measured all day; an agent workload runs
 overlapping requests, so aggregate is the number that actually matters.
