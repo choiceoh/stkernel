@@ -908,6 +908,10 @@ class Glm53Net:
         # [rows*t] i32 each, read-only across this forward's DSA layers: lengths, horizons and, joined, the query windows
         lengths = caches.row_lengths(contexts, t, kp, glue.lengths, width=n_cand if joined else 0)
         seq_lens, ke = lengths[:2]
+        # The same `index_kpool_always_select_tail` pin the row loop applies: this is the
+        # captured decode path, so without it here the guarantee would hold in prefill and
+        # eager decode and vanish in the served one.
+        pin = tail_pin_pools(seq_lens, kp)
         keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
         # `select_native` returns None whenever it does not admit the shape -- a reference lane's
         # CPU logits included -- and the horizon mask plus torch.topk stay as they were.
@@ -918,6 +922,7 @@ class Glm53Net:
             starts, ends = lengths[2:]
             logits = self.lanes.indexer_logits(q8, keys_all.view(rows * n_cand, -1), scales_all.view(-1), w_eff, ends,
                                                ks=starts, width=n_cand)
+            pin_pools_in_logits(logits, pin, k=k)
             winners = pick(logits, ke, k)                     # horizon + top-k, one launch, logits untouched
             if winners is None:
                 glue.horizon(logits, ke)                                                  # -inf past each query's pools, in place
@@ -927,6 +932,7 @@ class Glm53Net:
             for r in range(rows):
                 sl = slice(r * t, (r + 1) * t)
                 logits = self.lanes.indexer_logits(q8[sl], keys_all[r], scales_all[r], w_eff[sl], ke[sl], ks=ks)[:, :n_cand].float()
+                pin_pools_in_logits(logits, pin[sl], k=k)
                 got = pick(logits, ke[sl], k)
                 if got is None:
                     glue.horizon(logits, ke[sl])                                          # -inf past each query's pools, in place
@@ -968,7 +974,7 @@ class Glm53Net:
             return topk_positions(values, k, valid=lengths, inplace=True)
         if rows <= SELECT_ROWS:
             logits = self.lanes.indexer_logits(q8, keys, scales, w_eff, ke)
-            pin_pools_in_logits(logits, pin)
+            pin_pools_in_logits(logits, pin, k=k)
             selected = select(logits, ke)
             result = selected if out is None else out.copy_(selected)
             from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke, seq=seq_lens, pool=pool,
@@ -979,7 +985,7 @@ class Glm53Net:
         for r0 in range(0, rows, SELECT_ROWS):
             r1 = min(rows, r0 + SELECT_ROWS)
             logits = self.lanes.indexer_logits(q8[r0:r1], keys, scales, w_eff[r0:r1], ke[r0:r1])
-            pin_pools_in_logits(logits, None if pin is None else pin[r0:r1])
+            pin_pools_in_logits(logits, None if pin is None else pin[r0:r1], k=k)
             out[r0:r1] = select(logits, ke[r0:r1])
         from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke, seq=seq_lens, pool=pool,
                  n_cand=n_cand, k=k, selected=out, prefill=rows > 64)
