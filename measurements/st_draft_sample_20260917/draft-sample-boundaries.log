@@ -1,0 +1,21 @@
+test_conditional_rows_ties_and_private_support (tests.test_engine_draft_sample.SampledWalkTests.test_conditional_rows_ties_and_private_support) ... ok
+test_full_drafter_sampled_entry_points_use_the_same_distributions (tests.test_engine_draft_sample.SampledWalkTests.test_full_drafter_sampled_entry_points_use_the_same_distributions) ... /work/tests/image_kernels.py:43: UserWarning: Memory efficient kernel not used because: (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:1104.)
+  Fn.scaled_dot_product_attention(q, q, q, attn_mask=mask, scale=1.0)
+/work/tests/image_kernels.py:43: UserWarning: Mem efficient attention requires last dimension of inputs to be divisible by 8. Got Query.size(-1): 4, Key.size(-1): 4, Value.size(-1): 4 instead. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:285.)
+  Fn.scaled_dot_product_attention(q, q, q, attn_mask=mask, scale=1.0)
+/work/tests/image_kernels.py:43: UserWarning: Flash attention kernel not used because: (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:1106.)
+  Fn.scaled_dot_product_attention(q, q, q, attn_mask=mask, scale=1.0)
+/work/tests/image_kernels.py:43: UserWarning: Flash attention has been runtime disabled. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/transformers/sdp_utils_cpp.h:559.)
+  Fn.scaled_dot_product_attention(q, q, q, attn_mask=mask, scale=1.0)
+/work/tests/image_kernels.py:43: UserWarning: cuDNN attention kernel not used because: (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:1108.)
+  Fn.scaled_dot_product_attention(q, q, q, attn_mask=mask, scale=1.0)
+/work/tests/image_kernels.py:43: UserWarning: head_dim should be a multiple of 8 (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/transformers/cuda/sdp_utils.cpp:653.)
+  Fn.scaled_dot_product_attention(q, q, q, attn_mask=mask, scale=1.0)
+ok
+test_shape_and_dtype_errors (tests.test_engine_draft_sample.SampledWalkTests.test_shape_and_dtype_errors) ... ok
+test_uniforms_adjacent_to_conditional_cdf_boundaries (tests.test_engine_draft_sample.SampledWalkTests.test_uniforms_adjacent_to_conditional_cdf_boundaries) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 1.260s
+
+OK

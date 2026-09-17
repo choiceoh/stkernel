@@ -764,35 +764,11 @@ class Drafter:
         if any(a != 1. for a in self.selector_alpha):
             edge *= self.selector_alpha_tensor(dev).view(1, K, 1, 1)
         scores = unary[:, :, None, :] + edge   # [n, K, prev, cur]
-        rows = torch.arange(n, device=dev)
-        prev = torch.zeros(n, dtype=torch.int64, device=dev)
-        # The walk puts mass on `sel_top_k` candidates a position and nothing else. Handing that back as
-        # [n, K, vocab] meant allocating and zeroing 12.4 MiB every decode step (n=4, K=5, V=154,880) to carry
-        # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
-        # Every position below writes all rows/candidates before the result is returned.
-        qprob = torch.empty(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
-        qcand = cand.clone()                                                          # the candidates are the walk's, position by position
-        # The sampled walk stays a loop: each position picks among the sixteen the last one opened. Its draw
-        # is the cumulative walk over the caller's uniform for that position -- keyed, not drawn, so four ranks
-        # hold the same number whatever came before (base/draws) and a recorded step replays alone (D12). What
-        # does not change along the walk -- which rows sample, and their temperatures -- is computed once.
-        if uniforms is None or tuple(uniforms.shape) != (n, K):
-            raise ValueError(f"the sampled walk needs uniforms [{n}, {K}], one a position")
-        from engine.base.sampler import _inverse_cdf
-        stochastic = (temps > 0).view(n, 1)
-        heat = temps.clamp_min(1e-5).view(n, 1)
-        out = []
-        for s in range(K):
-            sel = scores[rows, s, prev]                                                                    # [n, 16]
-            best = sel.argmax(-1)
-            probs = torch.softmax(sel / heat, dim=-1)
-            probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
-            pick = torch.where(stochastic.view(n), _inverse_cdf(probs, uniforms[:, s]), best)
-            qprob[:, s] = probs
-            out.append(cand[rows, s, pick])
-            prev = pick
+        from engine.kernels.draft_sample import sampled_walk
         from engine.modules.draft_agreement import agree_walk
-        return agree_walk(self.target.comm, torch.stack(out, 1), qcand, qprob)
+        if uniforms is None:
+            raise ValueError(f"the sampled walk needs uniforms [{n}, {K}], one a position")
+        return agree_walk(self.target.comm, *sampled_walk(scores, cand, temps, uniforms))
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor, *, boundary=None) -> "list[int]":
         """K drafts for the block [anchor at `position`, K masks after it]; the ring holds the context up to position-1."""
@@ -897,25 +873,19 @@ class Drafter:
         if any(a != 1. for a in self.selector_alpha):
             edge *= self.selector_alpha_tensor(dev).view(K, 1, 1)
         scores = unary[:, None, :] + edge
-        # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
-        # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
-        # is the whole of a draw. `multinomial` was a kernel a position to do that.
+        # Conditional probabilities are batched; the predecessor choice stays
+        # sequential inside one kernel. Keyed uniforms remain caller-owned.
         u = torch.as_tensor(uniforms, dtype=torch.float32, device=dev).reshape(-1)
         if u.numel() != K:
             raise ValueError(f"the sampled walk needs {K} uniforms, one a position, got {u.numel()}")
-        drafts, probabilities = [], []
-        prev = torch.zeros(1, dtype=torch.int64, device=dev)
-        for s in range(K):
-            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
-            walk = probs.cumsum(0)
-            pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
-                .clamp_max(walk.argmax())                   # past the walk's end: its last candidate with mass
-            probabilities.append(probs)
-            drafts.append(cand[s].index_select(0, pick))
-            prev = pick
+        from engine.kernels.draft_sample import sampled_walk
         from engine.modules.draft_agreement import agree_walk
+        tokens, support, probabilities = sampled_walk(
+            scores.unsqueeze(0), cand.unsqueeze(0),
+            torch.full((1,), temperature, dtype=torch.float32, device=dev), u.reshape(1, K),
+            greedy_rows=False, last_mass=True)
         tokens, support, probabilities = agree_walk(
-            self.target.comm, torch.cat(drafts), cand, torch.stack(probabilities))
+            self.target.comm, tokens[0], support[0], probabilities[0])
         dists = torch.zeros(K, vocab, device=dev, dtype=torch.float32)
         dists.scatter_add_(1, support, probabilities)
         return tokens, dists

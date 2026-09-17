@@ -12,7 +12,8 @@ communication changes or precision changes.
 The baseline is `tap_mix` followed by `add_norm` from main `13ce718f`.
 The candidate uses the same inputs and dtype. The RTX 5050 is the owner's
 explicitly authorized component comparison device, not a GB10 surrogate.
-GPU source hashes are in `draft-post-norm.json`; SM121 lowering hashes are
+The convolution probe was captured at commit `10da8233`, before the
+subsequent sampled-selector changes to drafter.py. GPU source hashes are in `draft-post-norm.json`; SM121 lowering hashes are
 in `draft-post-norm-compile.json`.
 
 - RTX 5050 SM120, 20 SMs, driver 595.79; Torch 2.13.0+cu132,

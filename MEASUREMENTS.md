@@ -4407,3 +4407,16 @@ replays; CPU 41 pass/8 skip and seven offline SM121 specializations pass.
 No queue/deployment; GB10/TP4 step/s and acceptance unmeasured. The measured
 microseconds do not resolve the historical millisecond-scale K sensitivity.
 [Raw brackets, hashes and reproduction](measurements/st_draft_post_norm_20260917/README.md).
+
+## 2026-09-17 — Default sampled selector: batch probabilities and fuse the K-position walk
+
+K=7 actual `propose_rows` selector code, with model/head outputs held fixed
+and synthetic codebooks on RTX 5050: C=1 **142.390 → 19.321 µs (−86.43%)**,
+C=2 143.676 → 20.892, C=4 156.297 → 24.810, C=8 160.743 → 34.658 µs.
+This removes ~123–131 µs from the measured component; it is not full-drafter
+or engine speed. Fourteen GPU shape/policy cases, changed-input graphs and
+exact CDF-boundary uniforms pass; CPU 50 pass/9 skip; 16 offline SM121 builds
+pass. The initially batched C=1 CDF changed rounding at exact cut points and
+was corrected to the former serial order. A separate attention tile split
+was slower and rejected. No queue/deployment; GB10/TP4 speed and acceptance
+unmeasured. [Receipts and limits](measurements/st_draft_sample_20260917/README.md).
