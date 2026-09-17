@@ -247,9 +247,10 @@ def reference() -> Lanes:
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
-MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0,as1"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the
+MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0,ss1"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the
 # M16 reform C=1 has, with direct register scatter, retained route state and the FC2 prefetch ring (#955/#962/#970)
-# as1: three-candidate FC1/FC2 search across routed decode, prefill and dense MLPs; top-8 is unchanged.
+# ss1: retain the adopted FC2 search. The as1 consumer run lost certificate/JSON
+# quality despite lower tensor SSE (2026-09-17); as1/as2 remain experimental.
 
 
 def parse_moe_static(value: str) -> "tuple[str | None, bool]":
