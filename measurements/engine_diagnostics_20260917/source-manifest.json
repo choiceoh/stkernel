@@ -1,0 +1,11 @@
+{
+  "base": "ed4202f739740db8e5ea33faba868e41a6b21a11",
+  "branch": "codex/engine-diagnostics-0917",
+  "sha256": {
+    "engine/base/diagnostic_metrics.py": "4ffe7619893c4f249d0c9ad7d572f0184839550097f0a013d22f3c9ef4f7c613",
+    "engine/base/runner.py": "59501ea92291225642bc7dee1caca8e8be060380676d4b12bbf153df4c4f3175",
+    "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+    "engine/profiles/glm53/drafter.py": "0a94429f53877e71c7acd679356a424216d800179159f60cb4e82bdc0f95362d",
+    "tests/test_engine_diagnostic_metrics.py": "c29f82ddd4c1afc5f2e0db9e821b89049bf150278ba389eee68af35c8fcaad48"
+  }
+}
