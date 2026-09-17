@@ -67,6 +67,10 @@ def main():
         from probes.engine_moe_c2_cells import main as moe_c2_cells
         moe_c2_cells(args.ranks, sections=args.lanes.split(':')[1:], samples=args.samples, output=args.output)
         return
+    if args.lanes in ('moe_input_reuse', 'moe_input_reuse_compile'):
+        from probes.engine_moe_input_reuse import run
+        run(args.output, args.ranks, compile_only=args.lanes.endswith('_compile'))
+        return
     if args.lanes == 'router_cells':
         # the decode router's launch fold: the served seven-launch chain against one fused launch (real rank gates)
         from probes.engine_router_cells import main as router_cells
