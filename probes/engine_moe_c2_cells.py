@@ -57,6 +57,7 @@ TARGET_U8 = 41.9      # distinct experts per layer an 8-row C=1 verify reads on 
 LAYERS = (3, 4, 5)
 CHUNKS = (512, 256)
 SECTIONS = ('chunk', 'depth', 'stamps', 'prefill', 'shapes', 'price', 'prefetch', 'bulk', 'input')
+OPTIONAL_SECTIONS = ('publication',)  # identical M8/M16 inputs and isolated contributions
 PREFETCH_CELLS = ('l2', 'lf2', 'lf4', 'lf8')   # l2 repeats the first ticket's control arm beside the FC2-only cells
 RANKS = '/home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors'
 # bytes a unique expert streams per layer: w13 + w2 + SF6 FC1 (128 x 1552) + SF6 FC2 (64 x 1552)
@@ -682,11 +683,11 @@ def prefill_cells(report, layers, chunks, brackets, reps=4):
 def main(ranks=None, *, sections=(), samples=None, output=None):
     options = dict(token.split('=', 1) for token in sections if '=' in token)
     wanted = {token for token in sections if '=' not in token} or set(SECTIONS)
-    if wanted - set(SECTIONS):
-        raise ValueError(f'unknown moe_c2_cells sections: {sorted(wanted - set(SECTIONS))}')
+    if wanted - set(SECTIONS + OPTIONAL_SECTIONS):
+        raise ValueError(f'unknown moe_c2_cells sections: {sorted(wanted - set(SECTIONS + OPTIONAL_SECTIONS))}')
     layer_ids = tuple(int(v) for v in options.get('layers', ','.join(map(str, LAYERS))).split(','))
     chunks = tuple(int(v) for v in options.get('chunks', ','.join(map(str, CHUNKS))).split(','))
-    if 512 not in chunks or any(c not in CHUNKS for c in chunks):
+    if (512 not in chunks and wanted != {'publication'}) or any(c not in CHUNKS for c in chunks):
         raise ValueError('the chunks must include the 512 control and come from TILED_W13_CHUNKS')
     brackets = int(samples) if samples else 2
     sink = open(output, 'w') if output else None
@@ -701,7 +702,8 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
     root = Path(__file__).resolve().parents[1]
     files = ('engine/kernels/b12x/moe_dispatch.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
              'engine/kernels/b12x/moe_static_kernel_v5.py', 'engine/kernels/b12x/moe_static_common.py',
-             'engine/profiles/glm53/lanes.py', 'engine/modules/expert_layout.py', 'probes/engine_moe_c2_cells.py')
+             'engine/profiles/glm53/lanes.py', 'engine/modules/expert_layout.py', 'probes/engine_moe_c2_cells.py',
+             'probes/engine_moe_publication.py')
     failures = []
     try:
         from engine.kernels.b12x import moe_dispatch as md
@@ -721,8 +723,12 @@ def main(ranks=None, *, sections=(), samples=None, output=None):
         layers = [Layer(loader, keys, L, lane, chunks, bulk='bulk' in wanted) for L in layer_ids]
         report('weights', layers=[layer.identity for layer in layers],
                allocated_bytes=torch.cuda.memory_allocated())
-        spread = calibrate(layers, report)
+        spread = .7 if wanted == {'publication'} else calibrate(layers, report)
+        def publication():
+            from probes.engine_moe_publication import check
+            check(report, layers)
         for section, fn in (('chunk', lambda: chunk_cells(report, layers, chunks, spread, brackets)),
+                            ('publication', publication),
                             ('depth', lambda: depth_cells(report, layers, spread, brackets)),
                             ('stamps', lambda: (stamp_cells(report, layers, [(str(c), c, None) for c in chunks], spread),
                                                 stamp_cells(report, layers, [('c1_served', 512, None)], spread, rows=8))),

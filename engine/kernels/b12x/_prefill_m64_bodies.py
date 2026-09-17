@@ -25,6 +25,7 @@ from ._moe_dynamic.gated import (
 )
 from .moe_dynamic_gated_tiled import MoEGatedDynamicKernelTiled
 from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint32, Uint64
+from .fp4_scale_search import quantize_block_fp4_search
 from flashinfer.cute_dsl.fp4_common import (
     atomic_add_global_i32, fabs_f32, fmax_f32, rcp_approx_ftz,
     quantize_block_fp4, quantize_block_fp4_fast, get_ptr_as_int64,
@@ -503,6 +504,10 @@ class M64Bodies:
             ),
             launch_params,
         )
+
+        # The grid barrier acquired every producer's generic-global A/SFA
+        # stores. Bridge those writes to this CTA's subsequent TMA reads.
+        cute.arch.fence_proxy("async.global")
 
         # Deferred publication is complete after the resident-grid barrier
         # inside initialize_route_q0_and_publish.  Cache the immutable tail in
@@ -1394,7 +1399,11 @@ class M64Bodies:
                                 gs_value = first_gs
                                 packed64 = Uint64(0)
                                 scale_byte = Uint8(0)
-                                if self.fast_math:
+                                if cutlass.const_expr(self.activation_scale_search > 0):
+                                    (packed64, scale_byte) = quantize_block_fp4_search(
+                                        values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                    )
+                                elif self.fast_math:
                                     packed64, scale_byte = quantize_block_fp4_fast(values, block_max, gs_value)
                                 else:
                                     packed64, scale_byte = quantize_block_fp4(values, block_max, gs_value)
@@ -1416,7 +1425,11 @@ class M64Bodies:
                                     gs_value = Uint32(_ld_shared_i32(route_scales_addr + route_slot * Int32(4))).bitcast(cutlass.Float32)
                                     packed64 = Uint64(0)
                                     scale_byte = Uint8(0)
-                                    if self.fast_math:
+                                    if cutlass.const_expr(self.activation_scale_search > 0):
+                                        (packed64, scale_byte) = quantize_block_fp4_search(
+                                            values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                        )
+                                    elif self.fast_math:
                                         packed64, scale_byte = quantize_block_fp4_fast(values, block_max, gs_value)
                                     else:
                                         packed64, scale_byte = quantize_block_fp4(values, block_max, gs_value)
@@ -1576,7 +1589,11 @@ class M64Bodies:
 
                     packed64 = Uint64(0)
                     scale_byte = Uint8(0)
-                    if self.fast_math:
+                    if cutlass.const_expr(self.activation_scale_search > 0):
+                        (packed64, scale_byte) = quantize_block_fp4_search(
+                            values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                        )
+                    elif self.fast_math:
                         packed64, scale_byte = quantize_block_fp4_fast(
                             values, block_max, gs_value
                         )

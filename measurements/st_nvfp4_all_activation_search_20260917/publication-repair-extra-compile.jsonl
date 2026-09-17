@@ -1,0 +1,4 @@
+{"event": "compile", "component": "private-m64", "global_proxy_fences": 1}
+{"event": "compile", "component": "direct-micro", "m": 1, "instructions": [[4189, "membar.gl;"], [4194, "atom.global.add.s32 %r1487, [%rd75], %r1488;"], [4200, "membar.gl;"], [4208, "st.global.release.gpu.s32 [%rd76], %r1491;"]]}
+{"event": "compile", "component": "direct-micro", "m": 8, "instructions": [[19995, "membar.gl;"], [20003, "atom.global.add.s32 %r7685, [%rd285], %r7686;"], [20009, "membar.gl;"], [20017, "st.global.release.gpu.s32 [%rd19], %r7689;"]]}
+{"event": "verdict", "passed": true, "gpu_used": false}
