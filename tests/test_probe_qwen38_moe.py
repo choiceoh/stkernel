@@ -468,5 +468,12 @@ class DispatchMirrorTests(unittest.TestCase):
         self.assertEqual(constants(lane)["activation"], "silu")
 
 
+class LaneRoutingTests(unittest.TestCase):
+    def test_kernel_check_routes_the_lane_to_the_probe(self):
+        text = (ROOT / "probes" / "engine_kernel_check.py").read_text()
+        self.assertIn("args.lanes == 'qwen38_moe'", text)
+        self.assertIn("from probes.engine_qwen38_moe import run as qwen38_moe", text)
+
+
 if __name__ == "__main__":
     unittest.main()
