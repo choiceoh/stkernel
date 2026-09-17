@@ -1,33 +1,6 @@
-..................E....E
-======================================================================
-ERROR: test_glm_rank_rejects_ambiguous_expert_layout_before_loading (tests.test_engine_kernels.KernelPackageTests.test_glm_rank_rejects_ambiguous_expert_layout_before_loading)
+........................
 ----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/Users/ost/.codex/worktrees/f6ff/stkernel2/tests/test_engine_kernels.py", line 35, in test_glm_rank_rejects_ambiguous_expert_layout_before_loading
-    rank_loader(path)
-    ~~~~~~~~~~~^^^^^^
-  File "/Users/ost/.codex/worktrees/f6ff/stkernel2/engine/profiles/glm53/weights.py", line 13, in rank_loader
-    loader = RankLoader(path)
-  File "/Users/ost/.codex/worktrees/f6ff/stkernel2/engine/base/loader.py", line 126, in __init__
-    self.direct = self._direct_works()
-                  ~~~~~~~~~~~~~~~~~~^^
-  File "/Users/ost/.codex/worktrees/f6ff/stkernel2/engine/base/loader.py", line 131, in _direct_works
-    os.close(os.open(self.path, os.O_RDONLY | os.O_DIRECT))
-                                              ^^^^^^^^^^^
-AttributeError: module 'os' has no attribute 'O_DIRECT'. Did you mean: 'O_CREAT'?
+Ran 24 tests in 4.519s
 
-======================================================================
-ERROR: test_tile_major_layout_contract_is_shared_with_the_reference_module (tests.test_engine_kernels.KernelPackageTests.test_tile_major_layout_contract_is_shared_with_the_reference_module)
-The served bind re-lays expert bytes in place; the reference lane reads them back through
-----------------------------------------------------------------------
-Traceback (most recent call last):
-  File "/Users/ost/.codex/worktrees/f6ff/stkernel2/tests/test_engine_kernels.py", line 132, in test_tile_major_layout_contract_is_shared_with_the_reference_module
-    from engine.modules import expert_layout
-  File "/Users/ost/.codex/worktrees/f6ff/stkernel2/engine/modules/expert_layout.py", line 10, in <module>
-    import torch
-ModuleNotFoundError: No module named 'torch'
-
-----------------------------------------------------------------------
-Ran 24 tests in 2.992s
-
-FAILED (errors=2)
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK

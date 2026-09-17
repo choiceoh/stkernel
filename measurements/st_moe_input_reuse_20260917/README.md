@@ -34,8 +34,14 @@ to eight/sixteen-row vector-input reform cells. It has no serving adoption yet.
   with reuse disabled, at both C1 and C2. Both were compiled on the same host
   with the same image, dependency mount and flags.
 - `cpu-config.txt`: 49 focused tests, seven GPU-dependent skips, no failures.
+- `cpu-integrated.txt`: all 24 integrated configuration/package tests pass in
+  the GPU-hidden Linux image on source `0c1cca60`. The earlier macOS attempt
+  lacked `os.O_DIRECT` and Torch for two package tests; its errors are retained
+  separately in `cpu-integrated-macos.txt` and are not counted as passes.
 - GPU ticket `moe-input-reuse-v1-0917`, admitted source `53e0ee63`:
   pending. It uses the canonical exclusive fleet queue and actual rank0 weights.
+- GPU ticket `moe-input-reuse-v2-0917`, admitted source `133a7343`, additionally
+  compares compact route preparation (mode 3). See `routing-candidate.md`.
 
 The CPU compiler host is `ost-97x`, with GPU-hidden runc, CUDA 13.2 and Torch
 2.13.0. The image alone has published FlashInfer, which lacks a required helper;
