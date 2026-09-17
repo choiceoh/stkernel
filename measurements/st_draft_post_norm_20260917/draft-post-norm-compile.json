@@ -1,0 +1,77 @@
+{
+  "status": "PASS",
+  "gpu_used": false,
+  "target": "sm_121",
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "triton": "3.7.1",
+  "cells": [
+    {
+      "width": 4096,
+      "block": 6,
+      "group": 256,
+      "taps": 2,
+      "shared_bytes": 32,
+      "ptx_sha256": "f9109f11f749fc19acc7fb6dde563a1d7e7b98684bb95f6c5dfc683c58afdcde",
+      "cubin_sha256": "419634467b4c85d55dbf77c6f796cff11402c234bc33c310c0443ad0690307c3"
+    },
+    {
+      "width": 4096,
+      "block": 7,
+      "group": 256,
+      "taps": 2,
+      "shared_bytes": 32,
+      "ptx_sha256": "b9c197d2bdc3e23a49b1e5588c016c62378c3274051706efddc6dfcdb6e16351",
+      "cubin_sha256": "2badd05c243f48f3cc42ae1b3abdced719342d58c70b6441dcee6eb5a3780086"
+    },
+    {
+      "width": 4096,
+      "block": 8,
+      "group": 256,
+      "taps": 2,
+      "shared_bytes": 32,
+      "ptx_sha256": "c09e873f79c7e0018b54b03f1c030f0960b6fcd165c2908699f7ac98d51c9988",
+      "cubin_sha256": "cd8ca3524af48a3ffbd481f8fc78591a4fb56984379d7a9346bafbe2e3a89a68"
+    },
+    {
+      "width": 4096,
+      "block": 8,
+      "group": 16,
+      "taps": 2,
+      "shared_bytes": 32,
+      "ptx_sha256": "558201c7084ed600c03414b0ac87cc409551f019df876ddc6ef8be3a11f51a45",
+      "cubin_sha256": "91c254e1b5dafd0ac34a610007c128e87f97b1385fe2573b25bb7228ff06c096"
+    },
+    {
+      "width": 4096,
+      "block": 8,
+      "group": 64,
+      "taps": 4,
+      "shared_bytes": 32,
+      "ptx_sha256": "19736e502b7ffe1427e02bd7e5517f19c68defd9c02b683779b9227d610c5869",
+      "cubin_sha256": "516b27c97704e9698ec76ea0a8568e82fb9157f1328174e118cdc8c06d185917"
+    },
+    {
+      "width": 32,
+      "block": 7,
+      "group": 8,
+      "taps": 2,
+      "shared_bytes": 0,
+      "ptx_sha256": "c8311a4c01f1be00d9ce9af5165edd530f862717680cb39617579d040b8805ce",
+      "cubin_sha256": "39a1093476ecaab4ff57fbcbc3d88a9a0f2b48efda8b8e2a2adf3bf9b2ea3ef6"
+    },
+    {
+      "width": 32,
+      "block": 8,
+      "group": 4,
+      "taps": 2,
+      "shared_bytes": 0,
+      "ptx_sha256": "a71332bc90c994765a211acb3d8fd23df3bad7be17a913c6aa0fcd17efb51eae",
+      "cubin_sha256": "7dd5f32208a3b21755a1b6cc9b04ad97fa073caee220c0a8afe6c2b21bdc6252"
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/draft_conv.py": "629d18fe226a314b72371b42e485f94e171d82f3ced57bb21e9640f45eeb5cc5",
+    "probes/engine_draft_post_norm_compile.py": "17c233c7f1230ed4b6f4bc5459b78bb4252ab9752e22c4f3401c21dcee91da7e"
+  }
+}

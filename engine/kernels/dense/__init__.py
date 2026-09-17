@@ -482,9 +482,12 @@ class PaddedDenseLinear(DenseLinear):
         super().__init__(weight, prefill=prefill, store=store, name=name, smooth=smooth)
 
     def __call__(self, x, rows_ok=None, *, observe=True):
-        if x.shape[-1] != self.input_cols or x.dtype != torch.bfloat16:
+        """x at the weight's width, or already at the padded width with zero columns (common.swiglu's `pad_to` writes
+        it so: the pad is then the producer's launch, not a separate one here)."""
+        if x.shape[-1] not in (self.input_cols, self.input_cols + self.pad) or x.dtype != torch.bfloat16:
             raise ValueError("dense input does not match its bound weight")
-        return super().__call__(torch.nn.functional.pad(x, (0, self.pad)) if self.pad else x, rows_ok, observe=observe)
+        widen = self.pad and x.shape[-1] == self.input_cols
+        return super().__call__(torch.nn.functional.pad(x, (0, self.pad)) if widen else x, rows_ok, observe=observe)
 
     def packet_projector(self):
         return None

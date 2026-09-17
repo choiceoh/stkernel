@@ -63,7 +63,8 @@ class Lanes:
                             #  step) runs only this rank's pairs, reading their count on the host
     moe_prepare: object = None      # (w13, w13_sf, w2, w2_sf, top_k, *, scales) -> views, once per bound layer before capture
     graph_resources: object = None  # () -> workspace owners to retain until the captured graphs close
-    swiglu: object = None           # (fused [N, 2I]) -> silu(gate) * up: the shared expert's activation
+    swiglu: object = None           # (fused [N, 2I], pad_to=None) -> silu(gate) * up: the shared expert's activation,
+                                    #  with zero columns to `pad_to` for its padded down projection
     moe_finish: object = None       # (routed [N, H] bf16, shared [N, H] bf16, gate [N, 1] f32) -> BF16(f32 routed +
                                     #  f32 shared * gate): the MoE output before its all-reduce
 
@@ -220,9 +221,10 @@ def reference() -> Lanes:
             out.index_add_(0, rows, y.float() * gain[:, None])
         return out.to(x.dtype)
 
-    def swiglu(fused):
+    def swiglu(fused, pad_to=None):
         gate, up = fused.chunk(2, -1)
-        return torch.nn.functional.silu(gate) * up
+        out = torch.nn.functional.silu(gate) * up
+        return torch.nn.functional.pad(out, (0, pad_to - out.shape[-1])) if pad_to else out
 
     def moe_finish(routed, shared, gate):
         return (routed.float() + shared.float() * gate).to(routed.dtype)

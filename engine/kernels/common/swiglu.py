@@ -16,29 +16,36 @@ import triton.language as tl
 
 
 @triton.jit
-def _swiglu(X, OUT, sX, sO, width, BLOCK: tl.constexpr):
+def _swiglu(X, OUT, sX, sO, width, out_width, BLOCK: tl.constexpr):
     row = tl.program_id(0)
     c = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
     live = c < width
     gate = tl.load(X + row * sX + c, live, other=0.0).to(tl.float32)
     up = tl.load(X + row * sX + width + c, live, other=0.0)
     gate = (gate * tl.sigmoid(gate)).to(up.dtype)
-    tl.store(OUT + row * sO + c, gate * up, live)
+    # columns past the activation's width are zeros: a padded consumer's input (dense.PaddedDenseLinear) written here
+    tl.store(OUT + row * sO + c, tl.where(live, gate * up, tl.zeros_like(up)), c < out_width)
 
 
-def swiglu(fused: torch.Tensor) -> torch.Tensor:
-    """[rows, 2 * inter] gate-then-up -> [rows, inter], `silu(gate) * up`; CUDA columns must be contiguous."""
+def swiglu(fused: torch.Tensor, *, pad_to: "int | None" = None) -> torch.Tensor:
+    """[rows, 2 * inter] gate-then-up -> [rows, inter], `silu(gate) * up`; CUDA columns must be contiguous. `pad_to`
+    widens the output with zero columns in the same launch -- the input a PaddedDenseLinear pads to -- instead of a
+    separate pad after it."""
     if fused.ndim != 2 or fused.shape[1] % 2:
         raise ValueError("the gated activation takes one [rows, 2 * inter] projection")
     rows, width = fused.shape[0], fused.shape[1] // 2
+    out_width = width if pad_to is None else pad_to
+    if out_width < width:
+        raise ValueError(f"the gated activation cannot pad {width} columns to {out_width}")
     if not fused.is_cuda:
         gate, up = fused.chunk(2, -1)
-        return torch.nn.functional.silu(gate) * up
+        out = torch.nn.functional.silu(gate) * up
+        return torch.nn.functional.pad(out, (0, out_width - width)) if out_width > width else out
     if fused.stride(1) != 1:
         raise ValueError("CUDA SwiGLU needs contiguous projection columns")
-    out = torch.empty(rows, width, device=fused.device, dtype=fused.dtype)
-    block = 1024 if width >= 1024 else triton.next_power_of_2(width)
+    out = torch.empty(rows, out_width, device=fused.device, dtype=fused.dtype)
+    block = 1024 if out_width >= 1024 else triton.next_power_of_2(out_width)
     if rows:
-        _swiglu[(rows, triton.cdiv(width, block))](fused, out, fused.stride(0), out.stride(0), width,
-                                                   BLOCK=block, num_warps=4)
+        _swiglu[(rows, triton.cdiv(out_width, block))](fused, out, fused.stride(0), out.stride(0), width, out_width,
+                                                       BLOCK=block, num_warps=4)
     return out

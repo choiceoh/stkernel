@@ -542,8 +542,12 @@ class DenseGlueTests(unittest.TestCase):
             self.assertEqual(tuple(seen["x"].shape), (3, 5, 640))
             self.assertFalse(seen["x"][..., 576:].any())
             torch.testing.assert_close(out, torch.nn.functional.linear(x.float(), weight.float()), rtol=1e-5, atol=1e-4)
+            # an input already at the padded width (common.swiglu's pad_to writes one) passes through unpadded again
+            wide = torch.zeros(2, 640, dtype=torch.bfloat16)
+            layer(wide)
+            self.assertIs(seen["x"], wide)
             with self.assertRaisesRegex(ValueError, "does not match"):
-                layer(torch.zeros(2, 640, dtype=torch.bfloat16))
+                layer(torch.zeros(2, 600, dtype=torch.bfloat16))
             self.assertIsNone(layer.packet_projector())
             self.assertIsNone(layer.slot_writer(4))
             aligned = dense.PaddedDenseLinear(torch.randn(8, 512, dtype=torch.bfloat16))
