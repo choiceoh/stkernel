@@ -106,7 +106,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
 | K1 | GDN 게이트를 링 커널 안에서 계산(in_proj 조각을 stride 로 읽음) | #569 #571 | `kernels/kda/ring.py`, `fused_recurrent.py`, `net.py:_gdn_rows` | native | −36 발사 | cpu·glm | 시간 | 열림 |
-| K2 | `gated_norm` 이 z 를 stride 로 읽음 | #569 | `kernels/gdn.py` | fold | −36 발사·복사 | cpu | 시간 | 열림 |
+| K2 | `gated_norm` 이 z 를 stride 로 읽음 | #569 | `kernels/gdn.py` | fold | −36 발사·복사 | cpu | 시간 | 이 PR |
 | K3 | chunk 파이프라인이 헤드별 decay 를 네이티브로(widen·repeat_interleave 제거) | #615 #811 | `kernels/kda/chunk_decay.py`, `kda.py` | native | 프리필 청크당 약 −20 GiB 쓰기 | cpu·glm | 일 | 열림 |
 | K4 | strided q/k l2norm 을 4 헤드에서도 admit | #811 | `kda.py:_glm53_qk_l2norm_strided` | fold | 프리필 층당 −3 발사 | cpu·glm | 시간 | 열림 |
 | K5 | GDN norm 이 out_proj 의 W4 입력 팩을 씀(S2 뒤) | #968 #978 | `gdn.py`, dense | kernel | −36 발사 | gpu·glm | 일 | 열림 |
