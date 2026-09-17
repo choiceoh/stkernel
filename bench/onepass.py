@@ -321,21 +321,17 @@ def _st_build(names, name: str = "st-glm53") -> dict:
     return out
 
 
-def _served_build(repo: str, profile: str = "glm53") -> dict:
-    """What the SERVER is running: the deployed overlay stamp and the knobs
-    that differ from the profile's defaults.
+def _served_build(repo: str) -> dict:
+    """What the ST serving container runs, read off the container itself.
 
-    NOT this process's environment -- ab-lever.sh boots the server with the
-    arm's env and then runs this bench in a plain shell, so os.environ here
-    carries none of it. The serving container's own Config.Env is the only
-    honest source, and the overlay stamp identifies the BUILD (a bench with
-    no deploy reuses the previous build whatever the git sha says).
-    An empty `knobs` IS that build's baseline -- bench/baseline.py reads it
-    so the next session can skip re-measuring one. Every failure degrades to
-    a missing field: a bench must never die over its own label.
+    The engine's identity is the source the container runs (the runtime
+    manifest's sha256 of the engine tree), the release the launcher stamped,
+    and STK_* knobs. The retired vLLM overlay's stamp and knob parsing went
+    with the overlay stack (2026-09-18); a boot that is not st-glm53 reports
+    no build at all. Every failure degrades to a missing field: a bench must
+    never die over its own label.
     """
     import subprocess
-    out = {}
     try:
         names = subprocess.run(["docker", "ps", "--format", "{{.Names}}"],
                                capture_output=True, text=True,
@@ -343,99 +339,14 @@ def _served_build(repo: str, profile: str = "glm53") -> dict:
     except Exception:
         names = []
     if "st-glm53" in names:
-        # The ST engine, not vLLM: its identity is the source the container runs (the runtime
-        # manifest's sha256), the release the launcher stamped, and STK_* knobs -- never the
-        # vLLM overlay stamp, which would make every ST release look like one build.
         return _st_build(names)
-    try:
-        stamp = os.environ.get("MK_OVERLAY_STAMP",
-                               "/home/choiceoh/glm53-cache/.overlay-sha")
-        with open(stamp) as fh:
-            out["overlay"] = fh.read().strip()[:12]
-    except Exception:
-        pass
-    try:
-        name = next((n for n in names if n.startswith("glm53")), None)
-        if not name:
-            return out
-        boot = subprocess.run(["docker", "inspect", "-f", "{{.Id}}|{{.State.StartedAt}}", name],
-                              capture_output=True, text=True, timeout=10)
-        if boot.returncode == 0 and "|" in boot.stdout.strip():
-            out["boot_id"] = boot.stdout.strip()
-        raw = subprocess.run(["docker", "inspect", "-f", "{{json .Config.Env}}", name],
-                             capture_output=True, text=True, timeout=10).stdout
-        served = dict(e.split("=", 1) for e in json.loads(raw or "[]")
-                      if "=" in e and e.startswith("VLLM_"))
-        declared = {}
-        with open(os.path.join(repo, "profiles", profile + ".env")) as fh:
-            for line in fh:
-                line = line.strip()
-                if line.startswith("VLLM_") and "=" in line:
-                    k, v = line.split("=", 1)
-                    declared[k] = v.strip().strip('"')
-                elif line.startswith("SPEC_K="):
-                    # The launcher exports this profile setting under a
-                    # VLLM alias for the compile-cache key. Matching values
-                    # belong to the baseline, not an experimental knob.
-                    declared["VLLM_GLM53_SPEC_K"] = line.split("=", 1)[1].strip().strip('"')
-        knobs = {k: v for k, v in served.items() if k in declared and v != declared[k]}
-        knobs.update({k: v for k, v in served.items()
-                      if k.startswith("VLLM_GLM53_") and k not in declared})
-        out["knobs"] = dict(sorted(knobs.items()))
-    except Exception:
-        pass
-    return out
-
-
-def _served_speculation(boot_id, *, preparation=False):
-    """Read the identified head's actual command; no serving imports or requests."""
-    import subprocess
-    try:
-        from glm53_launch_metadata import launch_speculation
-        if not isinstance(boot_id, str) or re.fullmatch(r'[0-9a-f]{64}\|[^|]+', boot_id) is None:
-            raise ValueError('missing identified serving boot')
-        container_id, started = boot_id.split('|', 1)
-        raw = subprocess.check_output(['docker', 'inspect', container_id], text=True,
-                                      stderr=subprocess.DEVNULL, timeout=10)
-        containers = json.loads(raw)
-        if not isinstance(containers, list) or len(containers) != 1:
-            raise ValueError('ambiguous serving container')
-        container = containers[0]
-        state = container['State']
-        if (container['Id'] != container_id or state['StartedAt'] != started
-                or state['Running'] is not True or state['Paused'] or state['Restarting']):
-            raise ValueError('serving boot changed or stopped')
-        env = {}
-        for item in container['Config']['Env']:
-            key, value = item.split('=', 1)
-            if key in env:
-                raise ValueError('duplicate serving environment')
-            env[key] = value
-        result = dict(launch_speculation(container['Config']['Cmd']), boot_id=boot_id,
-                      image=container['Image'], environment_spec_k=env.get('VLLM_GLM53_SPEC_K'))
-        if preparation:
-            result.update(preparation_mode=env.get('VLLM_GLM53_PREP_FUSED'),
-                preparation_kernel=env.get('VLLM_GLM53_PREP_FUSED_KERNEL', 'cuda'),
-                shadow_every=env.get('VLLM_GLM53_PREP_FUSED_SHADOW_EVERY', '1'),
-                selfcheck_every=env.get('VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY', '64'))
-        return result
-    except (KeyError, ValueError, TypeError, OSError, subprocess.SubprocessError):
-        return None  # Missing evidence never arms SPEC_K proof.
+    return {}
 
 
 def build_record(args, revision):
     from measurement_contract import from_args, metadata
     return dict(name=args.name, t=time.strftime("%F %T"), git=revision, evidence_scope='full',
                 prefill=[], quality={}, decode={}, korean={}, **metadata(from_args(args)))
-
-
-def _require_preparation(rec):
-    # Defaults stay knobs={}; execution must still be proved. Seed a rejection
-    # before collection so an exception cannot erase this requirement.
-    rec['required_proofs'] = ['VLLM_GLM53_PREP_FUSED']
-    rec['proof'] = {'VLLM_GLM53_PREP_FUSED': False}
-    rec['proof_ok'] = '0/1'
-    rec['preparation'] = dict(verdict='REJECTED', reason='preparation proof not completed')
 
 
 def kda_state_storage(metrics_text: str):
@@ -733,17 +644,6 @@ def _main() -> int:
             cq.filler, args.fixed_decode_tokens, args.fixed_decode_tokens // 2, 'fixed-all')
         fixed_item['min_tokens'] = args.fixed_decode_tokens
     run.workloads(items + ([fixed_item] if fixed_item else []))
-    prove_spec = 'VLLM_GLM53_SPEC_K' in (rec.get('knobs') or {})
-    spec_before = _served_speculation(rec.get('boot_id')) if prove_spec else None
-    prove_prep = os.environ.get('ONEPASS_REQUIRE_PREP_FUSED') == '1'
-    if prove_prep:
-        _require_preparation(rec)
-    prep_before = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
-    prep_log_path = os.environ.get('MK_HEAD_LOG', '/home/choiceoh/glm53-logs/glm53.log')
-    prep_prefix = None
-    if prove_prep:
-        from glm53_prep_proof import log_prefix
-        prep_prefix = log_prefix(prep_log_path)
     if os.environ.get("FLEET_SESSION"):
         rec["session"] = os.environ["FLEET_SESSION"]          # who held the fleet (fleet.sh run)
     if os.environ.get("MK_COLD_COMPILE") == "1":
@@ -852,8 +752,6 @@ def _main() -> int:
     c1_issues = steady_errors(c1_report, rec['requests'], 1)
     rec['steady_state'] = dict(valid=not c1_issues, issues=c1_issues, profile='off', prefix='fresh',
                               preparation='no observed specialization or capture' if not c1_issues else 'unverified')
-    spec_after = _served_speculation(rec.get('boot_id')) if prove_spec else None
-    prep_after = _served_speculation(rec.get('boot_id'), preparation=True) if prove_prep else None
     m1 = bd._parse_spec_metrics(metrics_after)
     traffic_issues = exclusive_errors(before_traffic, traffic_state(metrics_after),
                                       sw.traffic_samples, len(rec["requests"]))
@@ -963,28 +861,6 @@ def _main() -> int:
         rec["decode"]["raw_windows_med"] = rec["decode"]["windows_med"]
         rec["decode"]["windows_med"] = None
         print("INVALID measurement: " + "; ".join(issues), flush=True)
-    # armed != serving: which of the arm's lanes actually ran, from the head log,
-    # checked after the traffic above (serving markers appear only then).
-    try:
-        from proof import check as _proof_check
-        _kn = [kk for kk, vv in (rec.get("knobs") or {}).items() if vv not in ("0", "", "off")]
-        if prove_prep and 'VLLM_GLM53_PREP_FUSED' not in _kn:
-            _kn.append('VLLM_GLM53_PREP_FUSED')
-        if _kn:
-            rec.update({kk: vv for kk, vv in _proof_check(
-                _kn, os.environ.get("MK_HEAD_LOG", "/home/choiceoh/glm53-logs/glm53.log"),
-                speculation=dict(expected_k=rec['knobs'].get('VLLM_GLM53_SPEC_K'),
-                    boot_id=rec.get('boot_id'), launch_before=spec_before, launch_after=spec_after,
-                    exclusive=args.require_exclusive and not traffic_issues,
-                    metrics_before=metrics_before, metrics_after=metrics_after),
-                preparation=dict(expected_mode=rec['knobs'].get('VLLM_GLM53_PREP_FUSED', '1'),
-                    boot_id=rec.get('boot_id'), launch_before=prep_before, launch_after=prep_after,
-                    exclusive=args.require_exclusive and not traffic_issues,
-                    log_prefix=prep_prefix) if prove_prep else None).items()
-                if kk in ("proof", "proof_ok", "speculation", "preparation")})
-    except Exception:
-        pass
-
     # C=N and profiler replays have their own counters, requests and artifacts.
     c4_items = [item for item in items if item['ctx'] in c4_contexts] if many in concurrencies else []
     rec['c4'] = []

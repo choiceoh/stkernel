@@ -1,6 +1,6 @@
 """The door's /metrics: the bench's contract, and what an operator needs on top of it.
 
-The first block of names is read by bench/window_metrics.py and bench/bracket.py, so it
+The first block of names is read by bench/window_metrics.py and the bracket judge, so it
 is pinned here by name and meaning. The rest is this session's addition: latency measured
 from admission, cache saturation, prefix reuse, and the step split D9 promises.
 """
