@@ -488,7 +488,22 @@ def served(reference_for: "tuple[str, ...]" = (), *, tp=None, moe_static: str = 
             prepared[key] = (views, sf13, sf2, alpha13, alpha2, quant13, quant2)
             return prepared[key]
 
-        def moe_prepare(w13, w13_sf, w2, w2_sf, top_k, limit, *, scales=None):
+        def moe_prepare(w13, w13_sf, w2, w2_sf, top_k, limit, *, scales=None, reuse_scales=None):
+            if reuse_scales is not None:
+                # Private scale-only control: both variants read identical raw
+                # scales, already consumed by this prepared SF6 owner. Rebind
+                # only the quantizer/epilogue scalars without reading them again.
+                from dataclasses import replace
+                if scales is None:
+                    raise ValueError('rescaled views require separate global scales')
+                base = (w13.data_ptr(), w13_sf.data_ptr(), w2.data_ptr(), w2_sf.data_ptr())
+                def pointers(s):
+                    return tuple(v.data_ptr() for v in (s.alpha13, s.input13, s.alpha2, s.input2))
+                original = prepared[base + pointers(reuse_scales)]
+                views = replace(original[0], w1_alpha=scales.alpha13, w2_alpha=scales.alpha2)
+                prepared[base + pointers(scales)] = (views, original[1], original[2],
+                    scales.alpha13, scales.alpha2, scales.input13, scales.input2)
+                return views
             # Dense MLPs are represented as one fixed expert (top_k=1).  Build
             # the W4A16 copy before views_for() may mutate the packed source to
             # tile-major storage.  Routed MoE remains NVFP4-only.

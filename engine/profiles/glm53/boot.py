@@ -712,6 +712,12 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         # own kill line plus a margin (budget.os_reserve_gib), not a number we picked.
         from engine.profiles.glm53 import budget as _budget_mod
         workspace_gib = _budget_mod.WORKSPACE_GIB if workspace_gib is None else float(workspace_gib)
+        if getattr(net, 'incident_redhat_prepare', False) and not net.modelopt:
+            # One additional raw/SF6 source-scale owner (~4.43 GiB/rank), plus
+            # preparation temporaries. The ordinary admission and memory gates
+            # still enforce this explicit private-control declaration.
+            workspace_gib += 6.0
+            recorder.gauge('incident_redhat_extra_workspace_gib', 6.0)
         if not workspace_gib > 0:
             raise ValueError(f"--workspace-gib must be a positive GiB ceiling, not {workspace_gib}")
         workspace_bytes = int(workspace_gib * GIB)

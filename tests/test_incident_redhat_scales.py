@@ -12,11 +12,15 @@ class RedHatScaleControlTests(unittest.TestCase):
         first, second = torch.zeros(2, 4, 4, dtype=torch.uint8), torch.zeros(2, 4, 2, dtype=torch.uint8)
         seen = []
 
-        def prepare(w13, sf13, w2, sf2, topk, limit, *, scales):
+        def prepare(w13, sf13, w2, sf2, topk, limit, *, scales, reuse_scales):
             self.assertIs(w13, first)
             self.assertIs(w2, second)
-            self.assertEqual(sf13.numel(), 16)
-            self.assertEqual(sf2.numel(), 8)
+            if reuse_scales is not None:
+                self.assertIs(reuse_scales, seen[0][2])
+                self.assertEqual(sf13.untyped_storage().nbytes(), 0)
+                self.assertEqual(sf2.untyped_storage().nbytes(), 0)
+                seen.append((None, None, scales))
+                return object()
             seen.append((sf13.data_ptr(), sf2.data_ptr(), scales))
             # Model the serving prepare call retiring the raw scale owner.
             sf13.untyped_storage().resize_(0)
@@ -32,7 +36,7 @@ class RedHatScaleControlTests(unittest.TestCase):
                       a13_scale=torch.tensor([.125, .25]), a2_scale=torch.tensor([.25, .125]))
         bind_layer(net, 3, values)
         self.assertEqual(len(seen), 2)
-        self.assertNotEqual(seen[0][:2], seen[1][:2])
+        self.assertEqual(seen[1][:2], (None, None))
         variants = net._incident_redhat_layers[3]
         self.assertTrue(torch.equal(variants['weight']['scales'].input13, torch.ones(2)))
         self.assertTrue(torch.equal(variants['calibrated']['scales'].alpha13, torch.tensor([.03125, .125])))

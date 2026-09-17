@@ -65,18 +65,23 @@ def bind_layer(net, layer, values):
     prefix = f'L{layer}.moe.'
     first, second = net.p[prefix + 'w13'], net.p[prefix + 'w2']
     one = torch.ones(first.shape[0], dtype=torch.float32, device=first.device)
-    # Preparation may consume the raw SF storage. Clone before either call.
+    # The second variant rebinds scalar pointers on the first prepared owner;
+    # it must neither duplicate four GiB of scales nor reread consumed bytes.
     owners = [('weight', values['w13_sf'], values['w2_sf'], one, one),
-              ('calibrated', values['w13_sf'].clone(), values['w2_sf'].clone(),
+              ('calibrated', values['w13_sf'], values['w2_sf'],
                values['a13_scale'], values['a2_scale'])]
     variants = {}
+    reuse = None
     for name, sf13, sf2, input13, input2 in owners:
         scales = ModelOptScales.bind(values['w13_alpha'], input13, values['w2_alpha'], input2,
                                      experts=first.shape[0], device=first.device)
         args = dict(w13=first, w13_sf=sf13, w2=second, w2_sf=sf2,
                     limit=net.F.swiglu_limit, scales=scales)
         views = net.lanes.moe_prepare(first, sf13, second, sf2,
-                                      net.F.topk_experts, net.F.swiglu_limit, scales=scales)
+                                      net.F.topk_experts, net.F.swiglu_limit,
+                                      scales=scales, reuse_scales=reuse)
+        if reuse is None:
+            reuse = scales
         record = dict(expert=partial(net.lanes.moe, **args), views=views, scales=scales)
         if net.lanes.moe_packets is not None and net.lanes.moe_packets_supported is not None:
             record['packet'] = partial(net.lanes.moe_packets, **args)
