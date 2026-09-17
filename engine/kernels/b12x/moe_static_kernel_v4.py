@@ -147,6 +147,7 @@ class MoEStaticKernelV4:
         scatter_packed_load: bool = True,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
+        activation_scale_search: int = 0,
         activation: str = "silu",
         swiglu_alpha: float = 1.702,
         swiglu_beta: float = 1.0,
@@ -177,6 +178,11 @@ class MoEStaticKernelV4:
         if self.direct_scatter and not (scatter_fp32 and not split):
             raise ValueError("private scatter requires packed FP32 output without split work")
         self.sf_vec_size = sf_vec_size
+        if activation_scale_search not in (0, 1, 2):
+            raise ValueError("activation scale search radius must be 0, 1 or 2")
+        if activation_scale_search and sf_vec_size != 16:
+            raise ValueError("activation scale search requires NVFP4 group-16 scales")
+        self.activation_scale_search = int(activation_scale_search)
         self.input_scales_are_reciprocal = input_scales_are_reciprocal
         self.activation = activation
         self.is_gated = is_gated_activation(activation)
@@ -1519,7 +1525,11 @@ class MoEStaticKernelV4:
                     block_max = fmax_f32(block_max, fabs_f32(loaded[elem_idx]))
                 packed = Uint64(0)
                 scale = Uint8(0)
-                if self.fast_math:
+                if cutlass.const_expr(self.activation_scale_search > 0):
+                    (packed, scale) = quantize_block_fp4_search(
+                        values, block_max, gs, self.activation_scale_search, self.fast_math
+                    )
+                elif self.fast_math:
                     packed, scale = quantize_block_fp4_fast(values, block_max, gs)
                 else:
                     packed, scale = quantize_block_fp4(values, block_max, gs)
@@ -1575,7 +1585,11 @@ class MoEStaticKernelV4:
                     block_max = fmax_f32(block_max, fabs_f32(loaded[elem_idx]))
                 packed = Uint64(0)
                 scale = Uint8(0)
-                if self.fast_math:
+                if cutlass.const_expr(self.activation_scale_search > 0):
+                    (packed, scale) = quantize_block_fp4_search(
+                        values, block_max, gs, self.activation_scale_search, self.fast_math
+                    )
+                elif self.fast_math:
                     packed, scale = quantize_block_fp4_fast(values, block_max, gs)
                 else:
                     packed, scale = quantize_block_fp4(values, block_max, gs)
@@ -1594,7 +1608,11 @@ class MoEStaticKernelV4:
                                 other_gs = rcp_approx_ftz(other_gs)
                             else:
                                 other_gs = cutlass.Float32(1.0) / other_gs
-                        if self.fast_math:
+                        if cutlass.const_expr(self.activation_scale_search > 0):
+                            (packed_lo, scale_byte) = quantize_block_fp4_search(
+                                values, block_max, other_gs, self.activation_scale_search, self.fast_math
+                            )
+                        elif self.fast_math:
                             packed_lo, scale_byte = quantize_block_fp4_fast(values, block_max, other_gs)
                         else:
                             packed_lo, scale_byte = quantize_block_fp4(values, block_max, other_gs)
@@ -1699,7 +1717,11 @@ class MoEStaticKernelV4:
                                 value = cutlass.Float32(a_input[token_idx, block_start + Int32(elem_idx)])
                             values[elem_idx] = value
                             block_max = fmax_f32(block_max, fabs_f32(value))
-                        if self.fast_math:
+                        if cutlass.const_expr(self.activation_scale_search > 0):
+                            (packed_lo, scale_byte) = quantize_block_fp4_search(
+                                values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                            )
+                        elif self.fast_math:
                             packed_lo, scale_byte = quantize_block_fp4_fast(
                                 values, block_max, gs_value
                             )
