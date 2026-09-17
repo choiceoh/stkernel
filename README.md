@@ -41,7 +41,7 @@ TP 기준선80.49 tok/s와의 차이 및 프리필 비교 제한은
 | 이 수치가 실측인가 | [`MEASUREMENTS.md`](MEASUREMENTS.md) — **여기 없으면 미실측**. 맨 앞에 판정 규율 8줄과 찾아보기 |
 | 디코드 스텝이 무슨 커널로 이루어지나 | [`STEP_KERNEL_MAP.md`](STEP_KERNEL_MAP.md) — 개수·소유권·시간 구성·꼬리 |
 | 다음에 무엇을 부팅하나 | [`RUNBOOK_KERNEL_CAMPAIGN2.md`](RUNBOOK_KERNEL_CAMPAIGN2.md) — EXP 상태 표(부팅 필요 여부 포함) |
-| 이 모듈은 무엇을 접수하나 | `overlay/modules/<name>/README.md` + 같은 폴더의 `manifest.tsv` |
+| 이 모듈은 무엇을 접수하나 | `overlay/modules/<name>/manifest.tsv` + 같은 폴더의 `README.md`(있으면) |
 | 최신 논문 중 무엇이 이 스택에 붙나 | [`docs/PAPER_MAP_20260917.html`](docs/PAPER_MAP_20260917.html) — 2026 커널·서빙·스펙 디코딩·양자화 논문을 디코드 스텝 병목별로 배치하고 도입 여부를 판정한 그날의 조사 |
 | 무엇으로 재나, 어디에 함정이 있나 | 이 문서의 `bench/` · `probes/` · `tools/` 절 |
 
@@ -105,8 +105,8 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 
 | 디렉터리 | 내용 |
 |---|---|
-| `overlay/modules/<name>/` | 오버레이 **모듈** 23개 — 각자 소스 · `manifest.tsv` · `README.md`(23/23) · 의존 선언 `requires`. glm53 전용 25개는 34차(2026-09-05)에 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접혔다 — 행·계약·노브 불변; 고아 모듈 둘(`glm53_drop_audit`·`glm53_sparse_q`)은 34차 §8 에서 삭제 |
-| `profiles/<model>.env` | 어떤 모듈을 싣고 어떤 노브로 뜨는지 (`MODULES=` + 서빙 env). dsv4 18 · glm53 8 · qwen38 1 모듈 |
+| `overlay/modules/<name>/` | 오버레이 **모듈** 35개 — 각자 소스 · `manifest.tsv` · `README.md`(31/35) · 의존 선언 `requires`(선택). glm53 전용 25개는 34차(2026-09-05)에 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접혔다 — 행·계약·노브 불변; 고아 모듈 둘(`glm53_drop_audit`·`glm53_sparse_q`)은 34차 §8 에서 삭제 |
+| `profiles/<model>.env` | 어떤 모듈을 싣고 어떤 노브로 뜨는지 (`MODULES=` + 서빙 env). dsv4 18 · dsv41 9 · glm53 11 · qwen38 6 모듈 |
 | `build/<profile>/` | `compose-overlays.sh` 가 렌더한 평평한 디렉터리 + 합성 매니페스트 — 배포기·런처가 보는 것 (생성물, 손으로 고치지 않는다) |
 | `launchers/` | 프로덕션 런처 + 슈퍼바이저 + systemd 유닛 + manifest 기반 4노드 배포·SHA-256 검증 + 런타임 경계 감사 + A/B 하네스(`ab-glm53.sh`) |
 | `bench/` | 검증·측정 도구 (아래 표) |
@@ -115,14 +115,14 @@ sentinel은 row append 전에 버리지만 GPU 수치/E2E 이득은 아직 미�
 | `tests/` | GPU/vllm 없이 도는 순수 로직 검증 (`python3 tests/test_logic.py`, 44.6K checks) — 청커 예산·skip-topk 규칙·SP 샤드·DSpark 범위/preimage 계약·manifest 불변식·도구 계약 |
 | `MEASUREMENTS.md` | **실측 원장** — 모든 판정과 수치 (여기 없는 주장은 미실측) |
 | `STEP_KERNEL_MAP.md` | 디코드 스텝의 커널 지도 — 무엇이 몇 발 돌고 누가 소유하며 어디가 레버인지 |
-| `RUNBOOK_KERNEL_CAMPAIGN2.md` | 부팅이 필요한 실험(EXP-1~19)의 절차·게이트·중단 기준 |
+| `RUNBOOK_KERNEL_CAMPAIGN2.md` | 부팅이 필요한 실험(EXP-1~24)의 절차·게이트·중단 기준 |
 
 ## 매니페스트 합성 · 런타임 경계 감사
 
 **매니페스트가 파일 목록·컨테이너 마운트 목적지·베이스 preimage의 유일한 원본**이다.
 모듈마다 `overlay/modules/<name>/manifest.tsv` 를 갖고, `compose-overlays.sh <profile>`
-가 프로필의 `MODULES=` 를 합쳐 `build/<profile>/manifest.tsv` 하나로 렌더한다(dsv4 23행 ·
-glm53 40행). 배포기·런처·검증이 보는 것은 그 합성본이다 — 루트에 `overlay/manifest.tsv`
+가 프로필의 `MODULES=` 를 합쳐 `build/<profile>/manifest.tsv` 하나로 렌더한다(dsv4 24행 ·
+glm53 71행). 배포기·런처·검증이 보는 것은 그 합성본이다 — 루트에 `overlay/manifest.tsv`
 는 더 이상 없다. 세 번째 열은 교체 대상의 production-hybrid-1.6 SHA-256 또는 새 파일의
 `absent` 계약이다.
 배포기는 manifest와 그 안의 모든 파일을 4노드에 복사하고 SHA-256을 대조하며,
@@ -464,7 +464,7 @@ OFF 고정 후 근본 원인 분석. `torch.ge(out=)` 마이크로옵은 무혐�
 ## 배포 레이아웃
 
 스택마다 경로가 다르고, `dsv4` 는 노드마다 또 다르다(런처
-`start-hy4-tp4.sh:220` 의 `overlay_dir()` 가 정본).
+`start-hy4-tp4.sh:223` 의 `overlay_dir()` 가 정본).
 
 | 스택 | 노드 | 오버레이 경로 |
 |---|---|---|
@@ -584,7 +584,7 @@ bash probes/run_prep_fused_check.sh                 # prep-fused 수치·발사 
 | 메가커널 | `megakernel_glm53_bench.py` · `mk_pdl_graph_check.py` · `osar_build_check.py` | 세그먼트 수치·발사당 µs · 그래프 캡처 아래 PDL 이 실제로 걸리는가 · 확장이 프리페치 바인딩을 갖고 빌드되는가 |
 | GEMM/양자화 | `gemm_fuse_bench.py` · `fp8_scale_granularity.py` · `nvfp4_dense_accuracy.py` · `mla_q_precision_check.py` | 작은 M 융합이 대역폭을 되찾나 · 128블록 스케일 계약값 · nvfp4/e4m3 강등의 오차 대가 |
 | MoE | `moe_decode_stream_probe.py` · `moe_gate_tile_sweep.py` | **서빙되는** b12x 커널이 디코드 형상에서 내는 GB/s(EXP-14 를 닫은 프로브) · 라우터 게이트 타일 |
-| MLA/인덱서 | `mk_mla_bench.py` · `mk_mla_prefill_check.py` · `indexer_gate_check.py` · `kda_conv_state_map.py` | MK-MLA 대 FlashInfer(수치·GPU 시간·호스트 계획) · head-gate split-K · KDA conv 상태 슬롯 출처 |
+| MLA/인덱서 | `mk_mla_bench.py` · `mk_mla_prefill_check.py` · `indexer_gate_check.py` | MK-MLA 대 FlashInfer(수치·GPU 시간·호스트 계획) · head-gate split-K |
 | 드래프터 | `drafter_fc_check.py` · `drafter_dense_path_check.py` · `head_w4_check.py` · `accept_profile.py` | 꼬리가 무엇을 지불하나(팔별) · 밀집 경로가 실제로 서빙되나 · W4 보캡 헤드의 로짓 영향 · 위치별 수용률 |
 | 프리필 | `prefill_ladder.py` · `kda_prefill_bench.py` · `glm53_prefill_profile.sh` | 길이 사다리로 후보 분리 · KDA 청크 발사설정 스윕 · 32K 한 번 캡처 후 census |
 | 통신 | `oneshot_ar_disttest.py` · `nccl_fingerprint.py` · `uma_datapath.cu` | 4랭크 정합 · 부팅 로그의 NCCL 지문 · RDMA 등록 메모리를 GPU 가 읽나 |

@@ -26,8 +26,9 @@ file, the module was never model-agnostic and has to be split, not overridden.
 | profile | model | modules | state |
 |---|---|---|---|
 | `dsv4` | DeepSeek-V4-Flash-0731 | 18 | retired 2026-09-13 -- weights deleted from the fleet, does not boot |
-| `glm53` | GLM-5.3-Flash NVFP4 | 25 | kernel campaign -- boots daily; the megakernel set is its default (ledger 28차 §8) |
+| `glm53` | GLM-5.3-Flash NVFP4 | 11 | kernel campaign -- boots daily; the megakernel set is its default (ledger 28차 §8) |
 | `qwen38` | Qwen3.8-Flash-Next NVFP4 | 6 | TEP=4 (TP=4 + EP) bring-up |
+| `dsv41` | DeepSeek-V4.1-Flash | 9 | prepared, not yet bootable -- preserved, not served (engine/CHARTER.md §D13) |
 
 `glm53` carries its own modules and can load none of `dsv4`'s: its image
 installs to dist-packages rather than the venv site-packages, and one of its
@@ -45,8 +46,9 @@ is not model-agnostic has to be split, not overridden" looks like when it is
 actually applied. The name still says `glm53`; renaming it touches the ledger,
 so it waits for a measured win on the second model.
 
-`qwen38` stays at one module: it ran on stock image code, and its b12x path is
-closed rather than pending (MEASUREMENTS.md).
+`qwen38` carries six modules: the shared `tp_oneshot_ar`, the shared-expert
+fold, PLE placement, the QSA split-K cap, the MTP spec lane and a b12x bounds
+wrapper. Its backend is `flashinfer_b12x` (profiles/qwen38.env).
 
 A profile also carries the serving knobs that are the model's rather than the
 fleet's -- backend, speculative depth, draft placement -- and, where a bring-up
@@ -112,8 +114,8 @@ restore the previous geometry.
 | 상태 | production | 커널 캠페인 대상 · 매일 부팅 | bring-up |
 | 이미지 | `aidendle94/sparkrun-vllm-ds4-gb10:production-hybrid-1.6` | `glm53:v13-b12x`(서빙은 `-it` 태그, 4노드 ID 일치 요구) | 미고정 |
 | 패키지 루트 | `site-packages` | `dist-packages` | 기본값 |
-| 모듈 수 | 18 | **9**(34차 묶음 8 + 39차 프리픽스 캐시; 접기 전 25) | 1 |
-| 오버레이 파일 | 23 | **54** | 2 |
+| 모듈 수 | 18 | **11**(34차 묶음 8 + 39차 프리픽스 캐시 + 메가커널; 접기 전 25) | 6 |
+| 오버레이 파일 | 24 | **71** | 11 |
 | 기본 노브 | 노브 전부 off 가 기준선 | **메가커널 세트**(`MEGAKERNEL`·`MK_MHC`·`MK_GEMM`·`MK_MLA`=1, `MK_KDA`=0) + 드래프터 W4 (28차 §8) + `MK_PDL`(27차 프로브, PR #290 — 종단 수치는 아직 없다) | — |
 
 `glm53` 의 기본값이 곧 브래킷된 cand 구성이다 — 그래서 A/B 의 base 팔은
@@ -138,7 +140,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `moe_gate_sm121` | GB10의 모든 MoE | 1 | ✓ | ● | ● | ● | · |
 | `tp_oneshot_ar` | 어느 모델이든 | 3 | ✓ | ● | ● | ● | ● |
 | `qwen38_moe` | Qwen3.8-Flash-Next 전용 (공유 전문가를 라우팅 grouped GEMM 의 11번째 슬롯으로 융합; 랭크 로컬 센티넬 −2, all-to-all 비참여) | 1 | ✓ | · | · | · | ● |
-| `qwen38_ple` | Qwen3.8-Flash-Next 전용 (51 GiB PLE n-gram 표: 호스트 RAM 오프로드 + NVFP4 체크포인트용 온디바이스 FP8 임베딩; TP>1 필수) | 2 | — | · | · | · | ● |
+| `qwen38_ple` | Qwen3.8-Flash-Next 전용 (47.68 GiB PLE n-gram 표: 호스트 RAM 오프로드 + NVFP4 체크포인트용 온디바이스 FP8 임베딩; TP>1 필수) | 2 | — | · | · | · | ● |
 | `qwen38_qsa` | Qwen3.8-Flash-Next 전용 (GB10 48 SM 용 QSA split-K 상한; 상위는 GB300 튜닝) | 1 | — | · | · | · | ● |
 | `qwen38_spec` | Qwen3.8-Flash-Next 전용 (MTP 스펙: n-gram 순서 수정, 적응 K) | 2 | — | · | · | · | ● |
 | `qwen38_b12x` | Qwen3.8-Flash-Next 전용 (b12x 워크스페이스 용량 바운드 체크 래퍼; IMA 를 숫자 적힌 부등식으로) | 2 | ✓ | · | · | · | ● |
@@ -173,7 +175,7 @@ DFlash2 경로에는 전혀 적용되지 않는 상태를 정상 구성으로 �
 | `dsv4_ops_fused_indexer_q` | 모델 전용 | 1 | — | ● | · | · | · |
 | `dsv4_tokenizer` | 모델 전용 | 2 | — | ● | · | · | · |
 
-매니페스트의 모든 행이 `absent`(=대체할 베이스가 없는 신규 파일)인 모듈은 이제 **다섯 개**다 — `tp_oneshot_ar`, `moe_gate_sm121`, `spec_fp8_head`, `dsv4_eager_scratch`, `glm53_megakernel`. 34차(2026-09-05)에 glm53 전용 모듈 25개를 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접으면서 이식 가능한 행(옛 `fp8_lm_head`·`glm53_fp8_dense`·`glm53_prep_fused`·`glm53_dflash_early_fc`·`glm53_boot_stamps` 등)은 묶음 안에서 이미지 계약 행과 섞였다 — 행 단위 계약은 그대로다(표의 "이식" 열 `일부`). 그래서 이미지가 달라도 계약이 성립한다 — 단 **형식이 이식 가능하다는 것과 내용이 모델 무관이라는 것은 다른 명제다**: `glm53_fp8_dense` 는 GLM 의 선형 이름 패턴에, `glm53_prep_fused` 는 러너의 준비 체인에 묶여 있다. 표의 "이식" 열은 앞의 뜻(계약 형식)이고, "범위" 열이 뒤의 뜻이다. 나머지가 한 이미지에 묶이는 이유는 기능이 특수해서가 아니라 오버레이가 **파일 전체 교체**이기 때문이고, 그래서 `*_wiring`·`glm53_*` 계열이 짝으로 존재한다: 이식 가능한 알맹이와 이미지별 배선.
+매니페스트의 모든 행이 `absent`(=대체할 베이스가 없는 신규 파일)인 모듈은 이제 **열세 개**다 — `tp_oneshot_ar`, `moe_gate_sm121`, `spec_fp8_head`, `dsv4_eager_scratch`, `glm53_megakernel`, `boot_stamps`, `sched_decode_first`, `qwen38_moe`, `qwen38_b12x`, `dsv41_vllm`, `dsv41_model`, `dsv41_engram`, `dsv41_encoding`. 34차(2026-09-05)에 glm53 전용 모듈 25개를 다섯 묶음(`glm53_model`·`glm53_kernels`·`glm53_drafter`·`glm53_moe`·`glm53_runtime`)으로 접으면서 이식 가능한 행(옛 `fp8_lm_head`·`glm53_fp8_dense`·`glm53_prep_fused`·`glm53_dflash_early_fc`·`glm53_boot_stamps` 등)은 묶음 안에서 이미지 계약 행과 섞였다 — 행 단위 계약은 그대로다(표의 "이식" 열 `일부`). 그래서 이미지가 달라도 계약이 성립한다 — 단 **형식이 이식 가능하다는 것과 내용이 모델 무관이라는 것은 다른 명제다**: `glm53_fp8_dense` 는 GLM 의 선형 이름 패턴에, `glm53_prep_fused` 는 러너의 준비 체인에 묶여 있다. 표의 "이식" 열은 앞의 뜻(계약 형식)이고, "범위" 열이 뒤의 뜻이다. 나머지가 한 이미지에 묶이는 이유는 기능이 특수해서가 아니라 오버레이가 **파일 전체 교체**이기 때문이고, 그래서 `*_wiring`·`glm53_*` 계열이 짝으로 존재한다: 이식 가능한 알맹이와 이미지별 배선.
 
 `spec_fp8_head`는 ○로 표시했다: dsv4에 마운트돼 있지만 `VLLM_DSPARK_FP8_DRAFT_HEAD=0`으로 꺼져 있다. rowwise `_scaled_mm` 판본이고 실측에서 60.6 vs 61.7·수용률 무이동으로 기각됐다(MEASUREMENTS.md:419). 채택된 쪽은 `spec_fp8_lm_head`(deepgemm)이며 dsv4는 아직 `dspark_drafter` 안의 사본을 쓴다.
 

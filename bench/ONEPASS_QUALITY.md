@@ -1,4 +1,4 @@
-# Onepass reasoning quality — harness 45 / ko-reasoning-v2
+# Onepass reasoning quality — harness 46 / ko-reasoning-v2
 
 > 살아 있는 참조 — **원패스가 무엇을 묻고 어떻게 채점하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
@@ -61,9 +61,10 @@ they are source-coverage checks, not free-form semantic citation grading.
 **fully passed cases**. Every check must pass for a case to pass. This strict
 quality gate continues to invalidate performance acceptance; a higher partial
 score alone is not an accepted speed improvement. C=1 and C=4 summaries remain
-separate (`quality`, `quality_c4`). Standalone runs and `ONEPASS_RUN_INDEX=1`
-cover 9 and 36 case results, respectively, excluding preparation/diagnostic
-replays. On the same boot, run 2 repeats C=1 only: C=4 preparation, measurement
+separate (`quality`, `quality_c4`). Harness 46 names two workloads (`ONEPASS_PROFILE`):
+`default` (2K/32K, C=1 only, 6 graded cases) and `extended` (2K/32K/128K plus the
+C=N arm; 9 C=1 cases and 6×width C=N cases), excluding preparation/diagnostic
+replays. On the same boot, run 2 repeats C=1 only: C=N preparation, measurement
 and diagnostic requests are omitted. `concurrency_coverage` records that omission,
 `c4` is empty and `quality_c4` is null, rather than a passing 0/0 result. This
 implements the operator's 2026-09-13 policy: C=1 twice, C=4 once. Optional
@@ -93,8 +94,8 @@ still on the ledger case when the cap closed it, so two cases were answered with
 no reasoning at all. One of nine cases passed. Harness 44 doubles both budgets
 and asks the ko-reasoning-v2 questions above. Thinking remains enabled. A budget
 or question change changes the performance workload, so harness 44 cannot reuse
-a harness 43 baseline. Quality at the new budget has not yet been measured; this
-change makes no GPU speed or quality claim.
+a harness 43 baseline. Quality at the new budget was measured under later
+harnesses; this change itself made no GPU speed or quality claim.
 
 Harness 45 keeps these questions and budgets and changes what the server does
 after each request: every onepass request says `retain: false`, so the finished
@@ -104,6 +105,12 @@ request on a bracket boot; on the live door a D17 probe filled production's tier
 with conversations nobody would continue. The served work differs, so harness 45
 cannot reuse a harness 44 baseline. An engine older than #858 ignores the field
 and still parks.
+
+Harness 46 names the workload itself in the record's identity (`default`:
+2K/32K, no C=N arm; `extended`: 2K/32K/128K with C=N) and puts
+`fixed_concurrency_tokens` into that identity, so the judge never reads a run
+with the C=N arm against one without. No record written before harness 46
+carries a profile, so harness 46 cannot reuse a harness 45 baseline.
 
 Before preparation, `workloads.json` stores exact prompts, schemas, evidence,
 oracles and valid witness sets. **Only prompts are sent to the model**. The record's

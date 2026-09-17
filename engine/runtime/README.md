@@ -56,12 +56,13 @@ bash engine/runtime/build-x86_64.sh
 
 `cuda132.x86_64.lock.json` holds 42 SHA256-pinned wheels; the cu132 index publishes no
 digest, so the three torch wheels are fetched and hashed by the generator. Its `deviations`
-field records the three entries that cannot match this lock -- `nvidia-cudla` dropped
+field records the four entries that cannot match this lock -- `nvidia-cudla` dropped
 (Tegra-only), `flashinfer-python` at the published `0.6.18.post1` rather than the fleet's
 unpublished dev build, `tilelang` at `0.1.14`, the nearest version with an x86_64 wheel --
 and the absence of DeepGEMM, which no x86_64 build can reproduce. Everything the vLLM
-parent supplied on ARM64 and a base image does not -- 31 packages, 59 wheels, read from
-every locked wheel's `Requires-Dist` -- is resolved into `closure.json` at fetch time, so
+parent supplied on ARM64 and a base image does not -- 43 closure wheels, read from
+every locked wheel's `Requires-Dist` -- is pinned in the lock and verified into
+`closure.json` at fetch time (only `--resolve-closure` resolves afresh), so
 the build still runs `--network none`. Torch's own requirements are not the whole of it:
 `flashinfer` needs `tvm_ffi`, and a closure built from torch alone yields an image that
 installs cleanly and cannot import flashinfer. The image carries `TORCH_CUDA_ARCH_LIST=12.0`

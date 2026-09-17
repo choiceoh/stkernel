@@ -203,7 +203,7 @@ rules and 45차 §91's 639-commit drift cannot recur. The sample is kept, not ju
 queued once: on every later cycle with nothing to deploy, deploy-watch asks the
 controller's judge whether the deployed commit has a warm sample and, when it
 has none and no `d17-<sha12>` ticket is queued or holding, queues another --
-at most `--probe-attempts` (3) per deployed sha, `--probe-gap` (1800 s) apart,
+at most `--probe-attempts` (3) per production boot, `--probe-gap` (1800 s) apart,
 tallied in `deploy-state.json`. The probe itself refuses to run when the door's
 `ST_RELEASE` is not the sha it was queued for, so a ticket queued before a
 deploy cannot label the next engine's numbers with the old commit.
@@ -901,14 +901,15 @@ port 8000, profile defaults, warmup, no measurement leg. Candidate environment
 overrides are removed. An already healthy public defaults arm of that approved
 build and approved immutable image avoids a duplicate boot. The public bind is
 read from the launcher's decoded static command, without executing shell text.
-`FLEET_PRODUCTION_REPO` selects the production
-checkout; it defaults to `/home/choiceoh/stkernel`. Restore failures return
+The production checkout comes from the `$FLEET_DIR/production-repo` pointer,
+falling back to the controller's own checkout; the resolved path is passed to
+`bench/fleet_restore.sh` as `FLEET_RECOVERY_REPO`. Restore failures return
 nonzero and retain `restore-debt.json`; a subsequent supervised boot can recover
 it before probes are admitted. SIGKILL/host loss cannot run a process's cleanup:
 the debt remains visible for recovery; this is not a host-level watchdog.
 An operator can put the path of a dedicated approved-main checkout in
 `$FLEET_DIR/production-repo`; this separates restoration from a common checkout that
-contains unmerged experiment work. An explicit `FLEET_PRODUCTION_REPO` wins.
+contains unmerged experiment work.
 The path may contain spaces and need not end with a newline. A clean checkout
 ahead of main is detached at approved main, preserving its candidate branch;
 dirty work is refused.
