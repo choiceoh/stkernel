@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as Fn
 
 from engine.modules import tree_attention, tree_kda
+from engine.modules.sparse_indexer import pin_pools_in_logits, tail_pin_pools
 from engine.modules.speculative_tree import Tree, dflash_candidates, select
 from engine.profiles.glm53.net import K_NORM_EPS, O_NORM_EPS, Step
 
@@ -126,6 +127,9 @@ class Verification:
         self.path_nodes = torch.tensor([p+(p[-1],)*(max(tree.depths)+1-len(p)) for p in paths],
                                        device=caches.device)
         self.lengths = torch.tensor([context+len(p) for p in paths], dtype=torch.int32, device=caches.device)
+        # `index_kpool_always_select_tail`: a node whose sequence length is a whole
+        # number of pools keeps the pool that just completed, as the served paths do.
+        self.tail_pin = tail_pin_pools(self.lengths, F.kpool)
         complete = [i for i, p in enumerate(paths) if (context+len(p)) % F.kpool == 0]
         pool_index = {node: j for j, node in enumerate(complete)}
         sources = [tuple(paths[i][j] if j >= 0 else j for j in range(len(paths[i])-F.kpool, len(paths[i])))
@@ -218,6 +222,9 @@ class Verification:
             # and ties have the same column order as the ordinary linear path.
             logical = torch.cat([logits[:, :ctx//F.kpool],
                 logits.gather(1, self.branch_columns)], 1) if self.pool_width else logits[:, :ctx//F.kpool]
+            # The pin is a pool id, and `logical` is chronological pool-id columns, so
+            # it is the same index here as in the served selection.
+            pin_pools_in_logits(logical, self.tail_pin, k=F.topk//F.kpool)
             pools = torch.full((n, F.topk//F.kpool), -1, dtype=torch.int32, device=x.device)
             # Topk ties can depend on the physical column count even when all
             # extra columns are -inf. Group equal lengths and slice exactly as
