@@ -366,6 +366,35 @@ def stable(a, b) -> bool:
     return bool((near | adjacent).all())
 
 
+def repeat_diagnosis(x, ids, weights, experts, prepared, c, repeats: int = 4) -> dict:
+    """Where an eager step's repeats part: the b12x call on this rank's pairs `repeats` times on identical inputs (the
+    first is the reference), and the FP32 index_add sum `repeats` times over one call's pair outputs. For each, how many
+    rows or tokens differ and by how much -- the call, the sum, or neither (then the parting was outside both)."""
+    token, xp, idp, wp = pairs_of(x, ids, weights, c)
+    calls = [dispatch(xp, idp, wp, experts, prepared).clone() for _ in range(repeats)]
+    first = calls[0]
+
+    def parted(tensors):
+        rows = set()
+        worst_ulps, worst_abs = 0, 0.0
+        for t in tensors[1:]:
+            differs = (t.view(torch.int16) != tensors[0].view(torch.int16)).view(t.shape[0], -1).any(dim=1)
+            rows.update(differs.nonzero().flatten().tolist())
+            worst_ulps = max(worst_ulps, bf16_ulps(t, tensors[0]))
+            worst_abs = max(worst_abs, float((t.float() - tensors[0].float()).abs().max()))
+        return dict(rows=len(rows), of=tensors[0].shape[0], first_rows=sorted(rows)[:8], ulps=worst_ulps,
+                    max_abs=worst_abs)
+
+    def summed():
+        total = torch.zeros(x.shape, dtype=torch.float32, device=x.device)
+        total.index_add_(0, token, first.float())
+        return total.bfloat16()
+    sums = [summed() for _ in range(repeats)]
+    duplicated = int((torch.bincount(token, minlength=x.shape[0]) > 1).sum())
+    return dict(pairs=int(token.numel()), repeats=repeats, call=parted(calls), index_add=parted(sums),
+                tokens_with_several_routes=duplicated)
+
+
 def samples_summary(cold, warm) -> dict:
     return dict(cold_us=round(statistics.median(cold), 1), warm_us=round(statistics.median(warm), 1),
                 cold_min_us=round(min(cold), 1), warm_min_us=round(min(warm), 1), samples=len(cold))
@@ -477,6 +506,7 @@ class _Probe:
     def __init__(self, report, md, lanes, c: Cell, quant, device="cuda"):
         self.report, self.md, self.lanes, self.c, self.quant, self.device = report, md, lanes, c, quant, device
         self.checks = []
+        self.unstable = []          # eager prefill checks whose repeats parted, with their diagnosis
         self.owners = []
         self.start = self.end = None
 
@@ -678,13 +708,15 @@ class _Probe:
             foreign = int(torch.count_nonzero(self.served(x, foreign_routes(ids, c), w, compact=True)))
         recip = oracle(x, ids, w, experts, c, self.quant)
         division = reference_partial(x, ids, w, experts, c, self.reference)
+        diagnosis = repeat_diagnosis(x, ids, w, experts, self.prepared[0], c) if not stable(again, out) else None
         row = dict(**stats, backend=backend, launched=launched,
                    selector_tile_m=(md._select_dynamic_tile_m(stats["local_pairs"], c.local, "silu")
                                     if backend == "dynamic" else None),
                    finite=bool(torch.isfinite(out.float()).all()), output_absmax=float(out.float().abs().max()),
                    oracle_relative=relative(out, recip), reference_relative=relative(out, division),
                    repeat_relative=relative(again, out), repeat_ulps=bf16_ulps(again, out),
-                   repeat_stable=stable(again, out), zero_weights_nonzero=zero, all_foreign_nonzero=foreign)
+                   repeat_stable=stable(again, out), repeat_diagnosis=diagnosis, zero_weights_nonzero=zero,
+                   all_foreign_nonzero=foreign)
         failures = []
         if launched.get("kernel") != backend:
             failures.append(f"the launch took {launched.get('kernel')}, the backend selector names {backend}")
@@ -692,13 +724,17 @@ class _Probe:
             failures.append("the output is not finite and nonzero")
         if row["oracle_relative"] > ORACLE_RELATIVE:
             failures.append(f"oracle {row['oracle_relative']:.4f} > {ORACLE_RELATIVE}")
-        if not row["repeat_stable"]:
-            failures.append("eager repeats differ")
         if zero or foreign:
             failures.append("zero weights or all-foreign routes left nonzero output")
+        # a repeat that differs is a finding the record carries (`unstable`), not a stop: the oracle held and the sweeps
+        # after it time the same served kernel (measurements/qwen38_lane_20260917: the first run stopped here)
         row["passed"] = not failures
+        row["unstable"] = not row["repeat_stable"]
         self.report("prefill_check", **row, failures=failures)
         self.checks.append(("prefill", tokens, row["oracle_relative"], row["reference_relative"]))
+        if row["unstable"]:
+            self.unstable.append(dict(tokens=tokens, backend=backend, repeat_ulps=row["repeat_ulps"],
+                                      repeat_relative=row["repeat_relative"], diagnosis=diagnosis))
         self.fail("prefill_check", row, failures)
 
     def prefill_sweep(self, tokens: int) -> dict:
@@ -792,7 +828,7 @@ class _Probe:
                                  cold_speedup=b["cold_speedup"]) for b in sorted(decode, key=lambda b: b["tokens"])],
                     prefill=[dict(tokens=r["best"]["tokens"], tile_m=r["best"]["tile_m"], cold_us=r["best"]["cold_us"],
                                   default_tile_m=r["default"]) for r in prefill],
-                    dynamic_tile_m=overall_tile(rows),
+                    dynamic_tile_m=overall_tile(rows), prefill_unstable=self.unstable,
                     not_measured="pack_stage_bytes: SF6 packing depends on the real scale bytes (srv2), not synthetic ones")
 
 

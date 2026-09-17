@@ -1,0 +1,93 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-cells2-0917-20260917-101505.txt
+waiting: pos 6/6, the fleet's moe-input-reuse-v4-0917 holds this box too 2026-09-17_10:15:05
+waiting: pos 5/6 2026-09-17_10:16:35
+waiting: pos 4/5, held by qwen38-cells-0917 [single] (pid 1786093@srv2, since 10:16, est 20m, carry C1: Qwen3.8 lanes qualified + glue GPU cases (correctness only)) 2026-09-17_10:16:36
+waiting: pos 4/5, held by qwen38-cells-0917 [single] (pid 1786093@srv2, since 10:16, est 20m, carry C1: Qwen3.8 lanes qualified + glue GPU cases (correctness only)), srv4: a probe is already running there (st-probe-srv2-2707011) 2026-09-17_10:16:39
+waiting: pos 4/6, held by qwen38-cells-0917 [single] (pid 1786093@srv2, since 10:16, est 20m, carry C1: Qwen3.8 lanes qualified + glue GPU cases (correctness only)), srv4: a probe is already running there (st-probe-srv2-2707011) 2026-09-17_10:19:40
+waiting: pos 4/6, held by qwen38-cells-0917 [single] (pid 1786093@srv2, since 10:16, est 20m, carry C1: Qwen3.8 lanes qualified + glue GPU cases (correctness only)) 2026-09-17_10:20:19
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-cells2-0917-20260917-101505.txt
+GO qwen38-cells2-0917 2026-09-17_10:20:21
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+{"lane": "qwen38_qualify", "config_sha256": "e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624", "gated_residual": {"enter": [0.0062500000931322575, 0.0012355633080005646], "inject": [0.004950494971126318, 0.0019775826949626207], "leave_norm": [0.004975124262273312, 0.0024845092557370663], "leave": [0.004975124262273312, 0.0024845092557370663], "close": [0.005586592014878988, 0.002717392984777689]}, "gdn": {"decay": [1.8527525469380635e-07, 1.2093259726952965e-07], "beta": [0.0, 0.0], "raw_beta": [0.0, 0.0], "norm": [7.038288458716124e-05, 2.438618139422033e-06]}, "qsa_norm_rope": {"norm_rope_6x256": [0.006172839552164078, 0.0015349400928243995], "norm_rope_4x128": [0.006896551698446274, 0.002324720611795783]}}
+test_the_chunk_decay_entry_is_the_recurrence (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_chunk_decay_entry_is_the_recurrence) ... /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+ok
+test_the_decay_entry_with_kda_s_gate_is_the_fused_entry (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_decay_entry_with_kda_s_gate_is_the_fused_entry)
+Hand the decay entry the per-channel decay KDA's fused gate computes and it is the fused ring entry. ... ok
+test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) ... 
+  test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) (tokens=7, slot=0, context=0) ... ERROR
+  test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) (tokens=7, slot=1, context=1) ... ERROR
+  test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) (tokens=7, slot=2, context=8) ... ERROR
+test_the_rows_fold_is_the_one_row_launches (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_rows_fold_is_the_one_row_launches) ... ok
+test_mhc_v41_on_the_megakernel (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_mhc_v41_on_the_megakernel) ... ok
+test_mla_glue_on_the_megakernel (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_mla_glue_on_the_megakernel) ... [megakernel] selftest mla rel=3.07e-03 prefill32=False -> ARM
+ok
+test_padded_dense_is_the_lane_over_padded_bytes (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_padded_dense_is_the_lane_over_padded_bytes) ... ok
+test_a_row_view_and_an_empty_step (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_a_row_view_and_an_empty_step) ... ok
+test_it_refuses_what_it_does_not_compute (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_it_refuses_what_it_does_not_compute) ... ok
+test_on_a_gpu_the_rounding_is_torchs (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_on_a_gpu_the_rounding_is_torchs) ... ok
+test_the_served_output_is_the_sum_rounded_once (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_the_served_output_is_the_sum_rounded_once) ... ok
+test_the_sum_is_the_torch_composition_byte_for_byte (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_the_sum_is_the_torch_composition_byte_for_byte) ... ok
+test_it_refuses_a_narrower_output (tests.test_engine_swiglu_pad.SwigluPadTests.test_it_refuses_a_narrower_output) ... ok
+test_on_a_gpu_the_bf16_launch_is_the_torch_pair_padded (tests.test_engine_swiglu_pad.SwigluPadTests.test_on_a_gpu_the_bf16_launch_is_the_torch_pair_padded) ... ok
+test_the_padded_launch_is_the_launch_then_the_pad (tests.test_engine_swiglu_pad.SwigluPadTests.test_the_padded_launch_is_the_launch_then_the_pad) ... ok
+test_without_pad_to_the_launch_writes_what_the_old_launch_wrote (tests.test_engine_swiglu_pad.SwigluPadTests.test_without_pad_to_the_launch_writes_what_the_old_launch_wrote)
+The kernel as it was before `pad_to` (kept here verbatim), on the same inputs: GLM-5.3's drafter calls it ... ok
+test_the_gate_in_the_ring_is_the_gates_launch_then_the_decay_entry (tests.test_engine_gdn_ring_gate.GdnRingGateTests.test_the_gate_in_the_ring_is_the_gates_launch_then_the_decay_entry) ... ok
+test_the_ring_is_the_recurrence_on_gdn_s_decay (tests.test_engine_gdn_ring_gate.GdnRingGateTests.test_the_ring_is_the_recurrence_on_gdn_s_decay) ... ok
+test_the_rows_fold_is_the_decay_rows_entry_and_the_one_row_launches (tests.test_engine_gdn_ring_gate.GdnRingGateTests.test_the_rows_fold_is_the_decay_rows_entry_and_the_one_row_launches) ... ok
+
+======================================================================
+ERROR: test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) (tokens=7, slot=0, context=0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kernel_glue.py", line 437, in test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane
+    out = recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/kda/ring.py", line 107, in recurrent_decay_ring
+    return _recurrent(q, k, v, decay, beta, None, None, ring, slot, context, None, decay=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/kda/ring.py", line 154, in _recurrent
+    raise ValueError("ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R")
+ValueError: ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R
+
+======================================================================
+ERROR: test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) (tokens=7, slot=1, context=1)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kernel_glue.py", line 437, in test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane
+    out = recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/kda/ring.py", line 107, in recurrent_decay_ring
+    return _recurrent(q, k, v, decay, beta, None, None, ring, slot, context, None, decay=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/kda/ring.py", line 154, in _recurrent
+    raise ValueError("ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R")
+ValueError: ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R
+
+======================================================================
+ERROR: test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) (tokens=7, slot=2, context=8)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/repo/tests/test_engine_kernel_glue.py", line 437, in test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane
+    out = recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/kda/ring.py", line 107, in recurrent_decay_ring
+    return _recurrent(q, k, v, decay, beta, None, None, ring, slot, context, None, decay=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/kda/ring.py", line 154, in _recurrent
+    raise ValueError("ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R")
+ValueError: ring must be FP32/FP16 [slots,R,HV,K,V] with dense rows and 1 <= T <= R
+
+----------------------------------------------------------------------
+Ran 19 tests in 51.904s
+
+FAILED (errors=3)
+Traceback (most recent call last):
+  File "/repo/probes/engine_kernel_check.py", line 466, in <module>
+    main()
+  File "/repo/probes/engine_kernel_check.py", line 127, in main
+    qwen38_cells(args.output)
+  File "/repo/probes/engine_qwen38_cells.py", line 63, in run
+    raise RuntimeError(f'glue GPU cases failed or skipped: {len(result.failures)} failed, {len(result.errors)} errors, '
+RuntimeError: glue GPU cases failed or skipped: 0 failed, 3 errors, 0 skipped

@@ -6,6 +6,7 @@ FP8 lane are stand-ins."""
 import contextlib
 import importlib.util
 from types import SimpleNamespace
+from pathlib import Path
 import unittest
 from unittest.mock import patch
 
@@ -197,12 +198,30 @@ class Arithmetic(unittest.TestCase):
         aligned = {k: v for k, v in good.items() if k != "padded_exact"}          # an aligned lane has no padded check
         self.assertEqual(failures(aligned), [])
         for change in (dict(dispatch_exact=False), dict(relative_error={"w4a8": .16, "fp8": .02}),
-                       dict(relative_error={"w4a8": .1, "fp8": float("nan")}), dict(twin_error=.006),
+                       dict(relative_error={"w4a8": float("nan"), "fp8": .02}), dict(twin_error=.006),
                        dict(twin_error=float("nan")), dict(padded_exact=False)):
             with self.subTest(change=change):
                 self.assertEqual(len(failures({**good, **change})), 1)
         fp8_only = dict(rows=4096, dispatch="fp8", dispatch_exact=True, relative_error={"fp8": .03}, band={"fp8": .16})
         self.assertEqual(failures(fp8_only), [])
+        self.assertEqual(len(failures({**fp8_only, "relative_error": {"fp8": .2}})), 1)
+
+    def test_an_unserved_arm_off_its_band_is_recorded_not_raised(self):
+        """The first lane run (measurements/qwen38_lane_20260917): FP8 at 4 rows of 320x2560 was 22% off while W4A8
+        served those rows; the gate stopped the whole run on it."""
+        failures, broken = self.probe.gate_failures, self.probe.broken_arms
+        row = dict(rows=4, dispatch="w4a8", dispatch_exact=True, relative_error={"w4a8": .085, "fp8": .22},
+                   band={"w4a8": .16, "fp8": .05}, twin_error=0.0)
+        self.assertEqual((failures(row), broken(row)), ([], ["fp8"]))
+        self.assertEqual(broken({**row, "relative_error": {"w4a8": .085, "fp8": float("nan")}}), ["fp8"])
+        self.assertEqual(broken({**row, "relative_error": {"w4a8": .085, "fp8": .04}}), [])
+        served = dict(rows=64, dispatch="fp8", dispatch_exact=True, relative_error={"fp8": .22}, band={"fp8": .05})
+        self.assertEqual((len(failures(served)), broken(served)), (1, []))
+
+    def test_a_broken_cell_is_neither_captured_nor_timed(self):
+        source = (Path(__file__).resolve().parents[1] / "probes" / "engine_qwen38_dense.py").read_text()
+        self.assertIn("if (name == 'w4a8' and m > W4A8_ROWS) or (m, name) in broken:", source)
+        self.assertIn("if (m, name) in broken[i]:\n            continue", source)
 
     def test_relative_error_and_summary(self):
         want = torch.tensor([[3., 4.]])

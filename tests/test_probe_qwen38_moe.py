@@ -468,6 +468,46 @@ class DispatchMirrorTests(unittest.TestCase):
         self.assertEqual(constants(lane)["activation"], "silu")
 
 
+class RepeatDiagnosisTests(unittest.TestCase):
+    """The first lane run (measurements/qwen38_lane_20260917) stopped at the eager prefill check: two identical calls
+    parted on one element by 0.0039. The check now records the parting with where it happened and goes on."""
+
+    @needs_torch
+    def test_the_diagnosis_names_the_call_or_the_sum(self):
+        import torch
+        from unittest import mock
+        p = probe()
+        c = p.cell_of(p.kernel_shape())
+        gen = torch.Generator().manual_seed(5)
+        x = torch.randn(6, 8, generator=gen).bfloat16()
+        token = torch.tensor([0, 0, 2, 3, 5])
+        pairs = (token, x.index_select(0, token), torch.zeros(5, 1, dtype=torch.int32), torch.ones(5, 1))
+        outputs = torch.randn(5, 8, generator=gen).bfloat16()
+        calls = iter([outputs.clone(), outputs.clone(), outputs.clone(), outputs.clone()])
+        with mock.patch.object(p, "pairs_of", return_value=pairs), \
+                mock.patch.object(p, "dispatch", side_effect=lambda *a, **k: next(calls)):
+            steady = p.repeat_diagnosis(x, None, None, None, None, c)
+        self.assertEqual((steady["call"]["rows"], steady["index_add"]["rows"]), (0, 0))
+        self.assertEqual((steady["pairs"], steady["tokens_with_several_routes"]), (5, 1))
+        parted = outputs.clone()
+        parted[2, 3] = parted[2, 3] + 0.25
+        calls = iter([outputs.clone(), parted, outputs.clone(), outputs.clone()])
+        with mock.patch.object(p, "pairs_of", return_value=pairs), \
+                mock.patch.object(p, "dispatch", side_effect=lambda *a, **k: next(calls)):
+            found = p.repeat_diagnosis(x, None, None, None, None, c)
+        self.assertEqual((found["call"]["rows"], found["call"]["first_rows"]), (1, [2]))
+        self.assertGreater(found["call"]["ulps"], 1)
+        self.assertEqual(found["index_add"]["rows"], 0)                  # one call's outputs summed alike every time
+
+    def test_a_parted_repeat_is_recorded_not_raised(self):
+        source = PROBE.read_text()
+        check = source[source.index("    def prefill_check("):source.index("    def prefill_sweep(")]
+        self.assertNotIn("eager repeats differ", check)
+        self.assertIn('row["unstable"] = not row["repeat_stable"]', check)
+        self.assertIn("repeat_diagnosis(", check)
+        self.assertIn("prefill_unstable=self.unstable", source)
+
+
 class LaneRoutingTests(unittest.TestCase):
     def test_kernel_check_routes_the_lane_to_the_probe(self):
         text = (ROOT / "probes" / "engine_kernel_check.py").read_text()

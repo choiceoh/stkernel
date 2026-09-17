@@ -50,12 +50,12 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | 대상 | 종류 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|
-| C1 | 셀 판정 프로브 모드(`engine_kernel_check --lanes qwen38_cells`). 단일 레인 티켓은 main 에 있는 프로브만 돌린다 | `probes/engine_qwen38_cells.py` | fix | cpu | 시간 | 머지 #1089, 티켓 `qwen38-cells-0917` 대기 |
-| C2 | dense 패딩 어댑터 GPU 판정 + W4A8/FP8 전환 행 수 실측: Qwen3.8 hidden 2560 · 중간 160, DSv4.1 576 | `kernels/dense`, `cells.py` | measure | gpu | 시간 | 프로브 머지 #1096, 티켓 `qwen38-dense-0917` 대기 |
+| C1 | 셀 판정 프로브 모드(`engine_kernel_check --lanes qwen38_cells`). 단일 레인 티켓은 main 에 있는 프로브만 돌린다 | `probes/engine_qwen38_cells.py` | fix | cpu | 시간 | 머지 #1089; 첫 실행 GPU 케이스 통과(픽스처 오류 3건은 이 PR 에서 수정), 재실행 예정 |
+| C2 | dense 패딩 어댑터 GPU 판정 + W4A8/FP8 전환 행 수 실측: Qwen3.8 hidden 2560 · 중간 160, DSv4.1 576 | `kernels/dense`, `cells.py` | measure | gpu | 시간 | 프로브 머지 #1096; 첫 실행 FP8 320×2560 4행 오차 0.22 발견·멈춤, 이 PR 에서 broken_arms 로 계속, 재실행 예정 |
 | C3 | KDA decay 어댑터(ring·chunk·recurrent) GPU 판정 + BV 8/16/32 스윕(4/12×128×128, T=2, 1–4 행, 정확 롤백 게이트) | `kernels/kda`, `cells.KDA_MEASURED_CELLS` | measure | gpu | 시간 | 프로브 머지 #1098, 티켓 `qwen38-kda-0917` 대기(8c25c625, K1 의 GDN 진입점) |
-| C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 프로브 머지 #1100, 티켓 `qwen38-moe-0917` 대기 |
+| C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 프로브 머지 #1100; 첫 실행 디코드 통과, 정적 프리필 반복 불일치 발견·멈춤, 이 PR 에서 진단 추가, 재실행 예정 |
 | C5 | DSv4.1 mHC V41 이음매(`MHCV41`) GPU 판정 | `kernels/dense/mhc.py`, `cells.py` | measure | gpu | 시간 | 열림 |
-| C6 | Qwen3.8 자체 레인 GPU `qualify`(게이트 잔차·QSA·GDN). 수치 변경 작업의 기준점 | `profiles/qwen38/lanes.py` | measure | gpu | 시간 | 열림 |
+| C6 | Qwen3.8 자체 레인 GPU `qualify`(게이트 잔차·QSA·GDN). 수치 변경 작업의 기준점 | `profiles/qwen38/lanes.py` | measure | gpu | 시간 | 이 PR(GPU qualify 통과, measurements/qwen38_lane_20260917) |
 | C7 | `cells.py`: 측정된 어댑터 셀을 `admitted` 로(Q3). `summarize.py` 는 서빙 커널이 PR 이 최적화한 커널과 같을 때만 '그대로' 로 셈. 재집계 | `kernels/cells.py`, `measurements/st_model_dependence_20260917/summarize.py` | fix | cpu | 시간 | 장치는 머지 #1095(측정 튜플 넷은 기록이 붙을 때 채움) |
 
 플릿이 필요해 이번 목록에서 뺀 것: one-shot·프리필 통신의 hidden 2560 실측(4랭크), Qwen3.8 부팅 onepass(D17 속도 기록).
