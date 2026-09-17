@@ -1186,12 +1186,18 @@ class Glm53Net:
         if contract is not None and aux_layers and any(L not in self.layers for L in aux_layers):
             raise ValueError("terminal features must name layers in this target")
         N = step.ids.shape[0]
-        audit = [] if getattr(self, 'incident_audit_root', None) is not None and N >= 128 else None
+        incident_identity = getattr(self, 'incident_step_identity', {})
+        audit = [] if (getattr(self, 'incident_audit_root', None) is not None and
+                       (N >= 128 or (N == 1 and incident_identity.get('mode') in (5, 10)
+                                     and incident_identity.get('generation') in (1, 124, 125)))) else None
+        audit_tail = []
         def audit_row(stage, layer, value):
             if audit is not None:
                 # Clone on the producer stream; host reads happen only after the
                 # complete prefill, so the audit does not insert per-layer waits.
                 audit.append((stage, layer, value[:8].detach().clone(), value[-32:].detach().clone()))
+                at = sp.last_local if sp else value.shape[0] - 1
+                audit_tail.append((stage, layer, value[at].detach().clone()))
         sp = self.prefill_transport if (finish and not self.probe and len(step.segments) == 1
                                        and N >= 128
                                        and not getattr(step, "captured", False)) else None
@@ -1276,6 +1282,8 @@ class Glm53Net:
             number = getattr(self, 'incident_audit_number', 0)
             self.incident_audit_number = number + 1
             torch.save(dict(rows=step.ids.shape[0], segments=repr(step.segments),
+                            identity=incident_identity, input_ids=step.ids[-1:].detach().cpu(),
+                            stage_tail=[(name, L, value.cpu()) for name, L, value in audit_tail],
                             layers=[(name, L, first.cpu(), last.cpu()) for name, L, first, last in audit],
                             hidden=h.detach().cpu()), root / f'rank{self.rank}-pass{number}.pt')
         if aux_layers:

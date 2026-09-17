@@ -1141,6 +1141,11 @@ class Glm53Engine:
     def _incident_forward(self, step, *, prefill=False, **kwargs):
         modes = getattr(self, 'incident_modes', {})
         mode = modes.get(step.segments[0].seq, 0)
+        if getattr(self.net, 'incident_audit_root', None) is not None:
+            seq = step.segments[0].seq
+            self.net.incident_step_identity = dict(
+                admission=self.admissions, seq=seq, mode=mode,
+                generation=self._generated_count(seq), prefill=prefill)
         if mode not in (7, 8, 9, 11, 12):
             return self._forward(step, **kwargs)
         if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
@@ -1430,6 +1435,21 @@ class Glm53Engine:
                              torch.tensor(ks, dtype=torch.int32, device=device),
                              torch.tensor(ps, dtype=torch.float32, device=device),
                              torch.cat(uniform_rows), None, dists).tolist()
+        audit_root = getattr(self.net, 'incident_audit_root', None)
+        if audit_root is not None and len(jobs) == 1 and self.net.rank == 0:
+            seq, raw, _, _ = jobs[0]
+            generation = self._generated_count(seq)
+            if self.incident_modes.get(seq) in (5, 10) and generation in (0, 1, 64, *range(114, 129)):
+                from pathlib import Path
+                root = Path(audit_root).parent / 'incident-logits'
+                root.mkdir(parents=True, exist_ok=True)
+                torch.save(dict(admission=self.admissions, seq=seq, generation=generation,
+                    mode=self.incident_modes[seq], raw=raw.detach().cpu(),
+                    processed=block.detach().cpu(), probabilities=dists.detach().cpu(),
+                    temperature=temps, top_k=ks, top_p=ps,
+                    uniforms=torch.cat(uniform_rows).cpu(), picks=picks,
+                    input_tail=self.tokens[seq][-8:]),
+                    root / f'admit{self.admissions}-gen{generation}.pt')
         verdicts, at = [], 0
         for (seq, _, drafts, draft_probs), count in zip(jobs, spans):
             mine = picks[at: at + count]
