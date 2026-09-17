@@ -466,7 +466,7 @@ class Glm53Net:
         for norm_key, dense_keys, resident_keys in self.smoothing_groups():
             if any(self.p.get(k) is None for k in dense_keys + resident_keys + [norm_key]) or dense_keys[0] not in names:
                 continue                                                    # a layer subset (a local boot), or a reader already retired
-            amax = amax_of(names[dense_keys[0]])
+            amax = amax_of(names[dense_keys[0]], width=self.p[dense_keys[0]].shape[1])
             readers = [self.p[k] for k in dense_keys + resident_keys]
             if shared_comm is not None and norm_key.endswith((".in_norm", ".post_norm")):
                 factor = shared_scales(amax, readers, shared_comm.all_reduce_max)

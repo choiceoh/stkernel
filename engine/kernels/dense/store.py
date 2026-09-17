@@ -208,14 +208,36 @@ class PackStore:
             raise ValueError(f'calibration changed while packing: {self.calibration_path(name)}')
         return hessian
 
-    def amax(self, name):
-        """The channel peaks [k] of `name`'s calibrated input (unsmoothed domain), or None when the blob has none."""
+    def amax(self, name, width=None):
+        """The channel peaks [k] of `name`'s calibrated input (unsmoothed domain), or None when this boot may not
+        fold them.
+
+        The peaks are a sum over one boot's activations exactly like the Hessian beside them, so the blob answers
+        to the same provenance rule (`fits_weights`): `calibration_path` keys a blob by the weight's NAME alone,
+        and a boot that changed checkpoints would otherwise fold that other checkpoint's channel distribution
+        into its norms and into every reader the fold rescales -- the silent class behind the 2026-09-17
+        indexer-gate corruption, where a fold the served weights never measured reshaped the indexer's gates.
+        A blob written before the field makes no claim and is taken, like `fits_weights`; so is one recorded
+        with no peaks at all (a Hessian-only blob: the peaks were never summed). A sum that never happened
+        (`ntok` 0), a non-floating or non-finite vector, or a width that does not match the weight about to
+        read it are refused too: the fold divides a norm channel by channel, so a half-wrong peaks vector
+        would scale only half the channels and look like a working boot.
+        """
         path = self.calibration_path(name)
         if not path.is_file():
             return None
+        if not self.fits_weights(path):
+            self.foreign.add(name)
+            self.stats['amax_foreign'] += 1
+            return None
+        self.read_files.add(path)
         blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
         amax = blob.get('amax')
-        return None if amax is None else amax.float()
+        if (amax is None or int(blob.get('ntok', 0)) <= 0 or not amax.is_floating_point()
+                or not torch.isfinite(amax).all() or (width is not None and amax.numel() != width)):
+            self.stats['amax_refused'] += 1
+            return None
+        return amax.float()
 
     @staticmethod
     def _smooth_sha(smooth):

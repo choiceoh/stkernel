@@ -28,13 +28,13 @@ class SharedInputSmoothingTests(unittest.TestCase):
             logical = comm.all_gather(rmsnorm(x, norm, facts.rms_eps), dim=0)
             expected = torch.nn.functional.linear(logical, weight)
             old = make()
-            old_packs = old.smooth_inputs(lambda _: amax)
+            old_packs = old.smooth_inputs(lambda _, width=None: amax)
             old_weight = old_packs.get('L0.kda.in_proj', (weight, None))[0]
             old_input = comm.all_gather(rmsnorm(x, old.p['L0.in_norm'], facts.rms_eps), dim=0)
             broken = torch.nn.functional.linear(old_input, old_weight)
 
             net = make()
-            packs = net.smooth_inputs(lambda _: amax, shared_comm=comm)
+            packs = net.smooth_inputs(lambda _, width=None: amax, shared_comm=comm)
             packed_weight = packs.get('L0.kda.in_proj', (weight, None))[0]
             received = comm.all_gather(rmsnorm(x, net.p['L0.in_norm'], facts.rms_eps), dim=0)
             actual = torch.nn.functional.linear(received, packed_weight)

@@ -5131,12 +5131,20 @@ def _get_dynamic_kernel(
 # ---------------------------------------------------------------------------
 # Dynamic launch
 # ---------------------------------------------------------------------------
-def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False):
-    """Get this shared workspace's FP32 sum while preserving the BF16 ABI."""
+def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False, long_prefill=False):
+    """Get this shared workspace's FP32 sum while preserving the BF16 ABI.
+
+    Grow-only: the buffer is sized by the largest call so far. The legacy `tp`
+    path keeps its 16384-row ceiling; the long-prefill SF6 lane may grow to its
+    32768-row predicate, a maximum production boots pre-pay in the memory
+    gate's 32,256-token far prefill pass, before the door opens -- the first
+    long request allocates nothing here.
+    """
+    ceiling = 32768 if long_prefill else 16384
     if (output.dtype != torch.bfloat16 or tuple(output.shape) != (num_tokens, k)
             or not output.is_contiguous() or output.device != workspace.device
             or k != 4096
-            or not (1 if tp or getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= (32768 if tp else 16384)):
+            or not (1 if tp or getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= ceiling):
         raise ValueError("expert-local FP32 scatter requires contiguous CUDA BF16 [T,4096]")
     current = workspace.ep_scatter_fp32
     if current is not None and (current.dtype != torch.float32 or current.device != output.device
@@ -5310,13 +5318,15 @@ def launch_sm120_dynamic_moe(
         tiled=bool(getattr(weights, "tiled", False)), reform_sf_pack=direct_sf6,
         activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
-    tp_scatter_fp32 = tp_scatter_fp32 or _long_prefill_sf6_word_unpack(
+    long_prefill_fp32 = _long_prefill_sf6_word_unpack(
         m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k, tile_m=workspace.tile_m,
         quant_mode=quant_mode, tiled=bool(getattr(weights, 'tiled', False)), reform_sf_pack=direct_sf6,
         activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit, ep_local=ep_local, tp_sf6_q0=tp_scatter_fp32,
         share_input_across_experts=input_gs_is_shared)
-    accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k, tp=tp_scatter_fp32)
+    tp_scatter_fp32 = tp_scatter_fp32 or long_prefill_fp32
+    accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k,
+                                            tp=tp_scatter_fp32, long_prefill=long_prefill_fp32)
                    if ep_local or tp_scatter_fp32 else scatter_output)
     compiled, mac = _get_dynamic_kernel(
         num_experts,

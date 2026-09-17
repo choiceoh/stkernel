@@ -487,3 +487,51 @@ receipt for the incident repair.
 These are source checks, not evidence that these paths are fault-free. The live
 target controls above narrow the investigation; precision and native sampler
 controls remain necessary before identifying the incident cause.
+
+## Context ablation — the assistant-provenance records are not the differentiator, 2026-09-18
+
+The prompt these replays carry is not a plain transcript. Its tool and memory
+records quote the assistant's **own reasoning**: `[ctx] [assistant] The user asks
+"..." — likely from conversation history ...` (x4), `[assistant] The user asks
+...` (x3), `**[assistant]** ...` (x2) and `[도구 sessions] {"action":"search",...}`.
+One of them is stamped `[2026-09-17T20:46:56+09:00]`, two minutes before the
+incident request. The memory records that are 95-100 days old quote ordinary,
+coherent assistant prose, so the self-referential material is recent.
+
+Two ablations asked whether that material causes the failure. Each replaced the
+id span of the selected prompt lines with the same number of a neutral filler id
+(`15`), so the prompt keeps its **exact token count** and every id outside the
+spans is byte-identical. The request is the incident's own 50,005 IDs at T=1,
+seed 7, `top_p=1`, `top_k=-1`, 1,024-token cap, `retain=false` and a fresh cache
+salt.
+
+| Arm | Lines neutralized | Replaced tokens | Output tokens | Glyph scan | Result |
+|---|---:|---:|---:|---|---|
+| Baseline | — | — | 554 | 0 replacement, 0 welded jamo, no Cyrillic/Thai | Derailed Korean |
+| `[ctx] [assistant]` records | 4 | 398 | 469 | 0 / 0 / none | Derailed Korean |
+| All assistant-provenance records | 11 | 975 | 382 | 0 / 0 / none | Derailed Korean |
+
+All three texts stay topically anchored to Ithaca/Telemachus while being
+semantically broken (invented words and wrong referents: `수아이비터`,
+`퓔로스`, `미네르바(아테나)가 떠서 맨토 이름으로 변신해`), and **all three score
+clean on the canonical Korean glyph counters**. The gate this incident is judged
+by counts glyph damage; this failure is semantic, and the gate has no case that
+can see it — the incident needs a graded semantic case over a long agentic
+context.
+
+**Ruled out:** the assistant-reasoning memory records are not the differentiator.
+Neutralizing either set leaves the failure intact, so "strip the records" is
+hygiene rather than the incident repair. The next causal step is the measurement
+this incident still lacks — **real-data selection**: capture the sparse indexer's
+selected pool ids for the incident prefix and compare them with an fp32 reference
+selection recomputed from the same captured operands (`q8`, `w_eff`, `keys`,
+`scales`). The selector *kernels* are verified on synthetic logits and the KDA
+operands were audited on real ones; the selection itself has never been compared
+on real data, and it is the only path here that engages for long contexts and
+content-dependently — short contexts take the covered path and never select.
+
+[Receipts](context-ablation-evidence.json), reproducer
+`probes/incident_context_ablation.py`. The door was idle at admission but is
+production traffic, not an exclusive hold: every arm advanced `served` by two, so
+these are quality observations, not an isolated timing measurement. Private
+prompt text and outputs remain on srv2.

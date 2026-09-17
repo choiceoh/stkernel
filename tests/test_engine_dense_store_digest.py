@@ -144,5 +144,82 @@ class DigestTests(unittest.TestCase):
         self.assertEqual(digest.of(self.weight), hashlib.sha256(self.weight.view(torch.uint8).numpy()).hexdigest())
 
 
+class AmaxProvenanceTests(unittest.TestCase):
+    """`store.amax` folds the smoothing's channel peaks into the served norms, so the blob must answer to the same
+    provenance and integrity rules as the Hessian beside it (store.fits_weights): a foreign claim, a sum that never
+    happened, a non-finite vector, or a width that is not the weight's K each fold as None -- never as wrong peaks."""
+    K = 32
+    NAME = 'Glm5NextForCausalLM/model.layers.0.self_attn.fused_qkv_a_proj'
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.peaks = torch.rand(self.K) + 0.5
+        self.write(peaks=self.peaks, ntok=1024, weights_id='weights-a')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, *, peaks, ntok, weights_id):
+        store = PackStore(self.root, 0)
+        path = store.calibration_path(self.NAME)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        blob = dict(H=torch.eye(self.K), ntok=ntok, name=self.NAME)
+        if peaks is not None:
+            blob['amax'] = peaks
+        if weights_id is not None:
+            blob['weights_id'] = weights_id
+        torch.save(blob, path)
+        store.release_pages()
+        return path
+
+    def store(self, weights_id='weights-a'):
+        return PackStore(self.root, 0, weights_id=weights_id)
+
+    def test_the_claiming_boot_folds_the_peaks(self):
+        peaks = self.store().amax(self.NAME, width=self.K)
+        self.assertTrue(bool(torch.isfinite(peaks).all()))
+        self.assertEqual(peaks.numel(), self.K)
+
+    def test_a_blob_from_before_the_field_makes_no_claim_and_is_taken(self):
+        self.write(peaks=self.peaks, ntok=1024, weights_id=None)
+        self.assertIsNotNone(self.store().amax(self.NAME))
+
+    def test_a_store_that_declares_no_weights_takes_every_claim(self):
+        self.assertIsNotNone(PackStore(self.root, 0).amax(self.NAME))
+
+    def test_a_foreign_claim_folds_as_none_and_is_reported(self):
+        self.write(peaks=self.peaks, ntok=1024, weights_id='weights-b')
+        store = self.store()
+        self.assertIsNone(store.amax(self.NAME))
+        self.assertIn(self.NAME, store.foreign)
+        self.assertEqual(store.stats['amax_foreign'], 1)
+
+    def test_a_sum_that_never_happened_is_refused(self):
+        self.write(peaks=self.peaks, ntok=0, weights_id='weights-a')
+        store = self.store()
+        self.assertIsNone(store.amax(self.NAME))
+        self.assertEqual(store.stats['amax_refused'], 1)
+        self.assertNotIn(self.NAME, store.foreign)
+
+    def test_a_non_finite_or_non_floating_peaks_vector_is_refused(self):
+        self.write(peaks=torch.full((self.K,), float('nan')), ntok=1024, weights_id='weights-a')
+        self.assertIsNone(self.store().amax(self.NAME))
+        self.write(peaks=torch.arange(self.K), ntok=1024, weights_id='weights-a')          # integer peaks
+        self.assertIsNone(self.store().amax(self.NAME))
+
+    def test_a_width_that_is_not_the_readers_k_is_refused(self):
+        store = self.store()
+        self.assertIsNone(store.amax(self.NAME, width=self.K + 8))
+        self.assertIsNotNone(store.amax(self.NAME, width=self.K))
+
+    def test_a_hessian_only_blob_and_a_missing_blob_both_fold_as_none(self):
+        self.write(peaks=None, ntok=1024, weights_id='weights-a')
+        self.assertIsNone(self.store().amax(self.NAME))
+        store = self.store()
+        store.calibration_path(self.NAME).unlink()
+        self.assertIsNone(store.amax(self.NAME))
+
+
 if __name__ == '__main__':
     unittest.main()
