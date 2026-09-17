@@ -37,13 +37,33 @@ asynchronous pipeline bypassed. The next attempt supplied `grammar` and
 `grammar_after` to `/v1/engine/completions`; that route did not bind those fields,
 so it also remained asynchronous. Neither result is target-only evidence.
 
-The next diagnostic arm (`e83aae36`) explicitly selects host block verification,
+The next diagnostic arm (`89ebe27a`) explicitly selects host block verification,
 host target-only, host token-level rejection, device reference verification or
 device target-only. Encoded diagnostic seeds normalize to the same underlying
 request seed. The replay harness checks async-step and accepted-token counters
-and refuses a bypassed control. The arm retains K=7 forward geometry even for
-target-only sampling; it does not independently exclude coupling between
-positions inside the target forward.
+and refuses a bypassed control. Modes 2 and 6 retain K=7 forward geometry even
+for target-only sampling. Mode 5 additionally runs the target at exactly one
+position, without a draft proposal or a speculative target graph. Its host
+control smoke check verifies one input row, one committed token and no proposal;
+the live replay must additionally report zero async steps and zero drafted and
+accepted tokens.
+
+## Accepted-token counter defect found during review
+
+The host commit counts `min(accepted, emitted_count)`, but both asynchronous
+implementations used `min(accepted, emitted_count - 1)`. If EOS or max output
+clips off the correction/bonus token, the last emitted token can itself be a
+confirmed draft. For example, three verified drafts clipped to two emitted
+tokens were recorded as one accepted token asynchronously and two on the host.
+
+The candidate corrects the asynchronous reference and fused commit counter.
+Tokens, committed length, stop decisions, contexts and KDA state are unchanged.
+This repairs acceptance statistics, not the malformed text. Cross-path tests
+cover greedy/sampled verification, all K=3 accepted lengths, output rooms and
+stop positions. The focused sampling/pipeline/agreement suite passes 38 tests;
+the real Triton commit body also matches counts, tokens, stop flags, kept drafts
+and context in 588 K=1/3/7 cases under its CPU interpreter. That interpreter
+result is not a CUDA replay qualification.
 
 ## Focused source review while awaiting the fleet
 
