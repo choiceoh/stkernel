@@ -271,7 +271,7 @@ class SelectRowsTests(unittest.TestCase):
 
     def loop(self, n_cand=None):
         """The segment loop's selection (net._indexer), one row at a time."""
-        from engine.modules.sparse_indexer import topk_positions, pool_slots
+        from engine.modules.sparse_indexer import pin_pools_in_logits, tail_pin_pools, topk_positions, pool_slots
         rows, t, kp, k = self.rows, self.T, self.KP, self.TOPK // self.KP
         n_cand = n_cand or self.N_CAND
         width = self.TOPK + kp - 1
@@ -283,6 +283,9 @@ class SelectRowsTests(unittest.TestCase):
             cand = Glm53Caches.pool_slots(self.caches, 0, r, iota(n_cand, "cpu")).long()
             ke = seq_lens // kp
             logits = self.net.lanes.indexer_logits(self.q8[sl], self.keys[cand], self.scales[cand], self.w[sl], ke)
+            # the served loop pins the pool that just completed (index_kpool_always_select_tail);
+            # this model of the loop has to do what the loop does
+            pin_pools_in_logits(logits, tail_pin_pools(seq_lens, kp), k=k)
             ids = topk_positions(logits[:, :n_cand].float(), k, valid=ke, inplace=True)
             pool_slots(ids, seq_lens, kp, *self.caches.token_map(0, r), slots[sl], valid[sl])
         return slots, valid
