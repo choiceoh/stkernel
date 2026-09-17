@@ -8,7 +8,11 @@ The failure also reproduces with zero reused prompt tokens. An exclusive audit
 has since identified BF16 atomic scatter instability in long MoE prefill. The
 FP32 accumulation candidate removes the observed repeat differences, but T=1
 output remains corrupted. This is a partial numerical repair, not incident
-resolution. See [the follow-up audit](code-audit.md).
+resolution. A further confirmed omission in input smoothing left the sparse
+indexer's FP32 head-gate weight unscaled. Fixing it restores the reference
+head-gate function, but the combined repair also fails the original T=1
+requests (seeds 7 and 11). The incident remains unresolved; PR #1139 is a draft.
+See [the follow-up audit](code-audit.md).
 
 ## Runtime and original request
 

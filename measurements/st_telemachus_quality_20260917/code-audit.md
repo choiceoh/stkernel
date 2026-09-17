@@ -38,8 +38,37 @@ an independent CPU check with actual rank weights and calibration, **synthetic
 inputs**, and the target's actual `smooth_inputs()` method. Every fixed layer
 matches its unsmoothed FP32 head-gate result bit for bit. The old reader omission
 has substantial errors on these synthetic inputs; those errors are not a live
-generation-quality measurement. The isolated original-request replay on
-`03e9c50551666156b89c799d967138a39cbb01d7` is pending.
+generation-quality measurement.
+
+The isolated replay on `03e9c50551666156b89c799d967138a39cbb01d7` **failed to
+recover quality**. Original 50,005-ID requests at T=1, seeds 7 and 11, generated
+10,006 and 597 tokens before their end tokens; both contain malformed Korean,
+and seed 7 enters a long repetition loop. A thinking-off control with one
+appended reasoning-end token generated 472 malformed tokens. All three used
+fresh cache namespaces, reported zero reused tokens, and advanced the exclusive
+owner's served count by exactly one. Per-request draft counters were not
+recorded; they must not be inferred from the root status response.
+
+The four running containers' file hashes match the diagnostic source for the
+two modified model files and all three FP32 accumulation files. This private
+arm keeps its existing diagnostic controls (including the no-activation-search
+MoE recipe), so its failures are diagnostic evidence, not a production
+performance qualification. Sanitized receipts and per-rank runtime identities:
+[`indexer-smoothing-replay-evidence.json`](indexer-smoothing-replay-evidence.json).
+
+Additional T=1 thinking-off controls on that same boot show:
+
+- 39-token clean question: 517 mostly readable tokens, with malformed words.
+- Exact original system prefix plus a clean user question, 41,509 tokens:
+  a 33-token tool call, which does not establish answer quality.
+- Original history plus a clean user question, 47,693 tokens: 356 malformed
+  tokens. Removing only the latest user's injected context does not fix it.
+
+These are changed-input controls, not recovery of the original request.
+Receipts: [`indexer-context-control-evidence.json`](indexer-context-control-evidence.json).
+The combined production branch passes 23 CPU tests with one GB10-only test
+skipped. PR #1139 remains a draft: neither mathematical repair suffices to
+declare the generation incident solved.
 
 ## Confirmed numerical defect
 
