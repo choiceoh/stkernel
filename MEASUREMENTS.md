@@ -4421,7 +4421,7 @@ was corrected to the former serial order. A separate attention tile split
 was slower and rejected. No queue/deployment; GB10/TP4 speed and acceptance
 unmeasured. [Receipts and limits](measurements/st_draft_sample_20260917/README.md).
 
-### 45차 — DSA 디코드 선택의 긴 행 비용은 병렬성이다: 부분빈 분할은 정확하지만 이득 0, #1078 의 장치 사실 정정 (2026-09-17, srv4 단일 GPU 레인 2회, PR #NNNN)
+### 45차 — DSA 디코드 선택의 긴 행 비용은 병렬성이다: 부분빈 분할은 정확하지만 이득 0, #1078 의 장치 사실 정정 (2026-09-17, srv4 단일 GPU 레인 2회, PR #1104)
 
 #1078 이 "48 KB 공유 메모리 → 빈 캐시가 빠지고 stash 2,560 → 넓은 빈이 행을 8 번 재독"으로 읽은 절벽을 고쳐 보고 원인을 쟀다. 합성 logits.
 - **정정.** GB10 `shared_memory_per_block_optin` 은 **101,376 B**(예산 93,184). 빈 캐시는 후보 약 76,800 까지 남고 stash 는 32K 에서 3,776,
