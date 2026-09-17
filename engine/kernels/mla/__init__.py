@@ -8,6 +8,12 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 # The compiled cell, stated once in engine/kernels/cells.py (the wizard's table refuses against the same numbers).
 from engine.kernels.cells import MLA_HEADS as MLA_H, MLA_LATENT as MLA_D, MLA_SINK   # noqa: E402
+
+if not __debug__:  # pragma: no cover - the asserts below are this module's contract
+    raise RuntimeError(
+        "engine.kernels.mla validates its public entry point with asserts; "
+        "python -O strips them, so it refuses to load optimized")
+
 MLA_SPLITS_MAX = 64
 MLA_MAX_SPLIT_ROWS = 64
 MLA_WS_ROWS = 3 * MLA_MAX_SPLIT_ROWS
@@ -264,6 +270,8 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
     cell = (2 if ENABLE_MLA_QREG and T == 16 and slots.shape[1] >= 128
             and branch is None and probe == 0 else 0)
     if ENABLE_MLA_DIRECT_CVT and branch is None and probe == 0 and T in (8, 16):
+        # DIRECT_CVT supersedes QREG where both apply; an A/B that flips only
+        # ENABLE_MLA_QREG while this is on measures the same cell twice.
         cell = 12 if T == 16 and slots.shape[1] >= 128 else 10
     # Experimental cells can have a different resident grid. A monotonic
     # ticket counter cannot switch divisors between their graph replays.

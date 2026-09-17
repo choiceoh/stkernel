@@ -10,6 +10,7 @@ decode rows; adoption requires the full consumer bracket as well as `probes/engi
 from pathlib import Path
 
 import torch
+import weakref
 
 EXPERTS, HIDDEN, TOPK, MAX_ROWS = 288, 4096, 8, 16
 
@@ -41,9 +42,16 @@ def _ticket(device):
     order, as their graph pool does. Independent captures use distinct streams.
     """
     index = torch.cuda.current_device() if device.index is None else device.index
-    key = (index, torch.cuda.current_stream(device).cuda_stream)
+    stream = torch.cuda.current_stream(device)
+    key = (index, stream.cuda_stream)
     if key not in _TICKETS:
         _TICKETS[key] = torch.zeros(1, dtype=torch.int32, device=f'cuda:{index}')
+        try:
+            # Drop the workspace when the stream dies, so a process that keeps
+            # creating capture streams does not grow this dict forever.
+            weakref.finalize(stream, _TICKETS.pop, key, None)
+        except TypeError:
+            pass          # streams are not weak-referenceable on this torch
     return _TICKETS[key]
 
 

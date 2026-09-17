@@ -3,6 +3,11 @@ import torch
 import triton
 import triton.language as tl
 
+if not __debug__:  # pragma: no cover - the asserts below are this module's contract
+    raise RuntimeError(
+        "engine.kernels.indexer validates its public entry points with asserts; "
+        "python -O strips them, so it refuses to load optimized")
+
 
 @triton.jit
 def _map_positions(pos, table, table_s0, block_size: tl.constexpr,

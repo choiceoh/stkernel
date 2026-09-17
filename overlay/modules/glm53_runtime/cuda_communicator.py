@@ -290,8 +290,9 @@ class CudaCommunicator(DeviceCommunicatorBase):
                 return _out
         except OneShotFatal:
             raise
-        except Exception:
-            pass
+        # Any other exception escapes too: the shim has already committed this
+        # rank (it returned past its pre-commit fallback), so a rank-local NCCL
+        # call here would split the collective. Let it fail loudly instead.
         return self._all_reduce_impl(input_)
 
     def _all_reduce_impl(self, input_):
