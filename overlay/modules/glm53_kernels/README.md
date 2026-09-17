@@ -10,12 +10,12 @@ GLM-5.3 층 커널 — kpool 희소 인덱서(tail-select 융합), tail 슬롯, 
 |---|---|---|
 | `glm53_kpool_tail_select` | `sparse_attn_indexer_kpool.py` | kpool 인덱서 op 접수 + tail-select 융합 (`INDEXER_DECODE_FUSED`, `KPOOL_UPDATE_DIRECT_POS`); radix top-k 확장은 34차 §8 일몰 |
 | `glm53_tail_slot_persistent` | `glm53_kpool_indexer.py` | kpool tail 슬롯 고정 버퍼 (이 이미지에서는 잠들어 있음) |
-| `glm53_kda_prefill_regime` | `chunk_delta_h.py`, `kda.py` | KDA 프리필 autotune 버킷 (`KDA_PREFILL_REGIME`, 기본 off) + #368 direct-out 출력 (`KDA_PREFILL_DIRECT_OUT`, 기본 off) |
+| `glm53_kda_prefill_regime` | `chunk_delta_h.py`, `kda.py` | KDA 프리필 autotune 버킷 (`KDA_PREFILL_REGIME`, 기본 off) + #368 direct-out 출력 (`KDA_PREFILL_DIRECT_OUT`, 2026-09-06부터 프로필 기본 on) |
 | `glm53_mhc_tilelang` | `tilelang.py`, `tilelang_kernels.py` | MHC TileLang 접수 (프리필 big_fuse `MHC_BIGFUSE`·패스 `MHC_PASSES` 오버라이드; MK-MHC 훅) |
 
 ---
 
-## glm53_kpool_tail_select (was `overlay/modules/glm53_kernels/`)
+## glm53_kpool_tail_select (was its own flat overlay module — see the table above)
 
 ## glm53_kpool_tail_select
 
@@ -36,7 +36,8 @@ index-K cache and the persistent tail cache, it returns before the unused
 top-k buffer work when the MLA metadata says `use_dense_mha=True`. Mixed
 prefill/decode batches, CUDA graph capture, cached-context or long MQA
 prefills, and any module-name drift retain the old path. This makes the change
-inert unless the separate SM121 dense-prefill arm is admitted.
+inert unless the separate SM121 dense-prefill arm is admitted — and that arm was
+sunset in 34차 §8, so the bypass stays inert here.
 
 The remaining changes to the kpool selection path are below.
 
@@ -180,7 +181,7 @@ decode step over the 11 full-attention layers, un-profiled.
 
 ---
 
-## glm53_tail_slot_persistent (was `overlay/modules/glm53_kernels/`)
+## glm53_tail_slot_persistent (was its own flat overlay module — see the table above)
 
 ## glm53_tail_slot_persistent
 
@@ -254,7 +255,7 @@ has not been measured.
 
 ---
 
-## glm53_sm121_mla_prefill (was `overlay/modules/glm53_kernels/`; 34차 §8 일몰 — 기록)
+## glm53_sm121_mla_prefill (was its own flat overlay module — see the table above; 34차 §8 일몰 — 기록)
 
 ## glm53_sm121_mla_prefill
 
@@ -350,9 +351,9 @@ require the engine-down bracket above.
 
 ---
 
-## glm53_kda_prefill_regime (was `overlay/modules/glm53_kernels/`)
+## glm53_kda_prefill_regime (was its own flat overlay module — see the table above)
 
-### Pure-prefill direct output (2026-09-06, default off)
+### Pure-prefill direct output (2026-09-06; 프로필 기본값 on)
 
 `VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1` lets the existing final KDA output
 kernel write into the layer's `core_attn_out` prefix. Previously it wrote to
@@ -391,11 +392,12 @@ Before promotion, additionally compare 2K/32K/128K onepass prefill and the
 existing quality/Korean/acceptance controls at explicit knob values 0 and 1.
 Arm on the launcher as a caller variable, not through `EXTRA_ENV`:
 `VLLM_GLM53_KDA_PREFILL_DIRECT_OUT=1 bash launchers/start-glm53-nvfp4-tp4.sh`.
-Rollback is the same caller variable set to 0. The import-time arming message
+The profile ships this at 1 (`profiles/glm53.env`); rollback is the same caller
+variable set to 0. The import-time arming message
 alone does not prove this lane served: confirm a pure-prefill trace loses the
 KDA output-merge copies. GPU and service measurements remain pending.
 
-### Strided Q/K l2norm (2026-09-06, default off)
+### Strided Q/K l2norm (2026-09-06; 프로필 기본값 on)
 
 `VLLM_GLM53_KDA_PREFILL_QK_NORM=1` (exact "1" arms) replaces
 `l2norm_fwd(q.contiguous())` with a strided/channel-major kernel over the
@@ -521,7 +523,7 @@ No GPU kernel was launched while preparing this overlay.
 
 ---
 
-## glm53_mhc_tilelang (was `overlay/modules/glm53_kernels/`)
+## glm53_mhc_tilelang (was its own flat overlay module — see the table above)
 
 ## glm53_mhc_tilelang
 
@@ -545,7 +547,7 @@ lane swept the identical TODO heuristic and adopted `(6, 4)` at M<8 for
 shapes (hc_mult=4 → n_out=24, hidden=4096) are in the same family, so the
 same sweep applies here.
 
-### Knob
+### Knob (34차 §8 삭제 — 아래는 그때의 기록)
 
 `VLLM_GLM53_MHC_SMALLM="tile_n,n_splits"` — e.g. `6,4`. Read once at import
 (capture-safe frozen constant); the per-call validator re-checks the kernel's

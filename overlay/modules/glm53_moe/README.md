@@ -25,7 +25,7 @@ GLM-5.3 MoE — b12x 공유 워크스페이스, EP 마이크로커널 레인, �
 
 ---
 
-## b12x_shared_workspace (was `overlay/modules/glm53_moe/`)
+## b12x_shared_workspace (was its own flat overlay module — see the table above)
 
 ## b12x_shared_workspace
 
@@ -37,11 +37,11 @@ max_num_tokens 2048):
 
 ```
 wrapper 1개: allocated +541.1 MiB
-MoE 층 43개: 22.72 GiB per rank
+MoE 층 42개: 22.72 GiB per rank
 공유 시 절감: 22.19 GiB
 ```
 
-GLM-5.3-Flash has 43 MoE layers of identical geometry, so the duplicate buffers
+GLM-5.3-Flash has 42 MoE layers of identical geometry, so the duplicate buffers
 were a quarter of the entire GMU budget. The arithmetic matched what the engine
 reported: 45.8 GiB of weights + 22.7 GiB of wrappers against an 87.4 GiB budget
 at GMU 0.73 leaves ~16 GiB for KV, and the engine logged 16.52 GiB.
@@ -101,8 +101,8 @@ invalidate addresses captured by decode CUDA graphs.
 always writes into preallocated scratch (`out=` / in-place), and vLLM's EP
 all-reduce (DP=1) combines the partial hidden states.
 
-`ENABLE_EP=1` on the glm53 launcher. Off by default — the TP-sharded path is
-the measured one. EPLB is refused (`_supports_parallel_config`).
+`ENABLE_EP=1` is the glm53 profile default (EP4) — the TP-sharded path is the
+one the profile does not use. EPLB is refused (`_supports_parallel_config`).
 `VLLM_B12X_EP_COMPACT=0` keeps every batch fixed-shape; with the default
 no-dummy path, remote slots become slice-local zero-weight repeats.
 `VLLM_B12X_EP_DISABLE_MICRO=1` is a plain-static diagnostic and is rejected
@@ -115,7 +115,7 @@ PIECEWISE graphs force compaction off so prefill capture keeps a fixed shape.
 
 ---
 
-## b12x_zero_weight_micro (was `overlay/modules/glm53_moe/`)
+## b12x_zero_weight_micro (was its own flat overlay module — see the table above)
 
 ## b12x_zero_weight_micro
 
@@ -187,7 +187,7 @@ does not claim a benchmark winner or alter the production default.
 
 ---
 
-## glm53_b12x_out (was `overlay/modules/glm53_moe/`)
+## glm53_b12x_out (was its own flat overlay module — see the table above)
 
 ## glm53_b12x_out
 

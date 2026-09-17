@@ -105,6 +105,7 @@ from flashinfer.cute_dsl.utils import (
     sm120_make_smem_layout_sfa,
     sm120_make_smem_layout_sfb,
 )
+from .fp4_scale_search import quantize_block_fp4_search
 from flashinfer.cute_dsl.fp4_common import (
     atomic_add_global_i32,
     fabs_f32,
@@ -351,6 +352,7 @@ class MoEStaticKernel:
         scatter_fp32: bool = False,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
+        activation_scale_search: int = 0,
         activation: str = "silu",
         swiglu_alpha: float = 1.702,
         swiglu_beta: float = 1.0,
@@ -362,6 +364,11 @@ class MoEStaticKernel:
         self.scatter_fp32 = scatter_fp32
         self.acc_dtype = cutlass.Float32
         self.sf_vec_size = sf_vec_size
+        if activation_scale_search not in (0, 1, 2):
+            raise ValueError("activation scale search radius must be 0, 1 or 2")
+        if activation_scale_search and sf_vec_size != 16:
+            raise ValueError("activation scale search requires NVFP4 group-16 scales")
+        self.activation_scale_search = int(activation_scale_search)
         self.input_scales_are_reciprocal = input_scales_are_reciprocal
         self.activation = activation
         self.is_gated = is_gated_activation(activation)
@@ -1107,7 +1114,11 @@ class MoEStaticKernel:
                 else:
                     packed_lo = Uint64(0)
                     packed_hi = Uint64(0)
-                    if self.fast_math:
+                    if cutlass.const_expr(self.activation_scale_search > 0):
+                        (packed_lo, scale_byte) = quantize_block_fp4_search(
+                            values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                        )
+                    elif self.fast_math:
                         packed_lo, scale_byte = quantize_block_fp4_fast(
                             values, block_max, gs_value
                         )
@@ -1892,7 +1903,11 @@ class MoEStaticKernel:
                         else:
                             packed_lo = Uint64(0)
                             packed_hi = Uint64(0)
-                            if self.fast_math:
+                            if cutlass.const_expr(self.activation_scale_search > 0):
+                                (packed_lo, scale_byte) = quantize_block_fp4_search(
+                                    values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                )
+                            elif self.fast_math:
                                 packed_lo, scale_byte = quantize_block_fp4_fast(
                                     values, block_max, gs_value
                                 )

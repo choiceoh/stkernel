@@ -1,7 +1,7 @@
 """Build one rank of GLM-5.3's ModelOpt BF16-dense hybrid (st-glm53-modelopt-up-gate-bf16-dense-v1) from ranks already
 on the node, streamed through engine/base/preshard.RankWriter (aligned offsets, exactly the layout's specs):
 
-  routed experts   NVIDIA's ModelOpt rank file; w13/w13_sf/w2/w2_sf replaced by a probes/expert_rank_patch.py patch
+  routed experts   NVIDIA's ModelOpt rank file; w13/w13_sf/w2/w2_sf replaced by a patch directory
                    when --patch names one; the activation global scales a13_scale/a2_scale set to 1.0 with
                    --unit-activation (dynamic group scales on the raw input, as Red Hat's folding serves them)
   dense MLPs 0-2   BF16 gate_up/down from the Red Hat (b12x) rank file of the same rank
@@ -60,7 +60,7 @@ def main():
     ap.add_argument("--meta", type=Path, required=True)
     ap.add_argument("--nvidia-ranks", type=Path, required=True)
     ap.add_argument("--redhat-ranks", type=Path, required=True)
-    ap.add_argument("--patch", type=Path, default=None, help="this rank's patch directory (expert_rank_patch.py build)")
+    ap.add_argument("--patch", type=Path, default=None, help="this rank's patch directory (one replacement file per tensor)")
     ap.add_argument("--unit-activation", action="store_true")
     ap.add_argument("--rank", type=int, required=True)
     ap.add_argument("--world", type=int, default=4)

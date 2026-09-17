@@ -1,8 +1,9 @@
-"""Native compile, numerical and real-weight cost gates for FC2 scale search."""
+"""Native compile, numerical and real-weight cost gates for activation scale search."""
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 from unittest.mock import patch
 
@@ -45,11 +46,21 @@ class Pack:
 
 
 def save_binary(fn, path, report, **meta):
-    path.with_suffix('.ptx').write_text(fn.__ptx__)
-    path.with_suffix('.cubin').write_bytes(fn.__cubin__)
+    cubin = fn.__cubin__
+    if not isinstance(cubin, bytes):
+        # CUDA-dialect CuTe retains its actual binary in LLVM IR; the public
+        # attribute can be an unused dump filename on the pinned runtime.
+        from cutlass.base_dsl.jit_executor import get_escaped_cubin_bytes
+        payloads = re.findall(r'llvm\.mlir\.global[^\n]*@\w+_binary\("([^"\n]*)"\)',
+                              str(fn.ir_module))
+        if len(payloads) != 1:
+            raise RuntimeError(f'expected one retained native binary, got {len(payloads)}')
+        cubin = get_escaped_cubin_bytes(payloads[0].encode())
+    path.with_suffix('.cubin').write_bytes(cubin)
     result = subprocess.run(['cuobjdump', '-res-usage', str(path.with_suffix('.cubin'))],
                             capture_output=True, text=True, check=True)
-    report('compile', cubin_bytes=len(fn.__cubin__), resources=result.stdout, **meta)
+    report('compile', cubin_bytes=len(cubin), cubin_sha256=hashlib.sha256(cubin).hexdigest(),
+           resources=result.stdout, **meta)
 
 
 def compile_check(report, dump):
@@ -85,16 +96,38 @@ def compile_check(report, dump):
                     raise AssertionError(f'accepted invalid search radius {invalid}')
             for rows in (8, 16, 32):
                 before = len(md._STATIC_V2_KERNEL_CACHE)
-                for radius in (0, 1, 2):
-                    spec = 't,r,sf6,batch' + (f',ss{radius}' if radius else '')
-                    cfg = md._parse_glm53_static_v2(spec)
+                for label in ('off', 'ss1', 'ss2', 'as1'):
+                    spec = 't,r,sf6,batch' + (',' + label if label != 'off' else '')
+                    cfg = md._static_v2_decode_config(md._parse_glm53_static_v2(spec), rows)
                     fn, _ = md._get_static_kernel_v2(
                         288, 288, rows, 4096, 512, 8, rows * 8, config=cfg,
                         mac_override=48, w13_chunk=256, activation='swigluoai_uninterleave',
                         swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
-                    save_binary(fn, dump / f'moe-m{rows}-s{radius}', report,
-                                component='moe', rows=rows, radius=radius)
-                assert len(md._STATIC_V2_KERNEL_CACHE) == before + 3, 'search cache aliases baseline'
+                    save_binary(fn, dump / f'moe-m{rows}-{label}', report,
+                                component='moe', rows=rows, arm=label)
+                assert len(md._STATIC_V2_KERNEL_CACHE) == before + 4, 'search cache aliases baseline'
+            common = dict(activation='swigluoai_uninterleave', swiglu_alpha=1.,
+                          swiglu_beta=0., swiglu_limit=10.)
+            for label in ('ss1', 'as1'):
+                cfg = md._parse_glm53_static_v2('t,r,sf6,batch,' + label)
+                with patch.object(md, '_STATIC_V2_OVERRIDE', cfg), \
+                        patch.object(md, '_TP_SF6_Q0_ENABLED', True):
+                    for component, getter, rows in [('dense-micro', md._get_micro_kernel, 8),
+                                                     ('dense-static', md._get_static_kernel, 65)]:
+                        fn, _ = getter(1, 1, rows, 4096, 3072, 1, 128, **common)
+                        save_binary(fn, dump / f'{component}-{label}', report,
+                                    component=component, arm=label)
+                    for component, rows, options in [
+                        ('dynamic-generic', 64, dict(tile_m=64)),
+                        ('dynamic-q0-raw', 4096, dict(tiled=True)),
+                        ('dynamic-q0-sf6', 4096, dict(tiled=True, reform_sf_pack=True)),
+                        ('dynamic-long', 16384, dict(tiled=True, reform_sf_pack=True)),
+                        ('dynamic-packets', 16384, dict(tiled=True, reform_sf_pack=True, _prefill_packets=True)),
+                    ]:
+                        fn, _ = md._get_dynamic_kernel(288, rows, 4096, 512, 8, rows*8,
+                                                       **common, **options)
+                        save_binary(fn, dump / f'{component}-{label}', report,
+                                    component=component, arm=label)
     assert not torch.cuda.is_initialized()
 
 
@@ -177,9 +210,9 @@ def moe_check(report, ranks):
     layer = cells.Layer(loader, set(loader.keys()), 3, served(moe_static='t,r,sf6,batch,q0'), (chunk,))
     report('weights', **layer.identity)
     spread = cells.calibrate([layer], report)
-    base = md._parse_glm53_static_v2('t,r,sf6,batch')
-    arms = [(label, chunk, dict(base, fc2_scale_search=radius))
-            for label, radius in (('base', 0), ('ss1', 1), ('ss2', 2), ('repeat', 0))]
+    base = md._parse_glm53_static_v2('t,r,sf6,batch,ss1')
+    candidate = md._parse_glm53_static_v2('t,r,sf6,batch,as1')
+    arms = [('base', chunk, base), ('as1', chunk, candidate), ('repeat', chunk, base)]
     for rows in (8, 16):
         fx = cells.Fixtures([layer], rows)
         fixture = (f'c{rows // 8}_requests', rows, rows // 8, spread)
@@ -195,13 +228,13 @@ def moe_check(report, ranks):
                 reference = accs['base'][0].double()
                 noise = cells.fp32_noise(accs['repeat'][0], accs['base'][0])
                 assert noise['fp32_max_ulps'] <= cells.MAX_ULPS
-                for label in ('ss1', 'ss2'):
+                for label in ('as1',):
                     candidate = accs[label][0].double()
                     report('moe_difference_not_quality', rows=rows, seed=seed, arm=label,
                            relative_l2=float((candidate-reference).norm() / reference.norm()),
                            max_abs=float((candidate-reference).abs().max()), control_noise=noise)
             fx.load(fixture, 917)
-            for label in ('ss1', 'ss2'):
+            for label in ('as1',):
                 cells.bracket(report, graphs, 'base', label, brackets=4, rows=rows,
                               fixture=fixture[0], layer=3)
             fx.routes[0].zero_()
@@ -226,8 +259,8 @@ def run(output, ranks, *, compile_only=False, quant_only=False):
             line = json.dumps(dict(event=event, **values))
             print(line, flush=True)
             sink.write(line + '\n'); sink.flush()
-        paths = ['engine/kernels/b12x/fp4_scale_search.py', 'engine/kernels/b12x/moe_static_kernel_v4.py',
-                 'engine/kernels/b12x/moe_dispatch.py', 'probes/engine_fp4_scale_search.py']
+        paths = [str(p.relative_to(root)) for p in sorted((root/'engine/kernels/b12x').rglob('*.py'))]
+        paths += ['engine/profiles/glm53/lanes.py', 'probes/engine_fp4_scale_search.py']
         report('identity', torch=torch.__version__, cuda=torch.version.cuda, gpu_used=not compile_only,
                source_sha256={p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths})
         if compile_only:

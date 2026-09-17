@@ -1,6 +1,6 @@
 # glm53_runtime
 
-GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부팅 스탬프, 개발 랩, one-shot AR 배선.
+GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 개발 랩, one-shot AR 배선. (부팅 스탬프는 41차에 `boot_stamps` 모듈로 분리됐다.)
 
 2026-09-05 (34차, 운영자 "디폴트화된 모듈들을 4~5개씩 하나로 묶어라") 에 아래 모듈들을 이 디렉터리 하나로 합쳤다. **매니페스트 행·베이스 계약·소스 파일·노브·기본값은 그대로**이고 디렉터리와 `manifest.tsv`·`requires`·README 만 합쳐졌다(합성 결과 `build/glm53/` 의 파일은 바이트 동일(메가커널 .cu 주석의 경로 한 줄 제외), 행 순서만 바뀜). 옛 이름은 원장·런북·커밋에 그대로 남아 있고, 아래 절이 옛 모듈 하나씩이다.
 
@@ -8,7 +8,7 @@ GLM-5.3 런타임 — 디코드 준비 통합(prep-fused), 샘플러 가드, 부
 |---|---|---|
 | `glm53_prep_fused` | `glm53_prep_fused.py` | 디코드 입력 준비 통합 (`PREP_FUSED`, EXP-7, 기본 on) |
 | `glm53_v2_sampler_guards` | `sampler.py` | V2 샘플러 가드 |
-| `glm53_boot_stamps` | `deneb_boot_stamps.py`, `zz_deneb_boot_stamps.pth` | 부팅 단계 타이밍 스탬프 |
+| `glm53_boot_stamps` | (`boot_stamps` 모듈로 분리, 41차) | 부팅 단계 타이밍 스탬프 — 이 디렉터리에서 빠졌다 |
 | `glm53_dev_lab` | `glm53_dev_lab.py`, `glm53_lab_middleware.py` | 개발 랩 `/glm53/lab` (`DEV_LAB`, 개발 부팅 전용) |
 | `glm53_oneshot_wiring` | `cuda_communicator.py` | one-shot AR 의 glm53 이미지 배선 (`cuda_communicator.py`) |
 | `glm53_prefill_sp` (신규, 368차) | `glm53_prefill_collectives.py`, `parallel_state.py` | 순수 프리필 TP4 시퀀스 병렬화 (`PREFILL_SP` 기본 1, `PREFILL_SP_FP8` 기본 3; 4096토큰 미만 BF16) |
@@ -98,7 +98,7 @@ uv run --with jsonschema python probes/glm53_tool_choice_acceptance.py \
 
 ---
 
-## glm53_prep_fused (was `overlay/modules/glm53_runtime/`)
+## glm53_prep_fused (was its own flat overlay module — see the table above)
 
 ## glm53_prep_fused
 
@@ -206,7 +206,7 @@ fused kernel at ~23 us of GPU time and the whole fused launch at ~27-40 us
 and the deep_gemm wrapper on the Grace CPU). The stock column excludes the
 runner's ~1,000 aten calls around those blocks, so serving saves more than
 the difference; the ceiling is the trace's prep region. Serving numbers:
-none yet (EXP-7).
+EXP-7 +7.3% (PREP 17.59 vs 16.39 tok/s).
 
 ### Guards
 
@@ -236,9 +236,9 @@ bracket.
 ### Arming
 
 ```
-VLLM_GLM53_PREP_FUSED=0        # default: inert; any other unknown value also DISARMs, loudly
+VLLM_GLM53_PREP_FUSED=0        # kill switch; any other unknown value also DISARMs, loudly
 VLLM_GLM53_PREP_FUSED=shadow   # bench boot: fused + stock chain, diff logged, fused batch served when clean
-VLLM_GLM53_PREP_FUSED=1        # armed after a clean shadow + EXP-7 bracket
+VLLM_GLM53_PREP_FUSED=1        # profile default since 32차 (EXP-7 +7.3%)
 VLLM_GLM53_PREP_FUSED_SHADOW_EVERY=16      # shadow: verify every Nth fused step (default 1)
 VLLM_GLM53_PREP_FUSED_SELFCHECK_EVERY=64   # armed: verify every Nth fused step, DISARM on drift (0 = off)
 
@@ -249,7 +249,7 @@ Rollback is the env line. Base contract from `glm53:v13-b12x`.
 
 ---
 
-## glm53_v2_sampler_guards (was `overlay/modules/glm53_runtime/`)
+## glm53_v2_sampler_guards (was its own flat overlay module — see the table above)
 
 ## glm53_v2_sampler_guards
 
@@ -274,9 +274,7 @@ path, so the manifest pin must be refreshed on an image bump.
 
 ---
 
-## glm53_boot_stamps (was `overlay/modules/glm53_runtime/`)
-
-## glm53_boot_stamps
+## glm53_boot_stamps (41차에 `boot_stamps` 모듈로 분리 — 아래는 기록)
 
 Boot phase timing for the serving engine. Additive: two new files, no image
 file replaced.
@@ -334,7 +332,7 @@ somewhere neither of them covers, and that is the next thing to name.
 
 ---
 
-## glm53_dev_lab (was `overlay/modules/glm53_runtime/`)
+## glm53_dev_lab (was its own flat overlay module — see the table above)
 
 ## glm53_dev_lab — 부팅 없는 커널 반복 루프 (32차 item 5)
 
@@ -352,7 +350,7 @@ curl ... -d '{"op":"recapture"}'                    # 그래프 재캡처(새 �
 
 ---
 
-## glm53_oneshot_wiring (was `overlay/modules/glm53_runtime/`)
+## glm53_oneshot_wiring (was its own flat overlay module — see the table above)
 
 ## glm53_oneshot_wiring
 

@@ -4,7 +4,8 @@
 Provenance: FlashInfer _moe_dynamic/gated.py from immutable image
 sha256:a3dd4c0f6cbb053097d65d10cd8ff8f6ae0cb9115cf0ff142e1cafe124c09211,
 source SHA256 993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445.
-The vendor file remains byte-identical for the independent #368 contract.
+The local parent adds optional FC1/FC2 activation scale search; its disabled
+arithmetic is unchanged. The inherited body is pinned below.
 
 Only __call__/kernel are forked to carry packed tensors and remove raw SFB
 TMA descriptors/transaction bytes. Q0/Q1, queue ownership, gate/up MMA order,
@@ -43,7 +44,7 @@ from ._moe_dynamic.gated import (
 )
 from .moe_dynamic_gated_tiled import MoEGatedDynamicKernelTiled
 
-STOCK_GATED_SHA256 = "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445"
+STOCK_GATED_SHA256 = "7c01dd68229f38a630d77ce0a2b3e28cc0c89f1008ee4bb880fcc9c26adceef6"
 SF6_STAGE_BYTES = 1552
 DYNAMIC_SF_BYTES = 1024
 

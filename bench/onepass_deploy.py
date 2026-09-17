@@ -129,7 +129,8 @@ def live_binding(container, directory, identity, stamp):
     if not container or not container.get('State', {}).get('Running'):
         raise ValueError('live onepass requires an existing running server')
     try:
-        started = datetime.fromisoformat(container['State']['StartedAt'].replace('Z', '+00:00'))
+        started = datetime.fromisoformat(
+            re.sub(r"(\.\d{6})\d+", r"\1", container['State']['StartedAt']).replace('Z', '+00:00'))
         if started.tzinfo is None:
             raise ValueError('missing boot timezone')
         started_ns = int(started.timestamp() * 1_000_000_000)
