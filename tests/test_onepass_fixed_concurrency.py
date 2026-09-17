@@ -70,6 +70,30 @@ class FixedConcurrencyTests(unittest.TestCase):
         self.assertAlmostEqual(got['c1_decode_tok_s'], 83.)
         self.assertAlmostEqual(got['decode_multiplier'], 164. / 83.)
 
+    def test_ordered_preparation_overlaps_after_each_first_token(self):
+        events, lock = [], threading.Lock()
+        both_generating = threading.Barrier(2)
+        def ask(url, model, content, limit, timing, **kwargs):
+            client = timing['client']
+            with lock:
+                events.append(('start', client))
+            if client == 0:
+                time.sleep(.01)
+            with lock:
+                events.append(('first', client))
+            kwargs['on_first_token']()
+            # The next client starts while the previous is still generating;
+            # serializing entire responses would fail this barrier.
+            both_generating.wait(timeout=2)
+            timing.update(started_monotonic=10 + client, ended_monotonic=20, completion_tokens=limit)
+            return 'answer', 1, 2, limit, 'length'
+        items = [dict(ctx=2000, question=f'q{i}', content=f'prompt {i}', max_tokens=64) for i in range(2)]
+        group(None, ask, 'unused', 'test', items, 2, prepare_ordered=True)
+        self.assertEqual(events, [('start', 0), ('first', 0), ('start', 1), ('first', 1)])
+        measured = SimpleNamespace(record={'recording': {'phase': 'measure-fixed-c2'}})
+        with self.assertRaisesRegex(ValueError, 'only allowed during preparation'):
+            group(measured, ask, 'unused', 'test', items, 2, prepare_ordered=True)
+
     def test_two_releases_of_two_pool_their_walls_and_average_their_decode(self):
         c1 = [dict(completion_tokens=1024, elapsed_s=12.8, decode_tok_s=80.) for _ in range(4)]
         # 2,048 tokens over 20 s, then over 12 s: 4,096 tokens over 32 s is 128 tok/s, not the mean of 102.4 and 170.7.

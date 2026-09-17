@@ -414,15 +414,15 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in diagnostics},
                              {(64, 64, 32)})
             prepared = [r for r in requests if r['phase'].startswith('prepare-')]
-            self.assertEqual(len(prepared), 5 + 4 * width + 8 if include_c4 else 5)
+            self.assertEqual(len(prepared), 5 + 4 * width + 4 * width + 4 if include_c4 else 5)
             # #1059 prepares all four fixed prompts at BOTH widths before
             # measuring C=1; warming only C=N biases the reported multiplier.
             fixed_prepared = [r for r in prepared if r['phase'].startswith('prepare-fixed-')]
-            self.assertEqual(len(fixed_prepared), 8 if include_c4 else 0)
+            self.assertEqual(len(fixed_prepared), 4 * width + 4 if include_c4 else 0)
             if include_c4:
                 for phase, concurrency in (('prepare-fixed-c1', 1), (f'prepare-fixed-c{width}', width)):
                     group = [r for r in fixed_prepared if r['phase'] == phase]
-                    self.assertEqual(len(group), 4)
+                    self.assertEqual(len(group), 4 * concurrency)
                     self.assertEqual({r['concurrency'] for r in group}, {concurrency})
                     self.assertEqual(len({r['question'] for r in group}), 4)
                 first_measure = next(i for i, r in enumerate(requests) if r['phase'] == 'measure-fixed-c1')

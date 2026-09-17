@@ -196,22 +196,36 @@ class Run:
         self.complete = True
 
 
-def group(run, ask, url, model, item, concurrency, scan=None, *, grade=False):
+def group(run, ask, url, model, item, concurrency, scan=None, *, grade=False, prepare_ordered=False):
     """`concurrency` clients released together. `item` is one request every client sends, or a
-    list with each client's own request (the fixed-length multiplier sends four different prompts)."""
+    list with each client's own request (the fixed-length multiplier sends four different prompts).
+    Preparation may order arrivals by first token to warm every prefill role;
+    this is forbidden in a recorded measurement phase."""
     items = list(item) if isinstance(item, (list, tuple)) else [item] * concurrency
     if len(items) != concurrency:
         raise ValueError(f'{concurrency} clients need {concurrency} requests, got {len(items)}')
+    if prepare_ordered and run is not None and not run.record.get('recording', {}).get('phase', '').startswith('prepare-'):
+        raise ValueError('ordered arrivals are only allowed during preparation')
     barrier = threading.Barrier(concurrency)
+    first_tokens = [threading.Event() for _ in items] if prepare_ordered else []
     def request(index):
         CURRENT.set(run)
         own = items[index]
         timing = dict(ctx=own['ctx'], question=own['question'], concurrency=concurrency, client=index)
         traces = []
         barrier.wait(timeout=30)
-        text, _, _, _, finish = ask(url, model, own['content'], own['max_tokens'], timing,
-            min_tokens=own.get('min_tokens', 0), seed=own.get('seed'), reasoning_budget=own.get('reasoning_budget'),
-            channel_trace=traces)
+        options = {}
+        if prepare_ordered:
+            if index and not first_tokens[index - 1].wait(timeout=30):
+                raise RuntimeError('previous preparation client did not produce its first token')
+            options['on_first_token'] = first_tokens[index].set
+        try:
+            text, _, _, _, finish = ask(url, model, own['content'], own['max_tokens'], timing,
+                min_tokens=own.get('min_tokens', 0), seed=own.get('seed'), reasoning_budget=own.get('reasoning_budget'),
+                channel_trace=traces, **options)
+        finally:
+            if prepare_ordered:
+                first_tokens[index].set()  # A failed client must not strand its followers.
         return timing, text, finish, traces
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
         responses = list(pool.map(request, range(concurrency)))
