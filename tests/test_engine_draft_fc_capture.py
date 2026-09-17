@@ -198,6 +198,92 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(report['rank'], 0)
 
 
+class FlushAtBudgetTests(unittest.TestCase):
+    """A deploy stops production with `docker rm -f`. An artifact that waits for shutdown is never written."""
+
+    def _fill(self, cap, batches=6):
+        for i in range(batches):
+            cap.slot_family[i % 2] = 'seq-%d' % (i % 2)
+            slots = torch.tensor([i % 2])
+            cap.drafter.decode_graphs.observe_rows(
+                slots, torch.arange(8).reshape(1, 8),
+                torch.randn(8, COLS, dtype=torch.bfloat16), torch.tensor([8]))
+
+    def test_it_files_at_the_budget_and_stops_charging_the_step(self):
+        graphs = fake_graphs()
+        drafter = fake_drafter(graphs=graphs)
+        inner_rows, inner_graph = drafter.observe_rows, graphs.observe_rows
+        cap = DraftFcCapture(drafter, '/tmp/unused', rows=16, salt='s')
+        cap.attach()
+        self.assertIsNone(cap.maybe_flush(), 'nothing collected yet: nothing to file')
+        self._fill(cap)
+        self.assertTrue(cap.full(), cap.status())
+        report = cap.maybe_flush()
+        self.assertIsNotNone(report)
+        self.assertIs(cap.drafter.observe_rows, inner_rows, 'the wrapper came back off')
+        self.assertIs(graphs.observe_rows, inner_graph)
+        self.assertEqual(cap.batches, [], '437 MiB of host pages are dropped once written')
+
+    def test_recording_really_stops_after_the_flush(self):
+        graphs = fake_graphs()
+        cap = DraftFcCapture(fake_drafter(graphs=graphs), '/tmp/unused', rows=16, salt='s')
+        cap.attach()
+        self._fill(cap)
+        cap.maybe_flush()
+        calls_before, kept_before = cap.calls, dict(cap.kept)
+        self._fill(cap, batches=4)                     # the step keeps running; the collector does not
+        self.assertEqual(cap.calls, calls_before)
+        self.assertEqual(cap.kept, kept_before)
+        self.assertEqual(len(graphs.replayed), 10, 'every step still replayed')
+
+    def test_a_second_flush_writes_nothing(self):
+        cap = DraftFcCapture(fake_drafter(graphs=fake_graphs()), '/tmp/unused', rows=16, salt='s')
+        cap.attach()
+        self._fill(cap)
+        first = cap.maybe_flush()
+        self.assertIsNotNone(first)
+        self.assertIsNone(cap.maybe_flush(), 'the shutdown must not write a second bundle')
+        self.assertIs(cap.flushed, first)
+
+    def test_a_failed_write_still_detaches(self):
+        """A collector that cannot file must not keep charging every step for nothing."""
+        graphs = fake_graphs()
+        drafter = fake_drafter(graphs=graphs)
+        cap = DraftFcCapture(drafter, '/proc/nonexistent/nowhere', rows=16, salt='s')
+        cap.attach()
+        self._fill(cap)
+        inner = graphs.observe_rows
+        report = cap.maybe_flush()
+        self.assertIn('error', report)
+        self.assertFalse(cap._attached)
+        self.assertIsNot(graphs.observe_rows, inner, 'the wrapper was in place before the flush')
+        kept_before = dict(cap.kept)
+        cap.drafter.decode_graphs.observe_rows(torch.tensor([0]), torch.arange(8).reshape(1, 8),
+                                               torch.randn(8, COLS, dtype=torch.bfloat16), torch.tensor([8]))
+        self.assertEqual(cap.kept, kept_before, 'a failed write still stopped the recording')
+        self.assertEqual(cap.batches, [])
+
+    def test_the_budget_no_longer_waits_for_a_balance_only_close_can_make(self):
+        """`min(kept) > 0` cannot come true before rebalance, so full() must not ask for it."""
+        cap = DraftFcCapture(fake_drafter(graphs=fake_graphs()), '/tmp/unused', rows=16, salt='s')
+        cap.attach()
+        self._fill(cap)
+        self.assertEqual(min(cap.kept.values()), 0, 'one split is still empty, as production always saw')
+        self.assertTrue(cap.full(), 'and the collector is still done: rebalance fixes the balance')
+
+
+class ProfileWiringTests(unittest.TestCase):
+    def test_the_step_loop_files_it_and_the_shutdown_does_not_write_twice(self):
+        adapter = (Path(__file__).resolve().parents[1]
+                   / 'engine/profiles/glm53/adapter.py').read_text()
+        self.assertIn('def housekeeping', adapter)
+        seam = adapter.split('def housekeeping', 1)[1][:900]
+        self.assertIn('maybe_flush()', seam, 'the after-step seam files the bundle')
+        boot = (Path(__file__).resolve().parents[1]
+                / 'engine/profiles/glm53/boot.py').read_text()
+        self.assertIn('capture.flushed if capture.flushed is not None else capture.close()', boot)
+
+
 class SplitRepairTests(unittest.TestCase):
     """Two production boots collected 1,971 and 421 rows and threw them all away: validation was empty."""
 
