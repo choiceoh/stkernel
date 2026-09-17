@@ -32,13 +32,14 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.directory.mkdir(parents=True)
         (self.repo / 'bench').mkdir(parents=True)
         for name in ('fleet.sh', 'fleet_onepass.py', 'fleet_prepare.py', 'fleet_prepared.py',
-                     'fleet_classify.py', 'pair.sh', 'chain.sh', 'ab-lever.sh', 'onepass.py',
-                     'onepass_deploy.py', 'measurement_contract.py', 'fleet_handoff.py',
-                     'fleet_pending.py', 'fleet_idle.py'):
+                     'fleet_classify.py', 'onepass.py', 'measurement_contract.py',
+                     'fleet_handoff.py', 'fleet_pending.py', 'fleet_idle.py', 'st_bracket.sh',
+                     'st_screen.py', 'st_judge.py', 'onepass_recording.py', 'onepass_quality.py'):
             shutil.copyfile(ROOT / 'bench' / name, self.repo / 'bench' / name)
-        (self.repo / 'probes').mkdir()
-        shutil.copyfile(ROOT / 'probes/run_ar_consumer_campaign.sh',
-                        self.repo / 'probes/run_ar_consumer_campaign.sh')
+        for relative in ('launchers/st_release.py', 'engine/base/latency_trace.py'):
+            destination = self.repo / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / relative, destination)
         self.prepared = self.root / 'preparation-started'
         self.executed = self.root / 'payload-started'
         self.bin = self.root / 'bin'
@@ -74,57 +75,6 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.assertFalse((self.directory / 'holder').exists())
         self.assertFalse((self.directory / 'pending').exists())
 
-    def prepare_preflight_fixture(self):
-        (self.repo / 'profiles').mkdir()
-        shutil.copyfile(ROOT / 'profiles/glm53.env', self.repo / 'profiles/glm53.env')
-        # Exercise the actual shell preflight and canonical entrypoint policy,
-        # but use the copied profile without fetching or executing a payload.
-        git = self.bin / 'git'
-        git.write_text('#!/bin/sh\nexit 1\n')
-        git.chmod(0o700)
-
-    def test_preflight_canonical_chain_ignores_header_example_knobs(self):
-        self.prepare_preflight_fixture()
-        chain = self.repo / 'bench/chain.sh'
-        self.assertIn('NAME="VLLM_X=1 VLLM_Y=1"', chain.read_text())
-        result = self.run_fleet('preflight', 'chain-header', '--', 'bash', str(chain),
-                                'A=VLLM_GLM53_MEGAKERNEL=1')
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn('PASS knobs declared', result.stdout)
-        self.assertNotIn('VLLM_X', result.stdout)
-        self.assertNotIn('VLLM_Y', result.stdout)
-        self.assert_no_work()
-
-    def test_preflight_ignores_indented_source_comment_knobs(self):
-        self.prepare_preflight_fixture()
-        chain = self.repo / 'bench/chain.sh'
-        chain.write_text(chain.read_text() + '\n \t# VLLM_COMMENT_EXAMPLE=1\n')
-        result = self.run_fleet('preflight', 'chain-comment', '--', 'bash', str(chain), 'A=')
-        self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertNotIn('VLLM_COMMENT_EXAMPLE', result.stdout)
-        self.assert_no_work()
-
-    def test_preflight_still_rejects_example_names_in_actual_caller_knobs(self):
-        self.prepare_preflight_fixture()
-        result = self.run_fleet('preflight', 'chain-undeclared', '--', 'bash',
-                                str(self.repo / 'bench/chain.sh'), 'A=VLLM_X=1 VLLM_Y=1')
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn('FAIL undeclared', result.stdout)
-        self.assertIn('VLLM_X VLLM_Y', result.stdout)
-        self.assert_no_work()
-
-    def test_preflight_still_checks_executable_source_assignments(self):
-        self.prepare_preflight_fixture()
-        chain = self.repo / 'bench/chain.sh'
-        # This fixture's canonical source contains a real assignment, ensuring
-        # comment filtering does not disable source knob inspection altogether.
-        chain.write_text(chain.read_text() + '\nVLLM_UNDECLARED_SOURCE=1\n')
-        result = self.run_fleet('preflight', 'chain-source', '--', 'bash', str(chain), 'A=')
-        self.assertEqual(result.returncode, 1, result.stdout)
-        self.assertIn('FAIL undeclared', result.stdout)
-        self.assertIn('VLLM_UNDECLARED_SOURCE', result.stdout)
-        self.assert_no_work()
-
     def test_arbitrary_gpu_command_is_rejected_before_cpu_preparation(self):
         # The marker is harmless even if invoked; the text also identifies
         # this as GPU work to the existing CPU/GPU classifier.
@@ -135,12 +85,20 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.assertIn('onepass-only', result.stdout)
         self.assert_no_work()
 
+    def test_retired_wrapper_is_not_resurrected_by_a_familiar_name(self):
+        result = self.run_fleet('run', '--gpu', '--prepare', str(self.preparation_spec),
+                                'chain-custom', '1', 'fixture', '--', 'bash', 'bench/chain.sh',
+                                'A=', 'touch ' + str(self.executed))
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn('onepass-only', result.stdout)
+        self.assert_no_work()
+
     def test_boot_binds_the_waiters_lease_before_signing_preparation(self):
         for incoming in ({}, {'ST_LEASE_OWNER':'stale-owner', 'ST_LEASE_PATH':'/stale',
                               'FLEET_LEASE_PATH':'/intended/lease'}):
             with self.subTest(incoming=incoming):
                 result = self.run_fleet('run', '--gpu', '--fleet', 'lease-fixture', '1',
-                                        'fixture', '--', 'bash', 'bench/chain.sh', 'A=', **incoming)
+                                        'fixture', '--', 'python3', 'bench/onepass.py', **incoming)
                 self.assertEqual(result.returncode, 3, result.stdout)
                 self.assertEqual(json.loads(self.prepared.read_text()), {
                     'ST_LEASE_OWNER':'queue/lease-fixture',
@@ -154,14 +112,6 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 3, result.stdout)
         self.assertEqual(json.loads(self.prepared.read_text()), {})
         self.assertFalse(self.executed.exists())
-
-    def test_chain_after_is_rejected_before_cpu_preparation(self):
-        result = self.run_fleet('run', '--gpu', '--prepare', str(self.preparation_spec),
-                                'chain-custom', '1', 'fixture', '--', 'bash', 'bench/chain.sh',
-                                'A=', '--after', 'A', 'touch ' + str(self.executed))
-        self.assertEqual(result.returncode, 2, result.stdout)
-        self.assertIn('without --after or --legs', result.stdout)
-        self.assert_no_work()
 
     def test_bare_reservation_wait_and_adoption_cannot_skip_payload_policy(self):
         for args in (('request', 'bare'), ('wait', 'bare', '1'),
@@ -181,11 +131,11 @@ class OnepassIntegrationTests(unittest.TestCase):
         self.assertIn('you said --cpu but the job shows GPU use', result.stdout)
         self.assert_no_work()
 
-    def test_pinned_controller_preserves_ar_wrapper_and_rejects_mutations(self):
+    def test_pinned_controller_preserves_the_bracket_and_rejects_mutations(self):
         runner = fleet_pin.pin(self.repo, self.directory)
-        relative = 'probes/run_ar_consumer_campaign.sh'
+        relative = 'bench/st_bracket.sh'
         self.assertEqual((runner / relative).read_bytes(), (self.repo / relative).read_bytes())
-        command = ['bash', relative, '--baseline-only']
+        command = ['bash', relative, 'pair', '0123456789abcdef']
         policy.validate(command, self.repo, runner, self.environment)
         original = (self.repo / relative).read_bytes()
         (self.repo / relative).write_bytes(original + b'\n# an unreviewed additional workload\n')
@@ -267,7 +217,7 @@ class OnepassIntegrationTests(unittest.TestCase):
         queue.write_text(f'10|before|100|1|neighbor|boot|{pid}\n'
                          f'20|mine|101|2|original|boot|{pid}\n'
                          f'30|after|102|1|neighbor|boot|{pid}\n')
-        original_command = ['bash', str(self.repo / 'bench/pair.sh'), 'A', '']
+        original_command = ['bash', str(self.repo / 'bench/st_bracket.sh'), 'pair', '0123456789abcdef']
         with patch.object(handoff, 'identity', return_value='fixture-start'), \
                 patch.dict(os.environ, self.environment, clear=True):
             with patch.object(pending.os, 'getcwd', return_value=str(self.repo)):

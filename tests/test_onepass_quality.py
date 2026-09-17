@@ -503,10 +503,6 @@ class IntegrationTests(unittest.TestCase):
         self._check_canonical_coverage(1, width=2)
         self._check_canonical_coverage(2, width=2)
 
-    def test_changed_quality_protocol_cannot_reuse_a_baseline(self):
-        import judge
-        self.assertFalse(judge.compatible({'quality_protocol': {'version': 'old'}},
-                                         {'quality_protocol': {'version': q.VERSION}}))
 
 
 if __name__ == '__main__':

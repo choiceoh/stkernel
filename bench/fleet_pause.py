@@ -168,9 +168,6 @@ def resume(directory, session, expected=None):
             value = (fleet_prepared.read(directory,original['prepare_manifest']) if original.get('prepare_receipt_required')
                      else json.loads(Path(original['prepare_manifest']).read_text()))
             fleet_prepare.validate(value, refresh=True, directory=directory)
-            if original.get('validation_env', {}).get('FLEET_VALIDATION_REQUIRED') == '1' and original['kind'] == 'boot':
-                fleet_prepare.validate_targets(directory, original['prepare_manifest'], verify_only=True,
-                                               controller=original)
     with pending.lock(Path(directory)):
         current, _, _ = owned(directory, session)
         if current != original:

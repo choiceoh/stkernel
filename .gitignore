@@ -4,16 +4,15 @@ __pycache__/
 # Other agent sessions create worktrees here; they are never ours to commit.
 .claude/
 
-# bench/bracket.py leg writes runs/bracket.jsonl next to the checkout by
-# default; deploy-overlays.sh refuses a dirty checkout, so the records must
-# not count as changes.
-runs/
-
 # Private CPU preparation outputs; experiment manifests pin these by hash.
 /build/
+runs/
 
 # Graphify keeps per-file extraction state locally; committed snapshots live
 # beside these files, but interpreter paths, caches, and run counters do not.
 **/graphify-out/cache/
 **/graphify-out/.graphify_*
 **/graphify-out/cost.json
+
+# macOS Finder noise
+.DS_Store

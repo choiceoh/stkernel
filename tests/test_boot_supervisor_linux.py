@@ -19,23 +19,10 @@ class LinuxSupervisorTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.repo, self.logs, self.bin = [self.root/p for p in ('repo', 'logs', 'bin')]
-        for path in (self.repo/'bench', self.repo/'profiles', self.logs/'fleet', self.bin):
+        for path in (self.repo/'bench', self.logs/'fleet', self.bin):
             path.mkdir(parents=True)
         for name in ('fleet.sh', 'fleet_boot.py', 'fleet_handoff.py', 'fleet_priority.py', 'fleet_pin.py', 'fleet_pending.py', 'fleet_inspect.py', 'experiment_metrics.py', 'fleet_launch.py', 'fleet_prepare.py', 'fleet_classify.py', 'fleet_pause.py', 'fleet_prepared.py', 'fleet_source.py', 'fleet_idle.py'):
             shutil.copy(ROOT/'bench'/name, self.repo/'bench'/name)
-        # This suite exercises real admission/controller processes. The separate
-        # validation suite covers receipts. Session admission must never prepare
-        # a recovery checkout or run its release CPU gate.
-        (self.repo/'bench/fleet_validation.py').write_text("import sys\nassert sys.argv[1] == 'validate', 'session attempted recovery preparation'\nprint('{}')\n")
-        # These lifecycle payloads have no Git source and never deploy. Keep
-        # approval bookkeeping present so real queue edits and admitted payload
-        # environments are exercised; test_fleet_approval owns real Git/auth.
-        (self.repo/'bench/fleet_approval.py').write_text('''def freeze(value):
-    value['deployment_approvals'] = [dict(target, base='0' * 40, candidate='1' * 40)
-                                   for target in value['deployment_targets']]
-def validate(value):
-    assert value.get('deployment_approvals'), 'lifecycle approval missing'
-''')
         # These inert Python commands exercise process ownership, editing and
         # cancellation. Real onepass admission is covered separately by the
         # CLI integration tests; no production policy override is introduced.
@@ -44,7 +31,6 @@ def validate(value):
                   + "def validate(*args, **kwargs): return {'entry': 'lifecycle-fixture'}\n\n\n"
                   + policy[policy.index('def authorize_wait('):])
         (self.repo/'bench/fleet_onepass.py').write_text(policy)
-        (self.repo/'profiles/glm53.env').write_text('VLLM_TEST=0\n')
         (self.repo/'bench/fleet_restore.sh').write_text('''#!/bin/bash
 echo "$FLEET_SESSION" >> "$LOGD/restores"
 sleep .05

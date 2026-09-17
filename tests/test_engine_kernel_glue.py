@@ -94,11 +94,11 @@ SPLIT_SINKHORN = replace(MEASURED, hc_variant="split_sinkhorn")                 
 
 
 def bench():
-    """probes/mk_mhc_geometry_bench.py: the V4.1 seam's torch form (stdlib at import, torch inside)."""
-    spec = importlib.util.spec_from_file_location("mk_mhc_geometry_bench", ROOT / "probes/mk_mhc_geometry_bench.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """engine/kernels/dense/mhc_reference.py: the V4.1 seam's torch form (stdlib at import, torch inside)."""
+    from engine.kernels.dense import mhc_reference
+    import importlib
+    importlib.reload(mhc_reference)
+    return mhc_reference
 
 
 def twin(q, ckv, slots, lens, sm_scale, ckv_scale, out=None):

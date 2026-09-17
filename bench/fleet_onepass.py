@@ -4,33 +4,29 @@
 
 This is an operator workflow contract, not a security sandbox. Custom shell
 payloads cannot establish that their only GPU workload is onepass, so use the
-standard pair, chain or live onepass command instead.
+standard live onepass command or the ST bracket/check lanes instead.
 """
 from __future__ import annotations
 
 import argparse
-from contextlib import closing
 import json
 import os
 from pathlib import Path
 import re
-import sqlite3
 import sys
 
 from fleet_prepare import command_environment
 
-POLICY = 'GPU work is onepass-only; use fleet.sh pair, chain or onepass'
+POLICY = 'GPU work is onepass-only; use fleet.sh onepass or the st-* lanes'
 # The queue's GPU lanes. boot and probe take the fleet (four Sparks); single takes ONE GPU
 # on another host (fleet_single.py: the 5050 on ost-97x). A command's lane follows from how
 # many GPUs its entry needs -- `gpus` in the contract -- and the single lane refuses
 # anything that needs four, so a boot can never be sent to one card by naming the lane.
 SINGLE = 'single'
 KINDS = ('boot', 'probe', SINGLE)
-SHELL_ENTRIES = ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh',
-                 'probes/run_ar_consumer_campaign.sh',
-                 'probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
+SHELL_ENTRIES = ('probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
                  'bench/st_bracket.sh')
-PYTHON_ENTRIES = ('bench/onepass.py', 'bench/experiments.py')
+PYTHON_ENTRIES = ('bench/onepass.py',)
 # The ST engine's bracket: one committed sha per arm in production shape; short screening by
 # default, full onepass for adoption. It is byte-pinned with what it executes, and its
 # grammar is shas and literal arm names only: a sha is a thing origin has, so the arm is
@@ -84,8 +80,8 @@ def gpus_needed(relative, args):
 
     The ST runner is one container on one node (`docker run --gpus all <probe>`; the four
     ranks are four threads on that GPU) unless the check is told `--distributed`, which is
-    one rank per Spark. Everything vLLM-shaped -- pair, chain, ab-lever, a recorded
-    experiment, a live onepass -- serves TP=4 across the fleet.
+    one rank per Spark. A live onepass or a distributed ST check serves TP=4 across the
+    fleet.
     """
     if relative in ST_ENTRIES and '--distributed' not in args:
         return 1
@@ -182,16 +178,6 @@ def _name(value):
         raise ValueError('onepass arm name must be a literal name of at most 128 characters')
 
 
-def _knobs(value):
-    for knob in value.split():
-        if not re.fullmatch(r'[A-Z_][A-Z0-9_]*=[A-Za-z0-9_.,:/+%=-]+', knob):
-            raise ValueError('onepass knobs must be literal NAME=value assignments')
-        if knob.split('=', 1)[0] in {'LEGS', 'LEVER', 'FLEET', 'REPO', 'BASH_ENV', 'ENV', 'PYTHONPATH'}:
-            raise ValueError('onepass knobs cannot replace workload control settings')
-        if knob.startswith('PREFILL_WARMUP=') and knob != 'PREFILL_WARMUP=0':
-            raise ValueError(POLICY + '; separate prefill warmup requests are disabled')
-
-
 class _Parser(argparse.ArgumentParser):
     def error(self, message):
         raise ValueError('invalid canonical onepass arguments: ' + message)
@@ -226,45 +212,12 @@ def _onepass_args(arguments):
         raise ValueError('onepass num-spec must be nonnegative')
 
 
-def _experiment(arguments, cwd, repo, environment):
-    if (len(arguments) != 4 or arguments[0] != '--root' or
-            arguments[2] != 'execute' or not re.fullmatch(r'[A-Za-z0-9_-]+', arguments[3])):
-        raise ValueError(POLICY + '; expected experiments.py --root ROOT execute JOB')
-    database = _path(arguments[1], cwd) / 'experiments.sqlite3'
-    try:
-        with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=5)) as connection:
-            row = connection.execute('SELECT payload FROM jobs WHERE id=?', (arguments[3],)).fetchone()
-        if row is None:
-            raise ValueError('unknown experiment')
-        payload = json.loads(row[0])
-        spec = payload['spec']
-        source = _path(payload['repo'], cwd)
-        if spec['kind'] not in {'pair', 'baseline'} or spec.get('command'):
-            raise ValueError('experiment must use a standard pair or shared onepass baseline')
-        if source != Path(cwd).resolve() or source != _path(environment.get('REPO', str(cwd)), cwd):
-            raise ValueError('experiment source does not match its execution repository')
-        if Path(payload.get('bash', 'bash')).name != 'bash':
-            raise ValueError('experiment requires the standard bash interpreter')
-        _knobs(' '.join(k + '=' + v for k, v in spec.get('knobs', {}).items()))
-        for key in ('LEGS', 'LEVER', 'FLEET', 'REPO', 'BASH_ENV', 'ENV', 'PYTHONPATH'):
-            if key in spec.get('env', {}):
-                raise ValueError('experiment overrides a workload control setting: ' + key)
-        for relative in ('bench/experiments.py', 'bench/serving_group.py',
-                         'bench/experiment_baselines.py', 'bench/ab-lever.sh',
-                         'bench/onepass.py', 'bench/onepass_deploy.py'):
-            _same(source / relative, relative, repo)
-    except (OSError, sqlite3.Error, KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise ValueError(POLICY + '; cannot verify recorded experiment: ' + str(exc)) from exc
-
-
 def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_only=False):
     """Validate effective argv and canonical source bytes; return entry metadata.
 
     ``repo`` is the trusted controller checkout or pinned runner, whose bench
-    files (and the approved campaign wrapper) supply the expected bytes.
-    ``cwd`` and REPO may name the candidate checkout, with matching controls.
-    Recovery does not enter this GPU experiment lane: fleet_idle.authorize
-    separately owns its boot-only maintenance action.
+    files supply the expected bytes. ``cwd`` and REPO may name the candidate
+    checkout, with matching controls.
     """
     if kind not in KINDS:
         raise ValueError('unknown GPU lane')
@@ -294,13 +247,12 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     for key in ('BASH_ENV', 'ENV', 'PYTHONPATH'):
         if effective.get(key):
             raise ValueError(POLICY + '; workload code injection setting is unsupported: ' + key)
-    for key, target in (('LEVER', 'bench/ab-lever.sh'), ('FLEET', 'bench/fleet.sh')):
-        if effective.get(key):
-            _same(_path(effective[key], cwd), target, repo)
+    if effective.get('FLEET'):
+        _same(_path(effective['FLEET'], cwd), 'bench/fleet.sh', repo)
     _same(path, relative, repo)
     source = _path(effective.get('REPO', str(cwd)), cwd)
     if relative in ST_ENTRIES:
-        # the ST runner, not the vLLM bracket: pin what it actually executes
+        # pin what the ST runner actually executes
         dependencies = ('probes/run_engine_probe.sh',) + (
             ('probes/run_engine_check.sh',) if relative == 'probes/run_engine_check.sh' else ())
     elif relative == ST_BRACKET:
@@ -308,50 +260,20 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
         # not pinned; what the controller runs -- onepass, the judge, the release cut -- is
         dependencies = ST_BRACKET_DEPENDENCIES
     else:
-        dependencies = ('bench/ab-lever.sh', 'bench/onepass.py', 'bench/onepass_deploy.py') if relative in SHELL_ENTRIES else ('bench/onepass.py',)
-    if relative == 'probes/run_ar_consumer_campaign.sh':
-        dependencies += ('bench/pair.sh',)
+        dependencies = ('bench/onepass.py',)
     for dependency in dependencies:
         _same(source / dependency, dependency, repo)
     args = command[2:]
-    if relative in ('bench/pair.sh', 'bench/ab-lever.sh'):
-        if len(args) not in (1, 2):
-            raise ValueError(POLICY + '; expected NAME and optional literal knobs')
-        _name(args[0])
-        _knobs(args[1] if len(args) == 2 else '')
-    elif relative == 'bench/chain.sh':
-        if not args:
-            raise ValueError('onepass chain needs at least one NAME=KNOBS arm')
-        seen = set()
-        for arm in args:
-            name, equal, knobs = arm.partition('=')
-            if not equal or arm.startswith('-'):
-                raise ValueError(POLICY + '; chain accepts only NAME=KNOBS, without --after or --legs')
-            _name(name)
-            if name in seen:
-                raise ValueError('onepass chain arm names must be unique')
-            seen.add(name)
-            _knobs(knobs)
-    elif relative == 'bench/onepass.py':
+    if relative == 'bench/onepass.py':
         _onepass_args(args)
-    elif relative == 'bench/experiments.py':
-        _experiment(args, cwd, repo, effective)
     elif relative in ST_ENTRIES:
         _st_args(relative, args, cwd, repo)
-    elif relative == ST_BRACKET:
+    else:
         if effective.get('ST_BRACKET_VALIDATION', 'screen') not in ('screen', 'full'):
             raise ValueError('ST_BRACKET_VALIDATION must be screen or full')
         _st_bracket_args(args)
-    else:
-        while args:
-            if args[0] == '--baseline-only':
-                args = args[1:]
-            elif args[0] == '--gpu-evidence' and len(args) > 1 and args[1] and not args[1].startswith('--'):
-                args = args[2:]
-            else:
-                raise ValueError('AR onepass campaign accepts only --baseline-only or --gpu-evidence DIR')
-    if rehearsal_only and relative not in {'bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh', ST_BRACKET}:
-        raise ValueError('CPU rehearsal supports only the canonical pair, chain, ab-lever and ST bracket helpers')
+    if rehearsal_only and relative != ST_BRACKET:
+        raise ValueError('CPU rehearsal supports only the ST bracket')
     gpus = gpus_needed(relative, args)
     if kind == SINGLE and gpus != 1:
         raise ValueError(POLICY + '; the single-GPU lane takes only an ST check without --distributed, and '

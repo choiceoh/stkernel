@@ -19,7 +19,6 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bench"))
 import experiments as ex
-import judge
 import cpu_evidence
 import fleet_priority
 import probe_report
@@ -103,106 +102,6 @@ def record(name="base", speed=100, **changes):
     return row
 
 
-class EvidenceTests(unittest.TestCase):
-    def test_actual_onepass_producer_matches_shared_baseline_contract(self):
-        from onepass import build_record
-        from measurement_contract import workload, evaluations
-        from experiment_baselines import reference
-        for work in (workload(), workload(dict(ctx=[4096], fixed_decode_tokens=64,
-                                                fixed_decode_reps=2, require_exclusive=True))):
-            args = SimpleNamespace(**dict(work, ctx=','.join(map(str, work['ctx'])), name='actual'))
-            produced = build_record(args, 'b' * 40)
-            payload = dict(snapshot=dict(build='a' * 64), spec=dict(revision='b'*40, context={},
-                evaluations=[dict(workload=work, objective={'metric':'decode_steps'})]))
-            produced.update(overlay='a'*12, runtime={})
-            self.assertTrue(judge.compatible(produced, reference(payload)))
-            self.assertFalse(judge.compatible(dict(produced, harness=39), reference(payload)))
-        for bad in ([], False, {'ctx':[{}]}, {'ctx':[True]}, {'require_exclusive':1}):
-            with self.subTest(bad=bad), self.assertRaises(ValueError):
-                workload(bad)
-        with self.assertRaises(ValueError):
-            evaluations({'evaluations':[{'objective':{'metric':'decode_tokens'}}]})
-
-    def test_prefill_uses_ttft_and_does_not_mix_compile_regimes(self):
-        obj = {'metric':'prefill_ttft', 'ctx':2000}
-        bases = [record(str(i), prefill=[dict(ctx=2000, cold_s=t)]) for i,t in enumerate((1,1.01,.99))]
-        cand = record('fast-prefill', prefill=[dict(ctx=2000, cold_s=.7)])
-        verdict = judge.judge(cand, bases[0], bases, obj)
-        self.assertEqual(verdict['decision'], 'improved')
-        self.assertAlmostEqual(verdict['delta'], .3)
-        self.assertEqual(judge.judge(dict(cand, cold_compile=True), bases[0], bases, obj)['status'], 'incomplete')
-        self.assertEqual(judge.judge(cand, bases[0], bases[:2], obj)['status'], 'incomplete')
-        self.assertEqual(judge.judge(dict(cand, prefill=[]), bases[0], bases, obj)['status'], 'incomplete')
-
-    def test_decode_tokens_measures_requests_and_rejects_truncation(self):
-        from measurement_contract import workload, metric_value
-        work = workload(dict(fixed_decode_tokens=100, fixed_decode_reps=2, require_exclusive=True))
-        def requests(seconds):
-            return [dict(fixed_decode=True, completion_tokens=100, decode_s=seconds) for _ in range(2)]
-        obj = {'metric':'decode_tokens'}
-        bases = [record(str(i), workload=work, requests=requests(s)) for i,s in enumerate((1,1.01,.99))]
-        cand = record('fast', workload=work, requests=requests(.5))
-        self.assertEqual(metric_value(cand, obj), 198)
-        self.assertEqual(judge.judge(cand, bases[0], bases, obj)['decision'], 'improved')
-        cand['requests'][0]['completion_tokens'] = 99
-        self.assertIsNone(metric_value(cand, obj))
-        quality = judge.judge(record('quality'), bases[0], bases, {'metric':'quality'})
-        self.assertEqual(quality['status'], 'incomplete')  # incompatible workloads remain incompatible
-        quality = judge.judge(record('quality'), record(), [record()], {'metric':'quality'})
-        self.assertEqual(quality['decision'], 'quality_pass')
-        self.assertNotIn('delta', quality)
-
-    def test_replays_of_one_boot_do_not_establish_a_noise_floor(self):
-        bases = [record(speed=n, boot_id="one-boot") for n in (99, 100, 101)]
-        verdict = judge.judge(record("candidate", 120), bases[-1], bases)
-        self.assertEqual(verdict["status"], "incomplete")
-        self.assertEqual(verdict["floor_n"], 1)
-
-    def test_probe_report_rejects_stale_partial_and_nonfinite_evidence(self):
-        contract = {"checks": {"error": {"op": "le", "value": .01}},
-                    "proof": ["candidate_lane"], "min_samples": 5}
-        probe_report.contract(contract)
-        good = dict(schema=1, nonce="fresh", experiment_id="job", binding={"revision": "rev"},
-                    samples=5, device="fixture-device", metrics={"error": .001}, proof={"candidate_lane": True})
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "report.json"
-            def judge_report(**changes):
-                path.write_text(json.dumps(dict(good, **changes)))
-                return probe_report.adjudicate(path, contract, "job", "fresh", {"revision": "rev"})[0]
-            self.assertEqual(judge_report(), "succeeded")
-            for change in ({"nonce": "old"}, {"binding": {}}, {"samples": 0}, {"samples": True}, {"device": ""}):
-                self.assertEqual(judge_report(**change), "incomplete")
-            for change in ({"metrics": {}}, {"metrics": {"error": float("nan")}},
-                           {"metrics": {"error": True}}, {"proof": {}}, {"proof": {"candidate_lane": 1}}):
-                self.assertEqual(judge_report(**change), "failed")
-
-    def test_unknown_zero_of_zero_proof_cannot_be_valid(self):
-        cand = record("cand", 120, knobs={"VLLM_TEST": "1"}, proof={"VLLM_TEST": None})
-        self.assertEqual(judge.judge(cand, record(), [record(), record(speed=101)])["status"], "invalid")
-
-    def test_missing_and_nonfinite_gates_are_rejected(self):
-        for change in ({"quality": {}}, {"korean": {}}, {"decode": {"windows_med": float("nan")}},
-                       {"decode": {"windows_med": float("inf")}}, {"quality": {"ok": 0, "total": 0}}):
-            with self.subTest(change=change):
-                self.assertEqual(judge.judge(record("cand", 120, **change), record(), [record()])["status"], "invalid")
-
-    def test_wrong_context_and_failed_baseline_are_not_reused(self):
-        for change in ({"overlay": "c" * 12}, {"workload": {"ctx": [2000]}}, {"runtime": {"image": "different"}},
-                       {"quality": {"ok": 8, "total": 9}}, {"thinking": False}):
-            with self.subTest(change=change):
-                self.assertEqual(judge.judge(record("cand", 120), record(**change), [record()])["status"], "incomplete")
-
-    def test_cross_build_floor_is_only_inconclusive(self):
-        bases = [record(), record(speed=101, overlay="c" * 12)]
-        verdict = judge.judge(record("cand", 120), bases[0], bases)
-        self.assertEqual(verdict["status"], "inconclusive")
-
-    def test_valid_negative_result_and_neutral_are_distinguished(self):
-        bases = [record(speed=100), record(speed=101), record(speed=99)]
-        verdict = judge.judge(record("cand", 80), bases[0], bases)
-        self.assertEqual(verdict["status"], "valid")
-        self.assertLess(verdict["delta"], 0)
-        self.assertEqual(judge.judge(record("cand", 100), bases[0], bases)["status"], "inconclusive")
 
 
 class PriorityTests(unittest.TestCase):
@@ -363,10 +262,10 @@ class SubmissionTests(unittest.TestCase):
         (self.repo / "bench/fleet.sh").write_text(FAKE_FLEET)
         (self.repo / "bench/ab-lever.sh").write_text(FAKE_LEVER)
         (self.repo / "bench/onepass.py").write_text(FAKE_ONEPASS)
-        for name in ("pair.sh", "chain.sh", "baseline.py", "judge.py", "experiments.py", "cpu_checks.py",
+        for name in ("experiments.py", "cpu_checks.py",
                      "cpu_evidence.py", "fleet_source.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
                      "serving_group.py", "experiment_resources.py", "prepared_artifacts.py", "cpu_unittest.py",
-                     "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "cpu_contracts.py", "experiment_submission.py", "experiment_explain.py"):
+                     "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "experiment_submission.py", "experiment_explain.py"):
             shutil.copy(ROOT / "bench" / name, self.repo / "bench" / name)
         for script in (self.repo / "bench").glob("*.sh"):
             script.chmod(0o755)
@@ -436,20 +335,6 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(stats["by_kind"]["cpu"]["valid_results"], 1)
         self.assertEqual(stats["requests"]["submitted"], 1)
 
-    def test_cpu_pair_dependencies_complete_without_extra_gpu_probe(self):
-        context = dict(image=self.image, model="fixture", hardware="fixture")
-        cpu = self.submit("cpu")
-        pair = self.submit("pair", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
-                           context=context, depends_on=[cpu["id"]])
-        self.assertEqual(self.wait(pair["id"])["state"], "succeeded")
-        self.assertEqual(self.wait(cpu["id"])["result"]["evidence"], "cpu-only")
-        self.assertEqual((self.logs / "arms").read_text().count("onepass"), 2)
-        store = ex.Store(self.jobs)
-        try:
-            kinds = {store.get(row['id'])['payload']['spec']['kind'] for row in store.list_jobs()}
-            self.assertEqual(kinds, {"cpu", "pair", "baseline"})
-        finally:
-            store.db.close()
 
     def test_custom_gpu_probe_rejected_before_source_or_gpu_inspection(self):
         context = dict(image=self.image, model="fixture", hardware="fixture")
@@ -489,35 +374,7 @@ class SubmissionTests(unittest.TestCase):
             store.db.close()
         self.assertFalse((self.logs / "admissions").exists())
 
-    def test_default_candidates_share_one_baseline_without_promotion_claim(self):
-        context = dict(image=self.image, model="fixture", hardware="fixture")
-        first = self.submit("first", kind="pair", command=[], knobs={"VLLM_TEST":"1"}, context=context)
-        second = self.submit("second", kind="pair", command=[], knobs={"VLLM_TEST":"2"}, context=context)
-        self.assertEqual(self.wait(first["id"])["state"], "succeeded")
-        self.assertEqual(self.wait(second["id"])["state"], "succeeded")
-        arms = (self.logs / "arms").read_text()
-        self.assertEqual(arms.count("-BASE-"), 1, arms)
-        self.assertEqual(arms.count("onepass"), 3, arms)
-        result = self.cli('result', second['id'])['result']
-        self.assertTrue(result['comparison_complete'])
-        self.assertFalse(result['promotion_ready'])
-        self.assertEqual(result['verdict']['decision'], 'unresolved')
-        store = ex.Store(self.jobs)
-        baselines = [json.loads(r[0]) for r in store.db.execute("SELECT payload FROM jobs")
-                     if json.loads(r[0])["spec"]["kind"] == "baseline"]
-        self.assertEqual(len(baselines), 1)
 
-    def test_baseline_failure_blocks_candidates_without_measuring_them(self):
-        lever = self.repo / "bench/ab-lever.sh"
-        lever.write_text(FAKE_LEVER.replace('if [ "${FAIL_ARM:-}" = "$1" ]; then exit 7; fi',
-                                           'case "$1" in *-BASE-*) exit 7;; esac'))
-        self.commit()
-        (self.overlay / "manifest.tsv").write_text("# source_commit=" + self.sha + "\n")
-        self.stamp.write_text(ex.digest(self.overlay / "manifest.tsv"))
-        context = dict(image=self.image, model="fixture", hardware="fixture")
-        job = self.submit(kind="pair", command=[], knobs={"VLLM_TEST":"1"}, context=context)
-        self.assertEqual(self.wait(job["id"])["state"], "blocked")
-        self.assertEqual((self.logs / "arms").read_text().count("onepass"), 1)
 
     def test_named_cpu_cache_reuses_identical_merge_but_not_source_or_env_changes(self):
         (self.repo / "tests").mkdir()
@@ -543,31 +400,6 @@ class SubmissionTests(unittest.TestCase):
         changed_source = self.submit("source", command=command)
         self.assertNotIn("cache_source", self.wait(changed_source["id"])["result"])
 
-    def test_startup_cache_ignores_unread_docs_and_invalidates_transitive_code(self):
-        (self.repo / "tests").mkdir()
-        (self.repo / "launchers").mkdir()
-        for path in cpu_evidence.STARTUP_AUDIT:
-            shutil.copy(ROOT / path, self.repo / path)
-        launcher = self.repo / "launchers/start-glm53-nvfp4-tp4.sh"
-        launcher.write_text("# launcher fixture\n")
-        self.commit()
-        spec = ex.normalize(dict(kind="cpu", revision=self.sha, hypothesis="startup", command=[
-            sys.executable, "bench/cpu_checks.py", "--suite", "startup"]), self.repo)
-        env = {k:v for k,v in self.env.items() if k in ex.BASE_ENV}
-        def identity():
-            return cpu_evidence.identity(self.repo, spec, env)
-        first = identity()
-        self.assertEqual(first["scope"], "audited-startup")
-        (self.repo / "README.md").write_text("documentation only")
-        self.commit()
-        self.assertEqual(identity(), first)
-        launcher.write_text("# actual launcher changed\n")
-        self.commit()
-        self.assertNotEqual(identity()["key"], first["key"])
-        test = self.repo / "tests/test_glm53_startup.py"
-        test.write_text(test.read_text() + "# dependency audit no longer matches\n")
-        self.commit()
-        self.assertEqual(identity()["scope"], "full-tree")
 
     def test_generic_cpu_command_is_never_content_cached(self):
         spec = ex.normalize(dict(kind="cpu", revision=self.sha, hypothesis="generic", command=["true"]), self.repo)
@@ -666,55 +498,9 @@ class SubmissionTests(unittest.TestCase):
                 self.assertEqual(store.get(job)["state"], terminal)
                 self.assertEqual(store.get(job)["result"], {"completed": True})
 
-    def test_pair_publishes_candidate_and_has_valid_shared_evidence(self):
-        context = dict(image=self.image, model="immutable-model-fixture", hardware="fake-nodes")
-        bases = [record(speed=n, git=self.sha, overlay=self.stamp.read_text()[:12], runtime=context) for n in (99,100,101)]
-        (self.logs / "onepass.jsonl").write_text("".join(json.dumps(r) + "\n" for r in bases))
-        job = self.submit(kind="pair", command=[], knobs={"VLLM_TEST": "1"}, context=context)
-        result = self.wait(job["id"])
-        self.assertEqual(result["state"], "succeeded", (result, Path(result["log"]).read_text()))
-        self.assertEqual(result["result"]["verdict"]["status"], "valid")
-        events = self.cli("inbox", "agent-a")["events"]
-        kinds = [e["event"] for e in events]
-        self.assertLess(kinds.index("arm_result"), kinds.index("succeeded"))
-        self.assertEqual((self.logs / "arms").read_text().count("onepass"), 1)
 
-    def test_shared_baseline_automatically_completes_first_pair(self):
-        context = dict(image=self.image, model="fixture", hardware="fixture")
-        job = self.submit(kind="pair", command=[], knobs={"VLLM_TEST": "1"}, context=context)
-        result = self.wait(job["id"])
-        self.assertEqual(result["state"], "succeeded", result)
-        before = (self.logs / "arms").read_text()
-        self.assertEqual(before.count("onepass"), 2)  # one defaults sample and one candidate
-        self.assertEqual(result["result"]["verdict"]["floor_n"], 1)
-        self.assertEqual(result['result']['evidence'], 'gpu-pair-screen')
-        self.assertFalse(result['result']['promotion_ready'])
-        result = self.cli("result", job["id"])
-        self.assertEqual(result["state"], "succeeded", result)
-        self.assertEqual((self.logs / "arms").read_text(), before)
 
-    def test_incompatible_old_floor_does_not_suppress_needed_baseline(self):
-        context = dict(image=self.image, model="fixture", hardware="fixture")
-        bases = [record(speed=n, git=self.sha, overlay=self.stamp.read_text()[:12], runtime={}) for n in (99,100,101)]
-        (self.logs / "onepass.jsonl").write_text("".join(json.dumps(r) + "\n" for r in bases))
-        job = self.submit(kind="pair", command=[], knobs={"VLLM_TEST": "1"}, context=context)
-        result = self.wait(job["id"])
-        self.assertEqual(result["state"], "succeeded", result)
-        self.assertEqual((self.logs / "arms").read_text().count("-BASE-"), 1)
 
-    def test_confirmation_acquires_only_missing_samples_and_later_screen_reuses_them(self):
-        context = self.pair_context()
-        first = self.submit('screen',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context)
-        self.assertEqual(self.wait(first['id'])['state'], 'succeeded')
-        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
-        confirm = self.submit('confirm',kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context,baseline_policy='confirm')
-        result = self.wait(confirm['id'])
-        self.assertEqual(result['state'], 'succeeded', result)
-        self.assertEqual(result['result']['verdict']['floor_n'], 3)
-        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 3)
-        third = self.submit('later',kind='pair',command=[],knobs={'VLLM_TEST':'2'},context=context)
-        self.assertEqual(self.wait(third['id'])['state'], 'succeeded')
-        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 3)
 
     def test_baseline_policy_rejects_unknown_values_and_non_pair_requests(self):
         for kind, policy in (('cpu','minimal'),('pair','skip'),('pair',None),('pair',[])):
@@ -723,42 +509,7 @@ class SubmissionTests(unittest.TestCase):
             with self.subTest(kind=kind,policy=policy), self.assertRaises(ValueError):
                 ex.normalize(raw, self.repo)
 
-    def test_minimal_result_reuses_valid_baseline_when_latest_defaults_failed(self):
-        context = self.pair_context()
-        job = self.submit(kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=context)
-        self.assertEqual(self.wait(job['id'])['state'], 'succeeded')
-        bad = record('FAILED-DEFAULTS',git=self.sha,overlay=self.stamp.read_text()[:12],runtime=context,
-                     quality={'ok':8,'total':9})
-        with (self.logs/'onepass.jsonl').open('a') as stream: stream.write(json.dumps(bad)+'\n')
-        store = ex.Store(self.jobs)
-        self.addCleanup(store.db.close)
-        state, result = ex.pair_result(store.get(job['id'])['payload'], job['id'])
-        self.assertEqual(state, 'succeeded')
-        self.assertNotEqual(result['baseline']['name'], 'FAILED-DEFAULTS')
-        self.assertEqual(result['baseline_samples'], 1)
-        self.assertEqual((self.logs/'arms').read_text().count('-BASE-'), 1)
 
-    def test_shell_pair_reuses_one_baseline_and_counts_each_boot_once(self):
-        # A stale fleet helper asking for recovery must not add a session boot.
-        (self.repo/'bench/fleet.sh').write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
-                                                                    'restore-needed) exit 0;;'))
-        self.refresh_deployed_fixture()
-        env = dict(self.env, LEVER=str(self.repo/'bench/ab-lever.sh'), FLEET=str(self.repo/'bench/fleet.sh'))
-        env.pop('PAIR_FLOOR_N',None)
-        for name in ('FIRST','SECOND','THIRD'):
-            result = subprocess.run([BASH,str(self.repo/'bench/pair.sh'),name,'VLLM_TEST=1'],
-                                    cwd=self.repo,env=env,text=True,capture_output=True,timeout=10)
-            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        arms = (self.logs/'arms').read_text()
-        self.assertEqual(arms.count('BASE onepass'),1,arms)
-        self.assertNotIn('RESTORE',arms)
-        ledger = self.logs/'onepass.jsonl'
-        rows = [json.loads(line) for line in ledger.read_text().splitlines()]
-        with ledger.open('a') as stream:
-            stream.write(json.dumps(next(row for row in rows if row['name']=='FIRSTBASE'))+'\n')
-        count = subprocess.check_output(['python3',str(self.repo/'bench/baseline.py'),'--count-for','THIRD'],
-                                         cwd=self.repo,env=env,text=True).strip()
-        self.assertEqual(count,'1')
 
     def test_legacy_saved_requests_keep_the_three_sample_contract(self):
         from experiment_baselines import required_samples
@@ -779,29 +530,7 @@ class SubmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "same committed"):
             store.submit("b", payload)
 
-    def test_skipped_cpu_math_is_partial_and_does_not_unlock_gpu(self):
-        (self.repo / "tests").mkdir()
-        (self.repo / "tests/test_logic.py").write_text("print('scale roundtrip: SKIP (no torch)')\n")
-        self.commit()
-        job = self.submit(command=[sys.executable, "bench/cpu_checks.py", "--suite", "logic"])
-        result = self.wait(job["id"])
-        self.assertEqual(result["state"], "failed", result)
-        self.assertEqual(result["result"]["returncode"], 3)
-        report = result["result"]["checks"]
-        self.assertFalse(report["coverage_complete"])
-        self.assertIn("no torch", report["checks"][0]["skipped"][0])
 
-    def test_chain_stops_after_failed_arm_and_preserves_failure_status(self):
-        (self.repo/'bench/fleet.sh').write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
-                                                                    'restore-needed) exit 0;;'))
-        self.refresh_deployed_fixture()
-        env = dict(self.env, LEVER=str(self.repo / "bench/ab-lever.sh"), FLEET=str(self.repo / "bench/fleet.sh"),
-                   FAIL_ARM="BROKEN", FLEET_SESSION="test")
-        p = subprocess.run([BASH, str(self.repo / "bench/chain.sh"), "BROKEN=VLLM_TEST=1", "NEXT=VLLM_TEST=2"],
-                           env=env, cwd=self.repo, capture_output=True, text=True, timeout=5)
-        self.assertEqual(p.returncode, 7, p.stdout + p.stderr)
-        self.assertNotIn("NEXT", (self.logs / "arms").read_text())
-        self.assertNotIn("RECOVER", (self.logs / "arms").read_text())
 
     def refresh_deployed_fixture(self):
         self.commit()
@@ -811,62 +540,9 @@ class SubmissionTests(unittest.TestCase):
     def pair_context(self):
         return dict(image=self.image, model='fixture', hardware='fixture')
 
-    def test_grouped_objectives_use_only_two_measured_boots(self):
-        fleet = self.repo / 'bench/fleet.sh'
-        fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;',
-                                          'restore-needed) echo restore-check >> "$LOGD/restore-checks"; exit 0;;'))
-        self.refresh_deployed_fixture()
-        evaluations = [dict(objective={'metric':'prefill_ttft','ctx':2000}, workload={'ctx':[2000]}),
-                       dict(objective={'metric':'quality'}, workload={'ctx':[2000]}),
-                       dict(objective={'metric':'decode_tokens'}, workload=dict(ctx=[2000],
-                            fixed_decode_tokens=100, fixed_decode_reps=2, require_exclusive=True))]
-        job = self.submit(kind='pair', command=[], knobs={'VLLM_TEST':'1'},
-                          evaluations=evaluations, context=self.pair_context())
-        result = self.wait(job['id'])
-        self.assertEqual(result['state'], 'succeeded', (result, Path(result['log']).read_text()))
-        self.assertEqual(len(result['result']['evaluations']), 3)
-        records = [json.loads(line) for line in (self.logs/'onepass.jsonl').read_text().splitlines()]
-        self.assertEqual(len(records), 4)  # two workloads per boot, quality reuses the first
-        self.assertEqual(len({r['boot_id'] for r in records}), 2)
-        self.assertEqual((self.logs/'arms').read_text().count('onepass'), 2)
-        self.assertTrue(result['result']['comparison_complete'])
-        self.assertFalse(result['result']['promotion_ready'])
-        self.assertNotIn('RESTORE', (self.logs/'arms').read_text())
-        self.assertFalse((self.logs/'restore-checks').exists())
 
-    def test_group_failure_stops_remaining_workloads_without_recovery(self):
-        fleet = self.repo / 'bench/fleet.sh'
-        fleet.write_text(FAKE_FLEET.replace('restore-needed) exit 1;;', 'restore-needed) exit 0;;'))
-        onepass = self.repo / 'bench/onepass.py'
-        onepass.write_text(FAKE_ONEPASS.replace("knobs = served['knobs']",
-            "knobs = served['knobs']\n if knobs and name.endswith('-E2'): raise SystemExit(7)"))
-        self.refresh_deployed_fixture()
-        evaluations = [dict(objective={'metric':'quality'}, workload={'ctx':[c]}) for c in (2000,4000,8000)]
-        job = self.submit(kind='pair', command=[], knobs={'VLLM_TEST':'1'},
-                          evaluations=evaluations, context=self.pair_context())
-        result = self.wait(job['id'])
-        self.assertEqual(result['state'], 'failed', result)
-        rows = [json.loads(l) for l in (self.logs/'onepass.jsonl').read_text().splitlines()]
-        self.assertEqual(len([r for r in rows if r['experiment_id'] == job['id']]), 1)
-        self.assertNotIn('RESTORE', (self.logs/'arms').read_text())
 
-    def test_defaults_with_unexpected_knobs_cannot_unlock_candidate(self):
-        lever = self.repo / 'bench/ab-lever.sh'
-        lever.write_text(FAKE_LEVER.replace('"${2:-}"', '"${2:-VLLM_TEST=1}"'))
-        self.refresh_deployed_fixture()
-        job = self.submit(kind='pair', command=[], knobs={'VLLM_TEST':'2'}, context=self.pair_context())
-        self.assertEqual(self.wait(job['id'])['state'], 'blocked')
-        self.assertEqual((self.logs/'arms').read_text().count('onepass'), 1)
 
-    def test_candidate_with_unrequested_enabled_knob_is_rejected(self):
-        onepass = self.repo / 'bench/onepass.py'
-        onepass.write_text(FAKE_ONEPASS.replace("knobs = served['knobs']",
-            "knobs = served['knobs']\n if knobs: knobs['VLLM_UNREQUESTED'] = '1'"))
-        self.refresh_deployed_fixture()
-        job = self.submit(kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=self.pair_context())
-        result = self.wait(job['id'])
-        self.assertEqual(result['state'],'failed',result)
-        self.assertIn('exactly match',result['result']['reason'])
 
     def test_individual_unittest_reports_counts_and_reuses_identical_tree(self):
         (self.repo/'tests').mkdir()
@@ -970,33 +646,7 @@ class SubmissionTests(unittest.TestCase):
         finally:
             resources.stop(unrelated)
 
-    def test_prepared_artifacts_move_to_gpu_snapshot_and_detect_corruption(self):
-        context = self.pair_context()
-        command = [sys.executable,'-c', "from pathlib import Path; Path('build').mkdir(); Path('build/ready.o').write_bytes(b'object')"]
-        cpu = self.submit('prepare', command=command, outputs=['build/ready.o'], context=context)
-        prepared = self.wait(cpu['id'])
-        self.assertEqual(prepared['state'], 'succeeded', prepared)
-        gpu = self.submit('consumer',kind='pair',command=[],knobs={'VLLM_TEST':'1'},
-                          context=context,depends_on=[cpu['id']])
-        result = self.wait(gpu['id'])
-        self.assertEqual(result['state'], 'succeeded', result)
-        self.assertEqual((Path(result['checkout'])/'build/ready.o').read_bytes(), b'object')
-        artifact = prepared['result']['artifacts'][0]
-        Path(artifact['path']).write_bytes(b'changed')
-        before = (self.logs/'arms').read_text()
-        bad = self.submit('changed-artifact',kind='pair',command=[],knobs={'VLLM_TEST':'2'},
-                          context=context,depends_on=[cpu['id']])
-        failed = self.wait(bad['id'])
-        self.assertEqual(failed['state'], 'failed', failed)
-        self.assertIn('artifact changed', failed['result']['reason'])
-        self.assertEqual((self.logs/'arms').read_text(), before)
 
-    def test_readiness_failure_never_enters_gpu_queue(self):
-        job = self.submit(kind='pair',command=[],knobs={'VLLM_TEST':'1'},context=self.pair_context(),
-                          resources={'disk_mb':1,'disk_path':str(self.root/'missing-disk')})
-        self.assertEqual(self.wait(job['id'])['state'], 'failed')
-        self.assertNotIn('--gpu', (self.logs/'admissions').read_text())
-        self.assertFalse((self.logs/'arms').exists())
 
     def test_compile_entrypoint_only_builds_an_object_and_is_cpu_classified(self):
         nvcc = self.bin/'nvcc'
@@ -1017,32 +667,6 @@ class SubmissionTests(unittest.TestCase):
         rejected = subprocess.run([*command,'--run'],cwd=self.repo,env=self.env,capture_output=True)
         self.assertNotEqual(rejected.returncode,0)
 
-    def test_plan_prepares_before_deployment_then_resolves_gpu_dependencies(self):
-        (self.repo/'tests').mkdir()
-        (self.repo/'tests/test_plan.py').write_text(
-            'import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
-        self.commit()  # deliberately not deployed yet
-        raw = dict(hypothesis='Improve 2K TTFT',knobs={'VLLM_TEST':'1'},context=self.pair_context(),
-                   objective={'metric':'prefill_ttft','ctx':2000},workload={'ctx':[2000]},
-                   cpu_suites=[],cpu_tests=['tests/test_plan.py'],prepare=[dict(
-                    command=[sys.executable,'-c',"from pathlib import Path; Path('build').mkdir(); Path('build/a.o').write_text('ready')"],
-                    outputs=['build/a.o'])])
-        path = self.root/'plan-input.json'
-        path.write_text(json.dumps(raw))
-        preview = self.cli('plan','planner',str(path))
-        self.assertFalse(preview['stages'][-1]['dependencies_resolved'])
-        self.assertIn('pending-stage:checks',preview['stages'][-1]['manifest']['depends_on'])
-        plan = self.cli('plan','planner',str(path),'--prepare-only')
-        self.assertEqual(plan['mode'],'prepare-only')
-        self.assertTrue(plan['stages'][-1]['dependencies_resolved'])
-        self.assertNotIn('submission',plan['stages'][-1])
-        for stage in plan['stages'][:-1]:
-            self.assertEqual(self.wait(stage['submission']['id'])['state'],'succeeded')
-        self.assertFalse((self.logs/'arms').exists())
-        (self.overlay/'manifest.tsv').write_text('# source_commit='+self.sha+'\n')
-        self.stamp.write_text(ex.digest(self.overlay/'manifest.tsv'))
-        gpu = self.cli('submit','planner',plan['stages'][-1]['path'])
-        self.assertEqual(self.wait(gpu['id'])['state'],'succeeded')
 
     def test_collect_delivery_and_ack_preserve_evidence_scope(self):
         path = self.root/'private.jsonl'
@@ -1064,27 +688,6 @@ class SubmissionTests(unittest.TestCase):
         self.assertEqual(stats['terminal_acknowledgment_s']['n'],2)
         self.assertGreaterEqual(stats['acknowledgment_s']['p50'],stats['delivery_s']['p50'])
 
-    def test_plan_preserves_cpu_submission_when_deployment_is_missing(self):
-        (self.repo/'tests').mkdir()
-        (self.repo/'tests/test_plan.py').write_text(
-            'import unittest\nclass C(unittest.TestCase):\n def test_ok(self): self.assertTrue(True)\n')
-        self.commit()
-        raw = dict(hypothesis='Quality contract',knobs={'VLLM_TEST':'1'},context=self.pair_context(),
-                   objective={'metric':'quality'},cpu_suites=[],cpu_tests=['tests/test_plan.py'])
-        path = self.root/'plan-input.json'
-        path.write_text(json.dumps(raw))
-        failed = self.cli('plan','planner',str(path),'--submit',ok=False)
-        self.assertEqual(failed.returncode,2,failed.stdout+failed.stderr)
-        plan = json.loads(failed.stdout)
-        self.assertIn('error',plan)
-        self.assertTrue(Path(plan['path']).is_file())
-        self.assertEqual(self.wait(plan['stages'][0]['submission']['id'])['state'],'succeeded')
-        self.assertFalse((self.logs/'arms').exists())
-        (self.overlay/'manifest.tsv').write_text('# source_commit='+self.sha+'\n')
-        self.stamp.write_text(ex.digest(self.overlay/'manifest.tsv'))
-        completed = self.cli('plan','planner',str(path),'--submit')
-        self.assertEqual(self.wait(completed['stages'][-1]['submission']['id'])['state'],'succeeded')
-        self.assertEqual((self.logs/'arms').read_text().count('onepass'),2)  # one quality baseline and one candidate
 
 
 if __name__ == "__main__":

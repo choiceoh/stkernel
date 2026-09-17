@@ -37,7 +37,14 @@ def packed_weights(hidden=512, intermediate=256, *, tiled=False, sf6=False):
     if sf6:
         # Existing independent byte oracle loads this source without importing
         # the CUDA-only b12x package entry point.
-        from tests.test_moe_static_sf6_direct import sf6 as oracle
+        import importlib.util
+        import sys
+        from pathlib import Path
+        spec = importlib.util.spec_from_file_location(
+            "sf6_pack_oracle", Path(__file__).resolve().parents[1] / "engine/kernels/b12x/moe_reform_sf_pack.py")
+        oracle = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = oracle
+        spec.loader.exec_module(oracle)
         def pack(raw, rows, k, kind):
             nr, nk = oracle.stage_shape(rows, k, kind)
             stages = oracle._stage_rows(raw, experts=1, rows=rows, k=k, kind=kind, first=0, last=nr*nk)

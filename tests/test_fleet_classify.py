@@ -72,24 +72,24 @@ class ClassifierExplanationTests(unittest.TestCase):
     def test_rehearsal_is_cpu_only_for_verified_canonical_helpers(self):
         for command in (['nvidia-smi'], ['python3', 'bench/onepass.py', '--name', 'real'],
                         ['bash', '-c', 'nvidia-smi'],
-                        ['env', 'FLEET_REHEARSE=0', 'bash', str(ROOT / 'bench/pair.sh'), 'real']):
+                        ['env', 'FLEET_REHEARSE=0', 'bash', str(ROOT / 'bench/st_bracket.sh'), 'pair', '0123456789abcdef']):
             with self.subTest(command=command):
                 value = self.explain(command, FLEET_REHEARSE='1')
                 self.assertEqual(value['classification'], 'gpu')
                 self.assertTrue(value['evidence'])
                 self.assertNotEqual(value['evidence'][0].get('name'), 'FLEET_REHEARSE')
-        for command in (['bash', str(ROOT / 'bench/pair.sh'), 'rehearsal', 'VLLM_TEST=1'],
-                        ['bash', str(ROOT / 'bench/chain.sh'), 'rehearsal=VLLM_TEST=1'],
-                        ['bash', str(ROOT / 'bench/ab-lever.sh'), 'rehearsal']):
+        for command in (['bash', str(ROOT / 'bench/st_bracket.sh'), 'pair', '0123456789abcdef'],
+                        ['bash', str(ROOT / 'bench/st_bracket.sh'), 'chain', 'A=0123456789abcdef'],
+                        ['bash', str(ROOT / 'bench/st_bracket.sh'), 'hold', '0123456789abcdef']):
             with self.subTest(command=command):
                 value = self.explain(command, FLEET_REHEARSE='1')
                 self.assertEqual(value['classification'], 'nogpu')
                 self.assertEqual(value['evidence'][0]['name'], 'FLEET_REHEARSE')
                 self.assertIn('verified canonical helper', value['reason'])
-        copied = self.root / 'bench' / 'ab-lever.sh'
+        copied = self.root / 'bench' / 'st_bracket.sh'
         copied.parent.mkdir()
         copied.write_text('#!/bin/bash\nnvidia-smi\n')
-        value = self.explain(['bash', str(copied), 'modified'], FLEET_REHEARSE='1')
+        value = self.explain(['bash', str(copied), 'pair', '0123456789abcdef'], FLEET_REHEARSE='1')
         self.assertEqual(value['classification'], 'gpu')
         self.assertNotEqual(value['evidence'][0].get('name'), 'FLEET_REHEARSE')
 
