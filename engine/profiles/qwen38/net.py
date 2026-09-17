@@ -500,7 +500,10 @@ class Qwen38Net:
         scores = torch.mm(x, p[n + "gates"].t())                     # [N, experts + 1]: the router, then the shared gate
         ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
         routed = self._experts[prefix](x, ids, weights, compact=compact)
-        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up")), n + "sh_down")
+        # the down projection's 160 columns pad to 256 (PaddedDenseLinear): the activation's launch writes the zeros
+        down = getattr(self, "dense", {}).get(n + "sh_down")
+        pad_to = down.input_cols + down.pad if getattr(down, "pad", 0) else None
+        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up"), pad_to=pad_to), n + "sh_down")
         gate = torch.sigmoid(scores[:, F.experts:].float())
         return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
 
