@@ -335,7 +335,20 @@ class Drafter:
             for L in range(F.layers):
                 for suffix in ("self_attn.k_proj.weight","self_attn.v_proj.weight","mlp.up_proj.weight"):
                     p[f"layers.{L}."+suffix]=None
+        # Built here, before any capture: the sampled walks multiply by it inside captured graphs, and a
+        # host list turned into a device tensor there is a pageable copy the graph cannot replay.
+        codebook = self.p.get("candidate_selector.predecessor_codebook")
+        if codebook is not None:
+            self.selector_alpha_tensor(codebook.device)
         self.fast_attention = True
+
+    def selector_alpha_tensor(self, device):
+        """The per-position selector alpha as an FP32 device tensor, built once per (alpha, device)."""
+        key = (tuple(self.selector_alpha), str(device))
+        if getattr(self, '_selector_alpha_key', None) != key:
+            self._selector_alpha_device = torch.tensor(self.selector_alpha, dtype=torch.float32, device=device)
+            self._selector_alpha_key = key
+        return self._selector_alpha_device
 
     # The block MLP has the target's input-cell shapes (gate_up 6144x4096, down 4096x3072), and a propose block is
     # one K=7 block of 8 rows per sequence: at C=1 those two projections take the C1 cells, at C=2 (16 rows) the
@@ -745,7 +758,7 @@ class Drafter:
         succ = p["candidate_selector.successor_codebook"][cand].float()
         edge = torch.einsum("nkpr,nkcr->nkpc", pred * proj[:, :, None, :], succ)
         if any(a != 1. for a in self.selector_alpha):
-            edge *= torch.tensor(self.selector_alpha, device=dev).view(1, K, 1, 1)
+            edge *= self.selector_alpha_tensor(dev).view(1, K, 1, 1)
         scores = unary[:, :, None, :] + edge   # [n, K, prev, cur]
         rows = torch.arange(n, device=dev)
         prev = torch.zeros(n, dtype=torch.int64, device=dev)
@@ -878,7 +891,7 @@ class Drafter:
         succ = p["candidate_selector.successor_codebook"][cand].float()
         edge = torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
         if any(a != 1. for a in self.selector_alpha):
-            edge *= torch.tensor(self.selector_alpha, device=dev).view(K, 1, 1)
+            edge *= self.selector_alpha_tensor(dev).view(K, 1, 1)
         scores = unary[:, None, :] + edge
         # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
         # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
