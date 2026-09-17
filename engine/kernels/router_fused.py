@@ -46,12 +46,16 @@ def _ticket(device):
     key = (index, stream.cuda_stream)
     if key not in _TICKETS:
         _TICKETS[key] = torch.zeros(1, dtype=torch.int32, device=f'cuda:{index}')
-        try:
+        if isinstance(stream, torch.cuda.Stream):
             # Drop the workspace when the stream dies, so a process that keeps
-            # creating capture streams does not grow this dict forever.
-            weakref.finalize(stream, _TICKETS.pop, key, None)
-        except TypeError:
-            pass          # streams are not weak-referenceable on this torch
+            # creating capture streams does not grow this dict forever. Only a
+            # real stream: tests stand in a light fake, and holding it to the
+            # dict's entry would evict the ticket as soon as the fake is
+            # replaced.
+            try:
+                weakref.finalize(stream, _TICKETS.pop, key, None)
+            except TypeError:
+                pass
     return _TICKETS[key]
 
 
