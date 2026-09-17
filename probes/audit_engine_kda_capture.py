@@ -4,12 +4,13 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(os.environ.get('ST_INCIDENT_SOURCE', Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(ROOT))
 from engine.modules.causal_conv import causal_conv1d
 from engine.modules.linear_attention import gated_delta_rule, kda_gate, kda_output_norm
@@ -82,17 +83,31 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     torch.set_num_threads(2)
-    packing, weights, rows = load_packing(), {}, []
+    packing, weights, rows, records = load_packing(), {}, [], []
     for path in sorted(args.directory.glob('rank*-L*-admit*.pt')):
         key = '-'.join(path.name.split('-')[:2])
         if key not in weights:
             weights[key] = torch.load(args.directory / (key + '-weights.pt'), map_location='cpu', weights_only=True)
         row = audit(path, weights[key], packing)
         rows.append(row)
+        records.append(torch.load(path, map_location='cpu', weights_only=True))
         print(json.dumps(row), flush=True)
     if not rows:
         raise SystemExit('no operand captures found')
-    args.out.write_text(json.dumps(dict(torch_version=torch.__version__, cases=rows,
+    carry = []
+    for current in records:
+        if current['start'] != 0:
+            continue
+        for previous in records:
+            if (previous['identity']['admission'] == current['identity']['admission']
+                    and previous['rank'] == current['rank'] and previous['layer'] == current['layer']
+                    and previous['context'] + previous['tokens'] == current['context']):
+                history = min(3, previous['conv']['x'].shape[0])
+                carry.append(dict(rank=current['rank'], layer=current['layer'],
+                    admission=current['identity']['admission'], context=current['context'],
+                    state=diff(current['recurrence']['initial'], previous['recurrence']['final']),
+                    conv_history=diff(current['conv']['initial'][:, -history:], previous['conv']['x'][-history:].T)))
+    args.out.write_text(json.dumps(dict(torch_version=torch.__version__, cases=rows, state_carry=carry,
         scope='Same captured operands and incoming state; the final prefill kernel chunk only, not the entire historical state.'), indent=2) + '\n')
 
 
