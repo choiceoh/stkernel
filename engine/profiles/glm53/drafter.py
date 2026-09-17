@@ -197,6 +197,9 @@ class Drafter:
         self.decode_graphs = None
         self.dense = {}
         self.fast_attention = False
+        self.reduce_packets = False
+        self.reduce_packet_rows = ()
+        self.reduce_packets_executed = set()
         self.local_heads, self.local_kv_heads = F.heads, F.kv_heads
         self.context_kv = None
         self.max_block_rows = None
@@ -344,6 +347,8 @@ class Drafter:
         if codebook is not None:
             self.selector_alpha_tensor(codebook.device)
         self.fast_attention = True
+        from engine.kernels.oneshot import OneShot
+        self.reduce_packets = isinstance(getattr(self.target.comm, 'transport', None), OneShot)
 
     def selector_alpha_tensor(self, device):
         """The per-position selector alpha as an FP32 device tensor, built once per (alpha, device)."""
@@ -362,6 +367,7 @@ class Drafter:
         """Before capture, once the target has bound its decode fastpath rows: the 8- and 16-row widths of those
         rows, on every block MLP projection whose single W4 pack is a declared cell. Returns the bound names."""
         from engine.kernels.dense import bound_input_cell
+        self.reduce_packet_rows = tuple(m for m in (capture_rows or ()) if m in (8, 16, 24, 32))
         rows = tuple(m for m in (capture_rows or ()) if m in (8, 16))
         bound = []
         for L in range(self.F.layers):
@@ -623,13 +629,35 @@ class Drafter:
         from engine.kernels.draft_conv import tap_add_norm
         return tap_add_norm(x, delta, base, residual, weight, self.F.rms_eps, self.F.conv_group, block)
 
+    def _reduce_post_conv(self, x, delta, base, block, site, *, residual=None, weight=None):
+        """Consume a decode exchange before any next collective, including the last MLP."""
+        normalized = residual is not None
+        if self.fast_attention:
+            if (self.reduce_packets and block == 8 and x.shape[0] in (8, 16, 24, 32)
+                    and x.shape[1] == 4096):
+                from engine.kernels.draft_reduce import packet_tap_add_norm, packet_tap_mix
+                comm = self.target.comm
+                packet = comm.transport.exchange(comm._settled(x))
+                def consume(source, descriptor):
+                    if normalized:
+                        return packet_tap_add_norm(source, descriptor, delta, base, residual, weight,
+                                                   self.F.rms_eps, self.F.conv_group, block)
+                    return packet_tap_mix(source, descriptor, delta, base, self.F.conv_group, block)
+                result = packet.consume(consume)
+                self.reduce_packets_executed.add((*site, x.shape[0]))
+                return result
+            x = self.target.comm.all_reduce(x)
+        if normalized:
+            return self._post_conv_norm(x, delta, base, residual, weight, block)
+        return self._conv_rows(x, delta, base, block)
+
     def _conv_rows(self, x, delta, base, t: int):
         """`_conv` over the step's blocks of t rows: the taps look back inside a block, never into the one before."""
         from engine.kernels.draft_conv import tap_mix
         return tap_mix(x, delta, base, self.F.conv_group, block=t)
 
     def _attn_rows(self, L: int, x: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
-                   field: torch.Tensor, n: int, t: int, rows_ok=None) -> torch.Tensor:
+                   field: torch.Tensor, n: int, t: int, rows_ok=None, *, reduce=True) -> torch.Tensor:
         """Each block against its own slot's ring, as one fused attention over the step's rows. A row reads its slot's
         ring and then its block's own keys; the ring is read in storage order -- its keys are rope'd at their
         positions, so the order of keys is immaterial -- and the cells outside the row's sliding window (not written
@@ -649,7 +677,8 @@ class Drafter:
             # at its own context length, so the rows are a grid dimension and there is nothing to concatenate.
             out = attend_rows(qh.view(n, t, heads, D), kh.view(n, t, kv, D), vh.view(n, t, kv, D),
                               field, ctx, slot=slots, layer=L, window=F.window)
-            return self.target.comm.all_reduce(self.linear(out.reshape(n*t, heads*D), q + "o_proj.weight", rows_ok))
+            local = self.linear(out.reshape(n*t, heads*D), q + "o_proj.weight", rows_ok)
+            return self.target.comm.all_reduce(local) if reduce else local
         W, kv, D, rep = F.window, F.kv_heads, F.head_dim, F.heads // F.kv_heads
         qh = norm_rope(Fn.linear(x, p[q + "q_proj.weight"]).view(n * t, F.heads, D), p[q + "q_norm.weight"], F.rms_eps, positions, F.rope_theta)
         kh = norm_rope(Fn.linear(x, p[q + "k_proj.weight"]).view(n * t, kv, D), p[q + "k_norm.weight"], F.rms_eps, positions, F.rope_theta)
@@ -685,9 +714,9 @@ class Drafter:
             q = f"layers.{L}."
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], t)
-            h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok)
-            res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1],
-                                          res, p[q + "post_attention_layernorm.weight"], t)
+            h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok, reduce=False)
+            res, h = self._reduce_post_conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1],
+                                            t, ('attn', L), residual=res, weight=p[q + "post_attention_layernorm.weight"])
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], t)
             if self.fast_attention:
@@ -696,13 +725,11 @@ class Drafter:
                 gate, up = (self.linear(h, q + "mlp." + name + "_proj.weight") for name in ("gate", "up"))
                 h = swiglu(torch.cat([gate, up], -1))
             h = self.linear(h, q + "mlp.down_proj.weight", rows_ok)
-            if self.fast_attention:
-                h = self.target.comm.all_reduce(h)
             if L + 1 < F.layers:
-                res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1],
-                                              res, p[f"layers.{L+1}.input_layernorm.weight"], t)
+                res, h = self._reduce_post_conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1],
+                                                t, ('mlp', L), residual=res, weight=p[f"layers.{L+1}.input_layernorm.weight"])
             else:
-                x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
+                x = self._reduce_post_conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t, ('mlp', L))
         return self._finish_head_input(res, x, t, head_input)
 
     def _packed_head(self):

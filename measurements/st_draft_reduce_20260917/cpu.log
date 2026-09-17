@@ -1,0 +1,41 @@
+test_all_ten_boundaries_consume_before_next_exchange (tests.test_engine_draft_reduce.DraftReduceTests.test_all_ten_boundaries_consume_before_next_exchange) ... ok
+test_boot_requires_every_bound_layer_and_side (tests.test_engine_draft_reduce.DraftReduceTests.test_boot_requires_every_bound_layer_and_side) ... ok
+test_failed_consumer_poison_is_not_retried_as_all_reduce (tests.test_engine_draft_reduce.DraftReduceTests.test_failed_consumer_poison_is_not_retried_as_all_reduce) ... ok
+test_ordinary_transport_reduces_once_not_twice (tests.test_engine_draft_reduce.DraftReduceTests.test_ordinary_transport_reduces_once_not_twice) ... ok
+test_other_block_lengths_keep_one_ordinary_reduction (tests.test_engine_draft_reduce.DraftReduceTests.test_other_block_lengths_keep_one_ordinary_reduction) ... ok
+test_packet_rows_do_not_depend_on_dense_precision (tests.test_engine_draft_reduce.DraftReduceTests.test_packet_rows_do_not_depend_on_dense_precision) ... ok
+test_raw_cpu_descriptors_are_refused_before_dereferencing (tests.test_engine_draft_reduce.DraftReduceTests.test_raw_cpu_descriptors_are_refused_before_dereferencing) ... ok
+test_replicated_reference_does_not_reduce (tests.test_engine_draft_reduce.DraftReduceTests.test_replicated_reference_does_not_reduce) ... ok
+test_cpu_matches_the_original_composition_and_preserves_inputs (tests.test_engine_draft_post_norm.PostNormTests.test_cpu_matches_the_original_composition_and_preserves_inputs) ... ok
+test_full_drafter_single_and_batched_blocks_match_unfused_boundaries (tests.test_engine_draft_post_norm.PostNormTests.test_full_drafter_single_and_batched_blocks_match_unfused_boundaries) ... ok
+test_invalid_block_and_shape_are_rejected (tests.test_engine_draft_post_norm.PostNormTests.test_invalid_block_and_shape_are_rejected) ... ok
+test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads (tests.test_engine_drafter.AuxLayerConventionTests.test_target_layer_ids_name_the_layers_whose_outputs_the_drafter_reads)
+DFlash's ids are 0-based layers whose completed OUTPUT feeds fc: the reference implementation reads ... ok
+test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar (tests.test_engine_drafter.CommittedCountTests.test_committed_count_reaches_the_direct_ring_write_as_a_device_scalar) ... ok
+test_dense_shapes_name_every_prepared_weight_at_this_tp (tests.test_engine_drafter.DrafterTests.test_dense_shapes_name_every_prepared_weight_at_this_tp) ... ok
+test_device_selector_matches_the_scalar_greedy_walk (tests.test_engine_drafter.DrafterTests.test_device_selector_matches_the_scalar_greedy_walk) ... ok
+test_each_block_row_sees_the_context_through_its_own_sliding_window (tests.test_engine_drafter.DrafterTests.test_each_block_row_sees_the_context_through_its_own_sliding_window)
+DFlash's mask (z-lab/dflash _attention_mask): the query at ctx + j sees context position p while ... ok
+test_long_observation_retains_the_newest_window (tests.test_engine_drafter.DrafterTests.test_long_observation_retains_the_newest_window) ... ok
+test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail (tests.test_engine_drafter.DrafterTests.test_native_rows_do_not_read_retired_weights_or_use_a_scratch_ring_tail)
+Exercise the merged batched interface with packed readers and no BF16 sources. ... ok
+test_rows_attention_uses_the_same_per_query_window (tests.test_engine_drafter.DrafterTests.test_rows_attention_uses_the_same_per_query_window)
+`_attn_rows` reads the ring in storage order; each cell's position is the newest one congruent to it. ... ok
+test_rows_observe_writes_the_valid_cells_in_place (tests.test_engine_drafter.DrafterTests.test_rows_observe_writes_the_valid_cells_in_place) ... ok
+test_rows_propose_matches_the_per_row_walk (tests.test_engine_drafter.DrafterTests.test_rows_propose_matches_the_per_row_walk)
+Three rows in three slots -- two with a context shorter than the window, one longer -- at once: the same ... ok
+test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions (tests.test_engine_drafter.DrafterTests.test_rows_sampled_walk_keeps_greedy_rows_greedy_and_hands_back_distributions) ... ok
+test_the_host_walk_crosses_once_not_twice_a_position (tests.test_engine_drafter.DrafterTests.test_the_host_walk_crosses_once_not_twice_a_position) ... ok
+test_the_masks_of_the_batched_paths_reach_the_packs (tests.test_engine_drafter.DrafterTests.test_the_masks_of_the_batched_paths_reach_the_packs)
+A calibrating pack sums only the rows the drafter says are real: `observe_rows` passes the kept positions, ... ok
+test_the_sampled_walk_hands_back_the_distribution_it_drew_from (tests.test_engine_drafter.DrafterTests.test_the_sampled_walk_hands_back_the_distribution_it_drew_from)
+The accept test divides by this, so it has to be the one the pick came out of. ... ok
+test_the_compute_phase_does_not_depend_on_the_accepted_count (tests.test_engine_drafter.ObserveOverlapTests.test_the_compute_phase_does_not_depend_on_the_accepted_count)
+The overlap starts observe_kv before the commit decides the count. That is only correct because the ... skipped "observe's write phase is a device kernel"
+test_the_split_is_byte_for_byte_the_single_pass (tests.test_engine_drafter.ObserveOverlapTests.test_the_split_is_byte_for_byte_the_single_pass) ... skipped "observe's write phase is a device kernel"
+test_cancellation_and_bf16_inputs_agree_on_all_ranks (tests.test_engine_oneshot_sum.RankOrderedSumTests.test_cancellation_and_bf16_inputs_agree_on_all_ranks) ... ok
+
+----------------------------------------------------------------------
+Ran 28 tests in 0.831s
+
+OK (skipped=2)

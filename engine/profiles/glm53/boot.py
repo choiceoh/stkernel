@@ -1167,6 +1167,20 @@ def drafter_decode_cell_report(drafter):
     return dict(rows=list(rows), dense=dense)
 
 
+def drafter_reduce_report(drafter):
+    """Require every declared packet boundary to execute during graph preparation."""
+    if not getattr(drafter, 'reduce_packets', False) or drafter.k != 7:
+        return {}
+    rows = drafter.reduce_packet_rows
+    expected = {(side, layer, r) for side in ('attn', 'mlp')
+                for layer in range(drafter.F.layers) for r in rows}
+    actual = set(drafter.reduce_packets_executed)
+    if expected - actual:
+        raise RuntimeError(f'drafter packet reductions were not executed: {sorted(expected - actual)}')
+    return dict(rows=list(rows), executed=sorted(actual), rank_order=[0, 1, 2, 3],
+                sum_rounding='FP32 left fold then BF16', terminal_head='existing MX producer')
+
+
 def native_execution_report(net, drafter):
     """Reject a prepared but unused lane before the full-model door opens."""
     target = [layer for name, layer in net.dense.items() if name != 'head']
@@ -1192,6 +1206,7 @@ def native_execution_report(net, drafter):
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
                  drafter_decode_cells=drafter_decode_cell_report(drafter),
+                 drafter_reduce_packets=drafter_reduce_report(drafter),
                  target_w4=sum(bool(p.executed & 1) for p in target),
                  target_fp8=sum(bool(p.executed & 2) for p in target),
                  head_fp8=net.dense['head'].executed,
