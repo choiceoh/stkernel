@@ -81,7 +81,10 @@ instability without recovering T=1 quality. An isolated target-only replay has
 now reproduced malformed Korean with exactly one position per forward, zero
 draft proposals, zero accepted drafts and zero asynchronous steps. Draft
 verification and multi-position geometry are therefore not necessary for the
-failure. Precision and native sampler controls are the next causal gate.
+failure. BF16 transport, FP8 dense decode, their combination and a Torch sorting
+sampler also failed to restore quality. An offline byte/tokenizer audit confirms
+that the malformed original prose is already encoded in the generated IDs;
+the two checkpoint tokenizers have the same vocabulary and decoder.
 Component correctness and a clean short answer do not establish recovery of
 the failing long request. See [the execution receipts](target-controls.json).
 

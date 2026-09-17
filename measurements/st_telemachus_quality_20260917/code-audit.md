@@ -30,8 +30,8 @@ The FP32 candidate still produced malformed Korean at T=1 with seeds 7 and 11
 Warming the exact prompt in 6,912-token pieces also failed at T=1. Thus neither
 temperature clamping nor avoiding one large prefill chunk is a proven repair.
 The 6,912-token control still exceeds the 2,048-row FP8 transport threshold;
-it does not exclude FP8 transport error. A transport-only BF16 comparison has
-not been run. Disabling sequence parallelism would also change memory and
+it does not exclude FP8 transport error. The later BF16-transport control below
+also remains corrupted. Disabling sequence parallelism would change memory and
 execution geometry and is not an equivalent control.
 
 ## Excluded controls
@@ -76,10 +76,91 @@ latest user turn reduced the prompt to 43,821 tokens; its 800-token scalar repla
 hit the output cap. A separate 47-token T=1 request also hit its 1,200-token cap
 after lengthy reasoning. Neither is evidence of restored visible-answer quality.
 
-The next isolated source adds FP8 dense decode readers, BF16 prefill transport
-and a Torch sorting sampler as separate scalar controls. Packet-FFN-off and
-shared-overlap-off controls distinguish those implementation changes from
-precision itself. Baseline is repeated on that same source before attribution.
+## Completed precision and sampler controls
+
+Source `654f42cad5cd` repeated the scalar baseline on the same boot as all
+controls. All 537 baseline output IDs equal the earlier `89ebe27a` scalar
+baseline. The 50,005-token, T=1, seed-7 requests reused zero tokens, completed
+one request each, and reported zero asynchronous steps, drafts and acceptances.
+
+| Scalar control | Outputs | Result |
+|---|---:|---|
+| Baseline | 537 | Malformed |
+| BF16 prefill transport, packet FFN disabled | 494 | Malformed |
+| FP8 dense decode, shared W4 overlap bypass disabled | 441 | Malformed |
+| Both controls combined | 410 | Malformed |
+| Torch sorting sampler | 537 | Malformed; first differing ID at output offset 125 |
+
+These controls reject the proposed changes as incident repairs. They do not
+exclude every precision defect or qualify the entire target implementation.
+The transport control also changes the packet FFN path. The FP8 control also
+changes the shared-MLP execution path. Their separate component controls were
+not run after neither combined change recovered quality.
+
+The actual boot used **Red Hat compressed-tensors rank files**,
+`st-glm53-9391-up-gate-full`, with `st-glm53-b12x-up-gate-v1` layout. Production's
+environment explicitly overrides both `RANKS_DIR` and `CKPT`; the NVIDIA
+defaults in source are not this runtime's weights. `modelopt=False`: the first
+three dense MLPs are DenseLinear readers and are covered by the FP8 control.
+Routed expert folded scales remain unchanged. The metadata tokenizer SHA is
+`0cfe2c099a7702a0921abc315ee039deb51e4a34b4818fc509bd27fa3dc4acc1`.
+
+A replay ending before the prior Ithaca answer generated 739 tokens with
+mostly coherent prose but factual and lexical errors; it is not recovery of
+the exact incident. Explicit top_p=0.95 with ordinary device verification also
+remained malformed (415 outputs). The actual Red Hat generation config omits
+top_p; the NVIDIA file's top_p=0.95 is not the served default. Counters, hashes
+and boot identity are in [precision-control-evidence.json](precision-control-evidence.json).
+The diagnostic hold ended and all four containers were stopped through the
+fleet workflow at 23:39:47 KST.
+
+## Offline tokenizer and byte audit
+
+The tokenizer audit uses the preserved IDs, without inference or a GPU. The
+Red Hat and NVIDIA tokenizers have identical 154,856-entry vocabularies,
+merges, added-token IDs and decoder definitions. Their tokenizer JSON differs
+only in the saved truncation setting, which the engine explicitly disables.
+The entire 50,005-token prompt decodes and re-encodes to exactly the same IDs.
+This does not prove that the original chat template/prompt contents were right.
+
+All 907 original output IDs exist in the vocabulary. Decoding them with either
+tokenizer, independently reconstructing ByteLevel bytes, and streaming batches
+of 1/2/7/8 tokens all reproduce the saved full text. Its bytes are valid UTF-8,
+with zero replacement characters. The full text, including reasoning, hashes
+to `b11ec28f853b6fcd3ff8bb7e7b5b50805ab752a165cc8a50d4e18ef696f06153`;
+the earlier `ef529a...` hash covers the visible answer only.
+
+The scalar controls contain one genuine malformed UTF-8 sequence in the raw
+generated tokens. At output offsets 124/125 (zero-based), token 27125 supplies
+bytes `eb a9`, then baseline token 17130 supplies ASCII `ekt`; the Torch control
+instead supplies token 17160, ASCII ` belongs`. A replacement character is the
+correct decoding of those bytes, not a streaming conversion fault.
+
+The baseline's chosen-token logprob at offset 125 is -17.9818000793. Its
+seed-7 RICH uniform is 0.9985362291. A low probability for one selected token
+does not alone establish a sampling defect: the aggregate tail and full CDF
+must be checked. The two samplers first diverge here after 125 identical IDs;
+this is not a claim that their numeric results match bit for bit.
+
+Synthetic 64-token streaming batches exposed an additional mismatch on the
+two scalar records after the stall guard fired. Batches 1/2/7/8 agree exactly;
+the original incident agrees even at 64. This separate finding does not
+explain the original failure and has not been shipped as a repair.
+
+Receipts: [tokenizer-audit.json](tokenizer-audit.json), tokenizers 0.23.2 on CPU.
+This is an offline check, not a claim of the serving image's library version.
+`probes/audit_engine_tokenizer.py` reproduces it; its detailed text and ID trace
+must remain in a private output directory outside git.
+
+## Prefix segmentation comparison
+
+The same scalar baseline's first 160 generated IDs were also reproduced through
+the legacy completions route with logprobs. Fresh-prefilling the identical token
+prefix through output offsets 1, 64 and 120 retained the top-1 decoded label but
+changed common top-20 logprobs by up to 1.87, 1.87 and 3.13 respectively. This is
+not a state-corruption proof: prefill/decode use different arithmetic, and that
+API merges distinct partial-byte token IDs under the same decoded U+FFFD key.
+Further numeric comparisons must preserve token IDs, not decoded labels.
 
 ## Accepted-token counter defect found during review
 
