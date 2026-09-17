@@ -6,6 +6,7 @@ without atomic-sum ambiguity. The ordinary full sum retains a separate repeat
 noise check. No arithmetic or instrumentation is added to serving kernels.
 """
 import dataclasses
+import hashlib
 from unittest.mock import patch
 
 import torch
@@ -104,6 +105,7 @@ def check(report, layers):
                 captured.clear()
             single = torch.cat((outputs['first'], outputs['second']))
             pair = outputs['pair'].clone()
+            assert int(torch.count_nonzero(pair)) > 0, 'nonzero fixture produced a vacuous all-zero comparison'
             if inspect_frontend:
                 assert len(snapshots['pair']) == 16 * 8
                 checked = sum(assert_frontend_equal(snapshots[name], snapshots['pair'], offset)
@@ -123,7 +125,9 @@ def check(report, layers):
                          pair=cells.fp32_noise(outputs['pair'], pair))
             assert all(v['fp32_max_ulps'] <= cells.MAX_ULPS for v in noise.values())
             captured.clear()
-            return dict(difference=difference, repeat_noise=noise)
+            return dict(difference=difference, repeat_noise=noise,
+                        output_nonzero=int(torch.count_nonzero(pair)),
+                        output_sha256=hashlib.sha256(pair.cpu().numpy().tobytes()).hexdigest())
 
         graphs = {}
         try:
@@ -161,6 +165,7 @@ def check(report, layers):
                 layer.views[chunk] = dataclasses.replace(
                     original_view, w2_tiled_storage=isolated,
                     down_fp4=isolated.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0))
+                partials = {slot: [] for slot in (0, 7)}
                 for k_tile in range(4):
                     isolated.zero_()
                     isolated[:, k_tile].copy_(down[:, k_tile])
@@ -168,8 +173,24 @@ def check(report, layers):
                         routes.zero_()
                         routes[:, route_slot].copy_(saved_routes[:, route_slot])
                         result = evaluate(exact=True)
+                        partials[route_slot].append(outputs['pair'].clone())
                         report('publication_contribution', layer=layer.L, k_tile=k_tile,
                                route_slot=route_slot, bit_exact=True, **result)
+
+                # Prove that the weight mask actually reached the kernel:
+                # four isolated K contributions must reconstruct one route's
+                # unmasked output. Ignoring the replacement weight view would
+                # instead add four copies of the complete route.
+                layer.views[chunk] = original_view
+                for route_slot, parts in partials.items():
+                    routes.zero_()
+                    routes[:, route_slot].copy_(saved_routes[:, route_slot])
+                    invoke('pair')
+                    reconstructed = torch.stack(parts).sum(0)
+                    difference = cells.fp32_noise(reconstructed, outputs['pair'])
+                    assert difference['fp32_max_ulps'] <= cells.MAX_ULPS, difference
+                    report('publication_reconstruction', layer=layer.L, route_slot=route_slot,
+                           **difference)
 
                 # Reuse the actual captured kernels with changed payloads,
                 # then exercise zero routes after poisoning the outputs.
@@ -178,6 +199,7 @@ def check(report, layers):
                 for name in outputs:
                     graphs[name], _ = _capture(lambda name=name: invoke(name))
                 captured.clear()
+                replay_hashes = set()
                 for replay in range(4):
                     x.copy_(cells.grouped(16, 2, .7, 1920 + replay))
                     selected, weights = layer.route(x)
@@ -194,12 +216,63 @@ def check(report, layers):
                     assert difference['fp32_max_ulps'] <= cells.MAX_ULPS, difference
                     if replay == 3:
                         assert all(int(torch.count_nonzero(out)) == 0 for out in outputs.values())
+                    digest = hashlib.sha256(outputs['pair'].cpu().numpy().tobytes()).hexdigest()
+                    if replay != 3:
+                        assert int(torch.count_nonzero(outputs['pair'])) > 0
+                        replay_hashes.add(digest)
                     report('publication_graph', layer=layer.L, replay=replay,
-                           zero_routes=replay == 3, **difference)
+                           zero_routes=replay == 3, output_sha256=digest, **difference)
+                assert len(replay_hashes) == 3, 'changed graph inputs did not change outputs'
                 assert configs[8]['input_reuse'] == 3
                 assert configs[16]['input_reuse'] == 4
                 assert configs[16]['c2_direct_scatter'] and configs[16]['c2_fc2_prefetch']
                 report('publication_paths', layer=layer.L, configurations=configs)
+
+                for graph in graphs.values():
+                    graph.reset()
+                graphs.clear()
+                # Exercise the repaired prefill publication on live tensors.
+                # Identical rows plus one route/one K slice must produce
+                # identical nonzero rows, including partial M128 tiles. This
+                # removes BF16/FP32 atomic addition order from the invariant.
+                isolated.zero_()
+                isolated[:, 2].copy_(down[:, 2])
+                layer.views[chunk] = dataclasses.replace(
+                    original_view, w2_tiled_storage=isolated,
+                    down_fp4=isolated.view(torch.float4_e2m1fn_x2).permute(2, 3, 1, 0))
+                for rows in (337, 2304, 32256):
+                    px = torch.empty((rows, 4096), dtype=torch.bfloat16, device='cuda')
+                    pi = torch.arange(8, device='cuda', dtype=torch.int32).expand(rows, 8).contiguous()
+                    pr = torch.zeros((rows, 8), device='cuda')
+                    pr[:, 0] = 1.
+                    po = torch.empty((rows, 4096), dtype=torch.float32, device='cuda')
+                    hashes = set()
+                    for generation in range(3):
+                        px.copy_(cells.grouped(1, 1, .7, 2920 + generation))
+                        if generation == 2:
+                            pr.zero_()
+                        po.fill_(float('nan'))
+
+                        def finalize_prefill(accumulator):
+                            po.copy_(accumulator)
+                            return po
+
+                        layer.moe(chunk, px, pi, pr, finalize=finalize_prefill)
+                        torch.cuda.synchronize()
+                        assert bool(torch.isfinite(po).all()), (rows, generation)
+                        differences = int(torch.count_nonzero(po != po[:1]))
+                        assert differences == 0, (rows, generation, differences)
+                        nonzero = int(torch.count_nonzero(po))
+                        assert (nonzero == 0) == (generation == 2)
+                        digest = hashlib.sha256(po[0].cpu().numpy().tobytes()).hexdigest()
+                        if generation != 2:
+                            hashes.add(digest)
+                        report('publication_prefill', layer=layer.L, rows=rows,
+                               generation=generation, unequal_rows=differences,
+                               output_nonzero=nonzero, first_row_sha256=digest,
+                               zero_routes=generation == 2)
+                    assert len(hashes) == 2, 'prefill reused the preceding payload'
+                    del px, pi, pr, po
         finally:
             for graph in graphs.values():
                 graph.reset()
