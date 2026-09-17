@@ -77,9 +77,13 @@ evidence that reducing temperature reliably repairs the incident.
 Exclusive same-ID reproduction and a router-fusion-off control both remain
 corrupted. Layer snapshots localized repeat instability to the first routed
 MoE layer during prefill; the FP32 scatter candidate removes that observed
-instability without recovering T=1 quality. Target-only and host/device
-verification controls are the next causal gate. Component correctness and a
-clean short answer do not establish recovery of the failing long request.
+instability without recovering T=1 quality. An isolated target-only replay has
+now reproduced malformed Korean with exactly one position per forward, zero
+draft proposals, zero accepted drafts and zero asynchronous steps. Draft
+verification and multi-position geometry are therefore not necessary for the
+failure. Precision and native sampler controls are the next causal gate.
+Component correctness and a clean short answer do not establish recovery of
+the failing long request. See [the execution receipts](target-controls.json).
 
 `probes/replay_engine_incident.py` retains the exact-ID, fresh-cache replay as a
 standalone bounded HTTP reproducer. It requires an idle ST door at admission,

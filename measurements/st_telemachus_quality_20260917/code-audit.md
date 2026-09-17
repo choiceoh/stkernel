@@ -52,6 +52,35 @@ control smoke check verifies one input row, one committed token and no proposal;
 the live replay must additionally report zero async steps and zero drafted and
 accepted tokens.
 
+## Completed target controls
+
+The isolated `89ebe27a` boot reproduced malformed Korean with the original
+50,005 prompt IDs, T=1, seed 7 and zero reused tokens in all three controls:
+
+| Execution | Outputs | Async steps | Drafted | Accepted | Result |
+|---|---:|---:|---:|---:|---|
+| Ordinary device block verification | 343 | 207 | 1,442 | 136 | Corrupted; same text hash as the earlier FP32 candidate |
+| Host target-only, eight-position target forward | 579 | 0 | 4,046 | 0 | Corrupted |
+| Host target-only, one-position eager forward | 537 | 0 | 0 | 0 | Corrupted |
+
+Each request preserved the exclusive fleet owner and advanced served count by
+exactly one. These controls show that draft acceptance, asynchronous sampling
+and multi-position target geometry are not necessary for the failure. They do
+not establish correctness of target computation, prefill, or the scalar sampler.
+Sanitized counters, output hashes and source identity are in
+[`target-controls.json`](target-controls.json).
+
+The original prompt also contains malformed prose in the preceding assistant
+answer. Removing that preceding conversation while retaining the system and
+latest user turn reduced the prompt to 43,821 tokens; its 800-token scalar replay
+hit the output cap. A separate 47-token T=1 request also hit its 1,200-token cap
+after lengthy reasoning. Neither is evidence of restored visible-answer quality.
+
+The next isolated source adds FP8 dense decode readers, BF16 prefill transport
+and a Torch sorting sampler as separate scalar controls. Packet-FFN-off and
+shared-overlap-off controls distinguish those implementation changes from
+precision itself. Baseline is repeated on that same source before attribution.
+
 ## Accepted-token counter defect found during review
 
 The host commit counts `min(accepted, emitted_count)`, but both asynchronous
@@ -99,6 +128,6 @@ receipt for the incident repair.
   copies of drafter graph outputs before replay. No lifetime fault established.
 - DSA causality: checked complete-pool horizons and incomplete-tail inclusion.
 
-These are source checks, not evidence that these paths are fault-free. The next
-decisive result must come from exact-input, same-runtime target/verification
-controls with execution counters proving which path actually ran.
+These are source checks, not evidence that these paths are fault-free. The live
+target controls above narrow the investigation; precision and native sampler
+controls remain necessary before identifying the incident cause.
