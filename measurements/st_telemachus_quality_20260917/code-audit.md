@@ -4,6 +4,51 @@ The T=1 incident is unresolved. Preserve the original 50,005 input IDs, seed,
 output cap, fresh cache namespace and runtime identity for every causal replay.
 Private prompts, token records and activation tensors remain outside git.
 
+## Merged production replay, 2026-09-18
+
+PR #1139 merged as `4c447c151c23c192e7a5cce6ce298cb2e3649673` after its
+engine CI passed. The tested source `fea591bd106452f7fcc27d041424ff0a0105c670`
+and that merge share complete engine tree
+`7a09f692e1c00d04548cc3d4f215724b46a43830`. This arm uses the production
+MoE recipe, input-smoothing correction, FP32 long-prefill scatter and the
+publication-ordering fixes; it does not use the private diagnostic controls.
+
+The exclusive `st-telemachus-ship0918` fleet hold replayed three requests:
+
+| Case | Prompt tokens | Output cap | Output tokens | Result |
+|---|---:|---:|---:|---|
+| Original IDs, T=1, seed 7 | 50,005 | 32,768 | 12,592 | Corrupted Korean; also echoes private prompt material |
+| Original IDs, T=1, seed 11 | 50,005 | 32,768 | 495 | Corrupted Korean |
+| Original IDs plus reasoning-end, T=1, seed 7 | 50,006 | 1,024 | 386 | Corrupted Korean |
+
+All three ended before their caps, reported zero cached tokens and advanced
+the exclusive owner's served count by exactly one. They use `top_p=1`,
+`top_k=-1` and independent cache namespaces. These are seeded replays of the
+original prompt IDs, not the original unseeded random draws. The native
+endpoint does not reproduce the original reasoning-budget adapter.
+
+Nine relevant file hashes on each of the four running ranks matched the
+source, including all three stock/micro/generic publication fences. The
+subsequent overlapping-merge regression on main did not affect this pinned
+runtime. This combined-arm failure is not an estimate of any individual
+repair's effect on quality, acceptance or throughput. No per-request draft
+counters were captured, and elapsed request time is not a matched speed test.
+The runtime stopped at 01:34:50 KST and released its fleet lease at 01:35:00.
+
+[Sanitized receipts and runtime identity](merged-production-replay-evidence.json)
+retain hashes and counts. Private prompts and output text remain on srv2.
+**The production-source replay still fails the incident quality gate.**
+
+### Overlapping publication-fence merges
+
+Main briefly lost all three stock/micro/generic global publication fences:
+#1139 removed one copy of each duplicate and #1143 removed the other copy.
+On `cd8cc080`, the two publication/source-contract test modules reproduce six
+failed subcases. PR #1145 restores exactly one fence at each publication
+boundary and matches their provenance hashes. Its full CI passed before merge
+`0bf16f005dccb8bb1b29b8732165896ca95be74c`; the seven tests pass on that merged
+main. This repairs the merge regression without resolving the response failure.
+
 ## Indexer smoothing reader omission, 2026-09-18
 
 `Glm53Net.smoothing_groups()` omitted `idx.w_heads` from the consumers of the
@@ -67,8 +112,9 @@ Additional T=1 thinking-off controls on that same boot show:
 These are changed-input controls, not recovery of the original request.
 Receipts: [`indexer-context-control-evidence.json`](indexer-context-control-evidence.json).
 The combined production branch passes 23 CPU tests with one GB10-only test
-skipped. PR #1139 remains a draft: neither mathematical repair suffices to
-declare the generation incident solved.
+skipped. Those repairs merged in PR #1139; neither mathematical repair suffices
+to declare the generation incident solved. The production replay above also
+fails the original quality gate.
 
 ## Confirmed numerical defect
 

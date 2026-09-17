@@ -1,0 +1,172 @@
+{
+  "cases": [
+    {
+      "case": "original-t1-seed11",
+      "source": "fea591bd106452f7fcc27d041424ff0a0105c670",
+      "owner": "queue/st-telemachus-ship0918",
+      "prompt_tokens": 50005,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "seed": 11,
+      "temperature": 1,
+      "completion_tokens": 495,
+      "output_ids_sha256": "55e269a7aa3b11c047eb00c9c0f9c379bed8b05daec452f0f7c0cdd76c694228",
+      "output_text_sha256": "56d64bf976d4df84a7ae2c8d693ec72467fc085c7c834c87bce353d32905d872",
+      "cap_hit": false,
+      "max_tokens": 32768,
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "seconds": 35.0359828210203,
+      "quality": "corrupted",
+      "execution_counter_scope": "served delta only; draft counters were not recorded per request",
+      "quality_basis": "Manual inspection of the private decoded output: malformed Korean remains.",
+      "quality_metric": "qualitative incident reproduction; no language-quality score or speed verdict"
+    },
+    {
+      "case": "original-t1-seed7",
+      "source": "fea591bd106452f7fcc27d041424ff0a0105c670",
+      "owner": "queue/st-telemachus-ship0918",
+      "prompt_tokens": 50005,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "seed": 7,
+      "temperature": 1,
+      "completion_tokens": 12592,
+      "output_ids_sha256": "c5c7dfe2ea93dc308618970edd2bf419a054be8bab48c3e1f6e3dddeee7330e3",
+      "output_text_sha256": "daddcefbbf905ec2bd4ece4ba5a5e0938e627bcb134a44f0eaab1dce6389b21c",
+      "cap_hit": false,
+      "max_tokens": 32768,
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "seconds": 335.6518652039813,
+      "quality": "corrupted",
+      "execution_counter_scope": "served delta only; draft counters were not recorded per request",
+      "quality_basis": "Manual inspection of the private decoded output: malformed Korean remains. The output also echoes private prompt material and continues with corrupted prose.",
+      "quality_metric": "qualitative incident reproduction; no language-quality score or speed verdict"
+    },
+    {
+      "case": "original-thinking-off",
+      "source": "fea591bd106452f7fcc27d041424ff0a0105c670",
+      "owner": "queue/st-telemachus-ship0918",
+      "prompt_tokens": 50006,
+      "prompt_sha256": "a5c267f68dac71d35602e68f1df7fdf5f4adabd5322d857da1cfc5d1ab3a6375",
+      "seed": 7,
+      "temperature": 1,
+      "completion_tokens": 386,
+      "output_ids_sha256": "b84efeb50924923093d100a59bb3040435d2acc6ba45a9db45685e94e85f5baa",
+      "output_text_sha256": "956f4d9ece8f299a46c4b46da871cc1cb9a78dca28b871ebe8dbdbe77fac5b4f",
+      "cap_hit": false,
+      "max_tokens": 1024,
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "seconds": 34.077943705022335,
+      "quality": "corrupted",
+      "execution_counter_scope": "served delta only; draft counters were not recorded per request",
+      "quality_basis": "Manual inspection of the private decoded output: malformed Korean remains.",
+      "quality_metric": "qualitative incident reproduction; no language-quality score or speed verdict"
+    }
+  ],
+  "runtime": [
+    {
+      "rank": 0,
+      "host": "10.10.10.2",
+      "container": "9ec1a4495cbcbb8950374a4f8af040098731b09db264a2bd8e9c097c94946db3",
+      "image_tag": "st-engine:bracket-fea591bd1064",
+      "image_id": "sha256:6b23b011842efc861178edbf74b88461e4071f84b95d0c0449b032eea98d2193",
+      "started_at": "2026-09-17T16:21:30.957357746Z",
+      "root": "/opt/st",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "e10c61e253e5700076bff203db07ba4248a702e104920bb3ac76deefa195c337",
+        "engine/profiles/glm53/boot.py": "c59d81c1526fe264c865b338dbe97759ba3700bdf69dca1cf9a67892f1318431",
+        "engine/kernels/SOURCES.json": "f9abf9e04df6581ff8527b6dbf8fcb5a2dbda9187eab2b34d599026c7a6c1cae",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "50ba375f321eafd6aa4f3bc6e396a4111c59c7e7123a7ca7881f3d86044384bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "3a2848e13ed8787828be505e0f5c59a98cc128dbc5eb1ac324ae870c6dcd92be",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
+        "engine/kernels/b12x/moe_static_kernel.py": "36d79215fafebae00dc0d6d44a880eafb36b85dcd0f4f8fce99f985e502f4c08",
+        "engine/kernels/b12x/moe_micro_kernel.py": "44463b566508b3eb3cda1e8c964abb10d594ac3b6ed028d1606164ac974e24f9",
+        "engine/kernels/b12x/_moe_dynamic/generic.py": "6e979048ad36d9cdf303818bedcbb2baefe90046ead1a0eb59f7f6fbf1500e21"
+      }
+    },
+    {
+      "rank": 1,
+      "host": "10.10.10.1",
+      "container": "e7566c61e74a4cabacf93222d8f291551dc776e8b1e4bcd8a3f0d1fc33747857",
+      "image_tag": "st-engine:bracket-fea591bd1064",
+      "image_id": "sha256:80c832cd3c743f6e2069ea58b068675aee51d44df578339199f4c3e758d154b8",
+      "started_at": "2026-09-17T16:21:31.190046897Z",
+      "root": "/opt/st",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "e10c61e253e5700076bff203db07ba4248a702e104920bb3ac76deefa195c337",
+        "engine/profiles/glm53/boot.py": "c59d81c1526fe264c865b338dbe97759ba3700bdf69dca1cf9a67892f1318431",
+        "engine/kernels/SOURCES.json": "f9abf9e04df6581ff8527b6dbf8fcb5a2dbda9187eab2b34d599026c7a6c1cae",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "50ba375f321eafd6aa4f3bc6e396a4111c59c7e7123a7ca7881f3d86044384bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "3a2848e13ed8787828be505e0f5c59a98cc128dbc5eb1ac324ae870c6dcd92be",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
+        "engine/kernels/b12x/moe_static_kernel.py": "36d79215fafebae00dc0d6d44a880eafb36b85dcd0f4f8fce99f985e502f4c08",
+        "engine/kernels/b12x/moe_micro_kernel.py": "44463b566508b3eb3cda1e8c964abb10d594ac3b6ed028d1606164ac974e24f9",
+        "engine/kernels/b12x/_moe_dynamic/generic.py": "6e979048ad36d9cdf303818bedcbb2baefe90046ead1a0eb59f7f6fbf1500e21"
+      }
+    },
+    {
+      "rank": 2,
+      "host": "10.10.10.3",
+      "container": "477ce61abb17dec5d559c73b8e9eaebedac55aeeb305ec23e4728a027b712cf4",
+      "image_tag": "st-engine:bracket-fea591bd1064",
+      "image_id": "sha256:f549772e0d3caf7548b2b10370e0a8fff1ef27014b44ab502ef303eb13cf933c",
+      "started_at": "2026-09-17T16:21:30.427612274Z",
+      "root": "/opt/st",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "e10c61e253e5700076bff203db07ba4248a702e104920bb3ac76deefa195c337",
+        "engine/profiles/glm53/boot.py": "c59d81c1526fe264c865b338dbe97759ba3700bdf69dca1cf9a67892f1318431",
+        "engine/kernels/SOURCES.json": "f9abf9e04df6581ff8527b6dbf8fcb5a2dbda9187eab2b34d599026c7a6c1cae",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "50ba375f321eafd6aa4f3bc6e396a4111c59c7e7123a7ca7881f3d86044384bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "3a2848e13ed8787828be505e0f5c59a98cc128dbc5eb1ac324ae870c6dcd92be",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
+        "engine/kernels/b12x/moe_static_kernel.py": "36d79215fafebae00dc0d6d44a880eafb36b85dcd0f4f8fce99f985e502f4c08",
+        "engine/kernels/b12x/moe_micro_kernel.py": "44463b566508b3eb3cda1e8c964abb10d594ac3b6ed028d1606164ac974e24f9",
+        "engine/kernels/b12x/_moe_dynamic/generic.py": "6e979048ad36d9cdf303818bedcbb2baefe90046ead1a0eb59f7f6fbf1500e21"
+      }
+    },
+    {
+      "rank": 3,
+      "host": "10.10.10.4",
+      "container": "8cbaca34e6731cb0e2653f3ae4059e0e70331492aa5b40a3cb40ba31c418f5be",
+      "image_tag": "st-engine:bracket-fea591bd1064",
+      "image_id": "sha256:6c13bd75d68d283f7d8be1dfe5c5b55ccb6427fb5423137b7d69d71f7264ff43",
+      "started_at": "2026-09-17T16:21:31.586784644Z",
+      "root": "/opt/st",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "e10c61e253e5700076bff203db07ba4248a702e104920bb3ac76deefa195c337",
+        "engine/profiles/glm53/boot.py": "c59d81c1526fe264c865b338dbe97759ba3700bdf69dca1cf9a67892f1318431",
+        "engine/kernels/SOURCES.json": "f9abf9e04df6581ff8527b6dbf8fcb5a2dbda9187eab2b34d599026c7a6c1cae",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "50ba375f321eafd6aa4f3bc6e396a4111c59c7e7123a7ca7881f3d86044384bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "3a2848e13ed8787828be505e0f5c59a98cc128dbc5eb1ac324ae870c6dcd92be",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
+        "engine/kernels/b12x/moe_static_kernel.py": "36d79215fafebae00dc0d6d44a880eafb36b85dcd0f4f8fce99f985e502f4c08",
+        "engine/kernels/b12x/moe_micro_kernel.py": "44463b566508b3eb3cda1e8c964abb10d594ac3b6ed028d1606164ac974e24f9",
+        "engine/kernels/b12x/_moe_dynamic/generic.py": "6e979048ad36d9cdf303818bedcbb2baefe90046ead1a0eb59f7f6fbf1500e21"
+      }
+    }
+  ],
+  "verdict": "All three responses remain corrupted; merged production source does not resolve the incident.",
+  "source": "fea591bd106452f7fcc27d041424ff0a0105c670",
+  "merged_commit": "4c447c151c23c192e7a5cce6ce298cb2e3649673",
+  "engine_tree": "7a09f692e1c00d04548cc3d4f215724b46a43830",
+  "runtime_verification": "All nine listed source-file hashes on each of four running ranks match the replay source. Source and PR #1139 merge have the same complete engine tree.",
+  "sampling": {
+    "temperature": 1,
+    "top_p": 1,
+    "top_k": -1,
+    "retain": false,
+    "cache_namespace": "independent random UUID per request"
+  },
+  "scope": "Production source in an isolated fleet hold; same prompt IDs and seeded sampling, not the original unseeded RNG or reasoning-budget adapter.",
+  "driver": {
+    "private_path": "/tmp/telemachus-quality-0917/run-merged-production-replay.py",
+    "sha256": "d20fc564d52bde3d89c8e7be24ea64068ffa1ea737bd86bf28879a6bd2666d31"
+  },
+  "fleet": {
+    "session": "st-telemachus-ship0918",
+    "door_ready_kst": "2026-09-18T01:24:50+09:00",
+    "hold_stopped_kst": "2026-09-18T01:34:50+09:00",
+    "lease_released_kst": "2026-09-18T01:35:00+09:00"
+  }
+}

@@ -11,8 +11,11 @@ output remains corrupted. This is a partial numerical repair, not incident
 resolution. A further confirmed omission in input smoothing left the sparse
 indexer's FP32 head-gate weight unscaled. Fixing it restores the reference
 head-gate function, but the combined repair also fails the original T=1
-requests (seeds 7 and 11). The incident remains unresolved; PR #1139 is a draft.
-See [the follow-up audit](code-audit.md).
+requests (seeds 7 and 11). PR #1139 merged as `4c447c15` after CI passed. A further replay with its complete
+production engine tree, including publication ordering and the default MoE
+recipe, still fails all three T=1 cases (12,592, 495 and 386 output tokens).
+The incident remains unresolved. See [the follow-up audit](code-audit.md) and
+[the production replay receipts](merged-production-replay-evidence.json).
 
 ## Runtime and original request
 
