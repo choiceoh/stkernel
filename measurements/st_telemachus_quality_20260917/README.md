@@ -14,8 +14,12 @@ head-gate function, but the combined repair also fails the original T=1
 requests (seeds 7 and 11). PR #1139 merged as `4c447c15` after CI passed. A further replay with its complete
 production engine tree, including publication ordering and the default MoE
 recipe, still fails all three T=1 cases (12,592, 495 and 386 output tokens).
-The incident remains unresolved. See [the follow-up audit](code-audit.md) and
-[the production replay receipts](merged-production-replay-evidence.json).
+The incident remains unresolved. A further captured-data audit identifies
+rank-dependent smoothing across token-sharded prefill; PR #1151 repairs that
+scale pairing, but its live thinking-off replay still severely corrupts Korean
+and the PR remains a draft. See [the follow-up audit](code-audit.md),
+[the production replay receipts](merged-production-replay-evidence.json) and
+[the shared-smoothing replay](shared-smoothing-replay-evidence.json).
 
 ## Runtime and original request
 

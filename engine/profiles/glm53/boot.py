@@ -935,7 +935,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 # Historical states contain old route sums or attention selected
                 # with uncorrected indexer head gates. Neither conversations nor
                 # prefix snapshots may restore them after these math repairs.
-                state_format = f"glm53-kda-{F.kda_state_dtype}-moe-fp32-idx-smooth-v3"
+                state_format = f"glm53-kda-{F.kda_state_dtype}-moe-fp32-shared-smooth-v4"
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
                                 capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
                                 state_format=state_format, mapped_staging=nvme_mapped_staging)

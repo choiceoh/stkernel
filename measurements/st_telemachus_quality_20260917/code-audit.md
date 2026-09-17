@@ -4,6 +4,66 @@ The T=1 incident is unresolved. Preserve the original 50,005 input IDs, seed,
 output cap, fresh cache namespace and runtime identity for every causal replay.
 Private prompts, token records and activation tensors remain outside git.
 
+## Shared-input smoothing mismatch, 2026-09-18
+
+The next CPU audit identifies a function-changing error before the first
+attention recurrence. `smooth_inputs()` computes its factors from each rank's
+local weight rows and calibration. The captured L0 factors differ from rank 0
+in 8, 16 and 36 channels on ranks 1, 2 and 3, with ratios of 0.5 or 2.
+During scalar decode each rank divides its input and multiplies its own
+weight by the same factor, preserving the map. Token-sharded prefill instead
+normalizes a row on its owning rank and gathers it to every TP projection.
+The sender's division and receiver's weight multiplication use different
+factors. Neither `TokenShards` nor the projection transport compensates that
+ratio. The same boundary exists at dense-MLP `post_norm` outputs.
+
+A CPU oracle rebuilt the actual first-layer input from checkpoint embedding
+rows and mHC weights, then evaluated the captured FP8 projection packs. The
+last captured rows of both original prefill chunks belong to sender rank 3.
+On receivers 0–2, the captured projection differs from the correctly paired
+receiver-scale reference by **7.29–9.02% relative L2**. Using the uncorrected
+sender scale predicts the captured values within **0.195–0.221%**. Sender and
+receiver rank 3 agree with the correctly paired reference within 0.188–0.203%.
+Those small remaining differences include kernel and transport rounding not
+fully emulated by this CPU oracle. The scalar-decode inputs agree exactly
+across all four ranks after undoing their individual smoothing factors.
+
+[The sanitized audit](shared-smoothing-input-audit.json) includes 16 scalar
+input comparisons and eight captured prefill projections; private inputs and
+embedding rows remain outside git. This evidence locates a real incorrect
+scale pairing. It does not yet establish that repairing it resolves the entire
+reported generation failure.
+
+Candidate `5d3e0fcef0d9bc6dd5d53bfac25fde7b4e24540a` chooses one factor for
+shared `in_norm` and `post_norm` outputs using the maximum activation and
+weight-column peaks across TP ranks. A calibration-presence bit travels with
+those peaks, so a rank without calibration still participates; when every rank
+lacks calibration all ranks leave the group unfolded. The collective runs at
+weight preparation. Rank-local `q_a_norm` outputs retain their local factors.
+The pack cache already keys the resulting smoothed weights and factors, and
+the parked-state tag advances to `shared-smooth-v4`.
+
+The four-rank CPU regression reproduces the old incorrect received-input
+projections and proves the corrected projections bit-identical to the original
+unsmoothed linear map. It also covers partial and absent calibration. All 20
+focused smoothing, projection-owner and boot-breakdown tests pass. The full
+engine CI on PR #1151 also passes.
+
+The `st-shared-smooth0918` live hold completed all three T=1 replays on the
+candidate. The original seeds 7 and 11 produced 544 and 500 tokens; both are
+more structured than the preceding baseline, but malformed expressions and
+semantic errors remain. The thinking-off case produced 816 tokens and still
+contains severe Korean corruption, including a replacement character. Every
+request ended below its cap, used zero cached tokens and advanced the exclusive
+owner's served count by one. Ten source files on all four running ranks match
+the candidate. [Execution receipts](shared-smoothing-replay-evidence.json)
+record the runtime and output hashes without private text.
+
+**This is a confirmed scale-pairing repair, not a recovered incident.** PR #1151
+remains a draft after the failed full quality gate. The live hold was stopped
+after the three replays; no additional performance claim follows from their
+elapsed times or shorter outputs.
+
 ## Merged production replay, 2026-09-18
 
 PR #1139 merged as `4c447c151c23c192e7a5cce6ce298cb2e3649673` after its
