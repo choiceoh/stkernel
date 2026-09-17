@@ -475,13 +475,14 @@ class Qwen38Net:
         # group's first position, stored; then the raw keys into the ring by position
         iq = lanes.norm_rope(idx[:, :idx_q].reshape(N, F.idx_heads, F.idx_dim), p[n + "idx_q_norm"], F.rms_eps,
                              meta.positions, F.rope_theta, F.rotary_dim)
-        ik = idx[:, idx_q:].contiguous()
+        # views, not copies: compression and the stores read the raw keys through their strides, the compression reads no
+        # raw positions without a rope cache (only their shape is checked), and the norm reads positions by stride
+        ik = idx[:, idx_q:]
         ring = caches.key_ring(cache_layer)
-        pooled, first = lanes.qsa_compress(ik[:, None, :], meta.positions[:, None, None].expand(N, 1, 3).contiguous(),
+        pooled, first = lanes.qsa_compress(ik[:, None, :], meta.positions[:, None, None].expand(N, 1, 3),
                                            ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions,
                                            meta.key_slots, F.idx_ratio)
-        keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0].contiguous(), F.rope_theta,
-                               F.rotary_dim)
+        keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0], F.rope_theta, F.rotary_dim)
         lanes.qsa_store(caches.index_keys(cache_layer), meta.key_slots, keys[:, 0])
         lanes.qsa_store(ring, meta.ring_slots, ik)
         selected = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,

@@ -608,7 +608,7 @@ def _compress_qsa_groups_kernel(
 
 
 @triton.jit
-def _norm_rope_partial(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, R2: tl.constexpr,
+def _norm_rope_partial(X, W, POS, INV, OUT, sXr, sXh, sO, sP, EPS, D: tl.constexpr, R2: tl.constexpr,
                        BD: tl.constexpr, BR: tl.constexpr):
     # One program owns one head: the unit-offset RMS norm over the whole head, rounded once to the output's dtype
     # (engine/modules/norm.rmsnorm_unit_offset), then the neox rotation of the first 2 * R2 channels reading the
@@ -630,7 +630,7 @@ def _norm_rope_partial(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, 
     wh = tl.load(W + R2 + i, mask=mi, other=0.0).to(tl.float32)
     lo = ((xl * scale) * (1.0 + wl)).to(OUT.dtype.element_ty).to(tl.float32)
     hi = ((xh * scale) * (1.0 + wh)).to(OUT.dtype.element_ty).to(tl.float32)
-    angle = tl.load(POS + r).to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
+    angle = tl.load(POS + r * sP).to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
     cos, sin = tl.cos(angle), tl.sin(angle)
     tl.store(out + i, (lo * cos - hi * sin).to(OUT.dtype.element_ty), mask=mi)
     tl.store(out + R2 + i, (lo * sin + hi * cos).to(OUT.dtype.element_ty), mask=mi)
@@ -654,9 +654,10 @@ def norm_rope_partial(x: torch.Tensor, w: torch.Tensor, eps: float, positions: t
     src = x if x.stride(2) == 1 else x.contiguous()
     out = torch.empty(rows, heads, D, device=x.device, dtype=x.dtype)
     inv = warm(x.device, rotary_dim, theta)
-    pos = positions.contiguous()
     if rows and heads:
-        _norm_rope_partial[(rows, heads)](src, w, pos, inv, out, src.stride(0), src.stride(1), out.stride(0), eps,
+        # positions are read through their stride: a group's first positions arrive as a column of [rows, 3]
+        _norm_rope_partial[(rows, heads)](src, w, positions, inv, out, src.stride(0), src.stride(1), out.stride(0),
+                                          positions.stride(0), eps,
                                           D=D, R2=rotary_dim // 2, BD=triton.next_power_of_2(D),
                                           BR=triton.next_power_of_2(rotary_dim // 2), num_warps=4)
     return out

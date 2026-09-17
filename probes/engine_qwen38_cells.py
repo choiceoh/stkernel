@@ -1,0 +1,65 @@
+"""Qwen3.8's cells on one GB10 before any boot: its served lanes qualified, and the glue's GPU cases (carry campaign C1).
+
+The wizard (engine/kernels/cells.py) marks every Qwen3.8 lane that is not admitted as unjudged on a GPU: the KDA decay
+glue at the per-rank cell (4 key / 12 value heads x 128), the padded dense lane, the V4.1 mHC seam, the MLA glue. Their
+GPU cases already exist in tests/test_engine_kernel_glue.py and skip without CUDA; the lanes that own arithmetic the
+glue does not cover (the gated residual, GDN's gates and norm, QSA's head norm with its partial rotation) qualify
+themselves at boot through engine/profiles/qwen38/lanes.qualify. This runs both on the single-GPU lane, where the
+Qwen3.8 checkpoint is absent (srv2 holds it): the facts come from its config, copied beside this file.
+
+qwen38_config.json is /home/choiceoh/models/qwen38-flash-next-nvfp4/config.json on srv2, byte for byte
+(sha256 e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624, read 2026-09-17).
+
+    bash bench/fleet.sh run --gpu qwen38-cells 20 'Qwen3.8 cells: lanes qualified, glue GPU cases' -- \\
+      bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes qwen38_cells
+
+Correctness only: no timing here, so nothing in it is a speed claim. The glue cells become admitted only with a
+measurement record beside the judgment (engine/QWEN38_CARRY.md, C2-C5).
+"""
+import json
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+CONFIG = Path(__file__).with_name('qwen38_config.json')
+CONFIG_SHA256 = 'e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624'
+GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_engine_kernel_glue.GlueOnTheGpuTests')
+
+
+def facts():
+    """The served facts of the checkpoint this config describes (engine/profiles/qwen38/facts.load's checks included)."""
+    import hashlib
+    import tempfile
+    raw = CONFIG.read_bytes()
+    if hashlib.sha256(raw).hexdigest() != CONFIG_SHA256:
+        raise RuntimeError(f'{CONFIG.name} is not the checkpoint config it records')
+    from engine.profiles.qwen38 import facts as qwen38
+    with tempfile.TemporaryDirectory() as ckpt:            # the probe's /repo is mounted read-only
+        (Path(ckpt) / 'config.json').write_bytes(raw)
+        return qwen38.load(ckpt)
+
+
+def run(output=None):
+    import unittest
+    import torch
+    assert torch.cuda.get_device_capability() == (12, 1), 'requires GB10'
+    rows = []
+
+    def report(lane, **values):
+        rows.append(dict(lane=lane, **values))
+        print(json.dumps(rows[-1]), flush=True)
+
+    from engine.profiles.qwen38 import lanes
+    F = facts()
+    report('qwen38_qualify', config_sha256=CONFIG_SHA256,
+           **{name: {k: list(v) for k, v in worst.items()} for name, worst in lanes.qualify(torch.device('cuda'), F).items()})
+    suite = unittest.defaultTestLoader.loadTestsFromNames(GLUE_CASES)
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    if not result.wasSuccessful() or result.skipped:
+        raise RuntimeError(f'glue GPU cases failed or skipped: {len(result.failures)} failed, {len(result.errors)} errors, '
+                           f'{len(result.skipped)} skipped')
+    report('glue_gpu', passed=True, tests=result.testsRun, cases=list(GLUE_CASES), device=torch.cuda.get_device_name(),
+           torch=torch.__version__, cuda=torch.version.cuda)
+    if output:
+        Path(output).write_text(''.join(json.dumps(row) + '\n' for row in rows))
