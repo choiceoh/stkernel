@@ -685,6 +685,7 @@ class Glm53Engine:
         # Private incident arm only: 1000+seed = host block verification,
         # 2000+seed = target-only, 3000+seed = token-level verification.
         # 4000+seed = device chain with torch block-verification reference;
+        # 5000+seed = eager single-token target forward, without proposals;
         # 6000+seed = device chain with target-only sampling. All modes use
         # the SAME underlying request seed after this decode.
         code = int(options.get("seed") or 0)
@@ -973,7 +974,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1506,6 +1507,27 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
+        if any(getattr(self, 'incident_modes', {}).get(seq) == 5 for seq in seqs):
+            if len(seqs) != 1:
+                raise ValueError('incident single-token control requires an isolated request')
+            seq, slot = seqs[0], slots[0]
+            context = self.ctx[seq]
+            ids = torch.tensor([self.tokens[seq][-1]], dtype=torch.int64, device=self.caches.device)
+            h, aux = self._forward(Step(ids, (Segment(seq, slot, context, 0, 1),)))
+            full = self._gather(self.net.head_local(h))
+            (accepted, new, lps), = self._pick_rich([(seq, full, [], None)])
+            new, done = self._commit(seq, accepted, new, lps, 0)
+            count = len(new)
+            boundary = (context + count) // self.F.block * self.F.block
+            if count and boundary > context:
+                self.caches.stash_draft(slot, boundary)
+            if aux is not None:
+                observe = getattr(self.drafter, 'observe_committed', self.drafter.observe)
+                observe(self.caches.draft_ring(slot),
+                        torch.arange(context, context + count, device=h.device), aux[:count])
+            self.ctx[seq] += count
+            self.steps += 1
+            return [done]
         flat, segments, drafts, draft_probs = [], [], {}, {}
         for seq, slot in zip(seqs, slots):
             ring = self.caches.draft_ring(slot) if self.drafter.k else None
