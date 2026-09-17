@@ -38,6 +38,14 @@ FEATURE_LANES = {
     "comm": ("oneshot", "prefill_collectives"),
 }
 CARRY = ("as-is", "re-measure", "glue", "no")
+# The kernel each feature's GLM-era optimizations were made in (a substring of the Serve kernel). A lane can be admitted
+# on another model's own kernel -- QSA for the indexer, the gated residual for the hyper-connections -- and then the
+# lane serves that model, but GLM's kpool or MK-mHC optimizations do not reach it (engine/QWEN38_CARRY.md C7).
+FEATURE_KERNELS = {
+    "moe": ("engine/kernels/b12x",), "boot_load_compile": ("engine/kernels/b12x",), "kda_linear": ("engine/kernels/kda",),
+    "indexer": ("kpool",), "mla_dsa": ("engine/kernels/mla",), "mhc": ("mhc",), "drafter": ("draft_",),
+    "dense_gemm": ("engine/kernels/dense",), "comm": ("oneshot", "prefill_collectives"),
+}
 
 
 def load():
@@ -53,10 +61,13 @@ def shares(rows, label):
     print(f"  {label:<44} n={len(rows):3d}  " + "  ".join(f"{s} {pct(c.get(s, 0), len(rows))}" for s in SCOPES))
 
 
-def lane_carry(verdicts: dict, lane: str) -> str:
+def lane_carry(verdicts: dict, lane: str, feature: "str | None" = None) -> str:
     v = verdicts.get(lane)
     if v is None:
         return "no"                                        # the model has no such layer
+    markers = FEATURE_KERNELS.get(feature, ())
+    if markers and not (v.serve and any(mark in v.serve.kernel for mark in markers)):
+        return "no"                                        # served by another kernel: the lane is not the one optimized
     if v.status == "admitted":
         return "as-is"
     tier = v.serve.tier if v.serve else None
@@ -75,7 +86,7 @@ def carry(r, verdicts, home=False):
     lanes = FEATURE_LANES.get(r["feature"])
     if not lanes:
         return "re-measure" if r["scope"] == "S" else "no"   # a generic knob (chunk size, width) chosen at GLM's cell
-    return max((lane_carry(verdicts, lane) for lane in lanes), key=CARRY.index)
+    return max((lane_carry(verdicts, lane, r["feature"]) for lane in lanes), key=CARRY.index)
 
 
 def admissions():
