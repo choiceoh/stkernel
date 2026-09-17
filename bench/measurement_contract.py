@@ -3,7 +3,10 @@
 import json
 import math
 
-HARNESS = 46
+HARNESS = 47
+# Harness 47: ko-reasoning-v3 makes the ledger's available-vs-order comparison,
+# reservation delta, and logic core's U6 scope explicit. Oracles and grading are unchanged; the prompt is a
+# new workload, so old quality/throughput records cannot supply its baseline.
 # Harness 46: onepass has two named workloads (`PROFILES`) and `default` is the cheap one -- two
 # contexts and no C=N arm. The full set is `extended`, asked for by name. Two things made this
 # necessary at once: a D17 probe reserves the live door for its whole run and answers 409 to every

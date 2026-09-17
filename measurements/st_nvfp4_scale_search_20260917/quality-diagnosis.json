@@ -1,0 +1,947 @@
+{
+  "scope": "Observed 2K ledger interpretation and v5 failing cases; no layer/logit causal attribution.",
+  "quality_version": "ko-reasoning-v2",
+  "runs": [
+    {
+      "run_id": "20260917T075009-506a1049b5b7",
+      "source_artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T075009-506a1049b5b7",
+      "source_sha256": {
+        "workloads": "cd14108fd17ddae758b40cf9609e6ed34374e45f69df8cae7b19a1a2b2ee899e",
+        "requests": "d8914e5fa7d7f0a8d99fd104ab5a6a9ea91e81cff8aa3b6ef4e72eb50e6b4db0",
+        "quality": "420ce24ad1234a5e48b7e70793e7fb520a34c2dbff05e9948916b5ddf61a480a"
+      },
+      "ledger_case": {
+        "id": "ledger",
+        "evidence": {
+          "L1": "마감은 10일 18시다. 효력일과 기록일이 모두 마감 이전인 행만 고려한다. 같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.",
+          "L2": "기초 재고 182개. 1상자는 12개다. 입고와 반품은 더하고 출고는 뺀다.",
+          "L3": "순재고 전체에 손실률 15%를 한 번 적용하고 소수 부분을 버린 뒤 예약 44개를 뺀 값이 가용량이다.",
+          "L4": "주문 282개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.",
+          "L5": "가정 변경: 예약만 9개 해제한다. 다른 조건과 거래는 그대로다.",
+          "L10": "거래 입고갑 개정1: 효력7일, 기록7일, 입고 16상자.",
+          "L11": "거래 입고갑 개정2: 효력7일, 기록9일, 입고 19상자.",
+          "L12": "거래 입고갑 개정3: 효력7일, 기록11일, 입고 24상자.",
+          "L13": "거래 출고을 개정1: 효력8일, 기록8일, 출고 42개.",
+          "L14": "거래 출고을 개정2: 효력11일, 기록9일, 출고 53개.",
+          "L15": "거래 입고병 개정1: 효력8일, 기록8일, 입고 9상자.",
+          "L16": "거래 입고병 개정2: 효력8일, 기록10일 12시, 취소.",
+          "L17": "거래 반품정 개정1: 효력9일, 기록9일, 반품 13개."
+        },
+        "question": "마감 시점의 전량승인 여부를 판정하라. result와 derivation은 L5를 적용하지 않은 기본 조건이고 counterfactual만 L5를 적용한다. selected에는 취소 개정을 포함해 최종 채택한 거래 행 ID를 적는다. received는 채택한 입고 상자 수에 상자당 개수를 곱한 값이며 반품과 출고는 넣지 않는다. net은 기초 재고에 채택한 입고·반품을 더하고 출고를 뺀 순재고, after_loss는 순재고에 손실률을 적용하고 소수 부분을 버린 값이다. counterfactual에는 L5 적용 후 가용량, 주문 부족량(부족하지 않으면 0), 판정을 적는다. evidence.selection에는 마감·개정 규칙과 모든 거래 행, arithmetic에는 단위·손실 규칙, decision에는 승인 규칙, counterfactual에는 가정 변경 규칙의 ID를 넣는다.",
+        "answer": {
+          "result": {
+            "available": 279,
+            "decision": "보류"
+          },
+          "derivation": {
+            "selected": [
+              "L11",
+              "L13",
+              "L16",
+              "L17"
+            ],
+            "received": 228,
+            "net": 381,
+            "after_loss": 323
+          },
+          "evidence": {
+            "selection": [
+              "L1",
+              "L10",
+              "L11",
+              "L12",
+              "L13",
+              "L14",
+              "L15",
+              "L16",
+              "L17"
+            ],
+            "arithmetic": [
+              "L2",
+              "L3"
+            ],
+            "decision": [
+              "L4"
+            ],
+            "counterfactual": [
+              "L5"
+            ]
+          },
+          "counterfactual": {
+            "available": 288,
+            "shortfall": 0,
+            "decision": "전량승인"
+          }
+        },
+        "schema_hints": {
+          "result.decision": "전량승인|보류",
+          "counterfactual.decision": "전량승인|보류",
+          "derivation.selected": [
+            "거래 행 ID"
+          ]
+        }
+      },
+      "observations": [
+        {
+          "phase": "measure-c1",
+          "question": 0,
+          "client": null,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "eba2561923363773a92b2c8889d69e9e36072ad22f5121d27d7bd6c7e30c20f6",
+          "output_sha256": "208f5364ff5998fbfaa5515248b9b285ca39d9e3dcd197a95140f729ab079d28",
+          "finish_reason": "stop",
+          "visible": "```json\n{\"ledger\": {\"result\": {\"available\": 279, \"decision\": \"보류\"}, \"derivation\": {\"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"], \"received\": 228, \"net\": 381, \"after_loss\": 323}, \"evidence\": {\"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"], \"arithmetic\": [\"L2\", \"L3\"], \"decision\": [\"L4\"], \"counterfactual\": [\"L5\"]}, \"counterfactual\": {\"available\": 288, \"shortfall\": 0, \"decision\": \"전량승인\"}}}\n```",
+          "visible_sha256": "e0c32ed3f0dc9a3cbb780744972d6becf4e820034b971beeca722fff956f51f3",
+          "quality": [
+            {
+              "phase": "measure-c1",
+              "ctx": 2000,
+              "question": 0,
+              "client": null,
+              "request_sha256": "eba2561923363773a92b2c8889d69e9e36072ad22f5121d27d7bd6c7e30c20f6",
+              "output_sha256": "208f5364ff5998fbfaa5515248b9b285ca39d9e3dcd197a95140f729ab079d28",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": true,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": true,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": true
+                  },
+                  "score": 6,
+                  "max_score": 6,
+                  "failures": [],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "e0c32ed3f0dc9a3cbb780744972d6becf4e820034b971beeca722fff956f51f3",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "20260917T081219-3b8b6377c42e",
+      "source_artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T081219-3b8b6377c42e",
+      "source_sha256": {
+        "workloads": "cd14108fd17ddae758b40cf9609e6ed34374e45f69df8cae7b19a1a2b2ee899e",
+        "requests": "1feb6b793197bc8145bf080bc83e87148bc4d01758a3920ed6b9690150af7437",
+        "quality": "7740261a00f66c827d552f82cced8683c3ef5f2f5140effacaffd1816fad25c9"
+      },
+      "ledger_case": {
+        "id": "ledger",
+        "evidence": {
+          "L1": "마감은 10일 18시다. 효력일과 기록일이 모두 마감 이전인 행만 고려한다. 같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.",
+          "L2": "기초 재고 182개. 1상자는 12개다. 입고와 반품은 더하고 출고는 뺀다.",
+          "L3": "순재고 전체에 손실률 15%를 한 번 적용하고 소수 부분을 버린 뒤 예약 44개를 뺀 값이 가용량이다.",
+          "L4": "주문 282개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.",
+          "L5": "가정 변경: 예약만 9개 해제한다. 다른 조건과 거래는 그대로다.",
+          "L10": "거래 입고갑 개정1: 효력7일, 기록7일, 입고 16상자.",
+          "L11": "거래 입고갑 개정2: 효력7일, 기록9일, 입고 19상자.",
+          "L12": "거래 입고갑 개정3: 효력7일, 기록11일, 입고 24상자.",
+          "L13": "거래 출고을 개정1: 효력8일, 기록8일, 출고 42개.",
+          "L14": "거래 출고을 개정2: 효력11일, 기록9일, 출고 53개.",
+          "L15": "거래 입고병 개정1: 효력8일, 기록8일, 입고 9상자.",
+          "L16": "거래 입고병 개정2: 효력8일, 기록10일 12시, 취소.",
+          "L17": "거래 반품정 개정1: 효력9일, 기록9일, 반품 13개."
+        },
+        "question": "마감 시점의 전량승인 여부를 판정하라. result와 derivation은 L5를 적용하지 않은 기본 조건이고 counterfactual만 L5를 적용한다. selected에는 취소 개정을 포함해 최종 채택한 거래 행 ID를 적는다. received는 채택한 입고 상자 수에 상자당 개수를 곱한 값이며 반품과 출고는 넣지 않는다. net은 기초 재고에 채택한 입고·반품을 더하고 출고를 뺀 순재고, after_loss는 순재고에 손실률을 적용하고 소수 부분을 버린 값이다. counterfactual에는 L5 적용 후 가용량, 주문 부족량(부족하지 않으면 0), 판정을 적는다. evidence.selection에는 마감·개정 규칙과 모든 거래 행, arithmetic에는 단위·손실 규칙, decision에는 승인 규칙, counterfactual에는 가정 변경 규칙의 ID를 넣는다.",
+        "answer": {
+          "result": {
+            "available": 279,
+            "decision": "보류"
+          },
+          "derivation": {
+            "selected": [
+              "L11",
+              "L13",
+              "L16",
+              "L17"
+            ],
+            "received": 228,
+            "net": 381,
+            "after_loss": 323
+          },
+          "evidence": {
+            "selection": [
+              "L1",
+              "L10",
+              "L11",
+              "L12",
+              "L13",
+              "L14",
+              "L15",
+              "L16",
+              "L17"
+            ],
+            "arithmetic": [
+              "L2",
+              "L3"
+            ],
+            "decision": [
+              "L4"
+            ],
+            "counterfactual": [
+              "L5"
+            ]
+          },
+          "counterfactual": {
+            "available": 288,
+            "shortfall": 0,
+            "decision": "전량승인"
+          }
+        },
+        "schema_hints": {
+          "result.decision": "전량승인|보류",
+          "counterfactual.decision": "전량승인|보류",
+          "derivation.selected": [
+            "거래 행 ID"
+          ]
+        }
+      },
+      "observations": [
+        {
+          "phase": "measure-c1",
+          "question": 0,
+          "client": null,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "089ea897702a67efd1e03d2339f3e846563a145c1889cd5677db4a8ea2194da8",
+          "output_sha256": "a058fb489b0f62bcda3c8659ff646692e1c3338207869d0512da6a4ab3a2d96c",
+          "finish_reason": "stop",
+          "visible": "{\"ledger\": {\"result\": {\"available\": 279, \"decision\": \"보류\"}, \"derivation\": {\"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"], \"received\": 228, \"net\": 381, \"after_loss\": 323}, \"evidence\": {\"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"], \"arithmetic\": [\"L2\", \"L3\"], \"decision\": [\"L4\"], \"counterfactual\": [\"L5\"]}, \"counterfactual\": {\"available\": 288, \"shortfall\": 0, \"decision\": \"전량승인\"}}}",
+          "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+          "quality": [
+            {
+              "phase": "measure-c1",
+              "ctx": 2000,
+              "question": 0,
+              "client": null,
+              "request_sha256": "089ea897702a67efd1e03d2339f3e846563a145c1889cd5677db4a8ea2194da8",
+              "output_sha256": "a058fb489b0f62bcda3c8659ff646692e1c3338207869d0512da6a4ab3a2d96c",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": true,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": true,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": true
+                  },
+                  "score": 6,
+                  "max_score": 6,
+                  "failures": [],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "20260917T082613-00d31a497ca1",
+      "source_artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T082613-00d31a497ca1",
+      "source_sha256": {
+        "workloads": "cd14108fd17ddae758b40cf9609e6ed34374e45f69df8cae7b19a1a2b2ee899e",
+        "requests": "98a92dfadb3cff7ff4bbecb6f4b1594308c88707a53b4cc1f4484f956f8413db",
+        "quality": "0b21d32698716afd6d3d0317aaf429a6294db4a9cc2e9e69987bfb7879605c2a"
+      },
+      "ledger_case": {
+        "id": "ledger",
+        "evidence": {
+          "L1": "마감은 10일 18시다. 효력일과 기록일이 모두 마감 이전인 행만 고려한다. 같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.",
+          "L2": "기초 재고 182개. 1상자는 12개다. 입고와 반품은 더하고 출고는 뺀다.",
+          "L3": "순재고 전체에 손실률 15%를 한 번 적용하고 소수 부분을 버린 뒤 예약 44개를 뺀 값이 가용량이다.",
+          "L4": "주문 282개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.",
+          "L5": "가정 변경: 예약만 9개 해제한다. 다른 조건과 거래는 그대로다.",
+          "L10": "거래 입고갑 개정1: 효력7일, 기록7일, 입고 16상자.",
+          "L11": "거래 입고갑 개정2: 효력7일, 기록9일, 입고 19상자.",
+          "L12": "거래 입고갑 개정3: 효력7일, 기록11일, 입고 24상자.",
+          "L13": "거래 출고을 개정1: 효력8일, 기록8일, 출고 42개.",
+          "L14": "거래 출고을 개정2: 효력11일, 기록9일, 출고 53개.",
+          "L15": "거래 입고병 개정1: 효력8일, 기록8일, 입고 9상자.",
+          "L16": "거래 입고병 개정2: 효력8일, 기록10일 12시, 취소.",
+          "L17": "거래 반품정 개정1: 효력9일, 기록9일, 반품 13개."
+        },
+        "question": "마감 시점의 전량승인 여부를 판정하라. result와 derivation은 L5를 적용하지 않은 기본 조건이고 counterfactual만 L5를 적용한다. selected에는 취소 개정을 포함해 최종 채택한 거래 행 ID를 적는다. received는 채택한 입고 상자 수에 상자당 개수를 곱한 값이며 반품과 출고는 넣지 않는다. net은 기초 재고에 채택한 입고·반품을 더하고 출고를 뺀 순재고, after_loss는 순재고에 손실률을 적용하고 소수 부분을 버린 값이다. counterfactual에는 L5 적용 후 가용량, 주문 부족량(부족하지 않으면 0), 판정을 적는다. evidence.selection에는 마감·개정 규칙과 모든 거래 행, arithmetic에는 단위·손실 규칙, decision에는 승인 규칙, counterfactual에는 가정 변경 규칙의 ID를 넣는다.",
+        "answer": {
+          "result": {
+            "available": 279,
+            "decision": "보류"
+          },
+          "derivation": {
+            "selected": [
+              "L11",
+              "L13",
+              "L16",
+              "L17"
+            ],
+            "received": 228,
+            "net": 381,
+            "after_loss": 323
+          },
+          "evidence": {
+            "selection": [
+              "L1",
+              "L10",
+              "L11",
+              "L12",
+              "L13",
+              "L14",
+              "L15",
+              "L16",
+              "L17"
+            ],
+            "arithmetic": [
+              "L2",
+              "L3"
+            ],
+            "decision": [
+              "L4"
+            ],
+            "counterfactual": [
+              "L5"
+            ]
+          },
+          "counterfactual": {
+            "available": 288,
+            "shortfall": 0,
+            "decision": "전량승인"
+          }
+        },
+        "schema_hints": {
+          "result.decision": "전량승인|보류",
+          "counterfactual.decision": "전량승인|보류",
+          "derivation.selected": [
+            "거래 행 ID"
+          ]
+        }
+      },
+      "observations": [
+        {
+          "phase": "measure-c1",
+          "question": 0,
+          "client": null,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "be00a07bb80e82c2c48fc2efda63fad64ed9d614de743da03569fb7de10d4830",
+          "output_sha256": "ba9df90b916c2b3540530c7025b2fb0c86019e261eceb1d873bbd25d9c86d3f6",
+          "finish_reason": "stop",
+          "visible": "{\"ledger\": {\"result\": {\"available\": 279, \"decision\": \"전량승인\"}, \"derivation\": {\"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"], \"received\": 228, \"net\": 381, \"after_loss\": 323}, \"evidence\": {\"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"], \"arithmetic\": [\"L2\", \"L3\"], \"decision\": [\"L4\"], \"counterfactual\": [\"L5\"]}, \"counterfactual\": {\"available\": 288, \"shortfall\": 0, \"decision\": \"전량승인\"}}}",
+          "visible_sha256": "6a1e080c5bd9169502ae63df298e97ecc8ba8d10cfe077de80aa3d4e8e37adb6",
+          "interpretation_excerpt": "Decision: order 282 ≥ 282 → full approval. Available 279 < 282? Wait rule L4: \"주문 282개 이상이면 전량승인\" — order ≥ 282 → full approval. The order is 282. So decision = 전량승인. Hmm, but available is 279 < order 282. The rule says order ≥282 → full approval regardless of available? The rule as stated: \"주문 282개 이상이면 전량승인, 미만이면 보류다.\" So decision based on order quantity vs 282. Order = 282 → 전량승인.",
+          "quality": [
+            {
+              "phase": "measure-c1",
+              "ctx": 2000,
+              "question": 0,
+              "client": null,
+              "request_sha256": "be00a07bb80e82c2c48fc2efda63fad64ed9d614de743da03569fb7de10d4830",
+              "output_sha256": "ba9df90b916c2b3540530c7025b2fb0c86019e261eceb1d873bbd25d9c86d3f6",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": false,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": false,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": true
+                  },
+                  "score": 5,
+                  "max_score": 6,
+                  "failures": [
+                    {
+                      "dimension": "result",
+                      "expected": {
+                        "available": 279,
+                        "decision": "보류"
+                      },
+                      "actual": {
+                        "available": 279,
+                        "decision": "전량승인"
+                      }
+                    }
+                  ],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "6a1e080c5bd9169502ae63df298e97ecc8ba8d10cfe077de80aa3d4e8e37adb6",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "20260917T084807-c744dee63090",
+      "source_artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T084807-c744dee63090",
+      "source_sha256": {
+        "workloads": "cd14108fd17ddae758b40cf9609e6ed34374e45f69df8cae7b19a1a2b2ee899e",
+        "requests": "a373e4d1a4124f1fffe39bd457c29178d7e7def64f3dd238ff2205d04b6b11e0",
+        "quality": "0dee95f168fb2e221e17b002ed75090fad329aaa1c745b75f8de12b5844830ff"
+      },
+      "ledger_case": {
+        "id": "ledger",
+        "evidence": {
+          "L1": "마감은 10일 18시다. 효력일과 기록일이 모두 마감 이전인 행만 고려한다. 같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.",
+          "L2": "기초 재고 182개. 1상자는 12개다. 입고와 반품은 더하고 출고는 뺀다.",
+          "L3": "순재고 전체에 손실률 15%를 한 번 적용하고 소수 부분을 버린 뒤 예약 44개를 뺀 값이 가용량이다.",
+          "L4": "주문 282개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.",
+          "L5": "가정 변경: 예약만 9개 해제한다. 다른 조건과 거래는 그대로다.",
+          "L10": "거래 입고갑 개정1: 효력7일, 기록7일, 입고 16상자.",
+          "L11": "거래 입고갑 개정2: 효력7일, 기록9일, 입고 19상자.",
+          "L12": "거래 입고갑 개정3: 효력7일, 기록11일, 입고 24상자.",
+          "L13": "거래 출고을 개정1: 효력8일, 기록8일, 출고 42개.",
+          "L14": "거래 출고을 개정2: 효력11일, 기록9일, 출고 53개.",
+          "L15": "거래 입고병 개정1: 효력8일, 기록8일, 입고 9상자.",
+          "L16": "거래 입고병 개정2: 효력8일, 기록10일 12시, 취소.",
+          "L17": "거래 반품정 개정1: 효력9일, 기록9일, 반품 13개."
+        },
+        "question": "마감 시점의 전량승인 여부를 판정하라. result와 derivation은 L5를 적용하지 않은 기본 조건이고 counterfactual만 L5를 적용한다. selected에는 취소 개정을 포함해 최종 채택한 거래 행 ID를 적는다. received는 채택한 입고 상자 수에 상자당 개수를 곱한 값이며 반품과 출고는 넣지 않는다. net은 기초 재고에 채택한 입고·반품을 더하고 출고를 뺀 순재고, after_loss는 순재고에 손실률을 적용하고 소수 부분을 버린 값이다. counterfactual에는 L5 적용 후 가용량, 주문 부족량(부족하지 않으면 0), 판정을 적는다. evidence.selection에는 마감·개정 규칙과 모든 거래 행, arithmetic에는 단위·손실 규칙, decision에는 승인 규칙, counterfactual에는 가정 변경 규칙의 ID를 넣는다.",
+        "answer": {
+          "result": {
+            "available": 279,
+            "decision": "보류"
+          },
+          "derivation": {
+            "selected": [
+              "L11",
+              "L13",
+              "L16",
+              "L17"
+            ],
+            "received": 228,
+            "net": 381,
+            "after_loss": 323
+          },
+          "evidence": {
+            "selection": [
+              "L1",
+              "L10",
+              "L11",
+              "L12",
+              "L13",
+              "L14",
+              "L15",
+              "L16",
+              "L17"
+            ],
+            "arithmetic": [
+              "L2",
+              "L3"
+            ],
+            "decision": [
+              "L4"
+            ],
+            "counterfactual": [
+              "L5"
+            ]
+          },
+          "counterfactual": {
+            "available": 288,
+            "shortfall": 0,
+            "decision": "전량승인"
+          }
+        },
+        "schema_hints": {
+          "result.decision": "전량승인|보류",
+          "counterfactual.decision": "전량승인|보류",
+          "derivation.selected": [
+            "거래 행 ID"
+          ]
+        }
+      },
+      "observations": [
+        {
+          "phase": "measure-c1",
+          "question": 0,
+          "client": null,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "b42d40246a3563192e9c3fc8c7f01e9a2e481ac796d52275073618303499b914",
+          "output_sha256": "f6733779676048dd8975be0b756b64fb9677a02c4dfb963229da7eb9f381b780",
+          "finish_reason": "stop",
+          "visible": "{\n  \"ledger\": {\n    \"result\": {\n      \"available\": 279,\n      \"decision\": \"전량승인\"\n    },\n    \"derivation\": {\n      \"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"],\n      \"received\": 228,\n      \"net\": 381,\n      \"after_loss\": 323\n    },\n    \"evidence\": {\n      \"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"],\n      \"arithmetic\": [\"L2\", \"L3\"],\n      \"decision\": [\"L4\"],\n      \"counterfactual\": [\"L5\"]\n    },\n    \"counterfactual\": {\n      \"available\": 288,\n      \"shortfall\": 0,\n      \"decision\": \"전량승인\"\n    }\n  }\n}",
+          "visible_sha256": "01b0da156b753c6914b00f15574824b70e85edd7c1e4fc8bcb9325f626b58235",
+          "interpretation_excerpt": "Decision: order 282 ≥ 282 → full approval. Available 279 < 282? Wait rule L4: \"주문 282개 이상이면 전량승인\" — order ≥ 282 → full approval. The order is 282. So decision = 전량승인. Hmm, but available is 279 < order 282. The rule says order ≥282 → full approval regardless of available? The rule as stated: \"주문 282개 이상이면 전량승인, 미만이면 보류다.\" So decision based on order quantity vs 282. Order = 282 → 전량승인.",
+          "quality": [
+            {
+              "phase": "measure-c1",
+              "ctx": 2000,
+              "question": 0,
+              "client": null,
+              "request_sha256": "b42d40246a3563192e9c3fc8c7f01e9a2e481ac796d52275073618303499b914",
+              "output_sha256": "f6733779676048dd8975be0b756b64fb9677a02c4dfb963229da7eb9f381b780",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": false,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": false,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": true
+                  },
+                  "score": 5,
+                  "max_score": 6,
+                  "failures": [
+                    {
+                      "dimension": "result",
+                      "expected": {
+                        "available": 279,
+                        "decision": "보류"
+                      },
+                      "actual": {
+                        "available": 279,
+                        "decision": "전량승인"
+                      }
+                    }
+                  ],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "01b0da156b753c6914b00f15574824b70e85edd7c1e4fc8bcb9325f626b58235",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "20260917T085954-db0ad21c8a9c",
+      "source_artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T085954-db0ad21c8a9c",
+      "source_sha256": {
+        "workloads": "cfa15652f6b8e27fda4a8f6121faa9a326af41b5cb97f460aef925b7308e59df",
+        "requests": "82da00334b5f2d67e655f05fed43cf1d9b7ed7970e40110544af0b927ffd78d7",
+        "quality": "069a20e9ab691384dd63d498193be1d5c7ba42177be472b00549bf7f76ebc6da"
+      },
+      "ledger_case": {
+        "id": "ledger",
+        "evidence": {
+          "L1": "마감은 10일 18시다. 효력일과 기록일이 모두 마감 이전인 행만 고려한다. 같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.",
+          "L2": "기초 재고 182개. 1상자는 12개다. 입고와 반품은 더하고 출고는 뺀다.",
+          "L3": "순재고 전체에 손실률 15%를 한 번 적용하고 소수 부분을 버린 뒤 예약 44개를 뺀 값이 가용량이다.",
+          "L4": "주문 282개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.",
+          "L5": "가정 변경: 예약만 9개 해제한다. 다른 조건과 거래는 그대로다.",
+          "L10": "거래 입고갑 개정1: 효력7일, 기록7일, 입고 16상자.",
+          "L11": "거래 입고갑 개정2: 효력7일, 기록9일, 입고 19상자.",
+          "L12": "거래 입고갑 개정3: 효력7일, 기록11일, 입고 24상자.",
+          "L13": "거래 출고을 개정1: 효력8일, 기록8일, 출고 42개.",
+          "L14": "거래 출고을 개정2: 효력11일, 기록9일, 출고 53개.",
+          "L15": "거래 입고병 개정1: 효력8일, 기록8일, 입고 9상자.",
+          "L16": "거래 입고병 개정2: 효력8일, 기록10일 12시, 취소.",
+          "L17": "거래 반품정 개정1: 효력9일, 기록9일, 반품 13개."
+        },
+        "question": "마감 시점의 전량승인 여부를 판정하라. result와 derivation은 L5를 적용하지 않은 기본 조건이고 counterfactual만 L5를 적용한다. selected에는 취소 개정을 포함해 최종 채택한 거래 행 ID를 적는다. received는 채택한 입고 상자 수에 상자당 개수를 곱한 값이며 반품과 출고는 넣지 않는다. net은 기초 재고에 채택한 입고·반품을 더하고 출고를 뺀 순재고, after_loss는 순재고에 손실률을 적용하고 소수 부분을 버린 값이다. counterfactual에는 L5 적용 후 가용량, 주문 부족량(부족하지 않으면 0), 판정을 적는다. evidence.selection에는 마감·개정 규칙과 모든 거래 행, arithmetic에는 단위·손실 규칙, decision에는 승인 규칙, counterfactual에는 가정 변경 규칙의 ID를 넣는다.",
+        "answer": {
+          "result": {
+            "available": 279,
+            "decision": "보류"
+          },
+          "derivation": {
+            "selected": [
+              "L11",
+              "L13",
+              "L16",
+              "L17"
+            ],
+            "received": 228,
+            "net": 381,
+            "after_loss": 323
+          },
+          "evidence": {
+            "selection": [
+              "L1",
+              "L10",
+              "L11",
+              "L12",
+              "L13",
+              "L14",
+              "L15",
+              "L16",
+              "L17"
+            ],
+            "arithmetic": [
+              "L2",
+              "L3"
+            ],
+            "decision": [
+              "L4"
+            ],
+            "counterfactual": [
+              "L5"
+            ]
+          },
+          "counterfactual": {
+            "available": 288,
+            "shortfall": 0,
+            "decision": "전량승인"
+          }
+        },
+        "schema_hints": {
+          "result.decision": "전량승인|보류",
+          "counterfactual.decision": "전량승인|보류",
+          "derivation.selected": [
+            "거래 행 ID"
+          ]
+        }
+      },
+      "observations": [
+        {
+          "phase": "measure-c1",
+          "question": 0,
+          "client": null,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "6e3d5886532797044a8e3e66ee633230dc1910563f2209b84afb3c588a44594e",
+          "output_sha256": "05d0677f0e9c38e46989a105f30fd6df35171dd995b2344ff106ad27679b51aa",
+          "finish_reason": "stop",
+          "visible": "{\"ledger\": {\"result\": {\"available\": 279, \"decision\": \"보류\"}, \"derivation\": {\"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"], \"received\": 228, \"net\": 381, \"after_loss\": 323}, \"evidence\": {\"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"], \"arithmetic\": [\"L2\", \"L3\"], \"decision\": [\"L4\"], \"counterfactual\": [\"L5\"]}, \"counterfactual\": {\"available\": 288, \"shortfall\": 0, \"decision\": \"전량승인\"}}}",
+          "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+          "quality": [
+            {
+              "phase": "measure-c1",
+              "ctx": 2000,
+              "question": 0,
+              "client": null,
+              "request_sha256": "6e3d5886532797044a8e3e66ee633230dc1910563f2209b84afb3c588a44594e",
+              "output_sha256": "05d0677f0e9c38e46989a105f30fd6df35171dd995b2344ff106ad27679b51aa",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": true,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": true,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": true
+                  },
+                  "score": 6,
+                  "max_score": 6,
+                  "failures": [],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": "20260917T091248-5c11967deaa5",
+      "source_artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T091248-5c11967deaa5",
+      "source_sha256": {
+        "workloads": "cfa15652f6b8e27fda4a8f6121faa9a326af41b5cb97f460aef925b7308e59df",
+        "requests": "16022f51908f4298093274a0081a75bb439aedec1da34b9339afd8dd951c0789",
+        "quality": "3c5c0eb214fab152209d4c0278c3418ec11143b9446c46f66bcb4771a56fba86"
+      },
+      "ledger_case": {
+        "id": "ledger",
+        "evidence": {
+          "L1": "마감은 10일 18시다. 효력일과 기록일이 모두 마감 이전인 행만 고려한다. 같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.",
+          "L2": "기초 재고 182개. 1상자는 12개다. 입고와 반품은 더하고 출고는 뺀다.",
+          "L3": "순재고 전체에 손실률 15%를 한 번 적용하고 소수 부분을 버린 뒤 예약 44개를 뺀 값이 가용량이다.",
+          "L4": "주문 282개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.",
+          "L5": "가정 변경: 예약만 9개 해제한다. 다른 조건과 거래는 그대로다.",
+          "L10": "거래 입고갑 개정1: 효력7일, 기록7일, 입고 16상자.",
+          "L11": "거래 입고갑 개정2: 효력7일, 기록9일, 입고 19상자.",
+          "L12": "거래 입고갑 개정3: 효력7일, 기록11일, 입고 24상자.",
+          "L13": "거래 출고을 개정1: 효력8일, 기록8일, 출고 42개.",
+          "L14": "거래 출고을 개정2: 효력11일, 기록9일, 출고 53개.",
+          "L15": "거래 입고병 개정1: 효력8일, 기록8일, 입고 9상자.",
+          "L16": "거래 입고병 개정2: 효력8일, 기록10일 12시, 취소.",
+          "L17": "거래 반품정 개정1: 효력9일, 기록9일, 반품 13개."
+        },
+        "question": "마감 시점의 전량승인 여부를 판정하라. result와 derivation은 L5를 적용하지 않은 기본 조건이고 counterfactual만 L5를 적용한다. selected에는 취소 개정을 포함해 최종 채택한 거래 행 ID를 적는다. received는 채택한 입고 상자 수에 상자당 개수를 곱한 값이며 반품과 출고는 넣지 않는다. net은 기초 재고에 채택한 입고·반품을 더하고 출고를 뺀 순재고, after_loss는 순재고에 손실률을 적용하고 소수 부분을 버린 값이다. counterfactual에는 L5 적용 후 가용량, 주문 부족량(부족하지 않으면 0), 판정을 적는다. evidence.selection에는 마감·개정 규칙과 모든 거래 행, arithmetic에는 단위·손실 규칙, decision에는 승인 규칙, counterfactual에는 가정 변경 규칙의 ID를 넣는다.",
+        "answer": {
+          "result": {
+            "available": 279,
+            "decision": "보류"
+          },
+          "derivation": {
+            "selected": [
+              "L11",
+              "L13",
+              "L16",
+              "L17"
+            ],
+            "received": 228,
+            "net": 381,
+            "after_loss": 323
+          },
+          "evidence": {
+            "selection": [
+              "L1",
+              "L10",
+              "L11",
+              "L12",
+              "L13",
+              "L14",
+              "L15",
+              "L16",
+              "L17"
+            ],
+            "arithmetic": [
+              "L2",
+              "L3"
+            ],
+            "decision": [
+              "L4"
+            ],
+            "counterfactual": [
+              "L5"
+            ]
+          },
+          "counterfactual": {
+            "available": 288,
+            "shortfall": 0,
+            "decision": "전량승인"
+          }
+        },
+        "schema_hints": {
+          "result.decision": "전량승인|보류",
+          "counterfactual.decision": "전량승인|보류",
+          "derivation.selected": [
+            "거래 행 ID"
+          ]
+        }
+      },
+      "observations": [
+        {
+          "phase": "measure-c1",
+          "question": 0,
+          "client": null,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "32752cbaf4bb25e7b692a40338feaf1c5e70117e078509337063b0aa2207a01d",
+          "output_sha256": "fec5c16a74c1c84c25af894deb2bb71542e203d0d0514feec7b99a8a3e17b34d",
+          "finish_reason": "stop",
+          "visible": "{\"ledger\": {\"result\": {\"available\": 279, \"decision\": \"보류\"}, \"derivation\": {\"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"], \"received\": 228, \"net\": 381, \"after_loss\": 323}, \"evidence\": {\"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"], \"arithmetic\": [\"L2\", \"L3\"], \"decision\": [\"L4\"], \"counterfactual\": [\"L5\"]}, \"counterfactual\": {\"available\": 288, \"shortfall\": 0, \"decision\": \"전량승인\"}}}",
+          "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+          "quality": [
+            {
+              "phase": "measure-c1",
+              "ctx": 2000,
+              "question": 0,
+              "client": null,
+              "request_sha256": "32752cbaf4bb25e7b692a40338feaf1c5e70117e078509337063b0aa2207a01d",
+              "output_sha256": "fec5c16a74c1c84c25af894deb2bb71542e203d0d0514feec7b99a8a3e17b34d",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": true,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": true,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": true
+                  },
+                  "score": 6,
+                  "max_score": 6,
+                  "failures": [],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "measure-c1",
+          "question": 2,
+          "client": null,
+          "workload_sha256": "654d6e31507fa4f87b9ee5dd2bc5393844a2644b90b7922141b9410a1d7ecd50",
+          "request_sha256": "9f9ca42e1014b61fa2334ccde590f770742759d3b47fe60f17878ab06db6cc86",
+          "output_sha256": "b6fc4f931de12c3b74168aaff5cd79a52be5325ad65f7bcaa44612a68badf169",
+          "finish_reason": "stop",
+          "visible": "```json\n{\n  \"logic\": {\n    \"result\": {\n      \"statuses\": [\"판단불가\", \"참\", \"거짓\", \"판단불가\"]\n    },\n    \"derivation\": {\n      \"worlds\": [\"000110\", \"010001\", \"010110\", \"101110\"]\n    },\n    \"evidence\": {\n      \"domain\": [\"U0\"],\n      \"constraints\": [\"U1\", \"U2\", \"U3\", \"U4\", \"U5\"],\n      \"counterfactual\": [\"U6\"]\n    },\n    \"counterfactual\": {\n      \"consistent\": false,\n      \"minimal_cores\": [[\"U1\", \"U2\", \"U3\", \"U4\", \"U6\"]]\n    },\n    \"witnesses\": [\n      {\"true\": \"101110\", \"false\": \"000110\"},\n      {\"true\": \"101110\", \"false\": null},\n      {\"true\": null, \"false\": \"101110\"},\n      {\"true\": \"010110\", \"false\": \"101110\"}\n    ]\n  }\n}\n```",
+          "visible_sha256": "cf4cdbd04935f7555e00a5818569d9acb01f7704dfb0cdcaf24f8c8021588031",
+          "quality": [
+            {
+              "phase": "measure-c1",
+              "ctx": 2000,
+              "question": 2,
+              "client": null,
+              "request_sha256": "9f9ca42e1014b61fa2334ccde590f770742759d3b47fe60f17878ab06db6cc86",
+              "output_sha256": "b6fc4f931de12c3b74168aaff5cd79a52be5325ad65f7bcaa44612a68badf169",
+              "results": [
+                {
+                  "case": "logic",
+                  "version": "ko-reasoning-v2",
+                  "passed": false,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": true,
+                    "derivation": false,
+                    "evidence": true,
+                    "counterfactual": true,
+                    "witnesses": true
+                  },
+                  "score": 6,
+                  "max_score": 7,
+                  "failures": [
+                    {
+                      "dimension": "derivation",
+                      "expected": {
+                        "worlds": [
+                          "000110",
+                          "010011",
+                          "010110",
+                          "101110"
+                        ]
+                      },
+                      "actual": {
+                        "worlds": [
+                          "000110",
+                          "010001",
+                          "010110",
+                          "101110"
+                        ]
+                      }
+                    }
+                  ],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "cf4cdbd04935f7555e00a5818569d9acb01f7704dfb0cdcaf24f8c8021588031",
+                  "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "question": 0,
+          "client": 0,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "0b7c17c44e83a39657fe4440161abbd639fff363b6766ad47f3b84aea3fcc241",
+          "output_sha256": "62601f444d9df5b1c586e30cf6567889d781fde7f6562b7293ac743eda5002f9",
+          "finish_reason": "stop",
+          "visible": "{\"ledger\": {\"result\": {\"available\": 279, \"decision\": \"보류\"}, \"derivation\": {\"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"], \"received\": 228, \"net\": 381, \"after_loss\": 323}, \"evidence\": {\"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"], \"arithmetic\": [\"L2\", \"L3\"], \"decision\": [\"L4\"], \"counterfactual\": [\"L5\"]}, \"counterfactual\": {\"available\": 314, \"shortfall\": 0, \"decision\": \"전량승인\"}}}",
+          "visible_sha256": "83e5c9d94ba00827627d5909e95006d417b0b3b17bc9d48e3f9420251d4ebc09",
+          "interpretation_excerpt": "Counterfactual (L5): 예약만 9개 해제 → available = 323 - 9 = 314. Shortfall = max(0, 282 - 314) = 0. Decision: 314 ≥ 282 → 전량승인.\n\nWait — \"예약만 9개 해제한다\" could mean release 9 reservations (i.e., subtract 9 instead of 44). Yes.",
+          "quality": [
+            {
+              "phase": "measure-c2-2000-q0",
+              "ctx": 2000,
+              "question": 0,
+              "client": 0,
+              "request_sha256": "0b7c17c44e83a39657fe4440161abbd639fff363b6766ad47f3b84aea3fcc241",
+              "output_sha256": "62601f444d9df5b1c586e30cf6567889d781fde7f6562b7293ac743eda5002f9",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": false,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": true,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": false
+                  },
+                  "score": 5,
+                  "max_score": 6,
+                  "failures": [
+                    {
+                      "dimension": "counterfactual",
+                      "expected": {
+                        "available": 288,
+                        "shortfall": 0,
+                        "decision": "전량승인"
+                      },
+                      "actual": {
+                        "available": 314,
+                        "shortfall": 0,
+                        "decision": "전량승인"
+                      }
+                    }
+                  ],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "83e5c9d94ba00827627d5909e95006d417b0b3b17bc9d48e3f9420251d4ebc09",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "question": 0,
+          "client": 1,
+          "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+          "request_sha256": "2e2ac95c08484c00a3eb609816ea042d15f570d23e3c40ad9654d7329116bdc0",
+          "output_sha256": "c286fdafdaa7cc395c9e1542259391fad1d685ace04a3c468931cdfa53b93a80",
+          "finish_reason": "stop",
+          "visible": "{\n  \"ledger\": {\n    \"result\": {\n      \"available\": 279,\n      \"decision\": \"보류\"\n    },\n    \"derivation\": {\n      \"selected\": [\"L11\", \"L13\", \"L16\", \"L17\"],\n      \"received\": 228,\n      \"net\": 381,\n      \"after_loss\": 323\n    },\n    \"evidence\": {\n      \"selection\": [\"L1\", \"L10\", \"L11\", \"L12\", \"L13\", \"L14\", \"L15\", \"L16\", \"L17\"],\n      \"arithmetic\": [\"L2\", \"L3\"],\n      \"decision\": [\"L4\"],\n      \"counterfactual\": [\"L5\"]\n    },\n    \"counterfactual\": {\n      \"available\": 288,\n      \"shortfall\": 0,\n      \"decision\": \"전량승인\"\n    }\n  }\n}",
+          "visible_sha256": "33df8676f32fafd0829130663c25c1d0c76928682b73da5a777e9ee54b15b81a",
+          "quality": [
+            {
+              "phase": "measure-c2-2000-q0",
+              "ctx": 2000,
+              "question": 0,
+              "client": 1,
+              "request_sha256": "2e2ac95c08484c00a3eb609816ea042d15f570d23e3c40ad9654d7329116bdc0",
+              "output_sha256": "c286fdafdaa7cc395c9e1542259391fad1d685ace04a3c468931cdfa53b93a80",
+              "results": [
+                {
+                  "case": "ledger",
+                  "version": "ko-reasoning-v2",
+                  "passed": true,
+                  "checks": {
+                    "format": true,
+                    "completion": true,
+                    "result": true,
+                    "derivation": true,
+                    "evidence": true,
+                    "counterfactual": true
+                  },
+                  "score": 6,
+                  "max_score": 6,
+                  "failures": [],
+                  "parse_error": null,
+                  "finish_reason": "stop",
+                  "visible_sha256": "33df8676f32fafd0829130663c25c1d0c76928682b73da5a777e9ee54b15b81a",
+                  "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

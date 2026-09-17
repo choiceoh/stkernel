@@ -102,7 +102,9 @@ def comparable(a, b) -> bool:
     indistinguishable. Now a record says which named workload it is, and two that disagree -- or a
     record that predates the name -- are not each other's baseline.
     """
-    return bool(profile_of(a)) and profile_of(a) == profile_of(b)
+    return (bool(profile_of(a)) and profile_of(a) == profile_of(b)
+            and all(a.get(key) == b.get(key) for key in
+                    ("harness", "quality_protocol", "workload", "generation_budget")))
 
 
 def samples(rows, sha, *, allow_rehearsal=False, tree=None, profile=None):
@@ -265,9 +267,16 @@ def main(argv=None) -> int:
     ap.add_argument("--base-tree", default="")
     ap.add_argument("--write", action="store_true", help="append the verdict to verdicts.jsonl")
     ap.add_argument("--allow-rehearsal", action="store_true")
+    ap.add_argument("--current-workload", action="store_true",
+                    help="require this checkout's harness and quality version for bracket reuse")
     ap.add_argument("--jsonl", default=JSONL)
     a = ap.parse_args(argv)
     rows = load(a.jsonl)
+    if a.current_workload:
+        from measurement_contract import HARNESS
+        from onepass_quality import VERSION
+        rows = [r for r in rows if r.get("harness") == HARNESS
+                and (r.get("quality_protocol") or {}).get("version") == VERSION]
     if a.action in ("samples", "boots"):
         if not HEX.fullmatch(a.sha):
             ap.error("--sha must be a commit id")

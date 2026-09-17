@@ -11,7 +11,7 @@ import re
 
 from measurement_contract import MAX_TOKENS, COMBINED_MAX_TOKENS, COMBINED_REASONING_BUDGET
 
-VERSION = 'ko-reasoning-v2'
+VERSION = 'ko-reasoning-v3'
 
 
 def digest(value):
@@ -36,8 +36,11 @@ def _ledger(rng):
               '같은 거래는 남은 행 중 가장 높은 개정 번호로 교체한다. 취소 개정은 수량 0이다. 개정들을 합산하지 않는다.',
         'L2': f'기초 재고 {opening}개. 1상자는 {unit}개다. 입고와 반품은 더하고 출고는 뺀다.',
         'L3': f'순재고 전체에 손실률 {loss}%를 한 번 적용하고 소수 부분을 버린 뒤 예약 {reserve}개를 뺀 값이 가용량이다.',
-        'L4': f'주문 {demand}개 이상이면 전량승인, 미만이면 보류다. 부분승인은 없다.',
-        'L5': f'가정 변경: 예약만 {abs(extra)}개 {"추가" if extra > 0 else "해제"}한다. 다른 조건과 거래는 그대로다.',
+        'L4': f'주문 수량은 {demand}개다. 가용량이 주문 수량 이상이면 전량승인, '
+              '가용량이 주문 수량 미만이면 보류다. 부분승인은 없다.',
+        'L5': f'가정 변경: 예약을 {abs(extra)}개 '
+              f'{"추가하므로 기존 예약 수량에 그만큼 더한다" if extra > 0 else "해제하므로 기존 예약 수량에서 그만큼 뺀다"}. '
+              '다른 조건과 거래는 그대로다.',
         'L10': f'거래 입고갑 개정1: 효력7일, 기록7일, 입고 {boxes - 3}상자.',
         'L11': f'거래 입고갑 개정2: 효력7일, 기록9일, 입고 {boxes}상자.',
         'L12': f'거래 입고갑 개정3: 효력7일, 기록11일, 입고 {boxes + 5}상자.',
@@ -170,7 +173,7 @@ def _logic(rng):
         'U3': f'{c}와 {d}가 동시에 1일 수 없다.',
         'U4': f'{a}, {d}, {e} 중 적어도 둘이 1이다.',
         'U5': f'{e}와 {f} 중 정확히 하나가 1이다.',
-        'U6': f'가정 변경: U1~U5를 모두 유지하고 {a}=0을 추가한다.',
+        'U6': f'추가 규칙: {a}=0이다.',
     }
     answer = dict(result=dict(statuses=statuses), derivation=dict(worlds=strings),
         evidence=dict(domain=['U0'], constraints=['U1', 'U2', 'U3', 'U4', 'U5'], counterfactual=['U6']),
@@ -182,9 +185,13 @@ def _logic(rng):
         '명제 순서 ' + ', '.join(f'Q{i + 1}={query_texts[q]}' for i, q in enumerate(order)) + '에 대해 '
         'U1~U5를 모두 만족하는 가능 세계 전체에서 참이면 참, 모두 거짓이면 거짓, 양쪽이 존재하면 판단불가로 분류하라. '
         '가능 세계 전체를 worlds에 열거하고 명제별 true/false 증인 세계 하나씩을 제출하라. '
+        '각 증인은 U1~U5를 모두 만족하며 해당 명제를 참 또는 거짓으로 만드는 세계다. '
         '해당 증인이 없을 때만 null이다. statuses와 witnesses의 배열 순서는 Q1~Q4다. '
-        'U6을 추가했을 때의 일관성 여부(consistent)와, 모순이면 모든 최소 모순 규칙 집합을 minimal_cores에 제시하라. '
-        '최소란 어떤 한 규칙을 빼도 모순이 사라진다는 뜻이다. U0의 이진 정의는 고정이며 core에 넣지 않는다. '
+        '가정 변경으로 U1~U5에 U6을 추가했을 때의 일관성 여부(consistent)를 판정하라. '
+        '모순이면 U1~U6 중 선택한 모든 최소 모순 규칙 집합을 minimal_cores에 제시하라. '
+        '각 집합은 그 안의 규칙만으로 모순이며 어느 한 규칙을 빼도 모순이 사라져야 한다. '
+        '집합 밖의 규칙은 적용하지 않는다. U6도 선택 대상인 독립 규칙이며 고정 배경 조건이 아니다. '
+        'U0의 이진 정의만 항상 고정이며 core에 넣지 않는다. '
         'evidence.domain에는 변수 정의, constraints에는 U1~U5, counterfactual에는 가정 변경 규칙의 ID를 넣는다.', answer,
         hints={'result.statuses': ['참|거짓|판단불가'], 'derivation.worlds': ['6자리 비트열'],
                'witnesses.true': '6자리 비트열|null', 'witnesses.false': '6자리 비트열|null',

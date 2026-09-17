@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical Korean consumer test, harness 45: C=1 2K/32K/128K; C=N 2K/32K (N = the door's admission limit, at most 4).
+"""Canonical Korean consumer test, harness 47: C=1 2K/32K/128K; C=N 2K/32K (N = the door's admission limit, at most 4).
 
 Every invocation prepares full prompts with bounded output, measures with the
 profiler off and a unique prefix salt, then runs separate bounded GPU diagnostic
@@ -22,6 +22,7 @@ The legacy cold_s/warm_s fields are aliases for first/median prepared fresh-pref
 TTFT, not claims about compiler or cache warmth. Harness 41 is incompatible:
 42 uses seeded reasoning dossiers and visible-answer proof certificates, 43 and
 44 doubled the completion budgets, and 44 asks the ko-reasoning-v2 questions.
+47 clarifies the ledger decision/reservation rules and logic core's U6 scope in ko-reasoning-v3.
 
     python3 bench/onepass.py --name RUN [--ctx 2000,32000,128000]
 
