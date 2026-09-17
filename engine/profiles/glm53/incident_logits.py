@@ -21,6 +21,7 @@ def capture(adapter, jobs, block, dists, temps, ks, ps, uniforms, picks, verdict
     digest = lambda ids: hashlib.sha256(json.dumps(ids, separators=(',', ':')).encode()).hexdigest()
     admission = adapter.nonces[seq]
     accepted, committed, _ = verdicts[0]
+    uniform_values = torch.cat(uniforms).detach().cpu()
     root = Path(root).parent / 'incident-logits'
     root.mkdir(parents=True, exist_ok=True)
     path = root / f'admit{admission}-gen{generation}.pt'
@@ -29,12 +30,13 @@ def capture(adapter, jobs, block, dists, temps, ks, ps, uniforms, picks, verdict
     record = dict(admission=admission, seq=seq, generation=generation, mode=mode,
                   raw=raw.detach().cpu(), processed=block.detach().cpu(),
                   probabilities=dists.detach().cpu(), temperature=temps,
-                  top_k=ks, top_p=ps, uniforms=torch.cat(uniforms).detach().cpu(),
+                  top_k=ks, top_p=ps, uniforms=uniform_values,
+                  uniform=float(uniform_values.item()) if uniform_values.numel() == 1 else None,
                   picks=list(picks), input_tail=prefix[-8:],
                   accepted=accepted, committed=list(committed),
                   prompt_len=prompt_len, prefix_len=len(prefix),
-                  prompt_ids_sha256=digest(prefix[:prompt_len]),
-                  prefix_ids_sha256=digest(prefix), seed=adapter.seeds.get(seq),
+                  prompt_sha256=digest(prefix[:prompt_len]),
+                  prefix_sha256=digest(prefix), seed=adapter.seeds.get(seq),
                   row_key=adapter._row_key(seq))
     # Do not silently replace evidence if an admission is unexpectedly reused.
     with path.open('xb') as out:

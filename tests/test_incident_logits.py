@@ -34,8 +34,11 @@ class IncidentLogitsTests(unittest.TestCase):
                 self.assertEqual(record['mode'], mode)
                 self.assertEqual(record['picks'], [2])
                 self.assertEqual(record['committed'], [1])
-                self.assertEqual(record['prefix_ids_sha256'],
+                self.assertEqual(record['prefix_sha256'],
                                  hashlib.sha256(json.dumps(prefix, separators=(',', ':')).encode()).hexdigest())
+                self.assertIsInstance(record['prefix_sha256'], str)
+                self.assertIsInstance(record['uniform'], float)
+                self.assertEqual(record['uniform'], .25)
                 self.assertEqual(record['prompt_len'], 2)
                 self.assertEqual(record['seed'], 7)
                 for key, value in zip(('raw', 'processed', 'probabilities', 'uniforms'), saved):
