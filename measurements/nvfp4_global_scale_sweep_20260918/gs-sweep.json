@@ -1,0 +1,552 @@
+{
+  "scope": "CPU global-scale (alpha) re-anchoring headroom on real production experts.\n\nThe NVFP4 activation/weight search moves a block +-2 scale codes around the\nladder entry nearest to block_amax/gs/6 -- if the static global scale `gs` is\nmis-anchored the whole ladder lands off-centre and no radius recovers it. This\nprobe measures, on the production rank's own dequantised experts, the\nquantisation SSE under three anchors: the STORED checkpoint alpha, the\namax/(448*6) recomputed alpha, and the sweep-optimal alpha (log grid, +-4\noctaves). The gap between stored and optimal is the re-anchoring headroom a\nrepack could claim; the gap between stored and recomputed says whether the\ncheckpoint's alpha simply drifted from the packed values (GPTQ moved the\nweights after the alpha was stamped).\n\nWeight numbers are fully real. The activation arm uses synthetic inputs and is\nlabelled mechanism: a static gs is re-anchored for a CORPUS, and that needs\ncaptured activations, not this fixture.\n",
+  "gpu_used": false,
+  "torch": "2.13.0+cu132",
+  "ranks": {
+    "path": "/ranks/rank0of4.safetensors",
+    "header_sha256": "e74d0e66f988fef12d7e0f7f8f1ea5abf66cef2e57d7aa882e1d64c3a52f4600"
+  },
+  "source_sha256": "f0224d61f19394c6137059b61cf40106693d517bdfe789594791e0e98180ee94",
+  "totals": {
+    "fc1_w13": {
+      "recomputed_sse": 16.03501998685865,
+      "optimal_sse": 2.7743776363216144,
+      "optimal_vs_recomputed_pct": 82.69800949050683,
+      "optimal_over_recomputed_median": 1.6817928305074292
+    },
+    "fc2_w2": {
+      "recomputed_sse": 7.859517110051045,
+      "optimal_sse": 1.3818756046708018,
+      "optimal_vs_recomputed_pct": 82.41780525035556,
+      "optimal_over_recomputed_median": 1.6817928305074292
+    },
+    "activation_mechanism": {
+      "gauss.r1": {
+        "recomputed_sse": 8813.218448297024,
+        "optimal_sse": 8801.657315009024,
+        "optimal_vs_recomputed_pct": 0.13117947042642353
+      },
+      "gauss.r2": {
+        "recomputed_sse": 8713.85468737262,
+        "optimal_sse": 8711.857739038845,
+        "optimal_vs_recomputed_pct": 0.022916934071315342
+      },
+      "outlier.r1": {
+        "recomputed_sse": 181785.5395734966,
+        "optimal_sse": 176857.07486933257,
+        "optimal_vs_recomputed_pct": 2.7111423250315347
+      },
+      "outlier.r2": {
+        "recomputed_sse": 181655.66145705697,
+        "optimal_sse": 176742.5981988324,
+        "optimal_vs_recomputed_pct": 2.7046023332369495
+      }
+    }
+  },
+  "cells": [
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 2.080534396146928,
+          "optimal": 0.4283168831891137
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 1.0067107579385068,
+          "optimal": 0.18987550648720308
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 975.1189856526513,
+          "optimal": 974.99036442226,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "gauss.r2": {
+          "recomputed": 965.0544628390683,
+          "optimal": 965.0544628390683,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r1": {
+          "recomputed": 12969.745459498328,
+          "optimal": 12938.423019688438,
+          "optimal_over_recomputed": 1.4142135623730951
+        },
+        "outlier.r2": {
+          "recomputed": 12953.365503059638,
+          "optimal": 12928.409854475358,
+          "optimal_over_recomputed": 1.4142135623730951
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 3,
+      "expert": 0
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 1.994328496564187,
+          "optimal": 0.4055655062054798
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 0.9482223965169669,
+          "optimal": 0.17128779266348743
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 976.7208470053956,
+          "optimal": 976.7208470053956,
+          "optimal_over_recomputed": 1.0
+        },
+        "gauss.r2": {
+          "recomputed": 966.4675949759767,
+          "optimal": 966.4675949759767,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r1": {
+          "recomputed": 19999.086886970697,
+          "optimal": 19999.086886970697,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r2": {
+          "recomputed": 19986.401404104137,
+          "optimal": 19986.401404104137,
+          "optimal_over_recomputed": 1.0
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 3,
+      "expert": 73
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 4.359654017857143e-05,
+        "optimal_alpha": 6.165481839307927e-05,
+        "optimal_over_recomputed": 1.4142135623730951,
+        "sse": {
+          "recomputed": 1.3877232503097292,
+          "optimal": 0.1872742699420505
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 0.949112968299499,
+          "optimal": 0.17137087343911328
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 983.6230249672271,
+          "optimal": 981.1281219365738,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "gauss.r2": {
+          "recomputed": 971.7521615482469,
+          "optimal": 971.7499953806279,
+          "optimal_over_recomputed": 2.0
+        },
+        "outlier.r1": {
+          "recomputed": 20296.168261758256,
+          "optimal": 20025.89859991146,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "outlier.r2": {
+          "recomputed": 20285.083392584962,
+          "optimal": 20013.73329375466,
+          "optimal_over_recomputed": 1.189207115002721
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 3,
+      "expert": 287
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 1.7192513162577523,
+          "optimal": 0.28140042290682943
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 0.8673425491372542,
+          "optimal": 0.1419817753519107
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 977.7795633602175,
+          "optimal": 977.7795633602175,
+          "optimal_over_recomputed": 1.0
+        },
+        "gauss.r2": {
+          "recomputed": 967.8600575854019,
+          "optimal": 967.8600575854019,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r1": {
+          "recomputed": 24929.35245650974,
+          "optimal": 24131.017600231964,
+          "optimal_over_recomputed": 1.4142135623730951
+        },
+        "outlier.r2": {
+          "recomputed": 24907.069806476662,
+          "optimal": 24115.52401322366,
+          "optimal_over_recomputed": 1.4142135623730951
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 20,
+      "expert": 0
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 1.7871889664772433,
+          "optimal": 0.30239464808791033
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 0.8672937002010777,
+          "optimal": 0.13992663991165577
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 980.1338790731231,
+          "optimal": 977.7714379568126,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "gauss.r2": {
+          "recomputed": 968.8322000191095,
+          "optimal": 967.8343754230873,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "outlier.r1": {
+          "recomputed": 27848.90549830268,
+          "optimal": 24484.106296970567,
+          "optimal_over_recomputed": 1.4142135623730951
+        },
+        "outlier.r2": {
+          "recomputed": 27832.823573420763,
+          "optimal": 24469.478961423458,
+          "optimal_over_recomputed": 1.4142135623730951
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 20,
+      "expert": 73
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 1.6766846964573778,
+          "optimal": 0.26462960260260165
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 4.359654017857143e-05,
+        "optimal_alpha": 6.165481839307927e-05,
+        "optimal_over_recomputed": 1.4142135623730951,
+        "sse": {
+          "recomputed": 0.7309225388060685,
+          "optimal": 0.07484461046009666
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 982.3168107708558,
+          "optimal": 982.3168107708558,
+          "optimal_over_recomputed": 1.0
+        },
+        "gauss.r2": {
+          "recomputed": 973.5295047013713,
+          "optimal": 973.5295047013713,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r1": {
+          "recomputed": 17571.786921826442,
+          "optimal": 17108.04837692898,
+          "optimal_over_recomputed": 1.4142135623730951
+        },
+        "outlier.r2": {
+          "recomputed": 17559.774407571145,
+          "optimal": 17097.907302011477,
+          "optimal_over_recomputed": 1.4142135623730951
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 20,
+      "expert": 287
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 2.0727288290487516,
+          "optimal": 0.40900374714430776
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.487723214285714e-05,
+        "optimal_alpha": 4.932385471446342e-05,
+        "optimal_over_recomputed": 1.4142135623730951,
+        "sse": {
+          "recomputed": 0.7664621671022263,
+          "optimal": 0.17100994566570582
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 975.6908917625683,
+          "optimal": 972.7820909518497,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "gauss.r2": {
+          "recomputed": 962.8841724718103,
+          "optimal": 962.8841724718103,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r1": {
+          "recomputed": 15638.18539716167,
+          "optimal": 15638.18539716167,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r2": {
+          "recomputed": 15626.354940255944,
+          "optimal": 15626.354940255944,
+          "optimal_over_recomputed": 1.0
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 40,
+      "expert": 0
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 4.359654017857143e-05,
+        "optimal_alpha": 6.165481839307927e-05,
+        "optimal_over_recomputed": 1.4142135623730951,
+        "sse": {
+          "recomputed": 1.4698139988609618,
+          "optimal": 0.16780442033528403
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 0.86896348270342,
+          "optimal": 0.16302031815010265
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 988.4620958149726,
+          "optimal": 984.7957287150466,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "gauss.r2": {
+          "recomputed": 975.2386152919123,
+          "optimal": 974.2416577217784,
+          "optimal_over_recomputed": 1.189207115002721
+        },
+        "outlier.r1": {
+          "recomputed": 14702.894047334381,
+          "optimal": 14702.894047334381,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r2": {
+          "recomputed": 14693.808174456597,
+          "optimal": 14693.808174456597,
+          "optimal_over_recomputed": 1.0
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 40,
+      "expert": 73
+    },
+    {
+      "fc1_w13": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 1.8467660367357175,
+          "optimal": 0.32798813590803727
+        },
+        "dims": [
+          1024,
+          4096
+        ]
+      },
+      "fc2_w2": {
+        "recomputed_alpha": 3.923688616071429e-05,
+        "optimal_alpha": 6.598831383652546e-05,
+        "optimal_over_recomputed": 1.6817928305074292,
+        "sse": {
+          "recomputed": 0.8544865493460256,
+          "optimal": 0.1585581425415264
+        },
+        "dims": [
+          4096,
+          512
+        ]
+      },
+      "activation_mechanism": {
+        "gauss.r1": {
+          "recomputed": 973.3723498900124,
+          "optimal": 973.3723498900124,
+          "optimal_over_recomputed": 1.0
+        },
+        "gauss.r2": {
+          "recomputed": 962.2359179397233,
+          "optimal": 962.2359179397233,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r1": {
+          "recomputed": 27829.414644134406,
+          "optimal": 27829.414644134406,
+          "optimal_over_recomputed": 1.0
+        },
+        "outlier.r2": {
+          "recomputed": 27810.980255127106,
+          "optimal": 27810.980255127106,
+          "optimal_over_recomputed": 1.0
+        }
+      },
+      "shape": [
+        4096,
+        512
+      ],
+      "layer": 40,
+      "expert": 287
+    }
+  ]
+}
