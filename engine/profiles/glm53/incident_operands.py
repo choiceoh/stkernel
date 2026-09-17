@@ -42,6 +42,11 @@ def capture(net, step):
     def keep(kind, **data):
         events.append(dict(kind=kind, **clone(data)))
     def rows(t):
+        total = step.ids.numel()
+        local = (total + net.comm.world_size - 1) // net.comm.world_size
+        if total >= 128 and net.prefill_transport is not None and t.shape[0] == local:
+            at = min(local, total - net.rank * local) - 1
+            return t[at:at+1].contiguous()
         return t[-1:].contiguous()
 
     pre = net._hc_pre
