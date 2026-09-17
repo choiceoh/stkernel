@@ -59,13 +59,17 @@ def tail_pin_pools(seq_lens: torch.Tensor, pool_size: int) -> torch.Tensor:
     return torch.where(pinned, complete - 1, torch.full_like(complete, -1)).to(torch.int32)
 
 
-def pin_pools_in_logits(logits: torch.Tensor, pin: "torch.Tensor | None") -> None:
+def pin_pools_in_logits(logits: torch.Tensor, pin: "torch.Tensor | None", *, k: "int | None" = None) -> None:
     """Raise each row's pinned pool above that row's own maximum, in place.
 
     Biasing the input is deliberate: neither selector kernel documents the order it
     writes its winners in, so evicting "the weakest" from the result would be a
     guess, while biasing the input lets each kernel drop its own weakest. Tensor
     ops only -- no `nonzero`, no host read -- so a captured step can run it.
+
+    `k` narrows the raise to the rows that need it: the pin's promise is membership,
+    not rank, so a pool already inside the top-k is left where it is and the other
+    rows' relative order -- and their ties -- are not disturbed.
     """
     import torch
     if pin is None:
@@ -74,6 +78,9 @@ def pin_pools_in_logits(logits: torch.Tensor, pin: "torch.Tensor | None") -> Non
         raise ValueError("one pin per row")
     columns = pin.clamp_min(0).to(torch.int64)[:, None]
     live = (pin >= 0)[:, None]
+    if k is not None and 0 < k < logits.shape[1]:
+        kth = logits.topk(k, dim=1).values[:, -1:]
+        live = live & (logits.gather(1, columns) < kth)
     top = logits.amax(dim=1, keepdim=True) + 1.0
     current = logits.gather(1, columns)
     logits.scatter_(1, columns, torch.where(live, top, current))
