@@ -627,6 +627,9 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
     if nb < 2:
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks after {ns} slots of {sb / 2**20:.0f} MiB")
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
+    from engine.profiles.glm53.weights import restored_constants_id
+    constants_id = restored_constants_id(rank.metadata)
+    recorder.gauge('restored_fp32_constants', constants_id or 'none')
     recorder.gauge('weight_layout', F.weight_layout)
     snapshot_bytes = snapshot_layout(F, net.layers, draft_shape)[0]
     reference_snapshot_bytes = snapshot_layout(F, net.layers, draft_shape, state_storage="fp32")[0]
@@ -936,6 +939,10 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 # with uncorrected indexer head gates. Neither conversations nor
                 # prefix snapshots may restore them after these math repairs.
                 state_format = f"glm53-kda-{F.kda_state_dtype}-moe-fp32-shared-smooth-v4"
+                if constants_id is not None:
+                    # Old routing and recurrence states cannot be reused after
+                    # changing these constants, even with identical dimensions.
+                    state_format += f'-constants-{constants_id}'
                 tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
                                 capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
                                 state_format=state_format, mapped_staging=nvme_mapped_staging)
