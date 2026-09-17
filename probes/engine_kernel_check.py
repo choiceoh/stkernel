@@ -50,6 +50,10 @@ def main():
         from probes.engine_boundary_stage import run as boundary_stage_check
         boundary_stage_check(args.output)
         return
+    if args.lanes == 'vocab_merge':
+        from probes.engine_vocab_merge import run as vocab_merge_check
+        vocab_merge_check(args.output)
+        return
     if args.lanes == 'vocab_selection':
         from probes.engine_vocab_selection import run as vocab_selection_check
         vocab_selection_check(args.output)

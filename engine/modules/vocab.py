@@ -32,18 +32,45 @@ def argmax(local_logits, comm, start: int, decodable: int | None = None):
     return 0xffffffff - (key & 0xffffffff)
 
 
+def compact_supported(rows, vocab, count, k, device):
+    """Select the exact-merge path only for its qualified serving geometry/runtime.
+
+    CUDA top-k tie order is unspecified upstream. Requalify against the dense
+    oracle before expanding this gate or updating the pinned Torch build.
+    Called before graph capture; no device query belongs in the replay path.
+    """
+    return (torch.device(device).type == 'cuda' and 1 <= rows <= 28
+            and (vocab, count, k) == (154880, 64, 16)
+            and torch.version.git_version == 'cf30153c4c131c8164ee7798e5022d810682e2cb'
+            and torch.version.cuda == '13.2'
+            and torch.cuda.get_device_capability(device) == (12, 1))
+
+
 class CandidateBuffer:
-    """A drafter-owned dense merge with only the previously touched columns cleared.
+    """A drafter-owned merge, optionally avoiding the dense vocabulary workspace.
 
     Allocate before capture; every use on the serving stream completes its
     top-k before the next use. Inactive rows keep their own last packet, so a
     shrink followed by growth cannot leave stale candidates in the vocabulary.
     """
-    def __init__(self, rows, vocab, count, device):
-        self.dense = torch.full((rows, vocab), float('-inf'), dtype=torch.float32, device=device)
-        self.previous = torch.full((rows, count), -(2**63), dtype=torch.int64, device=device)
+    def __init__(self, rows, vocab, count, device, *, compact=False):
+        self.rows, self.vocab, self.count, self.compact = rows, vocab, count, compact
+        self.device = torch.empty(0, device=device).device
+        self.dense = None if compact else torch.full((rows, vocab), float('-inf'), dtype=torch.float32, device=device)
+        self.previous = None if compact else torch.full((rows, count), -(2**63), dtype=torch.int64, device=device)
+
+    def select(self, gathered, vocab, k):
+        if not self.compact:
+            return self.restore(gathered, vocab).topk(k, dim=-1)
+        if (gathered.shape[0] > self.rows or gathered.shape[1] != self.count
+                or gathered.device != self.device or vocab != self.vocab):
+            raise ValueError('candidate buffer requires its declared row, vocabulary and packet geometry')
+        from engine.kernels.common.vocab_merge import topk as compact_topk
+        return compact_topk(gathered, vocab, k)
 
     def restore(self, gathered, vocab):
+        if self.compact:
+            raise ValueError('compact candidate buffers do not own a dense vocabulary')
         if (gathered.ndim != 2 or gathered.dtype != torch.int64 or gathered.device != self.dense.device
                 or gathered.shape[0] > self.dense.shape[0] or gathered.shape[1] != self.previous.shape[1]
                 or vocab != self.dense.shape[1] or not gathered.is_contiguous()):
@@ -57,15 +84,15 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None, *
 
     Each int64 carries an ordered FP32 score and its global token id. Local
     cutoff ties keep the first vocabulary ids, matching the pinned CUDA radix
-    selection. Restore candidates at their original vocabulary positions before
-    calling topk: selecting directly from the small packet changes tie order
+    selection. Compact workspaces reproduce the radix gather order before the
+    same small CUDA sort; selecting packed keys directly changes tie order
     and can change the drafter's subsequent greedy walk.
 
     The local selection is over the keys directly (kernels/vocab_candidates.select): they are unique, so the k
-    largest are one set, and `sorted=False` says this step does not decide the order. torch's dense topk over
-    the restored candidates still does, which is what keeps the tie order pinned (45차 §87).
+    largest are one set, and `sorted=False` says this step does not decide the order.
+    The merge preserves the dense topk ordering (45차 §87).
 
-    This saves network traffic, not the final dense selection workspace. CUDA
+    Compact workspaces also eliminate the final dense selection workspace. CUDA
     tie equivalence must be rechecked when changing the pinned PyTorch runtime.
     CPU topk has a different, unspecified tie policy; only untied equivalence
     is promised there. NaNs retain their ordering, not their payload bits.
@@ -107,8 +134,9 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None, *
     gathered = comm.all_gather(packet, dim=-1)
     if fused:
         from engine.kernels.common.vocab_candidates import restore
-        dense = restore(gathered, vocab) if workspace is None else workspace.restore(gathered, vocab)
-        return dense.topk(k, dim=-1)
+        if workspace is not None:
+            return workspace.select(gathered, vocab, k)
+        return restore(gathered, vocab).topk(k, dim=-1)
     ids = 0xffffffff - (gathered & 0xffffffff)
     ordered = gathered >> 32
     bits = torch.where(ordered < 0, ordered ^ 0x7fffffff, ordered).to(torch.int32)
