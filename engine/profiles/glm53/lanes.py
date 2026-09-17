@@ -247,9 +247,9 @@ def reference() -> Lanes:
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
-MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0"  # incident trace: retain the failing baseline's arithmetic
+MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0"  # incident control: same arithmetic, all searches off
 # M16 reform C=1 has, with direct register scatter, retained route state and the FC2 prefetch ring (#955/#962/#970)
-# ss1: three-candidate FC2 activation scale search, adopted 2026-09-17; top-8 routing is unchanged.
+# as1: three-candidate FC1/FC2 search across routed decode, prefill and dense MLPs; top-8 is unchanged.
 
 
 def parse_moe_static(value: str) -> "tuple[str | None, bool]":

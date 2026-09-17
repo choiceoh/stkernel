@@ -123,7 +123,9 @@
     "b12x/_moe_dynamic/gated.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py",
       "sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "7c01dd68229f38a630d77ce0a2b3e28cc0c89f1008ee4bb880fcc9c26adceef6",
+      "local_modifications": "Optional activation scale search for FC1 and FC2; disabled branch retains imported arithmetic."
     },
     "b12x/_moe_dynamic/generic.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py",

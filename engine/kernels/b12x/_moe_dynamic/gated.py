@@ -29,6 +29,7 @@ from flashinfer.cute_dsl.utils import (
     sm120_make_smem_layout_sfa,
     sm120_make_smem_layout_sfb,
 )
+from ..fp4_scale_search import quantize_block_fp4_search
 from flashinfer.cute_dsl.fp4_common import (
     atomic_add_global_i32,
     fabs_f32,
@@ -739,6 +740,7 @@ class MoEGatedDynamicKernel:
         *,
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
+        activation_scale_search: int = 0,
         activation: str = "silu",
         swiglu_alpha: float = 1.702,
         swiglu_beta: float = 1.0,
@@ -761,6 +763,11 @@ class MoEGatedDynamicKernel:
         self._dense_cls = DenseGemmKernel
         self.acc_dtype = cutlass.Float32
         self.sf_vec_size = sf_vec_size
+        if activation_scale_search not in (0, 1, 2):
+            raise ValueError("activation scale search radius must be 0, 1 or 2")
+        if activation_scale_search and sf_vec_size != 16:
+            raise ValueError("activation scale search requires NVFP4 group-16 scales")
+        self.activation_scale_search = int(activation_scale_search)
         self.input_scales_are_reciprocal = input_scales_are_reciprocal
         self.fast_math = fast_math
         self.activation = activation
@@ -2193,7 +2200,11 @@ class MoEGatedDynamicKernel:
 
                     packed64 = Uint64(0)
                     scale_byte = Uint8(0)
-                    if self.fast_math:
+                    if cutlass.const_expr(self.activation_scale_search > 0):
+                        (packed64, scale_byte) = quantize_block_fp4_search(
+                            values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                        )
+                    elif self.fast_math:
                         packed64, scale_byte = quantize_block_fp4_fast(
                             values, block_max, gs_value
                         )
@@ -3267,7 +3278,11 @@ class MoEGatedDynamicKernel:
                                     block_max = fmax_f32(block_max, fabs_f32(value))
                                 packed64 = Uint64(0)
                                 scale_byte = Uint8(0)
-                                if self.fast_math:
+                                if cutlass.const_expr(self.activation_scale_search > 0):
+                                    (packed64, scale_byte) = quantize_block_fp4_search(
+                                        values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                    )
+                                elif self.fast_math:
                                     packed64, scale_byte = quantize_block_fp4_fast(
                                         values, block_max, gs_value
                                     )
@@ -3312,7 +3327,11 @@ class MoEGatedDynamicKernel:
                                     block_max = fmax_f32(block_max, fabs_f32(value))
                                 packed64 = Uint64(0)
                                 scale_byte = Uint8(0)
-                                if self.fast_math:
+                                if cutlass.const_expr(self.activation_scale_search > 0):
+                                    (packed64, scale_byte) = quantize_block_fp4_search(
+                                        values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                    )
+                                elif self.fast_math:
                                     packed64, scale_byte = quantize_block_fp4_fast(
                                         values, block_max, gs_value
                                     )
@@ -3459,7 +3478,11 @@ class MoEGatedDynamicKernel:
                                 gs_value = route_gs[0]
                                 packed64 = Uint64(0)
                                 scale_byte = Uint8(0)
-                                if self.fast_math:
+                                if cutlass.const_expr(self.activation_scale_search > 0):
+                                    (packed64, scale_byte) = quantize_block_fp4_search(
+                                        values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                    )
+                                elif self.fast_math:
                                     packed64, scale_byte = quantize_block_fp4_fast(
                                         values, block_max, gs_value
                                     )
@@ -3525,7 +3548,11 @@ class MoEGatedDynamicKernel:
 
                                     packed64 = Uint64(0)
                                     scale_byte = Uint8(0)
-                                    if self.fast_math:
+                                    if cutlass.const_expr(self.activation_scale_search > 0):
+                                        (packed64, scale_byte) = quantize_block_fp4_search(
+                                            values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                        )
+                                    elif self.fast_math:
                                         packed64, scale_byte = quantize_block_fp4_fast(
                                             values, block_max, gs_value
                                         )

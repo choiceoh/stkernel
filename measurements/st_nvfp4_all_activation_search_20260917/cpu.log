@@ -1,0 +1,15 @@
+........................................................................2026-09-17 12:37:40,879 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m1
+2026-09-17 12:37:40,879 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp3dxunf8h/st_b12x_moe_sm121a_cute_dsl/static_m1.o
+2026-09-17 12:37:40,883 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_276fa544_sm121a_cute_dsl/dynamic_e288
+2026-09-17 12:37:40,883 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp3dxunf8h/st_b12x_moe_276fa544_sm121a_cute_dsl/dynamic_e288.o
+2026-09-17 12:37:40,887 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_shared_sm121a_cute_dsl/static_m1
+2026-09-17 12:37:40,887 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp3dxunf8h/st_b12x_moe_shared_sm121a_cute_dsl/static_m1.o
+2026-09-17 12:37:40,891 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_shared_sm121a_cute_dsl
+2026-09-17 12:37:40,891 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_shared_sm121a_cute_dsl/dynamic_e288
+2026-09-17 12:37:40,891 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /tmp/tmp3dxunf8h/st_b12x_moe_shared_sm121a_cute_dsl/dynamic_e288.o
+..
+----------------------------------------------------------------------
+Ran 74 tests in 20.536s
+
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK
