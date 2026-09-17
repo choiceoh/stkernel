@@ -24,15 +24,15 @@ class ScatterConfigTests(unittest.TestCase):
         parse, select, key = (ns[n] for n in ('_parse_glm53_static_v2', '_static_v2_decode_config', '_static_v2_cache_key'))
         base = parse('t,r,sf6,batch')
         for rows in (8, 16):
-            configs = [select(dict(base, input_reuse=mode), rows) for mode in (0, 1, 2, 3)]
-            self.assertEqual(len({key(c, m=rows) for c in configs}), 4)
+            configs = [select(dict(base, input_reuse=mode), rows) for mode in (0, 1, 2, 3, 4)]
+            self.assertEqual(len({key(c, m=rows) for c in configs}), 5)
             self.assertEqual(key(configs[0], m=rows), key(select(base, rows), m=rows))
             for config in configs:
                 self.assertEqual(select(config, rows), config)
         for rows in (1, 7, 12, 24, 32, 128):
             with self.assertRaisesRegex(ValueError, 'input reuse'):
                 select(dict(base, input_reuse=1), rows)
-        for changed in ({'input_reuse': 4}, {'input_reuse': 1, 'input_vec16': False}):
+        for changed in ({'input_reuse': 5}, {'input_reuse': 1, 'input_vec16': False}):
             with self.assertRaisesRegex(ValueError, 'input reuse'):
                 select(dict(base, **changed), 8)
         for scheduler in ('even', 'split', 'probe_route_scatter'):

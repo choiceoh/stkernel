@@ -16,10 +16,16 @@ the exact GLM TP4 geometry and capacity against the maximum number of compact
 experts, even when all routed slots select different experts. No new allocation,
 kernel launch or grid barrier is added.
 
-Two separately keyed candidates are measured: contiguous work assignment
-(`input_reuse=1`) and warp-striped assignment across the resident CTAs
-(`input_reuse=2`). The selector defaults to zero. The experiment is restricted
-to eight/sixteen-row vector-input reform cells. It has no serving adoption yet.
+Four separately keyed candidates are measured: contiguous quantization cache
+(`input_reuse=1`), warp-striped cache (`2`), compact route preparation plus
+striped cache (`3`), and register fanout (`4`). Mode 3 uses another 512/1024
+bytes for route metadata. Mode 4 retains only that metadata, quantizes each
+block once in phase 1, and writes it directly to every selected expert with
+an equal input scale. Different scales use the original quantizer. Its compact
+expert prefix uses warp ballots instead of scanning each first-occurrence flag.
+
+No candidate is selected by serving. The selector defaults to zero and is
+restricted to eight/sixteen-row vector-input reform cells.
 
 ## Evidence
 
@@ -38,10 +44,23 @@ to eight/sixteen-row vector-input reform cells. It has no serving adoption yet.
   the GPU-hidden Linux image on source `0c1cca60`. The earlier macOS attempt
   lacked `os.O_DIRECT` and Torch for two package tests; its errors are retained
   separately in `cpu-integrated-macos.txt` and are not counted as passes.
-- GPU ticket `moe-input-reuse-v1-0917`, admitted source `53e0ee63`:
-  pending. It uses the canonical exclusive fleet queue and actual rank0 weights.
-- GPU ticket `moe-input-reuse-v2-0917`, admitted source `133a7343`, additionally
-  compares compact route preparation (mode 3). See `routing-candidate.md`.
+- `gpu-v1.jsonl`, source `53e0ee63`, ticket `moe-input-reuse-v1-0917`:
+  28 raw-byte cases and 36 output comparisons pass on GB10. Whole-MoE timing
+  does not establish a gain: evicted three-layer changes are +0.06%/+0.12%
+  for the contiguous cache and +0.65%/+1.00% for striped C1/C2.
+- `gpu-routing.jsonl`, source `0cb764d6`, ticket `moe-input-reuse-v4-0917`:
+  42 raw-byte cases and 48 output comparisons pass. Mode 3 evicted three-layer
+  changes are -0.15% C1 and -0.01% C2, with only 3/5 and 2/5 faster brackets.
+  This is inconclusive. Stamped frontend medians fall from 13.10 to 12.01 us
+  at C1 and 18.32 to 17.14 us at C2, but that is not whole-MoE speed proof.
+- `summary-v1.json` and `summary-routing.json` preserve all bracket ranges,
+  numerical comparisons, and phase medians. No gate was relaxed.
+- The V2 ticket was cancelled after its edited source disagreed with the
+  pinned runner; V3 failed admission before GPU use. V4 used a fresh frozen
+  source and runner, with the required generic-to-async shared-memory fence.
+- `native-resources-fanout.json`: mode 4 and the disabled control compile at
+  C1/C2 with CUDA devices hidden, 96 registers and zero stack/local memory.
+  GPU correctness and timing remain pending for this new mode.
 
 The CPU compiler host is `ost-97x`, with GPU-hidden runc, CUDA 13.2 and Torch
 2.13.0. The image alone has published FlashInfer, which lacks a required helper;
