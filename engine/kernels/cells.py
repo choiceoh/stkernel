@@ -416,7 +416,7 @@ def _recipe_oneshot_measure(c):
 def _recipe_prefill_measure(c):
     return Recipe("measure", f"probes/engine_performance_comm_check.py on {_FLEET}; cells.PREFILL_MEASURED_HIDDEN",
                   f"probes/engine_performance_comm_check.py also runs PrefillCollectives at 128..6912 rows, 4096 wide: parameterize the width with the "
-                  f"one-shot change and run it at {c.hidden}; the BF16/FP8 switch (FP8_MIN_ROWS 4096 rows) has only run at "
+                  f"one-shot change and run it at {c.hidden}; the BF16/FP8 switch (FP8_MIN_ROWS 2048 rows) has only run at "
                   "hidden 4096",
                   "the probe's all_gather (exact against the quantized reference) and reduce_scatter (rtol 0.008, atol 0.03125) checks",
                   f"cells.PREFILL_MEASURED_HIDDEN lists {c.hidden} with the run's record", "hours")
