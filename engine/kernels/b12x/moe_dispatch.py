@@ -4774,7 +4774,7 @@ def _get_dynamic_kernel(
             raise ValueError('FFN packets require the ordinary long-prefill SF6 M128 body')
         cache_key = (*cache_key, 'long_prefill_fp8_packets_v2_stride')
     if prefill_word_unpack:
-        cache_key = (*cache_key, 'long_prefill_sf6_route_words_v1')
+        cache_key = (*cache_key, 'long_prefill_sf6_route_words_fp32_v2')
     short_word_unpack = _short_prefill_q0_word_unpack(
         m=m, tp_sf6_q0=tp_sf6_q0, reform_sf_pack=reform_sf_pack,
         ep_local=ep_local_cls is not None)
@@ -5026,7 +5026,7 @@ def _get_dynamic_kernel(
     global_scale_fake = cute.runtime.make_fake_compact_tensor(
         alpha_dtype, (E,), assumed_align=16
     )
-    scatter_dtype = cutlass.Float32 if ep_local_cls is not None or tp_sf6_q0 else a_dtype
+    scatter_dtype = cutlass.Float32 if ep_local_cls is not None or tp_sf6_q0 or prefill_word_unpack else a_dtype
     scatter_fake = make_ptr(scatter_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
     token_map_fake = make_ptr(cutlass.Int32, 4, cute.AddressSpace.gmem, assumed_align=4)
     token_weights_fake = make_ptr(
@@ -5136,7 +5136,7 @@ def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False):
     if (output.dtype != torch.bfloat16 or tuple(output.shape) != (num_tokens, k)
             or not output.is_contiguous() or output.device != workspace.device
             or k != 4096
-            or not (1 if tp or getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= 16384):
+            or not (1 if tp or getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= (32768 if tp else 16384)):
         raise ValueError("expert-local FP32 scatter requires contiguous CUDA BF16 [T,4096]")
     current = workspace.ep_scatter_fp32
     if current is not None and (current.dtype != torch.float32 or current.device != output.device
@@ -5310,6 +5310,12 @@ def launch_sm120_dynamic_moe(
         tiled=bool(getattr(weights, "tiled", False)), reform_sf_pack=direct_sf6,
         activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
         swiglu_limit=swiglu_limit, share_input_across_experts=input_gs_is_shared)
+    tp_scatter_fp32 = tp_scatter_fp32 or _long_prefill_sf6_word_unpack(
+        m=num_tokens, E=num_experts, k=k, n=n, num_topk=top_k, tile_m=workspace.tile_m,
+        quant_mode=quant_mode, tiled=bool(getattr(weights, 'tiled', False)), reform_sf_pack=direct_sf6,
+        activation=activation, swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta,
+        swiglu_limit=swiglu_limit, ep_local=ep_local, tp_sf6_q0=tp_scatter_fp32,
+        share_input_across_experts=input_gs_is_shared)
     accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k, tp=tp_scatter_fp32)
                    if ep_local or tp_scatter_fp32 else scatter_output)
     compiled, mac = _get_dynamic_kernel(
