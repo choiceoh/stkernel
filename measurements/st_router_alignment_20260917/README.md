@@ -73,8 +73,29 @@ The consumer selector remains at its existing value during this implementation
 comparison (`fused_decode_router=False`). `_align=False` is a private component
 control, not a serving knob. Full-engine answer quality has not been rerun.
 
+## Default adoption follow-up
+
+After the alignment merged in #1112, the user requested enabling the serving
+default and deploying it to production. The selector now defaults on for the
+qualified GLM53 geometry (hidden 4096, experts 288, expert top-k 8, speculative
+K7). Dispatch still requires prepared FP32 gates/bias, bound rows 8 or 16, and
+no route-slot skip. Other widths and geometries use the common path; an explicit
+`fused_decode_router=False` remains available for comparisons.
+
+The measured CUDA kernel and wrapper are unchanged. This adoption reuses the
+component evidence above; it is not a new whole-engine speed, acceptance or
+answer-quality result. The earlier combined consumer quality difference is
+still not attributed causally to the router.
+
 Source references: pinned PyTorch
 [gather](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/aten/src/ATen/native/cuda/TensorTopK.cu),
 [sort dispatch](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/aten/src/ATen/native/cuda/Sort.cu),
 [sorting network](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/aten/src/ATen/native/cuda/SortUtils.cuh).
 `served-weights.ptx` is the CPU-compiled SM121 Triton reduction used for alignment.
+
+Default-selection validation: 54 CPU tests passed in the pinned x86 runtime
+(`default-cpu-tests.txt`), covering geometry admission, bias arena accounting,
+bound-row dispatch, explicit disable, route-slot skip, startup execution proof,
+and execution plans. The first staging attempts omitted recipe evidence files;
+after copying the missing repository fixtures, the same tests passed. No CUDA
+source or wrapper changed for this selector adoption.
