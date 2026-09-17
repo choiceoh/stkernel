@@ -12,6 +12,18 @@ import triton
 from .fused_recurrent import fused_recurrent_gated_delta_rule_fwd_kernel
 
 _CELL_SEEN = {}
+# Probe hook (probes/engine_qwen38_kda.py): force every ring launch's value tile BV -- a power of two no wider than
+# next_power_of_2(V) -- to sweep a cell under measurement; kda.py's fused_recurrent_kda_fwd has its own. None keeps the
+# rule in `_recurrent`. Measure, then fix the cell in the rule; never an env read (engine/kernels/README.md, D11).
+_BV_OVERRIDE: int | None = None
+
+
+def _forced_bv(vd: int) -> int:
+    """`_BV_OVERRIDE`, held to the launch's value width before it replaces the rule's tile."""
+    bv, widest = _BV_OVERRIDE, triton.next_power_of_2(vd)
+    if type(bv) is not int or bv <= 0 or bv & (bv - 1) or bv > widest:
+        raise ValueError(f"_BV_OVERRIDE must be a power of two up to {widest} (V={vd}), got {bv!r}")
+    return bv
 
 
 def _check_cell(decay: bool = False) -> None:
@@ -158,6 +170,8 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
     # BV=16 at seven tokens changed rollback results in the GPU exact gate.
     if h == hv == 16 and kd == vd == 128 and t <= 6:
         bv = 16
+    if _BV_OVERRIDE is not None:
+        bv = _forced_bv(vd)
     strides = tuple(x.stride()[1:] for x in inputs) if any(not x.is_contiguous() for x in inputs) else None
     # rows > 1: the kernel's sequence axis (program i_n) is the row -- sequence i_n starts at token i_n * T of the
     # flat inputs and reads its own slot/context entry; B stays 1 because the only use of B*T is the K-block
