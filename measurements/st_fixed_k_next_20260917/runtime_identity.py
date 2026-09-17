@@ -17,13 +17,13 @@ for maps in Path('/proc').glob('[0-9]*/maps'):
  except (FileNotFoundError,PermissionError,ProcessLookupError): continue
  for line in lines:
   path=line.split()[-1]
-  if not any(name in path for name in ('/st_dense_', '/st_mla_', '/st_router_fused_')): continue
+  if not any(name in path for name in ('/st_dense_', '/st_mla_', '/st_router_fused_', '/st_cublaslt_')): continue
   if path.endswith('.so'): modules.setdefault(path,set()).add(int(maps.parent.name))
 result=[]
 for filename,pids in sorted(modules.items()):
  p=Path(filename)
  files=[]
- for f in [p,*sorted((p.parent/'src').glob('*.cu'))]:
+ for f in [p,*sorted(f for f in (p.parent/'src').rglob('*') if f.is_file())]:
   files.append(dict(path=str(f),sha256=hashlib.sha256(f.read_bytes()).hexdigest(),
                     bytes=f.stat().st_size,mtime=f.stat().st_mtime))
  result.append(dict(pids=sorted(pids),files=files))
@@ -54,6 +54,6 @@ if __name__ == '__main__':
     for row in rows:
         paths = [m['files'][0]['path'] for m in row['modules']]
         if any(sum(name in path for path in paths) != 1
-               for name in ('/st_dense_', '/st_mla_', '/st_router_fused_')):
-            raise RuntimeError(f"rank {row['rank']}: require exactly one mapped dense, MLA and fused-router native")
+               for name in ('/st_dense_', '/st_mla_', '/st_router_fused_', '/st_cublaslt_')):
+            raise RuntimeError(f"rank {row['rank']}: require exactly one mapped dense, MLA, fused-router and cuBLASLt native")
     print(json.dumps(dict(scope='read-only process map and file identity, no GPU calls', ranks=rows), indent=2))

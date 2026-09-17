@@ -1,0 +1,789 @@
+{
+  "runs": [
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260917T001556-8cecc11b1385",
+      "sha": "0330d576a4c9749aaf6b855d81c3d8bd42a87c3b",
+      "engine_source_sha256": "9b2b9405c79bea8524d08a61c6c81c1e40e58b4c67029a2416d46b80771d6912",
+      "image": "st-engine:bracket-0330d576a4c9",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed",
+        "C=2 ctx=2000: C=2 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 7,
+        "total": 18,
+        "score": 62,
+        "max_score": 114,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 18
+          },
+          "completion": {
+            "ok": 18,
+            "total": 18
+          },
+          "result": {
+            "ok": 9,
+            "total": 18
+          },
+          "derivation": {
+            "ok": 7,
+            "total": 18
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 18
+          },
+          "counterfactual": {
+            "ok": 9,
+            "total": 18
+          },
+          "witnesses": {
+            "ok": 1,
+            "total": 6
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.514671384835593,
+      "step_s": null,
+      "observed_step_s": 13.92413075332866,
+      "request_decode_tok_s": 82.29677677649893,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 80.40855462271756,
+          "ttft_s": [
+            1.1350898090167902,
+            1.1170983710326254,
+            1.1051648469874635,
+            1.3651240650215186,
+            1.360317368991673,
+            1.3663292190176435
+          ],
+          "completion_tokens": [
+            2176,
+            3951,
+            5097,
+            1024,
+            1024,
+            1024
+          ],
+          "output_sha256": [
+            "731243ffad13ac6f5261b6af9a1c93b95629acf2acf7997033b5a21631767752",
+            "454d96b58c156e0d1622808a946012bf99b302bfbcb8ff8d9ffa7fbe21a2be39",
+            "1157fe779d0b2e7ef766d7d0263837506bfdc16c4adc77448a65b9ddcd1db4b6",
+            "3bf08e4eba8c946c254c6a6a285aa1b068ca6f512dde51b8858c04ae4a6dac75",
+            "27c2e53d91390f7b1bbcc0ec2bef4bf394a67923aa5731db2745f5ff6a384bda",
+            "27c2e53d91390f7b1bbcc0ec2bef4bf394a67923aa5731db2745f5ff6a384bda"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 81.47965619284221,
+          "ttft_s": [
+            9.788579737010878
+          ],
+          "completion_tokens": [
+            10450
+          ],
+          "output_sha256": [
+            "f44bd2e04563cfacb308a7a3b1ca5a2cc87a62af84d2d88310dc9fe917bc9d95"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 86.88665592115325,
+          "ttft_s": [
+            37.50232228997629
+          ],
+          "completion_tokens": [
+            8337
+          ],
+          "output_sha256": [
+            "d68867a33d80d7939841fdee4afc248fa74e1c48e2ef996661af761afbbeb120"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1,
+          2
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": [
+            2000,
+            32000
+          ]
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "measured"
+      },
+      "quality_concurrent": {
+        "version": "ko-reasoning-v2",
+        "ok": 11,
+        "total": 12,
+        "score": 75,
+        "max_score": 76,
+        "dimensions": {
+          "format": {
+            "ok": 12,
+            "total": 12
+          },
+          "completion": {
+            "ok": 12,
+            "total": 12
+          },
+          "result": {
+            "ok": 12,
+            "total": 12
+          },
+          "derivation": {
+            "ok": 12,
+            "total": 12
+          },
+          "evidence": {
+            "ok": 12,
+            "total": 12
+          },
+          "counterfactual": {
+            "ok": 11,
+            "total": 12
+          },
+          "witnesses": {
+            "ok": 4,
+            "total": 4
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "fixed_concurrency": {
+        "tokens": 1024,
+        "clients": 4,
+        "concurrency": 2,
+        "c1_tok_s": 64.5740673401084,
+        "many_tok_s": 85.71984183561733,
+        "c1_decode_tok_s": 71.90014548448731,
+        "many_decode_tok_s_sum": 98.83147683163969,
+        "valid": false,
+        "issues": [
+          "C=2: rank 0: preparation changed or unknown",
+          "C=2: rank 1: preparation changed or unknown",
+          "C=2: rank 2: preparation changed or unknown",
+          "C=2: rank 3: preparation changed or unknown"
+        ]
+      },
+      "concurrent": [
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 112.03189432047692,
+          "valid": false,
+          "issues": [
+            "C=2 quality or Korean corruption gate failed"
+          ]
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 122.55196026985962,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 2000,
+          "aggregate_output_tok_s": 90.39091447704864,
+          "valid": true,
+          "issues": []
+        },
+        {
+          "concurrency": 2,
+          "ctx": 32000,
+          "aggregate_output_tok_s": 97.09587409007733,
+          "valid": true,
+          "issues": []
+        }
+      ],
+      "fixed_pooled_step_s": 13.430572921022774,
+      "fixed_window_count": 45,
+      "request_groups": {
+        "normal_c1": {
+          "count": 5,
+          "quality": {
+            "ok": 7,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 32000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 128000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 85.2410221163674
+        },
+        "fixed_decode_c1": {
+          "count": 3,
+          "quality": {
+            "ok": 0,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 61.52090416290335
+        },
+        "fixed_concurrency_c1": {
+          "count": 4,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": 70.48009934459051
+        },
+        "fixed_concurrency_many": {
+          "count": 4,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": 49.393311548583135
+        },
+        "normal_many": {
+          "count": 8,
+          "quality": {
+            "ok": 11,
+            "total": 12,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": 0,
+                "client": 1,
+                "case": "ledger",
+                "dimensions": [
+                  "counterfactual"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 62.20162468285247
+        }
+      }
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260917T003830-a809d6dfddc4",
+      "sha": "0330d576a4c9749aaf6b855d81c3d8bd42a87c3b",
+      "engine_source_sha256": "9b2b9405c79bea8524d08a61c6c81c1e40e58b4c67029a2416d46b80771d6912",
+      "image": "st-engine:bracket-0330d576a4c9",
+      "shape": {
+        "model": "glm-5.3-flash",
+        "max_model_len": 1048576,
+        "max_concurrent_requests": 2,
+        "speculative_tokens": 7,
+        "prefix_cache": true,
+        "conversation_tier": true,
+        "engine": "ST",
+        "parked": 0
+      },
+      "profile": "custom",
+      "evidence_issues": [
+        "C=1 quality or Korean corruption gate failed"
+      ],
+      "quality": {
+        "version": "ko-reasoning-v2",
+        "ok": 7,
+        "total": 18,
+        "score": 62,
+        "max_score": 114,
+        "dimensions": {
+          "format": {
+            "ok": 9,
+            "total": 18
+          },
+          "completion": {
+            "ok": 18,
+            "total": 18
+          },
+          "result": {
+            "ok": 9,
+            "total": 18
+          },
+          "derivation": {
+            "ok": 7,
+            "total": 18
+          },
+          "evidence": {
+            "ok": 9,
+            "total": 18
+          },
+          "counterfactual": {
+            "ok": 8,
+            "total": 18
+          },
+          "witnesses": {
+            "ok": 2,
+            "total": 6
+          }
+        },
+        "scope": "visible final content; deterministic proof certificates"
+      },
+      "korean": {
+        "dirty": 0,
+        "n": 8,
+        "kinds": {
+          "replacement": 0,
+          "lone_jamo": 0,
+          "cjk_mixed": 0,
+          "control": 0
+        },
+        "hits": []
+      },
+      "k": 7,
+      "acceptance": 0.5111249473510722,
+      "step_s": null,
+      "observed_step_s": 12.967984574797136,
+      "request_decode_tok_s": 81.57983466747295,
+      "contexts": {
+        "2000": {
+          "decode_tok_s": 78.52635652308712,
+          "ttft_s": [
+            1.1386235349928029,
+            1.1222909670323133,
+            1.1137421539751813,
+            1.373182700946927,
+            1.3439932329929434,
+            1.3778005479834974
+          ],
+          "completion_tokens": [
+            2330,
+            3074,
+            4057,
+            1024,
+            1024,
+            1024
+          ],
+          "output_sha256": [
+            "0188cd315620b22738bade5ad07e1b0dead92f6b068f130d47e96b42952a627b",
+            "a01b26b2c5ff0b6078850f8116d0d983835ebab4fc6d57ea790d581abc421d3a",
+            "6b27013f913bc98475759915b42b2f50a259ac624e28a3c61f4e820ff523ea6b",
+            "ba2128614a4909dc3991f2294346b4ecf98a1689936c135973e03f907cb83070",
+            "143fa6939125038c031b45c74040a2887b2e4b326fd7071db5b2db16572bd30a",
+            "143fa6939125038c031b45c74040a2887b2e4b326fd7071db5b2db16572bd30a"
+          ]
+        },
+        "32000": {
+          "decode_tok_s": 82.20770492376168,
+          "ttft_s": [
+            9.588360245979857
+          ],
+          "completion_tokens": [
+            12992
+          ],
+          "output_sha256": [
+            "e9e18c3378930c9dd2fbb1de9bc49c67c633811c5a1a1ccb774b2127590ecd5e"
+          ]
+        },
+        "128000": {
+          "decode_tok_s": 84.80679526388462,
+          "ttft_s": [
+            37.3742881360231
+          ],
+          "completion_tokens": [
+            10195
+          ],
+          "output_sha256": [
+            "f1fac83cb4bdd163ab57bb9ecceadcf57e5050d8700dbc553858ec4054fbe001"
+          ]
+        }
+      },
+      "concurrency_coverage": {
+        "policy": "c1-twice-c2-once-no-128k-v3",
+        "width": 2,
+        "included": [
+          1
+        ],
+        "contexts": {
+          "1": [
+            2000,
+            32000,
+            128000
+          ],
+          "2": []
+        },
+        "c4_excluded_contexts": [
+          128000
+        ],
+        "c4_status": "omitted_after_run_1"
+      },
+      "quality_concurrent": null,
+      "fixed_concurrency": null,
+      "concurrent": [],
+      "fixed_pooled_step_s": 13.346218837748939,
+      "fixed_window_count": 45,
+      "request_groups": {
+        "normal_c1": {
+          "count": 5,
+          "quality": {
+            "ok": 7,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": 1,
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "derivation",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 128000,
+                "question": "all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "derivation",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 84.48003496535397
+        },
+        "fixed_decode_c1": {
+          "count": 3,
+          "quality": {
+            "ok": 0,
+            "total": 9,
+            "failures": [
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "ledger",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "portfolio",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual"
+                ]
+              },
+              {
+                "ctx": 2000,
+                "question": "fixed-all",
+                "client": null,
+                "case": "logic",
+                "dimensions": [
+                  "format",
+                  "result",
+                  "derivation",
+                  "evidence",
+                  "counterfactual",
+                  "witnesses"
+                ]
+              }
+            ]
+          },
+          "pooled_decode_tok_s": 59.759035069395615
+        },
+        "fixed_concurrency_c1": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        },
+        "fixed_concurrency_many": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        },
+        "normal_many": {
+          "count": 0,
+          "quality": {
+            "ok": 0,
+            "total": 0,
+            "failures": []
+          },
+          "pooled_decode_tok_s": null
+        }
+      }
+    }
+  ],
+  "pairs": [],
+  "complete": false,
+  "scope": "Observations only; failed quality/preparation gates are retained, not waived"
+}

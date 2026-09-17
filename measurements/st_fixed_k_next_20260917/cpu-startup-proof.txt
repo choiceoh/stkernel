@@ -1,0 +1,10 @@
+From https://github.com/choiceoh/stkernel
+ * branch              codex/st-fixed-k-next-consumer -> FETCH_HEAD
+   522cf777..9dfaa875  codex/st-fixed-k-next-consumer -> origin/codex/st-fixed-k-next-consumer
+Preparing worktree (detached HEAD 9dfaa875)
+HEAD is now at 9dfaa875 Merge branch 'codex/st-fixed-k-next' into codex/st-fixed-k-next-consumer
+......
+----------------------------------------------------------------------
+Ran 6 tests in 0.056s
+
+OK

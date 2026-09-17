@@ -25,7 +25,7 @@ index c78c3197..893f2e31 100644
  ENABLE_MLA_CLUSTER = True
  ENABLE_MLA_PREFILL32 = False
 diff --git a/engine/profiles/glm53/net.py b/engine/profiles/glm53/net.py
-index f74a38f6..21465e88 100644
+index b17b3446..fdb83f1a 100644
 --- a/engine/profiles/glm53/net.py
 +++ b/engine/profiles/glm53/net.py
 @@ -169,7 +169,7 @@ class Glm53Net:
