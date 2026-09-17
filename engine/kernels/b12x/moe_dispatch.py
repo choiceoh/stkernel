@@ -421,6 +421,7 @@ _STATIC_V2_DEFAULT = {
     # z: the B stages land as ONE cp.async.bulk each from pre-swizzled tile-major boxes (bulk_b)
     "bulk_b": False,
     "fc2_scale_search": 0,  # ss1/ss2: opt-in static FC2 activation scale search
+    "activation_scale_search": 0,  # as1/as2: FC1 + FC2, routed and dense, all backends
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -478,6 +479,9 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
         if token in ("ss1", "ss2"):
             cfg["fc2_scale_search"] = int(token[-1])
             continue
+        if token in ("as1", "as2"):
+            cfg["activation_scale_search"] = int(token[-1])
+            continue
         if token == "q":
             # 39차 §4c: the FC1 weight scales arrive 6-bit packed (base + index
             # per 4 KB block) and the MMA warps expand them in the stage buffer.
@@ -524,6 +528,8 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             )
         key = {"m": "tile_m", "f": "fc1", "g": "fc2", "a": "a_rows"}[token[0]]
         cfg[key] = int(token[1:])
+    if cfg["fc2_scale_search"] and cfg["activation_scale_search"]:
+        raise ValueError("choose ss1/ss2 (static FC2) or as1/as2 (all activations), not both")
     if cfg["tile_m"] != 32 or cfg["a_rows"] != 32:
         raise ValueError(f"{_GLM53_B12X_STATIC_V2_ENV}: v4 is tile_m 32, a_rows 32")
     if cfg["fc1"] < 1 or cfg["fc2"] < 1:
@@ -596,6 +602,20 @@ def configure_tp_sf6_q0(enabled: bool) -> None:
                         and _GLM53_B12X_STATIC_V2.get("reform_sf_pack")):
         raise ValueError("STK_moe_static: q0 needs the t,r,sf6 cells")
     _TP_SF6_Q0_ENABLED = bool(enabled)
+
+
+def _activation_scale_search_for(**geometry) -> int:
+    """The bound routed/dense NVFP4 cell only; the old ss recipe stays FC2-only.
+
+    Reuse the admitted FP32-scatter geometry, including the dense MLP cell.
+    This does not alter scatter arithmetic, routing or the W4A16 guard.
+    """
+    cfg = _STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None else _GLM53_B12X_STATIC_V2
+    radius = int((cfg or {}).get("activation_scale_search", 0))
+    if (radius and geometry["quant_mode"] == "nvfp4"
+            and _glm_tp_scatter_fp32(**geometry)):
+        return radius
+    return 0
 _STATIC_V2_STAMPS: Dict[Tuple[int, str], "torch.Tensor"] = {}
 _STATIC_V2_COUNTERS: Dict[str, "torch.Tensor"] = {}
 
@@ -2190,6 +2210,12 @@ def _get_static_kernel(
         swiglu_limit=swiglu_limit,
     )
     cache_key = (*cache_key, scatter_fp32, "runtime_dense_m_v1") if dynamic_m else (*cache_key, scatter_fp32)
+    activation_scale_search = _activation_scale_search_for(
+        state_E=state_E, weight_E=weight_E, k=k, n=n, num_topk=num_topk,
+        quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
+    if activation_scale_search:
+        cache_key = (*cache_key, "activation_scale_search_v1", activation_scale_search)
     cached = _STATIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -2205,6 +2231,7 @@ def _get_static_kernel(
         sf_vec_size=sf_vec_size,
         mma_tiler_mn=mma_tiler_mn,
         output_tile_count_n=output_tile_count_n,
+        activation_scale_search=activation_scale_search,
         fast_math=fast_math,
         activation=activation,
         swiglu_alpha=swiglu_alpha,
@@ -2417,6 +2444,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("input_vec16_v1",)
     if config.get("input_reuse", 0):
         cfg += ("input_reuse_v1", int(config["input_reuse"]))
+    if config.get("activation_scale_search", 0):
+        cfg += ("activation_scale_search_v1", int(config["activation_scale_search"]))
     if config.get("fc2_scale_search", 0):
         cfg += ("fc2_scale_search_v1", int(config["fc2_scale_search"]))
     # Expanded output and register scatter never alias a served handle.
@@ -2665,7 +2694,8 @@ def _get_static_kernel_v2(
         bulk_b=bulk_b,
         input_vec16=bool(config.get("input_vec16", False)),
         input_reuse=int(config.get("input_reuse", 0)),
-        fc2_scale_search=int(config.get("fc2_scale_search", 0)),
+        activation_scale_search=int(config.get("activation_scale_search", 0)),
+        fc2_scale_search=int(config.get("activation_scale_search", 0) or config.get("fc2_scale_search", 0)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
@@ -3095,6 +3125,12 @@ def _get_micro_kernel(
         shared_fc1_a=shared_fc1_a,
         ep_m16=ep_m16,
     )
+    activation_scale_search = _activation_scale_search_for(
+        state_E=state_E, weight_E=weight_E, k=k, n=n, num_topk=num_topk,
+        quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
+    if activation_scale_search:
+        cache_key = (*cache_key, "activation_scale_search_v1", activation_scale_search)
     cached = _MICRO_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -3108,6 +3144,7 @@ def _get_micro_kernel(
         mma_tiler_mn=mma_tiler_mn,
         output_tile_count_n=max(1, (n + mma_tiler_mn[1] - 1) // mma_tiler_mn[1]),
         input_scales_are_reciprocal=input_scales_are_reciprocal,
+        activation_scale_search=activation_scale_search,
         fast_math=fast_math,
         activation=activation,
         swiglu_alpha=swiglu_alpha,
@@ -4744,6 +4781,12 @@ def _get_dynamic_kernel(
         cache_key = (*cache_key, 'private_prefill_m64_fp32_v1')
     if chunk != TILED_W13_K_IN:
         cache_key = (*cache_key, 'w13_chunk', chunk)
+    activation_scale_search = _activation_scale_search_for(
+        state_E=E, weight_E=E, k=k, n=n, num_topk=num_topk,
+        quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+        swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit)
+    if activation_scale_search:
+        cache_key = (*cache_key, "activation_scale_search_v1", activation_scale_search)
     cached = _DYNAMIC_KERNEL_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -4760,6 +4803,7 @@ def _get_dynamic_kernel(
         sf_vec_size=sf_vec_size,
         mma_tiler_mn=mma_tiler_mn,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
+        activation_scale_search=activation_scale_search,
         fast_math=fast_math,
         activation=activation,
         swiglu_alpha=swiglu_alpha,
@@ -4816,6 +4860,7 @@ def _get_dynamic_kernel(
             sf_vec_size=sf_vec_size,
             mma_tiler_mn=mma_tiler_mn,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
+            activation_scale_search=activation_scale_search,
             fast_math=fast_math,
             activation=activation,
             swiglu_alpha=swiglu_alpha,
@@ -4834,6 +4879,7 @@ def _get_dynamic_kernel(
             sf_vec_size=sf_vec_size,
             mma_tiler_mn=mma_tiler_mn,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
+            activation_scale_search=activation_scale_search,
             fast_math=fast_math,
             activation=activation,
             swiglu_alpha=swiglu_alpha,
@@ -4850,6 +4896,7 @@ def _get_dynamic_kernel(
         kernel = ep_local_cls(
             sf_vec_size=sf_vec_size, mma_tiler_mn=mma_tiler_mn,
             input_scales_are_reciprocal=input_scales_are_reciprocal,
+            activation_scale_search=activation_scale_search,
             fast_math=fast_math, activation=activation, swiglu_alpha=swiglu_alpha,
             swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
             share_input_across_experts=False, **ep_kwargs)

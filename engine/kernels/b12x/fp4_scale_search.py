@@ -1,7 +1,7 @@
 """Experimental NVFP4 scale selection, preserving FlashInfer's scale convention.
 
-Only the opted-in static MoE FC2 input pack calls this helper. Candidate zero
-is the original packed result, including exceptional-input behavior. Score
+Static FC2 uses ss1/ss2; as1/as2 also cover FC1, dynamic prefill and dense MLPs.
+Candidate zero is the original packed result, including exceptional-input behavior. Score
 the actual packed E2M1 bytes, not an approximate quantizer or proxy threshold.
 """
 import cutlass

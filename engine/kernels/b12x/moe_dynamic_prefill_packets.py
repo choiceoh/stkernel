@@ -14,6 +14,7 @@ from pathlib import Path
 import cutlass
 import cutlass.cute as cute
 from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint32, Uint64
+from .fp4_scale_search import quantize_block_fp4_search
 from flashinfer.cute_dsl.fp4_common import (
     atomic_add_global_i32, fabs_f32, fmax_f32, rcp_approx_ftz,
     quantize_block_fp4, quantize_block_fp4_fast, get_ptr_as_int64,
@@ -27,7 +28,7 @@ from ._moe_dynamic.gated import (
 from .moe_w4a16_fp4_helpers import cvt_e4m3x4_to_f32x4, st_shared_bf16_from_f32
 from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
 
-PREFILL_SOURCE_SHA256 = 'bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a'
+PREFILL_SOURCE_SHA256 = '57f366b34a0452e664a3d41aa91add4100388e9f20071d0859af626c1b958d47'
 
 
 @lru_cache(maxsize=1)
@@ -282,7 +283,11 @@ class MoEGatedDynamicKernelSF6Packets(MoEGatedDynamicKernelSF6Prefill):
                                 gs_value = first_gs
                                 packed64 = Uint64(0)
                                 scale_byte = Uint8(0)
-                                if self.fast_math:
+                                if cutlass.const_expr(self.activation_scale_search > 0):
+                                    (packed64, scale_byte) = quantize_block_fp4_search(
+                                        values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                    )
+                                elif self.fast_math:
                                     packed64, scale_byte = quantize_block_fp4_fast(values, block_max, gs_value)
                                 else:
                                     packed64, scale_byte = quantize_block_fp4(values, block_max, gs_value)
@@ -304,7 +309,11 @@ class MoEGatedDynamicKernelSF6Packets(MoEGatedDynamicKernelSF6Prefill):
                                     gs_value = Uint32(_ld_shared_i32(route_scales_addr + route_slot * Int32(4))).bitcast(cutlass.Float32)
                                     packed64 = Uint64(0)
                                     scale_byte = Uint8(0)
-                                    if self.fast_math:
+                                    if cutlass.const_expr(self.activation_scale_search > 0):
+                                        (packed64, scale_byte) = quantize_block_fp4_search(
+                                            values, block_max, gs_value, self.activation_scale_search, self.fast_math
+                                        )
+                                    elif self.fast_math:
                                         packed64, scale_byte = quantize_block_fp4_fast(values, block_max, gs_value)
                                     else:
                                         packed64, scale_byte = quantize_block_fp4(values, block_max, gs_value)
