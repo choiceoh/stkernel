@@ -55,7 +55,8 @@ class SelectionCapture:
     def enabled(self):
         return self.where is not None
 
-    def __call__(self, layer, *, q8, w_eff, keys, scales, ke, n_cand, k, selected, prefill: bool):
+    def __call__(self, layer, *, q8, w_eff, keys, scales, ke, n_cand, k, selected, prefill: bool,
+                 seq=None, pool=None):
         if not self.enabled or not wanted(layer) or not prefill or layer in self.done:
             return None
         import torch
@@ -66,7 +67,8 @@ class SelectionCapture:
                         heads=int(q8.shape[1]), width=int(q8.shape[2]), prefill=bool(prefill),
                         q8=q8.detach().to("cpu"), w_eff=w_eff.detach().float().to("cpu"),
                         keys=keys.detach().to("cpu"), scales=scales.detach().float().to("cpu"),
-                        ke=ke.detach().to("cpu"), selected=selected.detach().to("cpu")), target)
+                        ke=ke.detach().to("cpu"), selected=selected.detach().to("cpu"),
+                        seq_lens=None if seq is None else seq.detach().to("cpu"), pool=pool), target)
         print(f"[selection-capture] L{layer} rows={int(q8.shape[0])} n_cand={int(n_cand)} k={int(k)} -> {target}",
               flush=True)
         return target
