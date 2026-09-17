@@ -144,6 +144,11 @@ def main():
         from probes.engine_qwen38_kda import run as qwen38_kda
         qwen38_kda(args.output)
         return
+    if args.lanes == 'qwen38_moe':
+        # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
+        from probes.engine_qwen38_moe import run as qwen38_moe
+        qwen38_moe(args.output)
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check

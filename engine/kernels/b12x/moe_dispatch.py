@@ -89,6 +89,13 @@ _DYNAMIC_SLICE_CHUNK = _TASK_SLICE_CHUNK
 # (Qwen3.8-Flash-Next lands at 40 rows per expert -> the table says 32, a tile GLM never
 # selects). Measure, then fix the cell in the table below; never an env read.
 _DYNAMIC_TILE_M_OVERRIDE: int | None = None
+# Probe hooks: pin the micro (decode) kernel's M tile (32/64/128, N 128) and its MAC (max active
+# clusters, 1..the SM count) for a decode cell under measurement (probes/engine_qwen38_moe.py:
+# Qwen3.8's EP cell, whose zero-weight sentinel sends every 2..8-token launch to micro, where the
+# selectors give M64 and the ladder's rungs are capped at GB10's 48 SMs). None keeps the selectors
+# (_select_micro_mma_tiler_mn, _select_micro_mac); never an env read.
+_MICRO_TILE_M_OVERRIDE: int | None = None
+_MICRO_MAC_OVERRIDE: int | None = None
 SF_VEC_SIZE = 16
 
 
@@ -977,6 +984,12 @@ def _select_micro_mma_tiler_mn(
     share_expert_scales: bool = False,
     single_token: bool = False,
 ) -> Tuple[int, int]:
+    if _MICRO_TILE_M_OVERRIDE is not None:
+        # M16 is the EP direct-scatter variant's (ep_m16: two MMA warps, a one-row atom); the
+        # stock micro atom spans 32 rows, so a pinned tile is 32, 64 or 128.
+        if _MICRO_TILE_M_OVERRIDE not in (32, 64, 128):
+            raise ValueError(f"_MICRO_TILE_M_OVERRIDE must be 32/64/128, got {_MICRO_TILE_M_OVERRIDE!r}")
+        return (_MICRO_TILE_M_OVERRIDE, 128)
     # Only the shared/direct EP candidate uses M16 with two MMA warps.
     # Missing or different execution metadata retains the prior M32 choice;
     # every other geometry keeps the original selector.
@@ -991,6 +1004,24 @@ def _select_micro_mma_tiler_mn(
             return (16, 128)
         return (32, 128)
     return _select_moe_mma_tiler_mn(m * num_topk, n)
+
+
+def _select_micro_mac(
+    routed_rows: int,
+    n: int,
+    base_mac: int,
+    ladder: Tuple[Tuple[int, int], ...],
+) -> int:
+    """The micro kernel's MAC: the tuned ladder's rung for these routed rows, capped by the work
+    tiles (routed rows x N slices) and by `base_mac`, the hardware limit (the SM count). A rung
+    above the SM count is capped to it. `_MICRO_MAC_OVERRIDE` pins it, never above `base_mac`."""
+    if _MICRO_MAC_OVERRIDE is not None:
+        if type(_MICRO_MAC_OVERRIDE) is not int or not 1 <= _MICRO_MAC_OVERRIDE <= base_mac:
+            raise ValueError(f"_MICRO_MAC_OVERRIDE must be an int in 1..{base_mac}, got {_MICRO_MAC_OVERRIDE!r}")
+        return _MICRO_MAC_OVERRIDE
+    micro_work_tiles = max(1, routed_rows * max(1, (n + 128 - 1) // 128))
+    tuned_mac = _lookup_mac_ladder(ladder, routed_rows)
+    return min(tuned_mac or base_mac, micro_work_tiles, base_mac)
 
 
 def _as_grouped_scale_view(
@@ -3744,7 +3775,6 @@ def launch_sm120_static_moe(
             )
             launch_ids = compact_ids
         # Select micro MAC: min of tuned ladder, work tiles, and hardware limit.
-        micro_work_tiles = max(1, routed_rows * max(1, (n + 128 - 1) // 128))
         micro_mac_ladder = _MICRO_MAC_LADDER
         if _GLM53_B12X_MICRO_MAC_LADDER is not None:
             micro_mac_ladder = _effective_glm53_mac_ladder(
@@ -3759,8 +3789,7 @@ def launch_sm120_static_moe(
                 activation=activation,
                 swiglu_limit=swiglu_limit,
             )
-        tuned_mac = _lookup_mac_ladder(micro_mac_ladder, routed_rows)
-        micro_mac = min(tuned_mac or base_mac, micro_work_tiles, base_mac)
+        micro_mac = _select_micro_mac(routed_rows, n, base_mac, micro_mac_ladder)
         compiled, mac = _get_micro_kernel(
             workspace.state_E,
             num_experts,
