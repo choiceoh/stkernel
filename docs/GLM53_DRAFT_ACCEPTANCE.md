@@ -26,7 +26,7 @@ request; this is not a measured acceptance or throughput verdict. `auto` resolve
 before arena sizing: if every rank has valid committed-decode statistics, all
 consume `fp8/decode/1`. Otherwise all use `fp8/collect/1`, keeping any already
 complete files intact and collecting the missing ones within the existing
-2 GiB calibration budget. This collection boot uses the shared FP8 pack;
+8 GiB calibration budget (`engine/kernels/dense/calibration.py`). This collection boot uses the shared FP8 pack;
 it does not claim to have activated decode GPTQ yet. Completed statistics are
 consumed on a subsequent boot, never by changing weights inside captured graphs.
 For the current FC and C=4 capacity, its missing full Hessian plus staging
@@ -57,8 +57,8 @@ each row above. Do not present an environment override as a bracket arm.
    short prompts, capture/warmup, ghost rows and rejected suffixes do not enter
    this Hessian. Blobs use `.committed-decode-v1` names and
    `input_scope=committed_decode_v1`; shared calibration is not overwritten.
-   At least 4,096 rows are required; automatic filing targets 32,768. Collection
-   stays within the existing 2 GiB calibration budget. Consume on a subsequent
+   At least 4,096 rows are required; automatic filing targets 131,072. Collection
+   stays within the existing 8 GiB calibration budget. Consume on a subsequent
    boot. Explicit `decode` requires completed calibration before serving;
    `auto` handles absent files as described above.
    With W4 decode, only the FC W4 pack uses it. With FP8 decode, a separate
@@ -107,8 +107,8 @@ reject attribution if shared calibration changes. Never compare the collector's
 Hessian-update overhead with an arm whose collection has finished. A/C need
 matching shared files, with C additionally reading the completed decode blob.
 
-Run full onepass with the existing coverage: C=1 at 2K/32K/128K and C=4 at
-2K/32K once; C=4 128K remains excluded. Keep the same questions, K, temperature,
+Run full onepass with the `extended` workload profile (harness 46): C=1 at
+2K/32K/128K and C=N at 2K/32K once; 128K C=N remains excluded. Keep the same questions, K, temperature,
 token limits, checkpoint, tokenizer and target packs. Use A/B/A and A/C/A warm
 comparisons (or A/combined/A for the combined experiment), retaining cold runs separately and resetting prefix reuse. Record
 per-question acceptance, first-rejection histogram, quality/logic checks, finish

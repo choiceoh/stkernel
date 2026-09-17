@@ -1,11 +1,13 @@
-# Onepass recording (harness 45)
+# Onepass recording (harness 46)
 
 > 살아 있는 참조 — **원패스가 무엇을 기록하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
-`python3 bench/onepass.py --name NAME` runs the Korean context ladder at C=1
-and C=4. C=4 sends four independent streaming requests for each canonical
-question with a start barrier. Request rates and aggregate rates have different
-denominators; C=4 never enters the C=1 decode-window pool. Questions now require
+`python3 bench/onepass.py --name NAME` runs the `default` workload (2K/32K at
+C=1) unless `--profile extended` asks for the Korean context ladder's 128K
+context and the C=N arm. C=N sends independent streaming requests for each
+canonical question with a start barrier, at the door's admission limit capped at
+four (two for GLM-5.3 since #950). Request rates and aggregate rates have
+different denominators; C=N never enters the C=1 decode-window pool. Questions now require
 versioned [reasoning proof certificates](ONEPASS_QUALITY.md): as-of transaction
 reconciliation, constrained optimization and possible-world/contradiction proofs.
 Only the final content channel is graded. C=1 and C=4 reuse identical prompts.
@@ -18,7 +20,8 @@ observed new Triton/CuTe/C++ specialization or ST graph capture, complete
 traffic counters, and the requested decode width on every rank. These are
 observed preparation conditions, not a claim that every external compiler or
 OS page cache is known. The compiler observers report their coverage. Missing
-evidence invalidates comparison. Harness 41 and older records are incompatible.
+evidence invalidates comparison. Records written before harness 46 carry no
+workload profile, and the judge will not read one against the other.
 
 The printed first/median TTFT values are prepared, fresh-prefix requests.
 `cold_s` and `warm_s` remain compatibility aliases for first/median; they do not

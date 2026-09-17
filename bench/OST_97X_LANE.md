@@ -206,18 +206,20 @@ bash engine/runtime/build-x86_64.sh        # fetch (network), then build --netwo
 ```
 
 42 wheels resolve, verified by sha256 -- the cu132 index publishes no digest, so
-`make_x86_64_lock.py` fetches those three and hashes them itself. Three entries cannot
+`make_x86_64_lock.py` fetches those three and hashes them itself. Four entries cannot
 match the fleet's and each is recorded in the lock's `deviations`: `nvidia-cudla` is
 dropped (Tegra-only, no x86_64 build and no such hardware), `flashinfer-python` moves from
 the unpublished `0.6.18.dev20260819` to `0.6.18.post1` (a `py3-none-any` wheel that JITs
-its kernels, so this is a version difference and not an arch one), and `tilelang` moves
-`0.1.12 -> 0.1.14`, the nearest version publishing an x86_64 wheel.
+its kernels, so this is a version difference and not an arch one), `tilelang` moves
+`0.1.12 -> 0.1.14`, the nearest version publishing an x86_64 wheel, and `deep_gemm` is
+absent because no x86_64 build can reproduce it.
 
 The lock is not the whole dependency set, and this is the part that bites: the fleet's lock
 names 34 wheels because its vLLM parent already supplied everything else. A base image
 supplies nothing, so `fetch_x86_64.py` reads `Requires-Dist` out of every locked wheel and
-resolves what the lock does not pin -- 31 packages, 59 wheels -- into `closure.json` at
-fetch time, which keeps the build itself offline. Reading only *torch's* requirements is
+verifies the lock's pinned closure -- 43 wheels -- into `closure.json` at fetch time
+(only `--resolve-closure` resolves afresh), which keeps the build itself offline. Reading
+only *torch's* requirements is
 not enough: that builds an image where `import flashinfer` raises
 `ModuleNotFoundError: No module named 'tvm_ffi'`, which is how the first build here failed.
 
@@ -230,7 +232,8 @@ here and what is here is not it.
 
 The **lock** is: all 42 wheels resolve and every digest is checked, and `torch`'s was
 confirmed against an independent `curl | sha256sum` (530,327,928 bytes). The **chain runs**:
-a build completed and reported `installed 42 locked wheels + 9 closure wheels`.
+a build completed and reported `installed 42 locked wheels + 9 closure wheels` (the closure
+was resolved then; it is now pinned in the lock at 43).
 
 The **image now is, for compiling** (2026-09-15). `st-engine:glm53-sm120-x86` was built
 (18.4 GB) and it imports `flashinfer`. What it cannot do out of the box is import ST's

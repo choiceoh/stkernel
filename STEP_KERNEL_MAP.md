@@ -32,10 +32,17 @@ C=1 디코드 스텝의 커널은 **1,582 개**, 그중 이 리포에서 컴파�
 
 **정정(2026-09-04)**: 첫 판의 "우리 소유 186 개(9.9%)" 는 틀렸다. `census.py` 의
 osar 그룹 정규식 `k_reduce` 가 앵커 없이 deep_gemm 의 `sm120_split_k_reduce_impl`
-42 발/스텝을 우리 AR 로 셌다(우리 osar 모듈의 `__global__` 은 `k_oneshot` 하나뿐이고
+42 발/스텝을 우리 AR 로 셌다(우리 osar 모듈의 `__global__` 은 `k_oneshot` 계열뿐이고
 102 발/스텝이다 — 아래 구조표와도 어긋났었다). 정규식에 `^` 앵커를 넣어 고쳤고,
 그 42 발은 원래 자리인 GEMM 그룹으로 갔다. 원장의 같은 부팅 표("커널 개수의 실측
 가격")는 처음부터 **148(AR 104 + 게이트 44)** 로 적고 있었다 — 어긋난 쪽은 지도였다.
+
+**정정(2026-09-17)**: 이 문서의 09-04/09-05 트레이스 서술은 그대로 두되, 그 뒤
+기본값이 움직인 것을 여기 적는다 — `mk_gemm_kernel` 은 v2 `mk_gemm2_kernel` 로
+대체됐고(34차 §8), KDA 메가커널 세그먼트는 일몰했으며(`MK_KDA` 삭제), b_proj
+fp8-dense(`VLLM_GLM53_FP8_DENSE_BPROJ`)와 인덱서 head-gate split-K
+(`VLLM_GLM53_INDEXER_GATE_SPLITK`)는 2026-09-06 프로필 기본값이 됐다. GLM-5.3-Flash
+는 EP4(`ENABLE_EP=1`)가 기본이다.
 
 > ⚠ 트레이스의 **절대 시간은 트레이스 사이에서 비교하지 말 것**. CUPTI 가 GPU 바쁜
 > 시간을 부풀린다(앞선 세션: 136 ms vs 실측 스텝 47.6 ms; 09-04 무장 트레이스는
@@ -79,14 +86,14 @@ osar 그룹 정규식 `k_reduce` 가 앵커 없이 deep_gemm 의 `sm120_split_k_
 | 그룹 | 스톡 08-31 | 무장 09-04 | 출처 | 지금 상태 |
 |---|---|---|---|---|
 | elementwise 글루 | **483** | **446** | torch/inductor 생성 | 안 움직였다 — MK 는 글루를 흡수하지 않는다. `custom_ops` A/B(EXP-2) 미실행 |
-| **메가커널 세그먼트 (우리)** | — | **263** | `glm53_megakernel` | mk_gemm 185 + mk_mhc 89 (아래 ⑥) |
+| **메가커널 세그먼트 (우리)** | — | **274** | `glm53_megakernel` | mk_gemm 185 + mk_mhc 89 (아래 ⑥) |
 | cutlass/cublas GEMM | 439 | 229 | cuBLASLt + deepgemm | 밀집 fp8 197 발이 MK 레인으로. 남은 건 드래프터 bf16 + 저랭크 b-절반(②) |
 | 정규화/양자화 | 301 | 129 | vLLM 커스텀 op + W8A8 대가 | `per_token_group_quant` 179 → 2 — MK GEMM 이 커널 안에서 양자화한다(③) |
 | mhc (TileLang) 2 종 | 185 | 14 | 이미지의 glm5next 모델 코드 | **접수 완료** — mk_mhc 가 89 발로 대체(④) |
 | MoE b12x | 99 | 110 | flashinfer | 손 안 댐. 개수 차는 08-31→09-01 사이의 경로 변경(09-01 스톡도 110) |
 | **osar AR (우리)** | 102 | 98 | `tp_oneshot_ar` | 이미 5→1. `k_oneshot` 하나뿐이다 |
 | 기타 | 82 | 86 | 혼합 | |
-| KDA/FLA 청크 | 68 | 77 | fla 라이브러리 | `MK_SEG_KDA=0` — 유일하게 남은 미무장 세그먼트 |
+| KDA/FLA 청크 | 68 | 77 | fla 라이브러리 | KDA 세그먼트는 34차 §8 에서 일몰(스톡 사슬 + `KDA_ONEPASS`) |
 | 복사/산포/수집 | 47 | 50 | torch | |
 | **게이트 (우리)** | 42 | 40 | `moe_gate_sm121` | #96 로 반감, 레버 아님(보충 분해 3) |
 | 어텐션 (MLA) | 33 | 33 | flashinfer/trtllm | 오늘 기본값은 `MK_SEG_MLA=1` — 이 트레이스엔 없다 |
@@ -130,7 +137,7 @@ r"\.mlp\.(gate_up_proj|down_proj)$"
 ```
 
 잡히는 것: KDA 의 q/k/v/b/f_a/g_a 는 로더가 `in_proj_qkvbfg_a` 로 **병합**하므로
-(`glm5next_model.py:843-848`) 첫 패턴에 걸린다. shared expert 의 gate/up 도
+(`glm5next_model.py:1095-1103`) 첫 패턴에 걸린다. shared expert 의 gate/up 도
 `gate_up_proj` 로 병합돼 걸린다.
 
 **안 잡히는 것** (≈145 와 맞는다):
@@ -144,14 +151,16 @@ r"\.mlp\.(gate_up_proj|down_proj)$"
 전부 **저랭크 사영의 뒤쪽 절반**이다. 바이트는 작아서(랭크 차원) 대역폭 이득은
 크지 않지만 **커널 개수로는 7.7%** 다. `_INCLUDE` 에 `_b_proj` 계열을 더하는 것은
 한 줄이고, 그 층들이 `ignore` 에 있는 이유(정밀도 민감)를 감안하면 **게이트를
-붙여 재야 한다.**
+붙여 재야 한다.** **정정(2026-09-06)**: 프로필 기본값 `VLLM_GLM53_FP8_DENSE_BPROJ=1`
+로 b_proj 33개가 fp8-dense/MK W4 레인으로 갔다.
 
 **무장 09-04**: cutlass/cublas 그룹 전체가 439 → **229**. 밀집 fp8 GEMM 197 발이
 mk_gemm 레인으로 갔고, 남은 201 발(깨끗한 스텝)은 **드래프터 34 발(꼬리, 2.88 ms)**
-+ 저랭크 b-절반 ~112 발 + `splitKreduce` 23 + 인덱서 `gemmSN` 11 이다. 즉 이 절의
-표적(b_proj 계열, EXP-4)은 **그대로 남아 있고**, 그 위에 드래프터가 얹혔다 —
-오늘의 기본값은 드래프터 30 발을 MK W4 로 옮겼다(28차, 스텝 −1.1 ms). 인덱서
-`gemmSN` 11 발(EXP-9 표적)도 아직 stock 이다.
++ 저랭크 b-절반 ~112 발 + `splitKreduce` 23 + 인덱서 `gemmSN` 11 이다. 그 위에
+드래프터가 얹혔다 — 오늘의 기본값은 드래프터 30 발을 MK W4 로 옮겼다(28차, 스텝
+−1.1 ms). **정정(2026-09-06)**: 이 절의 표적이던 b_proj 계열(EXP-4)과 인덱서
+`gemmSN`(EXP-9)은 둘 다 프로필 기본값이 됐다(`FP8_DENSE_BPROJ=1`,
+`INDEXER_GATE_SPLITK=1`). 위 09-04 수치와 "남은 자리" 서술은 그 이전 상태다.
 
 ### ③ 정규화/양자화 301 개 (스톡 08-31) — W8A8 의 대가가 보인다
 
@@ -193,13 +202,14 @@ return (weight_key, activation_key) in (
 **가중치는 NVFP4 고정.** W4A8 은 통과하지 못한다. 그리고:
 
 ```python
-def _supports_parallel_config(cfg): return not cfg.use_ep
+def _supports_parallel_config(moe_parallel_config):
+    return not getattr(moe_parallel_config, "enable_eplb", False)
 ```
 
-**b12x 는 expert parallelism 을 지원하지 않는다** — 288 전문가가 전 랭크에
-복제된다. 스텝의 62% 가 전문가 읽기인데 그게 **샤딩 없는 전량 읽기**라는 뜻이고,
-EP 를 쓸 수 있다면 그 항이 줄어들 여지가 있다. 이 축을 여는 것은 커널 교체이며
-지금까지 논한 어떤 변경보다 크다.
+**b12x 커널은 EPLB 만 거부한다** — EP 는 오버레이가 전역 top-k 를 리맵해 원격
+슬롯을 커널 전에 제거하는 방식으로 그 위에 얹혀 있다(`flashinfer_b12x_moe.py` 의
+로컬 전용 래퍼). GLM-5.3-Flash 프로필은 `ENABLE_EP=1`(EP4)이 기본이라 routed
+expert 는 랭크별로 샤딩된다 — "288 전문가가 전 랭크에 복제"는 기본값의 모습이 아니다.
 
 **무장 09-04**: 99 → **110**, 손 안 댔다. 그리고 27차가 이 축의 다음 칸을 닫았다 —
 **MK_SEG_MOE 는 열 이유가 없다**: b12x static 커널(U=40)의 실효 대역폭 197 GB/s 는
@@ -208,11 +218,11 @@ EP 를 쓸 수 있다면 그 항이 줄어들 여지가 있다. 이 축을 여�
 마이크로커널이 240 GB/s 에 닿는 것. EP(EXP-1)는 여전히 **미실측 부팅 게이트**다 —
 구현은 끝났고 브래킷만 남았다(RUNBOOK EXP-1).
 
-### ⑥ 메가커널 세그먼트 263 개 (우리) — 접수의 결과
+### ⑥ 메가커널 세그먼트 274 개 (우리) — 접수의 결과
 
 | | 발/스텝 | ms/스텝 | 발당 | 무엇을 대체했나 |
 |---|---|---|---|---|
-| `mk_gemm_kernel` | 185 | 14.13 | 76 us | deep_gemm 밀집 fp8×fp4 197 발 + `per_token_group_quant` 177 발 |
+| `mk_gemm2_kernel` | 185 | 14.13 | 76 us | deep_gemm 밀집 fp8×fp4 197 발 + `per_token_group_quant` 177 발 |
 | `mk_mhc_kernel` | 89 | 2.03 | 23 us | TileLang `mhc_pre`+`mhc_fused` 179 발 |
 
 **커널 수는 −304, 시간은 제자리다.** 09-01 스톡 트레이스의 deep_gemm 밀집 GEMM 은
@@ -239,9 +249,9 @@ down 36 µs), **상주** `mk_gemm` 은 publish 배리어가 마지막 블록을 
 즉 이 절의 "시간은 제자리" 는 **2026-09-04 무장 트레이스의 상태**이고, 원인(30차)과
 처방(v2)이 그 뒤에 차례로 붙었다.
 
-세그먼트 넷 중 **KDA 는 기본값에서 여전히 미무장**이다(`MK_SEG_KDA=0`; conv 상태 dtype
-계약 때문에 `MAMBA_CACHE_DTYPE` 노브가 09-04 22:24 에 붙었고, 켠 팔은 한국어 혼입률
-때문에 되돌려졌다 — 30차 §12). 켠 부팅의 트레이스는 보충 분해 6 에 있다. MLA 는
+세그먼트 넷 중 **KDA 세그먼트는 34차 §8 에서 일몰**됐다(`MK_KDA`·`MK_KDA_SHADOW`
+코드 삭제) — 그 블록의 경로는 스톡 사슬 + `VLLM_GLM53_KDA_ONEPASS` 다
+(`profiles/glm53.env`). 켠 부팅의 트레이스는 보충 분해 6 에 있다. MLA 는
 09-04 19:55 부터 기본값이지만 이 트레이스에는 없다.
 
 ## 이미 닫힌 축 (재조사 금지)
@@ -274,7 +284,7 @@ down 36 µs), **상주** `mk_gemm` 은 publish 배리어가 마지막 블록을 
 |---|---|---|
 | MHC | 179 → 45 | **179 → 89** + stock 잔여 7 |
 | quant + 밀집 GEMM | ~360 → ~180 | **376 → 187** |
-| KDA 블록 | ~510 → 34 | 미무장(`MK_SEG_KDA=0`) |
+| KDA 블록 | ~510 → 34 | 일몰(34차 §8; 스톡 사슬 + `KDA_ONEPASS`) |
 | 합계 천장 | 약 4.9 ms | 시간이 준 자리는 MHC −0.5 · 양자화 −1.5 ms 뿐 |
 
 ⚠ **그런데 이 근거는 강해지지 않고 약해지고 있다.** #89 이후 #90·#93·#96 이
@@ -364,7 +374,7 @@ mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`a
 
 | 위치 | 개/스텝 | 무엇 | 처리 |
 |---|---|---|---|
-| 풀어텐션 11층 인덱서 | 275 | 꼬리 풀 강제 8개, seq_len 유도, fill, 확장·변환 주변 | 우리 `sparse_attn_indexer_kpool.py` — `VLLM_GLM53_KPOOL_FUSED_TOPK`(기본 off, 미측정)에 접기 |
+| 풀어텐션 11층 인덱서 | 275 | 꼬리 풀 강제 8개, seq_len 유도, fill, 확장·변환 주변 | 우리 `sparse_attn_indexer_kpool.py` 로 접기(`glm53_kpool_topk`·`KPOOL_FUSED_TOPK` 는 34차 §8 에서 삭제) |
 | KDA 34층 | 136 | conv 뒤 `reshape` 가 split 뷰를 q/k/v 세 번 복사 | MK-KDA 가 흡수 |
 | MoE 42층 | 42 | shared expert 덧셈 | osar copy-in 에 접기 |
 | 나머지 | ~150 | 드래프터 inductor 글루, 꼬리 native RMSNorm, eager memcpy | 작음 |
@@ -374,8 +384,8 @@ mamba 4, 드래프터 1)의 빌더 — GDN 빌더 4개가 각각 `to`·`sub`·`a
 
 **읽다가 나온 것**: (1) 인덱서의 fp32 head-gate `torch.mm(hidden.float(), _wp_fp32)`
 가 cuBLAS gemmSN 2블록 커널로 층당 86 us, 11층 0.95 ms/스텝(CUPTI) — 우리
-stock `attention.py` `Indexer.forward` 의 것(`FUSED_K_GATE=0` 이라 우리 fastpath 사본은 안 돈다),
-split-K 로 수 us 감 → `glm53_indexer_gate_splitk` (EXP-9, opt-in, N=32 콜드 88 → 12.7 us,
+stock `attention.py` `Indexer.forward` 의 것(`FUSED_K_GATE` 노브는 34차 §8 에서 일몰 — 우리 fastpath 사본은 안 돈다),
+split-K 로 수 us 감 → `glm53_indexer_gate_splitk` (EXP-9, 프로필 기본값 `1`(2026-09-06), N=32 콜드 88 → 12.7 us,
 ~1.2%/스텝; 첫 판의 N=16 수치는 리뷰로 정정). (2) 드래프터 fc 투영
 814 us(eager bf16, 5층 hidden cat, 168 MB 읽기, `ReplicatedLinear` 라 fp8 dense
 패턴 밖) 포함 드래프터 커널 합 ~3 ms(CUPTI) — 원장 D≈0 과 긴장, 직접 측정 전

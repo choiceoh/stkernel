@@ -50,7 +50,8 @@ mHC는 GLM 레인이 호출하는 pre/post를 직접 제공한다. vLLM의 Custo
 일반 `torch.nn.Module`이다. MLA의 Python 드라이버는 sparse MLA에 필요한 빌드·작업공간·
 수치 판정만 보존하며, 다른 모델의 GEMM/가중치 포장 후크를 가져오지 않는다.
 
-GB10 플릿 이미지의 PDL 정책을 유지한다: conv·TileLang·DeepGEMM에서 끈다(KDA 상태 커널 경합).
+GB10 플릿 이미지의 PDL 정책을 유지한다: conv·DeepGEMM에서 끈다(KDA 상태 커널 경합). mHC prefill 의
+TileLang 레인은 2026-09-12부터 PDL 을 켠다(`mhc/tilelang_kernels.py` `ENABLE_PDL = True`).
 메가커널 발사는 프로덕션 채택값대로 PDL 을 켠다(`mk_pdl_enabled()` 가 코드 기본값 true, 27차 발사당 58.0→53.6 µs).
 DeepGEMM 설정은 첫 실행에 한 번 적용해 CPU에서의 패키지 검사와 장치 배정 전 임포트가
 CUDA 문맥을 만들지 않게 한다. MLA는 첫 eager 호출에 JIT와 수치 판정을 끝내야 한다.
@@ -114,9 +115,9 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
   `lanes.served()` 가 `moe_dispatch.configure_static_v2()`/`configure_tp_sf6_q0()` 로 한 번 적용하고, 바인딩 때
   `Lanes.moe_prepare` 가 층마다 뷰를 만든다(셀 `t` 는 아레나 바이트를 제자리 타일 우선으로, `sf6` 는 packed-only 스케일 소유자).
   참조 레인은 `engine/modules/expert_layout.py` 로 같은 바이트를 행 우선으로 읽는다.
-  `STK_mla_prefill` — 큰 M 프리필 후보 `stock | tile32 | pair | pair4`(tile32 프로덕션 기본값), `mla.configure_prefill()` 이 무장 전에 적용.
+  `STK_mla_prefill` — 큰 M 프리필 후보 `stock | tile32`(tile32 프로덕션 기본값), `mla.configure_prefill()` 이 무장 전에 적용.
 - **프로브 훅으로 남긴 것**(env 가 아니라 인자·모듈 속성; 서빙은 안 건드림): MLA 분할 강제 `mla_decode(splits=)`, MLA 루프라인 모드
-  `mla_decode(probe=)`(`.cu` `run_mla` 의 넷째 int), 쌍 프리필 겹침 통계 `mla.PAIR_STATS`, 동적 tile_m 고정
+  `mla_decode(probe=)`(`.cu` `run_mla` 의 넷째 int), 동적 tile_m 고정
   `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), micro 타일·MAC 고정 `moe_dispatch._MICRO_TILE_M_OVERRIDE`/`_MICRO_MAC_OVERRIDE`
   (Qwen3.8 EP 디코드 셀 측정용, `probes/engine_qwen38_moe.py`), KDA recurrent 값 타일 BV 고정
   `kda/ring._BV_OVERRIDE`·`kda/kda._BV_OVERRIDE`(새 셀 BV 스윕용, `probes/engine_qwen38_kda.py`), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),
@@ -255,10 +256,11 @@ API, 전체 수치 검사를 다시 검증한다. 이미지 빌드·프로브는
     bash probes/run_engine_probe.sh probes/engine_kernel_check.py
     bash probes/run_engine_check.sh --layers 0-4
 
-GPU 검사는 사용 가능한 GB10에서 실행한다. JIT 캐시는 기본 `$HOME/.cache/st`에 두며
-`ST_CACHE`로 변경한다. JIT 캐시 지도(2026-09-12 실측): Triton `/cache/triton`, TileLang `/cache/tilelang`,
-DeepGEMM `/cache/deep_gemm`, nvcc 빌드는 MLA `/cache/mla`, dense `/cache/st-dense`,
-one-shot `/cache/st-oneshot`이다. 세 네이티브 확장은 소스·로컬 헤더의 내용과 명시적 빌드 옵션,
+GPU 검사는 사용 가능한 GB10에서 실행한다. 네이티브 확장 캐시는 기본 `$HOME/.cache/st/<module>`에 두며
+`ST_MLA_BUILD_ROOT`·`ST_DENSE_BUILD_ROOT`·`ST_ONESHOT_BUILD_ROOT`·`ST_NATIVE_BUILD_ROOT`로 바꾼다.
+이미지가 박아 둔 JIT 캐시 지도(CUDA 13.2 격리, 2026-09-14): Triton `/cache/cu132/triton`, TileLang `/cache/cu132/tilelang`,
+DeepGEMM `/cache/cu132/deep_gemm`, nvcc 빌드는 MLA `/cache/cu132/mla`, dense `/cache/cu132/st-dense`,
+one-shot `/cache/cu132/st-oneshot`, native `/cache/cu132/st-native`이다. 세 네이티브 확장은 소스·로컬 헤더의 내용과 명시적 빌드 옵션,
 Torch/CUDA 버전으로 캐시를 나누고, 그 안의 `src/`를 Ninja 입력으로 사용한다. 같은 내용의
 체크아웃·rsync·touch는 입력 경로나 수정 시각을 바꾸지 않는다. 실제 변경은 새 캐시를 만들며,
 Torch/Ninja의 빌드·헤더 의존성 검사·잠금은 그대로 사용한다. 이 방식으로 전환할 때 기존
