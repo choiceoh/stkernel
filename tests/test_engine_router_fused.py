@@ -113,7 +113,7 @@ class RouterConsumerTests(unittest.TestCase):
             with self.subTest(change=change):
                 net = Glm53Net(replace(profile, **change), NS(rank=0, world_size=4),
                                NS(rmsnorm=None, swiglu=None, route_weights=None), [3])
-                self.assertEqual(net.fused_decode_router, not change)
+                self.assertFalse(net.fused_decode_router)
 
     def test_fusion_preserves_the_capture_route_skip_by_using_the_common_path(self):
         from types import MethodType, SimpleNamespace as NS

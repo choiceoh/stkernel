@@ -188,7 +188,7 @@ class Glm53Net:
         # The aligned tail matches served selection/normalization on the same
         # logits. Admit the qualified K7 geometry; route() also requires a bound
         # C1/C2 width and resident FP32 weights/bias, with no route-slot skip.
-        self.fused_decode_router = (F.hidden, F.experts, F.topk_experts, F.spec_k) == (4096, 288, 8, 7)
+        self.fused_decode_router = False  # incident control: isolate the fused router on the same base
         self._router_fused_bias = {}
         self._router_fused_executed = set()
         self._decode_pairs = {}
