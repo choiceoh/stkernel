@@ -245,7 +245,7 @@ def check(report, layers):
                     pi = torch.arange(8, device='cuda', dtype=torch.int32).expand(rows, 8).contiguous()
                     pr = torch.zeros((rows, 8), device='cuda')
                     pr[:, 0] = 1.
-                    po = torch.empty((rows, 4096), dtype=torch.float32, device='cuda')
+                    po = torch.empty((rows, 4096), dtype=torch.bfloat16, device='cuda')
                     hashes = set()
                     for generation in range(3):
                         px.copy_(cells.grouped(1, 1, .7, 2920 + generation))
@@ -253,22 +253,20 @@ def check(report, layers):
                             pr.zero_()
                         po.fill_(float('nan'))
 
-                        def finalize_prefill(accumulator):
-                            po.copy_(accumulator)
-                            return po
-
-                        layer.moe(chunk, px, pi, pr, finalize=finalize_prefill)
+                        # The finalizer hook is decode-only. Exercise prefill's
+                        # ordinary BF16 output contract, as serving does.
+                        layer.moe(chunk, px, pi, pr, output=po)
                         torch.cuda.synchronize()
                         assert bool(torch.isfinite(po).all()), (rows, generation)
                         differences = int(torch.count_nonzero(po != po[:1]))
                         assert differences == 0, (rows, generation, differences)
                         nonzero = int(torch.count_nonzero(po))
                         assert (nonzero == 0) == (generation == 2)
-                        digest = hashlib.sha256(po[0].cpu().numpy().tobytes()).hexdigest()
+                        digest = hashlib.sha256(po[0].view(torch.uint8).cpu().numpy().tobytes()).hexdigest()
                         if generation != 2:
                             hashes.add(digest)
                         report('publication_prefill', layer=layer.L, rows=rows,
-                               generation=generation, unequal_rows=differences,
+                               generation=generation, output_dtype=str(po.dtype), unequal_rows=differences,
                                output_nonzero=nonzero, first_row_sha256=digest,
                                zero_routes=generation == 2)
                     assert len(hashes) == 2, 'prefill reused the preceding payload'

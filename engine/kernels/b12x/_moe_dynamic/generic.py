@@ -1515,6 +1515,10 @@ class MoEDynamicKernel:
             is_cta_leader,
         )
 
+        # Packed A and SFA were written through the generic global proxy.
+        # Each consuming CTA orders them after grid acquisition and before TMA.
+        cute.arch.fence_proxy("async.global")
+
         gA = cute.local_tile(mA, self.sa_tile_shape_mk, (None, None, None))
         # Tiled view over w13.
         # Gated: [2*I_tp, K, E] packed as [up, gate] across N.

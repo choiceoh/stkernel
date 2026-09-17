@@ -134,7 +134,7 @@
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py",
       "sha256": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
       "origin": "image",
-      "local_sha256": "6e979048ad36d9cdf303818bedcbb2baefe90046ead1a0eb59f7f6fbf1500e21",
+      "local_sha256": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
       "local_modifications": [
         "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
         "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
@@ -204,7 +204,7 @@
       "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",
       "sha256": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
       "origin": "repository",
-      "local_sha256": "44463b566508b3eb3cda1e8c964abb10d594ac3b6ed028d1606164ac974e24f9",
+      "local_sha256": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
       "local_modifications": [
         "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic.",
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
@@ -216,7 +216,7 @@
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py",
       "sha256": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
       "origin": "image",
-      "local_sha256": "36d79215fafebae00dc0d6d44a880eafb36b85dcd0f4f8fce99f985e502f4c08",
+      "local_sha256": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
       "local_modifications": [
         "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic.",
         "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
