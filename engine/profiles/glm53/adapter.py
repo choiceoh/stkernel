@@ -689,7 +689,9 @@ class Glm53Engine:
         # 6000+seed = device chain with target-only sampling. All modes use
         # the SAME underlying request seed after this decode.
         code = int(options.get("seed") or 0)
-        mode = code // 1000 if 1000 <= code < 7000 else 0
+        # Follow-up single-position controls: 7 FP8 dense decode, 8 BF16
+        # prefill transport, 9 both. Every change is restored after forward.
+        mode = code // 1000 if 1000 <= code < 10000 else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -974,7 +976,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1134,8 +1136,50 @@ class Glm53Engine:
             return self.net.forward(step, self.caches, aux_layers=self.aux_layers, **kwargs, **terminal)
         return self.net.forward(step, self.caches, **kwargs, **terminal), None
 
+    def _incident_forward(self, step, *, prefill=False, **kwargs):
+        modes = getattr(self, 'incident_modes', {})
+        mode = modes.get(step.segments[0].seq, 0)
+        if mode not in (7, 8, 9):
+            return self._forward(step, **kwargs)
+        if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
+            raise ValueError('precision controls require one isolated target position')
+        from engine.kernels.dense import DenseLinear
+        import engine.kernels.prefill_collectives as transport
+        dense = []
+        old_overlap = self.net.shared_overlap
+        old_packets = self.net.prefill_ffn_packets
+        old_threshold = transport.FP8_MIN_ROWS
+        try:
+            if not prefill and mode in (7, 9):
+                dense = [(name, layer, layer.decode_precision) for name, layer in self.net.dense.items()
+                         if isinstance(layer, DenseLinear)]
+                if not dense or any(layer.fp8 is None for _, layer, _ in dense):
+                    raise RuntimeError('FP8 control requires existing FP8 packs for every dense reader')
+                for _, layer, _ in dense:
+                    layer.decode_precision = 'fp8'
+                # SharedMLP bypasses DenseLinear dispatch and reads W4 packs.
+                self.net.shared_overlap = None
+            if prefill and mode in (8, 9):
+                transport.FP8_MIN_ROWS = 1 << 60
+                # Packet FFNs always pack FP8, independently of the threshold.
+                self.net.prefill_ffn_packets = False
+            seen = getattr(self, '_incident_precision_seen', set())
+            key = (step.segments[0].seq, prefill)
+            if key not in seen:
+                print(f'[incident-precision] mode={mode} prefill={prefill} '
+                      f'fp8_dense_readers={len(dense)} bf16_transport={prefill and mode in (8, 9)}', flush=True)
+                seen.add(key)
+                self._incident_precision_seen = seen
+            return self._forward(step, **kwargs)
+        finally:
+            for _, layer, previous in dense:
+                layer.decode_precision = previous
+            self.net.shared_overlap = old_overlap
+            self.net.prefill_ffn_packets = old_packets
+            transport.FP8_MIN_ROWS = old_threshold
+
     def _prefill_forward(self, step: Step):
-        h, aux = self._forward(step, last_hidden_only=True)
+        h, aux = self._incident_forward(step, prefill=True, last_hidden_only=True)
         # Layer-major experimental execution returns full rows. Its caller
         # needs the same global final row as the ordinary prefill composition.
         return h[-1:], aux
@@ -1507,13 +1551,13 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
-        if any(getattr(self, 'incident_modes', {}).get(seq) == 5 for seq in seqs):
+        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9) for seq in seqs):
             if len(seqs) != 1:
                 raise ValueError('incident single-token control requires an isolated request')
             seq, slot = seqs[0], slots[0]
             context = self.ctx[seq]
             ids = torch.tensor([self.tokens[seq][-1]], dtype=torch.int64, device=self.caches.device)
-            h, aux = self._forward(Step(ids, (Segment(seq, slot, context, 0, 1),)))
+            h, aux = self._incident_forward(Step(ids, (Segment(seq, slot, context, 0, 1),)))
             full = self._gather(self.net.head_local(h))
             (accepted, new, lps), = self._pick_rich([(seq, full, [], None)])
             new, done = self._commit(seq, accepted, new, lps, 0)
