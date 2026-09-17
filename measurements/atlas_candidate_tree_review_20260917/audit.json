@@ -1,0 +1,498 @@
+{
+  "scope": "Fixed-baseline-state arithmetic; no tree GPU execution, timing, or deployment verdict",
+  "assumptions": [
+    "Unchanged baseline spine; alternatives have no descendants",
+    "Static shape shared by all cases, at most 7 draft nodes plus anchor",
+    "Exact target verification and no EOS/output-budget clipping",
+    "Oracle may choose a correct leaf per case: unattainable upper bound",
+    "Captures are different builds/workloads and are not pooled"
+  ],
+  "capture_20260916": {
+    "source": {
+      "path": "measurements/st_draft_sensitivity_20260916/live/rank0-validation.json",
+      "sha256": "0dbe00d6d04605ae1869ee96899f1b09f0e8d63301b5b9311462be3620c9c70e"
+    },
+    "cases": 16,
+    "requests": 8,
+    "prefixes": [
+      0,
+      2,
+      7,
+      7,
+      1,
+      7,
+      0,
+      3,
+      0,
+      2,
+      7,
+      7,
+      0,
+      1,
+      0,
+      2
+    ],
+    "prefix_histogram": {
+      "0": 5,
+      "1": 2,
+      "2": 3,
+      "3": 1,
+      "7": 5
+    },
+    "perfect_leaf_upper_bound": {
+      "shape_count": 115,
+      "baseline_chain7": {
+        "counts_by_depth": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "spine": 7,
+        "verification_rows": 8,
+        "baseline_accepted_total": 46,
+        "tail_tokens_lost": 0,
+        "leaf_tokens_rescued": 0,
+        "accepted_total": 46,
+        "mean_accepted": 2.875,
+        "mean_emitted_unclipped": 3.875,
+        "emitted_ratio_to_chain7": 1.0,
+        "step_time_reduction_needed_for_tie": 0.0,
+        "current_tree_kda_full_state_passes": 8
+      },
+      "best_fixed_8row_by_spine_length": [
+        {
+          "counts_by_depth": [
+            4,
+            3
+          ],
+          "spine": 2,
+          "verification_rows": 8,
+          "baseline_accepted_total": 46,
+          "tail_tokens_lost": 26,
+          "leaf_tokens_rescued": 7,
+          "accepted_total": 27,
+          "mean_accepted": 1.6875,
+          "mean_emitted_unclipped": 2.6875,
+          "emitted_ratio_to_chain7": 0.6935483870967742,
+          "step_time_reduction_needed_for_tie": 0.30645161290322576,
+          "current_tree_kda_full_state_passes": 15
+        },
+        {
+          "counts_by_depth": [
+            3,
+            2,
+            2
+          ],
+          "spine": 3,
+          "verification_rows": 8,
+          "baseline_accepted_total": 46,
+          "tail_tokens_lost": 20,
+          "leaf_tokens_rescued": 10,
+          "accepted_total": 36,
+          "mean_accepted": 2.25,
+          "mean_emitted_unclipped": 3.25,
+          "emitted_ratio_to_chain7": 0.8387096774193549,
+          "step_time_reduction_needed_for_tie": 0.16129032258064513,
+          "current_tree_kda_full_state_passes": 15
+        },
+        {
+          "counts_by_depth": [
+            2,
+            2,
+            2,
+            1
+          ],
+          "spine": 4,
+          "verification_rows": 8,
+          "baseline_accepted_total": 46,
+          "tail_tokens_lost": 15,
+          "leaf_tokens_rescued": 10,
+          "accepted_total": 41,
+          "mean_accepted": 2.5625,
+          "mean_emitted_unclipped": 3.5625,
+          "emitted_ratio_to_chain7": 0.9193548387096774,
+          "step_time_reduction_needed_for_tie": 0.08064516129032262,
+          "current_tree_kda_full_state_passes": 14
+        },
+        {
+          "counts_by_depth": [
+            2,
+            1,
+            2,
+            1,
+            1
+          ],
+          "spine": 5,
+          "verification_rows": 8,
+          "baseline_accepted_total": 46,
+          "tail_tokens_lost": 10,
+          "leaf_tokens_rescued": 8,
+          "accepted_total": 44,
+          "mean_accepted": 2.75,
+          "mean_emitted_unclipped": 3.75,
+          "emitted_ratio_to_chain7": 0.967741935483871,
+          "step_time_reduction_needed_for_tie": 0.032258064516129004,
+          "current_tree_kda_full_state_passes": 12
+        },
+        {
+          "counts_by_depth": [
+            2,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "spine": 6,
+          "verification_rows": 8,
+          "baseline_accepted_total": 46,
+          "tail_tokens_lost": 5,
+          "leaf_tokens_rescued": 5,
+          "accepted_total": 46,
+          "mean_accepted": 2.875,
+          "mean_emitted_unclipped": 3.875,
+          "emitted_ratio_to_chain7": 1.0,
+          "step_time_reduction_needed_for_tie": 0.0,
+          "current_tree_kda_full_state_passes": 9
+        },
+        {
+          "counts_by_depth": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "spine": 7,
+          "verification_rows": 8,
+          "baseline_accepted_total": 46,
+          "tail_tokens_lost": 0,
+          "leaf_tokens_rescued": 0,
+          "accepted_total": 46,
+          "mean_accepted": 2.875,
+          "mean_emitted_unclipped": 3.875,
+          "emitted_ratio_to_chain7": 1.0,
+          "step_time_reduction_needed_for_tie": 0.0,
+          "current_tree_kda_full_state_passes": 8
+        }
+      ],
+      "any_fixed_shape_strictly_beats_chain7_acceptance": false
+    }
+  },
+  "rank_capture_20260915": {
+    "source": {
+      "path": "measurements/st_draft_rank_overlap_20260915/rank-rows.jsonl.gz",
+      "sha256": "ee4083fe894ef6f239645bec638827be7fc38a4f01407060127c4586488f8eb0"
+    },
+    "raw_steps": 6291,
+    "eligible_steps": 6285,
+    "excluded_output_boundaries": 6,
+    "prefix_histogram": {
+      "0": 852,
+      "1": 913,
+      "2": 814,
+      "3": 673,
+      "4": 513,
+      "5": 451,
+      "6": 331,
+      "7": 1738
+    },
+    "perfect_leaf_upper_bound": {
+      "shape_count": 115,
+      "baseline_chain7": {
+        "counts_by_depth": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "spine": 7,
+        "verification_rows": 8,
+        "baseline_accepted_total": 23019,
+        "tail_tokens_lost": 0,
+        "leaf_tokens_rescued": 0,
+        "accepted_total": 23019,
+        "mean_accepted": 3.6625298329355607,
+        "mean_emitted_unclipped": 4.662529832935561,
+        "emitted_ratio_to_chain7": 1.0,
+        "step_time_reduction_needed_for_tie": 0.0,
+        "current_tree_kda_full_state_passes": 8
+      },
+      "best_fixed_8row_by_spine_length": [
+        {
+          "counts_by_depth": [
+            4,
+            3
+          ],
+          "spine": 2,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 13066,
+          "leaf_tokens_rescued": 1765,
+          "accepted_total": 11718,
+          "mean_accepted": 1.8644391408114558,
+          "mean_emitted_unclipped": 2.864439140811456,
+          "emitted_ratio_to_chain7": 0.6143529893529893,
+          "step_time_reduction_needed_for_tie": 0.3856470106470107,
+          "current_tree_kda_full_state_passes": 15
+        },
+        {
+          "counts_by_depth": [
+            3,
+            2,
+            2
+          ],
+          "spine": 3,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 9360,
+          "leaf_tokens_rescued": 2579,
+          "accepted_total": 16238,
+          "mean_accepted": 2.583611774065235,
+          "mean_emitted_unclipped": 3.583611774065235,
+          "emitted_ratio_to_chain7": 0.7685981435981436,
+          "step_time_reduction_needed_for_tie": 0.2314018564018564,
+          "current_tree_kda_full_state_passes": 15
+        },
+        {
+          "counts_by_depth": [
+            2,
+            2,
+            2,
+            1
+          ],
+          "spine": 4,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 6327,
+          "leaf_tokens_rescued": 2579,
+          "accepted_total": 19271,
+          "mean_accepted": 3.066189339697693,
+          "mean_emitted_unclipped": 4.066189339697694,
+          "emitted_ratio_to_chain7": 0.872099372099372,
+          "step_time_reduction_needed_for_tie": 0.12790062790062795,
+          "current_tree_kda_full_state_passes": 14
+        },
+        {
+          "counts_by_depth": [
+            2,
+            2,
+            1,
+            1,
+            1
+          ],
+          "spine": 5,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 3807,
+          "leaf_tokens_rescued": 1765,
+          "accepted_total": 20977,
+          "mean_accepted": 3.337629276054097,
+          "mean_emitted_unclipped": 4.337629276054097,
+          "emitted_ratio_to_chain7": 0.9303166803166804,
+          "step_time_reduction_needed_for_tie": 0.06968331968331964,
+          "current_tree_kda_full_state_passes": 11
+        },
+        {
+          "counts_by_depth": [
+            1,
+            2,
+            1,
+            1,
+            1,
+            1
+          ],
+          "spine": 6,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 1738,
+          "leaf_tokens_rescued": 913,
+          "accepted_total": 22194,
+          "mean_accepted": 3.5312649164677805,
+          "mean_emitted_unclipped": 4.53126491646778,
+          "emitted_ratio_to_chain7": 0.9718468468468469,
+          "step_time_reduction_needed_for_tie": 0.028153153153153143,
+          "current_tree_kda_full_state_passes": 10
+        },
+        {
+          "counts_by_depth": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "spine": 7,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 0,
+          "leaf_tokens_rescued": 0,
+          "accepted_total": 23019,
+          "mean_accepted": 3.6625298329355607,
+          "mean_emitted_unclipped": 4.662529832935561,
+          "emitted_ratio_to_chain7": 1.0,
+          "step_time_reduction_needed_for_tie": 0.0,
+          "current_tree_kda_full_state_passes": 8
+        }
+      ],
+      "any_fixed_shape_strictly_beats_chain7_acceptance": false
+    },
+    "recorded_unary_sibling_policy": {
+      "shape_count": 115,
+      "baseline_chain7": {
+        "counts_by_depth": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ],
+        "spine": 7,
+        "verification_rows": 8,
+        "baseline_accepted_total": 23019,
+        "tail_tokens_lost": 0,
+        "leaf_tokens_rescued": 0,
+        "accepted_total": 23019,
+        "mean_accepted": 3.6625298329355607,
+        "mean_emitted_unclipped": 4.662529832935561,
+        "emitted_ratio_to_chain7": 1.0,
+        "step_time_reduction_needed_for_tie": 0.0,
+        "current_tree_kda_full_state_passes": 8
+      },
+      "best_fixed_8row_by_spine_length": [
+        {
+          "counts_by_depth": [
+            3,
+            4
+          ],
+          "spine": 2,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 13066,
+          "leaf_tokens_rescued": 1202,
+          "accepted_total": 11155,
+          "mean_accepted": 1.7748607796340494,
+          "mean_emitted_unclipped": 2.774860779634049,
+          "emitted_ratio_to_chain7": 0.5951405951405951,
+          "step_time_reduction_needed_for_tie": 0.40485940485940486,
+          "current_tree_kda_full_state_passes": 16
+        },
+        {
+          "counts_by_depth": [
+            2,
+            3,
+            2
+          ],
+          "spine": 3,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 9360,
+          "leaf_tokens_rescued": 1252,
+          "accepted_total": 14911,
+          "mean_accepted": 2.3724741447891806,
+          "mean_emitted_unclipped": 3.3724741447891806,
+          "emitted_ratio_to_chain7": 0.7233142233142233,
+          "step_time_reduction_needed_for_tie": 0.27668577668577665,
+          "current_tree_kda_full_state_passes": 16
+        },
+        {
+          "counts_by_depth": [
+            2,
+            2,
+            2,
+            1
+          ],
+          "spine": 4,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 6327,
+          "leaf_tokens_rescued": 1095,
+          "accepted_total": 17787,
+          "mean_accepted": 2.830071599045346,
+          "mean_emitted_unclipped": 3.830071599045346,
+          "emitted_ratio_to_chain7": 0.8214578214578214,
+          "step_time_reduction_needed_for_tie": 0.17854217854217858,
+          "current_tree_kda_full_state_passes": 14
+        },
+        {
+          "counts_by_depth": [
+            2,
+            2,
+            1,
+            1,
+            1
+          ],
+          "spine": 5,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 3807,
+          "leaf_tokens_rescued": 802,
+          "accepted_total": 20014,
+          "mean_accepted": 3.1844073190135243,
+          "mean_emitted_unclipped": 4.184407319013524,
+          "emitted_ratio_to_chain7": 0.8974542724542725,
+          "step_time_reduction_needed_for_tie": 0.10254572754572755,
+          "current_tree_kda_full_state_passes": 11
+        },
+        {
+          "counts_by_depth": [
+            2,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "spine": 6,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 1738,
+          "leaf_tokens_rescued": 429,
+          "accepted_total": 21710,
+          "mean_accepted": 3.4542561654733492,
+          "mean_emitted_unclipped": 4.45425616547335,
+          "emitted_ratio_to_chain7": 0.9553303303303303,
+          "step_time_reduction_needed_for_tie": 0.044669669669669676,
+          "current_tree_kda_full_state_passes": 9
+        },
+        {
+          "counts_by_depth": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "spine": 7,
+          "verification_rows": 8,
+          "baseline_accepted_total": 23019,
+          "tail_tokens_lost": 0,
+          "leaf_tokens_rescued": 0,
+          "accepted_total": 23019,
+          "mean_accepted": 3.6625298329355607,
+          "mean_emitted_unclipped": 4.662529832935561,
+          "emitted_ratio_to_chain7": 1.0,
+          "step_time_reduction_needed_for_tie": 0.0,
+          "current_tree_kda_full_state_passes": 8
+        }
+      ],
+      "any_fixed_shape_strictly_beats_chain7_acceptance": false
+    },
+    "policy_limits": "Unary rank excludes recorded walk pick; synchronous rows used a rank-1 placeholder. Not bilinear alternative ranking."
+  }
+}

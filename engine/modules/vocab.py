@@ -39,11 +39,24 @@ class CandidateBuffer:
     top-k before the next use. Inactive rows keep their own last packet, so a
     shrink followed by growth cannot leave stale candidates in the vocabulary.
     """
-    def __init__(self, rows, vocab, count, device):
-        self.dense = torch.full((rows, vocab), float('-inf'), dtype=torch.float32, device=device)
-        self.previous = torch.full((rows, count), -(2**63), dtype=torch.int64, device=device)
+    def __init__(self, rows, vocab, count, device, *, compact=False):
+        self.rows, self.vocab, self.count, self.compact = rows, vocab, count, compact
+        self.device = torch.empty(0, device=device).device
+        self.dense = None if compact else torch.full((rows, vocab), float('-inf'), dtype=torch.float32, device=device)
+        self.previous = None if compact else torch.full((rows, count), -(2**63), dtype=torch.int64, device=device)
+
+    def select(self, gathered, vocab, k):
+        if not self.compact:
+            return self.restore(gathered, vocab).topk(k, dim=-1)
+        if (gathered.shape[0] > self.rows or gathered.shape[1] != self.count
+                or gathered.device != self.device or vocab != self.vocab):
+            raise ValueError('candidate buffer requires its declared row, vocabulary and packet geometry')
+        from engine.kernels.common.vocab_merge import topk as compact_topk
+        return compact_topk(gathered, vocab, k)
 
     def restore(self, gathered, vocab):
+        if self.compact:
+            raise ValueError('compact candidate buffers do not own a dense vocabulary')
         if (gathered.ndim != 2 or gathered.dtype != torch.int64 or gathered.device != self.dense.device
                 or gathered.shape[0] > self.dense.shape[0] or gathered.shape[1] != self.previous.shape[1]
                 or vocab != self.dense.shape[1] or not gathered.is_contiguous()):
@@ -107,8 +120,9 @@ def topk(local_logits, comm, start: int, k: int, decodable: int | None = None, *
     gathered = comm.all_gather(packet, dim=-1)
     if fused:
         from engine.kernels.common.vocab_candidates import restore
-        dense = restore(gathered, vocab) if workspace is None else workspace.restore(gathered, vocab)
-        return dense.topk(k, dim=-1)
+        if workspace is not None:
+            return workspace.select(gathered, vocab, k)
+        return restore(gathered, vocab).topk(k, dim=-1)
     ids = 0xffffffff - (gathered & 0xffffffff)
     ordered = gathered >> 32
     bits = torch.where(ordered < 0, ordered ^ 0x7fffffff, ordered).to(torch.int32)

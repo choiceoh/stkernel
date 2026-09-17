@@ -46,6 +46,10 @@ def main():
         from probes.engine_vocab_selection import run as vocab_selection_check
         vocab_selection_check(args.output)
         return
+    if args.lanes == 'vocab_merge':
+        from probes.engine_vocab_merge import run as vocab_merge_check
+        vocab_merge_check(args.output)
+        return
     if args.lanes == 'mhc_c1_tails':
         from probes.engine_mhc_c1_tails import main as mhc_c1_tails_check
         mhc_c1_tails_check(args.ranks, samples=args.samples, output=args.output)
