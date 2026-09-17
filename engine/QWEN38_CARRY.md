@@ -42,7 +42,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | ID | 내용 | 대상 | 종류 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|
 | P1 | C=1 캡처 스텝의 `rows_req` 가 stride-0 뷰라 QSA 커널이 저장소 너머를 읽고 어텐션이 스텝을 거부 | `profiles/qwen38/net.py:step_meta`, `kernels/qsa.py` | fix | cpu | 시간 | 머지 #1084 |
-| P2 | Qwen3.8 서빙 커널의 CPU 인터프리터 하네스. QSA ops·게이트 잔차·GDN·캡처 `step_meta` 를 `engine/modules` 오라클에 대조. 지금은 테스트가 0 건이라 `cpu` 판정의 전제 | `tests/` | fix | cpu | 일 | 열림 |
+| P2 | Qwen3.8 서빙 커널의 CPU 인터프리터 하네스. QSA ops·게이트 잔차·GDN·캡처 `step_meta` 를 `engine/modules` 오라클에 대조. 지금은 테스트가 0 건이라 `cpu` 판정의 전제 | `tests/` | fix | cpu | 일 | 이 PR |
 | P3 | 서빙 프리필이 768 토큰 블록마다 타깃 forward 를 따로 돈다. `served_step` 이 `marks` 를 버려서 청크당 최대 42 forward | `profiles/qwen38/adapter.py`, `base/composed.py` | fix | gpu | 일 | 열림 |
 | P4 | 부팅이 `prepare_dense` 에 `consume_weights` 를 주지 않아 BF16 원본이 랭크당 약 1.9 GB 상주. 프리샤드가 패딩 크기를 예약해야 함 | `profiles/qwen38/fleet.py`, `preshard.py` | fix | cpu | 일 | 열림 |
 
