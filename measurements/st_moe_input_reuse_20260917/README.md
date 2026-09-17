@@ -29,6 +29,10 @@ to eight/sixteen-row vector-input reform cells. It has no serving adoption yet.
 - `native-resources-v1.json`: all six compiled cells use 96 registers,
   zero stack and zero local memory. Dynamic shared memory is unchanged:
   91,136 bytes for C1, 100,352 for C2. Native resource counts are not speed proof.
+- `native-resources-control-0330.json`: the original control from `0330d576`
+  produces byte-identical native binaries and disassembly to the new source
+  with reuse disabled, at both C1 and C2. Both were compiled on the same host
+  with the same image, dependency mount and flags.
 - `cpu-config.txt`: 49 focused tests, seven GPU-dependent skips, no failures.
 - GPU ticket `moe-input-reuse-v1-0917`, admitted source `53e0ee63`:
   pending. It uses the canonical exclusive fleet queue and actual rank0 weights.
