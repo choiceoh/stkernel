@@ -121,6 +121,11 @@ def main():
         from probes.engine_topk_hpcops import run as topk_hpcops_check
         topk_hpcops_check(args.output)
         return
+    if args.lanes == 'qwen38_cells':
+        # correctness only: Qwen3.8's lanes qualified and the glue's GPU cases, from its config (engine/QWEN38_CARRY.md C1)
+        from probes.engine_qwen38_cells import run as qwen38_cells
+        qwen38_cells(args.output)
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check
