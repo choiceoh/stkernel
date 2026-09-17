@@ -29,6 +29,10 @@ The FP32 candidate still produced malformed Korean at T=1 with seeds 7 and 11
 (343 and 544 output tokens). T=0 was more coherent but retained factual errors.
 Warming the exact prompt in 6,912-token pieces also failed at T=1. Thus neither
 temperature clamping nor avoiding one large prefill chunk is a proven repair.
+The 6,912-token control still exceeds the 2,048-row FP8 transport threshold;
+it does not exclude FP8 transport error. A transport-only BF16 comparison has
+not been run. Disabling sequence parallelism would also change memory and
+execution geometry and is not an equivalent control.
 
 ## Excluded controls
 
@@ -64,14 +68,25 @@ stop positions. The focused sampling/pipeline/agreement suite passes 38 tests;
 the real Triton commit body also matches counts, tokens, stop flags, kept drafts
 and context in 588 K=1/3/7 cases under its CPU interpreter. That interpreter
 result is not a CUDA replay qualification.
+The scoped metric correction merged as PR #1129 (`418f4168`), after the required
+CI passed; its ancestry in `origin/main` was verified. It is not a deployment
+receipt for the incident repair.
 
 ## Focused source review while awaiting the fleet
 
 - Block verification: compared host and device running ratios, residual-mass
   thresholds, accepted-prefix selection and correction distributions. No
-  incident-causing mismatch established. Independent exact enumeration of
-  context-dependent binary K=2 laws matched the target first-token law to
-  floating-point roundoff; this does not qualify the actual CUDA implementation.
+  incident-causing mismatch established. Independent exact rational enumeration
+  of 36 context-dependent binary models, K=1/2/3 and a four-token output horizon,
+  matched all 16 complete sequence probabilities exactly, including subsequent
+  blocks. This is stronger than a first-token-only check, but does not qualify
+  the actual CUDA implementation.
+- Kernel arithmetic: the actual Triton sampler and block-verification bodies
+  were run under the CPU interpreter with CUDA hidden. Thirty-two sampler rows
+  at vocabularies 777 and 154,880 matched the sorting oracle (maximum probability
+  difference 1.1920929e-7); 12 K=7 verification rows matched accepted counts and
+  token IDs. Inputs carried BF16-rounded values in FP32 storage, so this does
+  not cover native BF16 loads, compilation or graph replay.
 - Draft sampling: traced returned sparse masses to the actual conditional walk,
   and checked rank agreement includes candidate IDs and probability bits.
 - Random draws: traced request-seed normalization, generation count and separate
