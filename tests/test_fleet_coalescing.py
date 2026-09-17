@@ -16,8 +16,6 @@ import test_fleet_experiments as fixtures
 ROOT = fixtures.ROOT
 sys.path.insert(0,str(ROOT/'bench'))
 import experiments as ex
-import experiment_baselines as baselines
-import experiment_groups as groups
 import experiment_metrics as metrics
 import experiment_retirement as retirement
 import cpu_evidence
@@ -106,65 +104,18 @@ class CoalescingTests(unittest.TestCase):
         self.assertEqual(result['result']['cache_source'],first['id'])
         self.assertEqual(output.read_text(),'run\n')
 
-    def manual_job(self, store, name, kind='cpu', **changes):
-        spec = dict(kind=kind,revision=self.sha,hypothesis=name,
-                    command=['true',name] if kind=='cpu' else [],
-                    knobs={'VLLM_TEST':'1'} if kind=='pair' else {},
-                    context={} if kind=='cpu' else self.pair_context())
+
+
+
+
+
+    def manual_job(self, store, name, **changes):
+        spec = dict(kind='cpu',revision=self.sha,hypothesis=name,command=['true',name])
         spec.update(changes)
         spec = ex.normalize(spec,self.repo)
-        payload = dict(spec=spec,repo=str(self.repo),environment={},snapshot={'build':'a'*64,'host':'fixture'},
-                       bash=fixtures.BASH,paths={'FLEET_DIR':str(self.fleet),'ONEPASS_JSONL':str(self.logs/'onepass.jsonl')})
+        payload = dict(spec=spec,repo=str(self.repo),environment={},snapshot={'host':'fixture'},
+                       bash=fixtures.BASH,paths={'FLEET_DIR':str(self.fleet)})
         return store.submit(name,payload)['id']
-
-    def seed_baselines(self, evaluations):
-        records=[]
-        for evaluation in evaluations:
-            work=workload(evaluation.get('workload'))
-            for index in range(3):
-                records.append(fixtures.record(f'BASE-{work["ctx"]}-{index}',git=self.sha,
-                    overlay=self.stamp.read_text()[:12],runtime=self.pair_context(),workload=work,
-                    prefill=[dict(ctx=c,cold_s=1) for c in work['ctx']]))
-        (self.logs/'onepass.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in records))
-
-    def test_group_seal_separates_late_or_incompatible_requests(self):
-        store=ex.Store(self.jobs)
-        first=self.manual_job(store,'first',kind='pair',evaluations=[{'workload':{'ctx':[2000]}}])
-        second=self.manual_job(store,'second',kind='pair',evaluations=[{'workload':{'ctx':[4000]}}])
-        self.assertEqual(groups.register(store,first),first)
-        self.assertEqual(groups.register(store,second),first)
-        sealed=groups.seal(store,first,store.get(first)['payload'])
-        self.assertEqual(len(sealed['spec']['evaluations']),2)
-        later=self.manual_job(store,'later',kind='pair',evaluations=[{'workload':{'ctx':[8000]}}])
-        self.assertEqual(groups.register(store,later),later)
-        changed=self.manual_job(store,'changed',kind='pair',knobs={'VLLM_TEST':'2'})
-        self.assertEqual(groups.register(store,changed),changed)
-
-    def test_group_capacity_and_explicit_repeat_preserve_independent_execution(self):
-        store=ex.Store(self.jobs)
-        leader=None
-        for index in range(7):
-            job=self.manual_job(store,str(index),kind='pair',evaluations=[{'workload':{'ctx':[2000+index]}}])
-            owner=groups.register(store,job)
-            if leader is None:leader=owner
-            self.assertEqual(owner==leader,index<6)
-        repeat=store.submit('repeat',store.get(leader)['payload'],repeat='independent sample')['id']
-        self.assertEqual(groups.register(store,repeat),repeat)
-
-    def test_only_missing_baseline_workloads_are_measured(self):
-        store=ex.Store(self.jobs)
-        job=self.manual_job(store,'baseline-owner',kind='pair',baseline_policy='confirm',evaluations=[{'workload':{'ctx':[2000]}},{'workload':{'ctx':[32000]}}])
-        payload=store.get(job)['payload'];payload['baseline_samples']=3
-        rows=[[{'boot_id':f'a{i}'} for i in range(3)],[{'boot_id':f'b{i}'} for i in range(2)]]
-        calls=[]
-        def measure(store,job,payload,name,knobs,work_indices):
-            calls.append(work_indices)
-            for i in work_indices:rows[i].append({'boot_id':name})
-            return [{'boot_id':name} for _ in work_indices]
-        with patch.object(baselines,'samples',side_effect=lambda p,i=0:rows[i]),patch('serving_group.measure',side_effect=measure):
-            self.assertEqual(baselines.run(store,job,payload)[0],'succeeded')
-        self.assertEqual(calls,[[1]])
-        self.assertEqual([len(r) for r in rows],[3,3])
 
     def test_withdrawal_keeps_other_subscribers_and_preserves_live_holder(self):
         store=ex.Store(self.jobs)
@@ -243,15 +194,6 @@ class CoalescingTests(unittest.TestCase):
                 run_cpu(store,old,['true'],store.get(old)['payload'])
             launch.assert_not_called()
 
-    def test_shared_member_cannot_publish_changed_inputs(self):
-        store=ex.Store(self.jobs)
-        first=self.manual_job(store,'owner',kind='pair')
-        second=self.manual_job(store,'follower',kind='pair',evaluations=[{'objective':{'metric':'quality'}}])
-        groups.register(store,first);self.assertEqual(groups.register(store,second),first)
-        with patch.object(ex,'verify',side_effect=ValueError('prepared artifacts changed')),patch.object(ex,'pair_result') as judge:
-            groups.publish(store,first,'succeeded',{})
-        judge.assert_not_called()
-        self.assertEqual(store.get(second)['state'],'failed')
 
     def test_bare_wait_cannot_remove_retired_ticket_without_supervisor(self):
         store=ex.Store(self.jobs)
@@ -297,7 +239,7 @@ class ContractAndTimingTests(unittest.TestCase):
     def test_phase_failures_do_not_become_successful_duration_samples(self):
         with tempfile.TemporaryDirectory() as directory:
             store=ex.Store(directory)
-            job=store.submit('a',dict(spec=dict(kind='pair',revision='a'*40,hypothesis='phases',depends_on=[]),environment={}))['id']
+            job=store.submit('a',dict(spec=dict(kind='cpu',revision='a'*40,hypothesis='phases',depends_on=[]),environment={}))['id']
             with self.assertRaises(ValueError):
                 with metrics.timed(store,job,'boot'):
                     raise ValueError('boot failed')

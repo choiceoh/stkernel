@@ -12,8 +12,7 @@ import statistics
 import time
 
 WAIT_PHASES = dict(waiting_dependencies='dependencies', waiting_cpu_evidence='cpu_shared_wait',
-                   waiting_cpu='cpu_queue', waiting_baseline='baseline_wait', waiting_group='shared_boot_wait',
-                   ready_pair='group_collection')
+                   waiting_cpu='cpu_queue')
 
 
 def transition(store, row, state):
@@ -68,12 +67,9 @@ def timed(store, job, phase):
 
 def signature(payload):
     spec = payload['spec']
-    value = {k:spec.get(k) for k in ('kind','context','command','knobs','env','resources','api_port','baseline_policy')}
+    value = {k:spec.get(k) for k in ('kind','context','command','env','resources')}
     value['host'] = payload.get('snapshot',{}).get('host')
     value['inputs'] = payload.get('snapshot',{}).get('inputs',{})
-    if spec.get('kind') in {'pair','baseline'}:
-        from serving_group import workloads
-        value['workloads'] = payload.get('measurement_binding',{}).get('workloads') or workloads(spec)
     return hashlib.sha256(json.dumps(value,sort_keys=True).encode()).hexdigest()
 
 

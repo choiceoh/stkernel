@@ -1,5 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Build reviewable CPU/prepare/GPU plans and submit them through the normal API."""
+"""Build reviewable CPU plans and submit them through the normal API.
+
+The GPU stage left with the vLLM pair lane (2026-09-18): GPU work is admitted
+through fleet.sh run --gpu and the ST bracket lanes, so a plan is CPU checks
+and CPU preparation only.
+"""
 import json
 from pathlib import Path
 import uuid
@@ -7,7 +12,6 @@ import uuid
 
 def build(raw, repo, base=None):
     from experiments import normalize, git
-    from measurement_contract import objective, workload
     gpu = dict(raw)
     cpu_jobs = gpu.pop('cpu_jobs',None)
     if cpu_jobs is None:
@@ -19,18 +23,10 @@ def build(raw, repo, base=None):
     suites = gpu.pop('cpu_suites', None)
     tests = gpu.pop('cpu_tests', [])
     preparation = gpu.pop('prepare', [])
-    obj = objective(gpu.pop('objective', None))
-    work = gpu.pop('workload', {})
-    if obj['metric'] == 'decode_tokens' and not work:
-        work = dict(fixed_decode_tokens=2048, fixed_decode_reps=3, require_exclusive=True)
-    if 'evaluations' not in gpu:
-        gpu['evaluations'] = [dict(objective=obj, workload=workload(work))]
-    gpu.setdefault('kind', 'pair')
-    gpu.setdefault('revision', git(repo, 'rev-parse', 'HEAD'))
+    revision = git(repo, 'rev-parse', 'HEAD')
+    gpu.setdefault('kind', 'cpu')
+    gpu.setdefault('revision', revision)
     gpu = normalize(gpu, repo)
-    if gpu['kind'] != 'pair':
-        raise ValueError('plan expects a serving pair configuration')
-    changed = git(repo, 'diff', '--name-only', base, 'HEAD').splitlines() if base else []
     # The overlay math contracts retired with the overlay (2026-09-18); the
     # fleet suite is the one CPU gate this planner still names by default.
     if suites is None and not tests:
@@ -43,13 +39,13 @@ def build(raw, repo, base=None):
     import re
     if any(not isinstance(t, str) or not re.fullmatch(r'tests/test_[A-Za-z0-9_]+\.py', t) or not (repo / t).is_file() for t in tests):
         raise ValueError('CPU tests must name existing tests/test_*.py files')
-    common = dict(kind='cpu', revision=gpu['revision'], context=gpu['context'], inputs=gpu['inputs'])
+    common = dict(kind='cpu', revision=gpu['revision'], context={}, inputs={})
     stages = []
     checks = [(suite,['--suite',suite]) for suite in suites]
     if tests:
         checks.append(('individual',[part for test in dict.fromkeys(tests) for part in ('--test',test)]))
     for name,arguments in checks:
-        check = normalize(dict(common,hypothesis='CPU '+name+': '+gpu['hypothesis'],
+        check = normalize(dict(kind='cpu', revision=gpu['revision'], hypothesis='CPU '+name+': '+gpu['hypothesis'],
             command=['python3','bench/cpu_checks.py',*arguments],
             resources={'cpu_slots':cpu_jobs if name=='fleet' else 1}),repo)
         stages.append(dict(name='checks' if len(checks)==1 else 'checks-'+name,manifest=check,requires=[]))
@@ -62,11 +58,11 @@ def build(raw, repo, base=None):
         requires = step.pop('requires',[])
         if not isinstance(requires,list) or any(not isinstance(n,str) or n not in [s['name'] for s in stages] for n in requires):
             raise ValueError('prepare requires must name earlier CPU stages')
-        manifest = normalize(dict(common, hypothesis='CPU preparation: ' + gpu['hypothesis'], **step), repo)
+        manifest = normalize(dict(kind='cpu', revision=gpu['revision'], hypothesis='CPU preparation: ' + gpu['hypothesis'], **step), repo)
         stages.append(dict(name=f'prepare-{index+1}', manifest=manifest, requires=requires))
-    stages.append(dict(name='gpu', manifest=gpu, requires=[s['name'] for s in stages]))
-    return dict(revision=gpu['revision'], changed=changed, stages=stages,
-                scope='CPU gates and preparation precede shared baselines and grouped onepass workloads')
+    return dict(revision=gpu['revision'], changed=git(repo, 'diff', '--name-only', base, 'HEAD').splitlines() if base else [],
+                stages=stages,
+                scope='CPU gates and preparation; GPU work is queued directly through fleet.sh run --gpu and the ST lanes')
 
 
 def run(args, store, repo):
@@ -101,29 +97,16 @@ def run(args, store, repo):
             if submission['id'] not in launched:
                 ensure_worker(store,submission['id'])
                 launched.add(submission['id'])
-    # Persist a preview before registration. The batch validates all included
-    # stages first, shares source/runtime reads and registers the DAG atomically.
-    selected = [s for s in plan['stages'] if s['name']!='gpu']
     save()
     if args.submit or args.prepare_only:
         from experiment_submission import submit_many
         try:
+            selected = [s for s in plan['stages']]
             answer = submit_many(store,args.session,[dict(name=s['name'],manifest=manifests[s['name']],requires=s['requires'])
                 for s in selected],repo,launch=False)
             submissions = {s['name']:s for s in answer['requests']}
-            # Make CPU IDs recoverable and start their normal workers before
-            # potentially slow or unavailable deployment attestation. GPU jobs
-            # still depend on every CPU stage; explicit preparation edges stay.
             save()
             launch_registered()
-            if not args.prepare_only:
-                gpu = dict(manifests['gpu'])
-                gpu['depends_on'] = sorted(set(gpu['depends_on']+[s['id'] for s in submissions.values()]))
-                submissions['gpu'] = submit_many(store,args.session,[dict(name='gpu',manifest=gpu)],repo,launch=False)['requests'][0]
-            if 'gpu' in submissions and getattr(args,'supersedes',[]):
-                from experiment_retirement import retire
-                submissions['gpu']['superseded'] = [retire(store,args.session,old,submissions['gpu']['id'],'Replaced by newer plan')
-                    for old in args.supersedes if old != submissions['gpu']['id']]
         except (OSError,ValueError) as exc:
             plan['error'] = str(exc)
         finally:

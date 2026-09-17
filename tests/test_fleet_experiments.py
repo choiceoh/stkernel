@@ -263,9 +263,9 @@ class SubmissionTests(unittest.TestCase):
         (self.repo / "bench/ab-lever.sh").write_text(FAKE_LEVER)
         (self.repo / "bench/onepass.py").write_text(FAKE_ONEPASS)
         for name in ("experiments.py", "cpu_checks.py",
-                     "cpu_evidence.py", "fleet_source.py", "probe_report.py", "experiment_baselines.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
-                     "serving_group.py", "experiment_resources.py", "prepared_artifacts.py", "cpu_unittest.py",
-                     "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_groups.py", "experiment_retirement.py", "experiment_metrics.py", "experiment_submission.py", "experiment_explain.py"):
+                     "cpu_evidence.py", "fleet_source.py", "probe_report.py", "fleet_priority.py", "fleet_handoff.py", "measurement_contract.py",
+                     "experiment_resources.py", "prepared_artifacts.py", "cpu_unittest.py",
+                     "experiment_plan.py", "cpu_compile.py", "experiment_sharing.py", "experiment_retirement.py", "experiment_metrics.py", "experiment_submission.py", "experiment_explain.py"):
             shutil.copy(ROOT / "bench" / name, self.repo / "bench" / name)
         for script in (self.repo / "bench").glob("*.sh"):
             script.chmod(0o755)
@@ -419,15 +419,6 @@ class SubmissionTests(unittest.TestCase):
             jobs = list(pool.map(submit, range(16)))
         self.assertEqual(len(set(jobs)), 1)
 
-    def test_failed_prerequisite_blocks_gpu_before_admission(self):
-        bad = self.submit(command=[sys.executable, "-c", "raise SystemExit(7)"])
-        self.assertEqual(self.wait(bad["id"])["state"], "failed")
-        gpu = self.submit("gpu-agent", kind="pair", command=[], knobs={"VLLM_TEST":"1"},
-                          depends_on=[bad["id"]],
-                          context={"image": self.image, "model": "fixture", "hardware": "fixture"})
-        result = self.wait(gpu["id"])
-        self.assertEqual(result["state"], "blocked", result)
-        self.assertNotIn("exp-" + gpu["id"], (self.logs / "admissions").read_text())
 
     def test_cpu_gpu_misclassification_is_refused(self):
         job = self.submit(command=["GPU_MARKER"])
@@ -511,13 +502,9 @@ class SubmissionTests(unittest.TestCase):
 
 
 
-    def test_legacy_saved_requests_keep_the_three_sample_contract(self):
-        from experiment_baselines import required_samples
-        self.assertEqual(required_samples({'kind':'pair'}),3)
-        self.assertEqual(required_samples({'kind':'pair','baseline_policy':'minimal'}),1)
 
     def test_invalid_manifest_and_old_prerequisite_are_rejected(self):
-        for change in ({"revision":"main"}, {"env":{"SKIP_BOOT":"1"}}, {"env":{"FLEET_REHEARSE":"1"}},
+        for change in ({"revision":"main"}, {"env":{"FLEET_SESSION":"x"}}, {"env":{"FLEET_REHEARSE":"1"}},
                        {"env":{"PYTHONPATH":"/tmp"}}, {"command":"echo ok"}):
             spec = dict(kind="cpu", revision=self.sha, hypothesis="contract", command=["true"])
             spec.update(change)
