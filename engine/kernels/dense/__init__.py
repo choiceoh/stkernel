@@ -64,6 +64,35 @@ class W4Pack:
     calibrated: bool = False    # GPTQ from a calibration Hessian (the store says), not round-to-nearest
 
 
+def repack_w4(pack, tile_rows=16):
+    """Reorder existing bytes before capture; never requantize or retain a second pack.
+
+    Disk caches keep their canonical 128-row format. The tensor shape identifies
+    the resident layout to every native reader, including small prefill calls.
+    Padding, row scales and calibration identity survive the permutation.
+    """
+    if tile_rows not in (16, 128):
+        raise ValueError('W4 resident tiles must have 16 or 128 rows')
+    if pack.rows <= 0 or pack.cols <= 0 or pack.cols % 128:
+        raise ValueError('W4 dimensions must be positive with 128-aligned columns')
+    q, s = pack.data, pack.scale
+    padded = (pack.rows + 127) // 128 * 128
+    if (q.ndim != 4 or q.shape[2] not in (16, 128)
+            or tuple(q.shape) != (padded // q.shape[2], pack.cols // 128, q.shape[2], 64)
+            or tuple(s.shape) != (*q.shape[:3], 8)
+            or q.dtype != torch.uint8 or s.dtype != torch.int8
+            or q.device != s.device or not q.is_contiguous() or not s.is_contiguous()):
+        raise ValueError('W4 bytes and scales must identify the same resident tile layout')
+    if q.shape[2] == tile_rows:
+        return pack
+    def reorder(t):
+        # Swap just the eight subtiles and K blocks: one copy, no row-major scratch.
+        kb, width = pack.cols // 128, t.shape[3]
+        shape = (padded // 128, kb, 8, 16, width) if tile_rows == 16 else (padded // 128, 8, kb, 16, width)
+        return t.view(shape).permute(0, 2, 1, 3, 4).contiguous().view(padded // tile_rows, kb, tile_rows, width)
+    return W4Pack(reorder(q), reorder(s), pack.rowscale, pack.rows, pack.cols, pack.calibrated)
+
+
 GPTQ_ACT_ORDER = True       # columns in decreasing Hessian-diagonal order with static groups (45차 §23 GPU 판정 7차)
 TILE = 4096                 # one GPTQ tile of K: a wider weight is packed as a sequence of them
 KMAX = DENSE_KMAX           # the decode kernel's widest K (kernels.cu KBLK_LIMIT): the drafter's fc, whole
@@ -342,6 +371,14 @@ class DenseLinear:
             self.fp8.weight=next(owned),next(owned)
         if getattr(self, 'decode_fp8', None) is not None:
             self.decode_fp8.weight=next(owned),next(owned)
+
+    def prepare_cta_layout(self):
+        """Target KDA input: replace the resident W4 pack before arena relocation."""
+        if (self.rows, self.cols) != (6416, 4096) or len(self.packs) != 1:
+            raise ValueError('CTA weight layout is declared for the target KDA input only')
+        if self.executed:
+            raise RuntimeError('repack weights before execution or graph capture')
+        self.packs = (repack_w4(self.packs[0]),)
 
     def isolate_workspace(self):
         """Before capture: permit this layer to overlap another W4 GEMM.
