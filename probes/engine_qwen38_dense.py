@@ -15,11 +15,14 @@ Arms, the two branches of DenseLinear.__call__ on the case's layer (a padded lan
   w4a8   engine/kernels/dense.w4_gemm on the layer's W4 pack: the branch at <= 32 rows, the most the kernel admits
   fp8    the layer's FP8Linear (Triton quantize + deep_gemm): the branch above 32 rows; prepare_dense adds no cuBLAS reader
 
-Gates, all before the first timing; the first failure raises. At every row count: the dispatch (the layer called the way
-the net calls it) equals its branch's arm byte for byte; each arm is inside tests/test_engine_dense.py's band of F.linear
-over the BF16 weight (W4A8 .16; FP8 .05 under 1024 rows, .16 from there) and W4A8 within .006 of its fp32 twin
-(packing.mk_w4_dequant x _mk_quant_x_ref); a padded lane equals DenseLinear over the padded weight byte for byte
-(GlueOnTheGpuTests' check). At the captured row counts every arm's graph replays its eager bytes on changed inputs.
+Gates, all before the first timing. At every row count: the dispatch (the layer called the way the net calls it) equals
+its branch's arm byte for byte; each arm is inside tests/test_engine_dense.py's band of F.linear over the BF16 weight (W4A8
+.16; FP8 .05 under 1024 rows, .16 from there) and W4A8 within .006 of its fp32 twin (packing.mk_w4_dequant x
+_mk_quant_x_ref); a padded lane equals DenseLinear over the padded weight byte for byte (GlueOnTheGpuTests' check). At the
+captured row counts every arm's graph replays its eager bytes on changed inputs. A failure of what serves the row count
+raises; the other arm off its band is recorded (`broken_arms`) and that cell is neither captured nor timed -- the first
+run stopped on FP8 at 4 rows of the shared expert's 320x2560, 22% off while W4A8 served them
+(measurements/qwen38_lane_20260917).
 
 Timings at rows 1, 2, 4, 8, 16, 32, 48, 64, 128, 512 and 4096, W4A8 at <= 32 only. The row counts a Qwen3.8 decode graph
 serves (up to max_seqs x (spec_k + 1) = 8) replay captured graphs; larger ones (prefill chunks) are eager calls, whose
@@ -141,18 +144,27 @@ def relative_error(got, want) -> float:
 
 
 def gate_failures(row: dict) -> "list[str]":
-    """Why one row count's gate row fails, empty when it passes. A NaN error fails (it is not below any band)."""
+    """Why one row count's served dispatch fails, empty when it passes. A NaN error fails (it is not below any band).
+    The other arm is not what serves these rows: its error is `broken_arms`' business."""
     rows, failures = row['rows'], []
     if not row['dispatch_exact']:
         failures.append(f"the dispatch at {rows} rows is not its {row['dispatch']} branch byte for byte")
-    for arm, error in row['relative_error'].items():
-        if not error < row['band'][arm]:
-            failures.append(f"{arm} at {rows} rows: relative error {error} is not below {row['band'][arm]}")
+    error = row['relative_error'][row['dispatch']]
+    if not error < row['band'][row['dispatch']]:
+        failures.append(f"{row['dispatch']} at {rows} rows: relative error {error} is not below "
+                        f"{row['band'][row['dispatch']]}")
     if 'twin_error' in row and not row['twin_error'] < TWIN_BAND:
         failures.append(f"w4a8 at {rows} rows: {row['twin_error']} from its fp32 twin, not below {TWIN_BAND}")
     if row.get('padded_exact') is False:
         failures.append(f"the padded lane at {rows} rows differs from DenseLinear over the padded weight")
     return failures
+
+
+def broken_arms(row: dict) -> "list[str]":
+    """The arms that do not serve this row count and miss their band here (NaN included): a finding the run records,
+    and a cell it does not time -- a switch moved onto such an arm would serve a wrong projection."""
+    return sorted(arm for arm, error in row['relative_error'].items()
+                  if arm != row['dispatch'] and not error < row['band'][arm])
 
 
 def crossover(w4a8: dict, fp8: dict) -> "int | None":
@@ -215,8 +227,9 @@ def elapsed_us(fn) -> float:
     return start.elapsed_time(end) * 1000.
 
 
-def gate(report, case, weight, layer, generator):
-    """The eager gates at every row count (module docstring); raises on the first failing row count."""
+def gate(report, case, weight, layer, generator) -> "set[tuple[int, str]]":
+    """The eager gates at every row count (module docstring); raises on the first row count whose served dispatch
+    fails, and returns the (rows, arm) cells an unserved arm missed its band at."""
     from engine.kernels.dense import DenseLinear, extension
     from engine.kernels.dense.packing import _mk_quant_x_ref, mk_w4_dequant
     problems = served_form(layer)
@@ -228,6 +241,7 @@ def gate(report, case, weight, layer, generator):
     twin_weight = mk_w4_dequant(pack.data, pack.scale, pack.rows, 1., pack.rowscale)
     manual = DenseLinear(torch.nn.functional.pad(weight, (0, pad))) if pad else None
     ext = extension()
+    broken = set()
     for m in ROWS:
         x = torch.randn(m, case.cols, device='cuda', generator=generator).bfloat16()
         want = torch.nn.functional.linear(x, weight)
@@ -244,13 +258,17 @@ def gate(report, case, weight, layer, generator):
         if manual is not None:
             row['padded_exact'] = bool(torch.equal(served, manual(torch.nn.functional.pad(x, (0, pad)))))
         failures = gate_failures(row)
-        report('gate', passed=not failures, failures=failures, **row)
+        missed = broken_arms(row)
+        report('gate', passed=not failures, failures=failures, broken_arms=missed, **row)
         if failures:
             raise RuntimeError(f'{case.label}: {failures}')
+        broken.update((m, arm) for arm in missed)
+    return broken
 
 
-def capture(report, case, layer, captured, generator) -> dict:
-    """{(rows, arm): (graph, static input, output)} at the captured row counts, each replaying its eager bytes."""
+def capture(report, case, layer, captured, generator, broken=frozenset()) -> dict:
+    """{(rows, arm): (graph, static input, output)} at the captured row counts, each replaying its eager bytes; a
+    broken (rows, arm) cell is not captured."""
     from probes.engine_decode_fusions import _capture
     graphs = {}
     for m in ROWS:
@@ -258,7 +276,7 @@ def capture(report, case, layer, captured, generator) -> dict:
             continue
         x = torch.randn(m, case.cols, device='cuda', generator=generator).bfloat16()
         for name, fn in arms(layer).items():
-            if name == 'w4a8' and m > W4A8_ROWS:
+            if (name == 'w4a8' and m > W4A8_ROWS) or (m, name) in broken:
                 continue
             graph, out = _capture(lambda fn=fn, x=x: fn(x))
             graphs[m, name] = (graph, x, out)
@@ -314,12 +332,12 @@ def _run(report, graphs):
                target=sum(not k.startswith('mtp.') for k in case.keys), mtp=sum(k.startswith('mtp.') for k in case.keys))
 
     generator = torch.Generator(device='cuda').manual_seed(SEED)
-    layers, inputs = [], []
+    layers, inputs, broken = [], [], []
     for case in cases:
         weight = (torch.randn(case.rows, case.cols, device='cuda', generator=generator) * WEIGHT_STD).bfloat16()
         layer = build_lane(case, weight)
-        gate(report, case, weight, layer, generator)
-        graphs.append(capture(report, case, layer, captured, generator))
+        broken.append(gate(report, case, weight, layer, generator))
+        graphs.append(capture(report, case, layer, captured, generator, broken[-1]))
         layers.append(layer)
         inputs.append({m: torch.randn(m, case.cols, device='cuda', generator=generator).bfloat16()
                        for m in ROWS if m > captured})
@@ -329,6 +347,8 @@ def _run(report, graphs):
 
     cells_ = []
     for i, m, name, mode in plan(cases, ROWS, captured):
+        if (m, name) in broken[i]:
+            continue
         if mode == 'captured':
             launch = graphs[i][m, name][0].replay
         else:
@@ -373,7 +393,8 @@ def _run(report, graphs):
                    fp8_over_w4a8={m: timed['fp8'][m] / timed['w4a8'][m] for m in both},
                    fp8_faster_rows=[m for m in both if timed['fp8'][m] < timed['w4a8'][m]])
     report('complete', status='PASS', crossovers=crossovers, switch_rows=W4A8_ROWS,
-           dense_measured_hidden=list(cells.DENSE_MEASURED_HIDDEN))
+           dense_measured_hidden=list(cells.DENSE_MEASURED_HIDDEN),
+           broken_arms={case.label: sorted([m, arm] for m, arm in broken[i]) for i, case in enumerate(cases)})
 
 
 if __name__ == '__main__':

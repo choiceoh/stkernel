@@ -419,7 +419,9 @@ class KdaDecayKernelTests(unittest.TestCase):
         from engine.kernels.kda.ring import recurrent_decay_ring
         from engine.kernels.linear_decay import per_channel
         dtype = torch.float32 if INTERPRET else torch.bfloat16
-        cells_ = 6
+        # a ring holds at least a step's tokens (the launcher refuses T > R): 8 cells for the GPU's 7-token step, which
+        # the first lane run (measurements/qwen38_lane_20260917) met as a refusal with 6
+        cells_ = 8
         for t in ((1, 3) if INTERPRET else (1, 3, 7)):
             q, k, v, decay, beta = self.step(t, dtype)
             ring = torch.randn(3, cells_, self.hv, self.kd, self.kd, device=KDA_DEVICE) * .1
