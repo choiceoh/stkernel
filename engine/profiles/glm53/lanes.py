@@ -247,9 +247,12 @@ def reference() -> Lanes:
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
-MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0,as1"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the
+MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0,as2"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the
 # M16 reform C=1 has, with direct register scatter, retained route state and the FC2 prefetch ring (#955/#962/#970)
-# as1: three-candidate FC1/FC2 search across routed decode, prefill and dense MLPs; top-8 is unchanged.
+# as2: five-candidate FC1/FC2 search across routed decode, prefill and dense MLPs; top-8 is unchanged.
+# Operator decision 2026-09-18 widening as1's radius-1 search to radius 2; the consumer gate
+# (quality, acceptance, tok/s, kernel cost) has not been run on as2 yet and the C=2 strict-score
+# wobble as1 showed (72->62/76, measurements/st_nvfp4_all_activation_search_20260917) is on record.
 
 
 def parse_moe_static(value: str) -> "tuple[str | None, bool]":
