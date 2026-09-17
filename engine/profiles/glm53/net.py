@@ -1186,6 +1186,12 @@ class Glm53Net:
         if contract is not None and aux_layers and any(L not in self.layers for L in aux_layers):
             raise ValueError("terminal features must name layers in this target")
         N = step.ids.shape[0]
+        audit = [] if getattr(self, 'incident_audit_root', None) is not None and N >= 128 else None
+        def audit_row(stage, layer, value):
+            if audit is not None:
+                # Clone on the producer stream; host reads happen only after the
+                # complete prefill, so the audit does not insert per-layer waits.
+                audit.append((stage, layer, value[:8].detach().clone(), value[-32:].detach().clone()))
         sp = self.prefill_transport if (finish and not self.probe and len(step.segments) == 1
                                        and N >= 128
                                        and not getattr(step, "captured", False)) else None
@@ -1219,6 +1225,7 @@ class Glm53Net:
                 L, x, step, caches, reduce, projection=projection)
             if self.probe:
                 self.probe("dsa" if F.is_dsa(L) else "kda", L, x)
+            audit_row('attention', L, x)
             res, post, comb, x = self._hc_post_pre(L, x, res, post, comb, "ffn")
             if L in packet_layers:
                 packets = sp.all_gather_packets(x.contiguous(), route=lambda local: self._sender_routes(L, local))
@@ -1233,6 +1240,7 @@ class Glm53Net:
                     x = self._moe(L, x, reduce) if F.is_moe(L) else self._dense(L, x, reduce)
             if self.probe:
                 self.probe("moe" if F.is_moe(L) else "dense", L, x)
+            audit_row('ffn', L, x)
             if aux_layers and L in aux_layers:
                 if contract is None:
                     aux[L] = self.lanes.mhc_post(x, res, post, comb).float().mean(1).to(x.dtype)
@@ -1261,6 +1269,15 @@ class Glm53Net:
             h = self.comm.all_gather(h, dim=0) if last_hidden_only else sp.gather_result(h)
         if last_hidden_only:
             h = h[-1:]  # the last SP rank owns the global last token
+        if audit is not None:
+            from pathlib import Path
+            root = Path(self.incident_audit_root)
+            root.mkdir(parents=True, exist_ok=True)
+            number = getattr(self, 'incident_audit_number', 0)
+            self.incident_audit_number = number + 1
+            torch.save(dict(rows=step.ids.shape[0], segments=repr(step.segments),
+                            layers=[(name, L, first.cpu(), last.cpu()) for name, L, first, last in audit],
+                            hidden=h.detach().cpu()), root / f'rank{self.rank}-pass{number}.pt')
         if aux_layers:
             if features is None:
                 features = torch.cat([aux[L] for L in aux_layers], dim=-1)

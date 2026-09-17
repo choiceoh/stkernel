@@ -1810,6 +1810,7 @@ def fleet(a) -> int:
             from engine.profiles.glm53 import budget as budget_mod
             print(budget_mod.report(engine.budget(ledger=engine.memory.report())))
         dump = DeathDump(a.dump_dir, runner.ring, boot_id=f"glm53-r{comm.rank}-{int(time.time())}")
+        net.incident_audit_root = Path(a.dump_dir) / 'incident-prefill-audit'
         if comm.rank == 0:
             print(rec.table())
             print(f"  ST engine: GLM-5.3, TP={facts.TP}, lanes={lanes.name}, KV {a.kv_gib} GiB, serving on :{a.port}")
