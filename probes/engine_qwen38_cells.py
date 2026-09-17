@@ -29,7 +29,9 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               'tests.test_engine_qwen38_moe_finish.GatedSumTests', 'tests.test_engine_swiglu_pad.SwigluPadTests',
               'tests.test_engine_gdn_ring_gate.GdnRingGateTests', 'tests.test_engine_qk_norm_strided_heads.OnTheGpuTests',
               'tests.test_engine_qwen38_qsa_inputs.QsaInputsTests',
-              'tests.test_engine_qwen38_attention_gate.AttentionGateTests')
+              'tests.test_engine_qwen38_attention_gate.AttentionGateTests',
+              'tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests',
+              'tests.test_engine_qwen38_kernels.SparseAttentionTests')
 
 
 def facts():
