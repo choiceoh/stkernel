@@ -1760,6 +1760,11 @@ class MoEStaticKernelV4:
         self._resident_grid_barrier(
             barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
         )
+        # The grid barrier publishes packed A and SFA through the generic
+        # global-memory proxy. Each consuming CTA must also order those
+        # writes against its TMA async-proxy reads, after acquiring the
+        # other CTAs' writes. The shared-memory fences below do not do this.
+        cute.arch.fence_proxy("async.global")
         if cutlass.const_expr(self.stamps):
             if Int32(tidx) == Int32(0):
                 _st_global_i64(

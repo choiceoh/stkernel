@@ -1,0 +1,2705 @@
+{
+  "scope": "completed, profiler-off consumer server receipts; no new measurement",
+  "receipts": [
+    {
+      "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T130020-d15c307f7bb5/measure-c1/server.json",
+      "sha256": "e452a3b0a2c1b87d914523b2145c97daaef8c6a71ffdfb3c6d76e7097cf5ea2c"
+    },
+    {
+      "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T130020-d15c307f7bb5/measure-c2-2000-q1/server.json",
+      "sha256": "9b37c3bb4545bbb1ab785972885f17cc63be430ee791a7a92db9a6609a9b3480"
+    },
+    {
+      "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T130020-d15c307f7bb5/measure-c2-32000-qall/server.json",
+      "sha256": "a80c32247b2c13ba943fc60a30bf4dace8c9f02864b5043f231d42c2ceb69e7c"
+    },
+    {
+      "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T133200-b3eb2a4aaa98/measure-c1/server.json",
+      "sha256": "442a6c72dde02298932beac6e38210621be29dcd0dbee629843d6dd90a63229f"
+    },
+    {
+      "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T133200-b3eb2a4aaa98/measure-c2-2000-q1/server.json",
+      "sha256": "83a43239950a259493274e9c7a0c7312a964d8b11ed5185149540f4a3d9bf15b"
+    },
+    {
+      "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T133200-b3eb2a4aaa98/measure-c2-32000-qall/server.json",
+      "sha256": "417aeca860056d13b1ce9d7d42f8c072de7079521cb70521ef40645978dcdc1e"
+    }
+  ],
+  "results": [
+    {
+      "arm": "ss1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c1",
+      "ranks": [
+        {
+          "rank": 0,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 110,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 236,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 374,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 375,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 772,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 773,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 774,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 775,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 776,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1197
+          }
+        },
+        {
+          "rank": 1,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 110,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 236,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 374,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 375,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 772,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 773,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 774,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 775,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 776,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1197
+          }
+        },
+        {
+          "rank": 2,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 110,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 236,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 374,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 375,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 772,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 773,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 774,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 775,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 776,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1197
+          }
+        },
+        {
+          "rank": 3,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 110,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 236,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 374,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 375,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 772,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 773,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 774,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 775,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 776,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1197
+          }
+        }
+      ]
+    },
+    {
+      "arm": "ss1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c2-2000-q1",
+      "ranks": [
+        {
+          "rank": 0,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 57,
+            "16": 98
+          }
+        },
+        {
+          "rank": 1,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 57,
+            "16": 98
+          }
+        },
+        {
+          "rank": 2,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 57,
+            "16": 98
+          }
+        },
+        {
+          "rank": 3,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 57,
+            "16": 98
+          }
+        }
+      ]
+    },
+    {
+      "arm": "ss1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c2-32000-qall",
+      "ranks": [
+        {
+          "rank": 0,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 28,
+            "16": 436
+          }
+        },
+        {
+          "rank": 1,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 28,
+            "16": 436
+          }
+        },
+        {
+          "rank": 2,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 28,
+            "16": 436
+          }
+        },
+        {
+          "rank": 3,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 28,
+            "16": 436
+          }
+        }
+      ]
+    },
+    {
+      "arm": "as1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c1",
+      "ranks": [
+        {
+          "rank": 0,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 101,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 193,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 295,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 296,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 715,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 716,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 717,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 718,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 719,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1043
+          }
+        },
+        {
+          "rank": 1,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 101,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 193,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 295,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 296,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 715,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 716,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 717,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 718,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 719,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1043
+          }
+        },
+        {
+          "rank": 2,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 101,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 193,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 295,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 296,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 715,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 716,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 717,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 718,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 719,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1043
+          }
+        },
+        {
+          "rank": 3,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2680
+            },
+            {
+              "step": 101,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 193,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2771
+            },
+            {
+              "step": 295,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 296,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 715,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 716,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 717,
+              "rows": [
+                0
+              ],
+              "positions": [
+                64512
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 718,
+              "rows": [
+                0
+              ],
+              "positions": [
+                96768
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 719,
+              "rows": [
+                0
+              ],
+              "positions": [
+                129024
+              ],
+              "tokens": 887
+            }
+          ],
+          "decode_rows": {
+            "8": 1043
+          }
+        }
+      ]
+    },
+    {
+      "arm": "as1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-2000-q1",
+      "ranks": [
+        {
+          "rank": 0,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 20,
+            "16": 89
+          }
+        },
+        {
+          "rank": 1,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 20,
+            "16": 89
+          }
+        },
+        {
+          "rank": 2,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 20,
+            "16": 89
+          }
+        },
+        {
+          "rank": 3,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2641
+            },
+            {
+              "step": 2,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 4,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 337
+            }
+          ],
+          "decode_rows": {
+            "8": 20,
+            "16": 89
+          }
+        }
+      ]
+    },
+    {
+      "arm": "as1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-32000-qall",
+      "ranks": [
+        {
+          "rank": 0,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 82,
+            "16": 358
+          }
+        },
+        {
+          "rank": 1,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 82,
+            "16": 358
+          }
+        },
+        {
+          "rank": 2,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 82,
+            "16": 358
+          }
+        },
+        {
+          "rank": 3,
+          "complete": true,
+          "prefill": [
+            {
+              "step": 1,
+              "rows": [
+                0
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 32256
+            },
+            {
+              "step": 2,
+              "rows": [
+                0
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            },
+            {
+              "step": 3,
+              "rows": [
+                1
+              ],
+              "positions": [
+                0
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 5,
+              "rows": [
+                1
+              ],
+              "positions": [
+                2304
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 7,
+              "rows": [
+                1
+              ],
+              "positions": [
+                4608
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 9,
+              "rows": [
+                1
+              ],
+              "positions": [
+                6912
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 11,
+              "rows": [
+                1
+              ],
+              "positions": [
+                9216
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 13,
+              "rows": [
+                1
+              ],
+              "positions": [
+                11520
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 15,
+              "rows": [
+                1
+              ],
+              "positions": [
+                13824
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 17,
+              "rows": [
+                1
+              ],
+              "positions": [
+                16128
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 19,
+              "rows": [
+                1
+              ],
+              "positions": [
+                18432
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 21,
+              "rows": [
+                1
+              ],
+              "positions": [
+                20736
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 23,
+              "rows": [
+                1
+              ],
+              "positions": [
+                23040
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 25,
+              "rows": [
+                1
+              ],
+              "positions": [
+                25344
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 27,
+              "rows": [
+                1
+              ],
+              "positions": [
+                27648
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 29,
+              "rows": [
+                1
+              ],
+              "positions": [
+                29952
+              ],
+              "tokens": 2304
+            },
+            {
+              "step": 31,
+              "rows": [
+                1
+              ],
+              "positions": [
+                32256
+              ],
+              "tokens": 1699
+            }
+          ],
+          "decode_rows": {
+            "8": 82,
+            "16": 358
+          }
+        }
+      ]
+    }
+  ]
+}
