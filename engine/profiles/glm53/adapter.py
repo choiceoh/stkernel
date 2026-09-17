@@ -693,7 +693,8 @@ class Glm53Engine:
         # prefill transport, 9 both. Every change is restored after forward.
         # 10 retains scalar W4 target computation and uses the torch sampling oracle.
         # 11 changes only packet FFNs; 12 changes only the shared-MoE fused/overlap path.
-        mode = code // 1000 if 1000 <= code < 13000 else 0
+        # 13 restores original BF16 dense matrices and ordinary TP transport.
+        mode = code // 1000 if 1000 <= code < 14000 else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -978,7 +979,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1146,6 +1147,12 @@ class Glm53Engine:
             self.net.incident_step_identity = dict(
                 admission=self.admissions, seq=seq, mode=mode,
                 generation=self._generated_count(seq), prefill=prefill)
+        if mode == 13:
+            if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
+                raise ValueError('BF16 reference requires one isolated target position')
+            from engine.profiles.glm53.incident_reference import bf16_dense
+            with bf16_dense(self.net):
+                return self._forward(step, **kwargs)
         if mode not in (7, 8, 9, 11, 12):
             from engine.profiles.glm53.incident_operands import capture
             with capture(self.net, step):
@@ -1583,7 +1590,7 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
-        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12) for seq in seqs):
+        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12, 13) for seq in seqs):
             if len(seqs) != 1:
                 raise ValueError('incident single-token control requires an isolated request')
             seq, slot = seqs[0], slots[0]

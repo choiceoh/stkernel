@@ -26,7 +26,7 @@ def _cpu(value):
 def capture(net, call, L, x, step, caches, reduce=None, **kwargs):
     identity = dict(getattr(net, 'incident_step_identity', {}))
     root = getattr(net, 'incident_audit_root', None)
-    enabled = (root is not None and L < 2 and identity.get('mode') == 5
+    enabled = (root is not None and identity.get('mode') == 5 and identity.get('admission') <= 2
                and (identity.get('prefill') or identity.get('generation') in (1, 124, 125)))
     if not enabled:
         return call(L, x, step, caches, reduce, **kwargs)
@@ -62,11 +62,19 @@ def capture(net, call, L, x, step, caches, reduce=None, **kwargs):
             actual=_copy(actual[:, start:]), final=_copy(final))
 
     def chunk(q, k, v, raw, beta, a_log, bias, state0, bound, states_at=None):
+        head = L % q.shape[2]
+        whole = dict(head=head, q=_copy(q[:, :, head:head+1]), k=_copy(k[:, :, head:head+1]),
+            v=_copy(v[:, :, head:head+1]), raw=_copy(raw[:, :, head:head+1]),
+            beta=_copy(beta[:, :, head:head+1]), a_log=_copy(a_log[head:head+1]),
+            bias=_copy(bias.reshape(q.shape[2],q.shape[3])[head:head+1].reshape(-1)),
+            initial=None if state0 is None else _copy(state0[:, head:head+1]), bound=bound)
         original = list(states_at or [])
         marks = sorted(set(original + ([start // unit] if start else [])))
         result = old.kda_chunk(q, k, v, raw, beta, a_log, bias, state0, bound,
                                states_at=marks or None)
         o, state = result[:2]
+        whole.update(actual=_copy(o[:, :, head:head+1]), final=_copy(state[:, head:head+1]))
+        record['full_recurrence'] = whole
         states = result[2] if marks else None
         initial = states[marks.index(start // unit)][None] if start else state0
         recurrence(q, k, v, raw, beta, a_log, bias, initial, bound, o, state)
@@ -114,7 +122,7 @@ def capture(net, call, L, x, step, caches, reduce=None, **kwargs):
     stem = f"rank{net.rank}-L{L}-admit{identity['admission']}-gen{identity['generation']}-ctx{s.ctx}"
     torch.save(_cpu(record), directory / (stem + '.pt'))
     weight_path = directory / f'rank{net.rank}-L{L}-weights.pt'
-    if not weight_path.exists():
+    if L < 2 and not weight_path.exists():
         weights = {}
         for suffix in ('in_proj', 'f_b', 'g_b', 'o_proj'):
             name = f'L{L}.kda.{suffix}'

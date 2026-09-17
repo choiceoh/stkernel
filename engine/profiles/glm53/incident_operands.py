@@ -1,5 +1,6 @@
 """Private bounded actual-request operands. Never part of the release path."""
 from contextlib import contextmanager
+from dataclasses import replace as lane_replace
 from pathlib import Path
 import torch
 
@@ -96,6 +97,38 @@ def capture(net, step):
         return result
     replace('_mla_context',mla_context)
 
+    # Audit the actual long-context selector, including the candidates read
+    # back from its pool cache. Its matrix and selected IDs are kept privately.
+    index_layer = []
+    indexer = net._indexer
+    def indexer_call(L,x,qr,step,caches,**kwargs):
+        index_layer.append(L)
+        try:
+            result = indexer(L,x,qr,step,caches,**kwargs)
+            s = step.segments[0]
+            positions = torch.arange(s.ctx+s.length,device=x.device)
+            keep('indexer_slots',layer=L,actual=rows(result[0]),valid=rows(result[1]),
+                 token_map=caches.token_slots(L,s.seq,positions),context=s.ctx,length=s.length)
+            return result
+        finally:
+            index_layer.pop()
+    replace('_indexer',indexer_call)
+    select = net._select_pools
+    def select_call(q8,w_eff,keys,scales,ke,n_cand,k,**kwargs):
+        result = select(q8,w_eff,keys,scales,ke,n_cand,k,**kwargs)
+        keep('indexer_selection',layer=index_layer[-1],q=q8[-1:],weights=w_eff[-1:],
+             keys=keys,scales=scales,valid=ke[-1:],candidates=n_cand,k=k,actual=result[-1:])
+        return result
+    replace('_select_pools',select_call)
+    original_lanes=net.lanes
+    def compress_call(keys,gate,ape):
+        result=original_lanes.kpool_compress(keys,gate,ape)
+        s=step.segments[0]
+        keep('indexer_compress',layer=index_layer[-1],keys=keys,gate=gate,ape=ape,
+             actual=result,pool_begin=s.ctx//keys.shape[1])
+        return result
+    net.lanes=lane_replace(original_lanes,kpool_compress=compress_call)
+
     route=net.route
     def route_call(L,x):
         result=route(L,x)
@@ -129,6 +162,7 @@ def capture(net, step):
     try:
         yield
     finally:
+        net.lanes=original_lanes
         net._experts=original_experts
         net._packet_experts=original_packet_experts
         for name,(existed,value) in saved.items():
