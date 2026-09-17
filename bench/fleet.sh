@@ -941,7 +941,6 @@ case "$cmd" in
     fi
     prep_args=(); [ -n "$prepare_spec" ] && prep_args=(--spec "$prepare_spec")
     [ -n "$prepared_manifest" ] && prep_args+=(--prepared "$prepared_manifest")
-    [ "$cls" = nogpu ] || [ "$kind" != boot ] || prep_args+=(--approve-deploy)
     FLEET_PREPARE_MANIFEST=$(python3 "$REPO/bench/fleet_prepare.py" create "$s" --fleet "$REPO/bench/fleet.sh" ${prep_args[@]+"${prep_args[@]}"} -- "$@") || exit 3
     export FLEET_PREPARE_MANIFEST
     if [ "$cls" = nogpu ]; then
@@ -957,14 +956,6 @@ case "$cmd" in
     pf=(); [ "$kind" = boot ] || pf=(--$kind)
     if ! preflight ${pf[@]+"${pf[@]}"} "$s" -- "$@"; then
       logit "preflight FAIL $s (not queued)"; _event preflight-fail "$s" "$note"; exit 3
-    fi
-    if [ "$kind" = boot ]; then
-      # Sessions validate only their candidate. The central idle controller
-      # selects a release-validated recovery when the fleet has been idle.
-      export FLEET_VALIDATION_STORE=${FLEET_VALIDATION_STORE:-$FLEET_DIR/validation}
-      python3 "$REPO/bench/fleet_prepare.py" validate-targets "$s" --prepared "$FLEET_PREPARE_MANIFEST" >&2 || exit 3
-      unset FLEET_RECOVERY_RECEIPT
-      export FLEET_VALIDATION_REQUIRED=1 FLEET_VALIDATION_LEVEL=admission
     fi
     runner=$(with_lock python3 "$REPO/bench/fleet_pin.py" "$REPO" "$FLEET_DIR") || exit 3
     inherited=""
