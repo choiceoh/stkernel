@@ -1334,6 +1334,9 @@ class Glm53Engine:
         for the 24 rows of one step.
         """
         from engine.base.sampler import block_verify, rows as sampler_rows, top_logprobs_batch
+        # Incident control: retain K7 target computation and state geometry,
+        # but sample only its first distribution and commit exactly one token.
+        jobs = [(seq, raw[:1], [], None) for seq, raw, _, _ in jobs]
         device = jobs[0][1].device
         if masks is None:
             pending = [(seq, self.matchers[seq], drafts) for seq, _, drafts, _ in jobs if seq in self.matchers]
