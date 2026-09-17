@@ -79,6 +79,8 @@ class DraftFcCapture:
         self.stopped = None
         self.seams: list[str] = []
         self.calls, self.calls_budget = 0, max(8 * rows, 4096)
+        self.flushed = None                            # the report, once written -- see `maybe_flush`
+        self._restore: list[tuple] = []
         self._attached = False
 
     # -- attachment ------------------------------------------------------
@@ -96,6 +98,7 @@ class DraftFcCapture:
 
         drafter.observe_rows = observe_rows
         self.seams = ['drafter.observe_rows']
+        self._restore = [(drafter, 'observe_rows', inner_rows)]
         graphs = getattr(drafter, 'decode_graphs', None)
         if graphs is not None:
             # the served seam: these run on the host every step and fill the graph's inputs
@@ -107,6 +110,7 @@ class DraftFcCapture:
 
                 graphs.observe_rows = graph_rows
                 self.seams.append('decode_graphs.observe_rows')
+                self._restore.append((graphs, 'observe_rows', inner_graph_rows))
             inner_prepared = getattr(graphs, 'observe_prepared_rows', None)
             if inner_prepared is not None:
                 def graph_prepared(slots, positions, context, valid, aux):
@@ -115,6 +119,7 @@ class DraftFcCapture:
 
                 graphs.observe_prepared_rows = graph_prepared
                 self.seams.append('decode_graphs.observe_prepared_rows')
+                self._restore.append((graphs, 'observe_prepared_rows', inner_prepared))
         diagnostics = getattr(drafter, 'diagnostics', None)
         if diagnostics is not None and hasattr(diagnostics, 'note_sync'):
             inner_sync = diagnostics.note_sync
@@ -130,7 +135,18 @@ class DraftFcCapture:
                 return inner_sync(seq, context, slot, accepted, new, remaining, ends, **kwargs)
 
             diagnostics.note_sync = note_sync
+            self._restore.append((diagnostics, 'note_sync', inner_sync))
         self._attached = True
+        return self
+
+    def detach(self):
+        """Put every wrapped callable back. This is what stops paying the per-step device sync."""
+        for owner, name, inner in reversed(self._restore):
+            try:
+                setattr(owner, name, inner)
+            except Exception:                          # noqa: BLE001 -- a restore never breaks a step
+                pass
+        self._restore, self._attached = [], False
         return self
 
     # -- recording -------------------------------------------------------
@@ -142,14 +158,20 @@ class DraftFcCapture:
             self.stopped = self.stopped or f'{type(exc).__name__}: {exc}'
 
     def full(self) -> bool:
-        """Recording is over: both splits are fed and the budget is met, or the door ran out of chances.
+        """Recording is over: the rows are in and two families exist, or the door ran out of chances.
 
-        The budget matters because a step that records pays a device sync (`mask.sum()`). On a door
-        that never serves a second request family, `min(kept) > 0` would never come true and every
-        step would keep paying it; after `calls_budget` observations the capture stops looking."""
+        NOT `min(kept) > 0`. The hash split leaves validation empty most of the time on a door with a
+        handful of families, and `rebalance` is what fixes that -- at close, by moving one whole family.
+        Waiting here for a balance that only close can produce would keep the collector recording (and
+        paying its per-step device sync) long past the point where it already had everything it needs.
+
+        The call budget is the backstop for a door that never fills: after it, `maybe_flush` files
+        whatever the refusal reason is and detaches, so the sync always stops."""
         if self.calls >= self.calls_budget:
             return True
-        return min(self.kept.values()) > 0 and sum(self.kept.values()) >= self.rows
+        if sum(self.kept.values()) < self.rows:
+            return False
+        return len({batch['ids'][0] for batch in self.batches}) >= 2       # rebalance needs two
 
     def _record(self, slots, positions, aux, valid):
         if self.stopped is not None or self.full():
@@ -217,6 +239,30 @@ class DraftFcCapture:
             if name_other != want:
                 self.kept[name_other] -= moved
         return None
+
+    def maybe_flush(self):
+        """Write the bundle the moment the budget is met, then take the collector off the step.
+
+        `close` used to be the only writer and it runs at shutdown -- but a deploy stops production with
+        `docker rm -f`, a SIGKILL, so no Python runs and everything collected is lost. Every close report
+        this feature ever produced came from a CRASH (which does unwind), never from the deploys that
+        actually stop production. Writing at the budget instead makes the artifact independent of how the
+        boot ends, and detaching afterwards is what stops paying the per-step device sync.
+
+        The write costs roughly a second once: the reader runs over the collected batches and the bundle
+        goes to disk. It is deliberately taken on the step loop's own after-step seam (base/serve calls
+        `engine.housekeeping`), where the profile's calibration filing already takes the same kind of cost,
+        instead of on a thread that would put CUDA work beside a replaying graph.
+        """
+        if self.flushed is not None or not self._attached or self.stopped is not None or not self.full():
+            return None
+        self.detach()                                  # first: a failed write must not keep charging the step
+        try:
+            self.flushed = self.close()
+        except Exception as exc:                       # noqa: BLE001 -- a collector never breaks serving
+            self.flushed = dict(self.status(), error=f'{type(exc).__name__}: {exc}')
+        self.batches = []                              # 437 MiB of host pages: the bundle is written, drop them
+        return self.flushed
 
     def close(self):
         """Run the collector against the live reader and write this rank's bundle."""

@@ -245,7 +245,15 @@ class Glm53Engine:
 
     def housekeeping(self, steps: int) -> None:
         """Called by the step loop after every model step (base/serve). Every 256th step, a calibrating boot asks its
-        sums how far they are (one device read) and files them when complete: the next boot packs GPTQ from them."""
+        sums how far they are (one device read) and files them when complete: the next boot packs GPTQ from them.
+
+        The draft FC collector files the same way and for the same reason -- a deploy stops production with
+        `docker rm -f`, so an artifact that waits for shutdown is never written."""
+        capture = getattr(self, 'draft_fc_capture', None)
+        if capture is not None and capture.flushed is None:
+            report = capture.maybe_flush()
+            if report is not None:
+                print(f"  draft FC capture: rank {self.net.comm.rank} filed at the budget {report}", flush=True)
         c = self.calibration
         if c is None or c.filed is not None or steps % 256:
             return

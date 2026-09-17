@@ -1898,7 +1898,10 @@ def fleet(a) -> int:
                             print(f"  expert capture: rank {comm.rank} could not close: {type(exc).__name__}: {exc}", flush=True)
                     if getattr(engine, "draft_fc_capture", None) is not None:
                         try:
-                            report = engine.draft_fc_capture.close()
+                            # Already filed at the budget (the usual case): say so and write nothing twice.
+                            # A shutdown is the fallback writer, not the only one -- `docker rm -f` never gets here.
+                            capture = engine.draft_fc_capture
+                            report = capture.flushed if capture.flushed is not None else capture.close()
                             print(f"  draft FC capture: rank {comm.rank} {report}", flush=True)
                         except Exception as exc:              # noqa: BLE001 -- a shutdown never fails a shutdown
                             print(f"  draft FC capture: rank {comm.rank} could not close: {type(exc).__name__}: {exc}", flush=True)
