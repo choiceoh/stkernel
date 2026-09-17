@@ -495,9 +495,10 @@ class Qwen38Net:
         # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer)
         blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
                                   meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
+        # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
         attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
-                                    F.idx_budget, meta.page_table, meta.rows_req)
-        out = (attended.float() * torch.sigmoid(gate.float())).to(x.dtype).reshape(N, Hq * D)
+                                    F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
+        out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 
     # -- MoE ----------------------------------------------------------------------------------------------------------
