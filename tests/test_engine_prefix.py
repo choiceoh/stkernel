@@ -70,6 +70,49 @@ def run_to_end(r, seq):
         r.prefix.check()                                     # the two resources' invariants hold at every step
 
 
+class MarkAlignmentTests(unittest.TestCase):
+    """A continued conversation resumes at wherever the last turn stopped -- any number at all.
+
+    Block boundaries are absolute; the model takes a mark's state at ITS kernel's chunk boundaries,
+    counted from the step's start. The two line up only when the start does. Production died three
+    times on 2026-09-17 with "a mark inside a prefill chunk must sit on a 64-token kernel chunk".
+    """
+
+    def _runner(self, align):
+        contract = Contract(chunk_align=BLOCK, token_budget=CHUNK, draft_slots=0, max_wait_s=20.0,
+                            max_running=4, mark_align=align)
+        cache = PrefixCache(BLOCK, CHUNK, 4)
+        r = Runner(Model(), contract, BlockPool(32, BLOCK, 4, 32), SlotPool(5),
+                   Ring(16, STEP_RECORD.size), prefix=cache)
+        r._chain[0] = {4: 'h4', 8: 'h8', 12: 'h12'}
+        return r, cache
+
+    def test_an_aligned_start_still_marks_every_boundary(self):
+        r, _ = self._runner(BLOCK)
+        marks = r._marks(0, 4, 14)
+        self.assertEqual(sorted(marks), [8, 12])
+        self.assertEqual(r.marks_unaligned, 0)
+
+    def test_a_resumed_turn_skips_the_boundaries_it_cannot_serve(self):
+        r, cache = self._runner(BLOCK)
+        free_before = len(cache.free_snaps)
+        marks = r._marks(0, 2, 14)                    # offsets 2, 6, 10: none sits on the kernel's grid
+        self.assertEqual(marks, {})
+        self.assertEqual(r.marks_unaligned, 3)
+        self.assertEqual(len(cache.free_snaps), free_before, 'a skipped mark takes no snapshot slot')
+
+    def test_without_a_declared_alignment_nothing_changes(self):
+        r, _ = self._runner(1)
+        self.assertEqual(sorted(r._marks(0, 2, 14)), [4, 8, 12])
+        self.assertEqual(r.marks_unaligned, 0)
+
+    def test_the_contract_refuses_a_nonsense_alignment(self):
+        for bad in (0, -8, 8.0):
+            with self.assertRaises(ValueError):
+                Contract(chunk_align=BLOCK, token_budget=CHUNK, draft_slots=0, max_wait_s=20.0,
+                         max_running=4, mark_align=bad)
+
+
 class ResetTests(unittest.TestCase):
     """An operator throwing the cache away, because the tokens cannot tell them it went stale."""
 

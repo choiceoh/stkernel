@@ -890,7 +890,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
             # Splitting a ragged tail now adds a second full model traversal.
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=token_budget, draft_slots=drafter.k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
-                                      decode_token_budget=F.chunk_align + drafter.k)
+                                      decode_token_budget=F.chunk_align + drafter.k,
+                                      mark_align=lanes.kda_chunk_tokens)
             engine.memory = memory
             engine.budget = redeclare           # printed once from guesses at boot, once from this boot's ledger
             engine.arena = arena                # every device tensor is a view of it: `release` needs the last reference
