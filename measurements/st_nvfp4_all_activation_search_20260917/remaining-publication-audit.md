@@ -1,5 +1,9 @@
 # Remaining FC search / C=2 publication boundaries
 
+Status: the follow-up [publication repair](publication-repair.md) implements
+both ordering fixes and adds identical-input M8/M16 GPU checks. The text below
+preserves the evidence and open questions at the time of the initial audit.
+
 Follow-up review on 2026-09-18 after PR #1133. The static decode patch is
 merged at `48a23b02eeef1d842322e2343d300c34ea811dd3`; its required CI check
 has passed. This review adds evidence only, with no serving-code changes or

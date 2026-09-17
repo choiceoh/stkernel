@@ -10,6 +10,8 @@ The later [remaining-publication audit](remaining-publication-audit.md)
 identifies the same proxy gap in prefill and reopens this audit's assumption
 that the generic grid barrier fully acquires other CTAs' writes. The static
 proxy fence does not by itself resolve that separate barrier question.
+The subsequent [publication repair](publication-repair.md) addresses both
+ordering edges and records identical-input M8/M16 GPU evidence.
 
 ## The invariant to preserve
 

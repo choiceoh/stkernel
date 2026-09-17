@@ -177,3 +177,8 @@ confirms the same missing global proxy fence in both served SF6 prefill paths
 and reopens the generic grid barrier's final-arrival acquire contract.
 `prefill-publication-native.json` contains the two GPU-free native receipts;
 this follow-up changes evidence only, not serving code.
+
+The [publication repair](publication-repair.md) then fixes both ordering
+boundaries across the kernel families and adds real-weight, identical-input
+M8/M16 validation. It keeps kernel correctness evidence separate from the
+still-unmeasured consumer quality and performance after these repairs.
