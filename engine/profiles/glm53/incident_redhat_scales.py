@@ -1,7 +1,7 @@
 """Private same-boot control for the Red Hat importer's lossy scale folding.
 
-Keep packed FP4 weights, routing, activation scales and dense calibration fixed.
-Restore only the original E4M3 scale bytes and separate FP32 global multipliers.
+Keep packed FP4 weights, routing and dense calibration fixed. Separate controls
+restore source weight scales alone, then the calibrated input global scales too.
 Sidecars are source-verified offline and must match this boot's folded scales.
 """
 from contextlib import contextmanager
@@ -37,7 +37,7 @@ def load_layer(net, layer):
         raise ValueError(f'corrupt Red Hat scale sidecar: rank={net.rank} layer={layer}')
     from safetensors.torch import load_file
     values = load_file(str(path), device='cpu')
-    if set(values) != {'w13_sf', 'w2_sf', 'w13_alpha', 'w2_alpha'}:
+    if set(values) != {'w13_sf', 'w2_sf', 'w13_alpha', 'w2_alpha', 'a13_scale', 'a2_scale'}:
         raise ValueError('unexpected scale sidecar fields')
     prefix = f'L{layer}.moe.'
     device = net.p[prefix + 'w13'].device
@@ -50,47 +50,56 @@ def load_layer(net, layer):
         if current_hash != receipt['folded_sha256'][name]:
             raise ValueError(f'folded source does not match the boot: {prefix + name}')
         values[name] = original.view(torch.float8_e4m3fn).to(device)
-    for name in ('w13_alpha', 'w2_alpha'):
+    for name in ('w13_alpha', 'w2_alpha', 'a13_scale', 'a2_scale'):
         if values[name].shape != (288,) or values[name].dtype != torch.float32:
-            raise ValueError('expected per-expert FP32 weight multipliers')
+            raise ValueError('expected per-expert FP32 global multipliers')
         values[name] = values[name].to(device)
     return values
 
 
 def bind_layer(net, layer, values):
-    """Prepare a second scale owner over the identical tile-major FP4 weights."""
+    """Prepare two scale controls over the identical tile-major FP4 weights."""
     if values is None:
         return
     from engine.profiles.glm53.modelopt_scales import ModelOptScales
     prefix = f'L{layer}.moe.'
     first, second = net.p[prefix + 'w13'], net.p[prefix + 'w2']
     one = torch.ones(first.shape[0], dtype=torch.float32, device=first.device)
-    scales = ModelOptScales.bind(values['w13_alpha'], one, values['w2_alpha'], one,
-                                 experts=first.shape[0], device=first.device)
-    args = dict(w13=first, w13_sf=values['w13_sf'], w2=second, w2_sf=values['w2_sf'],
-                limit=net.F.swiglu_limit, scales=scales)
-    views = net.lanes.moe_prepare(first, values['w13_sf'], second, values['w2_sf'],
-                                  net.F.topk_experts, net.F.swiglu_limit, scales=scales)
-    record = dict(expert=partial(net.lanes.moe, **args), views=views, scales=scales)
-    if net.lanes.moe_packets is not None and net.lanes.moe_packets_supported is not None:
-        record['packet'] = partial(net.lanes.moe_packets, **args)
-        record['packet_supported'] = partial(net.lanes.moe_packets_supported, **args)
+    # Preparation may consume the raw SF storage. Clone before either call.
+    owners = [('weight', values['w13_sf'], values['w2_sf'], one, one),
+              ('calibrated', values['w13_sf'].clone(), values['w2_sf'].clone(),
+               values['a13_scale'], values['a2_scale'])]
+    variants = {}
+    for name, sf13, sf2, input13, input2 in owners:
+        scales = ModelOptScales.bind(values['w13_alpha'], input13, values['w2_alpha'], input2,
+                                     experts=first.shape[0], device=first.device)
+        args = dict(w13=first, w13_sf=sf13, w2=second, w2_sf=sf2,
+                    limit=net.F.swiglu_limit, scales=scales)
+        views = net.lanes.moe_prepare(first, sf13, second, sf2,
+                                      net.F.topk_experts, net.F.swiglu_limit, scales=scales)
+        record = dict(expert=partial(net.lanes.moe, **args), views=views, scales=scales)
+        if net.lanes.moe_packets is not None and net.lanes.moe_packets_supported is not None:
+            record['packet'] = partial(net.lanes.moe_packets, **args)
+            record['packet_supported'] = partial(net.lanes.moe_packets_supported, **args)
+        variants[name] = record
     if not hasattr(net, '_incident_redhat_layers'):
         net._incident_redhat_layers = {}
-    net._incident_redhat_layers[layer] = record
+    net._incident_redhat_layers[layer] = variants
     print(f'[incident-redhat] rank={net.rank} layer={layer} source_scales=verified '
-          f'activation_global=1 packed_fp4=shared', flush=True)
+          f'variants=weight,calibrated packed_fp4=shared', flush=True)
 
 
 @contextmanager
-def select(net, enabled):
+def select(net, variant):
     """Swap prepared owners for one isolated eager request forward, then restore."""
     audit = getattr(net, 'incident_audit_root', None)
     previous = {}
     try:
         net.incident_audit_root = None
-        if enabled:
-            records = net._incident_redhat_layers
+        if variant is not None:
+            if variant not in ('weight', 'calibrated'):
+                raise ValueError('unknown Red Hat scale control')
+            records = {layer: variants[variant] for layer, variants in net._incident_redhat_layers.items()}
             if set(records) != {layer for layer in net.layers if net.F.is_moe(layer)}:
                 raise ValueError('lossless scale owners are incomplete')
             for attr, field in (('_experts', 'expert'), ('_expert_views', 'views'),

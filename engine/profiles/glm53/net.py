@@ -305,7 +305,8 @@ class Glm53Net:
                 expert(x, *routes[topk])
                 alternate = getattr(self, '_incident_redhat_layers', {}).get(layer)
                 if alternate is not None:
-                    alternate['expert'](x, *routes[topk])
+                    for record in alternate.values():
+                        record['expert'](x, *routes[topk])
 
     def router_nbytes(self):
         """Replicated FP32 gates, read by every native decode and prefill router."""
