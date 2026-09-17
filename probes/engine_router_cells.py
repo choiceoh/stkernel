@@ -9,7 +9,8 @@ Arms, each a captured graph over the same x:
   served    glm_pointwise.router_logits (x.to(float) + IEEE FP32 cuBLAS sgemm + its split-K reduce) then
             route_weights (_scores, torch.topk sorted, _weights): the seven launches a layer the step serves
   served_b  a second capture of the same chain: the noise floor, and the control's own determinism
-  fused     engine/kernels/router_fused.cu: the same products and formulas in one launch, another add order
+  fused_legacy  prior fused tail: lower-id tie order and sequential weight sum
+  fused     one launch with the served topk tie order and weight sum; projection add order still differs
 
 Scope `single` is layer 3 (warm = the gate sits in L2, the launch floor); `chain` runs all 42 routed layers
 in model order with their own gates (198 MB a replay, more than L2 holds, so even its warm replays stream
@@ -19,9 +20,8 @@ flush before every replay, outside the events).
 Gates and verdicts:
   - logits: fused against served, ulps of max(|value|, tensor RMS); bound 64 like the MoE cells' add-order
     gate. Beyond it the kernel is wrong, not differently ordered.
-  - selection from its OWN logits: the kernel's ids must be torch.topk's set over sigmoid(fused logits) + bias
-    and its weights that reference's within a few ulps. This isolates phase 2 from the add order; a mismatch
-    fails the cell.
+  - selection from its OWN logits: ids, order and weight bits must match the served route_weights.
+    Legacy/aligned projection bits must also agree. This isolates the changed tail from projection rounding.
   - flip rate against served (reported, never a gate): rows whose top-8 SET differs, rows whose order
     differs. These are the serving-numerics change a bracket would have to accept; synthetic rows only
     indicate the order of magnitude.
@@ -47,8 +47,8 @@ SEEDS = 12                                 # x draws per fixture and scope for t
 EXPERTS, HIDDEN, TOPK, SCALE = 288, 4096, 8, 2.5
 GATE_BYTES = EXPERTS * HIDDEN * 4
 MAX_ULPS = 64                              # an add order moves a logit by a few ulps of its scale, never 1e4
-OWN_WEIGHT_MAX_ULPS = 4                    # phase 2 against torch on the kernel's own logits: sum order only
-ARMS = ('served', 'served_b', 'fused')
+OWN_WEIGHT_MAX_ULPS = 0                    # phase 2 now matches the served path bit for bit
+ARMS = ('served', 'served_b', 'fused_legacy', 'fused')
 
 
 def _sha(t):
@@ -71,20 +71,21 @@ class Router:
         ids, weights = route_weights(logits, self.bias, TOPK, SCALE)
         return logits, ids, weights
 
-    def fused(self, x, logits):
+    def fused(self, x, logits, *, align=True):
         from engine.kernels.router_fused import route
-        ids, weights = route(x, self.gate, self.bias, TOPK, SCALE, logits=logits)
+        ids, weights = route(x, self.gate, self.bias, TOPK, SCALE, logits=logits, _align=align)
         return logits, ids, weights
 
 
 def capture(group, x, rows):
     """Graphs and their (logits, ids, weights) per layer for every arm over the static x."""
     graphs, outs = {}, {}
-    fused_logits = [torch.empty(rows, EXPERTS, device='cuda', dtype=torch.float32) for _ in group]
     try:
         for label in ARMS:
-            def run(label=label):
-                return [(r.fused(x, fused_logits[n]) if label == 'fused' else r.served(x))
+            fused_logits = [torch.empty(rows, EXPERTS, device='cuda', dtype=torch.float32) for _ in group]
+            def run(label=label, fused_logits=fused_logits):
+                return [(r.fused(x, fused_logits[n], align=label == 'fused')
+                         if label.startswith('fused') else r.served(x))
                         for n, r in enumerate(group)]
             graphs[label], outs[label] = _capture(run)
     except BaseException:
@@ -95,11 +96,70 @@ def capture(group, x, rows):
 
 
 def _reference_selection(logits, bias):
-    """The engine's unbound reference (net._select_routes) over the given logits."""
-    s = torch.sigmoid(logits)
-    sel = (s + bias).topk(TOPK, dim=-1).indices
-    w = s.gather(-1, sel)
-    return sel.to(torch.int32), w / (w.sum(-1, keepdim=True) + 1e-20) * SCALE
+    """The served selection, including its exact sigmoid, topk order and reduction."""
+    from engine.kernels.glm_pointwise import route_weights
+    return route_weights(logits, bias, TOPK, SCALE)
+
+
+def edge_checks(report):
+    """Actual CUDA selection on exact projections, plus independent graph streams."""
+    from engine.kernels.router_fused import route
+    cases = []
+    columns = torch.arange(EXPERTS, device='cuda')
+    for rows in (1, 7, 8, 9, 16):
+        for dtype in (torch.bfloat16, torch.float32):
+            x = torch.zeros(rows, HIDDEN, device='cuda', dtype=dtype)
+            x[:, :rows] = torch.eye(rows, device='cuda', dtype=dtype)
+            for pattern in ('all_tied', 'saturated', 'boundary', 'interleaved'):
+                logits = torch.zeros(rows, EXPERTS, device='cuda')
+                bias = torch.zeros(EXPERTS, device='cuda')
+                if pattern == 'saturated':
+                    logits[:] = (columns % 3).float() * 8 + 24
+                elif pattern == 'boundary':
+                    bias[:] = torch.where(columns % 43 == 0, 1., torch.where(columns < 150, 0., -1.))
+                elif pattern == 'interleaved':
+                    logits[:] = ((columns * 17) % 13).float() * .25 - 1.5
+                    bias[:] = (columns % 5).float() * .125
+                gate = torch.zeros(EXPERTS, HIDDEN, device='cuda')
+                gate[:, :rows] = logits.T
+                projected = torch.empty_like(logits)
+                got = route(x, gate, bias, TOPK, SCALE, logits=projected)
+                want = _reference_selection(logits, bias)
+                if not torch.equal(projected, logits) or any(not torch.equal(a.view(torch.int32), b.view(torch.int32))
+                                                             for a, b in zip(got, want)):
+                    raise AssertionError(f'router selection differs: {rows=} {dtype=} {pattern=}')
+                cases.append(dict(rows=rows, dtype=str(dtype), pattern=pattern))
+    streams = [torch.cuda.Stream() for _ in range(2)]
+    graphs, outputs, references, inputs = [], [], [], []
+    # Separate graph pools and capture streams: each owns its arrival counter.
+    for index, stream in enumerate(streams):
+        rows = (8, 16)[index]
+        x = torch.randn(rows, HIDDEN, device='cuda', dtype=torch.bfloat16)
+        gate = torch.randn(EXPERTS, HIDDEN, device='cuda') * .02
+        bias = torch.randn(EXPERTS, device='cuda') * .1
+        inputs.append((x, gate, bias))
+        stream.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(stream):
+            expected = route(x, gate, bias, TOPK, SCALE)
+            references.append(tuple(t.clone() for t in expected))
+        torch.cuda.synchronize()
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph, stream=stream):
+            outputs.append(route(x, gate, bias, TOPK, SCALE))
+        graphs.append(graph)
+    try:
+        for repeat in range(32):
+            for index in (range(2) if repeat % 2 == 0 else range(1, -1, -1)):
+                with torch.cuda.stream(streams[index]):
+                    graphs[index].replay()
+            torch.cuda.synchronize()
+            for got, want in zip(outputs, references):
+                if any(not torch.equal(a.view(torch.int32), b.view(torch.int32)) for a, b in zip(got, want)):
+                    raise AssertionError('independent router graphs interfered across streams')
+    finally:
+        for graph in graphs:
+            graph.reset()
+    report('edge_checks', passed=True, cases=cases, concurrent_graph_replays=64)
 
 
 def _merge_max(total, key, value):
@@ -117,7 +177,8 @@ def judge(report, group, x, graphs, outs, *, rows, groups, scope, fixture):
     """Replay every arm in both orders over SEEDS draws of x; gate the fused logits and its own selection,
     count the flips against the served chain. Returns (passed, stats)."""
     stats = dict(rows_judged=0, set_mismatch_rows=0, order_mismatch_rows=0, weight_rows_compared=0, own_set_mismatch_rows=0,
-                 own_order_mismatch_rows=0, control_self_diff=0)
+                 own_order_mismatch_rows=0, own_weight_bit_differences=0,
+                 legacy_logit_bit_differences=0, control_self_diff=0)
     for seed in range(SEEDS):
         x.copy_(grouped(rows, groups, SPREAD, 5000 + 100 * seed + rows))
         for order in (ARMS, ARMS[::-1]):
@@ -128,6 +189,8 @@ def judge(report, group, x, graphs, outs, *, rows, groups, scope, fixture):
                 ls, is_, ws = outs['served'][n]
                 lb, ib, wb = outs['served_b'][n]
                 lf, if_, wf = outs['fused'][n]
+                ll, _, _ = outs['fused_legacy'][n]
+                stats['legacy_logit_bit_differences'] += int((lf.view(torch.int32) != ll.view(torch.int32)).sum())
                 stats['control_self_diff'] += int((ls != lb).sum() + (is_ != ib).sum() + (ws != wb).sum())
                 noise = fp32_noise(lf, ls)
                 _merge_max(stats, 'logits_max_ulps', noise['fp32_max_ulps'])
@@ -137,6 +200,7 @@ def judge(report, group, x, graphs, outs, *, rows, groups, scope, fixture):
                 own_set = (ro.sort(1).values == if_.sort(1).values).all(1)
                 stats['own_set_mismatch_rows'] += int(rows - own_set.sum())
                 stats['own_order_mismatch_rows'] += int(rows - (ro == if_).all(1).sum())
+                stats['own_weight_bit_differences'] += int((wf.view(torch.int32) != wo.view(torch.int32)).sum())
                 if own_set.any():
                     own = fp32_noise(_aligned(if_, wf, ro)[own_set], wo[own_set])
                     _merge_max(stats, 'own_weights_max_ulps', own['fp32_max_ulps'])
@@ -154,7 +218,8 @@ def judge(report, group, x, graphs, outs, *, rows, groups, scope, fixture):
     stats.setdefault('weights_max_ulps', 0.)
     stats.setdefault('weights_max_abs', 0.)
     passed = (stats['logits_max_ulps'] <= MAX_ULPS and stats['own_set_mismatch_rows'] == 0
-              and stats['own_weights_max_ulps'] <= OWN_WEIGHT_MAX_ULPS)
+              and stats['own_order_mismatch_rows'] == 0 and stats['own_weight_bit_differences'] == 0
+              and stats['legacy_logit_bit_differences'] == 0 and stats['control_self_diff'] == 0)
     report('exact', fixture=fixture, rows=rows, scope=scope, layers=[r.L for r in group], seeds=SEEDS,
            replay_orders='forward/reverse', logits_max_ulps_gate=MAX_ULPS, own_weights_max_ulps_gate=OWN_WEIGHT_MAX_ULPS,
            set_flip_pct=100. * stats['set_mismatch_rows'] / stats['rows_judged'],
@@ -186,6 +251,7 @@ def main(ranks=None, *, samples=None, output=None):
                rank_file=str(path), layers=LAYERS, fixtures=[f[0] for f in FIXTURES], spread=SPREAD, seeds=SEEDS,
                brackets=brackets, source_sha256={f: hashlib.sha256((root / f).read_bytes()).hexdigest() for f in files},
                scope='captured same-build router cells beside production; no answer, acceptance or step/s verdict')
+        edge_checks(report)
         loader = rank_loader(path)
         routers = [Router(loader, L) for L in LAYERS]
         report('weights', layers=[r.identity for r in routers], gate_bytes_per_layer=GATE_BYTES,
@@ -206,10 +272,12 @@ def main(ranks=None, *, samples=None, output=None):
                     if not passed:
                         raise RuntimeError(f'{fixture} {scope}: the fused router failed its gates ({stats})')
                     res = bracket(report, graphs, 'served', 'fused', brackets=brackets, **meta)
+                    alignment = bracket(report, graphs, 'fused_legacy', 'fused', brackets=brackets, **meta)
                     verdicts.append(dict(
                         fixture=fixture, rows=rows, scope=scope, layers=len(group),
                         floor_pct={c: floor[c]['mean_change_pct'] for c in floor},
                         change_pct={c: res[c]['mean_change_pct'] for c in res},
+                        alignment_cost_pct={c: alignment[c]['mean_change_pct'] for c in alignment},
                         served_us={c: res[c]['control_us']['mean'] for c in res},
                         fused_us={c: res[c]['candidate_us']['mean'] for c in res},
                         saved_us_per_layer={c: (res[c]['control_us']['mean'] - res[c]['candidate_us']['mean']) / len(group)

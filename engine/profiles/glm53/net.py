@@ -1056,6 +1056,7 @@ class Glm53Net:
         and logits. Native execution reads the resident gate directly; the
         unprepared reference converts its checkpoint gate at the call site."""
         if (getattr(self, 'fused_decode_router', False) and self._router_layers is not None
+                and getattr(self, 'route_skip', None) is None
                 and x.shape[0] in (8, 16) and x.shape[0] in self.decode_fastpath_rows):
             from engine.kernels.router_fused import route
             result = route(x, self._router_weights[L], self._router_fused_bias[L],

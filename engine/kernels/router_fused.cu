@@ -19,11 +19,11 @@
 // gate the 16-row cut is still not DRAM-bound; the next question is a profile, not another blind
 // cut (measurements/st_c2_levers_survey_20260917).
 // The last CTA to arrive (a ticket, like the mHC tails) selects for every row: score =
-// div_rn(1, 1 + exp(-logit)) + bias, top-k descending by score with an exact tie to the LOWER
-// expert id, weight = s / (sum s + 1e-20) * scale from the RAW sigmoid with the sum taken in column
-// order. The ticket resets itself, so a captured graph replays without host work.
+// div_rn(1, 1 + exp(-logit)) + bias. Boundary ties select the lower expert id; the selected
+// columns then follow the pinned PyTorch gather/bitonic order. Weight = s / (sum s + 1e-20) * scale
+// from the RAW sigmoid with Triton's 4/2/1 reduction. The ticket resets itself for graph replay.
 //
-// Same products, same formulas, another add order: a logit moves by a few ulps and a near-tied
+// Same products, same formulas, another projection add order: a logit moves by a few ulps and a near-tied
 // top-8 boundary can flip. That is a serving-numerics change, so adoption is a bracket; this cell
 // only sizes the launch-count prize and the flip rate (probes/engine_router_cells.py).
 #include <torch/extension.h>
@@ -71,7 +71,53 @@ __device__ __forceinline__ void st_rt_load4<__nv_bfloat16>(const __nv_bfloat16* 
 // tl.div_rn(1., 1. + libdevice.exp(-x)): the same libdevice exp, an IEEE division
 __device__ __forceinline__ float st_rt_sigmoid(float v) { return __fdiv_rn(1.0f, 1.0f + expf(-v)); }
 
-template <typename X, int ROWS>
+// Match the pinned PyTorch CUDA topk tail without another launch. Its single-block gather
+// emits scores above the kth score in expert-id order, then boundary ties in id order;
+// SmallBitonicSort sorts those eight entries in a 32-entry network, including invalid padding.
+// Running the same comparisons preserves even its otherwise unspecified tie permutation.
+// Only tied rows need this work: every strictly ordered row already has the same output order.
+__device__ __forceinline__ void st_rt_topk_order(int lane, int& id, float& lg, float& score) {
+  const float previous = __shfl_up_sync(0xffffffffu, score, 1);
+  if (!__ballot_sync(0xffffffffu, lane > 0 && lane < ST_RT_TOPK && score == previous)) return;
+  const float boundary = __shfl_sync(0xffffffffu, score, ST_RT_TOPK - 1);
+  int gather_rank = 0;
+#pragma unroll
+  for (int r = 0; r < ST_RT_TOPK; ++r) {
+    const int other_id = __shfl_sync(0xffffffffu, id, r);
+    const float other_score = __shfl_sync(0xffffffffu, score, r);
+    gather_rank += ((score == boundary && other_score > boundary) ||
+                    ((score == boundary) == (other_score == boundary) && other_id < id));
+  }
+  int source = 0;
+#pragma unroll
+  for (int r = 0; r < ST_RT_TOPK; ++r)
+    if (__shfl_sync(0xffffffffu, gather_rank, r) == lane) source = r;
+  id = __shfl_sync(0xffffffffu, id, source);
+  lg = __shfl_sync(0xffffffffu, lg, source);
+  score = __shfl_sync(0xffffffffu, score, source);
+  int valid = lane < ST_RT_TOPK;
+  if (!valid) { id = 0; lg = 0.f; score = 0.f; }
+#pragma unroll
+  for (int size = 2; size <= 32; size *= 2) {
+    const bool direction = (lane & size) != 0;
+#pragma unroll
+    for (int stride = size / 2; stride > 0; stride /= 2) {
+      const float other_score = __shfl_xor_sync(0xffffffffu, score, stride);
+      const float other_lg = __shfl_xor_sync(0xffffffffu, lg, stride);
+      const int other_id = __shfl_xor_sync(0xffffffffu, id, stride);
+      const int other_valid = __shfl_xor_sync(0xffffffffu, valid, stride);
+      const bool lower = (lane & stride) == 0;
+      const bool compare = lower ? score > other_score : other_score > score;
+      const bool valid_a = lower ? valid : other_valid;
+      const bool valid_b = lower ? other_valid : valid;
+      if (((compare && valid_a) || !valid_b) == direction) {
+        score = other_score; lg = other_lg; id = other_id; valid = other_valid;
+      }
+    }
+  }
+}
+
+template <typename X, int ROWS, bool ALIGN>
 __global__ void __launch_bounds__(ST_RT_THREADS, 2)
 st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const float* __restrict__ bias,
                 unsigned int* ticket, float* __restrict__ logits, int* __restrict__ ids,
@@ -176,7 +222,7 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
       taken[i] = false;
     }
     int my_id = -1;
-    float my_lg = 0.f;
+    float my_lg = 0.f, my_score = -INFINITY;
     for (int r = 0; r < ST_RT_TOPK; ++r) {
       // the lane's best untaken score; a strict compare keeps the lower slot, i.e. the lower expert id
       float best = -INFINITY;
@@ -200,13 +246,21 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
           if (i == won) { taken[i] = true; owner_lg = lg[i]; }
       }
       const float v = __shfl_sync(0xffffffffu, owner_lg, owner);
-      if (lane == r) { my_id = be; my_lg = v; }
+      if (lane == r) { my_id = be; my_lg = v; my_score = best; }
     }
-    // weights from the raw sigmoid; the sum in column order
+    if constexpr (ALIGN) st_rt_topk_order(lane, my_id, my_lg, my_score);
+    // Same 4/2/1 butterfly as glm_pointwise._weights (Triton 3.7.1, eight columns).
+    // The old sequential sum is retained only for the same-build component comparison.
     const float s = lane < ST_RT_TOPK ? st_rt_sigmoid(my_lg) : 0.f;
     float sum = 0.f;
+    if constexpr (ALIGN) {
+      sum = s;
 #pragma unroll
-    for (int r = 0; r < ST_RT_TOPK; ++r) sum += __shfl_sync(0xffffffffu, s, r);
+      for (int off = 4; off > 0; off >>= 1) sum += __shfl_xor_sync(0xffffffffu, sum, off);
+    } else {
+#pragma unroll
+      for (int r = 0; r < ST_RT_TOPK; ++r) sum += __shfl_sync(0xffffffffu, s, r);
+    }
     if (lane < ST_RT_TOPK) {
       ids[t * ST_RT_TOPK + lane] = my_id;
       weights[t * ST_RT_TOPK + lane] = __fdiv_rn(s, sum + 1e-20f) * scale;
@@ -216,25 +270,25 @@ st_router_fused(const X* __restrict__ x, const float* __restrict__ gate, const f
   if (tid == 0) *ticket = 0u;
 }
 
-template <typename X>
+template <typename X, bool ALIGN>
 static void launch(const at::Tensor& x, const at::Tensor& gate, const at::Tensor& bias, const at::Tensor& ticket,
                    at::Tensor& logits, at::Tensor& ids, at::Tensor& weights, float scale, cudaStream_t stream) {
   const int rows = (int)x.size(0);
   const X* xp = reinterpret_cast<const X*>(x.data_ptr());
   unsigned int* tk = reinterpret_cast<unsigned int*>(ticket.data_ptr<int>());
   if (rows <= 8)
-    st_router_fused<X, 8><<<ST_RT_CTAS, ST_RT_THREADS, 0, stream>>>(
+    st_router_fused<X, 8, ALIGN><<<ST_RT_CTAS, ST_RT_THREADS, 0, stream>>>(
         xp, gate.data_ptr<float>(), bias.data_ptr<float>(), tk, logits.data_ptr<float>(), ids.data_ptr<int>(),
         weights.data_ptr<float>(), rows, scale);
   else
-    st_router_fused<X, ST_RT_MAX_ROWS><<<ST_RT_CTAS, ST_RT_THREADS, 0, stream>>>(
+    st_router_fused<X, ST_RT_MAX_ROWS, ALIGN><<<ST_RT_CTAS, ST_RT_THREADS, 0, stream>>>(
         xp, gate.data_ptr<float>(), bias.data_ptr<float>(), tk, logits.data_ptr<float>(), ids.data_ptr<int>(),
         weights.data_ptr<float>(), rows, scale);
   C10_CUDA_KERNEL_LAUNCH_CHECK();
 }
 
 void run(const at::Tensor& x, const at::Tensor& gate, const at::Tensor& bias, const at::Tensor& ticket,
-         at::Tensor logits, at::Tensor ids, at::Tensor weights, double scale) {
+         at::Tensor logits, at::Tensor ids, at::Tensor weights, double scale, bool align) {
   TORCH_CHECK(x.is_cuda() && x.dim() == 2 && x.size(1) == ST_RT_HIDDEN && x.is_contiguous() &&
                   x.size(0) >= 1 && x.size(0) <= ST_RT_MAX_ROWS &&
                   (x.scalar_type() == at::kBFloat16 || x.scalar_type() == at::kFloat) &&
@@ -264,10 +318,13 @@ void run(const at::Tensor& x, const at::Tensor& gate, const at::Tensor& bias, co
               "fused router: weights must be contiguous FP32 [rows, 8]");
   const c10::cuda::CUDAGuard guard(x.device());
   const auto stream = c10::cuda::getCurrentCUDAStream(x.get_device());
-  if (x.scalar_type() == at::kBFloat16)
-    launch<__nv_bfloat16>(x, gate, bias, ticket, logits, ids, weights, (float)scale, stream.stream());
-  else
-    launch<float>(x, gate, bias, ticket, logits, ids, weights, (float)scale, stream.stream());
+  if (x.scalar_type() == at::kBFloat16) {
+    if (align) launch<__nv_bfloat16, true>(x, gate, bias, ticket, logits, ids, weights, (float)scale, stream.stream());
+    else launch<__nv_bfloat16, false>(x, gate, bias, ticket, logits, ids, weights, (float)scale, stream.stream());
+  } else {
+    if (align) launch<float, true>(x, gate, bias, ticket, logits, ids, weights, (float)scale, stream.stream());
+    else launch<float, false>(x, gate, bias, ticket, logits, ids, weights, (float)scale, stream.stream());
+  }
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {

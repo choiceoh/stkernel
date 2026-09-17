@@ -1,9 +1,9 @@
 """The one-launch decode router (2026-09-17 cell): its wrapper's admission, the source contract the probe
 relies on, the probe's wiring, and the selection rule the kernel documents -- all on the CPU.
 
-The kernel itself runs on the single-GPU lane (probes/engine_router_cells.py); here the rule it claims to
-implement -- torch.topk's set over sigmoid(logits) + bias, an exact tie to the lower expert id, weights
-from the raw sigmoid renormalised and scaled -- is pinned against the engine's own unbound reference.
+The kernel itself runs on the single-GPU lane (probes/engine_router_cells.py), which checks exact order
+and weights against the served CUDA path. CPU tests cover the selection set, routing integration and
+counter ownership; CPU torch.topk does not define the CUDA tie permutation.
 """
 import ast
 from pathlib import Path
@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _kernel_rule(logits, bias, topk=8, scale=2.5):
-    """The documented selection: descending score, ties to the lower id; weights from the raw sigmoid."""
+    """Selection-set oracle, shown in lower-id tie order (not the CUDA output permutation)."""
     s = torch.sigmoid(logits)
     scores = s + bias
     rows, experts = scores.shape
@@ -28,6 +28,23 @@ def _kernel_rule(logits, bias, topk=8, scale=2.5):
 
 
 class RouterFusedTests(unittest.TestCase):
+    def test_arrival_counters_are_isolated_between_streams_and_reused_within_one(self):
+        from types import SimpleNamespace as NS
+        from unittest.mock import patch
+        from engine.kernels import router_fused as rf
+        device = torch.device('cuda:0')
+        with patch.dict(rf._TICKETS, {}, clear=True), \
+             patch.object(torch.cuda, 'current_stream', return_value=NS(cuda_stream=101)) as current, \
+             patch.object(torch, 'zeros', side_effect=lambda *a, **k: object()) as allocate:
+            first = rf._ticket(device)
+            self.assertIs(rf._ticket(device), first)
+            current.return_value = NS(cuda_stream=202)
+            second = rf._ticket(device)
+            self.assertIsNot(first, second)
+            current.return_value = NS(cuda_stream=101)
+            self.assertIs(rf._ticket(device), first)
+            self.assertEqual(allocate.call_count, 2)
+
     def test_wrapper_admits_only_the_served_shapes_before_any_build(self):
         from engine.kernels import router_fused as rf
         self.assertIsNone(rf._EXT)
@@ -61,7 +78,7 @@ class RouterFusedTests(unittest.TestCase):
         constants = {n.targets[0].id: n.value for n in tree.body
                      if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)}
         self.assertEqual(ast.literal_eval(constants['FIXTURES']), (('c2_two_requests', 16, 2), ('c1_one_request', 8, 1)))
-        self.assertEqual(ast.literal_eval(constants['ARMS']), ('served', 'served_b', 'fused'))
+        self.assertEqual(ast.literal_eval(constants['ARMS']), ('served', 'served_b', 'fused_legacy', 'fused'))
         self.assertEqual(ast.literal_eval(constants['MAX_ULPS']), 64)
         self.assertIn('range(3, 45)', ast.unparse(constants['LAYERS']))
 
@@ -85,6 +102,29 @@ class RouterFusedTests(unittest.TestCase):
         self.assertEqual(ids_t[0, 1].item(), 100)
 
 class RouterConsumerTests(unittest.TestCase):
+    def test_fusion_preserves_the_capture_route_skip_by_using_the_common_path(self):
+        from types import MethodType, SimpleNamespace as NS
+        from unittest.mock import patch
+        from engine.profiles.glm53.net import Glm53Net
+        from engine.kernels import glm_pointwise, router_fused
+        for rows in (8, 16):
+            for skip in (.05, {3: .05}):
+                ids = torch.arange(8, dtype=torch.int32).repeat(rows, 1)
+                weights = torch.tensor([[.9, .5, .4, .3, .2, .1, .06, .04]]).repeat(rows, 1)
+                net = NS(F=NS(topk_experts=8, routed_scale=2.5), p={'L3.moe.bias': None},
+                         lanes=NS(route_weights=lambda *a: (ids, weights)), route_skip=skip,
+                         fused_decode_router=True, _router_layers={3}, decode_fastpath_rows=(8, 16),
+                         _router_weights={3: None}, _router_fused_bias={3: None},
+                         _router_fp32=set(), _router_fused_executed=set())
+                net._select_routes = MethodType(Glm53Net._select_routes, net)
+                expected = net._select_routes(3, None)
+                with patch.object(router_fused, 'route', side_effect=AssertionError('bypassed skip')), \
+                     patch.object(glm_pointwise, 'router_logits', return_value=None):
+                    actual = Glm53Net.route(net, 3, torch.empty(rows, 4096, dtype=torch.bfloat16))
+                for got, want in zip(actual, expected):
+                    torch.testing.assert_close(got, want, rtol=0, atol=0)
+                self.assertEqual((actual[1] != 0).sum(-1).tolist(), [5] * rows)
+
     def test_bias_is_budgeted_resident_fp32_and_only_bound_rows_use_fusion(self):
         from types import SimpleNamespace as NS
         from unittest.mock import patch
