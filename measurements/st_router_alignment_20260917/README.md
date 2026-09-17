@@ -25,12 +25,56 @@ was caused by the router, or that aligning the tail improves answer quality.
 
 ## Validation
 
-Pending: same-build CUDA comparison of served, served self-control, prior fused,
-and aligned fused. The probe now requires exact selection order and weight bits
-on identical logits, unchanged projection bits between fused variants, finite
-tie/boundary/saturation fixtures, and independent-stream graph replay checks.
-It measures both aligned-versus-prior-fused cost and aligned-versus-served cost.
-Full-engine answer quality is outside this component check.
+Commit `538ad639`, session `router-align-rank2-0917`, GB10 on srv3 beside
+production, 2026-09-17 12:09:36–12:10:59 KST. The initial srv4 ticket had no
+memory room; its replacements retained its age. All 42 rank2 gate/bias hashes
+match the prior rank3 probe. The measured source hashes are in `gpu.jsonl`.
+
+- **24,768 row checks** (12 seeds, forward/reverse replay, C1/C2 single/42-layer
+  chain): exact selection order and weight bits on the fused projection;
+  unchanged projection bits between prior/aligned fused; control self-diff 0.
+- Full served-versus-aligned selection **set and order mismatch 0** in these
+  synthetic activation checks. Projection error remains up to 5.72e-6 and
+  aligned weights can still differ from the full served path by 8.94e-8.
+  Identical-logit equivalence is not whole-router bitwise equivalence.
+- **40 finite edge cases**: rows 1/7/8/9/16, BF16/FP32, all ties, saturation,
+  boundary ties, interleaved repeated scores. All exact against served CUDA.
+- **64 independent-stream graph replays**, all bitwise stable.
+- CPU: 24 tests, 4 GPU-only skips. CUDA compilation passed with no device
+  initialization. BF16 C1/C2: prior/aligned both 128 registers, stack/local 0,
+  shared 1,796/2,564 bytes. See `cpu-tests.txt` and `cpu-compile.txt`.
+- CI run 35176444980 attempt 2: 260 files / 2,356 engine tests, 469 skipped,
+  zero failures or unavailable modules; additional 137 onepass, 77 oracle and
+  21 fleet tests passed. Attempt 1 failed the unrelated TP4 prefill test with
+  `rank 3 failed`; its standalone 8-test file passed (`ci-prefill-recheck.txt`)
+  and unchanged CI rerun passed. The initial failure is not silently waived.
+
+## Cost: 42-layer chain, three B/A/A/B brackets per cache condition
+
+| Rows | Cache | Prior fused us | Aligned fused us | Added us | Added % |
+|---|---|---:|---:|---:|---:|
+| C1 / 8 | warm | 1238.150 | 1250.717 | 12.567 | 1.015 |
+| C1 / 8 | evicted | 1403.311 | 1415.686 | 12.375 | 0.882 |
+| C2 / 16 | warm | 1621.493 | 1650.805 | 29.311 | 1.808 |
+| C2 / 16 | evicted | 1790.374 | 1817.900 | 27.526 | 1.537 |
+
+In the separate matched served/aligned bracket, evicted C1 is
+3,196.533 -> 1,414.897 us (**-55.737%**), C2 3,255.079 -> 1,817.641 us
+(**-44.160%**). Corresponding served self-control floors are +0.066%/-0.025%.
+The aligned tail keeps almost all of the launch-fusion gain, at about
+**0.0124 ms / 0.0275 ms added per 42 routed layers**. These are component costs,
+not measured whole-engine step latency, throughput or answer quality.
+
+Decision: keep alignment as the fused implementation's default. The projection
+accumulation remains unchanged; restoring cuBLAS would give up the main fused
+projection/launch saving and is not part of this change.
 
 The consumer selector remains at its existing value during this implementation
-comparison. `_align=False` is a private component control, not a serving knob.
+comparison (`fused_decode_router=False`). `_align=False` is a private component
+control, not a serving knob. Full-engine answer quality has not been rerun.
+
+Source references: pinned PyTorch
+[gather](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/aten/src/ATen/native/cuda/TensorTopK.cu),
+[sort dispatch](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/aten/src/ATen/native/cuda/Sort.cu),
+[sorting network](https://github.com/pytorch/pytorch/blob/cf30153c4c131c8164ee7798e5022d810682e2cb/aten/src/ATen/native/cuda/SortUtils.cuh).
+`served-weights.ptx` is the CPU-compiled SM121 Triton reduction used for alignment.
