@@ -1,0 +1,393 @@
+From 5854cbd369f28632c337a1d5b35044ac7a619c31 Mon Sep 17 00:00:00 2001
+From: choiceoh <choiceoh@topsolar.kr>
+Date: Thu, 17 Sep 2026 09:03:03 +0900
+Subject: [PATCH] perf(engine): split a threshold bin wider than the stash once
+ more before refining against the row
+
+GB10 blocks hold 48 KB of shared memory, so past 24,576 candidates the decode
+selection keeps no bin cache and a 2,560-slot stash. A threshold bin wider than
+that refined the 64-bit key a byte at a time against the row -- up to eight more
+reads of the row, most of them spent on bytes every element of the bin shares:
+228 us against a 12 us read floor at 8x131,072 (measurements/st_topk_hpcops_20260917).
+
+The bin now fixes an fp32 key range (the fp16 rounding midpoints around its code
+range, an ulp wider each side; exponents 0, 1, 30, 31 take the whole key space).
+One pass histograms the bin's elements over that range cut into 256; the sift
+sends winners above the cut sub-bin out and only the cut sub-bin to the stash.
+The old row refinement stays for a sub-bin still wider than the stash (a plateau).
+The sub-bin index is clamped to the range, which is monotone, so the set and the
+lower-pool-id tie rule are unchanged; hist is reused, no shared memory is added.
+
+CPU: the range, shift and clamp are mirrored and checked on both sides of every
+fp16 rounding midpoint (a planted range error is caught). The comparison probe
+gains narrow, negative, sparse and lognormal distributions and times narrow too.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ engine/kernels/decode_topk.cu    | 128 +++++++++++++++++++++++++++++--
+ probes/engine_topk_hpcops.py     |  46 +++++++----
+ tests/test_engine_decode_topk.py |  92 ++++++++++++++++++++++
+ 3 files changed, 243 insertions(+), 23 deletions(-)
+
+diff --git a/engine/kernels/decode_topk.cu b/engine/kernels/decode_topk.cu
+index 19ecdc6c..adcf3b2f 100644
+--- a/engine/kernels/decode_topk.cu
++++ b/engine/kernels/decode_topk.cu
+@@ -16,8 +16,15 @@
+ //   4. sift and refine against the shared bins -- DRAM is touched again only to re-read the
+ //      few values that land in the threshold bin
+ // so the DRAM cost is one pass over the logits and the fixed cost is a handful of barriers.
+-// A row too wide for the bin cache falls back to reading the row a second time; a bin too
+-// wide for the stash falls back to refining against the row. Both are exact.
++// A row too wide for the bin cache falls back to reading the row a second time. A threshold
++// bin too wide for the stash is split once more: one pass histograms the bin's elements over
++// the fp32 key range the bin can hold, cut into 256, and only that sub-bin goes to the stash.
++// Only a sub-bin still too wide (a plateau of equal scores) refines against the row. All exact.
++//
++// GB10 is where the second split matters: 48 KB of shared memory a block leaves no bin cache
++// past 24,576 candidates and 2,560 stash slots, and on a skewed row of 131,072 the old byte-wise
++// refinement re-read the row up to eight times -- 228 us against a 12 us read floor
++// (measurements/st_topk_hpcops_20260917).
+ //
+ // The key is (ordered_float_key(score) << 32) | ~index, so an exact tie chooses the LOWER
+ // pool id. That is what torch.topk(sorted=False) does here: measured over single- and
+@@ -100,6 +107,53 @@ __device__ __forceinline__ int st_coarse_bin(float x) {
+   return (int)(key >> 8);
+ }
+ 
++// The ordered-key range [lo, hi] every fp32 score in coarse bin `coarse` falls in, widened by an
++// fp32 ulp on each side (a wider range is still exact; it only makes the sub-bins coarser). The
++// bin fixes the fp16 sign, exponent E and the top two mantissa bits; its scores lie between the
++// fp16 rounding midpoints around that code range. Exponents 0, 1 (subnormal spacing and signed
++// zero), 30 and 31 (overflow to inf, NaN) take the whole key space instead.
++__device__ __forceinline__ void st_bin_key_range(int coarse, st_u32* lo, st_u32* hi) {
++  const int positive = coarse >= 0x80;
++  const st_u32 code = positive ? ((st_u32)coarse & 0x7fu) : (~(st_u32)coarse & 0x7fu);
++  const st_u32 e = code >> 2, m2 = code & 3u;
++  if (e < 2u || e > 29u) {
++    *lo = 0u;
++    *hi = 0xffffffffu;
++    return;
++  }
++  const st_u32 exp32 = e + 112u;
++  const st_u32 mid_lo = m2 ? ((exp32 << 23) | ((m2 << 21) - 0x1000u))
++                           : (((exp32 - 1u) << 23) | 0x7ff000u);
++  const st_u32 mid_hi = (exp32 << 23) | ((((m2 << 8) | 0xffu) << 13) + 0x1000u);
++  const st_u32 mag_lo = mid_lo - 1u, mag_hi = mid_hi + 1u;
++  if (positive) {
++    *lo = mag_lo | 0x80000000u;
++    *hi = mag_hi | 0x80000000u;
++  } else {
++    *lo = ~(mag_hi | 0x80000000u);
++    *hi = ~(mag_lo | 0x80000000u);
++  }
++}
++
++// The shift that folds a key range into 256 sub-bins: (key - lo) >> shift is in [0, 255].
++__device__ __forceinline__ int st_fine_shift(st_u32 lo, st_u32 hi) {
++  const st_u32 span = hi - lo;
++  int shift = 0;
++#pragma unroll 24
++  for (int i = 0; i < 24; ++i)
++    if ((span >> shift) > 0xffu) ++shift;
++  return shift;
++}
++
++// A key's sub-bin, clamped to the range. The clamp never reorders keys (it is monotone), so even
++// a range that missed an element would only lump it into an end sub-bin, which the stash's full
++// 64-bit keys still order exactly -- and it keeps the index inside `hist` whatever happens.
++__device__ __forceinline__ int st_fine_bin(st_u32 key, st_u32 lo, st_u32 hi, int shift) {
++  if (key <= lo) return 0;
++  if (key >= hi) return (int)((hi - lo) >> shift);
++  return (int)((key - lo) >> shift);
++}
++
+ __device__ __forceinline__ st_u64 st_stash_key(st_u32 ordered, int index) {
+   return ((st_u64)ordered << 32) | (st_u32)(~(st_u32)index);
+ }
+@@ -283,9 +337,59 @@ __global__ __launch_bounds__(ST_THREADS) void st_dsa_select(
+     return;
+   }
+ 
++  // A threshold bin wider than the stash: split it once over its own key range. `fine_cut` >= 0
++  // means the sift below classifies coarse-bin elements by sub-bin instead of sending them all
++  // to the stash, and `need` then counts only what the cut sub-bin must still supply.
++  int fine_cut = -1;
++  st_u32 fine_lo = 0u, fine_hi = 0xffffffffu;
++  int fine_shift = 0;
+   if (coarse_pop > stash_slots) {
+-    // A bin wider than the stash. Refine the 64-bit key a byte at a time against the row
+-    // itself. Bounded at eight rounds because the key is unique per element.
++    st_bin_key_range(coarse, &fine_lo, &fine_hi);
++    fine_shift = st_fine_shift(fine_lo, fine_hi);
++    for (int i = tx; i <= ST_RADIX; i += nt) hist[i] = 0;
++    __syncthreads();
++    // One more pass over the row, four floats to a thread like the sweep; only the threshold
++    // bin's elements count.
++    const int fine_quads = (((st_u64)(size_t)in & 15ull) == 0ull) ? (length >> 2) : 0;
++    for (int i = tx; i < fine_quads; i += nt) {
++      const float4 v = __ldg(reinterpret_cast<const float4*>(in) + i);
++      const float four[4] = {v.x, v.y, v.z, v.w};
++#pragma unroll
++      for (int j = 0; j < 4; ++j) {
++        if (st_coarse_bin(four[j]) != coarse) continue;
++        st_hist_add(hist, st_fine_bin(st_ordered_key(four[j]), fine_lo, fine_hi, fine_shift));
++      }
++    }
++    for (int i = (fine_quads << 2) + tx; i < length; i += nt) {
++      if (ST_BIN_AT(i) != coarse) continue;
++      st_hist_add(hist, st_fine_bin(st_ordered_key(in[i]), fine_lo, fine_hi, fine_shift));
++    }
++    __syncthreads();
++    st_suffix_and_pick(hist, need, &threshold_bin);
++    __syncthreads();
++    const int cut = threshold_bin;
++    const int fine_need = need - hist[cut + 1];
++    const int fine_pop = hist[cut] - hist[cut + 1];
++    if (fine_pop <= stash_slots) {
++      fine_cut = cut;
++      need = fine_need;
++      if (need == 0) {  // the cut falls on a sub-bin edge
++        for (int i = tx; i < length; i += nt) {
++          const int b = ST_BIN_AT(i);
++          if (b > coarse || (b == coarse
++              && st_fine_bin(st_ordered_key(in[i]), fine_lo, fine_hi, fine_shift) > fine_cut))
++            ST_EMIT(i);
++        }
++        ST_PUBLISH();
++        return;
++      }
++    }
++  }
++
++  if (fine_cut < 0 && coarse_pop > stash_slots) {
++    // A sub-bin still wider than the stash: a plateau of (nearly) equal scores. Refine the
++    // 64-bit key a byte at a time against the row itself. Bounded at eight rounds because the
++    // key is unique per element.
+     if (tx == 0) key_prefix = 0;
+     __syncthreads();
+ #pragma unroll 8
+@@ -330,6 +434,10 @@ __global__ __launch_bounds__(ST_THREADS) void st_dsa_select(
+   // bin's own candidates go to the stash. Only these few touch DRAM again.
+   for (int i = tx; i <= ST_RADIX; i += nt) hist[i] = 0;
+   __syncthreads();
++// An element of the threshold bin by sub-bin: -1 when the bin was not split, so every one of
++// them equals the "cut" and goes to the stash exactly as before.
++#define ST_FINE_AT(idx) \
++  (fine_cut < 0 ? -1 : st_fine_bin(st_ordered_key(in[(idx)]), fine_lo, fine_hi, fine_shift))
+   // One atomic a thread a class instead of one an element: a thread classifies its four
+   // bins into two masks and claims that many slots at once.
+ #define ST_SIFT_QUAD(q, base)                                            \
+@@ -338,7 +446,11 @@ __global__ __launch_bounds__(ST_THREADS) void st_dsa_select(
+     _Pragma("unroll") for (int _j = 0; _j < 4; ++_j) {                    \
+       const int _b = (int)(((q) >> (_j * 8)) & 0xffu);                   \
+       if (_b > coarse) _hi |= 1 << _j;                                   \
+-      else if (_b == coarse) _eq |= 1 << _j;                             \
++      else if (_b == coarse) {                                           \
++        const int _f = ST_FINE_AT((base) + _j);                          \
++        if (_f > fine_cut) _hi |= 1 << _j;                               \
++        else if (_f == fine_cut) _eq |= 1 << _j;                         \
++      }                                                                  \
+     }                                                                    \
+     if (_hi) {                                                           \
+       int _p = atomicAdd(&counter, __popc(_hi));                         \
+@@ -366,9 +478,10 @@ __global__ __launch_bounds__(ST_THREADS) void st_dsa_select(
+   for (int i = tx; i < quads; i += nt) ST_SIFT_QUAD(ST_QUAD_AT(i), i << 2)
+   for (int i = (quads << 2) + tx; i < length; i += nt) {
+     const int b = ST_BIN_AT(i);
+-    if (b > coarse) {
++    const int f = b == coarse ? ST_FINE_AT(i) : 0;
++    if (b > coarse || (b == coarse && f > fine_cut)) {
+       ST_EMIT(i);
+-    } else if (b == coarse) {
++    } else if (b == coarse && f == fine_cut) {
+       const int p = atomicAdd(&num_input[0], 1);
+       if (p < stash_slots) {
+         const st_u32 key = st_ordered_key(in[i]);
+@@ -379,6 +492,7 @@ __global__ __launch_bounds__(ST_THREADS) void st_dsa_select(
+     }
+   }
+ #undef ST_SIFT_QUAD
++#undef ST_FINE_AT
+   __syncthreads();
+ 
+ #pragma unroll 8
+diff --git a/probes/engine_topk_hpcops.py b/probes/engine_topk_hpcops.py
+index 8cbb6a5d..68773880 100644
+--- a/probes/engine_topk_hpcops.py
++++ b/probes/engine_topk_hpcops.py
+@@ -30,7 +30,8 @@ K = 512
+ VENDOR = Path(__file__).resolve().parent / 'vendor' / 'hpcops_topk'
+ DECODE = ((8, 8192), (8, 32768), (8, 131072), (16, 32768), (16, 131072), (16, 236032))
+ PREFILL = ((1024, 32768), (1024, 131072), (1024, 236032))
+-DISTRIBUTIONS = ('indexer', 'normal', 'plateau')
++DISTRIBUTIONS = ('indexer', 'normal', 'plateau', 'narrow', 'negative', 'sparse', 'lognormal')
++TIMED = ('indexer', 'narrow')
+ 
+ _HPC = None
+ 
+@@ -64,6 +65,16 @@ def logits_for(dist, rows, n, gen):
+         return x
+     if dist == 'normal':
+         return torch.randn(rows, n, generator=gen, device='cuda')
++    if dist == 'narrow':
++        # every score inside one or two coarse bins: the threshold bin is wider than any stash
++        return 3.0 + 0.05 * torch.randn(rows, n, generator=gen, device="cuda")
++    if dist == 'negative':
++        return -torch.exp(torch.randn(rows, n, generator=gen, device='cuda'))
++    if dist == 'sparse':
++        # mostly exact zeros: fewer than k positives on short rows, a zero plateau at the cut
++        return (torch.randn(rows, n, generator=gen, device='cuda') - 2.5).clamp_min_(0)
++    if dist == 'lognormal':
++        return torch.exp(3.0 * torch.randn(rows, n, generator=gen, device='cuda'))
+     # plateau: 64 levels, so the k-th value is tied with many columns
+     return torch.randint(0, 64, (rows, n), generator=gen, device='cuda').float()
+ 
+@@ -173,23 +184,26 @@ def run(output=None):
+                         continue
+                     bad = mismatched_rows(got, want)
+                     report('exactness', kind=kind, rows=rows, n=n, dist=dist, arm=name, mismatched_rows=bad)
+-                    if bad and dist != 'plateau':
++                    # a tie rule other than the lower pool id is a different set, not a wrong one: only
++                    # distributions without exact ties at the cut disqualify an arm
++                    if bad and dist not in ('plateau', 'sparse'):
+                         exact[name] = False
+                 del want
+-            logits = logits_for('indexer', rows, n, gen)
+-            ke = horizons(kind, rows, n)
+-            visible_bytes = int(ke.long().sum()) * 4
+-            for name, fn in arms(kind, rows, n):
+-                if name != 'read_floor' and not exact.get(name, False):
+-                    report('skipped_inexact', kind=kind, rows=rows, n=n, arm=name)
+-                    continue
+-                if kind == 'decode':
+-                    median_us, best_us = timed_graph(fn, logits, ke, repeats=5)
+-                else:
+-                    median_us, best_us = timed_eager(fn, logits, ke, repeats=15)
+-                report('timing', kind=kind, rows=rows, n=n, arm=name, median_us=round(median_us, 2),
+-                       best_us=round(best_us, 2), visible_mib=round(visible_bytes / 2**20, 2),
+-                       gb_per_s=round(visible_bytes / 1e9 / (median_us / 1e6), 1))
++            for dist in TIMED:
++                logits = logits_for(dist, rows, n, gen)
++                ke = horizons(kind, rows, n)
++                visible_bytes = int(ke.long().sum()) * 4
++                for name, fn in arms(kind, rows, n):
++                    if name != 'read_floor' and not exact.get(name, False):
++                        report('skipped_inexact', kind=kind, rows=rows, n=n, arm=name)
++                        continue
++                    if kind == 'decode':
++                        median_us, best_us = timed_graph(fn, logits, ke, repeats=5)
++                    else:
++                        median_us, best_us = timed_eager(fn, logits, ke, repeats=15)
++                    report('timing', kind=kind, rows=rows, n=n, dist=dist, arm=name, median_us=round(median_us, 2),
++                           best_us=round(best_us, 2), visible_mib=round(visible_bytes / 2**20, 2),
++                           gb_per_s=round(visible_bytes / 1e9 / (median_us / 1e6), 1))
+             torch.cuda.empty_cache()
+     return events
+ 
+diff --git a/tests/test_engine_decode_topk.py b/tests/test_engine_decode_topk.py
+index 92e7b6e4..53111c46 100644
+--- a/tests/test_engine_decode_topk.py
++++ b/tests/test_engine_decode_topk.py
+@@ -74,6 +74,98 @@ class SourceContractTests(unittest.TestCase):
+                 self.assertLessEqual(allocated, budget, (budget, columns))
+ 
+ 
++class SubBinRangeTests(unittest.TestCase):
++    """The threshold-bin split: every fp32 score a coarse bin can hold lies in the key range the
++    kernel computes for that bin, so its 256 sub-bins keep the order the stash then resolves.
++
++    Mirrors `st_bin_key_range`, `st_fine_shift` and `st_fine_bin` in Python and checks them at the
++    places a range could be wrong: both sides of every fp16 rounding midpoint, for every code.
++    """
++
++    @staticmethod
++    def key_range(coarse):
++        positive = coarse >= 0x80
++        code = (coarse & 0x7F) if positive else (~coarse & 0x7F)
++        e, m2 = code >> 2, code & 3
++        if e < 2 or e > 29:
++            return 0, 0xFFFFFFFF
++        exp32 = e + 112
++        mid_lo = (exp32 << 23) | ((m2 << 21) - 0x1000) if m2 else ((exp32 - 1) << 23) | 0x7FF000
++        mid_hi = (exp32 << 23) | ((((m2 << 8) | 0xFF) << 13) + 0x1000)
++        mag_lo, mag_hi = mid_lo - 1, mid_hi + 1
++        if positive:
++            return mag_lo | 0x80000000, mag_hi | 0x80000000
++        return (~(mag_hi | 0x80000000)) & 0xFFFFFFFF, (~(mag_lo | 0x80000000)) & 0xFFFFFFFF
++
++    @staticmethod
++    def fine_shift(lo, hi):
++        span, shift = (hi - lo) & 0xFFFFFFFF, 0
++        for _ in range(24):
++            if (span >> shift) > 0xFF:
++                shift += 1
++        return shift
++
++    @staticmethod
++    def fine_bin(key, lo, hi, shift):
++        if key <= lo:
++            return 0
++        if key >= hi:
++            return (hi - lo) >> shift
++        return (key - lo) >> shift
++
++    def test_the_kernel_carries_the_mirrored_range(self):
++        text = SOURCE.read_text(encoding="utf-8")
++        for needle in ("st_bin_key_range", "st_fine_shift", "st_fine_bin", "e < 2u || e > 29u",
++                       "exp32 = e + 112u", "0x7ff000u", "(m2 << 21) - 0x1000u", "+ 0x1000u"):
++            self.assertIn(needle, text)
++
++    @unittest.skipUnless(importlib.util.find_spec("numpy") is not None, "requires numpy")
++    def test_every_score_near_every_fp16_rounding_edge_lies_in_its_bins_range(self):
++        import numpy as np
++        codes = np.arange(1 << 15, dtype=np.uint32)          # fp16 magnitudes
++        exps, mans = codes >> 10, codes & 0x3FF
++        normal = (exps >= 1) & (exps <= 30)
++        values = np.where(normal, np.ldexp(1.0 + mans / 1024.0, exps.astype(np.int64) - 15), 0.0)
++        ulp = np.ldexp(1.0, exps.astype(np.int64) - 25)       # half an fp16 step
++        probes = []
++        for mid in (values - ulp, values + ulp):
++            m32 = mid.astype(np.float32)
++            probes += [m32, np.nextafter(m32, np.float32(np.inf)), np.nextafter(m32, np.float32(0))]
++        probes.append(values.astype(np.float32))
++        x = np.concatenate(probes)
++        x = x[np.isfinite(x) & (x > 0)]
++        x = np.concatenate([x, -x])
++        with np.errstate(over="ignore"):
++            h = x.astype(np.float16).view(np.uint16).astype(np.uint32)
++        key16 = np.where(h & 0x8000, ~h & 0xFFFF, h | 0x8000)
++        coarse = key16 >> 8
++        bits = x.view(np.uint32).astype(np.uint64)
++        ordered = np.where(bits & 0x80000000, ~bits & 0xFFFFFFFF, bits | 0x80000000)
++        checked = 0
++        for c in np.unique(coarse):
++            lo, hi = self.key_range(int(c))
++            keys = ordered[coarse == c]
++            if (lo, hi) == (0, 0xFFFFFFFF):
++                continue
++            checked += keys.size
++            self.assertGreaterEqual(int(keys.min()), lo, hex(int(c)))
++            self.assertLessEqual(int(keys.max()), hi, hex(int(c)))
++            shift = self.fine_shift(lo, hi)
++            self.assertLessEqual((hi - lo) >> shift, 255, hex(int(c)))
++            bins = [self.fine_bin(int(k), lo, hi, shift) for k in np.sort(keys)[:: max(1, keys.size // 64)]]
++            self.assertEqual(bins, sorted(bins), "sub-bins must not reorder keys")
++        self.assertGreater(checked, 300000)
++
++    def test_the_whole_key_space_still_folds_into_256_sub_bins(self):
++        shift = self.fine_shift(0, 0xFFFFFFFF)
++        self.assertEqual(shift, 24)
++        self.assertEqual(self.fine_bin(0xFFFFFFFF, 0, 0xFFFFFFFF, shift), 255)
++        lo, hi = self.key_range(0x80 | (5 << 2) | 1)            # a positive, normal bin
++        shift = self.fine_shift(lo, hi)
++        self.assertEqual(self.fine_bin(lo - 7, lo, hi, shift), 0, "below the range clamps to 0")
++        self.assertEqual(self.fine_bin(hi + 7, lo, hi, shift), (hi - lo) >> shift)
++
++
+ class ControlArmTests(unittest.TestCase):
+     """`_select_rows(native=False)` must really be the Torch path.
+ 
+-- 
+2.54.0
+
