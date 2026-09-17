@@ -302,6 +302,14 @@ class Qwen38Net:
         cells more than once in one launch, and which write lands is not defined."""
         F = self.F
         dev = step.ids.device
+        from engine.profiles.qwen38.caches import QSA_KEY_RING
+        if getattr(step, "captured", False) and step.ids.is_cuda:
+            # one launch for what the composition below spells in about forty (engine/kernels/step_addresses); the
+            # composition stays the CPU's form and the reference the kernel is held to
+            from engine.kernels import step_addresses
+            return StepMeta(*step_addresses.captured(step.contexts, step.slots, step.seqs, caches.block_table,
+                                                     tokens=step.tokens, blocks=step.blocks, block=F.block,
+                                                     ratio=F.idx_ratio, ring=QSA_KEY_RING))
         if getattr(step, "captured", False):
             n, t = step.rows, step.tokens
             positions = (step.contexts[:, None] + iota(t, dev)).reshape(-1)
@@ -333,7 +341,6 @@ class Qwen38Net:
         key_pages = page_table[rr, group // per_group]
         key_slots = torch.where(closes, key_pages.long() * per_group + group % per_group,
                                 torch.full_like(positions, -1)).to(torch.int32)
-        from engine.profiles.qwen38.caches import QSA_KEY_RING
         ring_slots = torch.where(positions >= lengths[rr] - QSA_KEY_RING,
                                  slot_table[rr, 0].long() * QSA_KEY_RING + positions % QSA_KEY_RING,
                                  torch.full_like(positions, -1)).to(torch.int32)
@@ -475,13 +482,14 @@ class Qwen38Net:
         # group's first position, stored; then the raw keys into the ring by position
         iq = lanes.norm_rope(idx[:, :idx_q].reshape(N, F.idx_heads, F.idx_dim), p[n + "idx_q_norm"], F.rms_eps,
                              meta.positions, F.rope_theta, F.rotary_dim)
-        ik = idx[:, idx_q:].contiguous()
+        # views, not copies: compression and the stores read the raw keys through their strides, the compression reads no
+        # raw positions without a rope cache (only their shape is checked), and the norm reads positions by stride
+        ik = idx[:, idx_q:]
         ring = caches.key_ring(cache_layer)
-        pooled, first = lanes.qsa_compress(ik[:, None, :], meta.positions[:, None, None].expand(N, 1, 3).contiguous(),
+        pooled, first = lanes.qsa_compress(ik[:, None, :], meta.positions[:, None, None].expand(N, 1, 3),
                                            ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions,
                                            meta.key_slots, F.idx_ratio)
-        keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0].contiguous(), F.rope_theta,
-                               F.rotary_dim)
+        keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0], F.rope_theta, F.rotary_dim)
         lanes.qsa_store(caches.index_keys(cache_layer), meta.key_slots, keys[:, 0])
         lanes.qsa_store(ring, meta.ring_slots, ik)
         selected = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
@@ -499,9 +507,12 @@ class Qwen38Net:
         scores = torch.mm(x, p[n + "gates"].t())                     # [N, experts + 1]: the router, then the shared gate
         ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
         routed = self._experts[prefix](x, ids, weights, compact=compact)
-        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up")), n + "sh_down")
+        # the down projection's 160 columns pad to 256 (PaddedDenseLinear): the activation's launch writes the zeros
+        down = getattr(self, "dense", {}).get(n + "sh_down")
+        pad_to = down.input_cols + down.pad if getattr(down, "pad", 0) else None
+        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up"), pad_to=pad_to), n + "sh_down")
         gate = torch.sigmoid(scores[:, F.experts:].float())
-        return self.comm.all_reduce((routed.float() + shared.float() * gate).to(x.dtype))
+        return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
 
     # -- PLE -----------------------------------------------------------------------------------------------------------
     def _ple_feature(self, L: int):

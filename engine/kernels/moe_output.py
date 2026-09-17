@@ -44,6 +44,44 @@ def combine(acc, shared, *, out=None):
     return out
 
 
+@tr.jit
+def _gated(Routed, Shared, Gate, Destination, sR, sS, sG, sD, H: tl.constexpr, BLOCK: tl.constexpr):
+    r = tl.program_id(0)
+    c = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
+    m = c < H
+    a = tl.load(Routed + r * sR + c, m, 0).to(tl.float32)
+    b = tl.load(Shared + r * sS + c, m, 0).to(tl.float32)
+    g = tl.load(Gate + r * sG)
+    tl.store(Destination + r * sD + c, (a + b * g).to(Destination.dtype.element_ty), m)
+
+
+def gated_sum(routed, shared, gate, *, out=None):
+    """BF16(FP32(routed) + FP32(shared) * gate): Qwen3.8's MoE output, the routed partial plus the sigmoid-gated shared
+    expert, in one launch instead of five (two widenings, the product, the sum, the rounding). routed and shared are
+    BF16 [N, H] with packed columns, gate FP32 [N, 1]. The launch compiles without fused multiply-add, so the sum is the
+    torch composition's; the served destination is BF16, and an FP32 `out` keeps the unrounded sum (the tests hold the
+    arithmetic and the rounding apart: Triton's CPU interpreter does not round BF16 the way a GPU does)."""
+    if (routed.ndim != 2 or shared.shape != routed.shape or routed.dtype != torch.bfloat16
+            or shared.dtype != torch.bfloat16 or gate.shape != (routed.shape[0], 1) or gate.dtype != torch.float32
+            or not (routed.device == shared.device == gate.device) or not routed.is_cuda
+            or routed.stride(1) != 1 or shared.stride(1) != 1):
+        raise ValueError('the gated MoE output takes BF16 routed and shared [N, H] with packed columns and an FP32 '
+                         'gate [N, 1] on one CUDA device')
+    if out is None:
+        out = torch.empty_like(routed, memory_format=torch.contiguous_format)
+    if (out.shape != routed.shape or out.dtype not in (torch.bfloat16, torch.float32) or out.device != routed.device
+            or out.stride(1) != 1
+            or torch._C._overlaps(out, routed) or torch._C._overlaps(out, shared) or torch._C._overlaps(out, gate)):
+        raise ValueError('the gated MoE output needs a distinct BF16 (or FP32) destination with packed columns')
+    rows, hidden = routed.shape
+    if rows and hidden:
+        block = 512
+        _gated[(rows, tr.cdiv(hidden, block))](routed, shared, gate, out, routed.stride(0), shared.stride(0),
+                                               gate.stride(0), out.stride(0), H=hidden, BLOCK=block, num_warps=4,
+                                               enable_fp_fusion=False)
+    return out
+
+
 def validate_finalizer(finalize, *, rows, experts, local_experts, hidden,
                        intermediate, topk, quant_mode, activation, limit,
                        alpha, beta, tiled):

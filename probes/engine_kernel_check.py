@@ -67,6 +67,10 @@ def main():
         from probes.engine_moe_c2_cells import main as moe_c2_cells
         moe_c2_cells(args.ranks, sections=args.lanes.split(':')[1:], samples=args.samples, output=args.output)
         return
+    if args.lanes in ('moe_input_reuse', 'moe_input_reuse_compile'):
+        from probes.engine_moe_input_reuse import run
+        run(args.output, args.ranks, compile_only=args.lanes.endswith('_compile'))
+        return
     if args.lanes == 'router_cells':
         # the decode router's launch fold: the served seven-launch chain against one fused launch (real rank gates)
         from probes.engine_router_cells import main as router_cells
@@ -124,6 +128,16 @@ def main():
         # component only: HPC-Ops' exact top-k (vendored, MIT) against st_dsa_select / prefill_topk and a read floor
         from probes.engine_topk_hpcops import run as topk_hpcops_check
         topk_hpcops_check(args.output)
+        return
+    if args.lanes == 'qwen38_cells':
+        # correctness only: Qwen3.8's lanes qualified and the glue's GPU cases, from its config (engine/QWEN38_CARRY.md C1)
+        from probes.engine_qwen38_cells import run as qwen38_cells
+        qwen38_cells(args.output)
+        return
+    if args.lanes == 'qwen38_dense':
+        # component timings: the W4A8/FP8 switch at Qwen3.8's projection shapes and the padded widths, gated first (C2)
+        from probes.engine_qwen38_dense import run as qwen38_dense
+        qwen38_dense(args.output)
         return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings

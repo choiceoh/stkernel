@@ -2379,6 +2379,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
     )
     if config.get("input_vec16", False):
         cfg += ("input_vec16_v1",)
+    if config.get("input_reuse", 0):
+        cfg += ("input_reuse_v1", int(config["input_reuse"]))
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2415,6 +2417,11 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
     reform = bool(config.get("decode_reform", False)) and (
         1 <= m <= 8 or (config.get("batch_reform", False) and m == 16)
         or bool(config.get("reform_every_static", False)))
+    reuse = int(config.get("input_reuse", 0))
+    if reuse not in (0, 1, 2, 3) or (reuse and not (reform and m in (8, 16) and config.get("input_vec16", True))):
+        raise ValueError("input reuse requires the eight/sixteen-row vector-input reform cell")
+    if reuse == 3 and any(config.get(k) for k in ("even", "split", "probe_route_scatter")):
+        raise ValueError("input reuse route preparation requires the ordinary resident scheduler")
     separate = (reform and bool(config.get("reform_sf_pack", False))
                 and bool(config.get("sf6_separate", True)))
     word_expand = separate and bool(config.get("sf6_word_expand", True))
@@ -2502,6 +2509,14 @@ def _get_static_kernel_v2(
     # The explicit batch recipe extends the same tile to K7/C2. All SF6
     # launches read the same packed scales; other shapes keep the t tile.
     config = _static_v2_decode_config(config, m)
+    if config.get("input_reuse", 0):
+        cache_bytes = m * (k // 2 + k // 16)
+        if config["input_reuse"] == 3:
+            cache_bytes += m * num_topk * 8
+        spare_bytes = (state_E - m * num_topk) * max_rows * (k // 2)
+        if ((state_E, weight_E, k, n, num_topk) != (288, 288, 4096, 512, 8)
+                or max_rows < m or cache_bytes > spare_bytes):
+            raise ValueError("input reuse cache must fit beyond every reachable compact expert plane")
     reform = config["decode_reform"]
     mma_tiler_mn = (16 if reform else int(config["tile_m"]), 128)
     cache_key = _static_v2_cache_key(
@@ -2587,6 +2602,7 @@ def _get_static_kernel_v2(
         l2_prefetch_fc1=bool(config.get("l2_prefetch_fc1", True)),
         bulk_b=bulk_b,
         input_vec16=bool(config.get("input_vec16", False)),
+        input_reuse=int(config.get("input_reuse", 0)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
@@ -2749,6 +2765,7 @@ def _get_static_kernel_v2(
         f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
         f"{'sync' if config.get('sync_cleanup') else ''}"
         f"{'inputv16' if config.get('input_vec16') else ''}"
+        f"{('inputreuse' + str(config['input_reuse'])) if config.get('input_reuse') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )

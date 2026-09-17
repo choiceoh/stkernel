@@ -1,0 +1,74 @@
+{
+  "gpu_used": false,
+  "scope": "static native resources only",
+  "kernels": [
+    {
+      "kernel": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncinputv16c256_6b39e69bee7229ef",
+      "binary_sha256": "1c8756dcf205aaa46f1872fc046c1ab644ef1b5c0793187d06f667fbbd36a688",
+      "sass_sha256": "6cf829e39eea5da81ac508e6b60b9a1a45157db027a6543bd0ea7340117fa477",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 8,
+      "input_reuse": 0
+    },
+    {
+      "kernel": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncinputv16inputreuse1c256_4c8983e2ae830597",
+      "binary_sha256": "166cbac9bf27032e2160484eec26b075eafb277f4f196394836d1c2c433ee4d5",
+      "sass_sha256": "dbdc82406312b7c378e3695d41800b884ded69d606ee41c4f3293e8eb780c15c",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 8,
+      "input_reuse": 1
+    },
+    {
+      "kernel": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncinputv16inputreuse2c256_4d8bb7bbca9d3987",
+      "binary_sha256": "557251e1fa57ead3be5030363b2cc21d511747af2fe0a2b25672de8f706773f7",
+      "sass_sha256": "1b7c2e831746c8ccdf45c180a2ffb3b92ca2f8735686ce1f92d1463b02a6f2fc",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 8,
+      "input_reuse": 2
+    },
+    {
+      "kernel": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncinputv16inputreuse3c256_0966ec1dedd7be32",
+      "binary_sha256": "6b746a580432d29c8197c7908bf7853bb2334f307365c3f1f72525e4147881a4",
+      "sass_sha256": "736b2c4d76af68831469f37644029e3986e28e391f62f6fca41c6a729662077a",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 8,
+      "input_reuse": 3
+    },
+    {
+      "kernel": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncinputv16c256_ca4b08734a6e288c",
+      "binary_sha256": "945df41b27fbb1767dba5bfa20e37fa583fd01b315b12d4d119ea381192c6bf2",
+      "sass_sha256": "4e1eec1d18e12f211ed8961a850efe3f0c37071eade186314a1f7e444c46cde3",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 16,
+      "input_reuse": 0
+    },
+    {
+      "kernel": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncinputv16inputreuse1c256_0c932059c0d8c287",
+      "binary_sha256": "7282d5d403463bfb4939b844921ec81ec6fd17f4bff917f6e2be25454be640ce",
+      "sass_sha256": "09aea9b41a2e661a747ff259a361a22cce473e4f21f9167759a17db694b5d574",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 16,
+      "input_reuse": 1
+    },
+    {
+      "kernel": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncinputv16inputreuse2c256_db35ead7528ec18a",
+      "binary_sha256": "5d4c98d8f99f3727d23ca6febf71b1fa53c5a76bd80552661a12de6803dd171a",
+      "sass_sha256": "20ba03d4f2a16d2cfc612fd5af160b957d22ca7dbcb0cb686341bfe494bab399",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 16,
+      "input_reuse": 2
+    },
+    {
+      "kernel": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncinputv16inputreuse3c256_60f959beb4358583",
+      "binary_sha256": "3591fb4e2adf5d7ae0ace3827a41950340bb5542f8909e7a897c67bf5ba7fd6d",
+      "sass_sha256": "992818adc298e8ba25b1091a70aed855701c489027aa7ac8b69ec59de9ce0884",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 16,
+      "input_reuse": 3
+    }
+  ],
+  "sources": {
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "ac8de0a64f111262012dc478673bbf491887667ae7f6b9a1d5991af4822e6dd5",
+    "engine/kernels/b12x/moe_dispatch.py": "b4754efc129a00842dd17aeaf2392914ba74a149f626d5eeb0a5e3d948d994ee"
+  }
+}

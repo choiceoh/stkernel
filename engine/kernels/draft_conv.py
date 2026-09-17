@@ -95,3 +95,66 @@ def _by_torch(x, delta, base, group, block=None):
         shifted = Fn.pad(blocks[:, :-tap], (0, 0, 0, 0, tap, 0))
         out = out + coeff[:, :, tap] * shifted * valid[:, tap].view(1, block, 1, 1)
     return out.reshape(rows, width)
+
+
+@triton.jit
+def _taps_add_norm(X, DELTA, BASE, RES, W, TOTAL, OUT,
+                   sX: tl.constexpr, sDr: tl.constexpr, sDt: tl.constexpr, sDg: tl.constexpr,
+                   sR: tl.constexpr, sO: tl.constexpr, width: tl.constexpr,
+                   BLOCK: tl.constexpr, GROUP: tl.constexpr, T: tl.constexpr,
+                   BC: tl.constexpr, EPS: tl.constexpr):
+    r = tl.program_id(0)
+    within = r % BLOCK
+    c = tl.arange(0, BC)
+    live = c < width
+    acc = tl.zeros([BC], tl.float32)
+    for tap in tl.static_range(T):
+        coeff = (tl.load(BASE + tap*width + c, live, 0).to(tl.float32)
+                 + tl.load(DELTA + r*sDr + tap*sDt + (c//GROUP)*sDg, live, 0).to(tl.float32)
+                 ).to(BASE.dtype.element_ty).to(tl.float32)
+        x = tl.load(X + (r-tap)*sX + c, live & (within >= tap), 0).to(tl.float32)
+        acc += coeff*x
+    # Keep the former convolution store and residual-add store roundings.
+    mixed = acc.to(X.dtype.element_ty).to(tl.float32)
+    total = (tl.load(RES + r*sR + c, live, 0).to(tl.float32) + mixed).to(X.dtype.element_ty)
+    tl.store(TOTAL + r*sO + c, total, live)
+    value = total.to(tl.float32)
+    scale = tl.rsqrt(tl.sum(value*value)/width + EPS)
+    weight = tl.load(W + c, live, 0)
+    tl.store(OUT + r*sO + c, (value*scale).to(X.dtype.element_ty)*weight, live)
+
+
+def tap_add_norm(x, delta, base, residual, weight, eps, group, block=None):
+    """The post-attention/MLP tap mix and following residual RMS in one launch.
+
+    Delta may be the strided side of a paired coefficient projection. Outputs
+    are private to each call/graph; the input residual remains unchanged.
+    """
+    from engine.kernels.common.norm_rope import add_norm
+    if (x.ndim != 2 or residual.shape != x.shape or weight.shape != (x.shape[1],)
+            or delta.ndim != 3 or delta.shape[0] != x.shape[0]
+            or type(group) is not int or group <= 0):
+        raise ValueError('tap residual norm requires matching rows, weights and grouped coefficients')
+    rows, width = x.shape
+    taps = delta.shape[1]
+    block = rows if block is None else block
+    if (type(block) is not int or block < 1 or rows % block or width < 1 or width % group
+            or taps < 1 or delta.shape[2] != width//group or base.shape != (taps,width)
+            or not 0 < eps < float('inf')):
+        raise ValueError('tap residual norm requires complete blocks and positive finite epsilon')
+    tensors = (x, delta, base, residual, weight)
+    if any(v.dtype != x.dtype or v.device != x.device for v in tensors):
+        raise ValueError('tap residual norm tensors must share dtype and device')
+    if not x.is_cuda:
+        return add_norm(residual, tap_mix(x, delta, base, group, block), weight, eps)
+    if (x.dtype != torch.bfloat16 or x.stride(1) != 1 or residual.stride(1) != 1
+            or base.stride(1) != 1 or base.stride(0) != width or weight.stride(0) != 1):
+        raise ValueError('CUDA tap residual norm requires BF16 contiguous columns and base rows')
+    total = torch.empty((rows,width), dtype=x.dtype, device=x.device)
+    out = torch.empty_like(total)
+    if rows:
+        _taps_add_norm[(rows,)](x,delta,base,residual,weight,total,out,
+                               x.stride(0),*delta.stride(),residual.stride(0),width,width,
+                               block,group,taps,triton.next_power_of_2(width),eps,
+                               num_warps=4 if width <= 1024 else 8)
+    return total,out
