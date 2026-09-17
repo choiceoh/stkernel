@@ -4,8 +4,11 @@ ST generated the corrupted Korean reported through Deneb. The engine's retained
 907 output token IDs decode to the same visible text as Deneb's transcript:
 both SHA-256 values are
 `ef529aa06c55f3c02b3045f81ffbc149aec2de38526b1b67a925d1ab1330b154`.
-The failure also reproduces with zero reused prompt tokens. No kernel cause or
-successful repair has been established.
+The failure also reproduces with zero reused prompt tokens. An exclusive audit
+has since identified BF16 atomic scatter instability in long MoE prefill. The
+FP32 accumulation candidate removes the observed repeat differences, but T=1
+output remains corrupted. This is a partial numerical repair, not incident
+resolution. See [the follow-up audit](code-audit.md).
 
 ## Runtime and original request
 
@@ -25,7 +28,7 @@ exact input/output IDs, prompt length and original request sampling metadata.
 The engine record came from the existing conversation tier, without enabling
 new capture or restarting the model.
 
-## Bounded live reproductions
+## Initial bounded live reproductions
 
 All requests used independent cache namespaces and reported cached_tokens=0.
 They ran sequentially against the existing production boot, with `retain=false`.
@@ -69,15 +72,14 @@ evidence that reducing temperature reliably repairs the incident.
 5. Canonical `bench/onepass.py:ask_stream` hardcodes temperature 0 and its graded
    workload does not cover this long agent conversation/prose continuation.
 
-## Remaining causal check
+## Causal checks after the initial capture
 
-Replay these same IDs on an exclusive, pinned runtime; hold the prompt, output
-budget, temperature, seed and concurrency constant. First compare full target
-generation with speculative generation, then vary the recently enabled target
-decode fusion separately if needed. Preserve logits or first-divergence token
-evidence before attributing the failure to draft selection, target numerics,
-recurrent-state commit, or batching. Component correctness and a clean short
-answer do not establish recovery of the failing long request.
+Exclusive same-ID reproduction and a router-fusion-off control both remain
+corrupted. Layer snapshots localized repeat instability to the first routed
+MoE layer during prefill; the FP32 scatter candidate removes that observed
+instability without recovering T=1 quality. Target-only and host/device
+verification controls are the next causal gate. Component correctness and a
+clean short answer do not establish recovery of the failing long request.
 
 `probes/replay_engine_incident.py` retains the exact-ID, fresh-cache replay as a
 standalone bounded HTTP reproducer. It requires an idle ST door at admission,
@@ -90,5 +92,5 @@ python3 probes/replay_engine_incident.py \
 ```
 
 The idle check is not an exclusive reservation. Use the fleet workflow for
-isolated runtime/kernel comparisons; no experimental boot or kernel rollback
-was performed as part of this incident capture.
+isolated runtime/kernel comparisons. The initial capture above used the
+production boot; subsequent experimental boots are recorded separately.
