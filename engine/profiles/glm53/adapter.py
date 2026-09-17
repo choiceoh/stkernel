@@ -694,7 +694,8 @@ class Glm53Engine:
         # 10 retains scalar W4 target computation and uses the torch sampling oracle.
         # 11 changes only packet FFNs; 12 changes only the shared-MoE fused/overlap path.
         # 13 restores original BF16 dense matrices and ordinary TP transport.
-        mode = code // 1000 if 1000 <= code < 14000 else 0
+        # 14 restores FP32 router biases, 15 KDA constants, 16 both.
+        mode = code // 1000 if 1000 <= code < 17000 else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -979,7 +980,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1147,6 +1148,12 @@ class Glm53Engine:
             self.net.incident_step_identity = dict(
                 admission=self.admissions, seq=seq, mode=mode,
                 generation=self._generated_count(seq), prefill=prefill)
+        if mode in (14, 15, 16):
+            if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
+                raise ValueError('FP32 constant reference requires one isolated target position')
+            from engine.profiles.glm53.incident_reference import original_fp32_constants
+            with original_fp32_constants(self.net, router=mode in (14, 16), kda=mode in (15, 16)):
+                return self._forward(step, **kwargs)
         if mode == 13:
             if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
                 raise ValueError('BF16 reference requires one isolated target position')
@@ -1590,7 +1597,7 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
-        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12, 13) for seq in seqs):
+        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16) for seq in seqs):
             if len(seqs) != 1:
                 raise ValueError('incident single-token control requires an isolated request')
             seq, slot = seqs[0], slots[0]

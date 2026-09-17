@@ -6,6 +6,46 @@ import torch
 
 
 @contextmanager
+def original_fp32_constants(net, *, router, kda):
+    """Private isolated control; restore checkpoint constants before each forward."""
+    weights = getattr(net, '_incident_original_fp32', None)
+    if weights is None:
+        import hashlib
+        import json
+        root = Path('/home/choiceoh/glm53-logs/incident-original-fp32-0918')
+        manifest = json.loads((root / 'manifest.json').read_text())
+        name = f'original-fp32-rank{net.rank}.pt'
+        path = root / name
+        if hashlib.sha256(path.read_bytes()).hexdigest() != manifest['sha256'][name]:
+            raise ValueError('original FP32 constants do not match their receipt')
+        weights = torch.load(path, map_location='cpu', weights_only=True)
+        if len(weights) != 110:
+            raise ValueError('expected 42 router biases and 68 KDA constants')
+        for name, value in weights.items():
+            if value.dtype != torch.float32 or value.shape != net.p[name].shape:
+                raise ValueError(f'invalid original constant: {name}')
+            if not torch.equal(net.p[name].cpu(), value.bfloat16().float()):
+                raise ValueError(f'control source does not match rounded serving constant: {name}')
+        weights = {name: value.to(net.p['norm'].device) for name, value in weights.items()}
+        net._incident_original_fp32 = weights
+        print(f'[incident-reference] rank={net.rank} original_fp32_constants={len(weights)}', flush=True)
+    selected = {name: value for name, value in weights.items()
+                if (router and name.endswith('.moe.bias'))
+                or (kda and name.endswith(('.kda.A_log', '.kda.dt_bias')))}
+    previous = {name: net.p[name] for name in selected}
+    previous_fused = net._router_fused_bias
+    try:
+        net.p.update(selected)
+        if router:
+            net._router_fused_bias = {L: weights[f'L{L}.moe.bias']
+                                     for L in previous_fused}
+        yield
+    finally:
+        net.p.update(previous)
+        net._router_fused_bias = previous_fused
+
+
+@contextmanager
 def bf16_dense(net):
     """Original BF16 dense weights, ordinary TP, native attention and NVFP4 experts.
 
