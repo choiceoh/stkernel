@@ -121,7 +121,10 @@ class DraftFcCapture:
 
             def note_sync(seq, context, slot, accepted, new, remaining, ends, **kwargs):
                 try:
-                    self.slot_family[int(slot)] = f'seq-{int(seq)}'
+                    # `seq` is the request id the adapter keys its limits by -- a string, not a number.
+                    # int(seq) raised on every call, the except swallowed it, and the family fell back
+                    # to the SLOT: three families a boot, and a 25% share that kept missing validation.
+                    self.slot_family[int(slot)] = f'seq-{seq}'
                 except Exception:                          # a sequence id is a convenience, not a contract
                     pass
                 return inner_sync(seq, context, slot, accepted, new, remaining, ends, **kwargs)
@@ -184,13 +187,46 @@ class DraftFcCapture:
                     families=len(set(b['ids'][0] for b in self.batches)), stopped=self.stopped,
                     seams=list(self.seams), calls=self.calls)
 
+    def rebalance(self) -> str | None:
+        """Move whole families until both splits are fed, or say why that is impossible.
+
+        The hash split gives each family the requested share independently, so a door that served
+        four requests has a 0.75^4 = 32% chance of putting none of them in validation -- and then
+        `close` threw away everything it had collected. Two production boots lost 1,971 and 421 rows
+        that way. Families move whole: `fit_fc_bias` refuses a train and a validation set that share
+        a request, and that is the invariant this preserves."""
+        empty = [name for name, kept in self.kept.items() if not kept]
+        if not empty:
+            return None
+        if len(empty) == len(self.kept):
+            return 'nothing was collected'
+        families = {}
+        for batch in self.batches:
+            families.setdefault(batch['ids'][0], []).append(batch)
+        if len(families) < 2:
+            return f'one family ({next(iter(families), None)}) cannot fill two splits'
+        want = empty[0]
+        # the family the salt ranks first: deterministic, and independent of arrival order
+        name = min(families, key=lambda f: hashlib.sha256((self.salt + '\0' + f).encode()).digest())
+        moved = 0
+        for batch in families[name]:
+            moved += int(batch['keep'].sum())
+            batch['split'] = want
+        self.kept[want] += moved
+        for name_other in self.kept:
+            if name_other != want:
+                self.kept[name_other] -= moved
+        return None
+
     def close(self):
         """Run the collector against the live reader and write this rank's bundle."""
         rank = self.drafter.target.comm.rank
         out = self.root / f'draft-fc-pairs-rank{rank}.pt'
+        why = None if self.stopped is not None else self.rebalance()
         report = dict(self.status(), rank=rank, path=str(out))
-        if self.stopped is not None or not all(self.kept.values()):
-            report['error'] = self.stopped or 'no committed rows in both splits'
+        if self.stopped is not None or why is not None or not all(self.kept.values()):
+            report['error'] = self.stopped or why or 'no committed rows in both splits'
+            self._file(report)          # even a refusal leaves evidence: a container's log does not outlive it
             return report
         from bench.draft_fc_bias import collect_fc_pairs
         device = self.drafter.p['hidden_norm.weight'].device
@@ -205,8 +241,17 @@ class DraftFcCapture:
         torch.save(bundle, out)
         report['reader_sha256'] = bundle['reader_sha256']
         report['written'] = out.stat().st_size
-        (self.root / f'draft-fc-pairs-rank{rank}.json').write_text(json.dumps(report, sort_keys=True))
+        self._file(report)
         return report
+
+    def _file(self, report):
+        """The report beside the bundle. A boot's container log is replaced by the next arm's."""
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            (self.root / f'draft-fc-pairs-rank{report["rank"]}.json').write_text(
+                json.dumps(report, sort_keys=True, default=str))
+        except Exception:                              # a shutdown never fails on its own record
+            pass
 
 
 def attach(engine, root, **kwargs):
