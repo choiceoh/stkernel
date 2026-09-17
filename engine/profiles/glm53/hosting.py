@@ -88,21 +88,11 @@ def edges(path: Path):
 
 
 def meter() -> str:
-    out, total, counts, real = [], 0, {"ours": 0, "drop": 0, "real": 0}, {}
-    for f in FILES:
-        es = list(edges(ROOT / "overlay/modules/glm53_model" / f))
-        kinds = [kind_of(s) for _m, s in es]
-        for (m, s), k in zip(es, kinds):
-            counts[k] += 1
-            if k == "real":
-                real.setdefault(f"{m}.{s}", []).append(f)
-        total += len(es)
-        out.append(f"  {f:<24} {len(es):>3} vLLM symbols: {kinds.count('ours'):>3} ours, {kinds.count('drop'):>2} dropped, {kinds.count('real'):>2} real")
-    out.append(f"  {'TOTAL':<24} {total:>3} symbols: {counts['ours']} ours ({counts['ours'] / total:.0%}), "
-               f"{counts['drop']} dropped (PP/SP/multimodal/platform/MTP), {counts['real']} real")
-    for k in sorted(real):
-        out.append(f"    real: {k:<70} {','.join(sorted(set(real[k])))}")
-    return "\n".join(out)
+    """Retired with the overlay stack (2026-09-18). The meter counted the
+    served GLM files' vLLM imports against their engine replacements while
+    the re-hosting was under way; the files it read (overlay/modules/glm53_model)
+    are gone, and the count it exists to report is 100% ours."""
+    return "re-hosting complete: the overlay stack retired 2026-09-18, nothing left to meter"
 
 
 if __name__ == "__main__":

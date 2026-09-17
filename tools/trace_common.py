@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared loader / step cutter / classifier for torch-profiler decode traces.
 
-Used by tools/trace_step_composition.py and tools/trace_step_timeline.py.
+Shared loader for the trace tools and census.py.
 Steps are cut at the first prep kernel of each step; the anchor is looked up
 in order because the mounted modules change the launch names:
   _gather_block_tables_kernel   stock V2 runner prep
