@@ -33,7 +33,9 @@ SHELL_ENTRIES = ('bench/pair.sh', 'bench/chain.sh', 'bench/ab-lever.sh',
 PYTHON_ENTRIES = ('bench/onepass.py', 'bench/experiments.py', 'bench/draft_replay.py')
 DRAFT_REPLAY = 'bench/draft_replay.py'
 DRAFT_REPLAY_DEPENDENCIES = ('probes/draft_sensitivity.py', 'launchers/lib/common-tp4.sh',
-                             'launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py')
+                             'launchers/lib/fleet-lease.sh', 'engine/base/fleet_lease.py',
+                             'probes/draft_vocab_merge.py', 'engine/modules/vocab.py',
+                             'engine/kernels/common/vocab_merge.py')
 # The ST engine's bracket: one committed sha per arm in production shape; short screening by
 # default, full onepass for adoption. It is byte-pinned with what it executes, and its
 # grammar is shas and literal arm names only: a sha is a thing origin has, so the arm is
@@ -340,7 +342,7 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     elif relative == 'bench/onepass.py':
         _onepass_args(args)
     elif relative == DRAFT_REPLAY:
-        allowed = {'--capture', '--checkpoint', '--output', '--reader', '--precision', '--rounds', '--engine-revision'}
+        allowed = {'--capture', '--checkpoint', '--output', '--reader', '--precision', '--rounds', '--engine-revision', '--experiment'}
         seen = set()
         while args:
             if len(args) < 2 or args[0] not in allowed or args[0] in seen or not re.fullmatch(r'[A-Za-z0-9/][A-Za-z0-9_.,:/=-]{0,255}', args[1]):
@@ -350,6 +352,8 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
                 raise ValueError('draft replay engine revision must be a commit id')
             if key == '--precision' and value not in ('fp8-rtn', 'bf16'):
                 raise ValueError('draft replay precision must be fp8-rtn or bf16')
+            if key == '--experiment' and value not in ('precision', 'vocab-merge'):
+                raise ValueError('draft replay experiment must be precision or vocab-merge')
             if key == '--rounds' and (not value.isdigit() or not 1 <= int(value) <= 100):
                 raise ValueError('draft replay rounds must be 1..100')
             seen.add(key)

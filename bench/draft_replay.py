@@ -31,6 +31,7 @@ def main():
     ap.add_argument('--reader', default='all', help='one reader, or all')
     ap.add_argument('--precision', choices=('fp8-rtn', 'bf16'), default='fp8-rtn')
     ap.add_argument('--rounds', type=int, default=10)
+    ap.add_argument('--experiment', choices=('precision', 'vocab-merge'), default='precision')
     ap.add_argument('--engine-revision', required=True, help='the captured serving commit, independent of queue controller updates')
     args = ap.parse_args()
     if not 1 <= args.rounds <= 100:
@@ -95,14 +96,21 @@ def main():
             run(0, ['git', '-C', str(repo), 'archive', engine_revision, 'engine', 'launchers'], stdout=f)
         run(0, ['tar', '-xf', str(archive), '-C', str(staged)])
         shutil.copytree(repo / 'probes', staged / 'probes', ignore=shutil.ignore_patterns('__pycache__'))
+        if args.experiment == 'vocab-merge':
+            # Validate/load the captured baseline bytes first. Import the one
+            # changed module separately; never relax the capture's source gate.
+            shutil.copyfile(repo / 'engine/modules/vocab.py', staged / 'probes/vocab_merge_candidate.py')
+            shutil.copyfile(repo / 'engine/kernels/common/vocab_merge.py', staged / 'engine/kernels/common/vocab_merge.py')
         with ThreadPoolExecutor(max_workers=4) as pool:
             runtime = list(pool.map(prepare, range(4)))
     (out.parent / (out.stem + '-runtime.json')).write_text(json.dumps(dict(revision=revision, engine_revision=engine_revision, runtime=runtime, env=env,
         capture=str(args.capture), checkpoint=str(args.checkpoint), precision=args.precision, reader=args.reader,
-        rounds=args.rounds, engine_booted=False, source_tree=str(tree)), indent=2) + '\n')
-    probe = ['python3', '-u', '/repo/probes/draft_sensitivity.py', '--capture', str(args.capture),
-             '--checkpoint', str(args.checkpoint), '--reader', args.reader, '--precision', args.precision,
+        rounds=args.rounds, experiment=args.experiment, engine_booted=False, source_tree=str(tree)), indent=2) + '\n')
+    probe = ['python3', '-u', '/repo/probes/' + ('draft_vocab_merge.py' if args.experiment == 'vocab-merge' else 'draft_sensitivity.py'),
+             '--capture', str(args.capture), '--checkpoint', str(args.checkpoint),
              '--rounds', str(args.rounds), '--output', str(out)]
+    if args.experiment == 'precision':
+        probe += ['--reader', args.reader, '--precision', args.precision]
     script = 'source /repo/launchers/lib/common-tp4.sh; eval "$CT_GID_PRELUDE"; exec ' + shlex.join(probe)
     children, logs = [], []
     def interrupted(signum, frame):

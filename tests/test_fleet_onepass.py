@@ -60,6 +60,9 @@ class OnepassPolicyTests(unittest.TestCase):
                    '--checkpoint', '/models/draft.safetensors', '--output', '/results/fp8.json',
                    '--precision', 'fp8-rtn', '--reader', 'all', '--rounds', '10', '--engine-revision', 'a'*40]
         self.assertEqual(self.validate(command)['gpus'], 4)
+        self.assertEqual(self.validate(command + ['--experiment', 'vocab-merge'])['gpus'], 4)
+        with self.assertRaises(ValueError):
+            self.validate(command + ['--experiment', 'arbitrary.py'])
         for kind in ('single', 'probe'):
             with self.subTest(kind=kind), self.assertRaises(ValueError):
                 self.validate(command, kind=kind)
