@@ -94,7 +94,7 @@ def _provenance(config):
     if not isinstance(container_id, str) or re.fullmatch("[a-f0-9]{64}", container_id) is None:
         raise ValueError("missing immutable container identity")
     try:
-        parsed = datetime.fromisoformat(started.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", started).replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             raise ValueError("container start time requires timezone")
     except (ValueError, TypeError, AttributeError) as exc:

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-# usage: python3 tools/trace_step_nodes.py <trace.gz> [--dump FILE] [--gap LO,HI] [--all-cats]
+# usage: python3 tools/trace_step_nodes.py <trace.gz> [--dump FILE] [--gap LO,HI]
 #                                          [--step N] [--anchor NAME] [--top K]
 """Per-step NODE view of a decode trace, streaming (RSS stays ~tens of MB).
 

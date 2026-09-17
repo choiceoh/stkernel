@@ -100,10 +100,11 @@ profile, image and ordered request hashes are verified unchanged. Host RAM is
 recorded before/after every arm and sampled during requests; memory protection
 and boot budgeting are unchanged.
 
-The campaign names `VLLM_GLM53_AR_CONSUMER_PDL=1` for A1 and `=0` for B1/B2,
-so baseline selection stays unchanged after profile promotion. Its lever
-rejects a missing mode. These commands are retained for reproduction; no
-further measurement is scheduled after the operator's adoption request.
+The campaign reads the profile's `VLLM_GLM53_AR_CONSUMER_PDL` and measures the
+opposite mode as the candidate, so the baseline is always the current profile
+default; its lever rejects a profile with no explicit mode. These commands are
+retained for reproduction; no further measurement is scheduled after the
+operator's adoption request.
 
 GPU validation automatically searches the newest 50 `ARCONSUMER-*/gpu`
 receipts under `LOGD` (default `/home/choiceoh/glm53-logs`). No result-directory
@@ -125,11 +126,10 @@ Onepass measurements and serving runtime/capture proof remain fresh.
 
 For a result outside the default search directory, the GPU runner accepts
 `--reuse-from /absolute/prior/run/gpu`. Older evidence without a runtime
-manifest is not automatically reused. The existing campaign option
-`--gpu-evidence /absolute/prior/run/gpu` retains explicit whole-run legacy
-verification: unchanged tested source/profile/image, all 15 numerical stages,
-and clean sanitizer/container receipts are still required. Legacy reuse is
-identified separately from the new runtime-attested cache. Deployment CPU
+manifest is not automatically reused. The legacy `--gpu-evidence
+/absolute/prior/run/gpu` option is accepted but inert — the campaign now prints
+that the canonical onepass is the only GPU workload and continues. Legacy reuse
+is identified separately from the new runtime-attested cache. Deployment CPU
 validation continues during fleet preparation.
 The exact reviewed old/new runner pair for this cache-only update preserves
 legacy evidence: its GPU commands and test cases are unchanged. Other runner

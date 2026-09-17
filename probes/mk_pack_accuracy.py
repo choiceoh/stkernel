@@ -27,7 +27,7 @@ have -- so the Hessian the GPTQ/LoRC arms see is anisotropic like a real
 one. With --calib <dir> the dumped Hessians of a calibration boot are used
 instead for the named linears.
 
-    mkprobe.sh probes/mk_pack_accuracy.py [--layer 1] [--m 32] [--iters 20]
+    bash probes/run_mk_probe.sh probes/mk_pack_accuracy.py [--layer 1] [--m 32] [--iters 20]
         [--lorc 16,32] [--shapes 6416:4096,1024:4096,4096:512]
 """
 import argparse

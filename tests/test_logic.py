@@ -12474,7 +12474,7 @@ def test_fleet_reservation_tooling_contracts() -> None:
     """
     global PASS
     fleet = open(os.path.join(REPO, "bench", "fleet.sh"), encoding="utf-8").read()
-    for sub in ("preflight)", "restore-needed)", "ledger)", '"--probe"', "expected_min()",
+    for sub in ("preflight)", "restore-needed)", "ledger)", "--probe|--single)", "expected_min()",
                 "hb_file()", "_ledger_row()", "serving_idle()", "baseline_line"):
         check(sub in fleet, f"fleet.sh carries {sub}")
     check('grep -qE "^${k%%=*}=" <<< "$prof_here"' in fleet and "FAIL undeclared in profiles/glm53.env" in fleet,
