@@ -745,9 +745,10 @@ def main(argv=None):
         command.pop(0)
     try:
         directory = Path(os.environ['FLEET_DIR'])
+        if args.approve_deploy:
+            raise ValueError('overlay deployment approval is no longer supported')
         if args.action == 'create':
-            print(prepare(directory,args.session,command,os.getcwd(),spec_path=args.spec,fleet=args.fleet,prepared=args.prepared,
-                          approve_deploy=args.approve_deploy))
+            print(prepare(directory,args.session,command,os.getcwd(),spec_path=args.spec,fleet=args.fleet,prepared=args.prepared))
         elif args.action == 'validate-targets':
             if not args.prepared:
                 raise ValueError('validate-targets requires --prepared MANIFEST')
