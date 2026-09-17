@@ -91,8 +91,28 @@ whole MLP. `projection.json` retains all per-cell values, seeds and hashes.
 
 ## Consumer gate
 
-Pending. Tickets `fp4-all-base17` and `fp4-all-candidate17` compare existing `ss1` with `as1` using the same implementation and
-harness, production shape, C=1/C=2 fixed 1024-token throughput, natural-EOS
-acceptance and clarified ko-reasoning-v3 quality, including 32K and 128K C=1.
-Quality must be preserved and C=1 output throughput must remain at least 95%
-of the matched baseline. Compile success is not a throughput or quality verdict.
+The implementation was merged in #1127 while these measurements were pending;
+this follow-up records its GPU and consumer evidence without changing the engine.
+Tickets `fp4-all-base17` and `fp4-all-candidate17` compare existing `ss1` with
+`as1` using the same implementation and harness, production shape, C=1/C=2
+fixed 1024-token throughput, natural-EOS acceptance and clarified ko-reasoning-v3
+quality, including 32K and 128K C=1. Quality must be preserved and C=1 output
+throughput must remain at least 95% of the matched baseline.
+
+- Baseline: `b2faf8169284ee62b74e456042b4d97dda28a2a3`.
+- Candidate: `1fd46c9ee5c88fcdfb6577361e86d61ad93a0261`.
+- Both bench trees: `63ae431979ba63a37c8126936b77597c9a743447`.
+- One boot per arm: C=1 natural EOS twice; C=2 and fixed length once.
+- Current baseline records are complete: `20260917T130020-d15c307f7bb5` and
+  `20260917T131947-0bfbe0518c6e`. Candidate collection remains in progress.
+
+The baseline has 30/30 correct final results, 23/30 fully correct certificates
+and 177/190 strict certificate points. Its natural C=1 acceptance is 55.125%
+and 56.468%; fixed throughput is 87.132 C=1 and 109.169 aggregate C=2 tok/s
+(1.253x). All baseline timing preparation checks pass. Canonical quality
+failures are retained, including one wrong minimal inconsistent rule set;
+timing validity alone is not a full quality/performance qualification.
+
+`consumer-baseline.json` preserves completed raw-record hashes, per-request
+timing/output hashes and original quality details. `compare_consumer.py` compares
+the four completed raw records and preserves the canonical judge's verdict.
