@@ -428,8 +428,14 @@ class IntegrationTests(unittest.TestCase):
                 first_measure = next(i for i, r in enumerate(requests) if r['phase'] == 'measure-fixed-c1')
                 self.assertTrue(all(i < first_measure for i, r in enumerate(requests)
                                     if r['phase'].startswith('prepare-fixed-')))
-            self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget']) for r in prepared},
+            self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget'])
+                              for r in prepared if r not in fixed_prepared},
                              {(64, 64, 32)})
+            # Full fixed-length preparation must also reach late decode shapes
+            # and use the measured reasoning budget, at both concurrency widths.
+            self.assertEqual({(r['max_tokens'], r['min_tokens'], r['reasoning_budget'])
+                              for r in fixed_prepared},
+                             {(1024, 1024, 512)} if include_c4 else set())
             self.assertEqual(record['preparation_budget']['max_tokens'], 64)
             fixed = [r for r in requests if r['phase'] in ('measure-fixed-c1', f'measure-fixed-c{width}')]
             measured = [r for r in requests if r['phase'].startswith('measure-') and r not in fixed]
