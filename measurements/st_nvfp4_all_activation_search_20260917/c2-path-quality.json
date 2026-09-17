@@ -1,0 +1,888 @@
+{
+  "scope": "original strict grades; C1 two runs vs C2 two clients in one wave, not equal replication",
+  "receipts": [
+    {
+      "path": "/tmp/st-fp4-all-receipts/base-1/requests.jsonl",
+      "sha256": "00a7a9f91a22da1684ae0fb307ddf61a3399420f079813ccf92c9294687d2bb7"
+    },
+    {
+      "path": "/tmp/st-fp4-all-receipts/base-1/quality.jsonl",
+      "sha256": "fb6edd21f5a24727cb657f0580741e32ead3d805f1141b25532765f20c082038"
+    },
+    {
+      "path": "/tmp/st-fp4-all-receipts/base-2/requests.jsonl",
+      "sha256": "b5ab20fb6e27b8f16fa0b0e8084e4b5b39e6cdf9d206c721777c9ade99d5b505"
+    },
+    {
+      "path": "/tmp/st-fp4-all-receipts/base-2/quality.jsonl",
+      "sha256": "39aac807e91028df1cd1b5f2452802789ac5934cbab31773456ddbae25d64e8c"
+    },
+    {
+      "path": "/tmp/st-fp4-all-receipts/candidate-1/requests.jsonl",
+      "sha256": "e4757e5b5a623d1f61d43f261bc190557b949d9943328b0c01bf54c9b315f5db"
+    },
+    {
+      "path": "/tmp/st-fp4-all-receipts/candidate-1/quality.jsonl",
+      "sha256": "cd528a5c99155f7a566f50daf9df8e18cddf8cf2c1e69432c574dcc9b6c673a0"
+    },
+    {
+      "path": "/tmp/st-fp4-all-receipts/candidate-2/requests.jsonl",
+      "sha256": "fc7b4c5075bfd2a126b1a5af44b12bd292a955a1a9663847e91fc994886a3c7c"
+    },
+    {
+      "path": "/tmp/st-fp4-all-receipts/candidate-2/quality.jsonl",
+      "sha256": "f4d7ad17a12a70622942181ea492b8800efedb621e60a9e9bee7322a9bfa9f92"
+    }
+  ],
+  "same_context_totals": {
+    "ss1-c1-2k32k": [
+      71,
+      76
+    ],
+    "ss1-c2-2k32k": [
+      72,
+      76
+    ],
+    "as1-c1-2k32k": [
+      76,
+      76
+    ],
+    "as1-c2-2k32k": [
+      62,
+      76
+    ]
+  },
+  "results": [
+    {
+      "folder": "base-1",
+      "arm": "ss1",
+      "cases": [
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "logic",
+          "score": 6,
+          "max_score": 7,
+          "failed_checks": [
+            "counterfactual"
+          ]
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "ctx": 2000,
+          "client": 0,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "ctx": 2000,
+          "client": 1,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "ctx": 2000,
+          "client": 0,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "ctx": 2000,
+          "client": 1,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "ctx": 2000,
+          "client": 0,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "ctx": 2000,
+          "client": 1,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 0,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 0,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 0,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 1,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 1,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 1,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        }
+      ],
+      "c2_waves": [
+        {
+          "phase": "measure-c2-2000-q0",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+              "output_sha256": "4e3d2792a4f101c8028aa72f36052de40e9b25a16edac4bfe4df16d2ea4b81c7",
+              "prompt_tokens": 2680,
+              "completion_tokens": 1732,
+              "finish_reason": "stop",
+              "ttft_s": 1.1170700350776315,
+              "elapsed_s": 27.320165119017474
+            },
+            {
+              "client": 1,
+              "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+              "output_sha256": "10a8a21b523807c4393669239701f17e29bc99c489ec455e5678a7fdac44e878",
+              "prompt_tokens": 2680,
+              "completion_tokens": 1336,
+              "finish_reason": "stop",
+              "ttft_s": 2.791293565998785,
+              "elapsed_s": 21.779560126946308
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+              "output_sha256": "ad88b6d082a4917d077f27d6e7d78050039adaf7f38967753e8dda4697f1b14c",
+              "prompt_tokens": 2641,
+              "completion_tokens": 3254,
+              "finish_reason": "stop",
+              "ttft_s": 1.142786112963222,
+              "elapsed_s": 43.34760997595731
+            },
+            {
+              "client": 1,
+              "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+              "output_sha256": "c36289ff9f095913186b87d050000c509107bb01a475372a92396b3040a3bd83",
+              "prompt_tokens": 2641,
+              "completion_tokens": 2069,
+              "finish_reason": "stop",
+              "ttft_s": 2.8203108010347933,
+              "elapsed_s": 32.09943425608799
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+              "output_sha256": "f6f882c240d00ce4c165340434647811556965617635b15a650f02e79234c951",
+              "prompt_tokens": 2771,
+              "completion_tokens": 2258,
+              "finish_reason": "stop",
+              "ttft_s": 2.888591000926681,
+              "elapsed_s": 41.413707619998604
+            },
+            {
+              "client": 1,
+              "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+              "output_sha256": "fc690a600da9addf5e787bdda6d18563a551c3a86932d3814e4acbece7edc872",
+              "prompt_tokens": 2771,
+              "completion_tokens": 2913,
+              "finish_reason": "stop",
+              "ttft_s": 1.1721096839755774,
+              "elapsed_s": 49.0170863479143
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+              "output_sha256": "bdd07537c68c96fcd760b4f83092c6b6a1a5c3f9e3606bad8e409fa993afafd5",
+              "prompt_tokens": 33955,
+              "completion_tokens": 7919,
+              "finish_reason": "stop",
+              "ttft_s": 27.66746450692881,
+              "elapsed_s": 156.44004735490307
+            },
+            {
+              "client": 1,
+              "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+              "output_sha256": "a4be9e895a5e0d6f1ff7be5b0741914436771e81971076686babca5b660f33df",
+              "prompt_tokens": 33955,
+              "completion_tokens": 8644,
+              "finish_reason": "stop",
+              "ttft_s": 9.655727965990081,
+              "elapsed_s": 159.08918675594032
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "folder": "base-2",
+      "arm": "ss1",
+      "cases": [
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        }
+      ],
+      "c2_waves": []
+    },
+    {
+      "folder": "candidate-1",
+      "arm": "as1",
+      "cases": [
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "portfolio",
+          "score": 5,
+          "max_score": 6,
+          "failed_checks": [
+            "derivation"
+          ]
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "ctx": 2000,
+          "client": 0,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "ctx": 2000,
+          "client": 1,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "ctx": 2000,
+          "client": 0,
+          "case": "portfolio",
+          "score": 1,
+          "max_score": 6,
+          "failed_checks": [
+            "format",
+            "result",
+            "derivation",
+            "evidence",
+            "counterfactual"
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "ctx": 2000,
+          "client": 1,
+          "case": "portfolio",
+          "score": 4,
+          "max_score": 6,
+          "failed_checks": [
+            "derivation",
+            "counterfactual"
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "ctx": 2000,
+          "client": 0,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "ctx": 2000,
+          "client": 1,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 0,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 0,
+          "case": "portfolio",
+          "score": 5,
+          "max_score": 6,
+          "failed_checks": [
+            "derivation"
+          ]
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 0,
+          "case": "logic",
+          "score": 5,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "witnesses"
+          ]
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 1,
+          "case": "ledger",
+          "score": 5,
+          "max_score": 6,
+          "failed_checks": [
+            "derivation"
+          ]
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 1,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "ctx": 32000,
+          "client": 1,
+          "case": "logic",
+          "score": 4,
+          "max_score": 7,
+          "failed_checks": [
+            "derivation",
+            "counterfactual",
+            "witnesses"
+          ]
+        }
+      ],
+      "c2_waves": [
+        {
+          "phase": "measure-c2-2000-q0",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+              "output_sha256": "1c0c7c8dcc96bc1bf0abf062959cb8ff4bd6c6be12349953d8476fc849d4b630",
+              "prompt_tokens": 2680,
+              "completion_tokens": 3194,
+              "finish_reason": "stop",
+              "ttft_s": 2.8028108900180086,
+              "elapsed_s": 44.37103241693694
+            },
+            {
+              "client": 1,
+              "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+              "output_sha256": "6336b3b0544e703425c2b523577ee64079280b5fb753816df429219293621051",
+              "prompt_tokens": 2680,
+              "completion_tokens": 1895,
+              "finish_reason": "stop",
+              "ttft_s": 1.1382837379351258,
+              "elapsed_s": 30.16546726494562
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+              "output_sha256": "a5f84d9f2ee1994ec9700044275297c83a76401a277d6c744bc8558977967aac",
+              "prompt_tokens": 2641,
+              "completion_tokens": 1968,
+              "finish_reason": "stop",
+              "ttft_s": 1.1145302860531956,
+              "elapsed_s": 29.318895239033736
+            },
+            {
+              "client": 1,
+              "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+              "output_sha256": "557bc38fc6590e1c84eedd774b020413601976e31b57748bbdc02097976175a2",
+              "prompt_tokens": 2641,
+              "completion_tokens": 2466,
+              "finish_reason": "stop",
+              "ttft_s": 2.749450649949722,
+              "elapsed_s": 33.20349456497934
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+              "output_sha256": "73416a81a9a5803e58d4262db31b25a50d0fbfdb723beb633279dbcb998c586c",
+              "prompt_tokens": 2771,
+              "completion_tokens": 2458,
+              "finish_reason": "stop",
+              "ttft_s": 1.167246942059137,
+              "elapsed_s": 40.33015930408146
+            },
+            {
+              "client": 1,
+              "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+              "output_sha256": "373105df734a15048c04cfd5ca814acd0686b3b916c3f110543742ef95a70d68",
+              "prompt_tokens": 2771,
+              "completion_tokens": 2185,
+              "finish_reason": "stop",
+              "ttft_s": 2.902452894952148,
+              "elapsed_s": 37.934518925030716
+            }
+          ]
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "unique_workloads": 1,
+          "unique_outputs": 2,
+          "clients": [
+            {
+              "client": 0,
+              "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+              "output_sha256": "0b5965bec2b5c074166e22dec567e1bf7aa861f118287938f9fcafa90e422ff9",
+              "prompt_tokens": 33955,
+              "completion_tokens": 8165,
+              "finish_reason": "stop",
+              "ttft_s": 9.680041674058884,
+              "elapsed_s": 147.23630420304835
+            },
+            {
+              "client": 1,
+              "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+              "output_sha256": "e1dc0442be40211b9cf2f4f370592ca55da0763889ab021c6b52a9f37c257ff0",
+              "prompt_tokens": 33955,
+              "completion_tokens": 6691,
+              "finish_reason": "stop",
+              "ttft_s": 27.704314191942103,
+              "elapsed_s": 133.5688126810128
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "folder": "candidate-2",
+      "arm": "as1",
+      "cases": [
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 2000,
+          "client": null,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 32000,
+          "client": null,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "ledger",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "portfolio",
+          "score": 6,
+          "max_score": 6,
+          "failed_checks": []
+        },
+        {
+          "phase": "measure-c1",
+          "ctx": 128000,
+          "client": null,
+          "case": "logic",
+          "score": 7,
+          "max_score": 7,
+          "failed_checks": []
+        }
+      ],
+      "c2_waves": []
+    }
+  ]
+}

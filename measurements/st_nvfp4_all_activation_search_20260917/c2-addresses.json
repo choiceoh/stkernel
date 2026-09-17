@@ -1,0 +1,57 @@
+{
+  "event": "address_audit",
+  "gpu_used": false,
+  "source_sha256": "5eb5b9f73c8e5a9481fe3da7b902209520d7c7ea929ec4cacf31fe268ae76970",
+  "scope": "source expressions and real CuTe layout; not a native memory-order test",
+  "grids": [
+    32,
+    36,
+    40,
+    44,
+    48
+  ],
+  "owner_coverage": "exactly once",
+  "cells": [
+    {
+      "m": 8,
+      "max_rows": 8,
+      "checked_addresses": 6144,
+      "expert_scale_stride": 32768,
+      "duplicate_scales": 0,
+      "scale_matches_actual_cute_layout": true,
+      "packed_modes_equal": true,
+      "scratch_tail_disjoint": true
+    },
+    {
+      "m": 8,
+      "max_rows": 64,
+      "checked_addresses": 6144,
+      "expert_scale_stride": 32768,
+      "duplicate_scales": 0,
+      "scale_matches_actual_cute_layout": true,
+      "packed_modes_equal": true,
+      "scratch_tail_disjoint": true
+    },
+    {
+      "m": 16,
+      "max_rows": 16,
+      "checked_addresses": 12288,
+      "expert_scale_stride": 32768,
+      "duplicate_scales": 0,
+      "scale_matches_actual_cute_layout": true,
+      "packed_modes_equal": true,
+      "scratch_tail_disjoint": true
+    },
+    {
+      "m": 16,
+      "max_rows": 128,
+      "checked_addresses": 12288,
+      "expert_scale_stride": 32768,
+      "duplicate_scales": 0,
+      "scale_matches_actual_cute_layout": true,
+      "packed_modes_equal": true,
+      "scratch_tail_disjoint": true
+    }
+  ],
+  "image": "sha256:e9e80b94d41277b171cef5785483989acd1c91d450d0d1068269e99f60bc75bd"
+}
