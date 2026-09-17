@@ -290,6 +290,7 @@ class Drafter:
         if consume_weights and policy.separate_decode_fp8:
             raise ValueError('separate decode FP8 needs the declared compact arena, not the source BF16 region')
         self.decode_calibration = policy.fc_calibration != 'shared'
+        self.decode_precision = policy.fc_precision
         from .drafter_storage import block_rows, needs_fp8, compact
         if compact_into is not None and (consume_weights or max_seqs is None):
             raise ValueError('compact drafter storage needs a sequence capacity and independent source weights')
