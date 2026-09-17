@@ -87,7 +87,7 @@ class SmoothingTests(unittest.TestCase):
         names = net.dense_weight_names(net.p)
         amax = {names["L1.mla.qkv_a"]: torch.rand(H, generator=g) * 4 + 0.1, names["L1.mla.q_b"]: torch.rand(Q, generator=g) + 0.1}
         originals = {k: v.clone() for k, v in net.p.items()}
-        smoothed = net.smooth_inputs(lambda name: amax.get(name))
+        smoothed = net.smooth_inputs(lambda name, width=None: amax.get(name))
         self.assertEqual(set(smoothed), {"L1.mla.qkv_a", "L1.mla.q_b", "L1.idx.wq_b"})
         self.assertFalse(torch.equal(net.p["L1.in_norm"], originals["L1.in_norm"]))
         self.assertFalse(torch.equal(net.p["L1.idx.wk"], originals["L1.idx.wk"]), "a bf16 reader is rescaled in place")
@@ -121,7 +121,7 @@ class SmoothingTests(unittest.TestCase):
         # Two pools' nonnegative per-head q.k scores, weighted by the head gates.
         pool_scores = torch.zeros(F.idx_heads, 2)
         pool_scores[0, 0], pool_scores[1, 1] = 1., 2.
-        smoothed = net.smooth_inputs(lambda name: amax)
+        smoothed = net.smooth_inputs(lambda name, width=None: amax)
         after, _ = net._indexer_head_gate(1, rmsnorm(x, net.p["L1.in_norm"], F.rms_eps), step)
         self.assertIn("L1.mla.qkv_a", smoothed)
         self.assertEqual(net.p["L1.idx.w_heads"].dtype, torch.float32)
