@@ -27,7 +27,7 @@ class KnobDeclarationTests(unittest.TestCase):
         self.assertFalse(cfg.knobs)
         self.assertEqual(cfg['decode_fastpaths'], 1)
         self.assertEqual([cfg[k] for k in ("moe_static", "mla_prefill", "context_ceiling", "lanes", "decode_eager", "execution")],
-                         ["t,r,sf6,batch,q0,as1", "tile32", 0, "served", 0, "native"])
+                         ["t,r,sf6,batch,q0,as2", "tile32", 0, "served", 0, "native"])
 
     def test_adopted_execution_cannot_be_changed_by_stale_bisect_environment(self):
         from engine.base.config import ConfigError
@@ -44,7 +44,7 @@ class KnobDeclarationTests(unittest.TestCase):
                                           "nvme_mapped_staging", "decode_iterations", "deferred_kda", "prefill_ffn_packets", "terminal_mhc", "prefill_indexer_shards",
                                           "draft_fc_precision", "draft_fc_calibration", "draft_diagnostics", "draft_tuning", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles", "oneshot_rails", "oneshot_inline", "GLM53_DENSE_W4A16_GUARD_ROWS"})
         self.assertEqual((cfg["mla_prefill"], cfg["context_ceiling"]), ("stock", 131072))
-        self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,batch,q0,as1"))
+        self.assertEqual((cfg["execution"], cfg["moe_static"]), ("native", "t,r,sf6,batch,q0,as2"))
         from engine.base.config import ConfigError
         with self.assertRaises(ConfigError):
             self._declared({"STK_mla_prefill":"stock"}, production=True)
@@ -131,7 +131,7 @@ class MoeStaticSpecTests(unittest.TestCase):
         from engine.profiles.glm53.lanes import MOE_STATIC_PRODUCTION, parse_moe_static
         self.assertEqual(parse_moe_static("stock"), (None, False))
         self.assertEqual(parse_moe_static("0"), (None, False))
-        self.assertEqual(parse_moe_static(MOE_STATIC_PRODUCTION), ("t,r,sf6,batch,as1", True))
+        self.assertEqual(parse_moe_static(MOE_STATIC_PRODUCTION), ("t,r,sf6,batch,as2", True))
         self.assertEqual(parse_moe_static("t,r,sf6,q0"), ("t,r,sf6", True))
         with self.assertRaisesRegex(ValueError, "q0 needs"):
             parse_moe_static("u,q0")
