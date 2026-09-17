@@ -24,6 +24,7 @@ def main():
     from engine.kernels.dense.mxfp8 import _quantize, _quantize_bound, _pack_weights
     from engine.kernels.dense.cublaslt_split import _quantize as _split_quantize, _reduce as _split_reduce, _reduce_norm
     from engine.kernels.dense.cublaslt_serving import _activation_scales
+    from engine.kernels.dense.cublaslt_producer import _add_norm_mx
     from engine.kernels.prefill_collectives.consumer import _quantize_gather_mx, _quantize_gather_mx_bound
     started = time.monotonic()
     native = _build()
@@ -59,6 +60,10 @@ def main():
                         dict(X='*fp32', W='*bf16', BIAS='*fp32' if bias else '*bf16', Y='*bf16'),
                         dict(M=m, N=4096, P=5, EPS=1e-6, HAS_BIAS=bias, BN=4096), 8)
                        for m in (1, 7, 8, 16, 24, 32, 64) for bias in (False, True)]
+    configurations += [(f'head-norm-m{n*t}-t{t}', _add_norm_mx,
+                        dict(A='*bf16', B='*bf16', W='*bf16', H='*bf16', Q='*fp8e4nv', S='*i32'),
+                        dict(M=n*t, T=t, EPS=1e-6), 8)
+                       for n, t in ((1,8), (2,8), (4,8), (8,8), (1,2), (2,5), (128,2), (19,8))]
     for name, fn, signature, constants, warps in configurations:
         if 'SCALAR_SCALE' in fn.arg_names:
             constants = dict(constants, SCALAR_SCALE=warps == 1)
@@ -68,7 +73,7 @@ def main():
         expensive = re.findall(r'\b(?:lg2|ex2|div|rcp)\.[\w.]*f32', ptx)
         # The FP8 producers avoid log/exp/div; RMS keeps the established IEEE
         # division (also present in common.norm_rope) to preserve its rounding.
-        if name != 'weight-scales' and not name.startswith('split-norm-') and expensive:
+        if name != 'weight-scales' and not name.startswith(('split-norm-', 'head-norm-')) and expensive:
             raise RuntimeError(f'{name} still has log/exp/div/reciprocal instructions: {expensive}')
         integer_divisions = re.findall(r'\b(?:div|rem)\.[su]32', ptx)
         if name.startswith('bound-') and integer_divisions:
@@ -91,7 +96,7 @@ def main():
                   scope='host binding compile/dlopen and SM121 producer compilation; no cuBLAS GPU execution')
     root = Path(__file__).resolve().parents[1]
     paths = ('engine/kernels/dense/cublaslt.cpp', 'engine/kernels/dense/cublaslt.py',
-             'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/cublaslt_split.py',
+             'engine/kernels/dense/cublaslt_producer.py', 'engine/kernels/dense/mxfp8.py', 'engine/kernels/dense/cublaslt_split.py',
              'engine/kernels/dense/cublaslt_serving.py', 'engine/kernels/dense/fp8.py',
              'engine/kernels/prefill_collectives/consumer.py', 'probes/engine_cublaslt_compile.py')
     report['source_sha256'] = {p: hashlib.sha256((root/p).read_bytes()).hexdigest() for p in paths}

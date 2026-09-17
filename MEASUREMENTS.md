@@ -4383,3 +4383,14 @@ C=2 캠페인이 남긴 지도를 코드와 원장으로 되짚었다(`measureme
 - **정확성.** ST 두 선택기는 전 형상·분포 불일치 0. HPC-Ops 는 동점 규칙이 달라 `plateau` 전 행 불일치.
 - **다음(미착수).** 실제 인덱서 logits 로 절벽이 서빙에서 나는지 확인 → `st_dsa_select` 넓은 빈 분기 수정 또는 HPC-Ops 동점 규칙
   수정(둘 다 바이트 동일 목표). [표·장치 사실·재현](measurements/st_topk_hpcops_20260917/README.md).
+
+## 2026-09-17 — Drafter head input fusion, default cuBLAS
+
+Final residual/RMS, non-anchor compaction and native MXFP8 input now share one
+launch; selector/calibration BF16 values and final logits are bit-identical.
+RTX 5050 actual head_local calls: K=7 C=1 **neutral (+0.009%)**, C=2/4/8
+latency −0.52/−0.89/−1.04%. Input-only savings are not whole-head or engine
+speedups. Eight shapes pass exact bytes/logits, changed-input graphs and
+independent output checks; 62 CPU pass/6 skip and 115 SM121 compile variants.
+No persistent memory growth, queue or deployment. GB10/TP4 speed and acceptance
+unmeasured. [Receipts and limitations](measurements/st_cublaslt_producer_20260917/README.md).
