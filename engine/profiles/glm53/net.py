@@ -41,7 +41,7 @@ import torch.nn.functional as Fn
 from engine.base.constants import fresh, iota
 from engine.base.graph_labels import operation
 from engine.kernels.decode_topk import select as select_native
-from engine.modules.sparse_indexer import topk_positions
+from engine.modules.sparse_indexer import pin_pools_in_logits, tail_pin_pools, topk_positions
 from engine.profiles.glm53 import specs
 from engine.profiles.glm53.facts import TP, Facts
 from engine.profiles.glm53.lanes import Lanes, swiglu_clamped
@@ -837,7 +837,8 @@ class Glm53Net:
                 if shard.score_rows:
                     cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                     selected = self._select_pools(q8, w_eff, keys[cand], scales[cand],
-                        seq_lens[shard.score_begin:shard.end] // kp, n_cand, F.topk // kp, layer=L)
+                        seq_lens[shard.score_begin:shard.end] // kp, n_cand, F.topk // kp, layer=L,
+                        seq_lens=seq_lens[shard.score_begin:shard.end], pool=kp)
                 pool_ids = shard.collect(selected, seq_lens // kp, self.comm)
                 self.prefill_indexer_executed.add(L)
             elif prefix:
@@ -847,11 +848,12 @@ class Glm53Net:
                 if prefix < s.length:
                     cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                     self._select_pools(q8, w_eff, keys[cand], scales[cand], seq_lens[prefix:] // kp,
-                                       n_cand, F.topk // kp, out=pool_ids[prefix:], layer=L)
+                                       n_cand, F.topk // kp, out=pool_ids[prefix:], layer=L,
+                                       seq_lens=seq_lens[prefix:], pool=kp)
             elif n_cand:
                 cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                 pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp,
-                                          layer=L)
+                                          layer=L, seq_lens=seq_lens, pool=kp)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
             self.lanes.pool_slots(pool_ids, seq_lens, kp, *caches.token_map(L, s.seq),
@@ -906,6 +908,10 @@ class Glm53Net:
         # [rows*t] i32 each, read-only across this forward's DSA layers: lengths, horizons and, joined, the query windows
         lengths = caches.row_lengths(contexts, t, kp, glue.lengths, width=n_cand if joined else 0)
         seq_lens, ke = lengths[:2]
+        # The same `index_kpool_always_select_tail` pin the row loop applies: this is the
+        # captured decode path, so without it here the guarantee would hold in prefill and
+        # eager decode and vanish in the served one.
+        pin = tail_pin_pools(seq_lens, kp)
         keys_all, scales_all = glue.candidates(keys, scales, *caches.pool_maps(L), n_cand)   # [rows, n_cand, d], [rows, n_cand]
         # `select_native` returns None whenever it does not admit the shape -- a reference lane's
         # CPU logits included -- and the horizon mask plus torch.topk stay as they were.
@@ -916,6 +922,7 @@ class Glm53Net:
             starts, ends = lengths[2:]
             logits = self.lanes.indexer_logits(q8, keys_all.view(rows * n_cand, -1), scales_all.view(-1), w_eff, ends,
                                                ks=starts, width=n_cand)
+            pin_pools_in_logits(logits, pin, k=k)
             winners = pick(logits, ke, k)                     # horizon + top-k, one launch, logits untouched
             if winners is None:
                 glue.horizon(logits, ke)                                                  # -inf past each query's pools, in place
@@ -925,6 +932,7 @@ class Glm53Net:
             for r in range(rows):
                 sl = slice(r * t, (r + 1) * t)
                 logits = self.lanes.indexer_logits(q8[sl], keys_all[r], scales_all[r], w_eff[sl], ke[sl], ks=ks)[:, :n_cand].float()
+                pin_pools_in_logits(logits, pin[sl], k=k)
                 got = pick(logits, ke[sl], k)
                 if got is None:
                     glue.horizon(logits, ke[sl])                                          # -inf past each query's pools, in place
@@ -936,10 +944,17 @@ class Glm53Net:
 
 
     def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int, *, out=None,
-                      layer: "int | None" = None) -> torch.Tensor:
+                      layer: "int | None" = None, seq_lens=None, pool: "int | None" = None) -> torch.Tensor:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
-        selection is independent, so the passes are exact and the transient is bounded."""
+        selection is independent, so the passes are exact and the transient is bounded.
+
+        `seq_lens` and `pool` carry the raw horizon (`ke` is its pool count): with them
+        the selection also honors `index_kpool_always_select_tail` -- a row whose
+        sequence length is a whole number of pools has an empty appended tail, so the
+        pool that just completed is pinned above that row's maximum instead of being
+        left to the top-k (see `tail_pin_pools`)."""
         rows = q8.shape[0]
+        pin = tail_pin_pools(seq_lens, pool) if (seq_lens is not None and pool) else None
         if out is not None and (out.shape != (rows, k) or out.dtype != torch.int32
                 or out.device != q8.device or not out.is_contiguous()):
             raise ValueError('pool selection destination must match contiguous int32 query rows')
@@ -959,9 +974,10 @@ class Glm53Net:
             return topk_positions(values, k, valid=lengths, inplace=True)
         if rows <= SELECT_ROWS:
             logits = self.lanes.indexer_logits(q8, keys, scales, w_eff, ke)
+            pin_pools_in_logits(logits, pin, k=k)
             selected = select(logits, ke)
             result = selected if out is None else out.copy_(selected)
-            from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke,
+            from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke, seq=seq_lens, pool=pool,
                      n_cand=n_cand, k=k, selected=result, prefill=rows > 64)
             return result
         if out is None:
@@ -969,8 +985,9 @@ class Glm53Net:
         for r0 in range(0, rows, SELECT_ROWS):
             r1 = min(rows, r0 + SELECT_ROWS)
             logits = self.lanes.indexer_logits(q8[r0:r1], keys, scales, w_eff[r0:r1], ke[r0:r1])
+            pin_pools_in_logits(logits, None if pin is None else pin[r0:r1], k=k)
             out[r0:r1] = select(logits, ke[r0:r1])
-        from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke,
+        from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke, seq=seq_lens, pool=pool,
                  n_cand=n_cand, k=k, selected=out, prefill=rows > 64)
         return out
 

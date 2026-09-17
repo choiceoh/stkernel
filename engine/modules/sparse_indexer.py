@@ -35,6 +35,57 @@ def indexer_logits(q: torch.Tensor, k: torch.Tensor, weights: torch.Tensor) -> t
     return torch.einsum("mhn,mh->mn", s, weights.float())
 
 
+def tail_pin_pools(seq_lens: torch.Tensor, pool_size: int) -> torch.Tensor:
+    """The pool each row must keep out of the top-k competition, or -1.
+
+    `index_kpool_always_select_tail` -- the checkpoint sets it and
+    `engine/profiles/glm53/facts.architecture` asserts it -- says the most recent
+    tokens are always attended. The appended tail covers
+    `[pool_len * pool_size, seq)`, which is EMPTY when `seq % pool_size == 0`: on
+    those rows the pool that just completed is left to win the top-k against the
+    whole history, and the top-k ranks by relevance, not recency. So pin it -- the
+    declared guarantee is about recency, and recency cannot be a competition.
+
+    Below the top-k budget every pool is selected anyway, which is why this is a
+    long-context rule (the dsv4-era overlay wrote the same finding:
+    `overlay/modules/glm53_kernels/README.md`, "Honor index_kpool_always_select_tail").
+    """
+    import torch
+    if seq_lens.ndim != 1:
+        raise ValueError("tail pins are one pool index per row")
+    seq = seq_lens.to(torch.int64)
+    complete = seq // pool_size
+    pinned = (seq % pool_size == 0) & (complete > 0)
+    return torch.where(pinned, complete - 1, torch.full_like(complete, -1)).to(torch.int32)
+
+
+def pin_pools_in_logits(logits: torch.Tensor, pin: "torch.Tensor | None", *, k: "int | None" = None) -> None:
+    """Raise each row's pinned pool above that row's own maximum, in place.
+
+    Biasing the input is deliberate: neither selector kernel documents the order it
+    writes its winners in, so evicting "the weakest" from the result would be a
+    guess, while biasing the input lets each kernel drop its own weakest. Tensor
+    ops only -- no `nonzero`, no host read -- so a captured step can run it.
+
+    `k` narrows the raise to the rows that need it: the pin's promise is membership,
+    not rank, so a pool already inside the top-k is left where it is and the other
+    rows' relative order -- and their ties -- are not disturbed.
+    """
+    import torch
+    if pin is None:
+        return
+    if pin.shape != (logits.shape[0],):
+        raise ValueError("one pin per row")
+    columns = pin.clamp_min(0).to(torch.int64)[:, None]
+    live = (pin >= 0)[:, None]
+    if k is not None and 0 < k < logits.shape[1]:
+        kth = logits.topk(k, dim=1).values[:, -1:]
+        live = live & (logits.gather(1, columns) < kth)
+    top = logits.amax(dim=1, keepdim=True) + 1.0
+    current = logits.gather(1, columns)
+    logits.scatter_(1, columns, torch.where(live, top, current))
+
+
 def topk_positions(logits: torch.Tensor, k: int, valid: "torch.Tensor | None" = None, inplace: bool = False) -> torch.Tensor:
     """Per-query top-k position ids, -1 padded; `valid[m]` masks positions >= it.
     `inplace` masks the caller's logits instead of copying them (a [T, N] fp32 copy is the
