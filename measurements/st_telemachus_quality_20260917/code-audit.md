@@ -46,9 +46,23 @@ the parked-state tag advances to `shared-smooth-v4`.
 The four-rank CPU regression reproduces the old incorrect received-input
 projections and proves the corrected projections bit-identical to the original
 unsmoothed linear map. It also covers partial and absent calibration. All 20
-focused smoothing, projection-owner and boot-breakdown tests pass. The
-`st-shared-smooth0918` fleet hold is reserved for the original T=1 replays;
-quality validation is pending.
+focused smoothing, projection-owner and boot-breakdown tests pass. The full
+engine CI on PR #1151 also passes.
+
+The `st-shared-smooth0918` live hold completed all three T=1 replays on the
+candidate. The original seeds 7 and 11 produced 544 and 500 tokens; both are
+more structured than the preceding baseline, but malformed expressions and
+semantic errors remain. The thinking-off case produced 816 tokens and still
+contains severe Korean corruption, including a replacement character. Every
+request ended below its cap, used zero cached tokens and advanced the exclusive
+owner's served count by one. Ten source files on all four running ranks match
+the candidate. [Execution receipts](shared-smoothing-replay-evidence.json)
+record the runtime and output hashes without private text.
+
+**This is a confirmed scale-pairing repair, not a recovered incident.** PR #1151
+remains a draft after the failed full quality gate. The live hold was stopped
+after the three replays; no additional performance claim follows from their
+elapsed times or shorter outputs.
 
 ## Merged production replay, 2026-09-18
 
