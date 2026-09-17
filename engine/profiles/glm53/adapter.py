@@ -1147,7 +1147,9 @@ class Glm53Engine:
                 admission=self.admissions, seq=seq, mode=mode,
                 generation=self._generated_count(seq), prefill=prefill)
         if mode not in (7, 8, 9, 11, 12):
-            return self._forward(step, **kwargs)
+            from engine.profiles.glm53.incident_operands import capture
+            with capture(self.net, step):
+                return self._forward(step, **kwargs)
         if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
             raise ValueError('precision controls require one isolated target position')
         from engine.kernels.dense import DenseLinear
