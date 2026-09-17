@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 PREFIX_FIELDS = ("prefix_sha256", "input_prefix_sha256", "prefix_hash", "prompt_sha256", "prefix")
 UNIFORM_FIELDS = ("uniform", "uniforms", "u", "draw", "draws", "seed_uniform")
+SEED_FIELDS = ("seed", "request_seed", "underlying_seed")
+NONCE_FIELDS = ("nonce", "admission_nonce", "admission")
 
 
 def _scalar(node, fields):
@@ -61,12 +63,35 @@ def read_capture(path: Path):
     probability = float(torch.softmax(flat, dim=-1)[top.indices[0]])
     prefix = _scalar(obj, PREFIX_FIELDS) if isinstance(obj, dict) else None
     uniform = _scalar(obj, UNIFORM_FIELDS) if isinstance(obj, dict) else None
+    seed = _scalar(obj, SEED_FIELDS) if isinstance(obj, dict) else None
+    nonce = _scalar(obj, NONCE_FIELDS) if isinstance(obj, dict) else None
     return dict(admission=int(match.group(1)), generation=int(match.group(2)), width=int(flat.numel()),
                 top1=int(top.indices[0]), top2=int(top.indices[1]),
                 margin=float(top.values[0] - top.values[1]), chosen_probability=probability,
                 prefix=None if prefix is None else str(prefix),
                 uniform=None if uniform is None else float(uniform),
+                seed=None if seed is None else int(seed),
+                nonce=None if nonce is None else int(nonce),
                 source=path.name)
+
+
+def draw_address(row, k=7):
+    """Which (purpose, position) word the captured uniform is, recomputed from the row's own address.
+
+    The engine's draws are stateless -- `mix(row_key(seed, nonce, generation) ^ word(purpose,
+    position))` -- so the number a step used is recoverable from the capture's own metadata. A
+    match proves the pipeline; no match means either the address differs or the host and device
+    hashes disagree, and both are silent failures otherwise.
+    """
+    if row["uniform"] is None or row["seed"] is None or row["nonce"] is None:
+        return None
+    from engine.base.draws import row_key, step_layout, uniform as draw_uniform
+
+    key = row_key(row["seed"], row["nonce"], row["generation"])
+    for purpose, position in step_layout(k):
+        if abs(draw_uniform(key, purpose, position) - row["uniform"]) < 1e-12:
+            return purpose, position
+    return (None, None)
 
 
 def profile(root: Path):
@@ -139,6 +164,18 @@ def main() -> int:
                   f"(min {row['tightest_margin']:.3f}) -> {'TIGHT' if row['tight'] else 'wide'}"
                   f"{'' if uniform is None else (' same-uniform' if uniform else ' DIFFERENT-UNIFORM')}")
         if found:
+            addresses = [(row, draw_address(row["left"]), draw_address(row["right"])) for row in found]
+            named = [(row, a, b) for row, a, b in addresses if a or b]
+            if named:
+                print("  draw address, recomputed from each side's own seed/nonce/generation:")
+                for row, a, b in named[:args.limit]:
+                    print(f"   admit{row['admission']} gen{row['generation']:5d}: "
+                          f"left {a} right {b}"
+                          f"{'  <-- ADDRESS DIFFERS' if a != b else ''}")
+            unverifiable = [row for row, a, b in addresses if a is None and b is None]
+            if unverifiable:
+                print(f"  rows whose draw could not be recomputed (no seed/nonce in the capture): "
+                      f"{len(unverifiable)}")
             tight = sorted(row["tightest_margin"] for row in found)
             print(f"  flip margins: min {tight[0]:.3f} median {tight[len(tight) // 2]:.3f} max {tight[-1]:.3f}")
             draws = [row for row in found if row["same_uniform"] is False]

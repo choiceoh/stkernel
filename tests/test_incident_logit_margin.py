@@ -123,5 +123,39 @@ class PrefixAndDrawTests(unittest.TestCase):
         self.assertEqual((len(found), len(skipped)), (1, 0))
 
 
+class DrawAddressTests(unittest.TestCase):
+    """The draws are stateless, so the address is recoverable -- and a silent mismatch is findable."""
+
+    def test_a_captured_uniform_is_named_by_the_address_it_was_drawn_from(self):
+        from engine.base.draws import VERIFY, row_key, uniform as draw_uniform
+
+        seed, nonce, generation = 7, 0, 42
+        value = draw_uniform(row_key(seed, nonce, generation), VERIFY, 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = capture(tmp, 1, generation, logits_row(1.0, 0.0), prefix="ee" * 32)
+            payload = torch.load(path, map_location="cpu", weights_only=False)
+            payload.update(seed=seed, nonce=nonce, uniform=value)
+            torch.save(payload, path)
+            row = margin.read_capture(path)
+        self.assertEqual(row["seed"], seed)
+        self.assertEqual(row["nonce"], nonce)
+        self.assertEqual(margin.draw_address(row), (VERIFY, 3))
+
+    def test_a_uniform_from_nowhere_is_reported_as_unmatched(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = capture(tmp, 1, 0, logits_row(1.0, 0.0), prefix="ff" * 32)
+            payload = torch.load(path, map_location="cpu", weights_only=False)
+            payload.update(seed=7, nonce=0, uniform=0.4242424242)
+            torch.save(payload, path)
+            row = margin.read_capture(path)
+        self.assertEqual(margin.draw_address(row), (None, None))
+
+    def test_without_a_seed_or_nonce_there_is_nothing_to_recompute(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = capture(tmp, 1, 0, logits_row(1.0, 0.0), prefix="11" * 32, uniform=0.5)
+            row = margin.read_capture(path)
+        self.assertIsNone(margin.draw_address(row))
+
+
 if __name__ == "__main__":
     unittest.main()
