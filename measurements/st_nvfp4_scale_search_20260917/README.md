@@ -1,9 +1,14 @@
 # NVFP4 activation scale search: adoption review, 2026-09-17
 
-**Proceed to a gated GPU prototype with three scale candidates first. Do not
-enable it in serving on the evidence below.** The idea reduces activation
-reconstruction error in a CPU feasibility study. It has not established model
-quality, speculative acceptance, GPU cost, C=1 speed, or C=2 scaling.
+**The default-off GPU prototype is implemented and passes its numerical and
+kernel-cost gates. Consumer qualification is still pending.** Enable `ss1`
+(three candidates) or `ss2` (five) in the explicit static MoE recipe to test
+FC2 input quantization. The production recipe is unchanged on this branch.
+
+The isolated consumer arm `151fcf3c4b291dff592ce2b0588866a34d493ab9` changes
+only that recipe to add `ss1`; its same-build baseline is
+`10eddbdedb12c533be43d11031d86b4d6e28b9d7`. The consumer experiment is separate
+from deployment/default adoption.
 
 The user contract remains unchanged: top-8 routing and model quality are
 preserved; C=1 throughput may fall at most 5%; the C=2 aggregate/C=1 throughput
@@ -22,8 +27,9 @@ scale. It does not import or patch a serving kernel. `--input` accepts saved
 
 The study contains 4,096 groups per distribution, 16,384 groups / 262,144 values
 in total. All fixtures are synthetic and BF16-rounded, including the SiLU
-fixtures; they are not activations captured from GLM. The post-SiLU kernel's
-FP32 values and actual weight sensitivity still need separate evaluation.
+fixtures; they are not activations captured from GLM. The native kernel rounds
+the post-SiLU intermediate to BF16 before reading it as FP32 for packing.
+Actual activation distributions and weight sensitivity need separate evaluation.
 Random seed 917 and source/input hashes are retained in the JSON receipts.
 
 | Synthetic distribution | MSE reduction, 3 candidates | MSE reduction, 5 candidates | 3-candidate share of 5-candidate gain |
@@ -111,11 +117,62 @@ source before choosing every input-pack call site.
   regresses. Report C=2 absolute throughput as well as its ratio; a smaller
   denominator does not establish progress toward 1.7.
 
-GPU checks were not submitted: the canonical single-GPU status reported only
-13.8 GiB MemAvailable on srv4, below its 16 GiB reserve floor even before
-allocating this experiment. No production restart or default change was made.
-The review and CPU experiment are complete; GPU implementation and adoption
-remain unverified.
+At the initial review, the single-GPU lane had insufficient memory. Following
+the user's implementation request, the native experiment ran through the
+canonical fleet reservation instead; no single-GPU memory guard was relaxed.
+
+## Native implementation and GPU results
+
+`fp4_scale_search.py` scores the actual packed E2M1 reconstruction. It starts
+with the original result and retains it for invalid global scales, nonfinite
+inputs or unordered SSE comparisons. Selection is fused into the existing
+static FC2 pack. The disabled branch is eliminated at compile time; `ss1`
+and `ss2` participate in both the in-process and persistent kernel identity.
+Dynamic prefill and FC1 input quantization retain their original quantizers.
+
+The `fp4_scale_search_compile` probe compiled 13 kernels without exposing a
+GPU: four quantizer variants and three MoE variants at 8, 16 and 32 rows. All
+passed CuTe/NVVM/PTXAS on sm_121a. The disabled quantizer and original have
+identical cubin bytes (SHA-256
+`37467c7e3cf3e88f492b4e0690bf5467d9d18581c4c4fc7e555d7b342e167633`).
+C=1/C=2 MoE registers remain 96 with all three options; local/stack bytes are
+zero. At 32 rows the counts are 117 / 120 / 118, with no local/stack use.
+
+GPU ticket `fp4-scale-search17`, source `10eddbde`, completed successfully in
+73.5 seconds on GB10/rank 0. Peak tensor allocation was 1,932,266,496 bytes.
+The 151,322 finite blocks include every finite BF16 encoding, mixed blocks,
+FP4 midpoint neighbours, wide exponents, and synthetic normal/SiLU inputs.
+Independent FP64 PyTorch decoding found no worsened reconstruction SSE beyond
+the declared 2e-5 relative tolerance. Invalid-scale/nonfinite fallback and
+disabled-mode byte parity passed, as did poisoned-output graph replay.
+
+Real layer-3 MoE timing uses identical weights, routes, inputs and runtime,
+four B/A/A/B brackets and 8/16 verify rows. Positive numbers mean slower:
+
+| Arm | C=1 warm | C=1 evicted | C=2 warm | C=2 evicted |
+|---|---:|---:|---:|---:|
+| ss1, 3 candidates | -0.077% | -0.045% | +0.103% | +0.093% |
+| ss2, 5 candidates | -0.550% | +0.280% | -0.158% | +0.280% |
+
+These small changes are kernel observations, not consumer speed gains. Both
+arms produced finite outputs on three seeds and exact zero outputs with zero
+route weights. Candidate outputs intentionally differ from the old quantizer;
+their difference is reported without pretending it is a quality verdict.
+
+`nvfp4_scale_projection.py` independently reads nine real rank-0 experts
+(layers 3, 20, 40; experts 0, 73, 287) and evaluates their FC2 projection on
+synthetic inputs on CPU. Three candidates reduce aggregate activation SSE by
+9.80% and projection SSE by 9.72%; all nine projection cells improve. Keeping
+the existing per-128 BF16 output rounding gives 9.72% as well. Five candidates
+yield 9.77% projection improvement. This supports the three-candidate choice
+but remains a tensor study, not real-prompt quality proof. Receipts are
+`compile.jsonl`, `gpu.jsonl` and `projection-cpu.json`.
+
+The full, isolated-port consumer ticket `fp4-scale-consumer17b` runs the
+`extended` workload, baseline/candidate/baseline, two passes per boot. Its
+quality, acceptance and C=1/C=2 results are pending. The first consumer
+submission was stopped while correcting a command that expanded to five
+boots; its incomplete measurement is excluded.
 
 ## Reproduction and upstream evidence
 
