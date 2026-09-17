@@ -92,3 +92,13 @@ python3 measurements/st_moe_input_reuse_20260917/summarize.py gpu-v1.jsonl
 Mode 4 ticket: `moe-input-reuse-fanout-0917`, frozen source `b1233ea1`,
 compares modes 0 through 4 on actual rank0 weights. It predates the serving
 adoption, and every arm explicitly supplies its selector.
+
+## Default integration
+
+`cpu-defaults.txt`: 31 related tests pass under the GPU-hidden Linux/ST image
+after adoption. They cover the exact shape and layout limits, explicit rollback,
+cache keys, mHC/MLA consumer proof, router binding and native registration.
+`native-resources-default.json` compiles the actual serving selection without an
+explicit mode: C1/C2 binaries and SASS exactly match the GPU-qualified mode 3
+in `native-resources-routing-fenced.json`. Both use 96 registers and no stack or
+local memory. The optional mode 4 does not alter these mode 3 binaries.

@@ -315,7 +315,7 @@
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
       "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
       "origin": "repository",
-      "local_sha256": "25a03b3b1bbc021f269ff13cb650d95065094b1251da374d3dd6504dff1f54c5",
+      "local_sha256": "c6320447ee8fba3d563cf988991a6f58c859201391c7278206cb933ef748359e",
       "local_modifications": [
         "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
         "2026-09-13: opt-in epilogue lifetime alias saves 4 KiB for the three-stage FC1 probe; separate-storage offsets and named barriers are preserved.",
@@ -323,7 +323,8 @@
         "2026-09-13: retire measured resident-wave/batch/stage probe hooks and restore separate epilogue storage; retain only the new private output candidates.",
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
         "2026-09-14 B12X 12b4eb257441: narrow SF6 shared loads with immediate offsets; retain volatile semantics, ring ownership and exact SFB mapping.",
-        "2026-09-14 CUDA 13.2: replace SF6 split-base addition with native add.u8x4; preserve scale operands, storage and barriers."
+        "2026-09-14 CUDA 13.2: replace SF6 split-base addition with native add.u8x4; preserve scale operands, storage and barriers.",
+        "2026-09-17 token input reuse: bounded quantization cache, compact deterministic routes with shared-to-async fence, and private register fanout with ballot prefixes. Equal raw scales reuse identical bytes; other scales keep the original quantizer. Mode 3 adopted on exact K7 C1/C2 geometry; mode 4 pending."
       ]
     },
     "b12x/moe_static_kernel_v5.py": {

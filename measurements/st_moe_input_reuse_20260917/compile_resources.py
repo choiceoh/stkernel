@@ -14,9 +14,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--control-only', action='store_true', help='also works on the pre-change source')
-    parser.add_argument('--modes', default='0,1,2,3,4', help='comma-separated input reuse selectors')
+    parser.add_argument('--modes', default='0,1,2,3,4', help='comma-separated selectors, or default for the serving selection')
     args = parser.parse_args()
-    modes = (0,) if args.control_only else tuple(int(m) for m in args.modes.split(','))
+    modes = (0,) if args.control_only else tuple(None if m == 'default' else int(m) for m in args.modes.split(','))
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '' or list(Path('/dev').glob('nvidia*')):
         raise RuntimeError('CPU compile requires no exposed CUDA devices')
     os.environ['CUTE_DSL_ARCH'] = 'sm_121a'
@@ -54,11 +54,13 @@ def main():
                 patch.object(md, 'build_and_load_cute_dsl_kernel', build_resources):
             for rows in (8, 16):
                 for mode in modes:
-                    cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True, input_reuse=mode)
+                    cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True)
+                    if mode is not None:
+                        cfg['input_reuse'] = mode
                     md._get_static_kernel_v2(288, 288, rows, 4096, 512, 8, rows*8, config=cfg,
                         mac_override=48, w13_chunk=256, activation='swigluoai_uninterleave',
                         swiglu_alpha=1., swiglu_beta=0., swiglu_limit=10.)
-                    records[-1].update(rows=rows, input_reuse=mode)
+                    records[-1].update(rows=rows, input_reuse='default' if mode is None else mode)
     if torch.cuda.is_initialized() or len(records) != 2 * len(modes):
         raise RuntimeError('missing cells or unexpectedly initialized CUDA context')
     sources = ('engine/kernels/b12x/moe_static_kernel_v4.py', 'engine/kernels/b12x/moe_dispatch.py')
