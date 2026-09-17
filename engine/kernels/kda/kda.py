@@ -43,6 +43,10 @@ _BV_OVERRIDE: int | None = None
 # since 2026-09-06 (39차 P2D3); the strided Q/K norm is the served path, baked.
 _GLM53_KDA_QK_L2NORM_STRIDED = True
 _GLM53_L2NORM_SHA256 = "203ff42abe4b30b6c28df3c07817fa4ed51ed93ae92da1c3fcfe460862cc4057"
+# (key heads, head dim) a rank's strided Q/K norm serves: GLM-5.3's 16 x 128 (the 39차 gate) and Qwen3.8's 4 x 128 (carry
+# K4). The reduction is per row over the head dim in 32-row programs, so the head count changes only which row a load
+# addresses, never the arithmetic or its tree.
+_QK_L2NORM_STRIDED_CELLS = ((16, 128), (4, 128))
 
 
 @lru_cache(maxsize=1)
@@ -108,7 +112,7 @@ def _glm53_qk_l2norm_strided(q, k):
         or q.ndim != 4 or k.ndim != 4
         or tuple(q.shape) != tuple(k.shape)
         or q.shape[0] != 1 or not 0 < q.shape[1] <= 32768
-        or tuple(q.shape[2:]) != (16, 128)
+        or tuple(q.shape[2:]) not in _QK_L2NORM_STRIDED_CELLS
         or any(stride <= 0 for stride in (*q.stride(), *k.stride()))
         or not _glm53_l2norm_source_matches(l2norm_fwd)
         # The alternate FLA mode divides by sqrt instead of multiplying by
@@ -131,12 +135,13 @@ def _glm53_qk_l2norm_strided(q, k):
     # The scheduler can emit 32,256 rows. Normalization is row-local; keep
     # the same reduction tree and extend only the launch grid so the larger
     # chunk does not silently restore both contiguous input copies.
-    rows = q.shape[1] * 16
+    heads = q.shape[2]
+    rows = q.shape[1] * heads
     _glm53_qk_l2norm_strided_kernel[(triton.cdiv(rows, 32), 2)](
         q, k, q_out, k_out, 1e-6, rows,
         QT=q.stride(1), QH=q.stride(2), QD=q.stride(3),
         KT=k.stride(1), KH=k.stride(2), KD=k.stride(3),
-        H=16, N=128, BD=128, MBLOCK=32, num_warps=4,
+        H=heads, N=128, BD=128, MBLOCK=32, num_warps=4,
     )
     return q_out, k_out
 

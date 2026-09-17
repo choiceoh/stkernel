@@ -27,7 +27,7 @@ CONFIG_SHA256 = 'e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d62
 # the glue's GPU cases, and the Qwen3.8 folds whose last step (a BF16 rounding) the CPU interpreter cannot judge
 GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_engine_kernel_glue.GlueOnTheGpuTests',
               'tests.test_engine_qwen38_moe_finish.GatedSumTests', 'tests.test_engine_swiglu_pad.SwigluPadTests',
-              'tests.test_engine_gdn_ring_gate.GdnRingGateTests')
+              'tests.test_engine_gdn_ring_gate.GdnRingGateTests', 'tests.test_engine_qk_norm_strided_heads.OnTheGpuTests')
 
 
 def facts():
