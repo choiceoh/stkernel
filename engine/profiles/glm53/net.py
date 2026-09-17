@@ -185,7 +185,9 @@ class Glm53Net:
         self.route_skip = None
         self._router_weights = {}
         self._router_fp32 = set()
-        self.fused_decode_router = (F.hidden, F.experts, F.topk_experts, F.spec_k) == (4096, 288, 8, 7)
+        # The fused FP32 reduction changes routing order. Its full consumer
+        # bracket lost quality at C1/C2; retain the original router by default.
+        self.fused_decode_router = False
         self._router_fused_bias = {}
         self._router_fused_executed = set()
         self._decode_pairs = {}

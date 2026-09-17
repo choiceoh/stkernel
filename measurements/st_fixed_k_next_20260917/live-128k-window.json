@@ -1,0 +1,85 @@
+{
+  "scope": "live ten-second partial window, not completed onepass gate",
+  "before": {
+    "t": 482833.055688779,
+    "counters": {
+      "vllm:request_success_total": 12.0,
+      "vllm:num_requests_running": 1.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:spec_decode_num_accepted_tokens_total": 18759.0,
+      "vllm:spec_decode_num_draft_tokens_total": 35539.0
+    },
+    "completed": [
+      {
+        "ctx": 2000,
+        "question": 0,
+        "phase": "measure-c1"
+      },
+      {
+        "ctx": 2000,
+        "question": 1,
+        "phase": "measure-c1"
+      },
+      {
+        "ctx": 2000,
+        "question": 2,
+        "phase": "measure-c1"
+      },
+      {
+        "ctx": 32000,
+        "question": "all",
+        "phase": "measure-c1"
+      }
+    ],
+    "phase": "measure-c1"
+  },
+  "after": {
+    "t": 482843.096530548,
+    "counters": {
+      "vllm:request_success_total": 12.0,
+      "vllm:num_requests_running": 1.0,
+      "vllm:num_requests_waiting": 0.0,
+      "vllm:spec_decode_num_accepted_tokens_total": 19388.0,
+      "vllm:spec_decode_num_draft_tokens_total": 36897.0
+    },
+    "completed": [
+      {
+        "ctx": 2000,
+        "question": 0,
+        "phase": "measure-c1"
+      },
+      {
+        "ctx": 2000,
+        "question": 1,
+        "phase": "measure-c1"
+      },
+      {
+        "ctx": 2000,
+        "question": 2,
+        "phase": "measure-c1"
+      },
+      {
+        "ctx": 32000,
+        "question": "all",
+        "phase": "measure-c1"
+      }
+    ],
+    "phase": "measure-c1"
+  },
+  "delta": {
+    "vllm:request_success_total": 0.0,
+    "vllm:num_requests_running": 0.0,
+    "vllm:num_requests_waiting": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 629.0,
+    "vllm:spec_decode_num_draft_tokens_total": 1358.0
+  },
+  "seconds": 10.040841769019607,
+  "session": "fixedk-next-consumer-a2-0917",
+  "observed_date": "2026-09-17",
+  "context": 128000,
+  "context_basis": "next incomplete C1 workload; 2K and 32K requests complete, same request active throughout both counter reads",
+  "k": 7,
+  "steps": 194.0,
+  "step_s": 19.32108925354993,
+  "acceptance": 0.4631811487481591
+}

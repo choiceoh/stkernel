@@ -504,6 +504,542 @@
         "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
         "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
       }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 0,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "4ee847f1ef76c8806929025b58f6df5fa8c290367dfdaaaf0d9b7f0c20c0b8c5",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 1,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "4ee847f1ef76c8806929025b58f6df5fa8c290367dfdaaaf0d9b7f0c20c0b8c5",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 2,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "4ee847f1ef76c8806929025b58f6df5fa8c290367dfdaaaf0d9b7f0c20c0b8c5",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 3,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "4ee847f1ef76c8806929025b58f6df5fa8c290367dfdaaaf0d9b7f0c20c0b8c5",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 0,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "88f09c69e651ace7edf51e9e216256c3ee585add1dd33386c06346c8659803aa",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 1,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "88f09c69e651ace7edf51e9e216256c3ee585add1dd33386c06346c8659803aa",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 2,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "88f09c69e651ace7edf51e9e216256c3ee585add1dd33386c06346c8659803aa",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 3,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "88f09c69e651ace7edf51e9e216256c3ee585add1dd33386c06346c8659803aa",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 0,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "885c4f8819e0ba96cb36c1109ad44ee8d91aedb5c9135be477793bfcc91a0c57",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 1,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "885c4f8819e0ba96cb36c1109ad44ee8d91aedb5c9135be477793bfcc91a0c57",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 2,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "885c4f8819e0ba96cb36c1109ad44ee8d91aedb5c9135be477793bfcc91a0c57",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 3,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "885c4f8819e0ba96cb36c1109ad44ee8d91aedb5c9135be477793bfcc91a0c57",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 0,
+      "diagnostic": "diagnostic-c2-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-2000/latency-summary.json",
+      "source_sha256": "499fd52d5a0b47062b2769c5f1b693174e980bc238e2dbe3b5056d676543f185",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 10
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 1,
+      "diagnostic": "diagnostic-c2-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-2000/latency-summary.json",
+      "source_sha256": "499fd52d5a0b47062b2769c5f1b693174e980bc238e2dbe3b5056d676543f185",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 10
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 2,
+      "diagnostic": "diagnostic-c2-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-2000/latency-summary.json",
+      "source_sha256": "499fd52d5a0b47062b2769c5f1b693174e980bc238e2dbe3b5056d676543f185",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 10
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 3,
+      "diagnostic": "diagnostic-c2-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-2000/latency-summary.json",
+      "source_sha256": "499fd52d5a0b47062b2769c5f1b693174e980bc238e2dbe3b5056d676543f185",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 10
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 0,
+      "diagnostic": "diagnostic-c2-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-32000/latency-summary.json",
+      "source_sha256": "f5f006cba4ec1e4e3a79724e527fd9a763a36358e55ae11287a694a4f2a026d2",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 1,
+      "diagnostic": "diagnostic-c2-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-32000/latency-summary.json",
+      "source_sha256": "f5f006cba4ec1e4e3a79724e527fd9a763a36358e55ae11287a694a4f2a026d2",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 2,
+      "diagnostic": "diagnostic-c2-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-32000/latency-summary.json",
+      "source_sha256": "f5f006cba4ec1e4e3a79724e527fd9a763a36358e55ae11287a694a4f2a026d2",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T012520-4419c12b7da4",
+      "rank": 3,
+      "diagnostic": "diagnostic-c2-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/diagnostic-c2-32000/latency-summary.json",
+      "source_sha256": "f5f006cba4ec1e4e3a79724e527fd9a763a36358e55ae11287a694a4f2a026d2",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, false, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 336,
+        "void st_router_fused<__nv_bfloat16, 16>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void mk_mla_kernel<false, false, true, 32, true>(MKMlaArgs)": 44,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, false, false, false>((anonymous namespace)::MKMhcArgs)": 20,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 0,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "5663577472c561c016b1f2acf10e7b9dd1e2ce83af6136344276b31546b31c4e",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 1,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "5663577472c561c016b1f2acf10e7b9dd1e2ce83af6136344276b31546b31c4e",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 2,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "5663577472c561c016b1f2acf10e7b9dd1e2ce83af6136344276b31546b31c4e",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 3,
+      "diagnostic": "diagnostic-c1-2000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-2000/latency-summary.json",
+      "source_sha256": "5663577472c561c016b1f2acf10e7b9dd1e2ce83af6136344276b31546b31c4e",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 0,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "d0c6d6b32e70e04361d28681bc6e4576906b44ff716fead72d6940237d89a3ef",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 1,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "d0c6d6b32e70e04361d28681bc6e4576906b44ff716fead72d6940237d89a3ef",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 2,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "d0c6d6b32e70e04361d28681bc6e4576906b44ff716fead72d6940237d89a3ef",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 3,
+      "diagnostic": "diagnostic-c1-32000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-32000/latency-summary.json",
+      "source_sha256": "d0c6d6b32e70e04361d28681bc6e4576906b44ff716fead72d6940237d89a3ef",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 0,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "00a3bd2110f802d7e04768e7fe063a363ec6c3e8db57bbd8f939133a4acc2f31",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 1,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "00a3bd2110f802d7e04768e7fe063a363ec6c3e8db57bbd8f939133a4acc2f31",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 2,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "00a3bd2110f802d7e04768e7fe063a363ec6c3e8db57bbd8f939133a4acc2f31",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
+    },
+    {
+      "arm": "A",
+      "run_id": "20260917T014752-189b46be0d0c",
+      "rank": 3,
+      "diagnostic": "diagnostic-c1-128000",
+      "source": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/diagnostic-c1-128000/latency-summary.json",
+      "source_sha256": "00a3bd2110f802d7e04768e7fe063a363ec6c3e8db57bbd8f939133a4acc2f31",
+      "launches": {
+        "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, false, false>((anonymous namespace)::MKMhcPacketsArgs)": 216,
+        "void st_router_fused<__nv_bfloat16, 8>(__nv_bfloat16 const*, float const*, float const*, unsigned int*, float*, int*, float*, int, float)": 168,
+        "void (anonymous namespace)::mk_mhc_packets_kernel<true, true, true, true>((anonymous namespace)::MKMhcPacketsArgs)": 120,
+        "void mk_mla_kernel<false, false, false, 16, true>(MKMlaArgs)": 44,
+        "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)": 178,
+        "void (anonymous namespace)::mk_mhc_ar_kernel<true, 4096, true, false, false>((anonymous namespace)::MKMhcArgs)": 20
+      }
     }
   ]
 }
