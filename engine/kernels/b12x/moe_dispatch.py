@@ -2761,6 +2761,7 @@ def _get_static_kernel_v2(
         f"{'prefetch3' if config.get('c2_fc2_prefetch') else ''}"
         f"{'sync' if config.get('sync_cleanup') else ''}"
         f"{'inputv16' if config.get('input_vec16') else ''}"
+        f"{('inputreuse' + str(config['input_reuse'])) if config.get('input_reuse') else ''}"
         f"{'xs' if config.get('skip_sf') else ''}{'xa' if config.get('skip_a') else ''}"
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )

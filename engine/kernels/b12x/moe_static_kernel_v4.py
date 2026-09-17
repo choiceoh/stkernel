@@ -1431,6 +1431,8 @@ class MoEStaticKernelV4:
                 for elem_idx in cutlass.range_constexpr(self.sf_vec_size):
                     values[elem_idx] = loaded[elem_idx]
                     block_max = fmax_f32(block_max, fabs_f32(loaded[elem_idx]))
+                packed = Uint64(0)
+                scale = Uint8(0)
                 if self.fast_math:
                     packed, scale = quantize_block_fp4_fast(values, block_max, gs)
                 else:
@@ -1518,8 +1520,8 @@ class MoEStaticKernelV4:
                 packed_lo = Uint64(0)
                 if reuse_this != Int32(0):
                     if cutlass.const_expr(self.input_reuse):
-                        packed_lo = reuse_packed[token_idx, sf_idx]
-                        scale_byte = reuse_scales[token_idx, sf_idx]
+                        packed_lo = reuse_packed[token_idx, sf_idx].to(Uint64)
+                        scale_byte = reuse_scales[token_idx, sf_idx].to(Uint8)
                 else:
                     block_start = sf_idx * Int32(self.sf_vec_size)
                     values = cute.make_rmem_tensor((self.sf_vec_size,), cutlass.Float32)

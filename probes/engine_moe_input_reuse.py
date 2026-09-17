@@ -34,8 +34,9 @@ def moe_frontend_check(report, ranks):
     from engine.profiles.glm53.weights import rank_loader
     from engine.profiles.glm53.lanes import served
     from engine.kernels.b12x import moe_dispatch as md
-    layer = cells.Layer(rank_loader(Path(ranks)), set(rank_loader(Path(ranks)).keys()),
-                        3, served(moe_static='t,r,sf6,batch,q0'), (256,))
+    loader = rank_loader(Path(ranks))
+    layer = cells.Layer(loader, set(loader.keys()), 3,
+                        served(moe_static='t,r,sf6,batch,q0'), (256,))
     get_kernel = md._get_static_kernel_v2
     captured = []
     class Observe:
@@ -66,8 +67,8 @@ def moe_frontend_check(report, ranks):
                 result[(int(experts[local]), token)] = (packed[local, row].clone(), scale[local, offsets].clone())
         return result
     original = layer.q13
-    for scale_case in ('uniform', 'uniform_nonunit', 'mixed', 'distinct', 'zero'):
-        values = (torch.ones(288, device='cuda') if scale_case == 'uniform' else
+    for scale_case in ('uniform', 'uniform_unique', 'uniform_shared', 'uniform_nonunit', 'mixed', 'distinct', 'zero'):
+        values = (torch.ones(288, device='cuda') if scale_case in ('uniform', 'uniform_unique', 'uniform_shared') else
                   torch.full((288,), .37, device='cuda') if scale_case == 'uniform_nonunit' else
                   torch.arange(288, device='cuda').remainder(4).float() * .31 if scale_case == 'mixed' else
                   torch.linspace(.01, 1.7, 288, device='cuda') if scale_case == 'distinct' else
@@ -76,6 +77,10 @@ def moe_frontend_check(report, ranks):
         for rows in (8, 16):
             fx = cells.Fixtures([layer], rows)
             fx.load(('independent', rows, rows, 1.), 41)
+            if scale_case == 'uniform_unique':
+                fx.ids[0].copy_(torch.arange(288 - rows * 8, 288, device='cuda').view(rows, 8))
+            elif scale_case == 'uniform_shared':
+                fx.ids[0].copy_(torch.arange(8, device='cuda').expand(rows, 8))
             snapshots = {}
             for mode in (0, 1, 2):
                 cfg = dict(md._parse_glm53_static_v2('t,r,sf6,batch'), input_vec16=True, input_reuse=mode)
@@ -91,7 +96,8 @@ def moe_frontend_check(report, ranks):
                 changes = {str(key): [int((a != b).sum()) for a, b in zip(base[key], got[key])]
                            for key in base if any(not torch.equal(a, b) for a,b in zip(base[key], got[key]))}
                 report('frontend_bytes', rows=rows, scale_case=scale_case, mode=mode,
-                       routes=len(base), mismatched_routes=changes)
+                       routes=len(base), unique_experts=len({expert for expert, _ in base}),
+                       mismatched_routes=changes)
                 if changes:
                     raise AssertionError(f'{scale_case} rows={rows} mode={mode}: packed inputs changed')
     layer.q13 = original
@@ -159,6 +165,10 @@ def run(output, ranks, *, compile_only=False):
             compile_check(report)
         else:
             torch.manual_seed(91731)
+            path = Path(ranks)
+            if path.is_dir():
+                ranks = str(path / 'rank0of4.safetensors')
+            report('device', name=torch.cuda.get_device_name(), capability=torch.cuda.get_device_capability())
             moe_frontend_check(report, ranks)
             moe_check(report, ranks)
         report('complete', passed=True, scope='component numerics and latency; consumer pending')
