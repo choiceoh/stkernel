@@ -1227,8 +1227,11 @@ class Glm53Net:
                 projection = self.prefill_project(sp, x, f"L{L}.kda.in_proj")
             elif sp:
                 x = sp.all_gather(x.contiguous())
-            x = self._dsa(L, x, step, caches, reduce) if F.is_dsa(L) else self._kda(
-                L, x, step, caches, reduce, projection=projection)
+            if F.is_dsa(L):
+                x = self._dsa(L, x, step, caches, reduce)
+            else:
+                from engine.profiles.glm53.incident_kda import capture
+                x = capture(self, self._kda, L, x, step, caches, reduce, projection=projection)
             if self.probe:
                 self.probe("dsa" if F.is_dsa(L) else "kda", L, x)
             audit_row('attention', L, x)
