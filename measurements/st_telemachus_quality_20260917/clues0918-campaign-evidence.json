@@ -1,0 +1,1329 @@
+{
+ "scope": "Exclusive-hold replays of the 2026-09-17 Telemachus incident on boot 048b682d75f9 (operand-oracle + origin/main merge), plus texture cross-checks of the st-causal0918b hold on 746b9f69. Sanitized: token counts, seeds, hashes and glyph statistics only; private prompt and output text remain on srv2.",
+ "date": "2026-09-18",
+ "texture_metric": "unseen(ko): fraction of adjacent Hangul bigrams absent from a private Korean filler reference; cyr/thai/cjk count foreign script codepoints in the decoded output. Clean controls score ~0.05-0.14; the incident output scored 0.19+ with Cyrillic.",
+ "boot_048b682d": {
+  "source": "048b682d75f9 (codex/telemachus-clues-0918 + origin/main a15d5749)",
+  "owner": "queue/st-telemachus-clues0918",
+  "cases": [
+   {
+    "case": "orig-baseline",
+    "prompt_tokens": 50005,
+    "seed": 5007,
+    "mode": 5,
+    "max_tokens": 130,
+    "completion_tokens": 130,
+    "cap_hit": true,
+    "ids_sha256": "a2a034b0efd5f4f2b09577f9e29ad0b2a3d90805ab60387001cbb1d369bc234f",
+    "texture": {
+     "chars": 244,
+     "cyr": 0,
+     "thai": 0,
+     "cjk": 0,
+     "unseen_ko": 0.051
+    }
+   },
+   {
+    "case": "orig-forced",
+    "prompt_tokens": 50129,
+    "seed": 5007,
+    "mode": 5,
+    "max_tokens": 2,
+    "completion_tokens": 2,
+    "cap_hit": true,
+    "ids_sha256": "9fce43b00ec27bad5d53a5b7f184037f97b6994e3d972c6049c0948085a1b23b"
+   },
+   {
+    "case": "orig-prefill125",
+    "prompt_tokens": 50130,
+    "seed": 5007,
+    "mode": 5,
+    "max_tokens": 1,
+    "completion_tokens": 1,
+    "cap_hit": true,
+    "ids_sha256": "f41676530b59bdeeb95fe413624204edb2a612fbe05f8dbef192c5d7f16ac74a"
+   },
+   {
+    "case": "neut-baseline",
+    "prompt_tokens": 50094,
+    "seed": 5007,
+    "mode": 5,
+    "max_tokens": 130,
+    "completion_tokens": 130,
+    "cap_hit": true,
+    "ids_sha256": "ddb0b542e5b57609e2aaf7e68d5bc93c0a7b749cf7b60661bae18ce1d8768a44",
+    "texture": {
+     "chars": 170,
+     "cyr": 0,
+     "thai": 0,
+     "cjk": 2,
+     "unseen_ko": 0.068
+    }
+   },
+   {
+    "case": "neut-forced",
+    "prompt_tokens": 50218,
+    "seed": 5007,
+    "mode": 5,
+    "max_tokens": 2,
+    "completion_tokens": 2,
+    "cap_hit": true,
+    "ids_sha256": "dd409a193892b33612513ca7d428bdf920b6a2c9df511dc66831ee5cf7f45b80"
+   },
+   {
+    "case": "neut-prefill125",
+    "prompt_tokens": 50219,
+    "seed": 5007,
+    "mode": 5,
+    "max_tokens": 1,
+    "completion_tokens": 1,
+    "cap_hit": true,
+    "ids_sha256": "4c6575484b264e11883be99c624c8a7900c8f656a0b0177ef36d2df6d97b9634"
+   },
+   {
+    "case": "excise-prior",
+    "prompt_tokens": 49513,
+    "seed": 7,
+    "mode": 0,
+    "max_tokens": 1024,
+    "completion_tokens": 994,
+    "cap_hit": false,
+    "ids_sha256": "63a3ecbbf4f1fff730261edd7f2a0f28304364e5c27af2495e8688c9a7d17070",
+    "texture": {
+     "chars": 1937,
+     "cyr": 0,
+     "thai": 0,
+     "cjk": 0,
+     "unseen_ko": 0.132
+    }
+   },
+   {
+    "case": "excise-span",
+    "prompt_tokens": 49513,
+    "seed": 7,
+    "mode": 0,
+    "max_tokens": 1024,
+    "completion_tokens": 1024,
+    "cap_hit": true,
+    "ids_sha256": "fa37aae244469658e2a9b6116feca05506f1ce3699ba5087bc8fd369dc0b48a3",
+    "texture": {
+     "chars": 2644,
+     "cyr": 0,
+     "thai": 0,
+     "cjk": 0,
+     "unseen_ko": 0.136
+    }
+   },
+   {
+    "case": "reverse-inject",
+    "prompt_tokens": 52898,
+    "seed": 7,
+    "mode": 0,
+    "max_tokens": 1024,
+    "completion_tokens": 677,
+    "cap_hit": false,
+    "ids_sha256": "3aa33688f403b86a2e2e961b9064d71497f1be1d5c9f03c397b3bc3a9db9a57d",
+    "texture": {
+     "chars": 896,
+     "cyr": 0,
+     "thai": 0,
+     "cjk": 0,
+     "unseen_ko": 0.108
+    }
+   },
+   {
+    "case": "orig-native1024",
+    "prompt_tokens": 50005,
+    "seed": 7,
+    "mode": 0,
+    "max_tokens": 1024,
+    "completion_tokens": 530,
+    "cap_hit": false,
+    "ids_sha256": "a104456f19e3208082fb4ef8c1174500ccbb09b81e7d13251e053e184ac5a869",
+    "texture": {
+     "chars": 1007,
+     "cyr": 0,
+     "thai": 0,
+     "cjk": 2,
+     "unseen_ko": 0.103
+    }
+   }
+  ],
+  "stage_gap": {
+   "definition": "relative L2 between the same global token's stage-tail capture in scalar generation (generation 1 or 125) and in a fresh prefill that ends at that token; 90 stages",
+   "original_arm": [
+    {
+     "stage": "attention0",
+     "scalar1_vs_prefill": 0.09476736932992935,
+     "scalar125_vs_prefill": 0.0951463058590889,
+     "scalar125_vs_scalar1": 0.018777647987008095
+    },
+    {
+     "stage": "ffn0",
+     "scalar1_vs_prefill": 0.1364050805568695,
+     "scalar125_vs_prefill": 0.13807375729084015,
+     "scalar125_vs_scalar1": 0.04504210874438286
+    },
+    {
+     "stage": "attention1",
+     "scalar1_vs_prefill": 0.06845585256814957,
+     "scalar125_vs_prefill": 0.07988759875297546,
+     "scalar125_vs_scalar1": 0.04341256991028786
+    },
+    {
+     "stage": "ffn1",
+     "scalar1_vs_prefill": 0.19927753508090973,
+     "scalar125_vs_prefill": 0.19798576831817627,
+     "scalar125_vs_scalar1": 0.09941908717155457
+    },
+    {
+     "stage": "attention2",
+     "scalar1_vs_prefill": 0.05803275480866432,
+     "scalar125_vs_prefill": 0.07015608996152878,
+     "scalar125_vs_scalar1": 0.04860379546880722
+    },
+    {
+     "stage": "ffn2",
+     "scalar1_vs_prefill": 0.05071353167295456,
+     "scalar125_vs_prefill": 0.04841546341776848,
+     "scalar125_vs_scalar1": 0.026826579123735428
+    },
+    {
+     "stage": "attention3",
+     "scalar1_vs_prefill": 0.056730661541223526,
+     "scalar125_vs_prefill": 0.06079905852675438,
+     "scalar125_vs_scalar1": 0.0327720083296299
+    },
+    {
+     "stage": "ffn3",
+     "scalar1_vs_prefill": 0.04355589300394058,
+     "scalar125_vs_prefill": 0.042450327426195145,
+     "scalar125_vs_scalar1": 0.029145661741495132
+    },
+    {
+     "stage": "attention4",
+     "scalar1_vs_prefill": 0.07811589539051056,
+     "scalar125_vs_prefill": 0.09982288628816605,
+     "scalar125_vs_scalar1": 0.06294745951890945
+    },
+    {
+     "stage": "ffn4",
+     "scalar1_vs_prefill": 0.24234147369861603,
+     "scalar125_vs_prefill": 0.39568617939949036,
+     "scalar125_vs_scalar1": 0.3253197968006134
+    },
+    {
+     "stage": "attention5",
+     "scalar1_vs_prefill": 0.09037374705076218,
+     "scalar125_vs_prefill": 0.13920097053050995,
+     "scalar125_vs_scalar1": 0.11335629969835281
+    },
+    {
+     "stage": "ffn5",
+     "scalar1_vs_prefill": 0.20614364743232727,
+     "scalar125_vs_prefill": 0.24415649473667145,
+     "scalar125_vs_scalar1": 0.20828454196453094
+    },
+    {
+     "stage": "attention6",
+     "scalar1_vs_prefill": 0.08642257750034332,
+     "scalar125_vs_prefill": 0.11766327917575836,
+     "scalar125_vs_scalar1": 0.09115053713321686
+    },
+    {
+     "stage": "ffn6",
+     "scalar1_vs_prefill": 0.24120765924453735,
+     "scalar125_vs_prefill": 0.2472495138645172,
+     "scalar125_vs_scalar1": 0.23724527657032013
+    },
+    {
+     "stage": "attention7",
+     "scalar1_vs_prefill": 0.07796074450016022,
+     "scalar125_vs_prefill": 0.0934465304017067,
+     "scalar125_vs_scalar1": 0.06000206992030144
+    },
+    {
+     "stage": "ffn7",
+     "scalar1_vs_prefill": 0.17804951965808868,
+     "scalar125_vs_prefill": 0.19489586353302002,
+     "scalar125_vs_scalar1": 0.15916898846626282
+    },
+    {
+     "stage": "attention8",
+     "scalar1_vs_prefill": 0.09644334018230438,
+     "scalar125_vs_prefill": 0.16429327428340912,
+     "scalar125_vs_scalar1": 0.13790249824523926
+    },
+    {
+     "stage": "ffn8",
+     "scalar1_vs_prefill": 0.1742521971464157,
+     "scalar125_vs_prefill": 0.19067324697971344,
+     "scalar125_vs_scalar1": 0.1732729822397232
+    },
+    {
+     "stage": "attention9",
+     "scalar1_vs_prefill": 0.09535086154937744,
+     "scalar125_vs_prefill": 0.14462587237358093,
+     "scalar125_vs_scalar1": 0.13362360000610352
+    },
+    {
+     "stage": "ffn9",
+     "scalar1_vs_prefill": 0.1882420778274536,
+     "scalar125_vs_prefill": 0.24484825134277344,
+     "scalar125_vs_scalar1": 0.2226860225200653
+    },
+    {
+     "stage": "attention10",
+     "scalar1_vs_prefill": 0.10436904430389404,
+     "scalar125_vs_prefill": 0.1337662637233734,
+     "scalar125_vs_scalar1": 0.10975001007318497
+    },
+    {
+     "stage": "ffn10",
+     "scalar1_vs_prefill": 0.18666276335716248,
+     "scalar125_vs_prefill": 0.22571586072444916,
+     "scalar125_vs_scalar1": 0.19711185991764069
+    },
+    {
+     "stage": "attention11",
+     "scalar1_vs_prefill": 0.1259719431400299,
+     "scalar125_vs_prefill": 0.16271895170211792,
+     "scalar125_vs_scalar1": 0.13090220093727112
+    },
+    {
+     "stage": "ffn11",
+     "scalar1_vs_prefill": 0.23835375905036926,
+     "scalar125_vs_prefill": 0.24004119634628296,
+     "scalar125_vs_scalar1": 0.23733755946159363
+    },
+    {
+     "stage": "attention12",
+     "scalar1_vs_prefill": 0.11583193391561508,
+     "scalar125_vs_prefill": 0.18166333436965942,
+     "scalar125_vs_scalar1": 0.16979143023490906
+    },
+    {
+     "stage": "ffn12",
+     "scalar1_vs_prefill": 0.20136532187461853,
+     "scalar125_vs_prefill": 0.23214589059352875,
+     "scalar125_vs_scalar1": 0.19802998006343842
+    },
+    {
+     "stage": "attention13",
+     "scalar1_vs_prefill": 0.12870118021965027,
+     "scalar125_vs_prefill": 0.220799520611763,
+     "scalar125_vs_scalar1": 0.17960762977600098
+    },
+    {
+     "stage": "ffn13",
+     "scalar1_vs_prefill": 0.3199104070663452,
+     "scalar125_vs_prefill": 0.34481820464134216,
+     "scalar125_vs_scalar1": 0.20711177587509155
+    },
+    {
+     "stage": "attention14",
+     "scalar1_vs_prefill": 0.15846295654773712,
+     "scalar125_vs_prefill": 0.20957715809345245,
+     "scalar125_vs_scalar1": 0.14761249721050262
+    },
+    {
+     "stage": "ffn14",
+     "scalar1_vs_prefill": 0.26210758090019226,
+     "scalar125_vs_prefill": 0.3804667890071869,
+     "scalar125_vs_scalar1": 0.3154364228248596
+    },
+    {
+     "stage": "attention15",
+     "scalar1_vs_prefill": 0.16996558010578156,
+     "scalar125_vs_prefill": 0.20998884737491608,
+     "scalar125_vs_scalar1": 0.15059944987297058
+    },
+    {
+     "stage": "ffn15",
+     "scalar1_vs_prefill": 0.28587034344673157,
+     "scalar125_vs_prefill": 0.4942460358142853,
+     "scalar125_vs_scalar1": 0.46278128027915955
+    },
+    {
+     "stage": "attention16",
+     "scalar1_vs_prefill": 0.17795409262180328,
+     "scalar125_vs_prefill": 0.2566710114479065,
+     "scalar125_vs_scalar1": 0.2324957698583603
+    },
+    {
+     "stage": "ffn16",
+     "scalar1_vs_prefill": 0.3101601302623749,
+     "scalar125_vs_prefill": 0.5064893364906311,
+     "scalar125_vs_scalar1": 0.4888741374015808
+    },
+    {
+     "stage": "attention17",
+     "scalar1_vs_prefill": 0.2288442999124527,
+     "scalar125_vs_prefill": 0.3497552275657654,
+     "scalar125_vs_scalar1": 0.2784763276576996
+    },
+    {
+     "stage": "ffn17",
+     "scalar1_vs_prefill": 0.2769768238067627,
+     "scalar125_vs_prefill": 0.38026654720306396,
+     "scalar125_vs_scalar1": 0.30565449595451355
+    },
+    {
+     "stage": "attention18",
+     "scalar1_vs_prefill": 0.1745365858078003,
+     "scalar125_vs_prefill": 0.2872464954853058,
+     "scalar125_vs_scalar1": 0.2378372997045517
+    },
+    {
+     "stage": "ffn18",
+     "scalar1_vs_prefill": 0.20327907800674438,
+     "scalar125_vs_prefill": 0.3150802552700043,
+     "scalar125_vs_scalar1": 0.2676551043987274
+    },
+    {
+     "stage": "attention19",
+     "scalar1_vs_prefill": 0.19263191521167755,
+     "scalar125_vs_prefill": 0.3098130524158478,
+     "scalar125_vs_scalar1": 0.2499479502439499
+    },
+    {
+     "stage": "ffn19",
+     "scalar1_vs_prefill": 0.32307615876197815,
+     "scalar125_vs_prefill": 0.40258023142814636,
+     "scalar125_vs_scalar1": 0.3194182217121124
+    },
+    {
+     "stage": "attention20",
+     "scalar1_vs_prefill": 0.22159044444561005,
+     "scalar125_vs_prefill": 0.3501495122909546,
+     "scalar125_vs_scalar1": 0.2851865589618683
+    },
+    {
+     "stage": "ffn20",
+     "scalar1_vs_prefill": 0.3647557199001312,
+     "scalar125_vs_prefill": 0.5062431693077087,
+     "scalar125_vs_scalar1": 0.3943263590335846
+    },
+    {
+     "stage": "attention21",
+     "scalar1_vs_prefill": 0.25290045142173767,
+     "scalar125_vs_prefill": 0.4592553377151489,
+     "scalar125_vs_scalar1": 0.34690579771995544
+    },
+    {
+     "stage": "ffn21",
+     "scalar1_vs_prefill": 0.4345616102218628,
+     "scalar125_vs_prefill": 0.525539219379425,
+     "scalar125_vs_scalar1": 0.30739837884902954
+    },
+    {
+     "stage": "attention22",
+     "scalar1_vs_prefill": 0.2140401303768158,
+     "scalar125_vs_prefill": 0.2874555289745331,
+     "scalar125_vs_scalar1": 0.19279193878173828
+    },
+    {
+     "stage": "ffn22",
+     "scalar1_vs_prefill": 0.6589106321334839,
+     "scalar125_vs_prefill": 0.7854401469230652,
+     "scalar125_vs_scalar1": 0.46175602078437805
+    },
+    {
+     "stage": "attention23",
+     "scalar1_vs_prefill": 0.2916599214076996,
+     "scalar125_vs_prefill": 0.42062681913375854,
+     "scalar125_vs_scalar1": 0.29629918932914734
+    },
+    {
+     "stage": "ffn23",
+     "scalar1_vs_prefill": 0.607745349407196,
+     "scalar125_vs_prefill": 0.6719942688941956,
+     "scalar125_vs_scalar1": 0.32228055596351624
+    },
+    {
+     "stage": "attention24",
+     "scalar1_vs_prefill": 0.3317471444606781,
+     "scalar125_vs_prefill": 0.42578670382499695,
+     "scalar125_vs_scalar1": 0.29675570130348206
+    },
+    {
+     "stage": "ffn24",
+     "scalar1_vs_prefill": 0.40466299653053284,
+     "scalar125_vs_prefill": 0.4836409389972687,
+     "scalar125_vs_scalar1": 0.3053726255893707
+    },
+    {
+     "stage": "attention25",
+     "scalar1_vs_prefill": 0.2040684074163437,
+     "scalar125_vs_prefill": 0.25765013694763184,
+     "scalar125_vs_scalar1": 0.19915153086185455
+    },
+    {
+     "stage": "ffn25",
+     "scalar1_vs_prefill": 0.3282410800457001,
+     "scalar125_vs_prefill": 0.41257038712501526,
+     "scalar125_vs_scalar1": 0.29802206158638
+    },
+    {
+     "stage": "attention26",
+     "scalar1_vs_prefill": 0.2897625267505646,
+     "scalar125_vs_prefill": 0.3678821325302124,
+     "scalar125_vs_scalar1": 0.24380648136138916
+    },
+    {
+     "stage": "ffn26",
+     "scalar1_vs_prefill": 0.33486706018447876,
+     "scalar125_vs_prefill": 0.3785410225391388,
+     "scalar125_vs_scalar1": 0.29618602991104126
+    },
+    {
+     "stage": "attention27",
+     "scalar1_vs_prefill": 0.28063565492630005,
+     "scalar125_vs_prefill": 0.3010997176170349,
+     "scalar125_vs_scalar1": 0.20703373849391937
+    },
+    {
+     "stage": "ffn27",
+     "scalar1_vs_prefill": 0.3860933780670166,
+     "scalar125_vs_prefill": 0.43656495213508606,
+     "scalar125_vs_scalar1": 0.34561192989349365
+    },
+    {
+     "stage": "attention28",
+     "scalar1_vs_prefill": 0.2773226797580719,
+     "scalar125_vs_prefill": 0.33605366945266724,
+     "scalar125_vs_scalar1": 0.27391448616981506
+    },
+    {
+     "stage": "ffn28",
+     "scalar1_vs_prefill": 0.41488760709762573,
+     "scalar125_vs_prefill": 0.37803179025650024,
+     "scalar125_vs_scalar1": 0.39563143253326416
+    },
+    {
+     "stage": "attention29",
+     "scalar1_vs_prefill": 0.23344860970973969,
+     "scalar125_vs_prefill": 0.2929026484489441,
+     "scalar125_vs_scalar1": 0.24579156935214996
+    },
+    {
+     "stage": "ffn29",
+     "scalar1_vs_prefill": 0.33714577555656433,
+     "scalar125_vs_prefill": 0.346807062625885,
+     "scalar125_vs_scalar1": 0.29755479097366333
+    },
+    {
+     "stage": "attention30",
+     "scalar1_vs_prefill": 0.1781575232744217,
+     "scalar125_vs_prefill": 0.21337677538394928,
+     "scalar125_vs_scalar1": 0.17030493915081024
+    },
+    {
+     "stage": "ffn30",
+     "scalar1_vs_prefill": 0.36490944027900696,
+     "scalar125_vs_prefill": 0.3767921030521393,
+     "scalar125_vs_scalar1": 0.3921387195587158
+    },
+    {
+     "stage": "attention31",
+     "scalar1_vs_prefill": 0.18431507050991058,
+     "scalar125_vs_prefill": 0.2359752506017685,
+     "scalar125_vs_scalar1": 0.1682044267654419
+    },
+    {
+     "stage": "ffn31",
+     "scalar1_vs_prefill": 0.22555552423000336,
+     "scalar125_vs_prefill": 0.2691000998020172,
+     "scalar125_vs_scalar1": 0.24312809109687805
+    },
+    {
+     "stage": "attention32",
+     "scalar1_vs_prefill": 0.18635770678520203,
+     "scalar125_vs_prefill": 0.25162386894226074,
+     "scalar125_vs_scalar1": 0.2148427665233612
+    },
+    {
+     "stage": "ffn32",
+     "scalar1_vs_prefill": 0.28115344047546387,
+     "scalar125_vs_prefill": 0.292766809463501,
+     "scalar125_vs_scalar1": 0.3012641966342926
+    },
+    {
+     "stage": "attention33",
+     "scalar1_vs_prefill": 0.1731199473142624,
+     "scalar125_vs_prefill": 0.2309054285287857,
+     "scalar125_vs_scalar1": 0.19855941832065582
+    },
+    {
+     "stage": "ffn33",
+     "scalar1_vs_prefill": 0.300934761762619,
+     "scalar125_vs_prefill": 0.28897422552108765,
+     "scalar125_vs_scalar1": 0.32395434379577637
+    },
+    {
+     "stage": "attention34",
+     "scalar1_vs_prefill": 0.13960860669612885,
+     "scalar125_vs_prefill": 0.1654035598039627,
+     "scalar125_vs_scalar1": 0.12087792158126831
+    },
+    {
+     "stage": "ffn34",
+     "scalar1_vs_prefill": 0.25545862317085266,
+     "scalar125_vs_prefill": 0.2750549912452698,
+     "scalar125_vs_scalar1": 0.2643507122993469
+    },
+    {
+     "stage": "attention35",
+     "scalar1_vs_prefill": 0.20492061972618103,
+     "scalar125_vs_prefill": 0.22674107551574707,
+     "scalar125_vs_scalar1": 0.14359872043132782
+    },
+    {
+     "stage": "ffn35",
+     "scalar1_vs_prefill": 0.3215503394603729,
+     "scalar125_vs_prefill": 0.35569941997528076,
+     "scalar125_vs_scalar1": 0.3402460515499115
+    },
+    {
+     "stage": "attention36",
+     "scalar1_vs_prefill": 0.08765430003404617,
+     "scalar125_vs_prefill": 0.09914085268974304,
+     "scalar125_vs_scalar1": 0.06472405046224594
+    },
+    {
+     "stage": "ffn36",
+     "scalar1_vs_prefill": 0.3338157832622528,
+     "scalar125_vs_prefill": 0.39668935537338257,
+     "scalar125_vs_scalar1": 0.3774372637271881
+    },
+    {
+     "stage": "attention37",
+     "scalar1_vs_prefill": 0.1843627393245697,
+     "scalar125_vs_prefill": 0.28116530179977417,
+     "scalar125_vs_scalar1": 0.24130216240882874
+    },
+    {
+     "stage": "ffn37",
+     "scalar1_vs_prefill": 0.23171734809875488,
+     "scalar125_vs_prefill": 0.22104643285274506,
+     "scalar125_vs_scalar1": 0.21539738774299622
+    },
+    {
+     "stage": "attention38",
+     "scalar1_vs_prefill": 0.17903319001197815,
+     "scalar125_vs_prefill": 0.22651158273220062,
+     "scalar125_vs_scalar1": 0.20036709308624268
+    },
+    {
+     "stage": "ffn38",
+     "scalar1_vs_prefill": 0.26061442494392395,
+     "scalar125_vs_prefill": 0.2761262059211731,
+     "scalar125_vs_scalar1": 0.23053601384162903
+    },
+    {
+     "stage": "attention39",
+     "scalar1_vs_prefill": 0.13338038325309753,
+     "scalar125_vs_prefill": 0.14509552717208862,
+     "scalar125_vs_scalar1": 0.10608312487602234
+    },
+    {
+     "stage": "ffn39",
+     "scalar1_vs_prefill": 0.2780912220478058,
+     "scalar125_vs_prefill": 0.2877929210662842,
+     "scalar125_vs_scalar1": 0.2607633173465729
+    },
+    {
+     "stage": "attention40",
+     "scalar1_vs_prefill": 0.20590561628341675,
+     "scalar125_vs_prefill": 0.28851282596588135,
+     "scalar125_vs_scalar1": 0.2675820291042328
+    },
+    {
+     "stage": "ffn40",
+     "scalar1_vs_prefill": 0.25735795497894287,
+     "scalar125_vs_prefill": 0.28733253479003906,
+     "scalar125_vs_scalar1": 0.24579840898513794
+    },
+    {
+     "stage": "attention41",
+     "scalar1_vs_prefill": 0.22011713683605194,
+     "scalar125_vs_prefill": 0.2817785143852234,
+     "scalar125_vs_scalar1": 0.23413826525211334
+    },
+    {
+     "stage": "ffn41",
+     "scalar1_vs_prefill": 0.3408360481262207,
+     "scalar125_vs_prefill": 0.30299144983291626,
+     "scalar125_vs_scalar1": 0.34235042333602905
+    },
+    {
+     "stage": "attention42",
+     "scalar1_vs_prefill": 0.23809634149074554,
+     "scalar125_vs_prefill": 0.29758012294769287,
+     "scalar125_vs_scalar1": 0.2875296473503113
+    },
+    {
+     "stage": "ffn42",
+     "scalar1_vs_prefill": 0.22925236821174622,
+     "scalar125_vs_prefill": 0.24954397976398468,
+     "scalar125_vs_scalar1": 0.24678125977516174
+    },
+    {
+     "stage": "attention43",
+     "scalar1_vs_prefill": 0.16228166222572327,
+     "scalar125_vs_prefill": 0.16427110135555267,
+     "scalar125_vs_scalar1": 0.1455691158771515
+    },
+    {
+     "stage": "ffn43",
+     "scalar1_vs_prefill": 0.24491482973098755,
+     "scalar125_vs_prefill": 0.2595762312412262,
+     "scalar125_vs_scalar1": 0.24763278663158417
+    },
+    {
+     "stage": "attention44",
+     "scalar1_vs_prefill": 0.22853359580039978,
+     "scalar125_vs_prefill": 0.28542980551719666,
+     "scalar125_vs_scalar1": 0.254474401473999
+    },
+    {
+     "stage": "ffn44",
+     "scalar1_vs_prefill": 0.24341270327568054,
+     "scalar125_vs_prefill": 0.24372069537639618,
+     "scalar125_vs_scalar1": 0.2235322743654251
+    }
+   ],
+   "neutral_arm": [
+    {
+     "stage": "attention0",
+     "scalar1_vs_prefill": 0.06468270719051361,
+     "scalar125_vs_prefill": 0.06550565361976624,
+     "scalar125_vs_scalar1": 0.018573058769106865
+    },
+    {
+     "stage": "ffn0",
+     "scalar1_vs_prefill": 0.12865744531154633,
+     "scalar125_vs_prefill": 0.12968572974205017,
+     "scalar125_vs_scalar1": 0.051621802151203156
+    },
+    {
+     "stage": "attention1",
+     "scalar1_vs_prefill": 0.06504043191671371,
+     "scalar125_vs_prefill": 0.08584146946668625,
+     "scalar125_vs_scalar1": 0.061485886573791504
+    },
+    {
+     "stage": "ffn1",
+     "scalar1_vs_prefill": 0.19831952452659607,
+     "scalar125_vs_prefill": 0.19659869372844696,
+     "scalar125_vs_scalar1": 0.12704603374004364
+    },
+    {
+     "stage": "attention2",
+     "scalar1_vs_prefill": 0.06751766055822372,
+     "scalar125_vs_prefill": 0.0804862529039383,
+     "scalar125_vs_scalar1": 0.05472385510802269
+    },
+    {
+     "stage": "ffn2",
+     "scalar1_vs_prefill": 0.04385986924171448,
+     "scalar125_vs_prefill": 0.044871460646390915,
+     "scalar125_vs_scalar1": 0.029016250744462013
+    },
+    {
+     "stage": "attention3",
+     "scalar1_vs_prefill": 0.059696681797504425,
+     "scalar125_vs_prefill": 0.06425529718399048,
+     "scalar125_vs_scalar1": 0.042555585503578186
+    },
+    {
+     "stage": "ffn3",
+     "scalar1_vs_prefill": 0.049071911722421646,
+     "scalar125_vs_prefill": 0.0574282743036747,
+     "scalar125_vs_scalar1": 0.043160974979400635
+    },
+    {
+     "stage": "attention4",
+     "scalar1_vs_prefill": 0.07810402661561966,
+     "scalar125_vs_prefill": 0.09701128304004669,
+     "scalar125_vs_scalar1": 0.0670887902379036
+    },
+    {
+     "stage": "ffn4",
+     "scalar1_vs_prefill": 0.24507157504558563,
+     "scalar125_vs_prefill": 0.29005536437034607,
+     "scalar125_vs_scalar1": 0.2726706266403198
+    },
+    {
+     "stage": "attention5",
+     "scalar1_vs_prefill": 0.08574024587869644,
+     "scalar125_vs_prefill": 0.12188269197940826,
+     "scalar125_vs_scalar1": 0.1051640510559082
+    },
+    {
+     "stage": "ffn5",
+     "scalar1_vs_prefill": 0.2105608582496643,
+     "scalar125_vs_prefill": 0.23074090480804443,
+     "scalar125_vs_scalar1": 0.20607195794582367
+    },
+    {
+     "stage": "attention6",
+     "scalar1_vs_prefill": 0.08969460427761078,
+     "scalar125_vs_prefill": 0.1223326250910759,
+     "scalar125_vs_scalar1": 0.09627102315425873
+    },
+    {
+     "stage": "ffn6",
+     "scalar1_vs_prefill": 0.20457491278648376,
+     "scalar125_vs_prefill": 0.21810324490070343,
+     "scalar125_vs_scalar1": 0.20692186057567596
+    },
+    {
+     "stage": "attention7",
+     "scalar1_vs_prefill": 0.08301453292369843,
+     "scalar125_vs_prefill": 0.11155704408884048,
+     "scalar125_vs_scalar1": 0.09955399483442307
+    },
+    {
+     "stage": "ffn7",
+     "scalar1_vs_prefill": 0.15344931185245514,
+     "scalar125_vs_prefill": 0.17234760522842407,
+     "scalar125_vs_scalar1": 0.1586175113916397
+    },
+    {
+     "stage": "attention8",
+     "scalar1_vs_prefill": 0.0880197137594223,
+     "scalar125_vs_prefill": 0.1467992216348648,
+     "scalar125_vs_scalar1": 0.12887288630008698
+    },
+    {
+     "stage": "ffn8",
+     "scalar1_vs_prefill": 0.15689927339553833,
+     "scalar125_vs_prefill": 0.18126094341278076,
+     "scalar125_vs_scalar1": 0.16635824739933014
+    },
+    {
+     "stage": "attention9",
+     "scalar1_vs_prefill": 0.10601240396499634,
+     "scalar125_vs_prefill": 0.15645810961723328,
+     "scalar125_vs_scalar1": 0.1301768571138382
+    },
+    {
+     "stage": "ffn9",
+     "scalar1_vs_prefill": 0.3622540235519409,
+     "scalar125_vs_prefill": 0.506486177444458,
+     "scalar125_vs_scalar1": 0.5567207336425781
+    },
+    {
+     "stage": "attention10",
+     "scalar1_vs_prefill": 0.10267090052366257,
+     "scalar125_vs_prefill": 0.16227655112743378,
+     "scalar125_vs_scalar1": 0.14514295756816864
+    },
+    {
+     "stage": "ffn10",
+     "scalar1_vs_prefill": 0.19120769202709198,
+     "scalar125_vs_prefill": 0.22890383005142212,
+     "scalar125_vs_scalar1": 0.22867076098918915
+    },
+    {
+     "stage": "attention11",
+     "scalar1_vs_prefill": 0.1352008581161499,
+     "scalar125_vs_prefill": 0.2465878129005432,
+     "scalar125_vs_scalar1": 0.21194808185100555
+    },
+    {
+     "stage": "ffn11",
+     "scalar1_vs_prefill": 0.33277130126953125,
+     "scalar125_vs_prefill": 0.2769705057144165,
+     "scalar125_vs_scalar1": 0.3362016975879669
+    },
+    {
+     "stage": "attention12",
+     "scalar1_vs_prefill": 0.1161482110619545,
+     "scalar125_vs_prefill": 0.17206503450870514,
+     "scalar125_vs_scalar1": 0.16386163234710693
+    },
+    {
+     "stage": "ffn12",
+     "scalar1_vs_prefill": 0.19985303282737732,
+     "scalar125_vs_prefill": 0.20642060041427612,
+     "scalar125_vs_scalar1": 0.20833568274974823
+    },
+    {
+     "stage": "attention13",
+     "scalar1_vs_prefill": 0.1279006451368332,
+     "scalar125_vs_prefill": 0.19317200779914856,
+     "scalar125_vs_scalar1": 0.1664452999830246
+    },
+    {
+     "stage": "ffn13",
+     "scalar1_vs_prefill": 0.19728122651576996,
+     "scalar125_vs_prefill": 0.22412769496440887,
+     "scalar125_vs_scalar1": 0.1955762356519699
+    },
+    {
+     "stage": "attention14",
+     "scalar1_vs_prefill": 0.11850234866142273,
+     "scalar125_vs_prefill": 0.1668585240840912,
+     "scalar125_vs_scalar1": 0.14503762125968933
+    },
+    {
+     "stage": "ffn14",
+     "scalar1_vs_prefill": 0.1954067349433899,
+     "scalar125_vs_prefill": 0.21903130412101746,
+     "scalar125_vs_scalar1": 0.1992950439453125
+    },
+    {
+     "stage": "attention15",
+     "scalar1_vs_prefill": 0.16620945930480957,
+     "scalar125_vs_prefill": 0.2043437510728836,
+     "scalar125_vs_scalar1": 0.14691680669784546
+    },
+    {
+     "stage": "ffn15",
+     "scalar1_vs_prefill": 0.21661265194416046,
+     "scalar125_vs_prefill": 0.2794407606124878,
+     "scalar125_vs_scalar1": 0.2535618841648102
+    },
+    {
+     "stage": "attention16",
+     "scalar1_vs_prefill": 0.1378411501646042,
+     "scalar125_vs_prefill": 0.1928953230381012,
+     "scalar125_vs_scalar1": 0.17200325429439545
+    },
+    {
+     "stage": "ffn16",
+     "scalar1_vs_prefill": 0.21574991941452026,
+     "scalar125_vs_prefill": 0.25242286920547485,
+     "scalar125_vs_scalar1": 0.22475147247314453
+    },
+    {
+     "stage": "attention17",
+     "scalar1_vs_prefill": 0.161289781332016,
+     "scalar125_vs_prefill": 0.21899211406707764,
+     "scalar125_vs_scalar1": 0.1928315907716751
+    },
+    {
+     "stage": "ffn17",
+     "scalar1_vs_prefill": 0.2963598966598511,
+     "scalar125_vs_prefill": 0.32316532731056213,
+     "scalar125_vs_scalar1": 0.2162456065416336
+    },
+    {
+     "stage": "attention18",
+     "scalar1_vs_prefill": 0.16261765360832214,
+     "scalar125_vs_prefill": 0.22257769107818604,
+     "scalar125_vs_scalar1": 0.20027309656143188
+    },
+    {
+     "stage": "ffn18",
+     "scalar1_vs_prefill": 0.2736629545688629,
+     "scalar125_vs_prefill": 0.2535622715950012,
+     "scalar125_vs_scalar1": 0.2766530513763428
+    },
+    {
+     "stage": "attention19",
+     "scalar1_vs_prefill": 0.15714865922927856,
+     "scalar125_vs_prefill": 0.18765497207641602,
+     "scalar125_vs_scalar1": 0.14617152512073517
+    },
+    {
+     "stage": "ffn19",
+     "scalar1_vs_prefill": 0.31050124764442444,
+     "scalar125_vs_prefill": 0.29522326588630676,
+     "scalar125_vs_scalar1": 0.32517117261886597
+    },
+    {
+     "stage": "attention20",
+     "scalar1_vs_prefill": 0.18114407360553741,
+     "scalar125_vs_prefill": 0.2551555037498474,
+     "scalar125_vs_scalar1": 0.23753993213176727
+    },
+    {
+     "stage": "ffn20",
+     "scalar1_vs_prefill": 0.2509114146232605,
+     "scalar125_vs_prefill": 0.2814646065235138,
+     "scalar125_vs_scalar1": 0.25490471720695496
+    },
+    {
+     "stage": "attention21",
+     "scalar1_vs_prefill": 0.1605806201696396,
+     "scalar125_vs_prefill": 0.23401489853858948,
+     "scalar125_vs_scalar1": 0.21415269374847412
+    },
+    {
+     "stage": "ffn21",
+     "scalar1_vs_prefill": 0.20730695128440857,
+     "scalar125_vs_prefill": 0.2815922200679779,
+     "scalar125_vs_scalar1": 0.25828835368156433
+    },
+    {
+     "stage": "attention22",
+     "scalar1_vs_prefill": 0.13915306329727173,
+     "scalar125_vs_prefill": 0.2201048582792282,
+     "scalar125_vs_scalar1": 0.200391486287117
+    },
+    {
+     "stage": "ffn22",
+     "scalar1_vs_prefill": 0.2003629058599472,
+     "scalar125_vs_prefill": 0.22761784493923187,
+     "scalar125_vs_scalar1": 0.21218453347682953
+    },
+    {
+     "stage": "attention23",
+     "scalar1_vs_prefill": 0.1981339156627655,
+     "scalar125_vs_prefill": 0.23232315480709076,
+     "scalar125_vs_scalar1": 0.16728290915489197
+    },
+    {
+     "stage": "ffn23",
+     "scalar1_vs_prefill": 0.3714171051979065,
+     "scalar125_vs_prefill": 0.32406100630760193,
+     "scalar125_vs_scalar1": 0.3849714696407318
+    },
+    {
+     "stage": "attention24",
+     "scalar1_vs_prefill": 0.17906321585178375,
+     "scalar125_vs_prefill": 0.2572348117828369,
+     "scalar125_vs_scalar1": 0.24859987199306488
+    },
+    {
+     "stage": "ffn24",
+     "scalar1_vs_prefill": 0.2549484372138977,
+     "scalar125_vs_prefill": 0.23350754380226135,
+     "scalar125_vs_scalar1": 0.2564539611339569
+    },
+    {
+     "stage": "attention25",
+     "scalar1_vs_prefill": 0.15270684659481049,
+     "scalar125_vs_prefill": 0.18439875543117523,
+     "scalar125_vs_scalar1": 0.1663537472486496
+    },
+    {
+     "stage": "ffn25",
+     "scalar1_vs_prefill": 0.30903127789497375,
+     "scalar125_vs_prefill": 0.2506617307662964,
+     "scalar125_vs_scalar1": 0.3303815722465515
+    },
+    {
+     "stage": "attention26",
+     "scalar1_vs_prefill": 0.21336175501346588,
+     "scalar125_vs_prefill": 0.24872569739818573,
+     "scalar125_vs_scalar1": 0.24191300570964813
+    },
+    {
+     "stage": "ffn26",
+     "scalar1_vs_prefill": 0.3235186040401459,
+     "scalar125_vs_prefill": 0.30551427602767944,
+     "scalar125_vs_scalar1": 0.3383592367172241
+    },
+    {
+     "stage": "attention27",
+     "scalar1_vs_prefill": 0.16092099249362946,
+     "scalar125_vs_prefill": 0.17479068040847778,
+     "scalar125_vs_scalar1": 0.1364203840494156
+    },
+    {
+     "stage": "ffn27",
+     "scalar1_vs_prefill": 0.25976884365081787,
+     "scalar125_vs_prefill": 0.24965327978134155,
+     "scalar125_vs_scalar1": 0.2698085606098175
+    },
+    {
+     "stage": "attention28",
+     "scalar1_vs_prefill": 0.13848020136356354,
+     "scalar125_vs_prefill": 0.1734079122543335,
+     "scalar125_vs_scalar1": 0.1631348580121994
+    },
+    {
+     "stage": "ffn28",
+     "scalar1_vs_prefill": 0.21534577012062073,
+     "scalar125_vs_prefill": 0.20926116406917572,
+     "scalar125_vs_scalar1": 0.22056183218955994
+    },
+    {
+     "stage": "attention29",
+     "scalar1_vs_prefill": 0.13004620373249054,
+     "scalar125_vs_prefill": 0.19203679263591766,
+     "scalar125_vs_scalar1": 0.18043296039104462
+    },
+    {
+     "stage": "ffn29",
+     "scalar1_vs_prefill": 0.1994759887456894,
+     "scalar125_vs_prefill": 0.1936796009540558,
+     "scalar125_vs_scalar1": 0.1969708949327469
+    },
+    {
+     "stage": "attention30",
+     "scalar1_vs_prefill": 0.13270457088947296,
+     "scalar125_vs_prefill": 0.1544611155986786,
+     "scalar125_vs_scalar1": 0.14368534088134766
+    },
+    {
+     "stage": "ffn30",
+     "scalar1_vs_prefill": 0.21914838254451752,
+     "scalar125_vs_prefill": 0.21933554112911224,
+     "scalar125_vs_scalar1": 0.21131128072738647
+    },
+    {
+     "stage": "attention31",
+     "scalar1_vs_prefill": 0.1512836366891861,
+     "scalar125_vs_prefill": 0.19686785340309143,
+     "scalar125_vs_scalar1": 0.12178488820791245
+    },
+    {
+     "stage": "ffn31",
+     "scalar1_vs_prefill": 0.2462582290172577,
+     "scalar125_vs_prefill": 0.2547833323478699,
+     "scalar125_vs_scalar1": 0.2525709569454193
+    },
+    {
+     "stage": "attention32",
+     "scalar1_vs_prefill": 0.14751264452934265,
+     "scalar125_vs_prefill": 0.20182327926158905,
+     "scalar125_vs_scalar1": 0.15932230651378632
+    },
+    {
+     "stage": "ffn32",
+     "scalar1_vs_prefill": 0.24790461361408234,
+     "scalar125_vs_prefill": 0.2596416175365448,
+     "scalar125_vs_scalar1": 0.24537819623947144
+    },
+    {
+     "stage": "attention33",
+     "scalar1_vs_prefill": 0.12573112547397614,
+     "scalar125_vs_prefill": 0.18649481236934662,
+     "scalar125_vs_scalar1": 0.16900606453418732
+    },
+    {
+     "stage": "ffn33",
+     "scalar1_vs_prefill": 0.2669348120689392,
+     "scalar125_vs_prefill": 0.26723939180374146,
+     "scalar125_vs_scalar1": 0.2409590631723404
+    },
+    {
+     "stage": "attention34",
+     "scalar1_vs_prefill": 0.09635046869516373,
+     "scalar125_vs_prefill": 0.10931991785764694,
+     "scalar125_vs_scalar1": 0.0857497826218605
+    },
+    {
+     "stage": "ffn34",
+     "scalar1_vs_prefill": 0.15628236532211304,
+     "scalar125_vs_prefill": 0.17202389240264893,
+     "scalar125_vs_scalar1": 0.1671910583972931
+    },
+    {
+     "stage": "attention35",
+     "scalar1_vs_prefill": 0.27657464146614075,
+     "scalar125_vs_prefill": 0.2777717709541321,
+     "scalar125_vs_scalar1": 0.09626307338476181
+    },
+    {
+     "stage": "ffn35",
+     "scalar1_vs_prefill": 0.18070559203624725,
+     "scalar125_vs_prefill": 0.20010235905647278,
+     "scalar125_vs_scalar1": 0.19003506004810333
+    },
+    {
+     "stage": "attention36",
+     "scalar1_vs_prefill": 0.09173551201820374,
+     "scalar125_vs_prefill": 0.12320094555616379,
+     "scalar125_vs_scalar1": 0.09932484477758408
+    },
+    {
+     "stage": "ffn36",
+     "scalar1_vs_prefill": 0.22086773812770844,
+     "scalar125_vs_prefill": 0.23748083412647247,
+     "scalar125_vs_scalar1": 0.23510682582855225
+    },
+    {
+     "stage": "attention37",
+     "scalar1_vs_prefill": 0.14491133391857147,
+     "scalar125_vs_prefill": 0.26063019037246704,
+     "scalar125_vs_scalar1": 0.2360592782497406
+    },
+    {
+     "stage": "ffn37",
+     "scalar1_vs_prefill": 0.2442634552717209,
+     "scalar125_vs_prefill": 0.26429471373558044,
+     "scalar125_vs_scalar1": 0.2514655292034149
+    },
+    {
+     "stage": "attention38",
+     "scalar1_vs_prefill": 0.16578464210033417,
+     "scalar125_vs_prefill": 0.2723061740398407,
+     "scalar125_vs_scalar1": 0.24970120191574097
+    },
+    {
+     "stage": "ffn38",
+     "scalar1_vs_prefill": 0.22556306421756744,
+     "scalar125_vs_prefill": 0.251373291015625,
+     "scalar125_vs_scalar1": 0.2217651754617691
+    },
+    {
+     "stage": "attention39",
+     "scalar1_vs_prefill": 0.12894733250141144,
+     "scalar125_vs_prefill": 0.20294569432735443,
+     "scalar125_vs_scalar1": 0.2026292085647583
+    },
+    {
+     "stage": "ffn39",
+     "scalar1_vs_prefill": 0.2479618787765503,
+     "scalar125_vs_prefill": 0.2737475633621216,
+     "scalar125_vs_scalar1": 0.2580800950527191
+    },
+    {
+     "stage": "attention40",
+     "scalar1_vs_prefill": 0.16810940206050873,
+     "scalar125_vs_prefill": 0.30135685205459595,
+     "scalar125_vs_scalar1": 0.27825719118118286
+    },
+    {
+     "stage": "ffn40",
+     "scalar1_vs_prefill": 0.281579852104187,
+     "scalar125_vs_prefill": 0.2827596068382263,
+     "scalar125_vs_scalar1": 0.2966025173664093
+    },
+    {
+     "stage": "attention41",
+     "scalar1_vs_prefill": 0.19817589223384857,
+     "scalar125_vs_prefill": 0.32456961274147034,
+     "scalar125_vs_scalar1": 0.29004159569740295
+    },
+    {
+     "stage": "ffn41",
+     "scalar1_vs_prefill": 0.23567073047161102,
+     "scalar125_vs_prefill": 0.26898297667503357,
+     "scalar125_vs_scalar1": 0.23803213238716125
+    },
+    {
+     "stage": "attention42",
+     "scalar1_vs_prefill": 0.1621377319097519,
+     "scalar125_vs_prefill": 0.22615642845630646,
+     "scalar125_vs_scalar1": 0.23879142105579376
+    },
+    {
+     "stage": "ffn42",
+     "scalar1_vs_prefill": 0.20381541550159454,
+     "scalar125_vs_prefill": 0.21602259576320648,
+     "scalar125_vs_scalar1": 0.20240724086761475
+    },
+    {
+     "stage": "attention43",
+     "scalar1_vs_prefill": 0.12057150900363922,
+     "scalar125_vs_prefill": 0.17659759521484375,
+     "scalar125_vs_scalar1": 0.20640771090984344
+    },
+    {
+     "stage": "ffn43",
+     "scalar1_vs_prefill": 0.17695605754852295,
+     "scalar125_vs_prefill": 0.2116680145263672,
+     "scalar125_vs_scalar1": 0.2276063710451126
+    },
+    {
+     "stage": "attention44",
+     "scalar1_vs_prefill": 0.1386500597000122,
+     "scalar125_vs_prefill": 0.33630800247192383,
+     "scalar125_vs_scalar1": 0.3169621527194977
+    },
+    {
+     "stage": "ffn44",
+     "scalar1_vs_prefill": 0.15928351879119873,
+     "scalar125_vs_prefill": 0.2580474317073822,
+     "scalar125_vs_scalar1": 0.2687683403491974
+    }
+   ],
+   "summary": {
+    "original_attention0_s1_vs_prefill": 0.0948,
+    "neutral_attention0_s1_vs_prefill": 0.0647,
+    "original_worst": {
+     "stage": "ffn22",
+     "s1_vs_prefill": 0.6589
+    },
+    "neutral_worst": {
+     "stage": "ffn23",
+     "s1_vs_prefill": 0.3714
+    },
+    "note": "The 14.7% layer-0 attention gap seen on the pre-#1151 diagnostic boot drops to 9.5% here, and the neutral-content control shows 6.5% at the same site: most of the original gap was the #1151 defect plus path-inherent noise. Deep-FFN gaps are downstream accumulation, not an injection site."
+   }
+  }
+ },
+ "boot_746b9f69_cross_check": {
+  "source": "746b9f695a13 (codex/telemachus-operand-oracle-0918, lacks #1157)",
+  "owner": "queue/st-causal0918b",
+  "prompt_sha256": "a5c267f68dac71d35602e68f1df7fdf5f4adabd5322d857da1cfc5d1ab3a6375",
+  "prompt_note": "thinking-off variant, 50,006 tokens",
+  "cases": [
+   {
+    "case": "native-full-capture",
+    "mode": 5,
+    "seed": 7,
+    "completion_tokens": 350,
+    "output_text_sha256": "88752656d0e76179c231e4acae618a538c81d3e4240a901c1329da965684a19e",
+    "texture": {
+     "chars": 411,
+     "cyr": 0,
+     "thai": 0,
+     "cjk": 0,
+     "unseen_ko": 0.136
+    }
+   },
+   {
+    "case": "original-bf16-dense",
+    "mode": 13,
+    "seed": 7,
+    "completion_tokens": 497,
+    "output_text_sha256": "3b8f6a4602e4e73f35e1f60c28251976b6608ec4ca388343200db6edd893583b",
+    "texture": {
+     "chars": 604,
+     "cyr": 3,
+     "thai": 0,
+     "cjk": 5,
+     "unseen_ko": 0.186
+    }
+   }
+  ],
+  "expert_audit": "Actual request routed outputs match the serving activation quantizer plus independent FP32 GEMMs at 0.17-0.44% relative L2 across sampled layers 3-44; routed-expert arithmetic remains consistent with its quantizer."
+ },
+ "delta_36e4f0ba_to_048b682d": [
+  {
+   "commit": "2d56d590",
+   "pr": 1147,
+   "kind": "fix",
+   "title": "pin the grafted FP32 epilogue and split the scatter ceilings"
+  },
+  {
+   "commit": "bb66367a",
+   "pr": 1153,
+   "kind": "measurement",
+   "title": "assistant-provenance records are not the differentiator"
+  },
+  {
+   "commit": "46d3b519",
+   "pr": 1154,
+   "kind": "fix",
+   "title": "fold the smoothing peaks only when the blob claims this boot's weights"
+  },
+  {
+   "commit": "886822a2",
+   "pr": 1155,
+   "kind": "bench",
+   "title": "agentic-recall gate"
+  },
+  {
+   "commit": "996db9d0",
+   "pr": 1156,
+   "kind": "probe",
+   "title": "capture the sparse indexer's selection and compare with a reference"
+  },
+  {
+   "commit": "a15d5749",
+   "pr": 1157,
+   "kind": "recipe",
+   "title": "widen the production activation scale search to as2 (radius 2)"
+  }
+ ],
+ "interpretation": "Boot 36e4f0ba still corrupted the original thinking-on request (unseen_ko 0.26); boot 048b682d does not reproduce it in scalar capture mode (0.051) or native mode (0.103, 530 tokens, natural stop). Boot 746b9f69 carries #1147+#1154 but not #1157 and still produced corrupted texture under the BF16-dense control (0.186, cyr 3) on the thinking-off prompt. The proximate difference is therefore most consistent with #1157 (as2 activation scale), which may be calibration avoidance of a chaotic failure rather than a root-cause repair."
+}

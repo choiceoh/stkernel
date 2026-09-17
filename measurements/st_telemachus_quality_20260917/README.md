@@ -21,7 +21,12 @@ and the PR remains a draft. A further context ablation rules the
 assistant-provenance memory records out as the differentiator: neutralizing them
 at the id level (same token count, everything else byte-identical) leaves the
 failure intact in both arms, and all three outputs score clean on the canonical
-Korean glyph counters while being semantically broken. See
+Korean glyph counters while being semantically broken. As of 2026-09-18 the
+exact original request **no longer reproduces** on tree `048b682d75f9` (native
+mode, unseen(ko) 0.103 vs 0.26 on the same morning's boot): the proximate
+difference is most consistent with the #1157 as2 activation-scale search, which
+may be calibration avoidance rather than a root-cause repair — see
+[the clues0918 campaign](code-audit.md). See
 [the follow-up audit](code-audit.md),
 [the production replay receipts](merged-production-replay-evidence.json) and
 [the shared-smoothing replay](shared-smoothing-replay-evidence.json).
