@@ -688,7 +688,10 @@ def commit_batch(picks: torch.Tensor, drafts: torch.Tensor, alive: torch.Tensor,
     count = torch.where(alive, count, torch.zeros_like(count))
     hit_end = (first_end < k1) & alive
     done = alive & (hit_end | (generated + count >= limit))
-    return count, done, torch.minimum(accepted, (count - 1).clamp_min(0)), picks
+    # A limit/EOS may cut off the correction or bonus token entirely. In that
+    # case every emitted token may be an accepted draft, as adapter._commit
+    # already counts it. Do not subtract a token that was never emitted.
+    return count, done, torch.minimum(accepted, count), picks
 
 
 def top_logprobs(logits: torch.Tensor, chosen: int, k: int) -> "tuple[float, list[tuple[int, float]]]":

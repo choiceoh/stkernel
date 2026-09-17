@@ -34,7 +34,7 @@ def _advance(PICKS, DRAFTS, ACCEPTED, ENDS, ALIVE, GENERATED, LIMIT, CTX, ANCHOR
     tl.store(BEFORE + row, ctx)
     tl.store(COUNT + row, count)
     tl.store(DONE + row, done)
-    tl.store(KEPT + row, tl.minimum(accepted, tl.maximum(count - 1, 0)))
+    tl.store(KEPT + row, tl.minimum(accepted, count))
     tl.store(CTX + row, ctx + count)
     tl.store(GENERATED + row, generated + count)
     tl.store(ANCHOR + row, tl.where(count > 0, last, anchor))
