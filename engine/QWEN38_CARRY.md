@@ -41,7 +41,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | 대상 | 종류 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|
-| P1 | C=1 캡처 스텝의 `rows_req` 가 stride-0 뷰라 QSA 커널이 저장소 너머를 읽고 어텐션이 스텝을 거부 | `profiles/qwen38/net.py:step_meta`, `kernels/qsa.py` | fix | cpu | 시간 | PR #1084 |
+| P1 | C=1 캡처 스텝의 `rows_req` 가 stride-0 뷰라 QSA 커널이 저장소 너머를 읽고 어텐션이 스텝을 거부 | `profiles/qwen38/net.py:step_meta`, `kernels/qsa.py` | fix | cpu | 시간 | 머지 #1084 |
 | P2 | Qwen3.8 서빙 커널의 CPU 인터프리터 하네스. QSA ops·게이트 잔차·GDN·캡처 `step_meta` 를 `engine/modules` 오라클에 대조. 지금은 테스트가 0 건이라 `cpu` 판정의 전제 | `tests/` | fix | cpu | 일 | 열림 |
 | P3 | 서빙 프리필이 768 토큰 블록마다 타깃 forward 를 따로 돈다. `served_step` 이 `marks` 를 버려서 청크당 최대 42 forward | `profiles/qwen38/adapter.py`, `base/composed.py` | fix | gpu | 일 | 열림 |
 | P4 | 부팅이 `prepare_dense` 에 `consume_weights` 를 주지 않아 BF16 원본이 랭크당 약 1.9 GB 상주. 프리샤드가 패딩 크기를 예약해야 함 | `profiles/qwen38/fleet.py`, `preshard.py` | fix | cpu | 일 | 열림 |
@@ -50,7 +50,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | 대상 | 종류 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|
-| C1 | 셀 판정 프로브 모드(`engine_kernel_check --lanes` 의 새 모드). 단일 레인 티켓은 main 에 있는 프로브만 돌린다 | `probes/` | fix | cpu | 시간 | 열림 |
+| C1 | 셀 판정 프로브 모드(`engine_kernel_check --lanes qwen38_cells`). 단일 레인 티켓은 main 에 있는 프로브만 돌린다 | `probes/engine_qwen38_cells.py` | fix | cpu | 시간 | 머지 #1089, 티켓 `qwen38-cells-0917` 대기 |
 | C2 | dense 패딩 어댑터 GPU 판정 + W4A8/FP8 전환 행 수 실측: Qwen3.8 hidden 2560 · 중간 160, DSv4.1 576 | `kernels/dense`, `cells.py` | measure | gpu | 시간 | 열림 |
 | C3 | KDA decay 어댑터(ring·chunk·recurrent) GPU 판정 + BV 8/16/32 스윕(4/12×128×128, T=2, 1–4 행, 정확 롤백 게이트) | `kernels/kda`, `cells.KDA_MEASURED_CELLS` | measure | gpu | 시간 | 열림 |
 | C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 열림 |
@@ -64,7 +64,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
-| Q1 | 죽은 글루 복사 제거: 읽히지 않는 `positions…expand(N,1,3).contiguous()`, `ik.contiguous()`, `first[:,0].contiguous()` 등 | #547 #926 #933 | `net.py:_qsa`, `qsa.py:norm_rope_partial` | fold | −39~−57 발사 | cpu | 시간 | 열림 |
+| Q1 | 죽은 글루 복사 제거: 읽히지 않는 `positions…expand(N,1,3).contiguous()`, `ik.contiguous()`, `first[:,0].contiguous()` 등 | #547 #926 #933 | `net.py:_qsa`, `qsa.py:norm_rope_partial` | fold | −39 발사 | cpu | 시간 | 이 PR |
 | Q2 | 캡처 `step_meta` 를 Triton 한 발사로(타깃·드래프트 두 번) | #543 #546 #819 #821 | `net.py:step_meta` | fold | 약 −80 발사 | cpu | 시간 | 열림 |
 | Q3 | QSA 입력 융합: q/k norm+rope 와 K/V 저장을 (행, 헤드)당 한 발사로, 압축→norm→rope→인덱스 키 쓰기를 한 발사로, 링 쓰기를 K/V 저장에 합침 | #914 #936 #547 #582 #921 | `qsa.py`, `net.py:_qsa` | fold | 층당 11→1, 약 −130 발사 | cpu | 일 | 열림 |
 | Q4 | 출력 게이트를 어텐션 최종 저장 안에서 적용 | #919 #899 | `qsa.py:qsa_sparse_paged_attention` | fold | −65 발사, 프리필 청크당 −21.6 GiB | gpu | 시간 | 열림 |
