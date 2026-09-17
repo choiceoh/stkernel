@@ -226,9 +226,15 @@ class Qwen38Net:
         """The dense lanes (engine/kernels/dense): W4A8 at decode rows, FP8 above; the shared expert's 160-column down
         projection through PaddedDenseLinear. No channel smoothing: its fold divides a plain norm weight, and every
         norm this model has is unit-offset. The hyper-connection mixers are BF16 matmuls inside their lane (10,240
-        wide, W4 packs do not tile) unless `hc_fp8` put them on FP8 (`_prepare_hc_fp8`); the router stays a BF16 GEMM."""
-        from engine.kernels.dense import DenseLinear, FP8Linear, PaddedDenseLinear
+        wide, W4 packs do not tile) unless `hc_fp8` put them on FP8 (`_prepare_hc_fp8`); the router stays a BF16 GEMM.
+
+        `consume_weights` moves a lane's W4 and FP8 packs into its BF16 source's arena region and drops the source, where
+        the packs fit it (engine/kernels/dense.packed_nbytes, the resident bound, against the source's bytes): every
+        projection but the shared expert's down projection, whose 160 columns pack at 256 -- 1,034,496 bytes of packs
+        against 819,200 of source -- until the preshard reserves its padded region."""
+        from engine.kernels.dense import DenseLinear, FP8Linear, PaddedDenseLinear, packed_nbytes, padded_columns
         self.dense = {}
+        self.retained_sources = []
         for key, name in self.dense_names(self.p).items():
             weight = self.p[key]
             aligned = weight.shape[1] % 128 == 0
@@ -236,8 +242,12 @@ class Qwen38Net:
                 PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None)
             self.dense[key] = lane
             if consume_weights and hasattr(lane, "consume_weight"):
-                lane.consume_weight(weight)
-                self.p[key] = None
+                cols = weight.shape[1] if aligned else padded_columns(weight.shape[1])
+                if packed_nbytes(weight.shape[0], cols) <= weight.numel() * weight.element_size():
+                    lane.consume_weight(weight)
+                    self.p[key] = None
+                else:
+                    self.retained_sources.append(key)
         head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
         self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
         self._hc_projections = self._prepare_hc_fp8() if self.hc_fp8 else {}
