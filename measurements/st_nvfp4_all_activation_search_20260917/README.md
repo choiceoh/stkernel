@@ -1,7 +1,7 @@
 # NVFP4 activation scale search extension — 2026-09-17
 
 The user requested the same three-candidate search at all three identified
-serving gaps: routed MoE FC1, dynamic-prefill FC2 and the first three dense MLPs.
+NVFP4 paths: routed MoE FC1, dynamic-prefill FC2 and the first three dense MLPs.
 The `as1` recipe selects that extension. `ss1` retains its original meaning:
 search only the routed static FC2 input. They cannot be combined. `as2` retains
 the optional five-candidate reference. No experts, weights, global scales,
@@ -20,6 +20,12 @@ activation/clamp semantics or accumulation arithmetic change.
 - The bound routed/dense NVFP4 geometry gates the extension. Unrelated shapes
   and formats retain their quantizers. Both in-memory and persistent compile
   keys include the option. Inherited-source pins and provenance were updated.
+
+The live production environment points to `st-glm53-9391-up-gate-full`, whose
+layout is `st-glm53-b12x-up-gate-v1`. Its dense MLPs use the separate dense path,
+not the E=1 NVFP4 adapter. Thus this consumer A/B measures the routed FC1 and
+prefill extension. The dense extension is for the separate ModelOpt NVFP4
+checkpoint; changing the current dense precision is outside this change.
 
 ## Validation so far
 
@@ -42,9 +48,50 @@ Receipts: `cpu.log`, `compile.jsonl`, `compile-summary.json`. The compile source
 snapshot precedes a helper docstring update and the probe's expanded fingerprint;
 no compiled arithmetic changed after that check.
 
+The default-flipped candidate passed another 26 focused CPU tests. GPU ticket
+`fp4-all-native17v2` also passed: 151,322 finite blocks had no worsened SSE beyond
+the quantizer's tolerance; exceptional-scale/disabled parity and poisoned-output
+graph replay passed. Actual layer-3 routed output remained finite and zero-route
+outputs remained exactly zero for both C=1/C=2 shapes. Relative output changes
+against ss1 are differences, not errors against a ground-truth model.
+
+| Single routed MoE kernel cost, as1 vs ss1 | Warm | Evicted |
+|---|---:|---:|
+| C=1 | +0.474% | -0.003% |
+| C=2 | +0.435% | -0.169% |
+
+Positive means slower. These are four B/A/A/B brackets on one rank, not consumer
+throughput. Receipts: `gpu.jsonl`, `candidate-cpu.log`.
+
+## Additional error ablation
+
+`probes/nvfp4_all_activation_projection.py` reads nine routed experts from the
+actual production rank (layers 3/20/40, experts 0/73/287) and the three dense MLPs
+from the separate ModelOpt rank. Each cell uses 16 synthetic normal BF16 input
+rows. It honors the rank's **up|gate** layout and keeps the same dequantized
+checkpoint weights, clamped SiLU, BF16 intermediate and K128 BF16 down-projection
+contributions in every arm. The reference omits FP4 activation quantization.
+This isolates activation-induced SSE, not weight error against the original
+model, captured activation behavior, native CUDA exactness or answer accuracy.
+
+| Routed experts, pooled SSE reduction | Reduction | Improved cells |
+|---|---:|---:|
+| FC1 activation: max-based to search | 17.715% | 9/9 |
+| FC1 projection: max-based to search | 17.649% | 9/9 |
+| FC2 activation, identical FC1 output | 9.652% | 9/9 |
+| FC2 projection, identical FC1 output | 9.565% | 9/9 |
+| Full MLP: existing FC2 ss1 to as1 | **12.547%** | **9/9** |
+| Full MLP: no search to as1 | 14.922% | 9/9 |
+
+The separate ModelOpt dense fixture shows only 0.069% less FC1 activation SSE
+and 0.005% less FC2 activation SSE; pooled full-MLP SSE increases by 0.043%.
+That fixture does not establish a dense improvement. Input distributions and
+checkpoint global scales matter, and smaller local SSE need not improve the
+whole MLP. `projection.json` retains all per-cell values, seeds and hashes.
+
 ## Consumer gate
 
-Pending. Compare existing `ss1` with `as1` using the same implementation and
+Pending. Tickets `fp4-all-base17` and `fp4-all-candidate17` compare existing `ss1` with `as1` using the same implementation and
 harness, production shape, C=1/C=2 fixed 1024-token throughput, natural-EOS
 acceptance and clarified ko-reasoning-v3 quality, including 32K and 128K C=1.
 Quality must be preserved and C=1 output throughput must remain at least 95%
