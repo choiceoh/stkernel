@@ -58,7 +58,8 @@ class Lanes:
     qsa_select: object      # qsa_select_paged_blocks(iq, key cache, page table, token_to_req, positions, lengths, topk, ratio)
                             #  -> the chosen blocks int32 [N, topk / ratio]
     qsa_attend: object      # qsa_sparse_paged_attention_blocks(q [N, Hq, D], k, v caches [pages, page, Hkv, D], blocks,
-                            #  positions, lengths, ratio, topk, table, token_to_req): the blocks expanded inside its tiles
+                            #  positions, lengths, ratio, topk, table, token_to_req, *, gate): the blocks expanded inside
+                            #  its tiles, the output gate applied in its final store
     # MoE
     route: object           # (logits [N, E], k) -> (ids int32 [N, k] global, weights f32 [N, k]): softmax fp32, top-k, renormalised
     moe: object             # (x [N, H] bf16, ids [N, k] global, weights [N, k] f32, w13, w13_sf, w2, w2_sf, *, scales,

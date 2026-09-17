@@ -22,7 +22,9 @@ are unchanged. What changed around them (engine/kernels/SOURCES.json lists it):
 - a layer's inputs take two launches instead of nine: `qsa_index_keys` runs the compression, the norm and rotation of
   the pooled keys and their store in one program a row, `qsa_inputs` the query, key and index query norms and rotations
   with the K, V and raw-key ring stores in one program a (row, head) -- the ported programs' arithmetic line for line
-  (`_norm_rope_into` is `_norm_rope_partial`'s), in the order that keeps the ring read before it is written.
+  (`_norm_rope_into` is `_norm_rope_partial`'s), in the order that keeps the ring read before it is written;
+- the sparse attention can apply the layer's output gate in its final store (GATED: the one-split launch or the merge):
+  the attention rounded to BF16, times sigmoid(gate) in fp32, rounded once -- the layer's gate launches without them.
 
 The references are engine/modules: attention.Attention(select=QSA) and sparse_indexer.qsa_select. Paged caches here are
 [pages, page_size, heads, dim] with a page table of physical pages per request -- the served caches present their
@@ -256,6 +258,10 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     FROM_BLOCKS: tl.constexpr = False,
     BLOCK_TOPK: tl.constexpr = 0,
     COMPRESS_RATIO: tl.constexpr = 1,
+    gate_ptr=None,
+    stride_gate_row=0,
+    stride_gate_head=0,
+    GATED: tl.constexpr = False,
 ) -> None:
     row = tl.program_id(0)
     kv_head = tl.program_id(1)
@@ -398,12 +404,26 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     )
     output_mask = head_offsets[:, None] < GROUP_SIZE
     if NUM_SPLITS == 1:
+        value = normalized_output
+        if GATED:
+            # ST (carry Q4): the output gate in the store -- the attention rounded to the output's dtype, times
+            # sigmoid(gate) in fp32 (1 / (1 + exp(-g)), torch's), rounded once: the layer's
+            # (attended.float() * torch.sigmoid(gate.float())).to(bf16) without its launches and fp32 temporaries
+            gate = tl.load(
+                gate_ptr
+                + row * stride_gate_row
+                + (first_head + head_offsets[:, None]) * stride_gate_head
+                + dim_offsets[None, :],
+                mask=output_mask,
+                other=0.0,
+            ).to(tl.float32)
+            value = normalized_output.to(output_ptr.dtype.element_ty).to(tl.float32) * tl.sigmoid(gate)
         tl.store(
             output_ptr
             + row * stride_output_row
             + (first_head + head_offsets[:, None]) * stride_output_head
             + dim_offsets[None, :],
-            normalized_output,
+            value,
             mask=output_mask,
         )
     else:
@@ -446,6 +466,10 @@ def _qsa_merge_splitk_kernel(
     NUM_QUERY_HEADS: tl.constexpr,
     NUM_SPLITS: tl.constexpr,
     BLOCK_SPLITS: tl.constexpr,
+    gate_ptr=None,
+    stride_gate_row=0,
+    stride_gate_head=0,
+    GATED: tl.constexpr = False,
 ) -> None:
     row = tl.program_id(0)
     head = tl.program_id(1)
@@ -472,6 +496,10 @@ def _qsa_merge_splitk_kernel(
     )
     merged = tl.sum(partial_output * weights[:, None], axis=0)
     merged = tl.where(denominator > 0, merged / denominator, 0.0)
+    if GATED:
+        # ST (carry Q4): the output gate in the merged store, as in the one-split store
+        gate = tl.load(gate_ptr + row * stride_gate_row + head * stride_gate_head + dim_offsets).to(tl.float32)
+        merged = merged.to(output_ptr.dtype.element_ty).to(tl.float32) * tl.sigmoid(gate)
     tl.store(
         output_ptr + row * stride_output_row + head * stride_output_head + dim_offsets,
         merged,
@@ -1143,15 +1171,18 @@ def qsa_select_paged_blocks(q, k_cache, page_table, token_to_req, query_position
     return out
 
 
-def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out=None):
+def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out=None, *, gate=None):
     """Sparse GQA over paged BF16 K/V caches [blocks, page_size, kv_heads, head_dim] at the selected positions
-    (int32 [rows, width], -1 skipped): softmax(q . k / sqrt(head_dim)) v per query head, [rows, heads, head_dim]."""
+    (int32 [rows, width], -1 skipped): softmax(q . k / sqrt(head_dim)) v per query head, [rows, heads, head_dim]. With
+    `gate` (BF16, q's shape, unit stride along the head) the output is BF16(attention * sigmoid(gate)), applied in the
+    final store."""
     width = logical_indices.shape[1] if logical_indices.ndim == 2 else 0
-    return _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width)
+    return _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width,
+                                   gate=gate)
 
 
 def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_positions, sequence_lengths,
-                                      compress_ratio, token_topk, block_table, token_to_req, out=None):
+                                      compress_ratio, token_topk, block_table, token_to_req, out=None, *, gate=None):
     """`qsa_sparse_paged_attention` at the positions `expand_qsa_block_indices_cuda` expands the chosen blocks to --
     int32 [rows, token_topk // compress_ratio] as `qsa_select_paged_blocks` writes them -- computed tile by tile in the
     attention's own launch (FROM_BLOCKS): the same positions on the same tiles, so the same bytes, without the expansion
@@ -1173,13 +1204,14 @@ def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_
     _packed_rows("QSA sparse attention", query_positions, sequence_lengths)
     return _sparse_paged_attention(q, k_cache, v_cache, block_indices, block_table, token_to_req, out,
                                    token_topk + compress_ratio - 1,
-                                   blocks=(query_positions, sequence_lengths, compress_ratio, block_topk))
+                                   blocks=(query_positions, sequence_lengths, compress_ratio, block_topk), gate=gate)
 
 
-def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width, blocks=None):
+def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width, blocks=None,
+                            gate=None):
     """The launch of both entries: `logical_indices` holds the positions at `width` columns, or (with `blocks` --
     query positions, sequence lengths, the compression ratio and the block top-k) the chosen blocks whose expansion
-    is `width` columns wide."""
+    is `width` columns wide. `gate`, when given, is applied in the final store (the one-split launch or the merge)."""
     if not q.is_cuda:
         raise RuntimeError("paged QSA sparse attention runs on CUDA")
     if q.ndim != 3 or k_cache.ndim != 4 or v_cache.shape != k_cache.shape:
@@ -1211,6 +1243,11 @@ def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, t
         out = torch.empty_like(q)
     if out.shape != q.shape or out.dtype != q.dtype or out.device != q.device or out.stride(2) != 1:
         raise ValueError("QSA sparse output must match its query")
+    if gate is not None and (gate.shape != q.shape or gate.dtype != torch.bfloat16 or gate.device != q.device
+                             or gate.stride(2) != 1):
+        raise ValueError("the QSA output gate is BF16 in the query's shape with a unit stride along the head")
+    gated = {} if gate is None else dict(gate_ptr=gate, stride_gate_row=gate.stride(0), stride_gate_head=gate.stride(1),
+                                         GATED=True)
     if not q.shape[0]:
         return out
 
@@ -1253,13 +1290,14 @@ def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, t
         TOPK=width, PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=block_table.shape[1],
         GROUP_SIZE=group_size, HEAD_DIM=q.shape[2], NUM_QUERY_HEADS=q.shape[1], NUM_SPLITS=num_splits,
         NUM_TILES=num_tiles, BLOCK_M=block_m, BLOCK_N=block_n, num_warps=partial_warps, num_stages=2, **expansion,
+        **(gated if num_splits == 1 else {}),
     )
     if num_splits == 1:
         return out
     _qsa_merge_splitk_kernel[(q.shape[0], q.shape[1])](
         partial_output, partial_lse, out, out.stride(0), out.stride(1), q.shape[0],
         HEAD_DIM=q.shape[2], NUM_QUERY_HEADS=q.shape[1], NUM_SPLITS=num_splits,
-        BLOCK_SPLITS=triton.next_power_of_2(num_splits), num_warps=2, num_stages=1,
+        BLOCK_SPLITS=triton.next_power_of_2(num_splits), num_warps=2, num_stages=1, **gated,
     )
     return out
 
