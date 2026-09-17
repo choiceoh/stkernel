@@ -102,7 +102,7 @@ runtime identity and diagnostic launch counts retain the source evidence.
 Candidate A resumed its original immutable reservation after the MoE component
 probes. Both cold and warm runs are complete and the fleet was released. The user
 authorized combined adoption even where an individual gain is small or inconclusive.
-The retained input-reuse mode 3 has separate same-build component evidence in
+The retained input-reuse modes 3 (C1) and 4 (C2) have separate same-build evidence in
 `st_moe_input_reuse_20260917`; this older consumer A/B does not include it.
 
 ### Cold consumer observations
@@ -184,8 +184,8 @@ The optional fused router's FP32 summation and tied-selection order differ from
 the control. This trial does not prove that the router caused each quality
 failure, but it also does not qualify that numerical change for a serving
 default. `fused_decode_router` is therefore false again. Bitwise-qualified mHC
-and MLA changes remain enabled, as does separately qualified MoE input-reuse
-mode 3. The final combined default has no full-engine speed verdict; the
+and MLA changes remain enabled, as do separately qualified MoE input-reuse
+modes 3 at C1 and 4 at C2. The final combined default has no full-engine speed verdict; the
 measured candidate included the fused router and excluded input reuse.
 
 The first control ticket (`fixedk-next-consumer-b-0917`, source `4de8c56f`)

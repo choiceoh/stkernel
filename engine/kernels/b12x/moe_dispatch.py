@@ -2495,10 +2495,10 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                 scatter_packed_load=bool(scatter_vec4 and config.get("scatter_packed_load", True)))
 
 
-# Numerically qualified K7 input cache and compact route preparation. The
-# whole-MoE gain is small/inconclusive; adopted with the fixed-K bundle by user
-# decision. Explicit input_reuse=0 remains the same-build control.
-INPUT_REUSE_DEFAULT = 3
+# Numerically qualified K7 input reuse: C1 caches the quantized token, C2 fans
+# it out from registers. Whole-MoE gains are small/cache-dependent; adopted
+# with the fixed-K bundle. Explicit input_reuse=0 is the same-build control.
+INPUT_REUSE_DEFAULTS = {8: 3, 16: 4}
 
 
 def _static_v2_input_reuse_config(config: dict, state_E: int, weight_E: int,
@@ -2513,7 +2513,7 @@ def _static_v2_input_reuse_config(config: dict, state_E: int, weight_E: int,
             and config.get("input_vec16")
             and not any(config.get(key) for key in
                         ("even", "split", "probe_route_scatter", "probe_direct_scatter"))):
-        return dict(config, input_reuse=INPUT_REUSE_DEFAULT)
+        return dict(config, input_reuse=INPUT_REUSE_DEFAULTS[m])
     return config
 
 

@@ -147,7 +147,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "39d59f5b839406d3533e00a30fa28b802d4fb5b0637738e52bd0cae23f861229",
+      "local_sha256": "38a6c647a9adc018e10a8dbf24a0cd6049df923729f0b269dd489af8003a7773",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -178,7 +178,8 @@
         "2026-09-17: separately keyed K7/C1-C2 token quantization caches and compact route preparation probes, with exact shape and workspace capacity guards; input reuse remains disabled pending GPU qualification.",
         "2026-09-17 Qwen3.8 EP decode cell (probes/engine_qwen38_moe.py): _MICRO_TILE_M_OVERRIDE / _MICRO_MAC_OVERRIDE probe hooks pin the micro kernel's M tile (32/64/128) and MAC (<= the SM count); the launcher's micro MAC arithmetic moves unchanged into _select_micro_mac. None keeps every selection.",
         "2026-09-17 private input fanout: cache only compact route metadata, reuse the quantized block in registers across equal-scale experts; separately keyed and disabled pending GPU and consumer qualification.",
-        "2026-09-17 adopt numerically qualified fixed-K bundle by user decision; small or inconclusive component gains are retained with explicit controls. See st_fixed_k_next and st_moe_input_reuse measurements."
+        "2026-09-17 adopt numerically qualified fixed-K bundle by user decision; small or inconclusive component gains are retained with explicit controls. See st_fixed_k_next and st_moe_input_reuse measurements.",
+        "2026-09-17 final input reuse: select qualified compact-cache mode 3 for C1 and register-fanout mode 4 for C2; 56 raw-byte cases and 60 output comparisons pass. Whole-MoE gains remain small and cache-dependent; explicit mode 0 is retained."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -324,7 +325,7 @@
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
         "2026-09-14 B12X 12b4eb257441: narrow SF6 shared loads with immediate offsets; retain volatile semantics, ring ownership and exact SFB mapping.",
         "2026-09-14 CUDA 13.2: replace SF6 split-base addition with native add.u8x4; preserve scale operands, storage and barriers.",
-        "2026-09-17 token input reuse: bounded quantization cache, compact deterministic routes with shared-to-async fence, and private register fanout with ballot prefixes. Equal raw scales reuse identical bytes; other scales keep the original quantizer. Mode 3 adopted on exact K7 C1/C2 geometry; mode 4 pending."
+        "2026-09-17 token input reuse: bounded quantization cache, compact deterministic routes with shared-to-async fence, and register fanout with ballot prefixes. Equal raw scales reuse identical bytes; other scales keep the original quantizer. GPU-qualified mode 3 at C1 and mode 4 at C2 are the scoped defaults."
       ]
     },
     "b12x/moe_static_kernel_v5.py": {

@@ -24,10 +24,10 @@ block once in phase 1, and writes it directly to every selected expert with
 an equal input scale. Different scales use the original quantizer. Its compact
 expert prefix uses warp ballots instead of scanning each first-occurrence flag.
 
-Serving now selects mode 3 only for the exact GLM TP4 eight/sixteen-row SF6
-reform geometry. The user explicitly accepted small or inconclusive gains as
-part of the combined fixed-K bundle. Explicit mode zero remains the same-build
-control. Mode 4 remains a private candidate pending its GPU comparison.
+Serving selects mode 3 for the exact GLM TP4 eight-row SF6 reform geometry and
+mode 4 for sixteen rows. The user explicitly accepted small or inconclusive
+gains as part of the combined fixed-K bundle. Explicit mode zero remains the
+same-build control. Other geometries and private schedulers are unchanged.
 
 ## Evidence
 
@@ -62,7 +62,15 @@ control. Mode 4 remains a private candidate pending its GPU comparison.
   source and runner, with the required generic-to-async shared-memory fence.
 - `native-resources-fanout.json`: mode 4 and the disabled control compile at
   C1/C2 with CUDA devices hidden, 96 registers and zero stack/local memory.
-  GPU correctness and timing remain pending for this new mode.
+  The following final GPU comparison qualifies the same mode 4 source.
+- `gpu-fanout.jsonl`, source `b1233ea1`, ticket `moe-input-reuse-fanout-0917`:
+  all 56 raw-byte cases and 60 output comparisons pass. Five-bracket evicted
+  three-layer results favor mode 3 at C1 (-0.601%, 5/5 faster) and mode 4 at
+  C2 (-0.459%, 4/5 faster). Those become the per-width defaults. The corresponding
+  warm results are +0.246% C1 and -0.233% C2, so this is a small, cache-dependent
+  tradeoff, not a robust whole-engine speedup. Mode 4 C1 is effectively flat
+  (+0.002% evicted); mode 3 C2 is -0.062% evicted. `summary-fanout.json` retains
+  all ranges and control samples, including the unfavorable warm cases.
 
 The CPU compiler host is `ost-97x`, with GPU-hidden runc, CUDA 13.2 and Torch
 2.13.0. The image alone has published FlashInfer, which lacks a required helper;
@@ -91,14 +99,23 @@ python3 measurements/st_moe_input_reuse_20260917/summarize.py gpu-v1.jsonl
 
 Mode 4 ticket: `moe-input-reuse-fanout-0917`, frozen source `b1233ea1`,
 compares modes 0 through 4 on actual rank0 weights. It predates the serving
-adoption, and every arm explicitly supplies its selector.
+adoption, and every arm explicitly supplies its selector. The ticket completed
+and released the fleet at 11:05 KST. No additional GPU job remains for this campaign.
 
 ## Default integration
 
 `cpu-defaults.txt`: 31 related tests pass under the GPU-hidden Linux/ST image
 after adoption. They cover the exact shape and layout limits, explicit rollback,
 cache keys, mHC/MLA consumer proof, router binding and native registration.
-`native-resources-default.json` compiles the actual serving selection without an
+`native-resources-default.json` records the initial serving selection without an
 explicit mode: C1/C2 binaries and SASS exactly match the GPU-qualified mode 3
 in `native-resources-routing-fenced.json`. Both use 96 registers and no stack or
 local memory. The optional mode 4 does not alter these mode 3 binaries.
+
+`native-resources-selected-default.json` compiles the final automatic selection:
+C1 is byte-identical in binary and SASS to qualified mode 3, C2 to qualified
+mode 4 in `native-resources-fanout.json`. Register, stack, local and shared
+resource counts are unchanged. `cpu-selected-default.txt` passes 26 focused
+Linux/ST-image checks with one GPU-only skip. The router retains its original
+default after the separate consumer comparison recorded quality regressions;
+that older comparison does not measure this final input-reuse bundle.

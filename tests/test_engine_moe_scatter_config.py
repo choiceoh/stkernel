@@ -8,7 +8,7 @@ def namespace():
     path = Path(__file__).resolve().parents[1] / 'engine/kernels/b12x/moe_dispatch.py'
     tree = ast.parse(path.read_text())
     names = {'_parse_glm53_static_v2', '_static_v2_decode_config', '_static_v2_cache_key', '_static_v2_input_reuse_config'}
-    constants = {'_STATIC_V2_DEFAULT', '_STATIC_SUNSET_TOKENS', '_GLM53_B12X_STATIC_V2_ENV', 'INPUT_REUSE_DEFAULT'}
+    constants = {'_STATIC_V2_DEFAULT', '_STATIC_SUNSET_TOKENS', '_GLM53_B12X_STATIC_V2_ENV', 'INPUT_REUSE_DEFAULTS'}
     nodes = [node for node in tree.body
              if (isinstance(node, ast.FunctionDef) and node.name in names)
              or (isinstance(node, ast.Assign) and any(
@@ -47,7 +47,7 @@ class ScatterConfigTests(unittest.TestCase):
             cfg = ns['_static_v2_decode_config'](base, rows)
             geometry = (288, 288, rows, 4096, 512, 8, rows * 8)
             got = choose(cfg, *geometry)
-            self.assertEqual(got.get('input_reuse', 0), 3 if rows in (8, 16) else 0)
+            self.assertEqual(got.get('input_reuse', 0), {8: 3, 16: 4}.get(rows, 0))
             self.assertEqual(choose(got, *geometry), got)
             self.assertEqual(choose(dict(cfg, input_reuse=0), *geometry)['input_reuse'], 0)
         cfg = ns['_static_v2_decode_config'](base, 8)
