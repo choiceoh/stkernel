@@ -243,7 +243,10 @@ def main() -> int:
         return 0
 
     build = args.build or deployed_build()
-    git = args.build or deployed_git()      # an explicit --build names the build, full stop
+    # An explicit --build names the build; leave `git` unset so for_build
+    # resolves the stamp to a sha via sha_of_stamp instead of matching the
+    # stamp itself against pre-stamp records.
+    git = None if args.build else deployed_git()
     rows = load(args.jsonl)
     mine = for_build(rows, build, git)
     label = build if any(r.get("overlay") for r in mine) else (git or build)

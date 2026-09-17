@@ -706,7 +706,10 @@ def _main() -> int:
     # N follows the door's admission limit (`serving_concurrency`); the c4_* key names predate it.
     many = serving_concurrency(rec['engine_shape'])
     contexts = list(map(int, args.ctx.split(',')))
-    c4_contexts = [ctx for ctx in contexts if ctx not in (128000, 131072)]
+    # A fresh-identity arm cannot tag a concurrent group (one cache_salt per
+    # request), so ONEPASS_C1_ONLY drops the C=N arm instead of racing it.
+    c4_contexts = ([] if os.environ.get("ONEPASS_C1_ONLY") == "1"
+                   else [ctx for ctx in contexts if ctx not in (128000, 131072)])
     first_run = rec.get('run_index', 1) == 1
     concurrencies = (1, many) if first_run and c4_contexts else (1,)
     rec['concurrency_coverage'] = dict(
@@ -784,7 +787,7 @@ def _main() -> int:
     # change the workload, not the timing definition.
     with br._StepWindows(bd, period=1.0) as sw:
         for ctx in (int(c) for c in args.ctx.split(",")):
-            ttfts, tok = [], 0
+            ttfts, tok, first_tok = [], 0, 0
             reused_before = _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total")
             ctx_items = [item for item in items if item['ctx'] == ctx]
             combined = len(ctx_items) == 1
@@ -797,7 +800,10 @@ def _main() -> int:
                 phases.append((ctx, t_req + ttft, time.monotonic()))
                 rec["requests"].append(timing)
                 pending_quality.append((item, timing, finish))
-                tok = ptok or tok
+                if ptok:
+                    tok += ptok
+                    if not first_tok:
+                        first_tok = ptok
                 gen_tokens += ctok
                 ttfts.append(ttft)
                 texts.append((f"ctx{ctx // 1000}K q{item['question']}", text, finish))
@@ -806,8 +812,13 @@ def _main() -> int:
             # first column cannot be read: it is prompt tokens over the first TTFT either way.
             reused = max(0.0, _st_counter(_metrics_text(bd.METRICS), "prefix_reused_tokens_total") - reused_before)
             share = reused / tok if tok else 0.0
+            # `tok` is every request of this context (three at 2K); the cold
+            # column is the first request's prompt over its own TTFT, and the
+            # reuse share is the counter delta over the same total the counter
+            # was taken across.
+            cold_tok_s = first_tok / cold if first_tok and cold > 0 else 0.0
             rec["prefill"].append({"ctx": ctx, "tok": tok, "cold_s": cold, "warm_s": warm,
-                                   "cold_tok_s": tok / cold if cold > 0 else 0.0,
+                                   "cold_tok_s": cold_tok_s,
                                    "warm_tok_s": tok / warm if warm > 0 else 0.0,
                                    "ttft_samples_s": ttfts, "first_s": cold, "median_s": warm,
                                    "state": "prepared fresh-prefix; see steady_state validity",
@@ -817,7 +828,7 @@ def _main() -> int:
             warm_col = f"{tok / warm:>11.0f}" if not combined else f"{'(1 req)':>11}"
             warm_t = f"{warm:>9.2f}s" if not combined else f"{'-':>10}"
             reuse_col = f"{share * 100:>5.0f}%" + ("*" if share >= CACHE_HIT_FRACTION else " ")
-            print(f"{ctx:>7} {tok:>7} {tok / cold:>11.0f} {warm_col} {cold:>9.2f}s {warm_t} {reuse_col} quality deferred", flush=True)
+            print(f"{ctx:>7} {tok:>7} {cold_tok_s:>11.0f} {warm_col} {cold:>9.2f}s {warm_t} {reuse_col} quality deferred", flush=True)
         if args.fixed_decode_tokens:
             for rep in range(args.fixed_decode_reps):
                 timing = {"ctx": 2000, "question": "fixed-all", "rep": rep, "fixed_decode": True}

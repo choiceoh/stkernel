@@ -7,11 +7,12 @@
 # kernel that once sat at the bottom -- the decode pair folded into one
 # launch behind ST_GLM53_MHC_ONEPASS -- was sunset in 34차 §8: the
 # megakernel's MK_SEG_MHC replaced the pair, RUNBOOK EXP-19):
-#   1. (2026-09-04) the ST_GLM53_MHC_PASSES block below the imports: an
-#      import-time, default-off override of the pass_configs dict the image
+#   1. (2026-09-04) the pass_configs override, now driven by
+#      engine.kernels.configure_mhc_passes() rather than an environment read:
+#      an import-time, default-off override of the pass_configs dict the image
 #      ships with both TMA lowering and warp specialization disabled. Unset
-#      or unparseable keeps the stock dict, so kernels compile exactly as
-#      the image's unless the knob deliberately says otherwise.
+#      keeps the stock dict, so kernels compile exactly as the image's unless
+#      the knob deliberately says otherwise.
 # Later ST changes, including the tiled TMA post path, are tracked in SOURCES.json.
 import contextlib
 import math
@@ -120,36 +121,15 @@ def _mhc_prefill_post_prenorm_kernel(
     tl.store(Sqrsum + split * M + row, sqr, row < M)
 
 
-# deneb fork: opt-in TileLang pass-config re-enable (ST_GLM53_MHC_PASSES).
-# The image disables BOTH TMA lowering and warp specialization for every mhc
-# kernel with no recorded reason, while GB10 does have TMA (deep_gemm's sm120
-# impls lean on CUtensorMap loads; see KERNEL_CAMPAIGN's GB10 dossier). This
-# knob is the offline A/B for that choice: unset or unparseable = exactly the
-# stock dict (compiled kernels byte-identical to the image's), while "tma" /
-# "ws" / "tma,ws" flip the shared TL_DISABLE_* configuration. The post kernel
-# now uses its own fixed TMA policy. Frozen at import like the other
-# MHC knobs -- the serving process sets env before import, and a captured
-# decode graph cannot branch on an env read.
-_MHC_PASSES_ENV = "ST_GLM53_MHC_PASSES"
-
-
-def _deneb_parse_mhc_passes(raw: str):
-    """Parse a subset of "tma,ws" (or "none") -> (tma, ws), or None.
-
-    "none" is the explicit stock combo -- distinct from unset only in that
-    the knob logs, which is what the wrapper's reference pass needs."""
-    tokens = [t.strip().lower() for t in raw.split(",") if t.strip()]
-    if not tokens:
-        return None
-    if tokens == ["none"]:
-        return False, False
-    picked = {"tma": False, "ws": False}
-    for t in tokens:
-        if t not in picked:
-            return None
-        picked[t] = True
-    return picked["tma"], picked["ws"]
-
+# deneb fork: TileLang pass-config re-enable. The image disables BOTH TMA
+# lowering and warp specialization for every mhc kernel with no recorded
+# reason, while GB10 does have TMA (deep_gemm's sm120 impls lean on CUtensorMap
+# loads; see KERNEL_CAMPAIGN's GB10 dossier). The offline A/B for that choice
+# is NOT an environment read: engine.kernels.configure_mhc_passes(tma, ws)
+# sets it once before this module is imported, and _DENEB_MHC_PASSES below
+# picks it up. Unset = exactly the stock dict (compiled kernels byte-identical
+# to the image's); "tma" / "ws" / both flip the shared TL_DISABLE_* values.
+# The post kernel keeps its own fixed TMA policy.
 
 # D11 (2026-09-12, ST): no environment read. The post kernel has its own fixed
 # TMA policy; this offline hook applies to the other mHC kernels.
@@ -158,8 +138,9 @@ _DENEB_MHC_PASSES = _kernels_pkg.MHC_PASSES   # engine.kernels.configure_mhc_pas
 
 
 @cache
-def compute_num_split(block_k: int, k: int | None, grid_size: int) -> int:
-    device_props = torch.cuda.get_device_properties(0)
+def _compute_num_split_for(block_k: int, k: int | None, grid_size: int,
+                           device: int) -> int:
+    device_props = torch.cuda.get_device_properties(device)
     n_sms = device_props.multi_processor_count
     split_k = n_sms // grid_size
     if k is not None:
@@ -168,6 +149,13 @@ def compute_num_split(block_k: int, k: int | None, grid_size: int) -> int:
         split_k = min(split_k, num_block_k // 4)
     split_k = max(split_k, 1)
     return split_k
+
+
+def compute_num_split(block_k: int, k: int | None, grid_size: int) -> int:
+    # SM count is a per-device fact; cache on the device too so a second GPU
+    # in the process does not reuse the first one's split.
+    return _compute_num_split_for(block_k, k, grid_size,
+                                  torch.cuda.current_device())
 
 
 pass_configs: dict[tilelang.PassConfigKey, Any] = {

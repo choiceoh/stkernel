@@ -137,13 +137,22 @@ class ShardReader:
             thread_name_prefix="engram-io",
             initializer=self._init_thread,
         )
+        # os.open returns a bare fd with no destructor, and threading.local
+        # values for finished workers are dropped without closing them. Keep
+        # every worker's (fd, buffer) here so close() can actually release them.
+        self._fds = []
+        self._fds_lock = threading.Lock()
         self._closed = False
 
     def _init_thread(self) -> None:
-        self._local.fd = os.open(self.path, os.O_RDONLY | os.O_DIRECT)
+        fd = os.open(self.path, os.O_RDONLY | os.O_DIRECT)
         # mmap of an anonymous region is page-aligned, which satisfies
         # O_DIRECT's buffer requirement without ctypes/posix_memalign.
-        self._local.buf = mmap.mmap(-1, self.read_bytes)
+        buf = mmap.mmap(-1, self.read_bytes)
+        self._local.fd = fd
+        self._local.buf = buf
+        with self._fds_lock:
+            self._fds.append((fd, buf))
 
     def submit(self, rows) -> "Gather":
         """Issue the reads and return WITHOUT waiting for them.
@@ -217,6 +226,11 @@ class ShardReader:
         if not self._closed:
             self._closed = True
             self._pool.shutdown(wait=True)
+            # All workers are idle now; release the fds and buffers they owned.
+            for fd, buf in self._fds:
+                os.close(fd)
+                buf.close()
+            self._fds.clear()
 
     def __enter__(self) -> "ShardReader":
         return self
