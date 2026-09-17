@@ -70,6 +70,12 @@ class Lanes:
                                     #  with zero columns to `pad_to` for its padded down projection
     moe_finish: object = None       # (routed [N, H] bf16, shared [N, H] bf16, gate [N, 1] f32) -> BF16(f32 routed +
                                     #  f32 shared * gate): the MoE output before its all-reduce
+    qsa_index_keys: object = None   # qsa.qsa_index_keys(ik [N, Di], ring, slot_table, token_to_req, starts, positions,
+                                    #  key_slots, ratio, idx_k_norm, eps, theta, rotary_dim, index key cache): compress,
+                                    #  norm, rope and store the keys the step's rows close, in one launch
+    qsa_inputs: object = None       # qsa.qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta,
+                                    #  rotary_dim, K, V, kv_slots, ring, ring_slots) -> (q, iq): the layer's norms and
+                                    #  rotations with the K/V and ring stores, in one launch
 
 
 def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -237,7 +243,8 @@ def reference() -> Lanes:
     return Lanes("reference", hc_norm, hc_leave, hc_leave_norm, hc_mix, gdn_gates, gdn_chunk, gdn_ring, gdn_ring_rows,
                  gdn_norm, conv_prefill, conv_ring, conv_ring_rows, norm_rope, unported("qsa_store"),
                  unported("qsa_compress"), unported("qsa_select"), unported("qsa_attend"), route_softmax_topk, moe,
-                 swiglu=swiglu, moe_finish=moe_finish)
+                 swiglu=swiglu, moe_finish=moe_finish, qsa_index_keys=unported("qsa_index_keys"),
+                 qsa_inputs=unported("qsa_inputs"))
 
 
 def served(*, tp=None) -> Lanes:
@@ -339,7 +346,8 @@ def served(*, tp=None) -> Lanes:
              qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, route_softmax_topk, moe]
     return Lanes("served", *(on_main(f) for f in bound), moe_prepare=on_main(moe_prepare),
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
-                 moe_finish=on_main(moe_output.gated_sum))
+                 moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
+                 qsa_inputs=on_main(qsa.qsa_inputs))
 
 
 def qualify(device, F) -> dict:

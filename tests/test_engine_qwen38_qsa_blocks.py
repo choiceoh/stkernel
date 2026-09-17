@@ -124,8 +124,7 @@ class ServedLaneTests(unittest.TestCase):
         lanes = (ROOT / "engine/profiles/qwen38/lanes.py").read_text()
         self.assertIn("qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks", lanes)
         net = (ROOT / "engine/profiles/qwen38/net.py").read_text()
-        self.assertIn("attended = lanes.qsa_attend(q.contiguous(), K, V, blocks, meta.positions32, meta.lengths, "
-                      "F.idx_ratio,", net)
+        self.assertIn("attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,", net)
 
 
 if __name__ == "__main__":
