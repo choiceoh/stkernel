@@ -1170,10 +1170,6 @@ class MoEStaticKernel:
             Int32(gdim_z),
             is_cta_leader,
         )
-        # The grid barrier publishes packed A and SFA through the generic
-        # global-memory proxy; the TMA reads below need the async-proxy edge
-        # (the shared-memory fences do not order these writes). See #1133.
-        cute.arch.fence_proxy("async.global")
 
         gA = cute.local_tile(mA, self.sa_tile_shape_mk, (None, None, None))
         # Single tiled view over concatenated w13 [2*I_tp, K, E].
