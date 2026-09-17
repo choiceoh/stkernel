@@ -1,0 +1,2169 @@
+{
+  "scope": "Review of every failing certificate. Original scores and final-result dimensions are retained. Encoding maps are diagnostic and do not change canonical grades.",
+  "rows": [
+    {
+      "arm": "base-1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c1",
+      "ctx": 2000,
+      "client": null,
+      "request_sha256": "e803ea73f3c33f215b5a70f9f99179542f84c6b3df61ac015f228db926633d0c",
+      "output_sha256": "4260974b30479f09651a0d2b21cb3e9a7e8df98a45217d7a9a8672a46384aa7b",
+      "source_record_sha256": "6a0762dc122761864ed145553b13db2ddebd69895174b7f92e71604d5fcebe89",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": true,
+          "evidence": true,
+          "counterfactual": false,
+          "witnesses": true
+        },
+        "score": 6,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "counterfactual",
+            "expected": {
+              "consistent": false,
+              "minimal_cores": [
+                [
+                  "U1",
+                  "U2",
+                  "U3",
+                  "U4",
+                  "U6"
+                ]
+              ]
+            },
+            "actual": {
+              "consistent": false,
+              "minimal_cores": [
+                [
+                  "U3",
+                  "U4",
+                  "U6"
+                ]
+              ]
+            }
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "31aed21cdb39576ebcb8c0675be57b1320266cd1adc4800958a27204a66964e8",
+        "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+      },
+      "classification": "subproof error; final result correct",
+      "evidence": [
+        "Actually also U6+U4+U3? U6: E=0; U4: B=1,D=1; U3: ¬(A∧B) → A=0; U2: C=A → C=0; U1: E∨C → fails. So {U3,U4,U6} is contradictory? Check: E=0, B=1, D=1, A=0, C=0. U1: E∨C = 0∨0 = 0 → violated. Yes {U3,U4,U6} is a contradiction. Minimal? Remove U3: E=0, B=1,D=1, A,C free with U1,U2: C=A, need C=1 (U1) → A=1, C=1. World: A=1,B=1,C=1,D=1,E=0,F=0. Check U5: D⊕F: D=1,F=0 → ok. So satisfiable → removing U3 removes contradiction. Remove U4: E=0, U1→C=1, U2→A=1, U3→B=0, U5: D⊕F. World: A=1,B=0,C=1,D=1,F=0,E=0. Satisfiable. Remove U6: {U1,U2,U3,U4} satisfiable (e.g., 101110). So {U3,U4,U6} is minimal core.",
+        "Also {U1,U2,U3,U4,U6}? Is it minimal? It contains {U3,U4,U6} as subset, so not minimal. But wait — does {U3,U4,U6} use U1? No. So {U3,U4,U6} is a minimal core."
+      ]
+    },
+    {
+      "arm": "base-1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c1",
+      "ctx": 32000,
+      "client": null,
+      "request_sha256": "58c001fb3d7f230458894532557fd44095f3a1b1d9cec4135d3bcabb575fb866",
+      "output_sha256": "1cb5d9fce966fe2319c3d4626131cbffee48b0913dd708144315184a99daf6a6",
+      "source_record_sha256": "6a0762dc122761864ed145553b13db2ddebd69895174b7f92e71604d5fcebe89",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "110000",
+                "100110",
+                "110010",
+                "111001"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "110010",
+                "111010",
+                "101110",
+                "110100"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "110000",
+                "false": null
+              },
+              {
+                "true": "111001",
+                "false": "110000"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "110010"
+              },
+              {
+                "true": "111010",
+                "false": "110010"
+              },
+              {
+                "true": "110010",
+                "false": null
+              },
+              {
+                "true": "110100",
+                "false": "110010"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "07bf779d22288ebccf90abb170c29cd64148549f610efb462797fb73a42fbd13",
+        "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "110010": "110000",
+        "111010": "110010",
+        "101110": "100110",
+        "110100": "111001"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "110010",
+          "right": "110000",
+          "excerpt": "- 110010: A=1,B=1,C=0,D=0,E=0,F=0. U1: A=1 ✓. U2: F=C=0 ✓. U3: C&E=0 ✓. U4: A,B=1,1 → two ✓. U5: B=1,D=0 XOR ✓."
+        },
+        {
+          "wrong": "111010",
+          "right": "110010",
+          "excerpt": "- 111010: A=1,B=1,C=0,D=0,E=1,F=0. U1 ✓. U2 ✓. U3: C=0 ✓. U4: A,B,E → three ✓. U5 ✓."
+        },
+        {
+          "wrong": "101110",
+          "right": "100110",
+          "excerpt": "- 101110: A=1,B=0,C=0,D=1,E=1,F=0. U1 ✓. U2 ✓. U3 ✓. U4: A,E → two ✓. U5: B=0,D=1 ✓."
+        },
+        {
+          "wrong": "110100",
+          "right": "111001",
+          "excerpt": "- 110100: A=1,B=1,C=1,D=0,E=0,F=1. U1: A=1 ✓. U2: F=C=1 ✓. U3: E=0 ✓. U4: A,B ✓. U5 ✓."
+        }
+      ]
+    },
+    {
+      "arm": "base-1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c1",
+      "ctx": 128000,
+      "client": null,
+      "request_sha256": "9fc416901a92fe9729785f8f65a9df5765da5cff579edaf1d6fc80a5c99d05b6",
+      "output_sha256": "187801f86e746c8fe269f2bd82448c22953c85ee38aee21f6e14592ae00fa394",
+      "source_record_sha256": "6a0762dc122761864ed145553b13db2ddebd69895174b7f92e71604d5fcebe89",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "001010",
+                "111000",
+                "101010",
+                "001111"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "001000",
+                "001111",
+                "101000",
+                "110000"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "001010"
+              },
+              {
+                "true": "001010",
+                "false": null
+              },
+              {
+                "true": "001111",
+                "false": "001010"
+              },
+              {
+                "true": "111000",
+                "false": "001010"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "001000"
+              },
+              {
+                "true": "001000",
+                "false": null
+              },
+              {
+                "true": "001111",
+                "false": "001000"
+              },
+              {
+                "true": "110000",
+                "false": "001000"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "13c5dfd84393b7035d8199af428c2aa54aefb3b200cef42b1d26744ca7fe8984",
+        "oracle_sha256": "a682ad40f60673c8aa2a5b329edce90748e4a5f0dfc5a67e57704d8aba774da7"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "110000": "111000",
+        "001000": "001010",
+        "101000": "101010"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "110000",
+          "right": "111000",
+          "excerpt": "110000: A=1, B=1, C=1, D=0, E=0, F=0. U1: C=1 OK. U2: D=0=F OK. U3: F=0 OK. U4: C=1, A=1 → two OK. U5: E=0, B=1 → XOR OK. Good."
+        },
+        {
+          "wrong": "001000",
+          "right": "001010",
+          "excerpt": "001000: A=0, B=0, C=1, D=0, E=1, F=0. U1: C=1. U2: 0=0. U3: F=0. U4: C=1, E=1 → two. U5: E=1, B=0 → XOR. Good."
+        },
+        {
+          "wrong": "101000",
+          "right": "101010",
+          "excerpt": "101000: A=1, B=0, C=1, D=0, E=1, F=0. U4: C=1, A=1 → two. U5: E=1, B=0. Good."
+        }
+      ]
+    },
+    {
+      "arm": "base-1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c2-2000-q2",
+      "ctx": 2000,
+      "client": 0,
+      "request_sha256": "b7933725a26299eca45d3cc01292214f8d4663394863561292645d873aa2a85a",
+      "output_sha256": "f6f882c240d00ce4c165340434647811556965617635b15a650f02e79234c951",
+      "source_record_sha256": "6a0762dc122761864ed145553b13db2ddebd69895174b7f92e71604d5fcebe89",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "000110",
+                "010011",
+                "010110",
+                "101110"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "001101",
+                "010011",
+                "011101",
+                "101110"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": "101110",
+                "false": "000110"
+              },
+              {
+                "true": "000110",
+                "false": null
+              },
+              {
+                "true": null,
+                "false": "000110"
+              },
+              {
+                "true": "010011",
+                "false": "000110"
+              }
+            ],
+            "actual": [
+              {
+                "true": "101110",
+                "false": "001101"
+              },
+              {
+                "true": "001101",
+                "false": null
+              },
+              {
+                "true": null,
+                "false": "001101"
+              },
+              {
+                "true": "010011",
+                "false": "001101"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "3b952cc39854d212f2100b11ae56d3dd6523951c55b39f680990c635db550082",
+        "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "001101": "000110",
+        "011101": "010110"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "001101",
+          "right": "000110",
+          "excerpt": "Case A=0 → C=0. Then E∨C requires E=1. ¬(A∧B) automatically satisfied. U4: E=1, need at least one of B,D =1. U5: F = 1-D.\n\n\n\nSubcase D=0: F=1. Need B=1 (since E=1, need one more of B,D; D=0 so B=1). World: A=0,B=1,C=0,D=0,E=1,F=1 → 010011.\n\n\n\nSubcase D=1: F=0. U4 satisfied (E=1,D=1). B free (0 or 1). Worlds: 001101 (B=0) and 011101 (B=1).\n\n"
+        },
+        {
+          "wrong": "011101",
+          "right": "010110",
+          "excerpt": "Case A=0 → C=0. Then E∨C requires E=1. ¬(A∧B) automatically satisfied. U4: E=1, need at least one of B,D =1. U5: F = 1-D.\n\n\n\nSubcase D=0: F=1. Need B=1 (since E=1, need one more of B,D; D=0 so B=1). World: A=0,B=1,C=0,D=0,E=1,F=1 → 010011.\n\n\n\nSubcase D=1: F=0. U4 satisfied (E=1,D=1). B free (0 or 1). Worlds: 001101 (B=0) and 011101 (B=1).\n\n"
+        }
+      ]
+    },
+    {
+      "arm": "base-1",
+      "run_id": "20260917T130020-d15c307f7bb5",
+      "phase": "measure-c2-32000-qall",
+      "ctx": 32000,
+      "client": 1,
+      "request_sha256": "3c631da4456367b435eee7374f9a119fb8899793c9490cd675b6cbe7bc7df459",
+      "output_sha256": "a4be9e895a5e0d6f1ff7be5b0741914436771e81971076686babca5b660f33df",
+      "source_record_sha256": "6a0762dc122761864ed145553b13db2ddebd69895174b7f92e71604d5fcebe89",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "110000",
+                "100110",
+                "110010",
+                "111001"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "100110",
+                "110000",
+                "110010",
+                "111000"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "110000",
+                "false": null
+              },
+              {
+                "true": "111001",
+                "false": "110000"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "100110"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": null
+              },
+              {
+                "true": "111000",
+                "false": "100110"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "8c68cf021f9c3dbeacae7d9cb7c7c9bcffc43e43dac9963aeb042a8d851fd29e",
+        "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "111000": "111001"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "111000",
+          "right": "111001",
+          "excerpt": "111000: A=1,B=1,C=1,D=0,E=0,F=1. U1: A=1 ✓ (also F=1). U2: F=1=C ✓. U3: E=0 ✓. U4: A,B ✓. U5 ✓."
+        }
+      ]
+    },
+    {
+      "arm": "base-2",
+      "run_id": "20260917T131947-0bfbe0518c6e",
+      "phase": "measure-c1",
+      "ctx": 32000,
+      "client": null,
+      "request_sha256": "e24da0d13c5d5b3bda3125edbfd56de44c6cb6d1e225128d4b8745d26e64129c",
+      "output_sha256": "68c15ecd60dbbb48c6545ebfbd1524dcbe5a06d556f8f1cb53715a7986ce57cd",
+      "source_record_sha256": "1012a3dc4de6bf2cb9513776b81da351e138077e1696b0880448539fd432964e",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "110000",
+                "100110",
+                "110010",
+                "111001"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "100110",
+                "110000",
+                "110001",
+                "110010"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "110000",
+                "false": null
+              },
+              {
+                "true": "111001",
+                "false": "110000"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "100110"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": null
+              },
+              {
+                "true": "110001",
+                "false": "100110"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "eb13e33485619777593c114ca3fe96f0e6c6ea2b35825c0db271da69cc5e45a0",
+        "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "110001": "111001"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "110001",
+          "right": "111001",
+          "excerpt": "- 110001: A=1,B=1,C=1,D=0,E=0,F=1. U1: A=1 ✓. U2: F=1=C ✓. U3: E=0 ✓. U4: A,B ✓. U5 ✓."
+        }
+      ]
+    },
+    {
+      "arm": "base-2",
+      "run_id": "20260917T131947-0bfbe0518c6e",
+      "phase": "measure-c1",
+      "ctx": 128000,
+      "client": null,
+      "request_sha256": "26560a88c1dda1fec99a56dbfe694563d70a71395822cf677c1d09dfd77c7312",
+      "output_sha256": "715f178d15c751c8aab08f0d131486bb31743eb9dd089f1b9337d399d4ff8bd9",
+      "source_record_sha256": "1012a3dc4de6bf2cb9513776b81da351e138077e1696b0880448539fd432964e",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "001010",
+                "111000",
+                "101010",
+                "001111"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "001001",
+                "110100",
+                "101100",
+                "001011"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "001010"
+              },
+              {
+                "true": "001010",
+                "false": null
+              },
+              {
+                "true": "001111",
+                "false": "001010"
+              },
+              {
+                "true": "111000",
+                "false": "001010"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "001001"
+              },
+              {
+                "true": "001001",
+                "false": null
+              },
+              {
+                "true": "001011",
+                "false": "001001"
+              },
+              {
+                "true": "110100",
+                "false": "001001"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "af13de98754abbdd1728bd18e98d9becd874959a09b92b600d078cc40004c60f",
+        "oracle_sha256": "a682ad40f60673c8aa2a5b329edce90748e4a5f0dfc5a67e57704d8aba774da7"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "001001": "001010",
+        "110100": "111000",
+        "101100": "101010",
+        "001011": "001111"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "001001",
+          "right": "001010",
+          "excerpt": "- 001001: A=0,B=0,C=1,D=0,E=1,F=0. U1: C=1 ✓. U2: D=F=0 ✓. U3: F=0 ✓. U4: C=1, E=1 → two ✓. U5: E=1, B=0 → exactly one ✓. Good."
+        },
+        {
+          "wrong": "110100",
+          "right": "111000",
+          "excerpt": "- 110100: A=1,B=1,C=1,D=0,E=0,F=0. U1: C=1 ✓. U2: 0=0 ✓. U3: F=0 ✓. U4: C=1, A=1 → two ✓. U5: E=0, B=1 → exactly one ✓. Good."
+        },
+        {
+          "wrong": "101100",
+          "right": "101010",
+          "excerpt": "- 101100: A=1,B=0,C=1,D=0,E=1,F=0. U1 ✓. U2 ✓. U3 ✓. U4: C=1,A=1 ✓. U5: E=1,B=0 ✓. Good."
+        },
+        {
+          "wrong": "001011",
+          "right": "001111",
+          "excerpt": "- 001011: A=0,B=0,C=1,D=1,E=1,F=1. U1: D=1 ✓. U2: 1=1 ✓. U3: F=1, A=0 ✓. U4: C=1,E=1 ✓. U5: E=1,B=0 ✓. Good."
+        }
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c1",
+      "ctx": 128000,
+      "client": null,
+      "request_sha256": "9d4ebcdc72b1ae4f136b9cc97ac5048edbf7292bfd2aac2846187d18260d4bb8",
+      "output_sha256": "d34ffd4c2db7cbc9bb7b13be931eea6cac872d969e06bbfdeb8d301f320d66bf",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "portfolio",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true
+        },
+        "score": 5,
+        "max_score": 6,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 19,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "budget"
+                  ]
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 16,
+                  "staff": 7,
+                  "score": 76,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 16,
+                  "staff": 6,
+                  "score": 79,
+                  "violations": []
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 15,
+                  "staff": 9,
+                  "score": null,
+                  "violations": [
+                    "staff"
+                  ]
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 15,
+                  "staff": 8,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 12,
+                  "staff": 8,
+                  "score": 71,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 19,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "budget",
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 19,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "budget",
+                    "dependency",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 16,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 8,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                }
+              ]
+            },
+            "actual": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 19,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "budget"
+                  ]
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 16,
+                  "staff": 7,
+                  "score": 76,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 16,
+                  "staff": 6,
+                  "score": 79,
+                  "violations": []
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 15,
+                  "staff": 9,
+                  "score": null,
+                  "violations": [
+                    "staff"
+                  ]
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 15,
+                  "staff": 8,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 12,
+                  "staff": 8,
+                  "score": 71,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 19,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "budget"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 19,
+                  "staff": 8,
+                  "score": null,
+                  "violations": [
+                    "budget",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 16,
+                  "staff": 6,
+                  "score": 60,
+                  "violations": []
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 8,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "6b0964784a3ca5fe2da5e0667b28700f9c2b7ade126365f08f997f0d40d543ad",
+        "oracle_sha256": "fa4e49b38ce1364fc20aeeb297167874922f38c3b922c478cd45742db31251c3"
+      },
+      "classification": "intermediate-field or constraint error; final result correct",
+      "evidence": [
+        "ACE: C and E conflict → violation. cost 4+7+4=15, staff 3+3+2=8 ok. Violations: [conflict].",
+        "BCD: cost 8+7+4=19 >17 → budget. staff 1+3+3=7. Violations: [budget].",
+        "BCE: cost 8+7+4=19 >17 budget; C and E conflict. Violations: [budget, conflict].",
+        "BDE: cost 8+4+4=16. staff 1+3+2=6. Score: boom 27+19+24=70, bust 33+35+23=91, min 70, risk 0+4+1=5, score 70-10=60.",
+        "CDE: cost 7+4+4=15. staff 3+3+2=8. C and E conflict → violation. Violations: [conflict].",
+        "BDE: 60",
+        "ACE: 15 no.",
+        "BCD: 19 no.",
+        "BCE: 19 no.",
+        "BDE: 16 no.",
+        "CDE: 15 no.",
+        "- ACE: cost 15, staff 8, score null, violations [\"conflict\"]"
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c1",
+      "ctx": 128000,
+      "client": null,
+      "request_sha256": "9d4ebcdc72b1ae4f136b9cc97ac5048edbf7292bfd2aac2846187d18260d4bb8",
+      "output_sha256": "d34ffd4c2db7cbc9bb7b13be931eea6cac872d969e06bbfdeb8d301f320d66bf",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "001010",
+                "111000",
+                "101010",
+                "001111"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "110000",
+                "001001",
+                "101001",
+                "001111"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "001010"
+              },
+              {
+                "true": "001010",
+                "false": null
+              },
+              {
+                "true": "001111",
+                "false": "001010"
+              },
+              {
+                "true": "111000",
+                "false": "001010"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "110000"
+              },
+              {
+                "true": "110000",
+                "false": null
+              },
+              {
+                "true": "001111",
+                "false": "110000"
+              },
+              {
+                "true": "110000",
+                "false": "001001"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "6b0964784a3ca5fe2da5e0667b28700f9c2b7ade126365f08f997f0d40d543ad",
+        "oracle_sha256": "a682ad40f60673c8aa2a5b329edce90748e4a5f0dfc5a67e57704d8aba774da7"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "110000": "111000",
+        "001001": "001010",
+        "101001": "101010"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "110000",
+          "right": "111000",
+          "excerpt": "110000: A=1,B=1,C=1,D=0,E=0,F=0. U1: C=1 ✓. U2: D=F=0 ✓. U3: F=0 ✓. U4: C+A+E = 1+1+0=2 ✓. U5: E=0,B=1 → exactly one ✓."
+        },
+        {
+          "wrong": "001001",
+          "right": "001010",
+          "excerpt": "001001: A=0,B=0,C=1,D=0,E=1,F=0. U1: C=1 ✓. U2 ✓. U3 ✓. U4: 1+0+1=2 ✓. U5: E=1,B=0 ✓."
+        },
+        {
+          "wrong": "101001",
+          "right": "101010",
+          "excerpt": "101001: A=1,B=0,C=1,D=0,E=1,F=0. U4: 1+1+1=3 ✓. U5 ✓."
+        }
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-2000-q1",
+      "ctx": 2000,
+      "client": 0,
+      "request_sha256": "814854176f8248d320df83f239a958e5f9efe82b6773d9059d6cb11728597f0a",
+      "output_sha256": "a5f84d9f2ee1994ec9700044275297c83a76401a277d6c744bc8558977967aac",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "portfolio",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": false,
+          "completion": true,
+          "result": false,
+          "derivation": false,
+          "evidence": false,
+          "counterfactual": false
+        },
+        "score": 1,
+        "max_score": 6,
+        "failures": [
+          {
+            "dimension": "result",
+            "expected": {
+              "best": "ABE",
+              "score": 81,
+              "runner_up": "ADE",
+              "margin": 8
+            },
+            "actual": null
+          },
+          {
+            "dimension": "derivation",
+            "expected": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 16,
+                  "staff": 5,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 18,
+                  "staff": 6,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 20,
+                  "staff": 7,
+                  "score": 81,
+                  "violations": []
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 14,
+                  "staff": 6,
+                  "score": 64,
+                  "violations": []
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 16,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 18,
+                  "staff": 8,
+                  "score": 73,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 15,
+                  "staff": 4,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 17,
+                  "staff": 5,
+                  "score": null,
+                  "violations": [
+                    "dependency",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 19,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                }
+              ]
+            },
+            "actual": null
+          },
+          {
+            "dimension": "evidence",
+            "expected": {
+              "constraints": [
+                "O1",
+                "O2",
+                "O3"
+              ],
+              "objective": [
+                "O4"
+              ],
+              "projects": [
+                "OA",
+                "OB",
+                "OC",
+                "OD",
+                "OE"
+              ],
+              "counterfactual": [
+                "O5"
+              ]
+            },
+            "actual": null
+          },
+          {
+            "dimension": "counterfactual",
+            "expected": {
+              "best": "ADE",
+              "score": 73,
+              "feasible": [
+                "ADE",
+                "ABC",
+                "ABD",
+                "ACD"
+              ]
+            },
+            "actual": null
+          }
+        ],
+        "parse_error": "Expecting ',' delimiter: line 1 column 1138 (char 1137)",
+        "finish_reason": "stop",
+        "visible_sha256": "6221222283ec1fe1f0ff1e5f72ca0cc7eb2acf86569ffc17519a1b4bf5478efa",
+        "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+      },
+      "classification": "JSON missing final closing brace; reported primary answer correct",
+      "evidence": [
+        "ull, \"violations\": [\"dependency\"]}, {\"ids\": \"CDE\", \"cost\": 15, \"staff\": 6, \"score\": null, \"violations\": [\"conflict\"]}]}, \"evidence\": {\"constraints\": [\"O1\", \"O2\", \"O3\"], \"objective\": [\"O4\"], \"projects\": [\"OA\", \"OB\", \"OC\", \"OD\", \"OE\"], \"counterfactual\": [\"O5\"]}, \"counterfactual\": {\"best\": \"ADE\", \"score\": 73, \"feasible\": [\"ABC\", \"ABD\", \"ACD\", \"ADE\"]}}"
+      ],
+      "reported_primary_result": {
+        "best": "ABE",
+        "score": 81,
+        "runner_up": "ADE",
+        "margin": 8
+      },
+      "diagnostic_repair": "append one closing brace only; original grades unchanged",
+      "repaired_output": {
+        "portfolio": {
+          "result": {
+            "best": "ABE",
+            "score": 81,
+            "runner_up": "ADE",
+            "margin": 8
+          },
+          "derivation": {
+            "candidates": [
+              {
+                "ids": "ABC",
+                "cost": 16,
+                "staff": 5,
+                "score": 72,
+                "violations": []
+              },
+              {
+                "ids": "ABD",
+                "cost": 18,
+                "staff": 6,
+                "score": 72,
+                "violations": []
+              },
+              {
+                "ids": "ABE",
+                "cost": 20,
+                "staff": 7,
+                "score": 81,
+                "violations": []
+              },
+              {
+                "ids": "ACD",
+                "cost": 14,
+                "staff": 6,
+                "score": 64,
+                "violations": []
+              },
+              {
+                "ids": "ACE",
+                "cost": 16,
+                "staff": 7,
+                "score": null,
+                "violations": [
+                  "conflict"
+                ]
+              },
+              {
+                "ids": "ADE",
+                "cost": 18,
+                "staff": 8,
+                "score": 73,
+                "violations": []
+              },
+              {
+                "ids": "BCD",
+                "cost": 15,
+                "staff": 4,
+                "score": null,
+                "violations": [
+                  "dependency"
+                ]
+              },
+              {
+                "ids": "BCE",
+                "cost": 17,
+                "staff": 5,
+                "score": null,
+                "violations": [
+                  "dependency",
+                  "conflict"
+                ]
+              },
+              {
+                "ids": "BDE",
+                "cost": 19,
+                "staff": 6,
+                "score": null,
+                "violations": [
+                  "dependency"
+                ]
+              },
+              {
+                "ids": "CDE",
+                "cost": 15,
+                "staff": 6,
+                "score": null,
+                "violations": [
+                  "conflict"
+                ]
+              }
+            ]
+          },
+          "evidence": {
+            "constraints": [
+              "O1",
+              "O2",
+              "O3"
+            ],
+            "objective": [
+              "O4"
+            ],
+            "projects": [
+              "OA",
+              "OB",
+              "OC",
+              "OD",
+              "OE"
+            ],
+            "counterfactual": [
+              "O5"
+            ]
+          },
+          "counterfactual": {
+            "best": "ADE",
+            "score": 73,
+            "feasible": [
+              "ABC",
+              "ABD",
+              "ACD",
+              "ADE"
+            ]
+          }
+        }
+      },
+      "diagnostic_repaired_grade": [
+        {
+          "case": "portfolio",
+          "version": "ko-reasoning-v3",
+          "passed": true,
+          "checks": {
+            "format": true,
+            "completion": true,
+            "result": true,
+            "derivation": true,
+            "evidence": true,
+            "counterfactual": true
+          },
+          "score": 6,
+          "max_score": 6,
+          "failures": [],
+          "parse_error": null,
+          "finish_reason": "stop",
+          "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+          "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+        }
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-2000-q1",
+      "ctx": 2000,
+      "client": 1,
+      "request_sha256": "b27190609623053d8dc944f9dc666698ecc0c7ae161b3447a7ca7965aaf28c5b",
+      "output_sha256": "557bc38fc6590e1c84eedd774b020413601976e31b57748bbdc02097976175a2",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "portfolio",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": false
+        },
+        "score": 4,
+        "max_score": 6,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 16,
+                  "staff": 5,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 18,
+                  "staff": 6,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 20,
+                  "staff": 7,
+                  "score": 81,
+                  "violations": []
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 14,
+                  "staff": 6,
+                  "score": 64,
+                  "violations": []
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 16,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 18,
+                  "staff": 8,
+                  "score": 73,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 15,
+                  "staff": 4,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 17,
+                  "staff": 5,
+                  "score": null,
+                  "violations": [
+                    "dependency",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 19,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                }
+              ]
+            },
+            "actual": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 16,
+                  "staff": 5,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 18,
+                  "staff": 6,
+                  "score": 72,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 20,
+                  "staff": 7,
+                  "score": 81,
+                  "violations": []
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 14,
+                  "staff": 6,
+                  "score": 64,
+                  "violations": []
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 16,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 18,
+                  "staff": 8,
+                  "score": 73,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 15,
+                  "staff": 4,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 17,
+                  "staff": 5,
+                  "score": null,
+                  "violations": [
+                    "dependency",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 19,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 6,
+                  "score": 55,
+                  "violations": []
+                }
+              ]
+            }
+          },
+          {
+            "dimension": "counterfactual",
+            "expected": {
+              "best": "ADE",
+              "score": 73,
+              "feasible": [
+                "ADE",
+                "ABC",
+                "ABD",
+                "ACD"
+              ]
+            },
+            "actual": {
+              "best": "ADE",
+              "score": 73,
+              "feasible": [
+                "ABC",
+                "ABD",
+                "ACD",
+                "ADE",
+                "CDE"
+              ]
+            }
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "9625af487c3c0f16ce9c2258ac4b20f40d30c61dce901ea407a1f0c2877c20d8",
+        "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+      },
+      "classification": "intermediate-field or constraint error; final result correct",
+      "evidence": [
+        "5. ACE: conflict C&E. cost 6+3+7=16, staff 3+1+3=7. Violations: [conflict]. Score null.",
+        "7. BCD: B without A → dependency violation. cost 7+3+5=15, staff 1+1+2=4. Violations: [dependency]. Score null.",
+        "8. BCE: B without A (dependency) and C&E conflict. cost 7+3+7=17, staff 1+1+3=5. Violations: [dependency, conflict]. Score null.",
+        "9. BDE: B without A → dependency. cost 7+5+7=19, staff 1+2+3=6. Violations: [dependency]. Score null.",
+        "10. CDE: cost 3+5+7=15, staff 1+2+3=6, boom 27+27+40=94, recession 17+25+29=71, risk 2+2+4=8. Score = min(94,71)-16 = 71-16=55. Feasible.",
+        "- ACE: conflict, null.",
+        "- BCD: dependency, null.",
+        "- BCE: dependency+conflict, null.",
+        "- BDE: dependency, null.",
+        "- CDE: 15 feasible, 55.",
+        "- CDE: boom 27+27+40=94; recession 17+25+29=71; min 71; risk 8 → 71-16=55. ✓"
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-32000-qall",
+      "ctx": 32000,
+      "client": 0,
+      "request_sha256": "3d8a0d33bac178fbbe345f54ead09ea107adc494e9cbab970508fc8902c2b54e",
+      "output_sha256": "0b5965bec2b5c074166e22dec567e1bf7aa861f118287938f9fcafa90e422ff9",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "portfolio",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true
+        },
+        "score": 5,
+        "max_score": 6,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 18,
+                  "staff": 5,
+                  "score": 49,
+                  "violations": []
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 19,
+                  "staff": 8,
+                  "score": 56,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 20,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "budget"
+                  ]
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 16,
+                  "staff": 8,
+                  "score": 34,
+                  "violations": []
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 17,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 18,
+                  "staff": 9,
+                  "score": 36,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 16,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 17,
+                  "staff": 4,
+                  "score": null,
+                  "violations": [
+                    "dependency",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 18,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                }
+              ]
+            },
+            "actual": {
+              "candidates": [
+                {
+                  "ids": "ABC",
+                  "cost": 18,
+                  "staff": 5,
+                  "score": 49,
+                  "violations": []
+                },
+                {
+                  "ids": "ABD",
+                  "cost": 19,
+                  "staff": 8,
+                  "score": 56,
+                  "violations": []
+                },
+                {
+                  "ids": "ABE",
+                  "cost": 20,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "budget"
+                  ]
+                },
+                {
+                  "ids": "ACD",
+                  "cost": 16,
+                  "staff": 8,
+                  "score": 34,
+                  "violations": []
+                },
+                {
+                  "ids": "ACE",
+                  "cost": 18,
+                  "staff": 5,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "ADE",
+                  "cost": 18,
+                  "staff": 9,
+                  "score": 36,
+                  "violations": []
+                },
+                {
+                  "ids": "BCD",
+                  "cost": 16,
+                  "staff": 6,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "BCE",
+                  "cost": 17,
+                  "staff": 4,
+                  "score": null,
+                  "violations": [
+                    "dependency",
+                    "conflict"
+                  ]
+                },
+                {
+                  "ids": "BDE",
+                  "cost": 18,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "dependency"
+                  ]
+                },
+                {
+                  "ids": "CDE",
+                  "cost": 15,
+                  "staff": 7,
+                  "score": null,
+                  "violations": [
+                    "conflict"
+                  ]
+                }
+              ]
+            }
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "5837a3c10ae82478cd910ce81dcff2c8fe1c5b3883de4a4249995e0cc61f8b1d",
+        "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+      },
+      "classification": "intermediate-field or constraint error; final result correct",
+      "evidence": [
+        "ACE: C and E both → conflict ✗.",
+        "BCD: B without A → dependency violation ✗. Also cost 7+4+5=16, staff 1+1+4=6. Violation: dependency.",
+        "BCE: B without A (dependency), C&E conflict. cost 7+4+6=17, staff 1+1+2=4. Violations: dependency, conflict.",
+        "BDE: B without A → dependency. cost 7+5+6=18, staff 1+4+2=7. Violation: dependency.",
+        "CDE: cost 4+5+6=15 ✓; staff 1+4+2=7 ✓; C&E conflict ✗. Violation: conflict.",
+        "- ACE: cost 18, staff 5, score null, violations [\"conflict\"].",
+        "- BCD: cost 16, staff 6, score null, violations [\"dependency\"].",
+        "- BCE: cost 17, staff 4, score null, violations [\"dependency\",\"conflict\"].",
+        "- BDE: cost 18, staff 7, score null, violations [\"dependency\"].",
+        "- CDE: cost 15, staff 7, score null, violations [\"conflict\"].",
+        "after_loss = floor(325 × 0.95) = floor(308.75) = 308.",
+        "after_loss = floor(325 × 0.95) = 308 (308.75 → 308). ✓"
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-32000-qall",
+      "ctx": 32000,
+      "client": 0,
+      "request_sha256": "3d8a0d33bac178fbbe345f54ead09ea107adc494e9cbab970508fc8902c2b54e",
+      "output_sha256": "0b5965bec2b5c074166e22dec567e1bf7aa861f118287938f9fcafa90e422ff9",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true,
+          "witnesses": false
+        },
+        "score": 5,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "110000",
+                "100110",
+                "110010",
+                "111001"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "100110",
+                "110000",
+                "110010",
+                "110001"
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "110000",
+                "false": null
+              },
+              {
+                "true": "111001",
+                "false": "110000"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "100110"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": null
+              },
+              {
+                "true": "110001",
+                "false": "100110"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "5837a3c10ae82478cd910ce81dcff2c8fe1c5b3883de4a4249995e0cc61f8b1d",
+        "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error",
+      "encoding_map": {
+        "110001": "111001"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "110001",
+          "right": "111001",
+          "excerpt": "- 110001: A=1,B=1,C=1,D=0,E=0,F=1. U1: F=1 ✓. U2: F=1=C ✓. U3: E=0 ✓. U4: A=1,B=1 ✓. U5 ✓. Valid."
+        }
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-32000-qall",
+      "ctx": 32000,
+      "client": 1,
+      "request_sha256": "ed94bd8e75a8bf295acb9f5c37ef51975537d0e0fe2ac4a05cac7b8683fa1b4d",
+      "output_sha256": "e1dc0442be40211b9cf2f4f370592ca55da0763889ab021c6b52a9f37c257ff0",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "ledger",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": true
+        },
+        "score": 5,
+        "max_score": 6,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "selected": [
+                "L11",
+                "L13",
+                "L16",
+                "L17"
+              ],
+              "received": 168,
+              "net": 325,
+              "after_loss": 308
+            },
+            "actual": {
+              "selected": [
+                "L11",
+                "L13",
+                "L16",
+                "L17"
+              ],
+              "received": 168,
+              "net": 325,
+              "after_loss": 271
+            }
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "b4843f4226eecc8928d66017065c90941f70908e9bc6d7cd045c60fbd8b58c97",
+        "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+      },
+      "classification": "intermediate-field or constraint error; final result correct",
+      "evidence": [
+        "After_loss: 손실률 5% applied to 순재고, floor, then subtract 예약 37. 325 × 0.95 = 308.75 → floor 308. Then 308 - 37 = 271.",
+        "ACE: C&E conflict. cost 7+4+6=17; staff 3+1+2=6. Violations: [conflict]. Score null.",
+        "BCD: B without A → dependency violation. cost 7+4+5=16; staff 1+1+4=6. Violations: [dependency]. Score null.",
+        "BCE: B without A (dependency), C&E (conflict). cost 7+4+6=17; staff 1+1+2=4. Violations: [dependency, conflict]. Score null.",
+        "BDE: B without A → dependency. cost 7+5+6=18; staff 1+4+2=7. Violations: [dependency]. Score null.",
+        "CDE: C&E conflict. cost 4+5+6=15; staff 1+4+2=7. Violations: [conflict]. Score null.",
+        "- ACE: conflict. cost 17>16 also budget violation. Violations: [budget, conflict].",
+        "- BCD: 16 ok cost; staff 6; dependency violation. Violations: [dependency].",
+        "- BCE: cost 17>16 budget; dependency; conflict. Violations: [budget, dependency, conflict].",
+        "- BDE: 18>16 budget; dependency. Violations: [budget, dependency].",
+        "- CDE: 15 ok; staff 7; conflict. Violations: [conflict].",
+        "after_loss = floor(325×0.95) - 37 = floor(308.75)=308; 308-37=271."
+      ]
+    },
+    {
+      "arm": "candidate-1",
+      "run_id": "20260917T133200-b3eb2a4aaa98",
+      "phase": "measure-c2-32000-qall",
+      "ctx": 32000,
+      "client": 1,
+      "request_sha256": "ed94bd8e75a8bf295acb9f5c37ef51975537d0e0fe2ac4a05cac7b8683fa1b4d",
+      "output_sha256": "e1dc0442be40211b9cf2f4f370592ca55da0763889ab021c6b52a9f37c257ff0",
+      "source_record_sha256": "c79b733e90f854f788515ac400caed5e95eea5bdf1ad67306666393ebba1210e",
+      "original_grade": {
+        "case": "logic",
+        "version": "ko-reasoning-v3",
+        "passed": false,
+        "checks": {
+          "format": true,
+          "completion": true,
+          "result": true,
+          "derivation": false,
+          "evidence": true,
+          "counterfactual": false,
+          "witnesses": false
+        },
+        "score": 4,
+        "max_score": 7,
+        "failures": [
+          {
+            "dimension": "derivation",
+            "expected": {
+              "worlds": [
+                "110000",
+                "100110",
+                "110010",
+                "111001"
+              ]
+            },
+            "actual": {
+              "worlds": [
+                "100110",
+                "110001",
+                "110010",
+                "111001"
+              ]
+            }
+          },
+          {
+            "dimension": "counterfactual",
+            "expected": {
+              "consistent": false,
+              "minimal_cores": [
+                [
+                  "U1",
+                  "U2",
+                  "U3",
+                  "U4",
+                  "U6"
+                ]
+              ]
+            },
+            "actual": {
+              "consistent": false,
+              "minimal_cores": [
+                [
+                  "U3",
+                  "U4",
+                  "U6"
+                ]
+              ]
+            }
+          },
+          {
+            "dimension": "witnesses",
+            "expected": [
+              {
+                "true": null,
+                "false": "110000"
+              },
+              {
+                "true": "100110",
+                "false": "110000"
+              },
+              {
+                "true": "110000",
+                "false": null
+              },
+              {
+                "true": "111001",
+                "false": "110000"
+              }
+            ],
+            "actual": [
+              {
+                "true": null,
+                "false": "110001"
+              },
+              {
+                "true": "110010",
+                "false": "110001"
+              },
+              {
+                "true": "110001",
+                "false": null
+              },
+              {
+                "true": "111001",
+                "false": "110001"
+              }
+            ]
+          }
+        ],
+        "parse_error": null,
+        "finish_reason": "stop",
+        "visible_sha256": "b4843f4226eecc8928d66017065c90941f70908e9bc6d7cd045c60fbd8b58c97",
+        "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+      },
+      "classification": "named assignments correctly derived; bit-string transcription error; also a genuine minimal-core error",
+      "encoding_map": {
+        "110001": "110000"
+      },
+      "mapped_worlds_and_witnesses_match_oracle": true,
+      "evidence": [
+        {
+          "wrong": "110001",
+          "right": "110000",
+          "excerpt": "- E=0: world A=1,B=1,C=0,D=0,E=0,F=0 → 110001? Order ABCDEF: A=1,B=1,C=0,D=0,E=0,F=0 → \"110001\"."
+        },
+        {
+          "excerpt": "Also U1 with U6: A=0 → F=1 → C=1. Then U3 → E=0. Then U4 needs two of {A=0,E=0,B} → impossible. So {U1, U3, U4, U6} also contradictory, but is it minimal? Check subsets: remove U1: {U3,U4,U6} still contradictory. So not minimal. "
+        },
+        {
+          "excerpt": "{U1, U2, U3, U4, U6}: contains {U3,U4,U6} which is already contradictory, so not minimal."
+        }
+      ]
+    }
+  ]
+}

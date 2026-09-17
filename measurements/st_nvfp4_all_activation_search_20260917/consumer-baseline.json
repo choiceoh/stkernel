@@ -2702,7 +2702,25 @@
           }
         ]
       }
-    ]
+    ],
+    "quality_protocol": {
+      "version": "ko-reasoning-v3",
+      "workloads_sha256": "5879551efd702c47e0f2687f02af0d87a16d0cbe5f2f6516cd9070c32b01d107",
+      "grading": "visible final content only; deterministic proof certificates",
+      "artifact": "workloads.json"
+    },
+    "recording": {
+      "schema": 1,
+      "status": "complete",
+      "server": {
+        "schema": 1,
+        "boot_id": "c8886b1f2ede4a9f81914c8833107b69",
+        "ranks": 4,
+        "policy": "fresh-prefix; observed preparation; profiler-off measurement; separate diagnostic replay"
+      },
+      "phase": "diagnostic-c2-32000"
+    },
+    "cold": "boot"
   },
   {
     "name": "B",
@@ -3956,6 +3974,24 @@
           }
         ]
       }
-    ]
+    ],
+    "quality_protocol": {
+      "version": "ko-reasoning-v3",
+      "workloads_sha256": "5879551efd702c47e0f2687f02af0d87a16d0cbe5f2f6516cd9070c32b01d107",
+      "grading": "visible final content only; deterministic proof certificates",
+      "artifact": "workloads.json"
+    },
+    "recording": {
+      "schema": 1,
+      "status": "complete",
+      "server": {
+        "schema": 1,
+        "boot_id": "c8886b1f2ede4a9f81914c8833107b69",
+        "ranks": 4,
+        "policy": "fresh-prefix; observed preparation; profiler-off measurement; separate diagnostic replay"
+      },
+      "phase": "diagnostic-c1-128000"
+    },
+    "cold": "boot"
   }
 ]

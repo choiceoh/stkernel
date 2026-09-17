@@ -27,7 +27,7 @@ not the E=1 NVFP4 adapter. Thus this consumer A/B measures the routed FC1 and
 prefill extension. The dense extension is for the separate ModelOpt NVFP4
 checkpoint; changing the current dense precision is outside this change.
 
-## Validation so far
+## Validation
 
 GPU-free checks used the existing serving image
 `sha256:e9e80b94d41277b171cef5785483989acd1c91d450d0d1068269e99f60bc75bd`,
@@ -91,8 +91,10 @@ whole MLP. `projection.json` retains all per-cell values, seeds and hashes.
 
 ## Consumer gate
 
-The implementation was merged in #1127 while these measurements were pending;
-this follow-up records its GPU and consumer evidence without changing the engine.
+The implementation was merged in #1127 while these measurements were pending.
+After reviewing the C=1 improvement, unchanged reported primary decisions and
+C=2 certificate issues, the user explicitly elected to retain **as1 as default**.
+This follow-up records the evidence without changing the engine or its default.
 Tickets `fp4-all-base17` and `fp4-all-candidate17` compare existing `ss1` with
 `as1` using the same implementation and harness, production shape, C=1/C=2
 fixed 1024-token throughput, natural-EOS acceptance and clarified ko-reasoning-v3
@@ -103,16 +105,63 @@ throughput must remain at least 95% of the matched baseline.
 - Candidate: `1fd46c9ee5c88fcdfb6577361e86d61ad93a0261`.
 - Both bench trees: `63ae431979ba63a37c8126936b77597c9a743447`.
 - One boot per arm: C=1 natural EOS twice; C=2 and fixed length once.
-- Current baseline records are complete: `20260917T130020-d15c307f7bb5` and
-  `20260917T131947-0bfbe0518c6e`. Candidate collection remains in progress.
+- Baseline records: `20260917T130020-d15c307f7bb5` and
+  `20260917T131947-0bfbe0518c6e`.
+- Candidate records: `20260917T133200-b3eb2a4aaa98` and
+  `20260917T135029-d3b4bfc0952f`.
+- All four records are complete. Harness, quality protocol, workload, budgets,
+  served shape and measurement policy match. All four timing preparation checks
+  pass, with profiler off, fresh prefixes and no observed compile/graph capture.
 
-The baseline has 30/30 correct final results, 23/30 fully correct certificates
-and 177/190 strict certificate points. Its natural C=1 acceptance is 55.125%
-and 56.468%; fixed throughput is 87.132 C=1 and 109.169 aggregate C=2 tok/s
-(1.253x). All baseline timing preparation checks pass. Canonical quality
-failures are retained, including one wrong minimal inconsistent rule set;
-timing validity alone is not a full quality/performance qualification.
+| Consumer metric | Existing ss1 | All-path as1 |
+|---|---:|---:|
+| Fixed 1024-token C=1 output tok/s | 87.132 | **95.358 (+9.44%)** |
+| Fixed 1024-token C=2 aggregate tok/s | 109.169 | **111.158 (+1.82%)** |
+| C=2 / C=1 | 1.253x | 1.166x |
+| Natural C=1 acceptance, runs 1 / 2 | 55.125% / 56.468% | 56.312% / 55.059% |
+| Natural C=1 tokens/step, runs 1 / 2 | 4.859 / 4.953 | 4.942 / 4.854 |
+| C=1 strict score, runs 1 / 2 | 52/57 / 53/57 | 54/57 / **57/57** |
+| C=1 strict score, combined | 105/114 | **111/114** |
+| C=2 strict score | 72/76 | 62/76 |
+| All strict points / complete certificates | 177/190; 23/30 | 173/190; 22/30 |
+| Parsed primary results | 30/30 | 29/30 |
+| Reported primary decisions, including malformed response | 30/30 | 30/30 |
 
-`consumer-baseline.json` preserves completed raw-record hashes, per-request
-timing/output hashes and original quality details. `compare_consumer.py` compares
-the four completed raw records and preserves the canonical judge's verdict.
+The C=1 speed guard passes. C=2 absolute throughput rises slightly, while the
+ratio falls because C=1 improves more; the 1.7x target is not reached. Fixed
+throughput has one sample per arm, so these are observations, not a replicated
+speedup estimate. Natural acceptance is similar; two C=1 repeats do not establish
+reduced variance. They use the pinned runs' counters, before the later EOS/limit
+accepted-draft accounting correction in #1129, with the same convention in both
+arms. These are not measurements of that later main build.
+
+| Fresh-prefix prefill, run 2 | ss1 tok/s (TTFT) | as1 tok/s (TTFT) |
+|---|---:|---:|
+| 2K | 2473.55 (1.120 s) | 2483.10 (1.116 s) |
+| 32K | 3541.62 (9.587 s) | 3503.91 (9.691 s) |
+| 128K | 3484.92 (37.278 s) | 3446.10 (37.698 s) |
+
+The candidate's missing closing JSON brace accounts for five failed C=2 checks;
+its reported primary answer is right. C=2 also adds five certificate deductions
+for constraints, intermediate fields and a minimal core. Both arms lose four
+C=2 points to bit-string transcription. The [quality audit](quality-audit.md)
+retains these distinctions and every original grade. No case is excluded.
+
+The canonical judge reports **NO BASE**, because the baseline has no fully
+passing warm certificate sample; the candidate's second C=1 run passes 9/9.
+This is not a canonical WIN or a claim that all quality gates passed. Adoption
+is the user's explicit decision after reviewing the mixed evidence.
+
+`consumer-baseline.json` and `consumer-candidate.json` preserve raw-record hashes,
+per-request timing/output hashes and original quality details.
+`consumer-comparison.json` is generated by `compare_consumer.py` from the four
+completed raw records. Raw artifacts remain under the recorded paths on srv2.
+`audit_quality.py --raw-root DIR --output FILE` reproduces the reviewed audit
+from folders `base-1`, `base-2`, `candidate-1`, `candidate-2`, each containing
+`record.json`, `quality.jsonl`, `requests.jsonl` and `workloads.json`.
+
+At measurement completion the bracket stopped all four candidate containers
+and dropped its temporary tiers by 23:00:48 KST. All four recorded container IDs
+were subsequently verified absent; the lease passed to the next queued job.
+`fleet-stop.json` records that release. No further GPU experiment was started
+for this campaign.

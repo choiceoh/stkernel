@@ -1,0 +1,70 @@
+{
+  "session": "fp4-all-candidate17",
+  "stop_method": "canonical st_bracket leg stops its own boot immediately after both records, then drops temporary tiers and releases the lease",
+  "stopped_by": "2026-09-17T23:00:48+09:00",
+  "all_four_measured_containers_removed": true,
+  "before": {
+    "t": "2026-09-17T13:59:27.944535+00:00",
+    "nodes": [
+      {
+        "node": "10.10.10.2",
+        "returncode": 0,
+        "identity": "9c3e7e745c0d63d83eea9e2c9dc2adfd88a71f3ada4a18f4edaab60a28e8dfc3|st-engine:bracket-1fd46c9ee5c8|true",
+        "error": ""
+      },
+      {
+        "node": "10.10.10.1",
+        "returncode": 0,
+        "identity": "e5cef05655866d25a97369d68e1b7d4dc8ea4f180ecf362d4b5c38b9c3c96f5e|st-engine:bracket-1fd46c9ee5c8|true",
+        "error": ""
+      },
+      {
+        "node": "10.10.10.3",
+        "returncode": 0,
+        "identity": "783d3078e43f41d13eb47d9a175c464b83042e650b1f438d833131c52b9738ad|st-engine:bracket-1fd46c9ee5c8|true",
+        "error": ""
+      },
+      {
+        "node": "10.10.10.4",
+        "returncode": 0,
+        "identity": "4361f070b9cdb2bc4739a1af39222f919a95c4b7db2f80ec6053486de8085156|st-engine:bracket-1fd46c9ee5c8|true",
+        "error": ""
+      }
+    ]
+  },
+  "after": {
+    "t": "2026-09-17T14:01:38.127611+00:00",
+    "nodes": [
+      {
+        "node": "10.10.10.2",
+        "container_id": "9c3e7e745c0d63d83eea9e2c9dc2adfd88a71f3ada4a18f4edaab60a28e8dfc3",
+        "returncode": 1,
+        "running": "",
+        "error": "error: no such object: 9c3e7e745c0d63d83eea9e2c9dc2adfd88a71f3ada4a18f4edaab60a28e8dfc3"
+      },
+      {
+        "node": "10.10.10.1",
+        "container_id": "e5cef05655866d25a97369d68e1b7d4dc8ea4f180ecf362d4b5c38b9c3c96f5e",
+        "returncode": 1,
+        "running": "",
+        "error": "error: no such object: e5cef05655866d25a97369d68e1b7d4dc8ea4f180ecf362d4b5c38b9c3c96f5e"
+      },
+      {
+        "node": "10.10.10.3",
+        "container_id": "783d3078e43f41d13eb47d9a175c464b83042e650b1f438d833131c52b9738ad",
+        "returncode": 1,
+        "running": "",
+        "error": "error: no such object: 783d3078e43f41d13eb47d9a175c464b83042e650b1f438d833131c52b9738ad"
+      },
+      {
+        "node": "10.10.10.4",
+        "container_id": "4361f070b9cdb2bc4739a1af39222f919a95c4b7db2f80ec6053486de8085156",
+        "returncode": 1,
+        "running": "",
+        "error": "error: no such object: 4361f070b9cdb2bc4739a1af39222f919a95c4b7db2f80ec6053486de8085156"
+      }
+    ]
+  },
+  "lease_handed_to": "st-telemachus-target0917d",
+  "scope": "Only this measurement campaign; the next queued job owns the fleet after release."
+}
