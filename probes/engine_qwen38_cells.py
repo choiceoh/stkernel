@@ -24,7 +24,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 CONFIG = Path(__file__).with_name('qwen38_config.json')
 CONFIG_SHA256 = 'e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624'
-GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_engine_kernel_glue.GlueOnTheGpuTests')
+# the glue's GPU cases, and the Qwen3.8 folds whose last step (a BF16 rounding) the CPU interpreter cannot judge
+GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_engine_kernel_glue.GlueOnTheGpuTests',
+              'tests.test_engine_qwen38_moe_finish.GatedSumTests')
 
 
 def facts():
