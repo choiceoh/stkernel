@@ -502,7 +502,7 @@ class Qwen38Net:
         routed = self._experts[prefix](x, ids, weights, compact=compact)
         shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up")), n + "sh_down")
         gate = torch.sigmoid(scores[:, F.experts:].float())
-        return self.comm.all_reduce((routed.float() + shared.float() * gate).to(x.dtype))
+        return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
 
     # -- PLE -----------------------------------------------------------------------------------------------------------
     def _ple_feature(self, L: int):
