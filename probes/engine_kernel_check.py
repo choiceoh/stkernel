@@ -137,7 +137,7 @@ def main():
         qwen38_dense(args.output)
         return
     if args.lanes == 'qwen38_kda':
-        # component timings: the KDA decay glue's 4/12 x 128 cell at value tiles 8/16/32, exact gate first (C3)
+        # component timings: Qwen3.8's GDN on the KDA kernels at its 4/12 x 128 cell, value tiles 8/16/32, exact gate first (C3)
         from probes.engine_qwen38_kda import run as qwen38_kda
         qwen38_kda(args.output)
         return

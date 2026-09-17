@@ -145,6 +145,19 @@ def rmsnorm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
 HEAD_NAME = "Glm5NextForCausalLM/lm_head"     # the pack store's name of the head's calibration (its FP8 GPTQ)
 
 
+def skip_route_weights(weights, tau: float, scale: float):
+    """ACE's slot skip on one layer's routes: a slot whose normalised gate is below `tau` gets weight 0 unless it is the
+    token's top-1, and the kept weights are renormalised to `scale`. The expert ids are left alone, so a skipped slot
+    still reads its expert and adds 0 x its output -- the numbers of skipping it, without the bytes (a measurement arm)."""
+    if not 0.0 <= tau < 1.0:
+        raise ValueError("a skip threshold is a normalised gate in [0, 1)")
+    p = weights / weights.sum(-1, keepdim=True).clamp_min(1e-20)
+    keep = p >= tau
+    keep.scatter_(-1, p.argmax(-1, keepdim=True), True)
+    kept = torch.where(keep, weights, torch.zeros_like(weights))
+    return kept / kept.sum(-1, keepdim=True).clamp_min(1e-20) * scale
+
+
 class Glm53Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None):
         if comm.world_size != TP:
@@ -167,6 +180,9 @@ class Glm53Net:
         self.shared_mlp = {}
         self.shared_overlap = None
         self._router_layers = None                         # None until every native FP32 router is resident
+        # A measurement arm's routed-slot skip (ACE, arXiv:2609.05228): None serves every routed slot. Read at call time,
+        # so only eager steps see a value set after capture -- the capture sets it per document for prefill passes.
+        self.route_skip = None
         self._router_weights = {}
         self._router_fp32 = set()
         self._decode_pairs = {}
@@ -1035,11 +1051,18 @@ class Glm53Net:
     def _select_routes(self, L, logits):
         F, p, n = self.F, self.p, f"L{L}.moe."
         if self.lanes.route_weights is not None:
-            return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
-        s = torch.sigmoid(logits)
-        sel = (s + p[n + "bias"]).topk(F.topk_experts, dim=-1).indices
-        w = s.gather(-1, sel)
-        return sel.to(torch.int32), w / (w.sum(-1, keepdim=True) + 1e-20) * F.routed_scale
+            sel, w = self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
+        else:
+            s = torch.sigmoid(logits)
+            sel = (s + p[n + "bias"]).topk(F.topk_experts, dim=-1).indices
+            w = s.gather(-1, sel)
+            sel, w = sel.to(torch.int32), w / (w.sum(-1, keepdim=True) + 1e-20) * F.routed_scale
+        skip = getattr(self, "route_skip", None)       # absent on lightweight stand-ins that borrow this method
+        if skip is not None:
+            tau = skip.get(L) if isinstance(skip, dict) else skip
+            if tau is not None:
+                w = skip_route_weights(w, float(tau), F.routed_scale)
+        return sel, w
 
 
     def _packet_ffn_layers(self, rows):

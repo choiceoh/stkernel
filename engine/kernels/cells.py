@@ -478,16 +478,6 @@ def _recipe_kda_measure(l):
                   "the rule and cells.KDA_MEASURED_CELLS name the cell", "hours")
 
 
-def _recipe_kda_ring():
-    return Recipe("wire", "engine/profiles/<profile>/lanes.py (kda_recurrent_ring, kda_recurrent_ring_rows)",
-                  "bind engine/kernels/kda/ring.recurrent_decay_ring and recurrent_decay_ring_rows: the ring lane's own "
-                  "launch and in-kernel ring writes with the gate computed outside the kernel (COMPUTE_GATE off), the "
-                  "per-head decay read through a stride-0 channel axis (linear_decay.per_channel)",
-                  f"{_GLUE_TEST} on {_GPU} (ring storage byte-identical to fused_recurrent_kda(compute_gate=False) with "
-                  "its states copied in; the same cases pass on the CPU under TRITON_INTERPRET=1) and " + _KDA_JUDGE,
-                  "the decode step replays byte-identically across rows (the tests/test_engine_kda_ring.py pattern)", "hours")
-
-
 def _recipe_kda_chunk():
     return Recipe("wire", "engine/profiles/<profile>/lanes.py (kda_chunk)",
                   "bind engine/kernels/kda/chunk_decay.chunk_kda_with_decay: chunk_kda_with_fused_gate's pipeline, "
@@ -822,22 +812,25 @@ def admission(shape) -> "list[Verdict]":
         else:
             unmeasured("kda_recurrent", f"{recurrent}; the BV=16 tile is measured at {_KDA_CELLS_TEXT} only",
                        _recipe_kda_measure(l), recurrent_serve)
-        ring_glue = _serve(GLUE, "engine/kernels/kda/ring.recurrent_decay_ring and recurrent_decay_ring_rows (the ring "
-                           "kernel with its gate computed outside it)", False,
-                           "the fused entry's launch and in-kernel ring writes, COMPUTE_GATE off; byte-identical to the "
-                           "functional lane and held to modules/linear_attention under Triton's CPU interpreter, unjudged "
-                           "on a GPU")
+        # a per-head (GatedDeltaNet) cell's ring lane is the ring kernel's own launch with GDN's gate compiled in
+        # (HEAD_GATE): no adapter between the model's arithmetic and the kernel
+        ring_gdn = _serve(SPECIALIZED, "engine/kernels/kda/ring.recurrent_gdn_ring and recurrent_gdn_ring_rows (the ring "
+                          "kernel computing GatedDeltaNet's per-head decay from its projection)", False,
+                          "the fused entry's launch and in-kernel ring writes with engine/kernels/gdn.gates' arithmetic in "
+                          "place of KDA's gate: byte-identical to that launch followed by the decay entry "
+                          "(recurrent_decay_ring) and held to modules/linear_attention under Triton's CPU interpreter, "
+                          "unjudged on a GPU")
         chunk_glue = _serve(GLUE, "engine/kernels/kda/chunk_decay.chunk_kda_with_decay (chunk_kda_with_fused_gate's "
                             "pipeline on a precomputed decay)", False,
                             "the per-head decay summed per chunk and widened per channel; held to modules/linear_attention "
                             "(states_at included) under Triton's CPU interpreter, unjudged on a GPU")
         if decay_measured:
-            admit("kda_ring", "the ring kernel with the per-head decay computed outside it, judged and timed",
-                  _judged(ring_glue))
+            admit("kda_ring", "the ring kernel computing GatedDeltaNet's per-head decay, judged and timed",
+                  _judged(ring_gdn))
             admit("kda_chunk", "the chunk pipeline on a precomputed per-head decay, judged and timed", _judged(chunk_glue))
         elif per_head:
-            refuse("kda_ring", "the ring lane fuses KDA's per-channel gate; a head-decay cell cannot run it", _recipe_kda_ring(),
-                   ring_glue)
+            unmeasured("kda_ring", f"the ring kernel computes GatedDeltaNet's per-head decay in its own launch; the BV=16 "
+                                   f"tile is measured at {_KDA_CELLS_TEXT} only", _recipe_kda_measure(l), ring_gdn)
             refuse("kda_chunk", "the chunk lane fuses KDA's gate; a head-decay prefill runs the pipeline on a decay computed "
                                 "outside it", _recipe_kda_chunk(), chunk_glue)
         elif measured_cell:

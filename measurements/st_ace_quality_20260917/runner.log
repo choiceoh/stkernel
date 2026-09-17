@@ -1,0 +1,12 @@
+2026-09-17 09:11:26 aceq-0917: queue checkout /home/choiceoh/st-worktrees/queue-main-ffc8b664, sha 4ff75addd4912e5b77cb4f14c2873c07f6815e97, arm tree /home/choiceoh/st-worktrees/aceq-4ff75add, est 45
+2026-09-17 09:53:47 aceq-0917: door up
+2026-09-17 09:56:48 aceq-0917: pass 0 exit 0 (133 ok rows)
+2026-09-17 09:59:47 aceq-0917: pass 1 exit 0 (133 ok rows)
+2026-09-17 10:02:50 aceq-0917: pass 2 exit 0 (133 ok rows)
+2026-09-17 10:05:58 aceq-0917: pass 3 exit 0 (133 ok rows)
+2026-09-17 10:09:09 aceq-0917: pass 4 exit 0 (133 ok rows)
+2026-09-17 10:09:09 aceq-0917: stop requested
+2026-09-17 10:09:28 aceq-0917: hold ended
+2026-09-17 10:09:28 aceq-0917: capture dir on srv4: /home/choiceoh/glm53-logs/st-bracket-dumps/aceq-0917-hold-4ff75addd491/expert-capture
+2026-09-17 10:09:28 aceq-0917: fetched head.jsonl (665 rows)
+2026-09-17 10:09:28 aceq-0917: ACE-QUALITY done

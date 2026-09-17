@@ -1,17 +1,19 @@
-"""Qwen3.8's KDA decay glue at its per-rank cell on one GB10: which value tile BV is exact, which fastest (carry C3).
+"""Qwen3.8's GDN recurrence on the KDA kernels at its per-rank cell on one GB10: which value tile BV is exact, which
+fastest (carry C3).
 
-Qwen3.8 serves GatedDeltaNet -- one log-decay per head -- on the KDA kernels as glue (engine/kernels/cells.GLUE): a
-captured decode step runs kda/ring.recurrent_decay_ring_rows (engine/profiles/qwen38/net._gdn_rows), the functional
-recurrent lane is fused_recurrent_kda(compute_gate=False) over linear_decay.per_channel (kda/kda.py), and prefill is
-kda/chunk_decay.chunk_kda_with_decay. A rank's cell is 4 key / 12 value heads x 128 x 128 with a two-cell state ring
+Qwen3.8 serves GatedDeltaNet -- one log-decay per head -- on the KDA kernels: a captured decode step runs
+kda/ring.recurrent_gdn_ring_rows, the ring kernel computing GDN's decay from the in_proj columns in its own launch
+(engine/profiles/qwen38/net._gdn_rows; HEAD_GATE, carry K1), the functional recurrent lane is
+fused_recurrent_kda(compute_gate=False) over linear_decay.per_channel (kda/kda.py, glue), and prefill is
+kda/chunk_decay.chunk_kda_with_decay (glue). A rank's cell is 4 key / 12 value heads x 128 x 128 with a two-cell state ring
 (SPEC_K=1): a C=1 step is one row of two tokens, C=2 two rows. Both recurrent launchers tile the value axis by BV and
 pick 16 only at GLM-5.3's cell (16/16 x 128, T <= 6; kda/ring.py records that BV=16 at seven tokens changed rollback
 results in the GPU exact gate), min(next_power_of_2(V), 8) = 8 everywhere else. This cell has served BV=8 unmeasured:
 cells.KDA_MEASURED_CELLS names GLM-5.3's cell only.
 
 Arms -- each tile forced through the launchers' probe hooks (kda/ring._BV_OVERRIDE, kda/kda._BV_OVERRIDE):
-  ring        recurrent_decay_ring_rows, rows 1/2/4 x tokens 1/2      BV 8 | 16 | 32
-  ring_eager  recurrent_decay_ring, one row x tokens 1/2              BV 8 | 16 | 32, gated and not timed: net._gdn's
+  ring        recurrent_gdn_ring_rows, rows 1/2/4 x tokens 1/2        BV 8 | 16 | 32
+  ring_eager  recurrent_gdn_ring, one row x tokens 1/2                BV 8 | 16 | 32, gated and not timed: net._gdn's
               uncaptured decode (host slot and context, its own specialization) under the same rule in `_recurrent`
   recurrent   fused_recurrent_kda(compute_gate=False), tokens 1/2/4   BV 8 | 16 | 32
   prefill     chunk_kda_with_decay at 128/1024/8192 tokens            no tile: the record's prefill baseline
@@ -36,13 +38,16 @@ The decision it feeds (engine/QWEN38_CARRY.md C3): whether (4, 12, 128, 128) joi
 the BV rule (kda/ring.py `_recurrent`, kda/kda.py fused_recurrent_kda_fwd) gets a Qwen3.8 branch. The `verdict` rows name
 the exact tiles and the fastest of them per (rows, tokens); `summary` holds every verdict in one line.
 
-    bash bench/fleet.sh run --gpu qwen38-kda 40 'Qwen3.8 KDA decay glue: BV 8/16/32 exact gate and timings' -- \\
+    bash bench/fleet.sh run --gpu qwen38-kda 40 'Qwen3.8 GDN on the KDA kernels: BV 8/16/32 exact gate and timings' -- \\
       bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes qwen38_kda
 
 Synthetic tensors at the served strides (the lane host has no Qwen3.8 checkpoint): q/k/v are views of one conv output
-row (net._heads), the decay an fp32 per-head tensor the launchers read through a stride-0 channel axis, beta raw bf16
-logits (sigmoided for prefill), the state ring fp32 (facts.GDN_STATE_DTYPE). The field's slot stride is dense where the
-served arena's is a whole slot's bytes: a constexpr of the ring address arithmetic, not of the recurrence.
+row (net._heads); the ring arms read a and b as the in_proj row's last columns (net._gdn_rows' split, so the stride the
+kernel compiles is the served one) with fp32 A_log and dt_bias; the functional and prefill arms take the fp32 per-head
+decay those give (read through a stride-0 channel axis) and raw bf16 beta logits (sigmoided for prefill); the state ring
+is fp32 (facts.GDN_STATE_DTYPE). The field's slot stride is dense where the served arena's is a whole slot's bytes: a
+constexpr of the ring address arithmetic, not of the recurrence. The GDN entries refuse a KDA cell, so `run` binds
+Qwen3.8's kernel shape from probes/qwen38_config.json.
 """
 import json
 from contextlib import contextmanager
@@ -87,6 +92,11 @@ class Cell:
     def qkv(self) -> int:
         """The conv output row q|k|v (facts.qkv_local)."""
         return (2 * self.k_heads + self.v_heads) * self.dim
+
+    @property
+    def in_proj(self) -> int:
+        """The in_proj row q|k|v|z|b|a (net._gdn_rows' split): the row stride the ring kernel reads a and b through."""
+        return self.qkv + self.v_heads * self.dim + 2 * self.v_heads
 
     @property
     def state_bytes(self) -> int:
@@ -158,13 +168,20 @@ def launcher_tile(launch, bv=None) -> dict:
 @dataclass
 class Inputs:
     """One launch's inputs as net._gdn_rows hands them to the lanes: q/k/v views of the conv output y [N, qkv]
-    (net._heads), the per-head fp32 decay [1, N, HV] (gdn.gates) and raw beta logits [1, N, HV] in y's dtype."""
+    (net._heads); a and b [1, N, HV] views of the in_proj row [N, in_proj] with fp32 A_log and dt_bias [HV] (the ring
+    arms); the per-head fp32 decay [1, N, HV] they give (gdn.gates) and raw beta logits [1, N, HV] in y's dtype (the
+    functional and prefill arms)."""
     y: torch.Tensor
     q: torch.Tensor
     k: torch.Tensor
     v: torch.Tensor
     decay: torch.Tensor
     beta: torch.Tensor
+    proj: torch.Tensor
+    a: torch.Tensor
+    b: torch.Tensor
+    A_log: torch.Tensor
+    dt_bias: torch.Tensor
 
 
 def served_inputs(cell, n, device, dtype=torch.bfloat16) -> Inputs:
@@ -173,21 +190,30 @@ def served_inputs(cell, n, device, dtype=torch.bfloat16) -> Inputs:
     q, k, v = y.split([qk, qk, cell.v_heads * cell.dim], dim=-1)
     decay = torch.zeros(n, cell.v_heads, device=device, dtype=torch.float32)
     beta = torch.zeros(n, cell.v_heads, device=device, dtype=dtype)
+    proj = torch.zeros(n, cell.in_proj, device=device, dtype=dtype)
+    _, _, b, a = proj.split([cell.qkv, cell.v_heads * cell.dim, cell.v_heads, cell.v_heads], dim=-1)
+    # exp(A_log) 1 and dt_bias -1: the decay -softplus(a - 1) of a ~ N(0, 2) spans exp(decay) about (0.007, 0.999)
+    A_log = torch.zeros(cell.v_heads, device=device, dtype=torch.float32)
+    dt_bias = torch.full((cell.v_heads,), -1.0, device=device, dtype=torch.float32)
     return Inputs(y, q.reshape(1, n, cell.k_heads, cell.dim), k.reshape(1, n, cell.k_heads, cell.dim),
-                  v.reshape(1, n, cell.v_heads, cell.dim), decay[None], beta[None])
+                  v.reshape(1, n, cell.v_heads, cell.dim), decay[None], beta[None], proj, a[None], b[None], A_log, dt_bias)
 
 
 def fill(inputs, seed) -> None:
-    """One step's values written in place (graphs read these tensors): generic rows, log-decays spread so exp(decay)
-    spans about (0.007, 0.999), beta logits around zero. A seed writes the same bytes every time on the same device."""
+    """One step's values written in place (graphs read these tensors): generic rows, decay logits spread so exp(decay)
+    spans about (0.007, 0.999), beta logits around zero; the functional arms' decay and beta are the ring arms' own.
+    A seed writes the same bytes every time on the same device."""
     device = inputs.y.device
     gen = torch.Generator(device=device).manual_seed(seed)
 
     def normal(shape):
         return torch.randn(shape, generator=gen, device=device, dtype=torch.float32)
     inputs.y.copy_(normal(inputs.y.shape))
-    inputs.decay.copy_(-torch.nn.functional.softplus(normal(inputs.decay.shape) * 2 - 1))
-    inputs.beta.copy_(normal(inputs.beta.shape) * 2)
+    inputs.proj.copy_(normal(inputs.proj.shape))
+    inputs.a.copy_(normal(inputs.a.shape) * 2)
+    inputs.b.copy_(normal(inputs.b.shape) * 2)
+    inputs.decay.copy_(-inputs.A_log.exp() * torch.nn.functional.softplus(inputs.a.float() + inputs.dt_bias))
+    inputs.beta.copy_(inputs.b)
 
 
 # -- the exact gate's arithmetic ------------------------------------------------------------------------------------------
@@ -251,12 +277,13 @@ class RingCase:
     eager: bool = False         # the one-row entry net._gdn calls: the slot's own ring, host slot 0 and context
 
     def launch(self):
-        from engine.kernels.kda.ring import recurrent_decay_ring, recurrent_decay_ring_rows
+        from engine.kernels.kda.ring import recurrent_gdn_ring, recurrent_gdn_ring_rows
         i = self.inputs
         if self.eager:
             ring = self.field[int(self.slots[0])][None]                 # net._gdn: rec[None], slot 0, s.ctx
-            return recurrent_decay_ring(i.q, i.k, i.v, i.decay, i.beta, ring, 0, int(self.contexts[0]))
-        return recurrent_decay_ring_rows(i.q, i.k, i.v, i.decay, i.beta, self.field, self.slots, self.contexts)
+            return recurrent_gdn_ring(i.q, i.k, i.v, i.a, i.b, i.A_log, i.dt_bias, ring, 0, int(self.contexts[0]))
+        return recurrent_gdn_ring_rows(i.q, i.k, i.v, i.a, i.b, i.A_log, i.dt_bias, self.field, self.slots,
+                                       self.contexts)
 
 
 def ring_case(cell, rows, tokens, field, dtype=torch.bfloat16, eager=False) -> RingCase:
@@ -627,7 +654,11 @@ def run(output=None):
             Path(output).write_text("".join(json.dumps(e) + "\n" for e in events))
 
     import triton
+    from engine.base import kernel_shape as ks
     from engine.kernels import cells
+    from engine.profiles.qwen38 import shapes
+    config = Path(__file__).with_name("qwen38_config.json")
+    ks.bind(shapes.kernel_shape(json.loads(config.read_text())["text_config"]))     # the GDN entries refuse a KDA cell
     ring, kda = _kda_modules()
     assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
     if ring._BV_OVERRIDE is not None or kda._BV_OVERRIDE is not None:
