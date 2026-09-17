@@ -667,6 +667,13 @@ def _validate_mqa(q: torch.Tensor) -> None:
         raise ValueError("QSA query must be [rows, heads, head_dim]")
 
 
+def _packed_rows(what: str, *rows: torch.Tensor) -> None:
+    """The kernels load one-dimensional row metadata at `ptr + row`, without a stride: a strided view -- an expanded
+    one-row mapping has stride 0 -- would be read past its storage."""
+    if any(t.numel() > 1 and t.stride(0) != 1 for t in rows):
+        raise ValueError(f"{what} needs packed row metadata (stride 1)")
+
+
 def qsa_mqa_paged(q, k_cache, page_table, token_to_req, query_positions, sequence_lengths, compress_ratio,
                   num_columns=None, score_scale=None):
     """Block scores sum_heads relu(q . key) / score_scale straight from a paged compressed-key cache
@@ -689,6 +696,7 @@ def qsa_mqa_paged(q, k_cache, page_table, token_to_req, query_positions, sequenc
         raise ValueError("QSA query positions must match query rows")
     if sequence_lengths.shape != (page_table.shape[0],):
         raise ValueError("QSA sequence lengths must match page-table requests")
+    _packed_rows("paged QSA scoring", token_to_req, query_positions)
     if compress_ratio <= 0:
         raise ValueError("QSA compression ratio must be positive")
     score_divisor = math.sqrt(q.shape[2]) if score_scale is None else score_scale
@@ -733,6 +741,7 @@ def expand_qsa_block_indices_cuda(block_indices, query_positions, sequence_lengt
         raise ValueError("QSA compressed top-k has an invalid shape")
     if token_to_req.shape != query_positions.shape:
         raise ValueError("QSA request mapping must match query positions")
+    _packed_rows("QSA expansion", token_to_req, query_positions)
     if sequence_lengths.ndim != 1 or not sequence_lengths.shape[0]:
         raise ValueError("QSA request sequence lengths must be nonempty")
     if out is None:
@@ -901,6 +910,7 @@ def qsa_store_cache_rows(cache, slot_mapping, rows):
         rows = rows[:, 0]
     if rows.shape != (slot_mapping.numel(), cache.shape[3]):
         raise ValueError("QSA cache rows and slots have incompatible shapes")
+    _packed_rows("QSA cache stores", slot_mapping)
     if not rows.shape[0]:
         return
     _store_qsa_rows_kernel[(rows.shape[0],)](
@@ -927,6 +937,7 @@ def qsa_compress_groups_with_ratio(raw_keys, raw_positions, compressor_state_cac
         raise ValueError("QSA raw positions must be [rows, 1, 3] int64")
     if logical_positions.shape != (rows,) or compressed_slots.shape != (rows,):
         raise ValueError("QSA compression metadata must match token rows")
+    _packed_rows("QSA compression", token_to_req, logical_positions, compressed_slots)
     if compressor_state_cache.ndim != 4 or compressor_state_cache.shape[2] != 1:
         raise ValueError("QSA compressor-state cache has an invalid shape")
     if (compressor_state_cache.shape[1] < compress_ratio or compressor_state_cache.shape[3] != raw_keys.shape[2]
