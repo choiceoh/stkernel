@@ -505,7 +505,12 @@ class Glm53Net:
         return torch.empty(rows, width, device=device, dtype=torch.bfloat16)
 
     @operation("head_local")
-    def head_local(self, h: torch.Tensor, *, out=None) -> torch.Tensor:
+    def head_local(self, h: torch.Tensor, *, out=None, producer_pack=None) -> torch.Tensor:
+        if producer_pack is not None:
+            head = self.dense.get("head")
+            if head is None:
+                raise RuntimeError('head producer requires the prepared FP8 head')
+            return head.project_mx(h, *producer_pack, out=out)
         if out is None:
             return self.linear(h, "head")
         return self.linear(h, "head", out=out)

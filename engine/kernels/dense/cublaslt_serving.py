@@ -142,6 +142,21 @@ class Reader:
             self.executed.add('direct')
         return out
 
+    def project_mx(self, q, scales, *, out=None):
+        """Consume a producer's native MX32 layout without a scale-conversion launch."""
+        if (q.ndim != 2 or q.shape[0] <= 0 or q.shape[1] != self.k
+                or q.dtype != torch.float8_e4m3fn or q.device != self.weight[0].device
+                or not q.is_contiguous() or scales.device != q.device
+                or scales.dtype != torch.uint8 or not scales.is_contiguous()
+                or scales.shape != (mxfp8.scale_bytes(q.shape[0], self.k),)):
+            raise ValueError('cuBLAS producer requires contiguous FP8 rows and native MX scale bytes')
+        m = q.shape[0]
+        out = self._out(m, out, q, scales)
+        plan, index = self._plan(m, 1, scales)
+        plan.run(index, q, self.weight[0], scales, self.mx_weight, out, self.workspace)
+        self.executed.update(('direct', 'producer_mx'))
+        return out
+
     def project_quantized(self, q, scales, *, out=None):
         if (q.ndim != 2 or q.shape[1] != self.k or q.shape[0] <= 0 or q.dtype != torch.float8_e4m3fn
                 or scales.shape != (q.shape[0], self.k//128) or scales.dtype != torch.float32

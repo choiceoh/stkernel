@@ -496,8 +496,8 @@ class Drafter:
         o = torch.einsum("bhn,nhd->bhd", torch.softmax(scores, dim=-1), v_all.float()).to(x.dtype)
         return self.linear(o.reshape(B, F.heads * F.head_dim), q + "o_proj.weight")
 
-    def block(self, ids: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
-        """One block through the five layers; returns the final hidden [B, hidden]."""
+    def block(self, ids: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int, *, head_input=False):
+        """Final hidden rows, or compact non-anchor rows plus native MX input for the head."""
         self._check_block_rows(ids.numel())
         F, p = self.F, self.p
         B = ids.shape[0]
@@ -525,7 +525,7 @@ class Drafter:
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
-        return add_norm(res, x, p["norm.weight"], F.rms_eps)[1]
+        return self._finish_head_input(res, x, B, head_input)
 
     # -- every row of a step at once (45차 §23 GPU 판정 4차) --------------------------------------------
     # The pipeline used to replay the one-row graphs once per row: each replay read the whole drafter (2.03 GiB of
@@ -652,9 +652,10 @@ class Drafter:
         return Fn.linear(o, p[q + "o_proj.weight"])
 
     def block_rows(self, ids: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
-                   field: torch.Tensor, n: int, t: int, alive=None) -> torch.Tensor:
+                   field: torch.Tensor, n: int, t: int, alive=None, *, head_input=False):
         """`block` for n blocks of t rows at once: ids/positions [n*t] in row order, slots/ctx [n]; `alive` [n] marks the
-        rows that are real (a calibration run leaves the others out of its sums)."""
+        rows that are real (a calibration run leaves the others out of its sums).
+        `head_input` returns only non-anchor hidden rows plus their native MX pack."""
         self._check_block_rows(n * t)
         F, p = self.F, self.p
         rows_ok = alive.repeat_interleave(t) if alive is not None else None
@@ -682,7 +683,17 @@ class Drafter:
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
             x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
-        return add_norm(res, x, p["norm.weight"], F.rms_eps)[1]
+        return self._finish_head_input(res, x, t, head_input)
+
+    def _packed_head(self):
+        head = getattr(self.target, 'dense', {}).get('head')
+        return getattr(head, 'cublas', None) is not None
+
+    def _finish_head_input(self, res, x, block_rows, packed):
+        if packed:
+            from engine.kernels.dense.cublaslt_producer import add_norm_head
+            return add_norm_head(res, x, self.p['norm.weight'], self.F.rms_eps, block_rows)
+        return add_norm(res, x, self.p['norm.weight'], self.F.rms_eps)[1]
 
     def _check_block_rows(self, rows):
         if self.max_block_rows is not None and rows > self.max_block_rows:
@@ -701,9 +712,14 @@ class Drafter:
         dev = anchors.device
         from engine.modules.draft_inputs import build
         ids, pos = build(anchors, positions, K, F.mask_id)
-        h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
+        if self._packed_head():
+            h, pack = self.block_rows(ids, pos, slots, positions, field, n, t, alive, head_input=True)
+            local = self.target.head_local(h, producer_pack=pack)
+        else:
+            h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
+            local = self.target.head_local(h)
         from engine.modules.vocab import topk
-        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
+        unary, cand = topk(local, self.target.comm, self.target.rank * self.target.vp,
                            F.sel_top_k, self.decodable, workspace=self.candidate_buffer)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
         if self.diagnostics is not None:
@@ -777,9 +793,13 @@ class Drafter:
         dev = anchor.device
         from engine.modules.draft_inputs import build
         ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
-        h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
+        if self._packed_head():
+            h, pack = self.block(ids, positions, ring, position, head_input=True)
+            local = self.target.head_local(h, producer_pack=pack)
+        else:
+            h = self.block(ids, positions, ring, position)[1:]
+            local = self.target.head_local(h)
         from engine.modules.vocab import topk
-        local = self.target.head_local(h)
         if boundary is not None:
             from engine.modules.draft_boundary import tensor, mask_ends
             boundary = tensor(boundary, dev)
@@ -829,9 +849,13 @@ class Drafter:
         dev = ring.device
         from engine.modules.draft_inputs import build
         ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
-        h = self.block(ids, positions, ring, position)[1:]
+        if self._packed_head():
+            h, pack = self.block(ids, positions, ring, position, head_input=True)
+            local = self.target.head_local(h, producer_pack=pack)
+        else:
+            h = self.block(ids, positions, ring, position)[1:]
+            local = self.target.head_local(h)
         from engine.modules.vocab import topk
-        local = self.target.head_local(h)
         if boundary is not None:
             from engine.modules.draft_boundary import tensor, mask_ends
             boundary = tensor(boundary, dev)
