@@ -713,7 +713,7 @@ fp8 pair, two quantized arms disagreeing, and cannot rank them).
 
 `VLLM_GLM53_MK_HEAD_DRAFT` / `VLLM_GLM53_MK_HEAD_TARGET` (both default 0). The
 served head is fp8 (`VLLM_TARGET_LM_HEAD_FP8`, `VLLM_SPEC_FP8_LM_HEAD`:
-deep_gemm W8A8 -- the `sm120_fp8_fp4` kernel name is deep_gemm's unified sm120
+deep_gemm W8A16 -- the `sm120_fp8_fp4` kernel name is deep_gemm's unified sm120
 kernel with every FP4 flag false), 158 MB/rank at ~190 GB/s = 836 us, twice a
 step (target verify m=8, draft candidates m=7): already at the DRAM floor for
 fp8 bytes. The W4 pack halves the bytes (the v1 lane measured 418 us on the

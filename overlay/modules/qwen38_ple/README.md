@@ -1,8 +1,8 @@
-# qwen38_ple — the 51 GiB n-gram table, and the scale nobody reads
+# qwen38_ple — the 47.68 GiB n-gram table, and the scale nobody reads
 
 Qwen3.8-Flash-Next carries a PLE (per-layer embedding) n-gram table at layer 2:
 `ngram_vocab_size_base` 20,000,000 split into `split_ngram_parts` 128 shards.
-It is about 51 GiB of the checkpoint's 126, and on a DGX Spark host memory *is*
+It is about 47.68 GiB of the checkpoint's 126, and on a DGX Spark host memory *is*
 the GPU pool, so where it lives decides whether the model fits.
 
 ## `weight_utils.py`

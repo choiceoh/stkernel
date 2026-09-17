@@ -176,7 +176,10 @@ def comparison_baseline(rec, reference=None, *, scope=None, require_proof=True):
                 or type(row.get("thinking")) is not bool):
             return False
         try:
-            return datetime.fromisoformat(boot.split("|", 1)[1].replace("Z", "+00:00")).tzinfo is not None
+            # Docker StartedAt and the boot ids built from it carry nanoseconds;
+            # Python <3.11 fromisoformat rejects more than six fractional digits.
+            stamp = re.sub(r"(\.\d{6})\d+", r"\1", boot.split("|", 1)[1]).replace("Z", "+00:00")
+            return datetime.fromisoformat(stamp).tzinfo is not None
         except ValueError:
             return False
     if (rec.get("rehearsal") or rec.get("knobs") != scope["knobs"]

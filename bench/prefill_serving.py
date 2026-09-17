@@ -83,7 +83,7 @@ if len(log_mounts)!=1 or not re.search(r'(?<!>)> /glmlogs/glm53\.log 2>&1(?:\s|$
     raise RuntimeError('serving log redirection/mount contract missing')
 log_path=pathlib.Path(log_mounts[0]['Source'])/'glm53.log'
 log_stat=log_path.stat()
-started=datetime.datetime.fromisoformat(c['State']['StartedAt'].replace('Z','+00:00')).timestamp()
+started=datetime.datetime.fromisoformat(re.sub(r"(\.\d{6})\d+",r"\1",c['State']['StartedAt']).replace('Z','+00:00')).timestamp()
 if log_path.is_symlink() or not log_path.is_file() or log_stat.st_size==0 or log_stat.st_mtime < started:
     raise RuntimeError('serving file log is empty or predates this container')
 state['log_source']=dict(path=str(log_path),container_id=c['Id'],

@@ -15,7 +15,7 @@ GLM-5.3 DFlash 드래프터 — fp8 헤드·로더·워밍업·early-fc·준비 
 
 ---
 
-## glm53_dflash2_fp8_head (was `overlay/modules/glm53_drafter/`)
+## glm53_dflash2_fp8_head (was its own flat overlay module — see the table above)
 
 ## glm53_dflash2_fp8_head
 
@@ -33,7 +33,7 @@ Base contract from `glm53:v13-b12x`.
 
 ---
 
-## glm53_dflash_loader_fp8 (was `overlay/modules/glm53_drafter/`)
+## glm53_dflash_loader_fp8 (was its own flat overlay module — see the table above)
 
 ## glm53_dflash_loader_fp8
 
@@ -44,7 +44,7 @@ Base contract from `glm53:v13-b12x`.
 
 ---
 
-## glm53_dflash_warmup (was `overlay/modules/glm53_drafter/`)
+## glm53_dflash_warmup (was its own flat overlay module — see the table above)
 
 ## glm53_dflash_warmup
 
@@ -73,7 +73,7 @@ Preimage: `cd3bce82…` (glm53:v13-b12x).
 
 ---
 
-## glm53_dflash_early_fc (was `overlay/modules/glm53_drafter/`)
+## glm53_dflash_early_fc (was its own flat overlay module — see the table above)
 
 ## glm53_dflash_early_fc
 
@@ -102,7 +102,7 @@ C=1 step/s stacked on the EXP-10 arm (the fc must be on the lane to matter).
 
 ---
 
-## glm53_drafter_prep (was `overlay/modules/glm53_drafter/`)
+## glm53_drafter_prep (was its own flat overlay module — see the table above)
 
 ## glm53_drafter_prep
 
@@ -186,7 +186,7 @@ mode on a production boot gives the honest ceiling first.
 
 ---
 
-## fp8_lm_head (was `overlay/modules/glm53_drafter/`)
+## fp8_lm_head (was its own flat overlay module — see the table above)
 
 ## fp8_lm_head
 

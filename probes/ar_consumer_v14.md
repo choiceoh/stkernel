@@ -8,8 +8,9 @@ boot and two baseline boots; it does not establish long-run production
 performance. After reviewing these results, the operator requested adoption
 and an end to further measurements. `VLLM_GLM53_AR_CONSUMER_PDL=1` is now
 the profile default; the measured mode remains unchanged. Setting it to `0`
-selects the previous path, and the comparison scripts explicitly retain
-that baseline. The follow-up measurement automation is paused.
+selects the previous path; the comparison scripts take the profile default
+(`1`) as the baseline and its opposite as the candidate, so the A/B names no
+longer follow the original arms. The follow-up measurement automation is paused.
 
 B2 here means the completed `arconsumer0908v17B2` retry. The interrupted
 v14 B2 attempt and the retries without serving records are excluded.
