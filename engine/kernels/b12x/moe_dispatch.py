@@ -420,6 +420,7 @@ _STATIC_V2_DEFAULT = {
     "l2_prefetch": 0, "l2_prefetch_fc1": True,
     # z: the B stages land as ONE cp.async.bulk each from pre-swizzled tile-major boxes (bulk_b)
     "bulk_b": False,
+    "fc2_scale_search": 0,  # ss1/ss2: opt-in static FC2 activation scale search
 }
 _STATIC_SUNSET_TOKENS = {
     "1": "the v2 default lane", "d": "the v2 dynamic schedule", "w": "the v3 lane",
@@ -473,6 +474,9 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
             continue
         if token == "sf6":
             cfg["reform_sf_pack"] = True
+            continue
+        if token in ("ss1", "ss2"):
+            cfg["fc2_scale_search"] = int(token[-1])
             continue
         if token == "q":
             # 39차 §4c: the FC1 weight scales arrive 6-bit packed (base + index
@@ -1869,6 +1873,7 @@ def _kernel_source_files() -> Tuple[str, ...]:
         __file__,
         os.path.join(os.path.dirname(__file__), "../../runtime/cuda132.lock.json"),
         os.path.join(os.path.dirname(__file__), "fp4_quant.py"),
+        os.path.join(os.path.dirname(__file__), "fp4_scale_search.py"),
         os.path.join(os.path.dirname(__file__), "moe_w4a16_fp4_helpers.py"),
         moe_activation.__file__,
         moe_static_kernel.__file__,
@@ -2412,6 +2417,8 @@ def _static_v2_cache_key(config: dict, **fields) -> Tuple:
         cfg += ("input_vec16_v1",)
     if config.get("input_reuse", 0):
         cfg += ("input_reuse_v1", int(config["input_reuse"]))
+    if config.get("fc2_scale_search", 0):
+        cfg += ("fc2_scale_search_v1", int(config["fc2_scale_search"]))
     # Expanded output and register scatter never alias a served handle.
     if config.get("probe_route_scatter", False):
         cfg += ("probe_route_scatter_v1",)
@@ -2658,6 +2665,7 @@ def _get_static_kernel_v2(
         bulk_b=bulk_b,
         input_vec16=bool(config.get("input_vec16", False)),
         input_reuse=int(config.get("input_reuse", 0)),
+        fc2_scale_search=int(config.get("fc2_scale_search", 0)),
         stamps=bool(config["stamps"]),
         skip_sf=bool(config.get("skip_sf", False)),
         skip_a=bool(config.get("skip_a", False)),
