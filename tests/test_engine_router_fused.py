@@ -102,6 +102,19 @@ class RouterFusedTests(unittest.TestCase):
         self.assertEqual(ids_t[0, 1].item(), 100)
 
 class RouterConsumerTests(unittest.TestCase):
+    def test_default_admits_only_the_qualified_glm53_k7_geometry(self):
+        from dataclasses import replace
+        from types import SimpleNamespace as NS
+        from engine.profiles.glm53 import facts
+        from engine.profiles.glm53.net import Glm53Net
+        from tests.test_engine_kernel_shape import GLM53_TEXT_CONFIG
+        profile = facts.architecture(GLM53_TEXT_CONFIG)
+        for change in ({}, {'hidden': 128}, {'experts': 32}, {'topk_experts': 4}, {'spec_k': 3}):
+            with self.subTest(change=change):
+                net = Glm53Net(replace(profile, **change), NS(rank=0, world_size=4),
+                               NS(rmsnorm=None, swiglu=None, route_weights=None), [3])
+                self.assertEqual(net.fused_decode_router, not change)
+
     def test_fusion_preserves_the_capture_route_skip_by_using_the_common_path(self):
         from types import MethodType, SimpleNamespace as NS
         from unittest.mock import patch
@@ -138,8 +151,7 @@ class RouterConsumerTests(unittest.TestCase):
         gate = torch.zeros(288, 4096, dtype=torch.bfloat16)
         bias = torch.randn(288).bfloat16()
         net.p = {'L3.moe.gate': gate, 'L3.moe.bias': bias}
-        self.assertFalse(net.fused_decode_router)
-        net.fused_decode_router = True
+        self.assertTrue(net.fused_decode_router)
         net.decode_fastpath_rows = (8, 16)
         arena = Arena(net.router_nbytes(), device='cpu')
         net.prepare_routers(arena)
