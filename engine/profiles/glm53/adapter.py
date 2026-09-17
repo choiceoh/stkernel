@@ -974,6 +974,9 @@ class Glm53Engine:
         return None
 
     def async_ready(self, seqs) -> bool:
+        # Incident arm: _pick_rich is the target-only control. All serving
+        # decode steps must reach it; admission seeds also run on the device.
+        return self._chain_exit("incident_target_only")
         if self.pipeline is None or self.decode_graphs is None or not self.drafter.k:
             return self._chain_exit("no_pipeline")
         if not self.pipeline.ready_for(seqs):
