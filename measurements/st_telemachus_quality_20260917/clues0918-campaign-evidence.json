@@ -1,7 +1,7 @@
 {
  "scope": "Exclusive-hold replays of the 2026-09-17 Telemachus incident on boot 048b682d75f9 (operand-oracle + origin/main merge), plus texture cross-checks of the st-causal0918b hold on 746b9f69. Sanitized: token counts, seeds, hashes and glyph statistics only; private prompt and output text remain on srv2.",
  "date": "2026-09-18",
- "texture_metric": "unseen(ko): fraction of adjacent Hangul bigrams absent from a private Korean filler reference; cyr/thai/cjk count foreign script codepoints in the decoded output. Clean controls score ~0.05-0.14; the incident output scored 0.19+ with Cyrillic.",
+ "texture_metric": "unseen(ko): fraction of adjacent Hangul bigrams absent from a private Korean filler reference; cyr/thai/cjk count foreign script codepoints in the decoded output. Clean controls score ~0.05-0.14; the incident output scored 0.19+ with Cyrillic. Texture is a glyph statistic only: arms can score in the normal band while containing welded non-words, as the reverse-inject arm does (unseen_ko 0.108 with 2 welded fragments, one of them an abbo-type weld).",
  "boot_048b682d": {
   "source": "048b682d75f9 (codex/telemachus-clues-0918 + origin/main a15d5749)",
   "owner": "queue/st-telemachus-clues0918",
@@ -20,7 +20,8 @@
      "cyr": 0,
      "thai": 0,
      "cjk": 0,
-     "unseen_ko": 0.051
+     "unseen_ko": 0.051,
+     "welded_latin_hangul_fragments": 0
     }
    },
    {
@@ -57,7 +58,8 @@
      "cyr": 0,
      "thai": 0,
      "cjk": 2,
-     "unseen_ko": 0.068
+     "unseen_ko": 0.068,
+     "welded_latin_hangul_fragments": 0
     }
    },
    {
@@ -94,7 +96,8 @@
      "cyr": 0,
      "thai": 0,
      "cjk": 0,
-     "unseen_ko": 0.132
+     "unseen_ko": 0.132,
+     "welded_latin_hangul_fragments": 0
     }
    },
    {
@@ -111,7 +114,8 @@
      "cyr": 0,
      "thai": 0,
      "cjk": 0,
-     "unseen_ko": 0.136
+     "unseen_ko": 0.136,
+     "welded_latin_hangul_fragments": 0
     }
    },
    {
@@ -128,7 +132,9 @@
      "cyr": 0,
      "thai": 0,
      "cjk": 0,
-     "unseen_ko": 0.108
+     "unseen_ko": 0.108,
+     "welded_latin_hangul_fragments": 2,
+     "abbo_weld_count": 1
     }
    },
    {
@@ -145,7 +151,8 @@
      "cyr": 0,
      "thai": 0,
      "cjk": 2,
-     "unseen_ko": 0.103
+     "unseen_ko": 0.103,
+     "welded_latin_hangul_fragments": 2
     }
    }
   ],
@@ -1267,7 +1274,8 @@
      "cyr": 0,
      "thai": 0,
      "cjk": 0,
-     "unseen_ko": 0.136
+     "unseen_ko": 0.136,
+     "welded_latin_hangul_fragments": 0
     }
    },
    {
@@ -1281,7 +1289,8 @@
      "cyr": 3,
      "thai": 0,
      "cjk": 5,
-     "unseen_ko": 0.186
+     "unseen_ko": 0.186,
+     "welded_latin_hangul_fragments": 2
     }
    }
   ],
@@ -1325,5 +1334,12 @@
    "title": "widen the production activation scale search to as2 (radius 2)"
   }
  ],
- "interpretation": "Boot 36e4f0ba still corrupted the original thinking-on request (unseen_ko 0.26); boot 048b682d does not reproduce it in scalar capture mode (0.051) or native mode (0.103, 530 tokens, natural stop). Boot 746b9f69 carries #1147+#1154 but not #1157 and still produced corrupted texture under the BF16-dense control (0.186, cyr 3) on the thinking-off prompt. The proximate difference is therefore most consistent with #1157 (as2 activation scale), which may be calibration avoidance of a chaotic failure rather than a root-cause repair."
+ "interpretation": "Glyph-level texture scores improve into the normal band on boot 048b682d under these replay conditions (scalar capture 0.051 at a 130-token cap; native 0.103 over 530 tokens), versus 0.26 corrupted on boot 36e4f0ba the same morning and 12,592 corrupted tokens on fea591bd. This is a texture improvement only: response recovery is NOT established (welded non-words persist in arms that pass texture), and the causal effect of #1157 is unverified — the between-boot contrast is consistent with as2 as the proximate texture difference but equally with boot-to-boot calibration or replay-path variance, and corruption recurring on a #1157 build through the general inference path weighs against as2 as a repair. Boot 746b9f69 (#1147+#1154, no #1157) still corrupted under the BF16-dense control (0.186, cyr 3), which independently exonerates FP8 dense quantization.",
+ "limitations": [
+  "orig-baseline (mode 5) hit its 130-token cap: a truncated sample, not a completed answer",
+  "texture scores are glyph statistics; they do not grade semantic coherence",
+  "reverse-inject scored 0.108 yet contains welded non-words (2 welds, incl. one abbo-type)",
+  "orig-native1024 scored 0.103 yet has 2 weld candidates",
+  "a follow-up reproduction on a #1157-containing build via the general inference path (original 50,005 IDs, T=1, seed 7) corrupted again"
+ ]
 }

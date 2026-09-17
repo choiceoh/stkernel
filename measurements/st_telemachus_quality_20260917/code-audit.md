@@ -543,7 +543,7 @@ production traffic, not an exclusive hold: every arm advanced `served` by two, s
 these are quality observations, not an isolated timing measurement. Private
 prompt text and outputs remain on srv2.
 
-## The incident no longer reproduces on 048b682d, 2026-09-18
+## Texture improves on 048b682d, but recovery is unverified, 2026-09-18
 
 An exclusive hold (`st-telemachus-clues0918`, boot `048b682d75f9` = the
 operand-oracle branch plus origin/main `a15d5749`) ran the remaining three
@@ -551,17 +551,29 @@ clues to ground: a forced-one-step stage-gap remeasure after the #1151
 repair, exact turn-level content ablations with token-verified boundaries,
 and a fresh texture comparison against a neutral 50,094-token control.
 
-**The original request no longer fails on this boot.** The exact 50,005
-input IDs at T=1, seed 7 score unseen(ko) **0.051** in scalar capture mode
-(130 tokens) and **0.103** in native mode (530 tokens, natural stop, no
-Cyrillic). Every ablation arm is clean: excise-prior 0.132 (994 tokens),
-excise-span 0.136 (1,024), reverse-inject 0.108 (677), neutral control
-0.068. Compare boot `36e4f0ba` earlier the same day, where the same
-original-thinking request still corrupted at 0.26, and boot `fea591bd`,
-where T=1 seeds 7 and 11 produced 12,592 and 495 corrupted tokens.
+**Glyph-level texture scores fall in the normal band on this boot — that is
+all that is established.** The exact 50,005 input IDs at T=1, seed 7 score
+unseen(ko) **0.051** in scalar capture mode (capped at 130 tokens — a
+truncated sample, not a completed answer) and **0.103** in native mode
+(530 tokens, natural stop, no Cyrillic). The ablation arms score 0.108–0.136
+and the neutral control 0.068. Compare boot `36e4f0ba` earlier the same day,
+where the same original-thinking request still corrupted at 0.26, and boot
+`fea591bd`, where T=1 seeds 7 and 11 produced 12,592 and 495 corrupted
+tokens.
 
-The code delta between 36e4f0ba (still failing) and 048b682d (clean) is
-exactly six merges; only three change runtime behavior:
+**Texture improvement is not response recovery.** unseen(ko) counts glyph
+bigrams; the context ablation above already showed arms scoring glyph-clean
+while semantically broken, and the same holds here: the reverse-inject arm
+(0.108) contains welded non-words (one `abbo`-type Latin weld inside Hangul,
+two welded fragments overall), and the native-mode original-prompt run has
+two weld candidates of its own. A follow-up reproduction on a build that
+includes #1157 — general inference path, the original 50,005 IDs, T=1,
+seed 7 — corrupted again. Recovery therefore remains unverified, and any
+bisection must be judged by a semantic gate (`bench/agentic-recall.py`),
+not by texture alone.
+
+The code delta between 36e4f0ba (still failing) and 048b682d (texture-clean)
+is exactly six merges; only three change runtime behavior:
 
 - #1147 `2d56d590` — pin the grafted FP32 epilogue, split the scatter ceilings
 - #1154 `46d3b519` — fold smoothing peaks only when the blob claims this boot's weights
@@ -573,10 +585,11 @@ texture under the BF16-dense incident control on the thinking-off prompt
 (unseen(ko) **0.186**, 3 Cyrillic codepoints, 497 tokens); its native
 thinking-off capture scored a borderline 0.136. That control failing under
 BF16 dense independently confirms FP8 dense quantization is not the cause.
-The proximate "clean" difference is therefore most consistent with **#1157
-(as2 activation scale)** — which may be calibration avoidance of a chaotic
-failure, not a root-cause repair. Recurrence under other boots/scales remains
-possible and should be monitored.
+**The causal effect of #1157 is unverified**: the between-boot contrast is
+consistent with as2 being the proximate texture difference, but equally with
+boot-to-boot calibration or replay-path variance — and corruption recurring
+on a #1157 build through the general inference path weighs against as2 as a
+repair. Recurrence should be expected and monitored.
 
 The remeasured stage gap shrinks the original 14.7% layer-0 attention
 divergence to 9.5%, with the neutral-content control showing 6.5% at the
@@ -589,13 +602,14 @@ sampled layers 3–44, so expert arithmetic stays consistent with its
 quantizer.
 
 [Sanitized receipts](clues0918-campaign-evidence.json): per-case token
-counts, seeds, output-ID hashes, texture statistics and both 90-stage gap
-tables. Private prompt/output text remains on srv2 under
-`/tmp/telemachus-quality-0917/`. The hold was released after the campaign
-(`fleet.sh cancel st-telemachus-clues0918`).
+counts, seeds, output-ID hashes, texture statistics, welded-fragment counts
+and both 90-stage gap tables. Private prompt/output text remains on srv2
+under `/tmp/telemachus-quality-0917/`. The hold was released after the
+campaign (`fleet.sh cancel st-telemachus-clues0918`).
 
-**Status:** the failure is not explained — it is absent on the current
-tree. If it matters to know whether as2 is a fix or a dodge, the decisive
-experiment is a hold on `746b9f695a13` running the original thinking-on
-request in native mode: corruption there would isolate #1157 as the only
-difference between failing and clean.
+**Status:** the failure is neither explained nor shown repaired. What improved
+is a glyph statistic under specific replay conditions on one boot. If the as2
+question still matters, the decisive experiment is a hold on `746b9f695a13`
+running the original thinking-on request through the general inference path,
+graded semantically — corruption there, beside a pass on 048b682d, would
+isolate #1157; corruption on both would close the as2 hypothesis.
