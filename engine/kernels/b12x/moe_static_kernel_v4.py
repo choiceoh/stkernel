@@ -1011,6 +1011,10 @@ class MoEStaticKernelV4:
             old_epoch = _ld_global_acquire_i32(barrier_epoch_addr)
             arrived = atomic_add_global_i32(barrier_count_addr, Int32(1))
             if arrived == grid_x - Int32(1):
+                # Acquire all earlier counter arrivals before releasing the
+                # epoch. The entry fence only publishes this CTA's writes;
+                # the final relaxed RMW must be followed by an acquire fence.
+                _threadfence()
                 st_global_i32(barrier_count_addr, Int32(0))
                 _st_global_release_i32(barrier_epoch_addr, old_epoch + Int32(1))
             else:

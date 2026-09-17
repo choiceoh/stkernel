@@ -17,7 +17,7 @@ from . import moe_dynamic_gated_sf6 as _sf6
 from .moe_dynamic_gated_sf6 import _sf6_ld_global_u32
 from .moe_w4a16_fp4_helpers import add_u8x4
 
-PARENT_SHA256 = '01fc34fddd90ca5b433ee26eb00286f7e7cf9f00d18b94bc68f2168245351b4e'
+PARENT_SHA256 = 'de87e617a3f52370e1bda1656438099c895618247e45a9a64313559e196033bb'
 
 
 @lru_cache(maxsize=1)
