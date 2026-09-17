@@ -1,0 +1,32 @@
+W0917 03:00:13.111000 1 site-packages/torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+{"torch": "2.13.0+cu132", "torch_commit": "cf30153c4c131c8164ee7798e5022d810682e2cb", "module": "/cache/router-alignment/router-fused/c99416b41a6ec5609ad5d02d/st_router_fused_c99416b41a6ec5609ad5d02d.so", "source_sha256": "7987ac644dfb143cc69c59c04269bb42633e7db8566d6f409146b6e31cf3c8b4", "binary_sha256": "8e1d08fc491568778973843b6906bb857ea53fd748bc265f8dcbd0bbd7a3aaf7", "cuda_initialized": false}
+
+Fatbin elf code:
+================
+arch = sm_121a
+code version = [1,8]
+host = linux
+compile_size = 64bit
+
+Resource usage:
+ Common:
+  GLOBAL:46 CONSTANT[4]:368
+ Function _ZN3cub17_V_300200_SM_12106detail11EmptyKernelIvEEvv:
+  REG:4 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:896 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedIfLi16ELb0EEvPKT_PKfS4_PjPfPiS6_if:
+  REG:128 STACK:32 SHARED:2564 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedIfLi8ELb0EEvPKT_PKfS4_PjPfPiS6_if:
+  REG:128 STACK:0 SHARED:1796 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedIfLi16ELb1EEvPKT_PKfS4_PjPfPiS6_if:
+  REG:128 STACK:32 SHARED:2564 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedIfLi8ELb1EEvPKT_PKfS4_PjPfPiS6_if:
+  REG:128 STACK:0 SHARED:1796 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedI13__nv_bfloat16Li16ELb0EEvPKT_PKfS5_PjPfPiS7_if:
+  REG:128 STACK:0 SHARED:2564 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedI13__nv_bfloat16Li8ELb0EEvPKT_PKfS5_PjPfPiS7_if:
+  REG:128 STACK:0 SHARED:1796 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedI13__nv_bfloat16Li16ELb1EEvPKT_PKfS5_PjPfPiS7_if:
+  REG:128 STACK:0 SHARED:2564 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _Z15st_router_fusedI13__nv_bfloat16Li8ELb1EEvPKT_PKfS5_PjPfPiS7_if:
+  REG:128 STACK:0 SHARED:1796 LOCAL:0 CONSTANT[0]:960 TEXTURE:0 SURFACE:0 SAMPLER:0
+

@@ -1,0 +1,66 @@
+{
+  "scope": "router component only, not an end-to-end step/quality verdict",
+  "rank2_matches_prior_rank3_router_hashes": true,
+  "row_checks": 24768,
+  "exact_own_selection_and_weight_bits": true,
+  "edge_checks": 40,
+  "concurrent_graph_replays": 64,
+  "chain": [
+    {
+      "fixture": "c2_two_requests",
+      "cache": "warm",
+      "control_us": {
+        "mean": 1621.493399143219,
+        "min": 1619.9685335159302
+      },
+      "candidate_us": {
+        "mean": 1650.80459912618,
+        "min": 1647.6739645004272
+      },
+      "mean_change_pct": 1.8076669321286598,
+      "added_us": 29.311199982960943
+    },
+    {
+      "fixture": "c2_two_requests",
+      "cache": "evicted",
+      "control_us": {
+        "mean": 1790.3739977627993,
+        "min": 1788.793995976448
+      },
+      "candidate_us": {
+        "mean": 1817.9003341744344,
+        "min": 1816.6209980845451
+      },
+      "mean_change_pct": 1.537462923726074,
+      "added_us": 27.526336411635157
+    },
+    {
+      "fixture": "c1_one_request",
+      "cache": "warm",
+      "control_us": {
+        "mean": 1238.1497422854106,
+        "min": 1237.3855113983154
+      },
+      "candidate_us": {
+        "mean": 1250.7165869077046,
+        "min": 1248.225450515747
+      },
+      "mean_change_pct": 1.0149696917190143,
+      "added_us": 12.566844622293956
+    },
+    {
+      "fixture": "c1_one_request",
+      "cache": "evicted",
+      "control_us": {
+        "mean": 1403.3113308250904,
+        "min": 1399.8129926621914
+      },
+      "candidate_us": {
+        "mean": 1415.6858380883932,
+        "min": 1414.4090116024017
+      },
+      "mean_change_pct": 0.8818076923833518,
+      "added_us": 12.374507263302803
+    }
+  ]
+}

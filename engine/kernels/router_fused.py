@@ -1,8 +1,10 @@
 """The decode router in one launch: IEEE FP32 logits, noaux_tc top-8 and weights (a 2026-09-17 cell).
 
 The served chain is seven launches per MoE layer (`glm_pointwise.router_logits` + `route_weights`). This
-kernel takes the same IEEE FP32 products and the same formulas in another add order, so its logits move
-by a few ulps and a near-tied top-8 boundary can flip. The GLM53 consumer can bind it at eight/sixteen
+kernel takes the same IEEE FP32 products in another projection add order, so its logits move
+by a few ulps and a near-tied top-8 boundary can flip. Selection order and weight reduction match the
+pinned PyTorch/Triton path; `_align=False` keeps the prior tail for component comparisons only.
+The GLM53 consumer can bind it at eight/sixteen
 decode rows; adoption requires the full consumer bracket as well as `probes/engine_router_cells.py`.
 """
 from pathlib import Path
@@ -33,14 +35,19 @@ def build():
 
 
 def _ticket(device):
-    """The launch's arrival counter: one int32 per device, zero between launches (the kernel resets it)."""
+    """One arrival counter per execution/capture stream, reset by the kernel.
+
+    Captures made on the same stream share this workspace and must replay in
+    order, as their graph pool does. Independent captures use distinct streams.
+    """
     index = torch.cuda.current_device() if device.index is None else device.index
-    if index not in _TICKETS:
-        _TICKETS[index] = torch.zeros(1, dtype=torch.int32, device=f'cuda:{index}')
-    return _TICKETS[index]
+    key = (index, torch.cuda.current_stream(device).cuda_stream)
+    if key not in _TICKETS:
+        _TICKETS[key] = torch.zeros(1, dtype=torch.int32, device=f'cuda:{index}')
+    return _TICKETS[key]
 
 
-def route(x, gate, bias, topk, scale, *, logits=None, ids=None, weights=None):
+def route(x, gate, bias, topk, scale, *, logits=None, ids=None, weights=None, _align=True):
     """(int32 ids [rows, 8], FP32 weights [rows, 8]) for BF16/FP32 x [rows <= 16, 4096] against the resident
     FP32 gate [288, 4096] and bias [288]; `logits` [rows, 288] FP32 is written when given (else allocated)."""
     if (not isinstance(x, torch.Tensor) or x.ndim != 2 or x.shape[1] != HIDDEN or not 0 < x.shape[0] <= MAX_ROWS
@@ -61,5 +68,5 @@ def route(x, gate, bias, topk, scale, *, logits=None, ids=None, weights=None):
         ids = torch.empty((rows, TOPK), dtype=torch.int32, device=x.device)
     if weights is None:
         weights = torch.empty((rows, TOPK), dtype=torch.float32, device=x.device)
-    build().run(x, gate, bias, _ticket(x.device), logits, ids, weights, float(scale))
+    build().run(x, gate, bias, _ticket(x.device), logits, ids, weights, float(scale), _align)
     return ids, weights

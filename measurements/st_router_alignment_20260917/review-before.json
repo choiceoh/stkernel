@@ -1,0 +1,77 @@
+{
+  "scope": "CPU integration reproductions; CUDA concurrency not executed",
+  "route_skip_bypass": [
+    {
+      "rows": 8,
+      "ordinary_nonzero": 5,
+      "fused_nonzero": 8,
+      "ordinary_weights": [
+        0.97826087474823,
+        0.54347825050354,
+        0.43478262424468994,
+        0.32608699798583984,
+        0.21739131212234497,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fused_weights": [
+        0.8999999761581421,
+        0.5,
+        0.4000000059604645,
+        0.30000001192092896,
+        0.20000000298023224,
+        0.10000000149011612,
+        0.05999999865889549,
+        0.03999999910593033
+      ]
+    },
+    {
+      "rows": 16,
+      "ordinary_nonzero": 5,
+      "fused_nonzero": 8,
+      "ordinary_weights": [
+        0.97826087474823,
+        0.54347825050354,
+        0.43478262424468994,
+        0.32608699798583984,
+        0.21739131212234497,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "fused_weights": [
+        0.8999999761581421,
+        0.5,
+        0.4000000059604645,
+        0.30000001192092896,
+        0.20000000298023224,
+        0.10000000149011612,
+        0.05999999865889549,
+        0.03999999910593033
+      ]
+    }
+  ],
+  "ticket_ownership": {
+    "same_object_for_distinct_mock_streams": true,
+    "allocations": 1,
+    "stream_queries": 0
+  },
+  "ticket_interleaving_model": [
+    {
+      "selected_launch": "B",
+      "published_ctas": {
+        "A": 48,
+        "B": 48
+      },
+      "required_ctas_per_launch": 96
+    }
+  ],
+  "positive_sum_association_example": {
+    "rows": 10000,
+    "sequential_larger": 2065,
+    "sequential_smaller": 2079,
+    "equal": 5856,
+    "max_absolute_difference": 9.5367431640625e-07
+  }
+}
