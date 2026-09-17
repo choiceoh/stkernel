@@ -171,3 +171,9 @@ prefill chunks and decode selectors. The deeper [logical and native-code
 audit](c2-logical-audit.md) identifies a missing generic-global -> TMA proxy
 fence at FC1 input publication and includes its correction. CPU checks and
 native compilation pass; post-patch GPU quality and speed remain unmeasured.
+
+The subsequent [remaining-publication audit](remaining-publication-audit.md)
+confirms the same missing global proxy fence in both served SF6 prefill paths
+and reopens the generic grid barrier's final-arrival acquire contract.
+`prefill-publication-native.json` contains the two GPU-free native receipts;
+this follow-up changes evidence only, not serving code.

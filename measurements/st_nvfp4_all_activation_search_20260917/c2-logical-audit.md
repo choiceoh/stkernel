@@ -6,6 +6,11 @@ patch adds `fence.proxy.async.global` after the second resident-grid barrier.
 This closes the identified proxy-ordering gap. GPU reproduction of stale reads
 and consumer quality/performance after the patch have not been measured.
 
+The later [remaining-publication audit](remaining-publication-audit.md)
+identifies the same proxy gap in prefill and reopens this audit's assumption
+that the generic grid barrier fully acquires other CTAs' writes. The static
+proxy fence does not by itself resolve that separate barrier question.
+
 ## The invariant to preserve
 
 For token `t`, expert `e`, and 16-value input block `b`, FC1 must consume the

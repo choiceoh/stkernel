@@ -10,9 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SOURCES = {
-    'moe_dynamic_gated_sf6.py': '6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e',
-    'moe_dynamic_gated_sf6_q0.py': '759a519145c3edecac42ea917abbd8003b142f02ba4d41f86fc2d58e939a51ba',
-    '_moe_dynamic/gated.py': '993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445',
+    'moe_dynamic_gated_sf6.py': 'de87e617a3f52370e1bda1656438099c895618247e45a9a64313559e196033bb',
+    'moe_dynamic_gated_sf6_q0.py': 'fc62f7e59f660d741c68b1ccb32173055914279c40052e62972b03b881650593',
+    '_moe_dynamic/gated.py': 'adf2c7336b785a96d2865fb1aa42d636392845b55ca84c733210d24193ca24ba',
 }
 
 
