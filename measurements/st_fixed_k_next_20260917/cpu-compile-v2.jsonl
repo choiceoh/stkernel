@@ -1,0 +1,12 @@
+{"event": "identity", "torch": "2.13.0+cu132", "cuda": "13.2", "gpu_used": false, "sources": {"engine/kernels/dense/kernels.cu": "5f2797b4be4bfaef0fa977b0f6d4677e407c554a8fd3615aa4e3657f532a696a", "engine/kernels/mla/glm53_megakernel.cu": "f53005de81073336f833b08ee171af3ebcd4fc22a07e405333048d3e42795ba4", "engine/kernels/b12x/moe_static_kernel_v4.py": "9a5bd5d73a3034dd510414b94c030810d0dd704b7cb739fe78f1ee09eb2423b7", "engine/kernels/b12x/moe_dispatch.py": "388d2a663becdd70f9c52d21f934a0d87162797f81d31c536fdb2100e03f8b92"}}
+{"event": "compile", "component": "dense", "module": "/cache/cu132/st-dense/e4fc4f9dc4fa5e897626f605/st_dense_e4fc4f9dc4fa5e897626f605.so", "binary_sha256": "197426868a7f5ac785a2b0b60b374f9fe7ba66c398c7e69be8704d46b11a9398"}
+{"event": "compile", "component": "mla", "module": "/cache/cu132/mla/eac1cc37bd1ad7d5188f6020/st_mla_eac1cc37bd1ad7d5188f6020.so", "binary_sha256": "54a826873e54aed160c99d92c10dbfbef53cd3ac86870a442d434895ec2f9534"}
+{"event": "compile", "component": "moe", "rows": 8, "cell": "base", "input_amax_tree": false, "input_pair_reuse": false}
+{"event": "compile", "component": "moe", "rows": 8, "cell": "tree", "input_amax_tree": true, "input_pair_reuse": false}
+{"event": "compile", "component": "moe", "rows": 8, "cell": "pair", "input_amax_tree": false, "input_pair_reuse": true}
+{"event": "compile", "component": "moe", "rows": 8, "cell": "pair_tree", "input_amax_tree": true, "input_pair_reuse": true}
+{"event": "compile", "component": "moe", "rows": 16, "cell": "base", "input_amax_tree": false, "input_pair_reuse": false}
+{"event": "compile", "component": "moe", "rows": 16, "cell": "tree", "input_amax_tree": true, "input_pair_reuse": false}
+{"event": "compile", "component": "moe", "rows": 16, "cell": "pair", "input_amax_tree": false, "input_pair_reuse": true}
+{"event": "compile", "component": "moe", "rows": 16, "cell": "pair_tree", "input_amax_tree": true, "input_pair_reuse": true}
+{"event": "complete", "passed": true, "failed": [], "scope": "components only; consumer pending"}

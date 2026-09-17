@@ -2062,7 +2062,7 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
 
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
           bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false,
-          bool PACK_INPUT = false>
+          bool PACK_INPUT = false, bool EXPAND_FN = false>
 __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   static_assert(!STATIC_TAILS || (BF16_FN && AR_CONSUMER && HID == HIDDEN && !V41));
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
@@ -2140,7 +2140,17 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
       for (int m = 0; m < NOUT; ++m) {
         // An ordinary vector load participates in the memory clobber below.
         // __ldg is a read-only intrinsic that nvcc can sink past that wait.
-        fnv[m] = ((const uint2*)a.fn)[(size_t)m * HID + h];
+        const uint2 packed = ((const uint2*)a.fn)[(size_t)m * HID + h];
+        if constexpr (EXPAND_FN) {
+          // The served grid has one CTA per SM. Compare spending its spare
+          // registers on exact FP32 coefficients once for all token rows.
+          const float2 lo = mk_mhc_unpack_bf16_late(packed.x);
+          const float2 hi = mk_mhc_unpack_bf16_late(packed.y);
+          fnr[m][0] = lo.x; fnr[m][1] = lo.y;
+          fnr[m][2] = hi.x; fnr[m][3] = hi.y;
+        } else {
+          fnv[m] = packed;
+        }
       }
     } else {
 #pragma unroll
@@ -2192,7 +2202,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
         float v = 0.0f;
-        if constexpr (BF16_FN && AR_CONSUMER) {
+        if constexpr (BF16_FN && AR_CONSUMER && !EXPAND_FN) {
           const float2 lo = mk_mhc_unpack_bf16_late(fnv[m].x);
           const float2 hi = mk_mhc_unpack_bf16_late(fnv[m].y);
           v += lo.x * r[0];
@@ -2362,18 +2372,18 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false, bool PACK_INPUT = false>
+template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false, bool PACK_INPUT = false, bool EXPAND_FN = false>
 __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   MK_MHC_TS(0);
-  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS, PACK_INPUT>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS, PACK_INPUT, EXPAND_FN>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, bool STATIC_TAILS = false, bool PACK_INPUT = false>
+template <bool BF16_FN, bool STATIC_TAILS = false, bool PACK_INPUT = false, bool EXPAND_FN = false>
 __global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
-  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS, PACK_INPUT>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS, PACK_INPUT, EXPAND_FN>(a, blockIdx.x);
 }
 
 // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
@@ -4080,7 +4090,7 @@ std::vector<int64_t> mk_rows16_info() {
 // arrays grow with it, and a register allocation that changes changes
 // occupancy. Sharing one cached grid across instantiations would launch the
 // 5120 kernel on a residency measured for 4096 and deadlock its barrier.
-template <int HID>
+template <int HID, bool EXPAND_FN = false>
 static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool static_c1) {
   auto stream = c10::cuda::getCurrentCUDAStream();
   // Separate occupancy for both new instantiations. Only immutable fn may
@@ -4089,12 +4099,12 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
   // what lets 16 rows (C=2 at K=7) take this path: a sum too wide for the
   // one-shot consumer releases nothing early, and this launch follows it.
   if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 16) {
-    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
+    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, false, EXPAND_FN> : mk_mhc_ar_kernel<false, HID, false, false, EXPAND_FN>;
     if constexpr (HID == HIDDEN) {
-      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true>;
+      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, false, EXPAND_FN>;
       if (a.input_pack) {
-        kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, true> : mk_mhc_ar_kernel<false, HID, false, true>;
-        if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, true>;
+        kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, true, EXPAND_FN> : mk_mhc_ar_kernel<false, HID, false, true, EXPAND_FN>;
+        if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, true, EXPAND_FN>;
       }
     }
     static int ar_grids[6] = {};
@@ -4151,6 +4161,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
   mk_launch(mk_mhc_kernel<HID>, mhc_grid, 0, stream, a);
 }
 
+template <bool EXPAND_FN = false>
 static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
                 bool ar_consumer = false, const at::Tensor& packets = {}, int tail_mode = -1) {
@@ -4182,6 +4193,8 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   const bool static_shape = hidden == HIDDEN && ints[0] == 8 && bf16_fn && (direct || ar_consumer);
   TORCH_CHECK(tail_mode != 1 || static_shape, "static MHC tails require a packed C1 consumer");
   const bool static_c1 = tail_mode != 0 && static_shape;
+  TORCH_CHECK(!EXPAND_FN || (hidden == HIDDEN && (ints[0] == 8 || ints[0] == 16)
+              && (direct || ar_consumer)), "expanded MHC coefficients require an 8/16-row GLM consumer");
   MKMhcArgs a{};
   if (ptrs.size() == 19) {
     TORCH_CHECK(hidden == HIDDEN && ints[0] == 8 && (direct || ar_consumer) && mk_pdl_enabled()
@@ -4221,11 +4234,11 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     MKMhcPacketsArgs packet_args{};
     static_cast<MKMhcArgs&>(packet_args) = a;
     packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
-    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
-    if (static_c1) kernel = mk_mhc_packets_kernel<true, true>;
+    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, false, EXPAND_FN> : mk_mhc_packets_kernel<false, false, false, EXPAND_FN>;
+    if (static_c1) kernel = mk_mhc_packets_kernel<true, true, false, EXPAND_FN>;
     if (a.input_pack) {
-      kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, true> : mk_mhc_packets_kernel<false, false, true>;
-      if (static_c1) kernel = mk_mhc_packets_kernel<true, true, true>;
+      kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, true, EXPAND_FN> : mk_mhc_packets_kernel<false, false, true, EXPAND_FN>;
+      if (static_c1) kernel = mk_mhc_packets_kernel<true, true, true, EXPAND_FN>;
     }
     static int grids[6] = {};
     int& grid = grids[(a.input_pack ? 3 : 0) + (static_c1 ? 2 : bf16_fn ? 1 : 0)];
@@ -4239,18 +4252,20 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     TORCH_CHECK(!static_c1 || grid == 48, "C1 static MHC tails require 48 resident CTAs");
     packet_args.grid = grid;
     mk_launch(kernel, grid, 0, stream, packet_args);
-  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer, static_c1);
-  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer, static_c1);
+  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41, EXPAND_FN>(a, bf16_fn, ar_consumer, static_c1);
+  else mk_mhc_launch<HIDDEN, EXPAND_FN>(a, bf16_fn, ar_consumer, static_c1);
 }
 
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
+                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1, bool expand_fn = false) {
+  if (expand_fn) mk_run_mhc_impl<true>(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
+  else mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
 }
 
 void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
+                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1, bool expand_fn = false) {
+  if (expand_fn) mk_run_mhc_impl<true>(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
+  else mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
 }
 
 // V4.1 has a separate occupancy cache from every legacy PR518 kernel.
@@ -4991,10 +5006,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
-        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1);
+        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1, pybind11::arg("expand_fn") = false);
   m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
-        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1);
+        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1, pybind11::arg("expand_fn") = false);
   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("hidden") = HIDDEN_V41);

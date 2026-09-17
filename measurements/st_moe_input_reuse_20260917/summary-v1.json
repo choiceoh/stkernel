@@ -1,0 +1,1173 @@
+{
+  "source": "measurements/st_moe_input_reuse_20260917/gpu-v1.jsonl",
+  "identity": [
+    {
+      "event": "identity",
+      "torch": "2.13.0+cu132",
+      "cuda": "13.2",
+      "gpu_used": true,
+      "sources": {
+        "engine/kernels/b12x/moe_static_kernel_v4.py": "b306fa426b16a03ad647346ecfe4c7523301137b102b08587546dc14637964ca",
+        "engine/kernels/b12x/moe_dispatch.py": "371c6aaaf270c9ffc7bf73f83ba7d2954baa8d407c3d50329493e7c79ad3c64a"
+      }
+    },
+    {
+      "event": "device",
+      "name": "NVIDIA GB10",
+      "capability": [
+        12,
+        1
+      ]
+    }
+  ],
+  "complete": true,
+  "frontend_cells": 28,
+  "frontend_failures": [],
+  "output_cells": 36,
+  "output_failures": [],
+  "comparisons": [
+    {
+      "rows": 8,
+      "scope": "single",
+      "cache": "warm",
+      "candidate": "reuse",
+      "control_mean_us": 775.295102596283,
+      "candidate_mean_us": 774.1314470767975,
+      "mean_change_pct": -0.15009194764531442,
+      "median_block_change_pct": -0.1384253568178173,
+      "block_range_pct": [
+        -0.57789248417629,
+        0.09714201379638077
+      ],
+      "faster_blocks": 3,
+      "blocks": [
+        {
+          "control_us": 771.6764807701111,
+          "candidate_us": 770.55624127388,
+          "change_pct": -0.1451695787220486
+        },
+        {
+          "control_us": 776.1855125427246,
+          "candidate_us": 771.699994802475,
+          "change_pct": -0.57789248417629
+        },
+        {
+          "control_us": 772.7522253990173,
+          "candidate_us": 772.8620171546936,
+          "change_pct": 0.014207886055528363
+        },
+        {
+          "control_us": 778.4215211868286,
+          "candidate_us": 777.3439884185791,
+          "change_pct": -0.1384253568178173
+        },
+        {
+          "control_us": 777.4397730827332,
+          "candidate_us": 778.1949937343597,
+          "change_pct": 0.09714201379638077
+        }
+      ]
+    },
+    {
+      "rows": 8,
+      "scope": "single",
+      "cache": "evicted",
+      "candidate": "reuse",
+      "control_mean_us": 833.4481002762914,
+      "candidate_mean_us": 834.3665011227131,
+      "mean_change_pct": 0.11019292576432971,
+      "median_block_change_pct": -0.08338020214957442,
+      "block_range_pct": [
+        -0.6107502839954759,
+        1.4651118159086707
+      ],
+      "faster_blocks": 3,
+      "blocks": [
+        {
+          "control_us": 840.5229980126023,
+          "candidate_us": 835.3895014151931,
+          "change_pct": -0.6107502839954759
+        },
+        {
+          "control_us": 831.4384995028377,
+          "candidate_us": 843.6200032010674,
+          "change_pct": 1.4651118159086707
+        },
+        {
+          "control_us": 829.5595021918416,
+          "candidate_us": 832.5820006430149,
+          "change_pct": 0.3643498077217311
+        },
+        {
+          "control_us": 829.3375028297305,
+          "candidate_us": 828.6459995433688,
+          "change_pct": -0.08338020214957442
+        },
+        {
+          "control_us": 836.3819988444448,
+          "candidate_us": 831.5950008109212,
+          "change_pct": -0.5723458945956938
+        }
+      ]
+    },
+    {
+      "rows": 8,
+      "scope": "single",
+      "cache": "warm",
+      "candidate": "striped",
+      "control_mean_us": 780.0850033760071,
+      "candidate_mean_us": 779.6334505081177,
+      "mean_change_pct": -0.05788508507857948,
+      "median_block_change_pct": -0.033127346702699345,
+      "block_range_pct": [
+        -1.0364265028797837,
+        1.1110210764655681
+      ],
+      "faster_blocks": 3,
+      "blocks": [
+        {
+          "control_us": 786.9607508182526,
+          "candidate_us": 778.8044810295105,
+          "change_pct": -1.0364265028797837
+        },
+        {
+          "control_us": 778.2082557678223,
+          "candidate_us": 774.5887339115143,
+          "change_pct": -0.4651096707701696
+        },
+        {
+          "control_us": 783.3069860935211,
+          "candidate_us": 783.0474972724915,
+          "change_pct": -0.033127346702699345
+        },
+        {
+          "control_us": 781.8002700805664,
+          "candidate_us": 783.0212712287903,
+          "change_pct": 0.1561781435683196
+        },
+        {
+          "control_us": 770.148754119873,
+          "candidate_us": 778.7052690982819,
+          "change_pct": 1.1110210764655681
+        }
+      ]
+    },
+    {
+      "rows": 8,
+      "scope": "single",
+      "cache": "evicted",
+      "candidate": "striped",
+      "control_mean_us": 833.4542989730835,
+      "candidate_mean_us": 833.3364993333817,
+      "mean_change_pct": -0.014133905103974609,
+      "median_block_change_pct": 0.10908348150406866,
+      "block_range_pct": [
+        -0.7041843558739158,
+        0.48952903378136625
+      ],
+      "faster_blocks": 2,
+      "blocks": [
+        {
+          "control_us": 834.2199996113777,
+          "candidate_us": 835.1299958303571,
+          "change_pct": 0.10908348150406866
+        },
+        {
+          "control_us": 833.8299999013543,
+          "candidate_us": 831.7080000415444,
+          "change_pct": -0.2544883081756377
+        },
+        {
+          "control_us": 835.9314985573292,
+          "candidate_us": 830.0449997186661,
+          "change_pct": -0.7041843558739158
+        },
+        {
+          "control_us": 829.3689982965589,
+          "candidate_us": 833.4290003404021,
+          "change_pct": 0.48952903378136625
+        },
+        {
+          "control_us": 833.9209984987974,
+          "candidate_us": 836.3705007359385,
+          "change_pct": 0.29373312838394394
+        }
+      ]
+    },
+    {
+      "rows": 8,
+      "scope": "chain",
+      "cache": "warm",
+      "candidate": "reuse",
+      "control_mean_us": 2070.736503601074,
+      "candidate_mean_us": 2067.36798286438,
+      "mean_change_pct": -0.16267259165211323,
+      "median_block_change_pct": -0.1806017141352978,
+      "block_range_pct": [
+        -0.7078397471656395,
+        0.7950266921705085
+      ],
+      "faster_blocks": 4,
+      "blocks": [
+        {
+          "control_us": 2068.039298057556,
+          "candidate_us": 2084.4807624816895,
+          "change_pct": 0.7950266921705085
+        },
+        {
+          "control_us": 2066.0107135772705,
+          "candidate_us": 2062.279462814331,
+          "change_pct": -0.1806017141352978
+        },
+        {
+          "control_us": 2076.171040534973,
+          "candidate_us": 2063.5076761245728,
+          "change_pct": -0.6099383992533403
+        },
+        {
+          "control_us": 2086.3317251205444,
+          "candidate_us": 2071.5638399124146,
+          "change_pct": -0.7078397471656395
+        },
+        {
+          "control_us": 2057.129740715027,
+          "candidate_us": 2055.0081729888916,
+          "change_pct": -0.10313242204149642
+        }
+      ]
+    },
+    {
+      "rows": 8,
+      "scope": "chain",
+      "cache": "evicted",
+      "candidate": "reuse",
+      "control_mean_us": 2127.9400005936623,
+      "candidate_mean_us": 2129.2223066091537,
+      "mean_change_pct": 0.06026044038525136,
+      "median_block_change_pct": -0.02626190273579132,
+      "block_range_pct": [
+        -0.5915077734756857,
+        0.5573638313596252
+      ],
+      "faster_blocks": 3,
+      "blocks": [
+        {
+          "control_us": 2130.7449974119663,
+          "candidate_us": 2142.620999366045,
+          "change_pct": 0.5573638313596252
+        },
+        {
+          "control_us": 2137.9250027239323,
+          "candidate_us": 2133.8215097784996,
+          "change_pct": -0.1919381147703736
+        },
+        {
+          "control_us": 2123.72450530529,
+          "candidate_us": 2111.1625097692013,
+          "change_pct": -0.5915077734756857
+        },
+        {
+          "control_us": 2119.077004492283,
+          "candidate_us": 2118.5204945504665,
+          "change_pct": -0.02626190273579132
+        },
+        {
+          "control_us": 2128.2284930348396,
+          "candidate_us": 2139.9860195815563,
+          "change_pct": 0.552456025525272
+        }
+      ]
+    },
+    {
+      "rows": 8,
+      "scope": "chain",
+      "cache": "warm",
+      "candidate": "striped",
+      "control_mean_us": 2071.0156202316284,
+      "candidate_mean_us": 2078.7296772003174,
+      "mean_change_pct": 0.37247700564548847,
+      "median_block_change_pct": 0.18017347655083782,
+      "block_range_pct": [
+        0.034311165165590296,
+        0.885532581738735
+      ],
+      "faster_blocks": 0,
+      "blocks": [
+        {
+          "control_us": 2075.5817890167236,
+          "candidate_us": 2076.2939453125,
+          "change_pct": 0.034311165165590296
+        },
+        {
+          "control_us": 2057.9689741134644,
+          "candidate_us": 2071.392774581909,
+          "change_pct": 0.6522839089072141
+        },
+        {
+          "control_us": 2085.8741998672485,
+          "candidate_us": 2089.6323919296265,
+          "change_pct": 0.18017347655083782
+        },
+        {
+          "control_us": 2056.5706491470337,
+          "candidate_us": 2074.7822523117065,
+          "change_pct": 0.885532581738735
+        },
+        {
+          "control_us": 2079.082489013672,
+          "candidate_us": 2081.5470218658447,
+          "change_pct": 0.11853944541382333
+        }
+      ]
+    },
+    {
+      "rows": 8,
+      "scope": "chain",
+      "cache": "evicted",
+      "candidate": "striped",
+      "control_mean_us": 2123.5252998769283,
+      "candidate_mean_us": 2137.263009697199,
+      "mean_change_pct": 0.6469294159606509,
+      "median_block_change_pct": 0.5691824705500448,
+      "block_range_pct": [
+        -0.002247244868802678,
+        1.3243901222594667
+      ],
+      "faster_blocks": 1,
+      "blocks": [
+        {
+          "control_us": 2138.360984623432,
+          "candidate_us": 2147.6110108196735,
+          "change_pct": 0.43257552222271123
+        },
+        {
+          "control_us": 2114.249013364315,
+          "candidate_us": 2114.2015010118484,
+          "change_pct": -0.002247244868802678
+        },
+        {
+          "control_us": 2122.292995452881,
+          "candidate_us": 2141.6295133531094,
+          "change_pct": 0.911114438093974
+        },
+        {
+          "control_us": 2124.0110099315643,
+          "candidate_us": 2136.100508272648,
+          "change_pct": 0.5691824705500448
+        },
+        {
+          "control_us": 2118.7124960124493,
+          "candidate_us": 2146.772515028715,
+          "change_pct": 1.3243901222594667
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "single",
+      "cache": "warm",
+      "candidate": "reuse",
+      "control_mean_us": 1216.7668461799622,
+      "candidate_mean_us": 1214.6047592163086,
+      "mean_change_pct": -0.17769114686526644,
+      "median_block_change_pct": 0.021004046602390858,
+      "block_range_pct": [
+        -1.3438280982742579,
+        1.0133665424537641
+      ],
+      "faster_blocks": 2,
+      "blocks": [
+        {
+          "control_us": 1219.393014907837,
+          "candidate_us": 1211.2429738044739,
+          "change_pct": -0.6683686886609697
+        },
+        {
+          "control_us": 1221.9062447547913,
+          "candidate_us": 1223.2487797737122,
+          "change_pct": 0.10987217920228609
+        },
+        {
+          "control_us": 1226.105511188507,
+          "candidate_us": 1209.6287608146667,
+          "change_pct": -1.3438280982742579
+        },
+        {
+          "control_us": 1210.59250831604,
+          "candidate_us": 1210.8467817306519,
+          "change_pct": 0.021004046602390858
+        },
+        {
+          "control_us": 1205.8369517326355,
+          "candidate_us": 1218.0564999580383,
+          "change_pct": 1.0133665424537641
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "single",
+      "cache": "evicted",
+      "candidate": "reuse",
+      "control_mean_us": 1269.8581974953413,
+      "candidate_mean_us": 1267.08709821105,
+      "mean_change_pct": -0.2182211596347461,
+      "median_block_change_pct": -0.35513183274363813,
+      "block_range_pct": [
+        -0.6995353338418275,
+        0.6295333631336497
+      ],
+      "faster_blocks": 4,
+      "blocks": [
+        {
+          "control_us": 1266.5729988366365,
+          "candidate_us": 1274.5464984327555,
+          "change_pct": 0.6295333631336497
+        },
+        {
+          "control_us": 1278.4569896757603,
+          "candidate_us": 1271.4409939944744,
+          "change_pct": -0.5487862116554498
+        },
+        {
+          "control_us": 1271.4859955012798,
+          "candidate_us": 1262.591501697898,
+          "change_pct": -0.6995353338418275
+        },
+        {
+          "control_us": 1265.7795026898384,
+          "candidate_us": 1264.3605004996061,
+          "change_pct": -0.11210500622081954
+        },
+        {
+          "control_us": 1266.9955007731915,
+          "candidate_us": 1262.4959964305162,
+          "change_pct": -0.35513183274363813
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "single",
+      "cache": "warm",
+      "candidate": "striped",
+      "control_mean_us": 1217.862892150879,
+      "candidate_mean_us": 1216.6219592094421,
+      "mean_change_pct": -0.10189430595468618,
+      "median_block_change_pct": -0.24578235336430998,
+      "block_range_pct": [
+        -1.0977895319145392,
+        1.2311563388342606
+      ],
+      "faster_blocks": 3,
+      "blocks": [
+        {
+          "control_us": 1208.9104652404785,
+          "candidate_us": 1223.7940430641174,
+          "change_pct": 1.2311563388342606
+        },
+        {
+          "control_us": 1231.9352626800537,
+          "candidate_us": 1225.9142398834229,
+          "change_pct": -0.4887450646986258
+        },
+        {
+          "control_us": 1216.0402536392212,
+          "candidate_us": 1217.3544764518738,
+          "change_pct": 0.10807395632830286
+        },
+        {
+          "control_us": 1220.9947109222412,
+          "candidate_us": 1207.5907588005066,
+          "change_pct": -1.0977895319145392
+        },
+        {
+          "control_us": 1211.4337682724,
+          "candidate_us": 1208.45627784729,
+          "change_pct": -0.24578235336430998
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "single",
+      "cache": "evicted",
+      "candidate": "striped",
+      "control_mean_us": 1268.2224977761507,
+      "candidate_mean_us": 1267.8049020469189,
+      "mean_change_pct": -0.03292763927181808,
+      "median_block_change_pct": 0.0250931223930273,
+      "block_range_pct": [
+        -0.8521474661744355,
+        0.7076000140988858
+      ],
+      "faster_blocks": 2,
+      "blocks": [
+        {
+          "control_us": 1268.2309914380312,
+          "candidate_us": 1277.2049941122532,
+          "change_pct": 0.7076000140988858
+        },
+        {
+          "control_us": 1279.2604975402355,
+          "candidate_us": 1279.5815039426088,
+          "change_pct": 0.0250931223930273
+        },
+        {
+          "control_us": 1264.3385007977486,
+          "candidate_us": 1258.5070095956326,
+          "change_pct": -0.4612286344548244
+        },
+        {
+          "control_us": 1260.7234995812178,
+          "candidate_us": 1265.9819964319468,
+          "change_pct": 0.4171015176980264
+        },
+        {
+          "control_us": 1268.5589995235205,
+          "candidate_us": 1257.749006152153,
+          "change_pct": -0.8521474661744355
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "chain",
+      "cache": "warm",
+      "candidate": "reuse",
+      "control_mean_us": 3709.8841428756714,
+      "candidate_mean_us": 3721.832847595215,
+      "mean_change_pct": 0.3220775706025636,
+      "median_block_change_pct": 0.15392018537352392,
+      "block_range_pct": [
+        -0.2520167881701285,
+        1.1423584810017706
+      ],
+      "faster_blocks": 1,
+      "blocks": [
+        {
+          "control_us": 3715.10648727417,
+          "candidate_us": 3718.4054851531982,
+          "change_pct": 0.08879955097731429
+        },
+        {
+          "control_us": 3695.705771446228,
+          "candidate_us": 3737.9239797592163,
+          "change_pct": 1.1423584810017706
+        },
+        {
+          "control_us": 3719.223976135254,
+          "candidate_us": 3709.8509073257446,
+          "change_pct": -0.2520167881701285
+        },
+        {
+          "control_us": 3700.4494667053223,
+          "candidate_us": 3718.324661254883,
+          "change_pct": 0.4830546859345697
+        },
+        {
+          "control_us": 3718.935012817383,
+          "candidate_us": 3724.659204483032,
+          "change_pct": 0.15392018537352392
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "chain",
+      "cache": "evicted",
+      "candidate": "reuse",
+      "control_mean_us": 3759.9461898207664,
+      "candidate_mean_us": 3764.396195113659,
+      "mean_change_pct": 0.11835289837232033,
+      "median_block_change_pct": 0.17032099493667907,
+      "block_range_pct": [
+        -0.2671946882667142,
+        0.5195240672086543
+      ],
+      "faster_blocks": 2,
+      "blocks": [
+        {
+          "control_us": 3746.884487569332,
+          "candidate_us": 3753.4724920988083,
+          "change_pct": 0.17582619777398723
+        },
+        {
+          "control_us": 3775.3784880042076,
+          "candidate_us": 3794.9924878776073,
+          "change_pct": 0.5195240672086543
+        },
+        {
+          "control_us": 3750.0699907541275,
+          "candidate_us": 3740.0500029325485,
+          "change_pct": -0.2671946882667142
+        },
+        {
+          "control_us": 3780.2179977297783,
+          "candidate_us": 3786.656502634287,
+          "change_pct": 0.17032099493667907
+        },
+        {
+          "control_us": 3747.1799850463867,
+          "candidate_us": 3746.8094900250435,
+          "change_pct": -0.009887302526745412
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "chain",
+      "cache": "warm",
+      "candidate": "striped",
+      "control_mean_us": 3717.2741651535034,
+      "candidate_mean_us": 3713.0732774734497,
+      "mean_change_pct": -0.113009896322247,
+      "median_block_change_pct": 0.07377220019515462,
+      "block_range_pct": [
+        -0.8208206331917878,
+        0.5453031859718127
+      ],
+      "faster_blocks": 2,
+      "blocks": [
+        {
+          "control_us": 3714.419960975647,
+          "candidate_us": 3734.67481136322,
+          "change_pct": 0.5453031859718127
+        },
+        {
+          "control_us": 3701.0204792022705,
+          "candidate_us": 3705.3890228271484,
+          "change_pct": 0.11803619162409351
+        },
+        {
+          "control_us": 3711.4237546920776,
+          "candidate_us": 3714.16175365448,
+          "change_pct": 0.07377220019515462
+        },
+        {
+          "control_us": 3726.852297782898,
+          "candidate_us": 3696.2615251541138,
+          "change_pct": -0.8208206331917878
+        },
+        {
+          "control_us": 3732.654333114624,
+          "candidate_us": 3714.879274368286,
+          "change_pct": -0.4762042546679113
+        }
+      ]
+    },
+    {
+      "rows": 16,
+      "scope": "chain",
+      "cache": "evicted",
+      "candidate": "striped",
+      "control_mean_us": 3758.8960953056812,
+      "candidate_mean_us": 3796.6195978224277,
+      "mean_change_pct": 1.0035792839248048,
+      "median_block_change_pct": 1.1466446903460437,
+      "block_range_pct": [
+        -0.3836797226016486,
+        1.9197014112805943
+      ],
+      "faster_blocks": 1,
+      "blocks": [
+        {
+          "control_us": 3744.6994967758656,
+          "candidate_us": 3813.236493617296,
+          "change_pct": 1.830240234241498
+        },
+        {
+          "control_us": 3756.5479949116707,
+          "candidate_us": 3828.6624997854233,
+          "change_pct": 1.9197014112805943
+        },
+        {
+          "control_us": 3779.3279848992825,
+          "candidate_us": 3798.83648827672,
+          "change_pct": 0.5161897420754791
+        },
+        {
+          "control_us": 3743.4439957141876,
+          "candidate_us": 3786.3679975271225,
+          "change_pct": 1.1466446903460437
+        },
+        {
+          "control_us": 3770.4610042274,
+          "candidate_us": 3755.9945099055767,
+          "change_pct": -0.3836797226016486
+        }
+      ]
+    }
+  ],
+  "stamps": [
+    {
+      "event": "stamps",
+      "arm": "base",
+      "chunk": 256,
+      "layer": 3,
+      "rows": 8,
+      "unique_experts": 36,
+      "calls": 12,
+      "evicted": true,
+      "medians": {
+        "span_us": 609.2159999999999,
+        "frontend_us": 13.175999999999998,
+        "phase0_barrier1_us": 2.912,
+        "route_quant_barrier2_us": 10.256,
+        "start_skew_us": 0.064,
+        "fc1_quant_us": 121.22399999999999,
+        "publish_us": 0.032,
+        "fc2_us": 56.28,
+        "idle_tail_us": 3.952,
+        "dma_fc1_us": 119.872,
+        "dma_fc2_us": 58.296
+      },
+      "items_per_cta": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "fc1_item_bytes": 610816,
+      "fc2_item_bytes": 286976,
+      "fc1_gbps_per_cta": 5.038738203656042,
+      "fc2_gbps_per_cta": 5.0990760483297795,
+      "scope": "stamped handle (keeps one extra barrier); per-item medians over CTA lane 0 of every CTA"
+    },
+    {
+      "event": "stamps",
+      "arm": "reuse",
+      "chunk": 256,
+      "layer": 3,
+      "rows": 8,
+      "unique_experts": 36,
+      "calls": 12,
+      "evicted": true,
+      "medians": {
+        "span_us": 619.488,
+        "frontend_us": 12.928,
+        "phase0_barrier1_us": 4.704,
+        "route_quant_barrier2_us": 8.256,
+        "start_skew_us": 0.064,
+        "fc1_quant_us": 122.52799999999999,
+        "publish_us": 0.032,
+        "fc2_us": 56.208,
+        "idle_tail_us": 4.4879999999999995,
+        "dma_fc1_us": 121.488,
+        "dma_fc2_us": 59.344
+      },
+      "items_per_cta": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "fc1_item_bytes": 610816,
+      "fc2_item_bytes": 286976,
+      "fc1_gbps_per_cta": 4.985113606685819,
+      "fc2_gbps_per_cta": 5.105607742670083,
+      "scope": "stamped handle (keeps one extra barrier); per-item medians over CTA lane 0 of every CTA"
+    },
+    {
+      "event": "stamps",
+      "arm": "striped",
+      "chunk": 256,
+      "layer": 3,
+      "rows": 8,
+      "unique_experts": 36,
+      "calls": 12,
+      "evicted": true,
+      "medians": {
+        "span_us": 606.304,
+        "frontend_us": 12.976,
+        "phase0_barrier1_us": 4.768,
+        "route_quant_barrier2_us": 8.304,
+        "start_skew_us": 0.096,
+        "fc1_quant_us": 120.976,
+        "publish_us": 0.032,
+        "fc2_us": 55.528,
+        "idle_tail_us": 3.6959999999999997,
+        "dma_fc1_us": 119.50399999999999,
+        "dma_fc2_us": 57.728
+      },
+      "items_per_cta": [
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3,
+        3
+      ],
+      "fc1_item_bytes": 610816,
+      "fc2_item_bytes": 286976,
+      "fc1_gbps_per_cta": 5.049067583652956,
+      "fc2_gbps_per_cta": 5.168131393171013,
+      "scope": "stamped handle (keeps one extra barrier); per-item medians over CTA lane 0 of every CTA"
+    },
+    {
+      "event": "stamps",
+      "arm": "base",
+      "chunk": 256,
+      "layer": 3,
+      "rows": 16,
+      "unique_experts": 80,
+      "calls": 12,
+      "evicted": true,
+      "medians": {
+        "span_us": 1278.6399999999999,
+        "frontend_us": 18.656,
+        "phase0_barrier1_us": 3.616,
+        "route_quant_barrier2_us": 15.072,
+        "start_skew_us": 0.096,
+        "fc1_quant_us": 122.224,
+        "publish_us": 0.064,
+        "fc2_us": 53.04,
+        "idle_tail_us": 13.136,
+        "dma_fc1_us": 121.896,
+        "dma_fc2_us": 53.536
+      },
+      "items_per_cta": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "fc1_item_bytes": 610816,
+      "fc2_item_bytes": 286976,
+      "fc1_gbps_per_cta": 4.997512763450713,
+      "fc2_gbps_per_cta": 5.410558069381599,
+      "scope": "stamped handle (keeps one extra barrier); per-item medians over CTA lane 0 of every CTA"
+    },
+    {
+      "event": "stamps",
+      "arm": "reuse",
+      "chunk": 256,
+      "layer": 3,
+      "rows": 16,
+      "unique_experts": 80,
+      "calls": 12,
+      "evicted": true,
+      "medians": {
+        "span_us": 1296.912,
+        "frontend_us": 17.488,
+        "phase0_barrier1_us": 6.072,
+        "route_quant_barrier2_us": 11.424,
+        "start_skew_us": 0.096,
+        "fc1_quant_us": 122.936,
+        "publish_us": 0.064,
+        "fc2_us": 54.128,
+        "idle_tail_us": 8.136,
+        "dma_fc1_us": 122.168,
+        "dma_fc2_us": 54.184
+      },
+      "items_per_cta": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "fc1_item_bytes": 610816,
+      "fc2_item_bytes": 286976,
+      "fc1_gbps_per_cta": 4.968569011518188,
+      "fc2_gbps_per_cta": 5.301803133313627,
+      "scope": "stamped handle (keeps one extra barrier); per-item medians over CTA lane 0 of every CTA"
+    },
+    {
+      "event": "stamps",
+      "arm": "striped",
+      "chunk": 256,
+      "layer": 3,
+      "rows": 16,
+      "unique_experts": 80,
+      "calls": 12,
+      "evicted": true,
+      "medians": {
+        "span_us": 1274.272,
+        "frontend_us": 17.536,
+        "phase0_barrier1_us": 5.976,
+        "route_quant_barrier2_us": 11.52,
+        "start_skew_us": 0.064,
+        "fc1_quant_us": 121.66399999999999,
+        "publish_us": 0.064,
+        "fc2_us": 51.800000000000004,
+        "idle_tail_us": 10.672,
+        "dma_fc1_us": 120.008,
+        "dma_fc2_us": 52.903999999999996
+      },
+      "items_per_cta": [
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        6,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7,
+        7
+      ],
+      "fc1_item_bytes": 610816,
+      "fc2_item_bytes": 286976,
+      "fc1_gbps_per_cta": 5.020515518148343,
+      "fc2_gbps_per_cta": 5.54007722007722,
+      "scope": "stamped handle (keeps one extra barrier); per-item medians over CTA lane 0 of every CTA"
+    }
+  ],
+  "scope": "Same-build component evidence only; full consumer qualification is separate"
+}

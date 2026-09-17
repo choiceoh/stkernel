@@ -1,0 +1,26 @@
+{
+  "gpu_used": false,
+  "scope": "static native resources only",
+  "kernels": [
+    {
+      "kernel": "static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregssyncinputv16c256_6b39e69bee7229ef",
+      "binary_sha256": "1c8756dcf205aaa46f1872fc046c1ab644ef1b5c0793187d06f667fbbd36a688",
+      "sass_sha256": "6cf829e39eea5da81ac508e6b60b9a1a45157db027a6543bd0ea7340117fa477",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o8409640961_tensorptri32gmemo641_tensorptrf32gmemo641_tensorptri8gmemalign1_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 8,
+      "input_reuse": 0
+    },
+    {
+      "kernel": "static2_m16_k4096_n512_t8_r128_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfregsc2scatterreuseprefetch3syncinputv16c256_ca4b08734a6e288c",
+      "binary_sha256": "945df41b27fbb1767dba5bfa20e37fa583fd01b315b12d4d119ea381192c6bf2",
+      "sass_sha256": "4e1eec1d18e12f211ed8961a850efe3f0c37071eade186314a1f7e444c46cde3",
+      "resources": "\nFatbin elf code:\n================\narch = sm_121a\ncode version = [1,8]\nhost = linux\ncompile_size = 64bit\nidentifier = kernels\n\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+      "rows": 16,
+      "input_reuse": 0
+    }
+  ],
+  "sources": {
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "cb5611833b788b9aab118b6339f0afe618529c551303e3987ea07d2d34cc7f71",
+    "engine/kernels/b12x/moe_dispatch.py": "2186f8e20351736c429b95d12b81425dd3dc828cd0464aedd83bbc2fb5e97f2f"
+  }
+}

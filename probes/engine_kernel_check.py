@@ -38,6 +38,10 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'next_k_compile' or args.lanes == 'next_k_cost' or args.lanes.startswith('next_k_cost:'):
+        from probes.engine_fixed_k_next import run
+        run(args.output, args.ranks, compile_only=args.lanes == 'next_k_compile', sections=args.lanes.split(':')[1:])
+        return
     if args.lanes in ('fixed_k_compile', 'fixed_k_cost'):
         from probes.engine_fixed_k_cost import run
         run(args.output, args.ranks, compile_only=args.lanes == 'fixed_k_compile')
@@ -62,6 +66,10 @@ def main():
         # the routed experts' same-build cells: tile-major w13 chunk, stamped timeline, prefill (real rank weights)
         from probes.engine_moe_c2_cells import main as moe_c2_cells
         moe_c2_cells(args.ranks, sections=args.lanes.split(':')[1:], samples=args.samples, output=args.output)
+        return
+    if args.lanes in ('moe_input_reuse', 'moe_input_reuse_compile'):
+        from probes.engine_moe_input_reuse import run
+        run(args.output, args.ranks, compile_only=args.lanes.endswith('_compile'))
         return
     if args.lanes == 'router_cells':
         # the decode router's launch fold: the served seven-launch chain against one fused launch (real rank gates)

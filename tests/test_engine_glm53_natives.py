@@ -122,8 +122,8 @@ class NativeBuildsTests(unittest.TestCase):
             builds = natives.builds(2, True)
         self.assertEqual(importers, {threading.get_ident()})
         self.assertEqual([name for name, _ in builds],
-                         ["cublaslt", "dense", "mla", "prefill-topk", "router-fp32", "decode-topk",
-                          "mapped-staging", "bounded-graph", "decode-queue", "one-shot"])   # no probe cell
+                         ["cublaslt", "dense", "mla", "prefill-topk", "router-fp32", "router-fused", "decode-topk",
+                          "mapped-staging", "bounded-graph", "decode-queue", "one-shot"])
         self.assertEqual(natives.NativeBuilds(builds).wait().keys(), dict(builds).keys())
         self.assertEqual(calls, [(2, True)])
 

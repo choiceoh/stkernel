@@ -1,0 +1,1339 @@
+{
+  "scope": "Rank 0 measured device body and TP4 stop agreement, globaltimer; not HTTP latency or profiler replay. C2 width one is excluded from width two. Fixed-output requests without bounded iteration records use the separate wall-time metric. Outputs differ and quality failures remain; observations do not establish causality.",
+  "runs": [
+    {
+      "arm": "B",
+      "run": 1,
+      "run_id": "20260917T001556-8cecc11b1385",
+      "sha": "0330d576a4c9749aaf6b855d81c3d8bd42a87c3b",
+      "rank": 0,
+      "k": 7,
+      "sources": [
+        {
+          "phase": "measure-c1",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T001556-8cecc11b1385/measure-c1/latency.jsonl",
+          "sha256": "5068579ac6d2db59775f12e666d5bc6ad8c83ad392036c05b0d47b239bf42370",
+          "admissions": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "c1_steps_by_request": {
+            "0": 422,
+            "1": 746,
+            "2": 1214,
+            "3": 2370,
+            "4": 1766
+          },
+          "c1_committed_by_request": {
+            "0": 2175,
+            "1": 3950,
+            "2": 5096,
+            "3": 10449,
+            "4": 8336
+          },
+          "missing_device_iterations": [
+            5,
+            6,
+            7
+          ],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T001556-8cecc11b1385/measure-c2-2000-q0/latency.jsonl",
+          "sha256": "c1fc85fb79c0f1d8684e5e8eb53087c85e4636734d22b777ca628a94f31d6abc",
+          "admissions": [
+            18,
+            19
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T001556-8cecc11b1385/measure-c2-2000-q1/latency.jsonl",
+          "sha256": "0eb55d48d2d7e47c3dd4043f4ecd63d12aab871362f13bdf55bd804d2563dbdf",
+          "admissions": [
+            22,
+            23
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T001556-8cecc11b1385/measure-c2-2000-q2/latency.jsonl",
+          "sha256": "483dc1de2cc3a2493ca7b0a0f1cfcf69e7608b44df983f01abcb2cdd16187cee",
+          "admissions": [
+            26,
+            27
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T001556-8cecc11b1385/measure-c2-32000-qall/latency.jsonl",
+          "sha256": "d189effc92c9230cd366ccea4de05d97c02523e4152016e3dd447fc6db71bca1",
+          "admissions": [
+            30,
+            31
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        }
+      ],
+      "groups": [
+        {
+          "kind": "ordinary_c1",
+          "ctx": 2000,
+          "width": 1,
+          "steps": 2382,
+          "request_steps": 2382,
+          "sum_us": 120383456.25600001,
+          "mean_ms": 50.53881454911839,
+          "median_ms": 50.543456000000006,
+          "body_step_s": 19.78677198746135,
+          "accepted": 8839,
+          "drafted": 16674,
+          "acceptance": 0.5301067530286674,
+          "committed": 11221,
+          "committed_per_request_step": 4.710747271200671,
+          "mean_stages_ms": {
+            "boundaries": 0.31746861460957176,
+            "commit": 0.004101172124265323,
+            "forward": 46.58779558690176,
+            "observe": 0.6010317917716206,
+            "propose": 2.8030894643157014,
+            "sample": 0.04837241981528127
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 32000,
+          "width": 1,
+          "steps": 2370,
+          "request_steps": 2370,
+          "sum_us": 120814037.824,
+          "mean_ms": 50.97638726751055,
+          "median_ms": 50.828896,
+          "body_step_s": 19.616925670943793,
+          "accepted": 8079,
+          "drafted": 16590,
+          "acceptance": 0.48698010849909584,
+          "committed": 10449,
+          "committed_per_request_step": 4.408860759493671,
+          "mean_stages_ms": {
+            "boundaries": 0.31619486244725736,
+            "commit": 0.004103601687763713,
+            "forward": 47.043951270886076,
+            "observe": 0.6032360371308018,
+            "propose": 2.7891068084388184,
+            "sample": 0.04536819578059072
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 128000,
+          "width": 1,
+          "steps": 1766,
+          "request_steps": 1766,
+          "sum_us": 90672024.672,
+          "mean_ms": 51.34316232842583,
+          "median_ms": 51.28528,
+          "body_step_s": 19.476790182952097,
+          "accepted": 6570,
+          "drafted": 12362,
+          "acceptance": 0.5314674000970717,
+          "committed": 8336,
+          "committed_per_request_step": 4.720271800679502,
+          "mean_stages_ms": {
+            "boundaries": 0.3181080317100793,
+            "commit": 0.004130228765571914,
+            "forward": 47.41909921630805,
+            "observe": 0.6041532774631937,
+            "propose": 2.7798936534541334,
+            "sample": 0.04376335220838053
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 2000,
+          "width": 1,
+          "steps": 1525,
+          "request_steps": 1525,
+          "sum_us": 77320388.192,
+          "mean_ms": 50.70189389639345,
+          "median_ms": 50.67801600000001,
+          "body_step_s": 19.7231291210432,
+          "accepted": 5212,
+          "drafted": 10675,
+          "acceptance": 0.48824355971896954,
+          "committed": 6737,
+          "committed_per_request_step": 4.417704918032787,
+          "mean_stages_ms": {
+            "boundaries": 0.31615408262295086,
+            "commit": 0.004103134426229509,
+            "forward": 46.75048471081967,
+            "observe": 0.6014188065573771,
+            "propose": 2.805955336393443,
+            "sample": 0.04690427803278689
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 2000,
+          "width": 2,
+          "steps": 1375,
+          "request_steps": 2750,
+          "sum_us": 102203220.928,
+          "mean_ms": 74.32961522036365,
+          "median_ms": 74.496224,
+          "body_step_s": 13.453587739359588,
+          "accepted": 10606,
+          "drafted": 19250,
+          "acceptance": 0.550961038961039,
+          "committed": 13356,
+          "committed_per_request_step": 4.856727272727273,
+          "mean_stages_ms": {
+            "boundaries": 0.6631841978181818,
+            "commit": 0.004090461090909091,
+            "forward": 69.67776432872728,
+            "observe": 0.6217265105454546,
+            "propose": 3.133554292363636,
+            "sample": 0.05049662836363636
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 32000,
+          "width": 1,
+          "steps": 275,
+          "request_steps": 275,
+          "sum_us": 14034878.208,
+          "mean_ms": 51.03592075636364,
+          "median_ms": 51.21392000000001,
+          "body_step_s": 19.59404249359625,
+          "accepted": 1203,
+          "drafted": 1925,
+          "acceptance": 0.6249350649350649,
+          "committed": 1478,
+          "committed_per_request_step": 5.374545454545455,
+          "mean_stages_ms": {
+            "boundaries": 0.32073402181818184,
+            "commit": 0.004107287272727273,
+            "forward": 47.060062254545464,
+            "observe": 0.6040621381818182,
+            "propose": 2.820078661818182,
+            "sample": 0.04894464
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 32000,
+          "width": 2,
+          "steps": 1608,
+          "request_steps": 3216,
+          "sum_us": 119778373.28,
+          "mean_ms": 74.48903810945274,
+          "median_ms": 74.556048,
+          "body_step_s": 13.424794109042185,
+          "accepted": 11320,
+          "drafted": 22512,
+          "acceptance": 0.5028429282160626,
+          "committed": 14536,
+          "committed_per_request_step": 4.519900497512438,
+          "mean_stages_ms": {
+            "boundaries": 0.6629883383084577,
+            "commit": 0.0041006766169154225,
+            "forward": 69.8309791243781,
+            "observe": 0.6240766567164179,
+            "propose": 3.1305679402985076,
+            "sample": 0.05274712437810945
+          }
+        }
+      ]
+    },
+    {
+      "arm": "B",
+      "run": 2,
+      "run_id": "20260917T003830-a809d6dfddc4",
+      "sha": "0330d576a4c9749aaf6b855d81c3d8bd42a87c3b",
+      "rank": 0,
+      "k": 7,
+      "sources": [
+        {
+          "phase": "measure-c1",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T003830-a809d6dfddc4/measure-c1/latency.jsonl",
+          "sha256": "870dcb876cd57d7c32d7c3cbd873ed4297eb9389b9fb41ea54dad34ad85a6ad6",
+          "admissions": [
+            63,
+            64,
+            65,
+            66,
+            67,
+            68,
+            69,
+            70
+          ],
+          "c1_steps_by_request": {
+            "0": 478,
+            "1": 572,
+            "2": 949,
+            "3": 2925,
+            "4": 2195
+          },
+          "c1_committed_by_request": {
+            "0": 2329,
+            "1": 3073,
+            "2": 4056,
+            "3": 12991,
+            "4": 10194
+          },
+          "missing_device_iterations": [
+            5,
+            6,
+            7
+          ],
+          "preparation_unchanged": true
+        }
+      ],
+      "groups": [
+        {
+          "kind": "ordinary_c1",
+          "ctx": 2000,
+          "width": 1,
+          "steps": 1999,
+          "request_steps": 1999,
+          "sum_us": 100671643.84,
+          "mean_ms": 50.36100242121061,
+          "median_ms": 50.428768000000005,
+          "body_step_s": 19.85663413996757,
+          "accepted": 7459,
+          "drafted": 13993,
+          "acceptance": 0.5330522404059173,
+          "committed": 9458,
+          "committed_per_request_step": 4.731365682841421,
+          "mean_stages_ms": {
+            "boundaries": 0.3175317738869435,
+            "commit": 0.004108326163081541,
+            "forward": 46.41260295747874,
+            "observe": 0.6010688384192096,
+            "propose": 2.8019764442221113,
+            "sample": 0.046686607303651824
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 32000,
+          "width": 1,
+          "steps": 2925,
+          "request_steps": 2925,
+          "sum_us": 148377789.536,
+          "mean_ms": 50.727449414017094,
+          "median_ms": 50.78944,
+          "body_step_s": 19.71319298627457,
+          "accepted": 10066,
+          "drafted": 20475,
+          "acceptance": 0.49162393162393164,
+          "committed": 12991,
+          "committed_per_request_step": 4.441367521367521,
+          "mean_stages_ms": {
+            "boundaries": 0.3164863343589744,
+            "commit": 0.0041031329914529915,
+            "forward": 46.78092228923077,
+            "observe": 0.602979292991453,
+            "propose": 2.79920163008547,
+            "sample": 0.04571502495726496
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 128000,
+          "width": 1,
+          "steps": 2195,
+          "request_steps": 2195,
+          "sum_us": 113045206.464,
+          "mean_ms": 51.50123301321185,
+          "median_ms": 51.492352000000004,
+          "body_step_s": 19.417010846001794,
+          "accepted": 7999,
+          "drafted": 15365,
+          "acceptance": 0.5205987634233648,
+          "committed": 10194,
+          "committed_per_request_step": 4.644191343963554,
+          "mean_stages_ms": {
+            "boundaries": 0.31829911617312073,
+            "commit": 0.004136207744874715,
+            "forward": 47.52992145785877,
+            "observe": 0.6044255343963554,
+            "propose": 2.8151644865603647,
+            "sample": 0.051108810933940776
+          }
+        }
+      ]
+    },
+    {
+      "arm": "A",
+      "run": 1,
+      "run_id": "20260917T012520-4419c12b7da4",
+      "sha": "9b3a192fd0d58a994cb5b30de0c1ef55d823e593",
+      "rank": 0,
+      "k": 7,
+      "sources": [
+        {
+          "phase": "measure-c1",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/measure-c1/latency.jsonl",
+          "sha256": "f1000273c877762e96c20a7e7609a58ec61450ebc0d822cccc8d6838efe2b99d",
+          "admissions": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ],
+          "c1_steps_by_request": {
+            "0": 419,
+            "1": 510,
+            "2": 827,
+            "3": 2153,
+            "4": 2886
+          },
+          "c1_committed_by_request": {
+            "0": 2206,
+            "1": 2628,
+            "2": 3449,
+            "3": 10040,
+            "4": 13621
+          },
+          "missing_device_iterations": [
+            5,
+            6,
+            7
+          ],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-2000-q0",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/measure-c2-2000-q0/latency.jsonl",
+          "sha256": "e2755b7820514ca8cbaf50d429164c37e6ae135cc3699e01e9a23a14a635a6fe",
+          "admissions": [
+            18,
+            19
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-2000-q1",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/measure-c2-2000-q1/latency.jsonl",
+          "sha256": "dab7a9b028a68641867b3113b18993c02bfcbe7feb654081535b9ee52aeeecd9",
+          "admissions": [
+            22,
+            23
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-2000-q2",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/measure-c2-2000-q2/latency.jsonl",
+          "sha256": "bbc1161ce75c7787930e82106377ac472f28f9a381b763c7dedb9db86b96611f",
+          "admissions": [
+            26,
+            27
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        },
+        {
+          "phase": "measure-c2-32000-qall",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T012520-4419c12b7da4/measure-c2-32000-qall/latency.jsonl",
+          "sha256": "be09f1d713e0c9f84aaf70e661f59c065eb58c1faa0f02e597ae3cb3eafb458c",
+          "admissions": [
+            30,
+            31
+          ],
+          "c1_steps_by_request": {},
+          "c1_committed_by_request": {},
+          "missing_device_iterations": [],
+          "preparation_unchanged": true
+        }
+      ],
+      "groups": [
+        {
+          "kind": "ordinary_c1",
+          "ctx": 2000,
+          "width": 1,
+          "steps": 1756,
+          "request_steps": 1756,
+          "sum_us": 83856990.4,
+          "mean_ms": 47.75455034168565,
+          "median_ms": 47.856144,
+          "body_step_s": 20.940412857936288,
+          "accepted": 6527,
+          "drafted": 12292,
+          "acceptance": 0.530995769606248,
+          "committed": 8283,
+          "committed_per_request_step": 4.716970387243736,
+          "mean_stages_ms": {
+            "boundaries": 0.31608570387243734,
+            "commit": 0.004123407744874716,
+            "forward": 43.806982797266514,
+            "observe": 0.5962001640091116,
+            "propose": 2.816537020501139,
+            "sample": 0.04033589066059226
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 32000,
+          "width": 1,
+          "steps": 2153,
+          "request_steps": 2153,
+          "sum_us": 103496401.05600001,
+          "mean_ms": 48.07078544170925,
+          "median_ms": 48.221312000000005,
+          "body_step_s": 20.8026557255363,
+          "accepted": 7887,
+          "drafted": 15071,
+          "acceptance": 0.5233229380930263,
+          "committed": 10040,
+          "committed_per_request_step": 4.663260566651185,
+          "mean_stages_ms": {
+            "boundaries": 0.3162190209010683,
+            "commit": 0.004135431490942871,
+            "forward": 44.11847693079424,
+            "observe": 0.5966456330701346,
+            "propose": 2.8205674686483975,
+            "sample": 0.040112527635856945
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 128000,
+          "width": 1,
+          "steps": 2886,
+          "request_steps": 2886,
+          "sum_us": 141021988.992,
+          "mean_ms": 48.86416804989606,
+          "median_ms": 48.90144,
+          "body_step_s": 20.46489360013011,
+          "accepted": 10735,
+          "drafted": 20202,
+          "acceptance": 0.5313830313830313,
+          "committed": 13621,
+          "committed_per_request_step": 4.7196812196812195,
+          "mean_stages_ms": {
+            "boundaries": 0.3168840249480249,
+            "commit": 0.004116313236313236,
+            "forward": 44.90317638253638,
+            "observe": 0.5996807207207208,
+            "propose": 2.8260420235620236,
+            "sample": 0.03999990020790021
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 2000,
+          "width": 1,
+          "steps": 1248,
+          "request_steps": 1248,
+          "sum_us": 59529753.856000006,
+          "mean_ms": 47.70012328205128,
+          "median_ms": 47.759024000000004,
+          "body_step_s": 20.964306404136323,
+          "accepted": 4411,
+          "drafted": 8736,
+          "acceptance": 0.5049221611721612,
+          "committed": 5659,
+          "committed_per_request_step": 4.534455128205129,
+          "mean_stages_ms": {
+            "boundaries": 0.31599835897435896,
+            "commit": 0.0041084871794871795,
+            "forward": 43.75509384615385,
+            "observe": 0.5961080512820512,
+            "propose": 2.8141982564102563,
+            "sample": 0.04049853846153846
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 2000,
+          "width": 2,
+          "steps": 1403,
+          "request_steps": 2806,
+          "sum_us": 101924896.448,
+          "mean_ms": 72.64782355523877,
+          "median_ms": 72.74211199999999,
+          "body_step_s": 13.765037286211832,
+          "accepted": 10497,
+          "drafted": 19642,
+          "acceptance": 0.534416047245698,
+          "committed": 13303,
+          "committed_per_request_step": 4.740912330719886,
+          "mean_stages_ms": {
+            "boundaries": 0.6618093799002139,
+            "commit": 0.004153431218816821,
+            "forward": 68.00243642480399,
+            "observe": 0.6123179700641482,
+            "propose": 3.1412702608695655,
+            "sample": 0.048504496079828936
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 32000,
+          "width": 1,
+          "steps": 396,
+          "request_steps": 396,
+          "sum_us": 19183364.096,
+          "mean_ms": 48.44283862626263,
+          "median_ms": 48.52217600000001,
+          "body_step_s": 20.64288609746877,
+          "accepted": 1892,
+          "drafted": 2772,
+          "acceptance": 0.6825396825396826,
+          "committed": 2288,
+          "committed_per_request_step": 5.777777777777778,
+          "mean_stages_ms": {
+            "boundaries": 0.32083781818181817,
+            "commit": 0.004139474747474748,
+            "forward": 44.48570173737374,
+            "observe": 0.5971974949494949,
+            "propose": 2.8189203232323234,
+            "sample": 0.04088703030303031
+          }
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 32000,
+          "width": 2,
+          "steps": 1739,
+          "request_steps": 3478,
+          "sum_us": 126174105.05600001,
+          "mean_ms": 72.55555207360553,
+          "median_ms": 72.571872,
+          "body_step_s": 13.782542774749047,
+          "accepted": 12511,
+          "drafted": 24346,
+          "acceptance": 0.51388318409595,
+          "committed": 15989,
+          "committed_per_request_step": 4.59718228867165,
+          "mean_stages_ms": {
+            "boundaries": 0.6614812006900518,
+            "commit": 0.004150302472685451,
+            "forward": 67.90278484646349,
+            "observe": 0.6153164623346751,
+            "propose": 3.1374223162737205,
+            "sample": 0.049729932144910866
+          }
+        }
+      ]
+    },
+    {
+      "arm": "A",
+      "run": 2,
+      "run_id": "20260917T014752-189b46be0d0c",
+      "sha": "9b3a192fd0d58a994cb5b30de0c1ef55d823e593",
+      "rank": 0,
+      "k": 7,
+      "sources": [
+        {
+          "phase": "measure-c1",
+          "path": "/home/choiceoh/glm53-logs/onepass-runs/20260917T014752-189b46be0d0c/measure-c1/latency.jsonl",
+          "sha256": "e3ebf86af68508dd03b8c92364b5276fa5eb0f696fe697ba0823fc4f4618489f",
+          "admissions": [
+            63,
+            64,
+            65,
+            66,
+            67,
+            68,
+            69,
+            70
+          ],
+          "c1_steps_by_request": {
+            "0": 400,
+            "1": 494,
+            "2": 1117,
+            "3": 2630,
+            "4": 3441
+          },
+          "c1_committed_by_request": {
+            "0": 2209,
+            "1": 2733,
+            "2": 4588,
+            "3": 12578,
+            "4": 16392
+          },
+          "missing_device_iterations": [
+            5,
+            6,
+            7
+          ],
+          "preparation_unchanged": true
+        }
+      ],
+      "groups": [
+        {
+          "kind": "ordinary_c1",
+          "ctx": 2000,
+          "width": 1,
+          "steps": 2011,
+          "request_steps": 2011,
+          "sum_us": 96249869.24800001,
+          "mean_ms": 47.86169529985082,
+          "median_ms": 47.894048000000005,
+          "body_step_s": 20.89353487658672,
+          "accepted": 7519,
+          "drafted": 14077,
+          "acceptance": 0.5341336932585068,
+          "committed": 9530,
+          "committed_per_request_step": 4.738935852809547,
+          "mean_stages_ms": {
+            "boundaries": 0.31798816907011435,
+            "commit": 0.004145265042267529,
+            "forward": 43.90949362506216,
+            "observe": 0.5979330959721532,
+            "propose": 2.817343347588265,
+            "sample": 0.04027098955743411
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 32000,
+          "width": 1,
+          "steps": 2630,
+          "request_steps": 2630,
+          "sum_us": 126716045.15200001,
+          "mean_ms": 48.18100576121674,
+          "median_ms": 48.27440000000001,
+          "body_step_s": 20.755066943931446,
+          "accepted": 9948,
+          "drafted": 18410,
+          "acceptance": 0.5403585008147745,
+          "committed": 12578,
+          "committed_per_request_step": 4.782509505703422,
+          "mean_stages_ms": {
+            "boundaries": 0.3187254266159696,
+            "commit": 0.004139242585551331,
+            "forward": 44.22763760912548,
+            "observe": 0.5976002190114069,
+            "propose": 2.8178354615969585,
+            "sample": 0.04045431482889734
+          }
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 128000,
+          "width": 1,
+          "steps": 3441,
+          "request_steps": 3441,
+          "sum_us": 168104084.8,
+          "mean_ms": 48.853264981110144,
+          "median_ms": 48.858432,
+          "body_step_s": 20.469460953872073,
+          "accepted": 12951,
+          "drafted": 24087,
+          "acceptance": 0.537675924772699,
+          "committed": 16392,
+          "committed_per_request_step": 4.7637314734088925,
+          "mean_stages_ms": {
+            "boundaries": 0.31931901656495204,
+            "commit": 0.00411408776518454,
+            "forward": 44.88632671897704,
+            "observe": 0.6006687544318512,
+            "propose": 2.8272802092415,
+            "sample": 0.04101400290613194
+          }
+        }
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "run": 1,
+      "groups": [
+        {
+          "kind": "ordinary_c1",
+          "ctx": 2000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c1",
+            "ctx": 2000,
+            "width": 1,
+            "steps": 2382,
+            "request_steps": 2382,
+            "sum_us": 120383456.25600001,
+            "mean_ms": 50.53881454911839,
+            "median_ms": 50.543456000000006,
+            "body_step_s": 19.78677198746135,
+            "accepted": 8839,
+            "drafted": 16674,
+            "acceptance": 0.5301067530286674,
+            "committed": 11221,
+            "committed_per_request_step": 4.710747271200671,
+            "mean_stages_ms": {
+              "boundaries": 0.31746861460957176,
+              "commit": 0.004101172124265323,
+              "forward": 46.58779558690176,
+              "observe": 0.6010317917716206,
+              "propose": 2.8030894643157014,
+              "sample": 0.04837241981528127
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c1",
+            "ctx": 2000,
+            "width": 1,
+            "steps": 1756,
+            "request_steps": 1756,
+            "sum_us": 83856990.4,
+            "mean_ms": 47.75455034168565,
+            "median_ms": 47.856144,
+            "body_step_s": 20.940412857936288,
+            "accepted": 6527,
+            "drafted": 12292,
+            "acceptance": 0.530995769606248,
+            "committed": 8283,
+            "committed_per_request_step": 4.716970387243736,
+            "mean_stages_ms": {
+              "boundaries": 0.31608570387243734,
+              "commit": 0.004123407744874716,
+              "forward": 43.806982797266514,
+              "observe": 0.5962001640091116,
+              "propose": 2.816537020501139,
+              "sample": 0.04033589066059226
+            }
+          },
+          "mean_cost_reduction_pct": 5.509160102532141,
+          "acceptance_change_pp": 0.08890165775805592
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 32000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c1",
+            "ctx": 32000,
+            "width": 1,
+            "steps": 2370,
+            "request_steps": 2370,
+            "sum_us": 120814037.824,
+            "mean_ms": 50.97638726751055,
+            "median_ms": 50.828896,
+            "body_step_s": 19.616925670943793,
+            "accepted": 8079,
+            "drafted": 16590,
+            "acceptance": 0.48698010849909584,
+            "committed": 10449,
+            "committed_per_request_step": 4.408860759493671,
+            "mean_stages_ms": {
+              "boundaries": 0.31619486244725736,
+              "commit": 0.004103601687763713,
+              "forward": 47.043951270886076,
+              "observe": 0.6032360371308018,
+              "propose": 2.7891068084388184,
+              "sample": 0.04536819578059072
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c1",
+            "ctx": 32000,
+            "width": 1,
+            "steps": 2153,
+            "request_steps": 2153,
+            "sum_us": 103496401.05600001,
+            "mean_ms": 48.07078544170925,
+            "median_ms": 48.221312000000005,
+            "body_step_s": 20.8026557255363,
+            "accepted": 7887,
+            "drafted": 15071,
+            "acceptance": 0.5233229380930263,
+            "committed": 10040,
+            "committed_per_request_step": 4.663260566651185,
+            "mean_stages_ms": {
+              "boundaries": 0.3162190209010683,
+              "commit": 0.004135431490942871,
+              "forward": 44.11847693079424,
+              "observe": 0.5966456330701346,
+              "propose": 2.8205674686483975,
+              "sample": 0.040112527635856945
+            }
+          },
+          "mean_cost_reduction_pct": 5.699897504610274,
+          "acceptance_change_pp": 3.6342829593930484
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 128000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c1",
+            "ctx": 128000,
+            "width": 1,
+            "steps": 1766,
+            "request_steps": 1766,
+            "sum_us": 90672024.672,
+            "mean_ms": 51.34316232842583,
+            "median_ms": 51.28528,
+            "body_step_s": 19.476790182952097,
+            "accepted": 6570,
+            "drafted": 12362,
+            "acceptance": 0.5314674000970717,
+            "committed": 8336,
+            "committed_per_request_step": 4.720271800679502,
+            "mean_stages_ms": {
+              "boundaries": 0.3181080317100793,
+              "commit": 0.004130228765571914,
+              "forward": 47.41909921630805,
+              "observe": 0.6041532774631937,
+              "propose": 2.7798936534541334,
+              "sample": 0.04376335220838053
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c1",
+            "ctx": 128000,
+            "width": 1,
+            "steps": 2886,
+            "request_steps": 2886,
+            "sum_us": 141021988.992,
+            "mean_ms": 48.86416804989606,
+            "median_ms": 48.90144,
+            "body_step_s": 20.46489360013011,
+            "accepted": 10735,
+            "drafted": 20202,
+            "acceptance": 0.5313830313830313,
+            "committed": 13621,
+            "committed_per_request_step": 4.7196812196812195,
+            "mean_stages_ms": {
+              "boundaries": 0.3168840249480249,
+              "commit": 0.004116313236313236,
+              "forward": 44.90317638253638,
+              "observe": 0.5996807207207208,
+              "propose": 2.8260420235620236,
+              "sample": 0.03999990020790021
+            }
+          },
+          "mean_cost_reduction_pct": 4.828285142766298,
+          "acceptance_change_pp": -0.00843687140403837
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 2000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c2",
+            "ctx": 2000,
+            "width": 1,
+            "steps": 1525,
+            "request_steps": 1525,
+            "sum_us": 77320388.192,
+            "mean_ms": 50.70189389639345,
+            "median_ms": 50.67801600000001,
+            "body_step_s": 19.7231291210432,
+            "accepted": 5212,
+            "drafted": 10675,
+            "acceptance": 0.48824355971896954,
+            "committed": 6737,
+            "committed_per_request_step": 4.417704918032787,
+            "mean_stages_ms": {
+              "boundaries": 0.31615408262295086,
+              "commit": 0.004103134426229509,
+              "forward": 46.75048471081967,
+              "observe": 0.6014188065573771,
+              "propose": 2.805955336393443,
+              "sample": 0.04690427803278689
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c2",
+            "ctx": 2000,
+            "width": 1,
+            "steps": 1248,
+            "request_steps": 1248,
+            "sum_us": 59529753.856000006,
+            "mean_ms": 47.70012328205128,
+            "median_ms": 47.759024000000004,
+            "body_step_s": 20.964306404136323,
+            "accepted": 4411,
+            "drafted": 8736,
+            "acceptance": 0.5049221611721612,
+            "committed": 5659,
+            "committed_per_request_step": 4.534455128205129,
+            "mean_stages_ms": {
+              "boundaries": 0.31599835897435896,
+              "commit": 0.0041084871794871795,
+              "forward": 43.75509384615385,
+              "observe": 0.5961080512820512,
+              "propose": 2.8141982564102563,
+              "sample": 0.04049853846153846
+            }
+          },
+          "mean_cost_reduction_pct": 5.920430941842381,
+          "acceptance_change_pp": 1.667860145319161
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 2000,
+          "width": 2,
+          "base": {
+            "kind": "ordinary_c2",
+            "ctx": 2000,
+            "width": 2,
+            "steps": 1375,
+            "request_steps": 2750,
+            "sum_us": 102203220.928,
+            "mean_ms": 74.32961522036365,
+            "median_ms": 74.496224,
+            "body_step_s": 13.453587739359588,
+            "accepted": 10606,
+            "drafted": 19250,
+            "acceptance": 0.550961038961039,
+            "committed": 13356,
+            "committed_per_request_step": 4.856727272727273,
+            "mean_stages_ms": {
+              "boundaries": 0.6631841978181818,
+              "commit": 0.004090461090909091,
+              "forward": 69.67776432872728,
+              "observe": 0.6217265105454546,
+              "propose": 3.133554292363636,
+              "sample": 0.05049662836363636
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c2",
+            "ctx": 2000,
+            "width": 2,
+            "steps": 1403,
+            "request_steps": 2806,
+            "sum_us": 101924896.448,
+            "mean_ms": 72.64782355523877,
+            "median_ms": 72.74211199999999,
+            "body_step_s": 13.765037286211832,
+            "accepted": 10497,
+            "drafted": 19642,
+            "acceptance": 0.534416047245698,
+            "committed": 13303,
+            "committed_per_request_step": 4.740912330719886,
+            "mean_stages_ms": {
+              "boundaries": 0.6618093799002139,
+              "commit": 0.004153431218816821,
+              "forward": 68.00243642480399,
+              "observe": 0.6123179700641482,
+              "propose": 3.1412702608695655,
+              "sample": 0.048504496079828936
+            }
+          },
+          "mean_cost_reduction_pct": 2.262613172608119,
+          "acceptance_change_pp": -1.6544991715340962
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 32000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c2",
+            "ctx": 32000,
+            "width": 1,
+            "steps": 275,
+            "request_steps": 275,
+            "sum_us": 14034878.208,
+            "mean_ms": 51.03592075636364,
+            "median_ms": 51.21392000000001,
+            "body_step_s": 19.59404249359625,
+            "accepted": 1203,
+            "drafted": 1925,
+            "acceptance": 0.6249350649350649,
+            "committed": 1478,
+            "committed_per_request_step": 5.374545454545455,
+            "mean_stages_ms": {
+              "boundaries": 0.32073402181818184,
+              "commit": 0.004107287272727273,
+              "forward": 47.060062254545464,
+              "observe": 0.6040621381818182,
+              "propose": 2.820078661818182,
+              "sample": 0.04894464
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c2",
+            "ctx": 32000,
+            "width": 1,
+            "steps": 396,
+            "request_steps": 396,
+            "sum_us": 19183364.096,
+            "mean_ms": 48.44283862626263,
+            "median_ms": 48.52217600000001,
+            "body_step_s": 20.64288609746877,
+            "accepted": 1892,
+            "drafted": 2772,
+            "acceptance": 0.6825396825396826,
+            "committed": 2288,
+            "committed_per_request_step": 5.777777777777778,
+            "mean_stages_ms": {
+              "boundaries": 0.32083781818181817,
+              "commit": 0.004139474747474748,
+              "forward": 44.48570173737374,
+              "observe": 0.5971974949494949,
+              "propose": 2.8189203232323234,
+              "sample": 0.04088703030303031
+            }
+          },
+          "mean_cost_reduction_pct": 5.080896144658431,
+          "acceptance_change_pp": 5.760461760461766
+        },
+        {
+          "kind": "ordinary_c2",
+          "ctx": 32000,
+          "width": 2,
+          "base": {
+            "kind": "ordinary_c2",
+            "ctx": 32000,
+            "width": 2,
+            "steps": 1608,
+            "request_steps": 3216,
+            "sum_us": 119778373.28,
+            "mean_ms": 74.48903810945274,
+            "median_ms": 74.556048,
+            "body_step_s": 13.424794109042185,
+            "accepted": 11320,
+            "drafted": 22512,
+            "acceptance": 0.5028429282160626,
+            "committed": 14536,
+            "committed_per_request_step": 4.519900497512438,
+            "mean_stages_ms": {
+              "boundaries": 0.6629883383084577,
+              "commit": 0.0041006766169154225,
+              "forward": 69.8309791243781,
+              "observe": 0.6240766567164179,
+              "propose": 3.1305679402985076,
+              "sample": 0.05274712437810945
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c2",
+            "ctx": 32000,
+            "width": 2,
+            "steps": 1739,
+            "request_steps": 3478,
+            "sum_us": 126174105.05600001,
+            "mean_ms": 72.55555207360553,
+            "median_ms": 72.571872,
+            "body_step_s": 13.782542774749047,
+            "accepted": 12511,
+            "drafted": 24346,
+            "acceptance": 0.51388318409595,
+            "committed": 15989,
+            "committed_per_request_step": 4.59718228867165,
+            "mean_stages_ms": {
+              "boundaries": 0.6614812006900518,
+              "commit": 0.004150302472685451,
+              "forward": 67.90278484646349,
+              "observe": 0.6153164623346751,
+              "propose": 3.1374223162737205,
+              "sample": 0.049729932144910866
+            }
+          },
+          "mean_cost_reduction_pct": 2.595665194395691,
+          "acceptance_change_pp": 1.104025587988744
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "groups": [
+        {
+          "kind": "ordinary_c1",
+          "ctx": 2000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c1",
+            "ctx": 2000,
+            "width": 1,
+            "steps": 1999,
+            "request_steps": 1999,
+            "sum_us": 100671643.84,
+            "mean_ms": 50.36100242121061,
+            "median_ms": 50.428768000000005,
+            "body_step_s": 19.85663413996757,
+            "accepted": 7459,
+            "drafted": 13993,
+            "acceptance": 0.5330522404059173,
+            "committed": 9458,
+            "committed_per_request_step": 4.731365682841421,
+            "mean_stages_ms": {
+              "boundaries": 0.3175317738869435,
+              "commit": 0.004108326163081541,
+              "forward": 46.41260295747874,
+              "observe": 0.6010688384192096,
+              "propose": 2.8019764442221113,
+              "sample": 0.046686607303651824
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c1",
+            "ctx": 2000,
+            "width": 1,
+            "steps": 2011,
+            "request_steps": 2011,
+            "sum_us": 96249869.24800001,
+            "mean_ms": 47.86169529985082,
+            "median_ms": 47.894048000000005,
+            "body_step_s": 20.89353487658672,
+            "accepted": 7519,
+            "drafted": 14077,
+            "acceptance": 0.5341336932585068,
+            "committed": 9530,
+            "committed_per_request_step": 4.738935852809547,
+            "mean_stages_ms": {
+              "boundaries": 0.31798816907011435,
+              "commit": 0.004145265042267529,
+              "forward": 43.90949362506216,
+              "observe": 0.5979330959721532,
+              "propose": 2.817343347588265,
+              "sample": 0.04027098955743411
+            }
+          },
+          "mean_cost_reduction_pct": 4.962782711225677,
+          "acceptance_change_pp": 0.10814528525895373
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 32000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c1",
+            "ctx": 32000,
+            "width": 1,
+            "steps": 2925,
+            "request_steps": 2925,
+            "sum_us": 148377789.536,
+            "mean_ms": 50.727449414017094,
+            "median_ms": 50.78944,
+            "body_step_s": 19.71319298627457,
+            "accepted": 10066,
+            "drafted": 20475,
+            "acceptance": 0.49162393162393164,
+            "committed": 12991,
+            "committed_per_request_step": 4.441367521367521,
+            "mean_stages_ms": {
+              "boundaries": 0.3164863343589744,
+              "commit": 0.0041031329914529915,
+              "forward": 46.78092228923077,
+              "observe": 0.602979292991453,
+              "propose": 2.79920163008547,
+              "sample": 0.04571502495726496
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c1",
+            "ctx": 32000,
+            "width": 1,
+            "steps": 2630,
+            "request_steps": 2630,
+            "sum_us": 126716045.15200001,
+            "mean_ms": 48.18100576121674,
+            "median_ms": 48.27440000000001,
+            "body_step_s": 20.755066943931446,
+            "accepted": 9948,
+            "drafted": 18410,
+            "acceptance": 0.5403585008147745,
+            "committed": 12578,
+            "committed_per_request_step": 4.782509505703422,
+            "mean_stages_ms": {
+              "boundaries": 0.3187254266159696,
+              "commit": 0.004139242585551331,
+              "forward": 44.22763760912548,
+              "observe": 0.5976002190114069,
+              "propose": 2.8178354615969585,
+              "sample": 0.04045431482889734
+            }
+          },
+          "mean_cost_reduction_pct": 5.019853515632732,
+          "acceptance_change_pp": 4.8734569190842905
+        },
+        {
+          "kind": "ordinary_c1",
+          "ctx": 128000,
+          "width": 1,
+          "base": {
+            "kind": "ordinary_c1",
+            "ctx": 128000,
+            "width": 1,
+            "steps": 2195,
+            "request_steps": 2195,
+            "sum_us": 113045206.464,
+            "mean_ms": 51.50123301321185,
+            "median_ms": 51.492352000000004,
+            "body_step_s": 19.417010846001794,
+            "accepted": 7999,
+            "drafted": 15365,
+            "acceptance": 0.5205987634233648,
+            "committed": 10194,
+            "committed_per_request_step": 4.644191343963554,
+            "mean_stages_ms": {
+              "boundaries": 0.31829911617312073,
+              "commit": 0.004136207744874715,
+              "forward": 47.52992145785877,
+              "observe": 0.6044255343963554,
+              "propose": 2.8151644865603647,
+              "sample": 0.051108810933940776
+            }
+          },
+          "candidate": {
+            "kind": "ordinary_c1",
+            "ctx": 128000,
+            "width": 1,
+            "steps": 3441,
+            "request_steps": 3441,
+            "sum_us": 168104084.8,
+            "mean_ms": 48.853264981110144,
+            "median_ms": 48.858432,
+            "body_step_s": 20.469460953872073,
+            "accepted": 12951,
+            "drafted": 24087,
+            "acceptance": 0.537675924772699,
+            "committed": 16392,
+            "committed_per_request_step": 4.7637314734088925,
+            "mean_stages_ms": {
+              "boundaries": 0.31931901656495204,
+              "commit": 0.00411408776518454,
+              "forward": 44.88632671897704,
+              "observe": 0.6006687544318512,
+              "propose": 2.8272802092415,
+              "sample": 0.04101400290613194
+            }
+          },
+          "mean_cost_reduction_pct": 5.141562399918486,
+          "acceptance_change_pp": 1.7077161349334236
+        }
+      ]
+    }
+  ]
+}

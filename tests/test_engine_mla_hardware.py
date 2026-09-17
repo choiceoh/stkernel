@@ -24,6 +24,7 @@ class MlaHardwareTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("mla_hardware_test", path)
         self.mla = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.mla)
+        self.mla.ENABLE_MLA_DIRECT_CVT = False
         self.mla.ENABLE_MLA_CLUSTER = True
         self.mla._MLA_CLUSTER_MAX = 8
         self.calls = []
@@ -81,7 +82,7 @@ class MlaHardwareTests(unittest.TestCase):
 
     def test_retained_queries_are_bound_to_ordinary_k7_cells(self):
         self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
-        self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
+        self.mla._ensure_workspace = lambda device: {name: Tensor((8,), 'i32', 144 + i * 32) for i, name in enumerate(('barrier_mla', 'barrier_mla_cell10', 'barrier_mla_cell12'))}
         self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
         torch = SimpleNamespace(int32='i32', bfloat16='bf16')
         for rows in (1, 8, 16, 24):
@@ -102,7 +103,7 @@ class MlaHardwareTests(unittest.TestCase):
 
     def test_tree_banks_pass_direct_pointers_with_same_cluster_and_split_plan(self):
         self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
-        self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
+        self.mla._ensure_workspace = lambda device: {name: Tensor((8,), 'i32', 144 + i * 32) for i, name in enumerate(('barrier_mla', 'barrier_mla_cell10', 'barrier_mla_cell12'))}
         self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
         torch = SimpleNamespace(int32='i32', bfloat16='bf16', float8_e4m3fn='fp8',
                                 cuda=SimpleNamespace(is_current_stream_capturing=lambda: False))
@@ -124,10 +125,33 @@ class MlaHardwareTests(unittest.TestCase):
                     with self.assertRaises(ValueError):
                         self.mla.mla_decode(q,cache,slots,lens,.0625,1.,out,branch=bad)
 
+    def test_decode_experiments_never_capture_tree_or_probe_dispatch(self):
+        self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
+        self.mla._ensure_workspace = lambda device: {name: Tensor((8,), 'i32', 144 + i * 32) for i, name in enumerate(('barrier_mla', 'barrier_mla_cell10', 'barrier_mla_cell12'))}
+        self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
+        torch = SimpleNamespace(int32='i32', bfloat16='bf16', float8_e4m3fn='fp8',
+                                cuda=SimpleNamespace(is_current_stream_capturing=lambda: False))
+        for enabled in (False, True):
+            self.mla.ENABLE_MLA_DIRECT_CVT = enabled
+            for rows in (1, 7, 8, 16, 24):
+                q = Tensor((rows,16,512), 'bf16', 16)
+                for mode in ('ordinary', 'tree', 'probe'):
+                    kwargs = ({'branch': Tensor((rows,512), 'fp8', 96)} if mode == 'tree'
+                              else {'probe': 1} if mode == 'probe' else {})
+                    with patch.dict(sys.modules, torch=torch):
+                        self.mla.mla_decode(q, Tensor((4096,512),'u8',32),
+                            Tensor((rows,2048),'i32',48), Tensor((rows,),'i32',64),
+                            .0625, 1., Tensor(q.shape,'bf16',80), **kwargs)
+                    cell = self.calls[-1][2][-1]
+                    expected = ((10 if rows == 8 else 12) if enabled else 0 if rows == 8 else 2) if rows in (8, 16) and mode == 'ordinary' else 0
+                    self.assertEqual(cell, expected, (enabled, rows, mode))
+                    self.assertEqual(self.calls[-1][0][7],
+                                     {0: 144, 2: 144, 10: 176, 12: 208}[expected])
+
     def test_tree_uses_own_capacity_before_selecting_cluster(self):
         self.mla._EXT.mla_tree_cluster_max = lambda: 2
         self.mla._EXT.run_mla = lambda *args: self.calls.append(args)
-        self.mla._ensure_workspace = lambda device: {'barrier_mla': Tensor((8,), 'i32', 144)}
+        self.mla._ensure_workspace = lambda device: {name: Tensor((8,), 'i32', 144 + i * 32) for i, name in enumerate(('barrier_mla', 'barrier_mla_cell10', 'barrier_mla_cell12'))}
         self.mla._mla_workspace = lambda *args: {'part': Tensor((8,), 'f32', 160), 'pml': Tensor((8,), 'f32', 176)}
         torch = SimpleNamespace(int32='i32', bfloat16='bf16', float8_e4m3fn='fp8',
                                 cuda=SimpleNamespace(is_current_stream_capturing=lambda: False))

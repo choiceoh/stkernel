@@ -161,12 +161,13 @@ def _mhc_rows_check(report, path, keys, owner, coeff, digest, rows):
                 graph.reset()
 
 
-def mla_check(report):
+def mla_check(report, *, direct_cvt=False):
     from engine.kernels import mla
     from probes.engine_decode_fusions import _capture
     mla._build()
+    label = "mla_direct_cvt" if direct_cvt else "mla_tile32"
     def call(enabled, *args, **kwargs):
-        with patch.object(mla, 'ENABLE_MLA_QREG', enabled):
+        with patch.object(mla, 'ENABLE_MLA_DIRECT_CVT' if direct_cvt else 'ENABLE_MLA_QREG', enabled):
             return mla.mla_decode(*args, **kwargs)
     cache = torch.randn(32768, 512, device='cuda').to(torch.float8_e4m3fn)
     for rows in (8, 16):
@@ -206,11 +207,13 @@ def mla_check(report):
                         if max(errors) > .02 or any(not out.isfinite().all().item() for out in outputs):
                             raise AssertionError(f'MLA {rows=} {width=} {case=}: {errors=}')
                     bitwise = torch.equal(outputs[0], outputs[1])
+                    if direct_cvt and not bitwise:
+                        raise AssertionError('MLA synchronization change is not bitwise')
                     if errors[1] > errors[0] + .002:
                         raise AssertionError(f'MLA tile32 worsened independent accuracy: {errors=}')
-                    report('numerics', component='mla_tile32', bitwise=bitwise, rows=rows, width=width, case=case, errors=errors)
+                    report('numerics', component=label, bitwise=bitwise, rows=rows, width=width, case=case, errors=errors)
                     if width == 2048:
-                        timings(report, 'mla_tile32', graphs, rows=rows, width=width, case=case)
+                        timings(report, label, graphs, rows=rows, width=width, case=case)
             finally:
                 for graph in graphs:
                     graph.reset()
