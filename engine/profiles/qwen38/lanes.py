@@ -64,6 +64,8 @@ class Lanes:
     moe_prepare: object = None      # (w13, w13_sf, w2, w2_sf, top_k, *, scales) -> views, once per bound layer before capture
     graph_resources: object = None  # () -> workspace owners to retain until the captured graphs close
     swiglu: object = None           # (fused [N, 2I]) -> silu(gate) * up: the shared expert's activation
+    moe_finish: object = None       # (routed [N, H] bf16, shared [N, H] bf16, gate [N, 1] f32) -> BF16(f32 routed +
+                                    #  f32 shared * gate): the MoE output before its all-reduce
 
 
 def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -222,10 +224,13 @@ def reference() -> Lanes:
         gate, up = fused.chunk(2, -1)
         return torch.nn.functional.silu(gate) * up
 
+    def moe_finish(routed, shared, gate):
+        return (routed.float() + shared.float() * gate).to(routed.dtype)
+
     return Lanes("reference", hc_norm, hc_leave, hc_leave_norm, hc_mix, gdn_gates, gdn_chunk, gdn_ring, gdn_ring_rows,
                  gdn_norm, conv_prefill, conv_ring, conv_ring_rows, norm_rope, unported("qsa_store"),
                  unported("qsa_compress"), unported("qsa_select"), unported("qsa_attend"), route_softmax_topk, moe,
-                 swiglu=swiglu)
+                 swiglu=swiglu, moe_finish=moe_finish)
 
 
 def served(*, tp=None) -> Lanes:
@@ -233,7 +238,7 @@ def served(*, tp=None) -> Lanes:
     Triton's autotuner and the b12x JIT can run; on the fleet (one rank a process) the calls are direct."""
     from engine.base.lanes import served as common_lanes
     from engine.kernels import gated_residual as hcr
-    from engine.kernels import gdn, qsa
+    from engine.kernels import gdn, moe_output, qsa
     from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.causal_conv_single import causal_conv1d_single
     from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
@@ -326,7 +331,8 @@ def served(*, tp=None) -> Lanes:
              qsa.norm_rope_partial, qsa.qsa_store_cache_rows, qsa.qsa_compress_groups_with_ratio,
              qsa.qsa_select_paged_tokens, qsa.qsa_sparse_paged_attention, route_softmax_topk, moe]
     return Lanes("served", *(on_main(f) for f in bound), moe_prepare=on_main(moe_prepare),
-                 graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu))
+                 graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
+                 moe_finish=on_main(moe_output.gated_sum))
 
 
 def qualify(device, F) -> dict:
