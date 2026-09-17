@@ -108,6 +108,10 @@ TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem
 # A commit that sets it is booted by a fleet hold and fed a corpus through the door; main keeps it False, and with it
 # False nothing here runs. Carried over from the arm branch it was written on, which was never merged.
 EXPERT_CAPTURE = False
+# A capture arm may feed its corpus several times, one routed-slot skip per pass (capture.Capture skip_passes): a
+# pass is None (every slot served), a normalised-gate threshold, or {layer: threshold}. Empty keeps one pass, no skip.
+ROUTE_SKIP_PASSES = ()
+ROUTE_SKIP_PASS_DOCUMENTS = 0
 # Collect the decode FC pairs `bench/draft_tune.py fc-bias` fits. The bias the boot binds from
 # `draft-fc-bias.json` has never been produced -- the fitter existed with no collector -- so
 # production runs with draft_fc_bias_status="missing". A collecting boot serves normally and
@@ -1808,7 +1812,9 @@ def fleet(a) -> int:
         if EXPERT_CAPTURE:                                  # after every warm-up and graph capture: only served prefill is recorded
             from engine.profiles.glm53 import capture as capture_mod
             engine.expert_capture = capture_mod.attach(engine, Path(a.dump_dir) / "expert-capture", a.ranks,
-                                                       sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS)
+                                                       sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS,
+                                                       skip_passes=ROUTE_SKIP_PASSES,
+                                                       pass_documents=ROUTE_SKIP_PASS_DOCUMENTS)
             print(f"  expert capture: rank {comm.rank} armed; rows and stats under {Path(a.dump_dir) / 'expert-capture'} "
                   f"on rank {capture_mod.CAPTURE_RANK}", flush=True)
         collect_fc = DRAFT_FC_CAPTURE or (DRAFT_FC_CAPTURE_WHEN_MISSING

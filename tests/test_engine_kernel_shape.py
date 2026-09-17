@@ -371,9 +371,9 @@ class CellTests(unittest.TestCase):
     def test_qwen38_gets_its_table_before_any_boot(self):
         from engine.kernels import cells
         status = {v.lane: v.status for v in cells.admission(qwen_shape())}
-        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "kda_ring", "kda_chunk", "dense")   # dense: 160 columns
+        refused = ("mla", "indexer", "mhc_decode", "mhc_prefill", "kda_chunk", "dense")   # dense: 160 columns
         admitted = ("device", "universal")
-        unmeasured = ("oneshot", "prefill_collectives", "kda_recurrent", "moe")
+        unmeasured = ("oneshot", "prefill_collectives", "kda_recurrent", "kda_ring", "moe")   # ring: GDN gate in-kernel
         self.assertEqual({k: status[k] for k in refused}, dict.fromkeys(refused, cells.REFUSED))
         self.assertEqual({k: status[k] for k in admitted}, dict.fromkeys(admitted, cells.ADMITTED))
         self.assertEqual({k: status[k] for k in unmeasured}, dict.fromkeys(unmeasured, cells.UNMEASURED))
@@ -591,7 +591,7 @@ class RecipeTests(unittest.TestCase):
                          ("oneshot", "unmeasured", "measure"), ("prefill_collectives", "unmeasured", "measure"),
                          ("dense", "refused", "wire"), ("dense", "refused", "rewrite"), ("dense", "unmeasured", "measure"),
                          ("indexer", "refused", "kernel"), ("draft", "unmeasured", "measure"),
-                         ("kda_recurrent", "unmeasured", "measure"), ("kda_ring", "refused", "wire"),
+                         ("kda_recurrent", "unmeasured", "measure"),
                          ("kda_ring", "unmeasured", "measure"), ("kda_chunk", "refused", "wire"),
                          ("kda_chunk", "unmeasured", "measure"), ("moe", "refused", "convert"),
                          ("moe", "unmeasured", "measure"), ("device", "refused", "rewrite"),
@@ -607,9 +607,9 @@ class RecipeTests(unittest.TestCase):
         qwen = cells.plan(cells.admission(qwen_shape()))
         self.assertEqual([(v.lane, v.status, v.recipe.kind, v.recipe.cost) for v in qwen], [
             ("dense", "refused", "wire", "hours"), ("kda_chunk", "refused", "wire", "hours"),
-            ("kda_ring", "refused", "wire", "hours"), ("mhc_decode", "refused", "wire", "hours"),
-            ("mhc_prefill", "refused", "wire", "hours"), ("mla", "refused", "wire", "hours"),
-            ("kda_recurrent", "unmeasured", "measure", "hours"), ("moe", "unmeasured", "measure", "hours"),
+            ("mhc_decode", "refused", "wire", "hours"), ("mhc_prefill", "refused", "wire", "hours"),
+            ("mla", "refused", "wire", "hours"), ("kda_recurrent", "unmeasured", "measure", "hours"),
+            ("kda_ring", "unmeasured", "measure", "hours"), ("moe", "unmeasured", "measure", "hours"),
             ("oneshot", "unmeasured", "measure", "hours"), ("prefill_collectives", "unmeasured", "measure", "hours"),
             ("indexer", "refused", "kernel", "days")])
         self.assertEqual([v.lane for v in cells.plan(cells.admission(dsv41_shape()))],
@@ -681,8 +681,8 @@ class RecipeTests(unittest.TestCase):
             doc = json.loads(out.getvalue())
             expected = [v.lane for v in cells.plan(cells.admission(qwen_shape()))]
             self.assertEqual(doc["plan"], expected)
-            self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 4, "refused": 7})
-            self.assertEqual(doc["serving"], {"specialized": 6, "glue": 4, "generic": 2, "none": 0, "glue_judged": 0,
+            self.assertEqual(doc["counts"], {"admitted": 2, "unmeasured": 5, "refused": 6})   # K1: the GDN ring is unmeasured
+            self.assertEqual(doc["serving"], {"specialized": 7, "glue": 3, "generic": 2, "none": 0, "glue_judged": 0,
                                               "generic_judged": 1})         # #986: qsa and gated_residual serve three lanes
             self.assertEqual(ks.from_dict(doc["shape"]), qwen_shape())
             self.assertEqual(doc["record"], str(ranks / ks.RECORD))
@@ -721,7 +721,7 @@ class RecipeTests(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 self.assertEqual(ks.main(["show", "--ranks", str(ranks)]), 0)
             self.assertIn("older cells", out.getvalue())
-            self.assertIn("serving: 6 specialized, 4 glue", out.getvalue())
+            self.assertIn("serving: 7 specialized, 3 glue", out.getvalue())
 
 
 class ServeTests(unittest.TestCase):
@@ -786,7 +786,7 @@ class ServeTests(unittest.TestCase):
         qwen = {lane: (v.serve.tier, v.serve.judged) for lane, v in self.verdicts(qwen_shape()).items() if v.serve}
         self.assertEqual(qwen, {"mla": (G, False), "indexer": (S, False), "mhc_decode": (S, False), "mhc_prefill": (S, False),
                                 "oneshot": (S, True), "prefill_collectives": (S, False), "dense": (L, False),
-                                "kda_recurrent": (L, False), "kda_ring": (L, False), "kda_chunk": (L, False),
+                                "kda_recurrent": (L, False), "kda_ring": (S, False), "kda_chunk": (L, False),
                                 "moe": (S, False), "universal": (G, True)})
         q = self.verdicts(qwen_shape())
         self.assertIn("qsa_sparse_paged_attention in engine/kernels/qsa.py", q["mla"].serve.kernel)   # the ported BF16-KV kernel
@@ -795,9 +795,9 @@ class ServeTests(unittest.TestCase):
         self.assertIn("engine/kernels/gated_residual", q["mhc_decode"].serve.kernel)       # five launches a site
         self.assertIn("gated_residual", q["mhc_decode"].serve.note)
         self.assertIn("PaddedDenseLinear", q["dense"].serve.kernel)                       # the shared expert's 160 columns
-        self.assertIn("recurrent_decay_ring", q["kda_ring"].serve.kernel)
+        self.assertIn("recurrent_gdn_ring", q["kda_ring"].serve.kernel)                    # GDN's gate in the ring kernel
         self.assertIn("chunk_kda_with_decay", q["kda_chunk"].serve.kernel)
-        self.assertEqual(cells.serving(list(q.values())), {"specialized": 6, "glue": 4, "generic": 2, "none": 0,
+        self.assertEqual(cells.serving(list(q.values())), {"specialized": 7, "glue": 3, "generic": 2, "none": 0,
                                                             "glue_judged": 0, "generic_judged": 1})
         unread = self.verdicts(replace(qwen_shape(), attention=replace(qwen_shape().attention, sink=None)))
         self.assertEqual(unread["mla"].serve.tier, N)                                     # an unread sink serves nothing

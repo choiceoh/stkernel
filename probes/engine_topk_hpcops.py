@@ -30,7 +30,8 @@ K = 512
 VENDOR = Path(__file__).resolve().parent / 'vendor' / 'hpcops_topk'
 DECODE = ((8, 8192), (8, 32768), (8, 131072), (16, 32768), (16, 131072), (16, 236032))
 PREFILL = ((1024, 32768), (1024, 131072), (1024, 236032))
-DISTRIBUTIONS = ('indexer', 'normal', 'plateau')
+DISTRIBUTIONS = ('indexer', 'normal', 'plateau', 'narrow', 'negative', 'sparse', 'lognormal')
+TIMED = ('indexer', 'narrow')
 
 _HPC = None
 
@@ -64,6 +65,16 @@ def logits_for(dist, rows, n, gen):
         return x
     if dist == 'normal':
         return torch.randn(rows, n, generator=gen, device='cuda')
+    if dist == 'narrow':
+        # every score inside one or two coarse bins: the threshold bin is wider than any stash
+        return 3.0 + 0.05 * torch.randn(rows, n, generator=gen, device="cuda")
+    if dist == 'negative':
+        return -torch.exp(torch.randn(rows, n, generator=gen, device='cuda'))
+    if dist == 'sparse':
+        # mostly exact zeros: fewer than k positives on short rows, a zero plateau at the cut
+        return (torch.randn(rows, n, generator=gen, device='cuda') - 2.5).clamp_min_(0)
+    if dist == 'lognormal':
+        return torch.exp(3.0 * torch.randn(rows, n, generator=gen, device='cuda'))
     # plateau: 64 levels, so the k-th value is tied with many columns
     return torch.randint(0, 64, (rows, n), generator=gen, device='cuda').float()
 
@@ -173,24 +184,86 @@ def run(output=None):
                         continue
                     bad = mismatched_rows(got, want)
                     report('exactness', kind=kind, rows=rows, n=n, dist=dist, arm=name, mismatched_rows=bad)
-                    if bad and dist != 'plateau':
+                    # a tie rule other than the lower pool id is a different set, not a wrong one: only
+                    # distributions without exact ties at the cut disqualify an arm
+                    if bad and dist not in ('plateau', 'sparse'):
                         exact[name] = False
                 del want
-            logits = logits_for('indexer', rows, n, gen)
-            ke = horizons(kind, rows, n)
-            visible_bytes = int(ke.long().sum()) * 4
-            for name, fn in arms(kind, rows, n):
-                if name != 'read_floor' and not exact.get(name, False):
-                    report('skipped_inexact', kind=kind, rows=rows, n=n, arm=name)
-                    continue
-                if kind == 'decode':
-                    median_us, best_us = timed_graph(fn, logits, ke, repeats=5)
-                else:
-                    median_us, best_us = timed_eager(fn, logits, ke, repeats=15)
-                report('timing', kind=kind, rows=rows, n=n, arm=name, median_us=round(median_us, 2),
-                       best_us=round(best_us, 2), visible_mib=round(visible_bytes / 2**20, 2),
-                       gb_per_s=round(visible_bytes / 1e9 / (median_us / 1e6), 1))
+            for dist in TIMED:
+                logits = logits_for(dist, rows, n, gen)
+                ke = horizons(kind, rows, n)
+                visible_bytes = int(ke.long().sum()) * 4
+                for name, fn in arms(kind, rows, n):
+                    if name != 'read_floor' and not exact.get(name, False):
+                        report('skipped_inexact', kind=kind, rows=rows, n=n, arm=name)
+                        continue
+                    if kind == 'decode':
+                        median_us, best_us = timed_graph(fn, logits, ke, repeats=5)
+                    else:
+                        median_us, best_us = timed_eager(fn, logits, ke, repeats=15)
+                    report('timing', kind=kind, rows=rows, n=n, dist=dist, arm=name, median_us=round(median_us, 2),
+                           best_us=round(best_us, 2), visible_mib=round(visible_bytes / 2**20, 2),
+                           gb_per_s=round(visible_bytes / 1e9 / (median_us / 1e6), 1))
             torch.cuda.empty_cache()
+    return events
+
+
+def sweep(output=None):
+    """Which of the host's choices sets st_dsa_select's time on this device: the plan it computes from the shared-memory
+    budget, then the same launch with the bin cache on or off, the stash smaller or larger, the block narrower or wider.
+    Every variant is checked as a set against masked torch.topk before it is timed; a launch the device refuses is
+    reported, not raised."""
+    from engine.kernels import decode_topk as dt
+    events = []
+
+    def report(event, **values):
+        row = dict(event=event, **values)
+        events.append(row)
+        print(json.dumps(row), flush=True)
+        if output:
+            Path(output).write_text(''.join(json.dumps(e) + '\n' for e in events))
+
+    props = torch.cuda.get_device_properties(0)
+    budget = dt.budget(torch.device('cuda'))
+    report('device', name=props.name, smem_per_block=getattr(props, 'shared_memory_per_block', None),
+           smem_optin=getattr(props, 'shared_memory_per_block_optin', None), budget=budget, static=dt.STATIC_SMEM,
+           max_stash=dt.MAX_STASH)
+    gen = torch.Generator(device='cuda').manual_seed(20260917)
+    for rows, n in ((8, 32768), (8, 131072)):
+        planned_bins, planned_stash = dt.plan(n, budget)
+        planned_threads = dt.block_threads(n)
+        report('plan', rows=rows, n=n, bin_bytes=planned_bins, stash=planned_stash, threads=planned_threads)
+        variants = [('planned', planned_bins, planned_stash, planned_threads)]
+        for threads in (256, 512, 1024):
+            if threads != planned_threads:
+                variants.append((f'threads{threads}', planned_bins, planned_stash, threads))
+        for stash in (1024, 2560, 8192, 32768):
+            if stash != planned_stash:
+                variants.append((f'nocache_stash{stash}', 0, stash, planned_threads))
+        variants.append(('cache_stash2560', (n + 3) // 4 * 4, 2560, planned_threads))
+        variants.append(('cache_stash8192', (n + 3) // 4 * 4, 8192, planned_threads))
+        for dist in ('indexer', 'narrow', 'normal'):
+            logits = logits_for(dist, rows, n, gen)
+            ke = horizons('decode', rows, n)
+            want = reference_sets(logits, ke)
+            for name, bins, stash, threads in variants:
+                out = torch.empty(rows, K, dtype=torch.int32, device='cuda')
+                fn = lambda lg, k, b=bins, s=stash, t=threads, o=out: dt._build().run(lg, k, o, s, b, t) or o
+                try:
+                    fn(logits, ke)
+                    torch.cuda.synchronize()
+                except Exception as exc:                     # the device refused the shared memory or the width
+                    report('refused', rows=rows, n=n, dist=dist, variant=name, bins=bins, stash=stash, threads=threads,
+                           error=f'{type(exc).__name__}: {exc}'[:200])
+                    continue
+                bad = mismatched_rows(out, want)
+                if bad:
+                    report('inexact', rows=rows, n=n, dist=dist, variant=name, mismatched_rows=bad)
+                    continue
+                median_us, best_us = timed_graph(fn, logits, ke, repeats=5)
+                report('timing', rows=rows, n=n, dist=dist, variant=name, bins=bins, stash=stash, threads=threads,
+                       median_us=round(median_us, 2), best_us=round(best_us, 2))
+            del want
     return events
 
 

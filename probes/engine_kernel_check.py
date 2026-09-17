@@ -124,6 +124,11 @@ def main():
         if args.output:
             args.output.write_text(''.join(json.dumps(row) + '\n' for row in rows))
         return
+    if args.lanes == 'topk_params':
+        # which host choice (bin cache, stash, block width) sets st_dsa_select's time on this device
+        from probes.engine_topk_hpcops import sweep as topk_params_sweep
+        topk_params_sweep(args.output)
+        return
     if args.lanes == 'topk_hpcops':
         # component only: HPC-Ops' exact top-k (vendored, MIT) against st_dsa_select / prefill_topk and a read floor
         from probes.engine_topk_hpcops import run as topk_hpcops_check
@@ -140,7 +145,7 @@ def main():
         qwen38_dense(args.output)
         return
     if args.lanes == 'qwen38_kda':
-        # component timings: the KDA decay glue's 4/12 x 128 cell at value tiles 8/16/32, exact gate first (C3)
+        # component timings: Qwen3.8's GDN on the KDA kernels at its 4/12 x 128 cell, value tiles 8/16/32, exact gate first (C3)
         from probes.engine_qwen38_kda import run as qwen38_kda
         qwen38_kda(args.output)
         return
