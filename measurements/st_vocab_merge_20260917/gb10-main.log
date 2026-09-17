@@ -1,0 +1,74 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-vocab-merge-main-0917-7e62-20260917-115902.txt
+waiting: pos 2/2, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:03
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:05
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:07
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:16
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.8 GiB, this check's budget 1.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:18
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:19
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.8 GiB, this check's budget 1.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:21
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:34
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:45
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:47
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_11:59:49
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:02
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:22
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:37
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.8 GiB, this check's budget 1.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:41
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.7 GiB, this check's budget 1.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:42
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.8 GiB, this check's budget 1.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:45
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.7 GiB, this check's budget 1.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:49
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.8 GiB, this check's budget 1.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:50
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.7 GiB, this check's budget 1.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:55
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.8 GiB, this check's budget 1.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:00:56
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.7 GiB, this check's budget 1.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:01:02
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.4 GiB, this check's budget 1.0 GiB, floor 16.0: 15.4 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:01:16
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.5 GiB, this check's budget 1.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:01:23
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.6 GiB, this check's budget 1.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:01:31
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.5 GiB, this check's budget 1.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:05
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.6 GiB, this check's budget 1.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:20
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.5 GiB, this check's budget 1.0 GiB, floor 16.0: 15.5 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:22
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.6 GiB, this check's budget 1.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:24
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.7 GiB, this check's budget 1.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:36
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.4 GiB, this check's budget 1.0 GiB, floor 16.0: 15.4 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:38
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.6 GiB, this check's budget 1.0 GiB, floor 16.0: 15.6 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:39
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:41
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.7 GiB, this check's budget 1.0 GiB, floor 16.0: 15.7 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:44
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.8 GiB, this check's budget 1.0 GiB, floor 16.0: 15.8 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:52
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 16.9 GiB, this check's budget 1.0 GiB, floor 16.0: 15.9 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:02:57
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:03:06
+waiting: pos 2/3, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:03:12
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:03:13
+waiting: pos 2/3, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:03:18
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:03:37
+waiting: pos 2/3, the fleet's d17-5eec399d2f0c holds this box too 2026-09-17_12:03:38
+waiting: pos 2/3 2026-09-17_12:03:55
+waiting: pos 2/3, srv4: no room beside production -- MemAvailable 17.0 GiB, this check's budget 1.0 GiB, floor 16.0: 16.0 GiB would be left 2026-09-17_12:04:06
+waiting: pos 2/3 2026-09-17_12:04:07
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-vocab-merge-main-0917-7e62-20260917-115902.txt
+GO vocab-merge-main-0917-7e62 2026-09-17_12:05:30
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 1 GiB beside production, no fleet lease)
+test_only_qualified_geometry_and_runtime_enable_the_default (tests.test_engine_vocab_merge.CompactRuntimeTests.test_only_qualified_geometry_and_runtime_enable_the_default) ... ok
+test_full_vocabulary_exact_ids_ties_masks_and_nonfinite (tests.test_engine_vocab_merge.VocabMergeTests.test_full_vocabulary_exact_ids_ties_masks_and_nonfinite) ... ok
+test_graph_replays_moving_packets_without_stale_state_or_rng (tests.test_engine_vocab_merge.VocabMergeTests.test_graph_replays_moving_packets_without_stale_state_or_rng) ... ok
+test_radix_preorder_including_implicit_background (tests.test_engine_vocab_merge.VocabMergeTests.test_radix_preorder_including_implicit_background) ... ok
+test_serving_greedy_and_t1_walk_q_and_block_verdict_are_identical (tests.test_engine_vocab_merge.VocabMergeTests.test_serving_greedy_and_t1_walk_q_and_block_verdict_are_identical) ... ok
+test_a_shard_narrower_than_k_pads_with_the_sentinel (tests.test_engine_vocab_topk.CandidateSelectionTests.test_a_shard_narrower_than_k_pads_with_the_sentinel) ... ok
+test_it_is_the_same_set_torch_would_have_taken (tests.test_engine_vocab_topk.CandidateSelectionTests.test_it_is_the_same_set_torch_would_have_taken) ... ok
+test_it_returns_them_in_descending_order (tests.test_engine_vocab_topk.CandidateSelectionTests.test_it_returns_them_in_descending_order) ... ok
+test_actual_vocabulary_ties_and_masks_match_dense_cuda_topk (tests.test_engine_vocab_topk.VocabTopkTests.test_actual_vocabulary_ties_and_masks_match_dense_cuda_topk) ... ok
+test_capture_replays_changing_candidates_without_rng_or_host_reads (tests.test_engine_vocab_topk.VocabTopkTests.test_capture_replays_changing_candidates_without_rng_or_host_reads) ... ok
+test_invalid_arguments_fail_before_a_collective (tests.test_engine_vocab_topk.VocabTopkTests.test_invalid_arguments_fail_before_a_collective) ... ok
+test_padding_and_nonfinite_scores_never_produce_invalid_ids (tests.test_engine_vocab_topk.VocabTopkTests.test_padding_and_nonfinite_scores_never_produce_invalid_ids) ... ok
+test_unique_strided_values_and_empty_shards_use_one_small_packet (tests.test_engine_vocab_topk.VocabTopkTests.test_unique_strided_values_and_empty_shards_use_one_small_packet) ... ok
+test_changing_packets_replay_with_one_owner_across_batch_shapes (tests.test_engine_vocab_packet.CandidatePacketTests.test_changing_packets_replay_with_one_owner_across_batch_shapes) ... ok
+test_fused_packets_preserve_exact_keys_order_and_masks (tests.test_engine_vocab_packet.CandidatePacketTests.test_fused_packets_preserve_exact_keys_order_and_masks) ... ok
+test_reused_dense_rows_clear_old_candidates_before_overlapping_new_ones (tests.test_engine_vocab_packet.CandidatePacketTests.test_reused_dense_rows_clear_old_candidates_before_overlapping_new_ones) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 4.829s
+
+OK
+{"rows": 1, "packet_bytes": 512, "dense_workspace_bytes": 619520, "exact": true, "merge": {"control": {"median_us": 72.46943563222885, "samples_us": [72.40556180477142, 72.51349836587906, 72.56556302309036, 72.49756157398224, 72.39355891942978, 72.44130969047546, 72.54549860954285, 72.43756204843521]}, "candidate": {"median_us": 18.40496901422739, "samples_us": [18.408438190817833, 18.40868778526783, 18.401499837636948, 18.391499295830727, 18.41150037944317, 18.409499898552895, 18.393563106656075, 18.39481294155121]}}}
+{"rows": 7, "packet_bytes": 3584, "dense_workspace_bytes": 4336640, "exact": true, "merge": {"control": {"median_us": 102.53153368830681, "samples_us": [103.377565741539, 102.52556204795837, 102.56556421518326, 102.53756493330002, 102.52150148153305, 102.52150148153305, 102.52950340509415, 102.53356397151947]}, "candidate": {"median_us": 19.04521882534027, "samples_us": [19.039500504732132, 19.054938107728958, 19.327437505126, 19.0595630556345, 19.035562872886658, 19.044937565922737, 19.025562331080437, 19.045500084757805]}}}
+{"rows": 14, "packet_bytes": 7168, "dense_workspace_bytes": 8673280, "exact": true, "merge": {"control": {"median_us": 143.075093626976, "samples_us": [143.06531846523285, 143.1014984846115, 143.080934882164, 143.03350448608398, 143.1811898946762, 143.0141180753708, 143.06925237178802, 143.1252509355545]}, "candidate": {"median_us": 19.914718344807625, "samples_us": [19.91187408566475, 20.33218741416931, 19.93750035762787, 19.9175626039505, 19.902249798178673, 19.903937354683876, 19.88956332206726, 19.91931162774563]}}}
+{"rows": 28, "packet_bytes": 14336, "dense_workspace_bytes": 17346560, "exact": true, "merge": {"control": {"median_us": 233.3914414048195, "samples_us": [233.86143147945404, 233.37730765342712, 233.3974391222, 233.41712355613708, 233.45737159252167, 233.37450623512268, 233.3417534828186, 233.38544368743896]}, "candidate": {"median_us": 20.993531681597233, "samples_us": [20.978687331080437, 20.985562354326248, 20.99750004708767, 20.965563133358955, 20.989563316106796, 20.999561995267868, 21.29950001835823, 21.005749702453613]}}}
