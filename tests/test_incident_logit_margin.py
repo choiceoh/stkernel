@@ -19,12 +19,16 @@ margin = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(margin)
 
 
-def capture(directory, admission, generation, logits, extra=True):
-    """A capture in the shape the engine writes: the logit row plus smaller side tensors."""
+def capture(directory, admission, generation, logits, extra=True, prefix=None, uniform=None):
+    """A capture in the shape the engine writes: the logit row plus the harness's side fields."""
     path = Path(directory) / f"rank0-admit{admission}-gen{generation}-ctx0.pt"
     payload = {"logits": logits}
     if extra:
         payload["small"] = torch.zeros(4)                      # always narrower than the row
+    if prefix is not None:
+        payload["prefix_sha256"] = prefix
+    if uniform is not None:
+        payload["uniform"] = uniform
     torch.save(payload, path)
     return path
 
@@ -64,7 +68,7 @@ class MarginTests(unittest.TestCase):
             capture(right_dir, 1, 0, logits_row(4.6, 5.0))                       # top1 = 1, margin 0.4
             capture(left_dir, 1, 1, logits_row(9.0, 0.0))                        # same top1 both sides
             capture(right_dir, 1, 1, logits_row(8.0, 0.0))
-            found = margin.flips(margin.profile(Path(left_dir)), margin.profile(Path(right_dir)))
+            found, skipped = margin.flips(margin.profile(Path(left_dir)), margin.profile(Path(right_dir)))
         self.assertEqual(len(found), 1)
         row = found[0]
         self.assertEqual((row["admission"], row["generation"]), (1, 0))
@@ -75,9 +79,48 @@ class MarginTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as left_dir, tempfile.TemporaryDirectory() as right_dir:
             capture(left_dir, 2, 0, logits_row(20.0, 0.0))                       # margin 20
             capture(right_dir, 2, 0, logits_row(0.0, 20.0))
-            found = margin.flips(margin.profile(Path(left_dir)), margin.profile(Path(right_dir)))
+            found, skipped = margin.flips(margin.profile(Path(left_dir)), margin.profile(Path(right_dir)))
         self.assertEqual(len(found), 1)
         self.assertFalse(found[0]["tight"])
+
+
+class PrefixAndDrawTests(unittest.TestCase):
+    """Logits from different prefixes differ by construction; a moved draw is not a moved distribution."""
+
+    def test_rows_whose_prefixes_differ_are_never_compared(self):
+        with tempfile.TemporaryDirectory() as left_dir, tempfile.TemporaryDirectory() as right_dir:
+            capture(left_dir, 1, 0, logits_row(5.0, 4.5), prefix="aa" * 32)
+            capture(right_dir, 1, 0, logits_row(4.6, 5.0), prefix="bb" * 32)
+            found, skipped = margin.flips(margin.profile(Path(left_dir)), margin.profile(Path(right_dir)))
+        self.assertEqual((len(found), len(skipped)), (0, 1))
+        self.assertEqual(skipped[0], (1, 0))
+
+    def test_a_matching_prefix_is_compared_and_the_fields_are_read(self):
+        with tempfile.TemporaryDirectory() as left_dir, tempfile.TemporaryDirectory() as right_dir:
+            capture(left_dir, 1, 0, logits_row(5.0, 4.5), prefix="cc" * 32, uniform=0.25)
+            capture(right_dir, 1, 0, logits_row(4.6, 5.0), prefix="cc" * 32, uniform=0.25)
+            left, right = margin.profile(Path(left_dir)), margin.profile(Path(right_dir))
+            found, skipped = margin.flips(left, right)
+        self.assertEqual((len(found), len(skipped)), (1, 0))
+        self.assertEqual(left[(1, 0)]["prefix"], "cc" * 32)
+        self.assertEqual(left[(1, 0)]["uniform"], 0.25)
+        self.assertTrue(found[0]["same_uniform"])
+
+    def test_a_row_whose_uniforms_differ_is_flagged_as_a_draw(self):
+        with tempfile.TemporaryDirectory() as left_dir, tempfile.TemporaryDirectory() as right_dir:
+            capture(left_dir, 1, 0, logits_row(5.0, 4.5), prefix="dd" * 32, uniform=0.25)
+            capture(right_dir, 1, 0, logits_row(4.6, 5.0), prefix="dd" * 32, uniform=0.75)
+            found, _ = margin.flips(margin.profile(Path(left_dir)), margin.profile(Path(right_dir)))
+        self.assertEqual(len(found), 1)
+        self.assertFalse(found[0]["same_uniform"])
+
+    def test_mixed_prefixes_can_be_forced_but_only_on_request(self):
+        with tempfile.TemporaryDirectory() as left_dir, tempfile.TemporaryDirectory() as right_dir:
+            capture(left_dir, 1, 0, logits_row(5.0, 4.5), prefix="aa" * 32)
+            capture(right_dir, 1, 0, logits_row(4.6, 5.0), prefix="bb" * 32)
+            left, right = margin.profile(Path(left_dir)), margin.profile(Path(right_dir))
+            found, skipped = margin.flips(left, right, prefixes=False)
+        self.assertEqual((len(found), len(skipped)), (1, 0))
 
 
 if __name__ == "__main__":
