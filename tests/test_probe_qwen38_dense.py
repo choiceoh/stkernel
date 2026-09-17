@@ -224,5 +224,13 @@ class Arithmetic(unittest.TestCase):
         self.assertEqual(self.probe.projection("L12.moe.sh_down"), "moe.sh_down")
 
 
+class LaneRoutingTests(unittest.TestCase):
+    def test_kernel_check_routes_the_lane_to_the_probe(self):
+        from pathlib import Path
+        text = (Path(__file__).resolve().parents[1] / "probes" / "engine_kernel_check.py").read_text()
+        self.assertIn("args.lanes == 'qwen38_dense'", text)
+        self.assertIn("from probes.engine_qwen38_dense import run as qwen38_dense", text)
+
+
 if __name__ == "__main__":
     unittest.main()

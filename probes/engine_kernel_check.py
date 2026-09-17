@@ -126,6 +126,11 @@ def main():
         from probes.engine_qwen38_cells import run as qwen38_cells
         qwen38_cells(args.output)
         return
+    if args.lanes == 'qwen38_dense':
+        # component timings: the W4A8/FP8 switch at Qwen3.8's projection shapes and the padded widths, gated first (C2)
+        from probes.engine_qwen38_dense import run as qwen38_dense
+        qwen38_dense(args.output)
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check
