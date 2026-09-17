@@ -88,5 +88,21 @@
       },
       "score_delta": 0
     }
-  ]
+  ],
+  "overall_repeated_case_totals": {
+    "baseline": {
+      "score": 191,
+      "max_score": 205,
+      "passed": 24,
+      "total": 32,
+      "result_passed": 32
+    },
+    "candidate": {
+      "score": 199,
+      "max_score": 205,
+      "passed": 28,
+      "total": 32,
+      "result_passed": 32
+    }
+  }
 }

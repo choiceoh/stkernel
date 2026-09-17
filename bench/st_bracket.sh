@@ -172,8 +172,11 @@ drop_tier() {  # dir image
   done
 }
 rehearse_record() {  # run-index: a record shaped like the last real ST one, or a stub, marked rehearsal
-  python3 - "$ARM" "$ARM_SHA" "$1" "$JSONL" <<'PY'
+  REPO="$REPO" python3 - "$ARM" "$ARM_SHA" "$1" "$JSONL" <<'PY'
 import json, os, sys, time
+sys.path.insert(0, os.path.join(os.environ['REPO'], 'bench'))
+from measurement_contract import metadata, profile
+from onepass_quality import VERSION
 name, sha, run, path = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4]
 rows = [json.loads(l) for l in open(path, encoding="utf-8") if l.strip()] if os.path.exists(path) else []
 real = [r for r in rows if r.get("engine") == "st" and not r.get("rehearsal")
@@ -186,6 +189,8 @@ rec.update({"name": name, "t": time.strftime("%F %T"), "rehearsal": True, "engin
             **({"arm_tree": os.environ["ST_BRACKET_TREE"]} if os.environ.get("ST_BRACKET_TREE") else {}),
             "run_index": run, "cold": os.environ.get("ST_BRACKET_COLD", "boot"),
             "session": os.environ.get("FLEET_SESSION", ""), "knobs": {}})
+rec.update(metadata(profile(os.environ.get('ONEPASS_PROFILE'))))
+rec['quality_protocol'] = {'version': VERSION}
 rec['evidence_scope'] = os.environ['ST_BRACKET_VALIDATION']
 rec['adoption_eligible'] = rec['evidence_scope'] == 'full'
 rec.pop("boot_id", None); rec.pop("run_id", None)
@@ -261,7 +266,7 @@ leg() {  # name sha -> the fixed leg; 0 when every run recorded
 }
 judge() {  # cand base -- by commit, and by engine tree: an adopted candidate's records are the base's
   local ct bt; ct=$(tree_of "$1"); bt=$(tree_of "$2")
-  python3 "$REPO/bench/st_judge.py" judge --cand "$1" --base "$2" ${ct:+--cand-tree "$ct"} ${bt:+--base-tree "$bt"} --write \
+  python3 "$REPO/bench/st_judge.py" judge --current-workload --cand "$1" --base "$2" ${ct:+--cand-tree "$ct"} ${bt:+--base-tree "$bt"} --write \
     $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )
 }
 pair() {
@@ -285,7 +290,7 @@ pair() {
   local have
   # Only samples of the workload this bracket measures count as its base: a record of another
   # profile answered another question (harness 46, bench/measurement_contract.PROFILES).
-  have=$(python3 "$REPO/bench/st_judge.py" samples --sha "$bs" --profile "${ONEPASS_PROFILE:-default}"          $(tree_args "$base") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
+  have=$(python3 "$REPO/bench/st_judge.py" samples --sha "$bs" --current-workload --profile "${ONEPASS_PROFILE:-default}"          $(tree_args "$base") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
   if [ "${have:-0}" -lt "$FLOOR_N" ]; then
     say "base ${bs:0:12} has ${have:-0} warm sample(s), $FLOOR_N wanted: booting it"
     leg "ST-${bs:0:12}" "$base" || return $?
@@ -315,7 +320,7 @@ chain() {  # [--reuse] NAME=<sha> ... [NAME ...]: a repeated name is another boo
       # --reuse: an arm whose commit already has a warm sample is not booted again; the judge takes
       # the samples that exist (and a pooled floor when the base has one boot). A B A B without
       # --reuse still alternates the boots, the way §93 asked, when the spread itself is the question.
-      have=$(python3 "$REPO/bench/st_judge.py" samples --sha "${shas[$name]}" $(tree_args "${shas[$name]}") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
+      have=$(python3 "$REPO/bench/st_judge.py" samples --sha "${shas[$name]}" --current-workload --profile "${ONEPASS_PROFILE:-default}" $(tree_args "${shas[$name]}") $( [ "$REHEARSE" = 1 ] && echo --allow-rehearsal )) || have=0
       if [ "${have:-0}" -ge 1 ]; then say "$name reused: ${have} warm sample(s) of ${shas[$name]:0:12} already (no --reuse to boot it again)"; continue; fi
     fi
     leg "$name" "${shas[$name]}" || return $?

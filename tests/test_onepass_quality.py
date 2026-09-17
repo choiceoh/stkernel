@@ -22,7 +22,7 @@ from onepass_recording import CURRENT, Run, group
 class OracleTests(unittest.TestCase):
     def test_ledger_oracle_against_asof_transaction_replay(self):
         decisions = set()
-        for seed in range(30):
+        for seed in [*range(30), 2007, 32007, 128007]:
             case = q.cases(seed)[0]
             evidence, expected = case['evidence'], case['answer']
             versions = {}
@@ -57,7 +57,7 @@ class OracleTests(unittest.TestCase):
         self.assertEqual(decisions, {'전량승인', '보류'})
 
     def test_portfolio_proof_against_independent_bitmask_search(self):
-        for seed in range(30):
+        for seed in [*range(30), 2007, 32007, 128007]:
             case = q.cases(seed)[1]
             evidence, expected = case['evidence'], case['answer']
             projects = {k: list(map(int, evidence['O' + k].split('= ')[1].split(', '))) for k in 'ABCDE'}
@@ -86,7 +86,7 @@ class OracleTests(unittest.TestCase):
 
     def test_logic_worlds_and_minimal_unsat_core_against_named_variable_solver(self):
         certificates = set()
-        for seed in range(30):
+        for seed in [*range(30), 2007, 32007, 128007]:
             case = q.cases(seed)[2]
             evidence, expected = case['evidence'], case['answer']
             terms = [re.findall('[A-F]', evidence['U' + str(i)]) for i in range(1, 7)]
@@ -140,6 +140,37 @@ class GraderTests(unittest.TestCase):
         rows = self.grade('```json\n' + json.dumps(self.answer) + '\n```')
         self.assertTrue(all(r['passed'] for r in rows))
         self.assertEqual(q.summarize(rows)['ok'], 3)
+
+    def test_order_282_compares_available_and_releases_a_reservation_delta(self):
+        ledger = self.cases[0]
+        self.assertIn('주문 수량은 282개다. 가용량이 주문 수량 이상이면', ledger['evidence']['L4'])
+        self.assertIn('예약을 9개 해제하므로 기존 예약 수량에서 그만큼 뺀다', ledger['evidence']['L5'])
+        self.assertEqual(ledger['answer']['result'], dict(available=279, decision='보류'))
+        self.assertEqual(ledger['answer']['counterfactual'],
+                         dict(available=288, shortfall=0, decision='전량승인'))
+        self.answer['ledger']['result']['decision'] = '전량승인'
+        self.answer['ledger']['counterfactual']['available'] = 314
+        row = self.grade()[0]
+        self.assertEqual({f['dimension'] for f in row['failures']}, {'result', 'counterfactual'})
+
+    def test_logic_core_includes_u6_as_a_rule_not_fixed_background(self):
+        logic = self.cases[2]
+        self.assertEqual(logic['evidence']['U6'], '추가 규칙: E=0이다.')
+        self.assertIn('집합 밖의 규칙은 적용하지 않는다', logic['question'])
+        self.assertIn('U6도 선택 대상인 독립 규칙', logic['question'])
+        self.answer['logic']['counterfactual']['minimal_cores'] = [['U1', 'U2', 'U3', 'U4']]
+        row = self.grade()[2]
+        self.assertTrue(row['checks']['result'])
+        self.assertFalse(row['checks']['counterfactual'])
+
+    def test_bit_encoding_failure_is_separate_from_correct_final_judgments(self):
+        worlds = self.answer['logic']['derivation']['worlds']
+        worlds[worlds.index('010011')] = '010001'
+        row = self.grade()[2]
+        self.assertTrue(row['checks']['result'])
+        self.assertFalse(row['checks']['derivation'])
+        self.assertTrue(row['checks']['witnesses'])
+        self.assertEqual(row['score'], row['max_score'] - 1)
 
     def test_correct_answer_with_false_derivation_or_false_citation_fails(self):
         self.answer['ledger']['derivation']['selected'][0] = 'L12'  # recorded after cutoff

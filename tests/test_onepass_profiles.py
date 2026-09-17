@@ -7,15 +7,20 @@ candidate measuring different things -- and nothing would have said so, because 
 was not part of the recorded workload at all. So the workload is named, the name is in the record, and
 records of different names are not each other's baseline.
 """
+import io
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "bench"))
 
 import measurement_contract as contract     # noqa: E402
 import st_judge                             # noqa: E402
+import onepass_quality as quality           # noqa: E402
 
 
 class ProfileTests(unittest.TestCase):
@@ -57,7 +62,8 @@ class ProfileTests(unittest.TestCase):
 
     def test_the_harness_moved_with_the_meaning(self):
         """A measurement that changed is a new generation; the number is how the ledger says so."""
-        self.assertGreaterEqual(contract.HARNESS, 46)
+        self.assertGreaterEqual(contract.HARNESS, 47)
+        self.assertEqual(quality.VERSION, 'ko-reasoning-v3')
 
 
 class JudgeTests(unittest.TestCase):
@@ -94,6 +100,34 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(out["cand_summary"]["n"], 1)
         self.assertIn("NO BASE", out["verdict"])
 
+    def test_prompt_version_and_workload_changes_cannot_supply_a_baseline(self):
+        current = self.record(harness=contract.HARNESS,
+                              quality_protocol={'version': quality.VERSION, 'workloads_sha256': 'new'},
+                              workload=contract.profile('default'))
+        for change in ({'harness': 46}, {'quality_protocol': {'version': 'ko-reasoning-v2'}},
+                       {'quality_protocol': {'version': quality.VERSION, 'workloads_sha256': 'old'}},
+                       {'workload': dict(current['workload'], seed=8)}):
+            with self.subTest(change=change):
+                old = dict(current, **change)
+                self.assertFalse(st_judge.comparable(current, old))
+                result = st_judge.judge([dict(current, arm_sha='c' * 40),
+                                        dict(old, arm_sha='b' * 40)], 'c' * 40, 'b' * 40)
+                self.assertEqual(result['base_summary']['n'], 0)
+
+    def test_bracket_reuse_counts_only_the_current_harness_and_quality_version(self):
+        current = self.record(harness=contract.HARNESS, quality_protocol={'version': quality.VERSION})
+        rows = [current, dict(current, boot_id='old-harness', harness=46),
+                dict(current, boot_id='old-question', quality_protocol={'version': 'ko-reasoning-v2'}),
+                self.record(boot_id='missing-identity')]
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / 'records.jsonl'
+            path.write_text(''.join(json.dumps(r) + '\n' for r in rows))
+            for action, expected in [('samples', '1'), ('boots', 'b1')]:
+                with patch('sys.stdout', new_callable=io.StringIO) as output:
+                    result = st_judge.main([action, '--sha', 'a' * 40, '--current-workload', '--jsonl', str(path)])
+                self.assertEqual(result, 0)
+                self.assertEqual(output.getvalue().strip(), expected)
+
 
 class WiringTests(unittest.TestCase):
     def test_onepass_takes_the_profile_and_lets_an_explicit_flag_win(self):
@@ -109,6 +143,8 @@ class WiringTests(unittest.TestCase):
         source = (ROOT / "bench/st_bracket.sh").read_text(encoding="utf-8")
         line = source[source.index('have=$(python3 "$REPO/bench/st_judge.py" samples'):]
         self.assertIn('--profile "${ONEPASS_PROFILE:-default}"', line[:400])
+        self.assertIn('--current-workload', line[:400])
+        self.assertIn('judge --current-workload', source)
 
 
 if __name__ == "__main__":

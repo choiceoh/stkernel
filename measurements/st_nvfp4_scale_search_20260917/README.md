@@ -1,13 +1,19 @@
 # NVFP4 activation scale search: adoption review, 2026-09-17
 
-**The default-off GPU prototype passes its numerical and kernel-cost gates.
-A valid 2K throughput pair improves C=2 by 14.37% and the multiplier from
-1.331x to 1.477x, below the 1.7x target. Quality is unresolved: the original
-rubric fails, but its repeated ledger failure exposes an ambiguous prompt.
-Excluding that whole case, the full campaign favors the candidate by 9 points;
-the separate 2K recheck favors the baseline by 1 point.** Enable `ss1`
-(three candidates) or `ss2` (five) in the explicit static MoE recipe to test
-FC2 input quantization. The production recipe is unchanged on this branch.
+**The user selected the three-candidate search (`ss1`) as the GLM production
+default after reviewing the completed study and prompt ambiguity.** This branch
+adds `ss1` to the production recipe. The valid 2K pair improves C=2 by 14.37%
+and the multiplier from 1.331x to 1.477x, below the 1.7x target. Excluding the
+ambiguous 282-unit ledger case, final-answer correctness is **32/32 for both
+arms** across the full campaign and separate recheck. Strict certificate scores
+remain 191/205 baseline versus 199/205 candidate, without forgiving transcription
+errors. These are descriptive repeated-case totals, not a population estimate.
+
+The same change introduces harness 47 / ko-reasoning-v3 to clarify the ledger
+comparison, reservation delta and logic core's U6 scope. Generated answers and
+grading are unchanged; old records retain v2. See `quality-ambiguity-audit.md`.
+The source/default change is distinct from restarting a live serving process;
+no v3 GPU quality or throughput result is claimed here.
 
 The isolated consumer arm `2a427a6ffe6eb55ffe0cce9f285df0ce9205fc90` changes
 only that recipe to add `ss1`; its same-build baseline is
@@ -22,9 +28,10 @@ The subsequent 2K-only speed recheck uses baseline
 from the full campaign (`bc0e8c490f81` and `e099d675bfd7`); only the shared
 benchmark preparation changed to cover both request-arrival orders.
 
-The implementation was merged as PR #1117 (`fd99f82e`) while the evidence was
-being collected. Main at `48fe5cfc` still has `MOE_STATIC_PRODUCTION` set to
-`t,r,sf6,batch,q0`, without `ss1`. These results do not enable the experiment.
+The implementation was initially merged as PR #1117 (`fd99f82e`) while evidence
+was being collected. At that point (`48fe5cfc`) main still used
+`t,r,sf6,batch,q0`. The subsequent explicit user adoption changes the default to
+`t,r,sf6,batch,q0,ss1`; `ss2` remains an optional five-candidate probe.
 
 The user contract remains unchanged: top-8 routing and model quality are
 preserved; C=1 throughput may fall at most 5%; the C=2 aggregate/C=1 throughput
@@ -243,10 +250,10 @@ artifact hashes. No layer activations or same-prefix logits were collected, so
 the exact numerical cause of the response changes is unknown. Local group SSE
 minimization does not minimize weighted projection error or answer error.
 
-A future prompt revision should explicitly compare available inventory to order
-quantity and clarify subtracting the released quantity from the existing
-reservation. It requires a new workload identity and a fresh matched comparison;
-the old scores must not be silently regraded or pooled with it.
+The following v3 revision explicitly compares available inventory to order
+quantity and clarifies subtracting the released quantity from the existing
+reservation. It has a new workload identity and needs its own matched comparison;
+the old scores are not regraded or pooled with it.
 
 Both full runs had clean C=1 preparation/profile/prefix evidence. Their raw
 C=1 generation rates were 81.00 / 75.81 tok/s for baseline and 78.10 / 78.56

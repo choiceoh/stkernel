@@ -1,4 +1,4 @@
-# Onepass reasoning quality — harness 46 / ko-reasoning-v2
+# Onepass reasoning quality — harness 47 / ko-reasoning-v3
 
 > 살아 있는 참조 — **원패스가 무엇을 묻고 어떻게 채점하는지. 하니스가 바뀌면 여기도 바뀐다.** 여기가 틀리면 그건 버그다.
 
@@ -21,6 +21,22 @@ at 32K and 128K, a combined request carries all three dossiers. `ctx` remains an
 approximate **document** size: question/schema/template overhead is additional.
 The server's actual `prompt_tokens` is the measurement denominator. Small context
 overrides never remove evidence to meet a nominal size.
+
+ko-reasoning-v3 (harness 47) clarifies two interpretation boundaries found in the
+NVFP4 scale-search audit. Ledger L4 explicitly compares available inventory to
+the stated order quantity; L5 adds/subtracts the reservation delta from the
+existing reservation. Logic U6 is only the additional variable assignment. A
+minimal core chooses rules from U1–U6, applies only the chosen rules, and keeps
+only U0 fixed; U6 is not implicit background. Witnesses must satisfy U1–U5 as
+well as making their own query true/false. Generated numbers, answer keys,
+budgets and grading dimensions are unchanged. Portfolio wording is unchanged.
+
+These prompts have a new workload hash. The ST bracket uses `--current-workload`
+for sample reuse and judging, excluding previous harness/quality versions.
+The ST judge also compares exact quality protocol, workload and generation
+budget, so different prompts cannot be compared solely because both profiles
+are called `default` or `extended`. Historical grades stay under their original
+version; this wording repair does not regrade them.
 
 ko-reasoning-v2 (harness 44) lowers the load a little without dropping a skill or
 a certificate dimension. Harness 43's answers showed where the reasoning went:
@@ -69,6 +85,13 @@ and diagnostic requests are omitted. `concurrency_coverage` records that omissio
 `c4` is empty and `quality_c4` is null, rather than a passing 0/0 result. This
 implements the operator's 2026-09-13 policy: C=1 twice, C=4 once. Optional
 fixed-decode repetitions add three cases each to C=1.
+
+Report `dimensions.result.ok/total` separately as **final-answer correctness**.
+A correct final judgment with a mistyped bit string in `derivation.worlds`
+passes `result` and fails `derivation`; it is a certificate error, not an
+incorrect final judgment. If an audit confirms correct named variable values
+followed by a wrong encoding, describe it as a transcription error. Neither
+this distinction nor a post-hoc ambiguity exclusion rewrites the strict rubric.
 
 The "C=4" arm is the door's admission limit capped at four
 (`onepass.serving_concurrency`, from `engine_shape.max_concurrent_requests`):
