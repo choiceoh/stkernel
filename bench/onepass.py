@@ -94,7 +94,7 @@ between, so the number is recorded either way and this only decides what gets ca
 
 
 def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=None,
-               channel_trace=None, reasoning_budget=None):
+               channel_trace=None, reasoning_budget=None, on_first_token=None):
     """(text, ttft_s, prompt_tokens, completion_tokens, finish_reason) of one
     streamed chat completion: ttft = first chunk carrying content."""
     body_obj = {"model": model, "max_tokens": max_tokens, "min_tokens": min_tokens,
@@ -156,6 +156,8 @@ def ask_stream(url, model, content, max_tokens, timing=None, min_tokens=0, seed=
                     arrivals.append(arrived)
                     if ttft is None:
                         ttft = arrived - t0
+                        if on_first_token is not None:
+                            on_first_token()
                     parts.append(piece)
                     for name in ('content', 'reasoning_content', 'reasoning'):
                         if d.get(name):
@@ -1014,13 +1016,21 @@ def _main() -> int:
         # counted specializations 55 -> 59 inside measure-fixed-c1 against 59 -> 61 inside
         # measure-fixed-c{N}. Both legs then failed steady_errors, and the multiplier they
         # printed was biased UP: the arm that paid more compile time is the denominator.
+        # Preserve the full output/reasoning budgets and warm every arrival role.
+        # Different simultaneous arrivals select different coexistence-prefill
+        # tails (e.g. 1087 versus 1101 tokens). Even a full-length replay missed
+        # these shapes on 2026-09-17. Ordered preparation waits for each client's
+        # first token before admitting the next; rotations give each prompt each
+        # role. Measured releases remain simultaneous and fail on any compilation.
         run.begin(f'prepare-fixed-c{many}', many)
         for release in releases:
-            group(run, ask_stream, bd.URL, cq.MODEL, [preparation_request(item, args.num_spec) for item in release], many)
+            for offset in range(many):
+                ordered = release[offset:] + release[:offset]
+                group(run, ask_stream, bd.URL, cq.MODEL, ordered, many, prepare_ordered=True)
         run.end()
         run.begin('prepare-fixed-c1')
         for item in fixed_items:
-            group(run, ask_stream, bd.URL, cq.MODEL, preparation_request(item, args.num_spec), 1)
+            group(run, ask_stream, bd.URL, cq.MODEL, item, 1)
         run.end()
         run.begin('measure-fixed-c1')
         before = traffic_state(_metrics_text(bd.METRICS))
@@ -1038,6 +1048,9 @@ def _main() -> int:
         fixed_errors += [f'C={many}: {e}' for e in steady_errors(run.end(), many_requests, many)
                          + exclusive_errors(before, after, [], FIXED_CONCURRENCY_CLIENTS)]
         summary = fixed_concurrency_summary(tokens, fixed_c1, fixed_many, many)
+        summary['preparation_policy'] = dict(version=2, output_tokens=tokens,
+            arrivals='first-token ordered cyclic rotations; all prompts in all arrival roles',
+            measured_arrivals='simultaneous')
         summary['issues'] = fixed_errors + summary['issues']
         summary.update(valid=not summary['issues'], c1_requests=fixed_c1, many_requests=many_requests,
                        latency_artifacts=['measure-fixed-c1', f'measure-fixed-c{many}'])

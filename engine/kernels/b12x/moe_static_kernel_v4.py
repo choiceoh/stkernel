@@ -28,6 +28,7 @@ import cutlass.utils.blockscaled_layout as blockscaled_utils
 
 from cutlass.cutlass_dsl import Int32, Int64, Uint8, Uint64
 from cutlass.cute.nvgpu import cpasync
+from .fp4_scale_search import quantize_block_fp4_search
 from .moe_micro_kernel import (
     scatter_add_bf16x2_to_f32, scatter_add_bf16x4_to_f32, scatter_store_bf16x2_to_f32,
     scatter_add_bf16x8_from_smem_to_f32,
@@ -124,6 +125,7 @@ class MoEStaticKernelV4:
         bulk_b: bool = False,
         input_vec16: bool = False,
         input_reuse: int = 0,
+        fc2_scale_search: int = 0,
         stamps: bool = False,
         decode_reform: bool = False,
         even: bool = False,
@@ -180,6 +182,9 @@ class MoEStaticKernelV4:
         self.is_gated = is_gated_activation(activation)
         assert self.is_gated
         self.fast_math = bool(fast_math)
+        if fc2_scale_search not in (0, 1, 2):
+            raise ValueError("FC2 scale search radius must be 0, 1 or 2")
+        self.fc2_scale_search = int(fc2_scale_search)
         self.swiglu_alpha = float(swiglu_alpha)
         self.swiglu_beta = float(swiglu_beta)
         self.swiglu_limit = float(swiglu_limit) if swiglu_limit is not None else None
@@ -2341,7 +2346,11 @@ class MoEStaticKernelV4:
                                 block_max = fmax_f32(block_max, fabs_f32(value))
                             scale_byte = Uint8(0)
                             packed_lo = Uint64(0)
-                            if self.fast_math:
+                            if cutlass.const_expr(self.fc2_scale_search > 0):
+                                packed_lo, scale_byte = quantize_block_fp4_search(
+                                    values, block_max, gs_value, self.fc2_scale_search, self.fast_math
+                                )
+                            elif self.fast_math:
                                 packed_lo, scale_byte = quantize_block_fp4_fast(
                                     values, block_max, gs_value
                                 )
