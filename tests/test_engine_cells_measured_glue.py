@@ -25,7 +25,7 @@ class MeasuredGlueTests(unittest.TestCase):
                           cells.MOE_MEASURED_CELLS), ((), (), (), ()))
         q = verdicts(qwen_shape())
         self.assertEqual({lane: v.status for lane, v in q.items() if lane in ("dense", "kda_ring", "kda_chunk", "moe")},
-                         {"dense": cells.REFUSED, "kda_ring": cells.REFUSED, "kda_chunk": cells.REFUSED,
+                         {"dense": cells.REFUSED, "kda_ring": cells.UNMEASURED, "kda_chunk": cells.REFUSED,
                           "moe": cells.UNMEASURED})
 
     def test_measured_dense_columns_admit_the_padded_lane(self):
@@ -49,10 +49,10 @@ class MeasuredGlueTests(unittest.TestCase):
         l = shape.linear
         with mock.patch.object(cells, "KDA_DECAY_MEASURED_CELLS", ((l.heads, l.v_heads, l.k_dim, l.v_dim),)):
             v = verdicts(shape)
-        for lane in ("kda_recurrent", "kda_ring", "kda_chunk"):
+        # the ring lane computes GDN's gate in its own launch (engine/kernels/kda/ring.recurrent_gdn_ring): no adapter
+        for lane, tier in (("kda_recurrent", cells.GLUE), ("kda_ring", cells.SPECIALIZED), ("kda_chunk", cells.GLUE)):
             with self.subTest(lane=lane):
-                self.assertEqual((v[lane].status, v[lane].serve.tier, v[lane].serve.judged),
-                                 (cells.ADMITTED, cells.GLUE, True))
+                self.assertEqual((v[lane].status, v[lane].serve.tier, v[lane].serve.judged), (cells.ADMITTED, tier, True))
                 self.assertNotIn("unjudged", v[lane].serve.note)
 
     def test_a_measured_moe_cell_is_admitted_with_its_pin(self):

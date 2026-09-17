@@ -12,6 +12,7 @@ import torch
 
 import triton
 import triton.language as tl
+from triton.language.extra.cuda import libdevice
 
 from .op import exp, log
 
@@ -77,6 +78,9 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     deferred_decay=None,
     deferred_updates=None,
     DEFERRED_STATE: tl.constexpr = False,
+    # ST (engine/kernels/kda/ring.recurrent_gdn_ring): g holds GatedDeltaNet's raw decay projection, one value per
+    # value head [.., T, HV]; a_log and g_bias are its A_log and dt_bias [HV]; the decay is engine/kernels/gdn.gates'
+    HEAD_GATE: tl.constexpr = False,
 ):
     i_k, i_v, i_nh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_n, i_hv = i_nh // HV, i_nh % HV
@@ -106,7 +110,10 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
         p_q = q + bos * INPUT_STRIDES[0][0] + i_h * INPUT_STRIDES[0][1] + o_k * INPUT_STRIDES[0][2]
         p_k = k + bos * INPUT_STRIDES[1][0] + i_h * INPUT_STRIDES[1][1] + o_k * INPUT_STRIDES[1][2]
         p_v = v + bos * INPUT_STRIDES[2][0] + i_hv * INPUT_STRIDES[2][1] + o_v * INPUT_STRIDES[2][2]
-        p_gk = g + bos * INPUT_STRIDES[3][0] + i_hv * INPUT_STRIDES[3][1] + o_k * INPUT_STRIDES[3][2]
+        if HEAD_GATE:
+            p_gk = g + bos * INPUT_STRIDES[3][0] + i_hv * INPUT_STRIDES[3][1]
+        else:
+            p_gk = g + bos * INPUT_STRIDES[3][0] + i_hv * INPUT_STRIDES[3][1] + o_k * INPUT_STRIDES[3][2]
         p_beta = beta + bos * INPUT_STRIDES[4][0] + i_hv * INPUT_STRIDES[4][1]
         if IS_BETA_HEADWISE:
             p_beta += o_v * INPUT_STRIDES[4][2]
@@ -121,12 +128,17 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
 
         if not IS_KDA:
             p_g = g + bos * HV + i_hv
+        elif HEAD_GATE:
+            p_gk = g + bos * HV + i_hv
         else:
             p_gk = g + (bos * HV + i_hv) * K + o_k
 
     # Per-head gate amplitude, hoisted out of the token loop (COMPUTE_GATE).
     if COMPUTE_GATE:
         b_a_log = tl.exp(tl.load(a_log + i_h).to(tl.float32))
+    if HEAD_GATE:
+        b_a_log = tl.exp(tl.load(a_log + i_hv).to(tl.float32))
+        b_dt_bias = tl.load(g_bias + i_hv).to(tl.float32)
 
     p_o = o + ((i_k * all + bos) * HV + i_hv) * V + o_v
 
@@ -182,6 +194,13 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
         if not IS_KDA:
             b_g = tl.load(p_g).to(tl.float32)
             b_h *= exp(b_g)
+        elif HEAD_GATE:
+            # engine/kernels/gdn.gates' arithmetic, whose fp32 decay this replaces (stored and reloaded, losslessly):
+            # -exp(A_log) * softplus(a + dt_bias), torch's softplus through log1p above its threshold 20; one value
+            # for every channel of the head
+            b_gk = tl.load(p_gk).to(tl.float32) + b_dt_bias
+            b_gk = -b_a_log * tl.where(b_gk > 20.0, b_gk, libdevice.log1p(tl.exp(tl.minimum(b_gk, 20.0))))
+            b_h *= exp(b_gk)
         else:
             b_gk = tl.load(p_gk, mask=mask_k, other=0).to(tl.float32)
             if COMPUTE_GATE:
@@ -260,6 +279,8 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
             p_v += HV * V
             if not IS_KDA:
                 p_g += HV
+            elif HEAD_GATE:
+                p_gk += HV
             else:
                 p_gk += HV * K
             p_beta += HV * (V if IS_BETA_HEADWISE else 1)

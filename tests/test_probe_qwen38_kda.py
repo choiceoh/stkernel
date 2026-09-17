@@ -63,7 +63,7 @@ class CaseTable(unittest.TestCase):
         linear = shape.linear
         self.assertEqual((p.K_HEADS, p.V_HEADS, p.DIM, p.DIM), (linear.heads, linear.v_heads, linear.k_dim, linear.v_dim))
         self.assertEqual((p.K_HEADS, p.V_HEADS, p.DIM), (4, 12, 128))
-        self.assertEqual(linear.decay, "head")                              # the decay glue, not KDA's fused gate
+        self.assertEqual(linear.decay, "head")                              # GDN's per-head decay, not KDA's gate
         self.assertEqual((p.SPEC_K, p.SPEC_K), (shape.spec_k, facts.SPEC_K))
         self.assertEqual(p.RING_CELLS, facts.SPEC_K + 1)                   # net.rec_ring
         self.assertEqual(facts.GDN_STATE_DTYPE, "fp32")                    # the probe's ring and states
@@ -109,16 +109,28 @@ class CaseTable(unittest.TestCase):
                 self.assertEqual((i.decay.shape, i.decay.dtype, i.beta.shape, i.beta.dtype),
                                  ((1, n, 12), torch.float32, (1, n, 12), torch.bfloat16))
                 self.assertEqual(per_channel(i.decay, p.DIM).stride()[-1], 0)       # the launchers' stride-0 channels
+                # the ring arms' a and b: net._gdn_rows' split of the in_proj row, so the kernel compiles the served strides
+                self.assertEqual((i.proj.shape, i.proj.dtype), ((n, 4120), torch.bfloat16))
+                qkv, z, b, a = i.proj.split([p.QWEN38.qkv, 12 * 128, 12, 12], dim=-1)
+                for got, want in ((i.a, a[None]), (i.b, b[None])):
+                    self.assertEqual((got.shape, got.stride(), got.storage_offset()),
+                                     (want.shape, want.stride(), want.storage_offset()))
+                self.assertEqual((i.A_log.shape, i.A_log.dtype, i.dt_bias.shape, i.dt_bias.dtype, i.A_log.is_contiguous()),
+                                 ((12,), torch.float32, (12,), torch.float32, True))
                 if n > 1:
                     self.assertFalse(i.q.is_contiguous())                          # a column slice of the conv row
+                    self.assertFalse(i.a.is_contiguous())
         a, b = p.served_inputs(p.QWEN38, 4, torch.device("cpu")), p.served_inputs(p.QWEN38, 4, torch.device("cpu"))
         p.fill(a, 7)
         p.fill(b, 7)
-        for x, y in ((a.y, b.y), (a.decay, b.decay), (a.beta, b.beta)):
+        for x, y in ((a.y, b.y), (a.decay, b.decay), (a.beta, b.beta), (a.proj, b.proj)):
             self.assertTrue(torch.equal(x, y))                                    # a seed writes the same bytes
         p.fill(b, 8)
         self.assertFalse(torch.equal(a.y, b.y))
         self.assertTrue(bool((a.decay < 0).all()) and bool((a.decay.exp() > 1e-4).all()))
+        from engine.modules.linear_attention import gdn_decay                     # the functional arms' decay is GDN's
+        self.assertTrue(torch.equal(a.decay, gdn_decay(a.a, a.A_log, a.dt_bias)))
+        self.assertTrue(torch.equal(a.beta, a.b))
 
 
 @unittest.skipUnless(KERNELS, "requires torch and triton (the kernel modules import it)")
@@ -126,9 +138,11 @@ class Hooks(unittest.TestCase):
     def setUp(self):
         from engine.base import kernel_shape as ks
         from engine.kernels.kda import kda, ring
+        from tests.test_engine_kernel_glue import HEAD_DECAY
         self.ring, self.kda = ring, kda
         ks.reset()
         self.addCleanup(ks.reset)
+        ks.bind(HEAD_DECAY)                                                 # the GDN ring entries refuse a KDA cell
         self.kernels = ring.fused_recurrent_gated_delta_rule_fwd_kernel, kda.fused_recurrent_gated_delta_rule_fwd_kernel
         self.addCleanup(self.restored)
 
@@ -445,16 +459,18 @@ class Interpreted(unittest.TestCase):
 
     def setUp(self):
         from engine.base import kernel_shape as ks
+        from tests.test_engine_kernel_glue import HEAD_DECAY
         ks.reset()
         self.addCleanup(ks.reset)
+        ks.bind(HEAD_DECAY)                                                 # the GDN ring entries refuse a KDA cell
         torch.manual_seed(20260917)
 
     def gate(self, entry, case, steps, rule_check, **key):
         from engine.kernels.kda import kda, ring
-        from tests.test_engine_kernel_glue import kda_kernels
+        from tests.test_engine_gdn_ring_gate import ring_kernels             # kda_kernels and libdevice's log1p
         p = probe()
         events = []
-        with kda_kernels():
+        with ring_kernels():
             exact, graphs = p.gate_case(lambda event, **values: events.append(dict(event=event, **values)), entry, case,
                                         steps, None, rule_check, **key)
         self.assertEqual((ring._BV_OVERRIDE, kda._BV_OVERRIDE), (None, None))
