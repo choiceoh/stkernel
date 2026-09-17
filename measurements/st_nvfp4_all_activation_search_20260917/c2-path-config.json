@@ -1,0 +1,75 @@
+{
+  "scope": "CPU execution of dispatch selectors, not a native numerical test",
+  "source": "engine/kernels/b12x/moe_dispatch.py",
+  "sha256": "9dec38542bfd42e678237f4cca5600675e2ac6ef36bb4b6cf31d94d5edcc2faf",
+  "cells": [
+    {
+      "arm": "ss1",
+      "m": 8,
+      "config": {
+        "decode_reform": true,
+        "input_reuse": 3,
+        "activation_scale_search": 0,
+        "fc2_scale_search": 1,
+        "c2_direct_scatter": false,
+        "c2_scatter_reuse": false,
+        "c2_fc2_prefetch": false,
+        "scatter_vec4": true,
+        "scatter_packed_load": true,
+        "sync_cleanup": true
+      },
+      "effective_fc2_radius": 1
+    },
+    {
+      "arm": "as1",
+      "m": 8,
+      "config": {
+        "decode_reform": true,
+        "input_reuse": 3,
+        "activation_scale_search": 1,
+        "fc2_scale_search": 0,
+        "c2_direct_scatter": false,
+        "c2_scatter_reuse": false,
+        "c2_fc2_prefetch": false,
+        "scatter_vec4": true,
+        "scatter_packed_load": true,
+        "sync_cleanup": true
+      },
+      "effective_fc2_radius": 1
+    },
+    {
+      "arm": "ss1",
+      "m": 16,
+      "config": {
+        "decode_reform": true,
+        "input_reuse": 4,
+        "activation_scale_search": 0,
+        "fc2_scale_search": 1,
+        "c2_direct_scatter": true,
+        "c2_scatter_reuse": true,
+        "c2_fc2_prefetch": true,
+        "scatter_vec4": false,
+        "scatter_packed_load": false,
+        "sync_cleanup": true
+      },
+      "effective_fc2_radius": 1
+    },
+    {
+      "arm": "as1",
+      "m": 16,
+      "config": {
+        "decode_reform": true,
+        "input_reuse": 4,
+        "activation_scale_search": 1,
+        "fc2_scale_search": 0,
+        "c2_direct_scatter": true,
+        "c2_scatter_reuse": true,
+        "c2_fc2_prefetch": true,
+        "scatter_vec4": false,
+        "scatter_packed_load": false,
+        "sync_cleanup": true
+      },
+      "effective_fc2_radius": 1
+    }
+  ]
+}

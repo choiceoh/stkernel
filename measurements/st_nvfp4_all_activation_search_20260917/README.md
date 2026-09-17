@@ -165,3 +165,9 @@ and dropped its temporary tiers by 23:00:48 KST. All four recorded container IDs
 were subsequently verified absent; the lease passed to the next queued job.
 `fleet-stop.json` records that release. No further GPU experiment was started
 for this campaign.
+
+The follow-up [C=2 receipt audit](c2-path-audit.md) records the concurrent
+prefill chunks and decode selectors. The deeper [logical and native-code
+audit](c2-logical-audit.md) identifies a missing generic-global -> TMA proxy
+fence at FC1 input publication and includes its correction. CPU checks and
+native compilation pass; post-patch GPU quality and speed remain unmeasured.
