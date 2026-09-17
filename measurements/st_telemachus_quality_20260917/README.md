@@ -146,3 +146,11 @@ root cause until the response quality gate passes.
 [Sanitized operands and constant evidence](causal-operands-0918.json) contains
 the runtime hashes, numerical comparisons and replay receipts. Private inputs,
 activations and generated prose remain outside Git.
+
+The router correction biases have a large common offset (layer means about
+5.3–14.5) compared with their within-layer variation (standard deviations about
+0.04–0.10). BF16 rounding collapses the original 234–288 distinct values per
+layer to 6–11. For example, layer 37 has 272 distinct original values and only
+6 rounded values. Promoting those rounded values back to FP32 does not restore
+the lost relative corrections. The actual-input selection counterfactual above
+measures the resulting effect; average uncentered weight error alone hides it.
