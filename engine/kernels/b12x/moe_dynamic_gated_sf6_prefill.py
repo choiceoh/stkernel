@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-"""Reuse Q0 routing metadata in long prefill, preserving BF16 accumulation.
+"""Reuse Q0 routing metadata in long prefill with FP32 route accumulation.
 
-The pinned Q0 producer is copied with only its output-zeroing extent changed
-from FP32 words to BF16 pairs. The inherited original SF6 epilogue retains
-its BF16 contribution and atomic-sum arithmetic. Word scale decoding uses the
+The pinned Q0 producer and epilogue preserve each rounded BF16 contribution,
+accumulate in FP32, and round once when publishing the output. Word scale decoding uses the
 separate prototype producer specialization; GPU qualification is pending.
 """
 from functools import lru_cache
@@ -27,6 +26,7 @@ from ._moe_dynamic.gated import (
 )
 from . import moe_dynamic_gated_sf6 as _sf6
 from .moe_dynamic_gated_sf6_words import MoEGatedDynamicKernelSF6Words
+from .moe_dynamic_ep_local import MoEGatedEPLocalKernel
 
 Q0_SOURCE_SHA256 = '759a519145c3edecac42ea917abbd8003b142f02ba4d41f86fc2d58e939a51ba'
 
@@ -39,6 +39,8 @@ def stock_contract_matches():
 
 
 class MoEGatedDynamicKernelSF6Prefill(MoEGatedDynamicKernelSF6Words):
+    scatter_sC_to_gmem = MoEGatedEPLocalKernel.scatter_sC_to_gmem
+
     def _setup_attributes(self, hidden_size):
         if (hidden_size != 4096 or self.tile_shape_mnk != (128,128,128)
                 or not self.reform_sf_pack or self.share_input_across_experts
@@ -79,7 +81,7 @@ class MoEGatedDynamicKernelSF6Prefill(MoEGatedDynamicKernelSF6Words):
         num_experts = Int32(row_counts.shape[0])
         sf_blocks_per_row = cols // Int32(16)
         output_bytes_per_row = cols // Int32(2)
-        cols_u32 = cols // Int32(2)  # Retain the original long-prefill BF16 scatter plane.
+        cols_u32 = cols  # Every FP32 accumulator word must be cleared.
         scatter_output_u32 = cute.recast_tensor(scatter_output, cutlass.Uint32)
         total_pairs = Int32(topk_ids.shape[0])
         num_topk = total_pairs // num_tokens

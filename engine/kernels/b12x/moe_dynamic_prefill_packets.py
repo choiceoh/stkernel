@@ -5,7 +5,7 @@ The route producer below is pinned to the ordinary long-prefill producer.
 Only its input-copy/wait section changes: every CTA cooperatively decodes
 FP8-v3 packets, rounds to BF16, and joins a CTA barrier before quantization.
 Per-expert scales, FP4 packing, histogram, task publication, MMA and the
-BF16 atomic epilogue retain their ordinary arithmetic and ownership.
+FP32 atomic epilogue retain their ordinary arithmetic and ownership.
 """
 from functools import lru_cache
 import hashlib
@@ -27,7 +27,7 @@ from ._moe_dynamic.gated import (
 from .moe_w4a16_fp4_helpers import cvt_e4m3x4_to_f32x4, st_shared_bf16_from_f32
 from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
 
-PREFILL_SOURCE_SHA256 = 'bcf0313d6cab7699ec03b09e6a64a482551250a825628daa4f68fea96c655a8a'
+PREFILL_SOURCE_SHA256 = 'dd7a428366b6a066dfd9d47d6fddb5449a815752b94e95aa8ab95e5b7443ffda'
 
 
 @lru_cache(maxsize=1)
@@ -95,7 +95,7 @@ class MoEGatedDynamicKernelSF6Packets(MoEGatedDynamicKernelSF6Prefill):
         num_experts = Int32(row_counts.shape[0])
         sf_blocks_per_row = cols // Int32(16)
         output_bytes_per_row = cols // Int32(2)
-        cols_u32 = cols // Int32(2)  # Retain the original long-prefill BF16 scatter plane.
+        cols_u32 = cols  # Every FP32 accumulator word must be cleared.
         scatter_output_u32 = cute.recast_tensor(scatter_output, cutlass.Uint32)
         total_pairs = Int32(topk_ids.shape[0])
         num_topk = total_pairs // num_tokens
