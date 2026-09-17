@@ -27,3 +27,6 @@ python3 tools/validate_graphify_engine_base.py
 
 The snapshot is intentionally scoped to `engine/base`; regenerate it when the
 source digest changes materially.
+
+The GitHub workflow `.github/workflows/graphify-check.yml` validates the
+committed snapshot whenever the source, graph, or graph tooling changes.
