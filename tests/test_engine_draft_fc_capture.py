@@ -2,6 +2,7 @@
 import types
 import tempfile
 import unittest
+from pathlib import Path
 
 import torch
 
@@ -195,6 +196,71 @@ class CaptureTests(unittest.TestCase):
         report = cap.close()                                       # nothing recorded at all
         self.assertIn('error', report)
         self.assertEqual(report['rank'], 0)
+
+
+class SplitRepairTests(unittest.TestCase):
+    """Two production boots collected 1,971 and 421 rows and threw them all away: validation was empty."""
+
+    def _feed(self, cap, families):
+        for i, family in enumerate(families):
+            cap.slot_family[i] = family
+        slots = torch.arange(len(families))
+        positions = torch.arange(len(families) * 8).reshape(len(families), 8)
+        aux = torch.randn(len(families) * 8, COLS, dtype=torch.bfloat16)
+        cap.drafter.observe_rows(None, slots, positions, aux, torch.tensor([8] * len(families)))
+
+    def test_the_request_id_is_the_family_and_it_is_not_a_number(self):
+        drafter = fake_drafter()
+        seen = {}
+        drafter.diagnostics.note_sync = lambda *a, **k: seen.setdefault('called', True) or 'inner'
+        cap = DraftFcCapture(drafter, '/tmp/unused', rows=64, salt='s')
+        cap.attach()
+        cap.drafter.diagnostics.note_sync('chatcmpl-9f3a', 0, 2, 1, [], 1, ())
+        self.assertEqual(cap.slot_family[2], 'seq-chatcmpl-9f3a')   # int(seq) used to raise here
+
+    def test_an_empty_split_is_repaired_by_moving_a_whole_family(self):
+        cap = DraftFcCapture(fake_drafter(), '/tmp/unused', rows=4096, salt='s')
+        cap.attach()
+        cap.batches = [dict(aux=torch.zeros(8, COLS), keep=torch.ones(8, dtype=torch.bool),
+                            ids=[f'seq-{i}'] * 8, split='train') for i in range(4)]
+        cap.kept = {'train': 32, 'validation': 0}
+        self.assertIsNone(cap.rebalance())
+        self.assertTrue(all(cap.kept.values()), cap.kept)
+        self.assertEqual(sum(cap.kept.values()), 32, 'rows are moved, never invented')
+        for family, splits in self._by_family(cap).items():
+            self.assertEqual(len(splits), 1, f'{family} was split across both sides')
+
+    def test_the_move_is_deterministic_and_independent_of_arrival_order(self):
+        def moved(order):
+            cap = DraftFcCapture(fake_drafter(), '/tmp/unused', rows=4096, salt='s')
+            cap.batches = [dict(aux=torch.zeros(8, COLS), keep=torch.ones(8, dtype=torch.bool),
+                                ids=[f'seq-{i}'] * 8, split='train') for i in order]
+            cap.kept = {'train': 8 * len(order), 'validation': 0}
+            cap.rebalance()
+            return {b['ids'][0] for b in cap.batches if b['split'] == 'validation'}
+        self.assertEqual(moved([0, 1, 2, 3]), moved([3, 1, 0, 2]))
+
+    def test_one_family_cannot_be_repaired_and_says_so(self):
+        cap = DraftFcCapture(fake_drafter(), '/tmp/unused', rows=4096, salt='s')
+        cap.batches = [dict(aux=torch.zeros(8, COLS), keep=torch.ones(8, dtype=torch.bool),
+                            ids=['seq-only'] * 8, split='train')]
+        cap.kept = {'train': 8, 'validation': 0}
+        self.assertIn('cannot fill two splits', cap.rebalance())
+
+    def test_a_refusal_still_files_its_report(self):
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            cap = DraftFcCapture(fake_drafter(), tmp, rows=64, salt='s')
+            report = cap.close()                                    # nothing collected at all
+            self.assertIn('error', report)
+            on_disk = json.loads((Path(tmp) / 'draft-fc-pairs-rank0.json').read_text())
+        self.assertEqual(on_disk['error'], report['error'])
+
+    def _by_family(self, cap):
+        out = {}
+        for batch in cap.batches:
+            out.setdefault(batch['ids'][0], set()).add(batch['split'])
+        return out
 
 
 class ProfileDefaultTests(unittest.TestCase):
