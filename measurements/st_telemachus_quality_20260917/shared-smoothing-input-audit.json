@@ -1,0 +1,681 @@
+{
+  "scope": "First-layer scalar decode embedding -> mHC pre -> smoothed norm only; no later residual mixing, MoE or long-prefill oracle.",
+  "gpu_used": false,
+  "torch_version": "2.14.0+cu130",
+  "cases": [
+    {
+      "file": "rank0-L0-admit1-gen1-ctx50005.pt",
+      "rank": 0,
+      "context": 50005,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0029323785565793514,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0010179942473769188,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank0-L0-admit1-gen124-ctx50128.pt",
+      "rank": 0,
+      "context": 50128,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 124,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0028625139966607094,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.000244140625,
+        "relative_l2": 0.00030895069357939065,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank0-L0-admit1-gen125-ctx50129.pt",
+      "rank": 0,
+      "context": 50129,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 125,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.002734188223257661,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0007644881843589246,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank0-L0-admit3-gen1-ctx50129.pt",
+      "rank": 0,
+      "context": 50129,
+      "identity": {
+        "admission": 3,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.002734188223257661,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0007644881843589246,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank1-L0-admit1-gen1-ctx50005.pt",
+      "rank": 1,
+      "context": 50005,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.001953125,
+        "relative_l2": 0.00296328985132277,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0010138594079762697,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank1-L0-admit1-gen124-ctx50128.pt",
+      "rank": 1,
+      "context": 50128,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 124,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0028401976451277733,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.000244140625,
+        "relative_l2": 0.00030666845850646496,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank1-L0-admit1-gen125-ctx50129.pt",
+      "rank": 1,
+      "context": 50129,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 125,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.002721005817875266,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.000757447094656527,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank1-L0-admit3-gen1-ctx50129.pt",
+      "rank": 1,
+      "context": 50129,
+      "identity": {
+        "admission": 3,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.002721005817875266,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.000757447094656527,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank2-L0-admit1-gen1-ctx50005.pt",
+      "rank": 2,
+      "context": 50005,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.001953125,
+        "relative_l2": 0.002973170718178153,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.001013389672152698,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank2-L0-admit1-gen124-ctx50128.pt",
+      "rank": 2,
+      "context": 50128,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 124,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.001953125,
+        "relative_l2": 0.00288410228677094,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.000244140625,
+        "relative_l2": 0.00030174307175911963,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank2-L0-admit1-gen125-ctx50129.pt",
+      "rank": 2,
+      "context": 50129,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 125,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.002714428585022688,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0007572504109703004,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank2-L0-admit3-gen1-ctx50129.pt",
+      "rank": 2,
+      "context": 50129,
+      "identity": {
+        "admission": 3,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.002714428585022688,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0007572504109703004,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank3-L0-admit1-gen1-ctx50005.pt",
+      "rank": 3,
+      "context": 50005,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.001953125,
+        "relative_l2": 0.0029460240621119738,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0010358118452131748,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank3-L0-admit1-gen124-ctx50128.pt",
+      "rank": 3,
+      "context": 50128,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 124,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.002842862391844392,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.000244140625,
+        "relative_l2": 0.00030130334198474884,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank3-L0-admit1-gen125-ctx50129.pt",
+      "rank": 3,
+      "context": 50129,
+      "identity": {
+        "admission": 1,
+        "seq": 0,
+        "mode": 5,
+        "generation": 125,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0027442460414022207,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0007991365855559707,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank3-L0-admit3-gen1-ctx50129.pt",
+      "rank": 3,
+      "context": 50129,
+      "identity": {
+        "admission": 3,
+        "seq": 0,
+        "mode": 5,
+        "generation": 1,
+        "prefill": false
+      },
+      "tokens": 1,
+      "reference_separate_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0027442460414022207,
+        "finite": true
+      },
+      "reference_fused_rounding": {
+        "equal": false,
+        "max_abs": 0.0009765625,
+        "relative_l2": 0.0007991365855559707,
+        "finite": true
+      },
+      "rank0_unscaled_input_agreement": {
+        "equal": true,
+        "max_abs": 0.0,
+        "relative_l2": 0.0,
+        "finite": true
+      }
+    }
+  ],
+  "smoothing_factors": [
+    {
+      "rank": 0,
+      "different_from_rank0": 0,
+      "min_ratio_to_rank0": 1.0,
+      "max_ratio_to_rank0": 1.0
+    },
+    {
+      "rank": 1,
+      "different_from_rank0": 8,
+      "min_ratio_to_rank0": 0.5,
+      "max_ratio_to_rank0": 2.0
+    },
+    {
+      "rank": 2,
+      "different_from_rank0": 16,
+      "min_ratio_to_rank0": 0.5,
+      "max_ratio_to_rank0": 2.0
+    },
+    {
+      "rank": 3,
+      "different_from_rank0": 36,
+      "min_ratio_to_rank0": 0.5,
+      "max_ratio_to_rank0": 2.0
+    }
+  ],
+  "prefill_projection": [
+    {
+      "file": "rank0-L0-admit1-gen0-ctx0.pt",
+      "rank": 0,
+      "sender_rank": 3,
+      "tokens": 64,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.375,
+        "relative_l2": 0.08839518576860428,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.0022106647957116365,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank0-L0-admit1-gen0-ctx32256.pt",
+      "rank": 0,
+      "sender_rank": 3,
+      "tokens": 21,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.40625,
+        "relative_l2": 0.09020799398422241,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.0020121922716498375,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank1-L0-admit1-gen0-ctx0.pt",
+      "rank": 1,
+      "sender_rank": 3,
+      "tokens": 64,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.4375,
+        "relative_l2": 0.07537613064050674,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.0021957047283649445,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank1-L0-admit1-gen0-ctx32256.pt",
+      "rank": 1,
+      "sender_rank": 3,
+      "tokens": 21,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.34375,
+        "relative_l2": 0.07632622122764587,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.0019549576099961996,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank2-L0-admit1-gen0-ctx0.pt",
+      "rank": 2,
+      "sender_rank": 3,
+      "tokens": 64,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.421875,
+        "relative_l2": 0.0728943794965744,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.002182795200496912,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank2-L0-admit1-gen0-ctx32256.pt",
+      "rank": 2,
+      "sender_rank": 3,
+      "tokens": 21,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.375,
+        "relative_l2": 0.07473256438970566,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.0019874421413987875,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank3-L0-admit1-gen0-ctx0.pt",
+      "rank": 3,
+      "sender_rank": 3,
+      "tokens": 64,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.002030095551162958,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.002030095551162958,
+        "finite": true
+      }
+    },
+    {
+      "file": "rank3-L0-admit1-gen0-ctx32256.pt",
+      "rank": 3,
+      "sender_rank": 3,
+      "tokens": 21,
+      "receiver_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.00188083213288337,
+        "finite": true
+      },
+      "sender_scale_reference": {
+        "equal": false,
+        "max_abs": 0.015625,
+        "relative_l2": 0.00188083213288337,
+        "finite": true
+      }
+    }
+  ],
+  "prefill_scope": "Captured L0 projection versus CPU embedding, mHC and captured FP8 packs; compares matching receiver scale to uncorrected sender scale. Does not independently emulate every transport rounding.",
+  "capture_source": "b11061eb21cfdcbdef12b972c607e9025124569a",
+  "cpu_reference_source": "fea591bd106452f7fcc27d041424ff0a0105c670",
+  "private_reproducer": "/tmp/telemachus-quality-0917/l0-input-audit.py",
+  "reproducer_sha256": "e64ce972402f3a71371438a52197d8c0a377f6aea1b66321f6d5ebb4a9485664",
+  "finding": "Captured prefill projections match uncompensated sender-rank smoothing, while scalar decode uses matching local scales. The first-layer mismatch is a function-changing TP boundary error; generation recovery still requires a corrected live replay."
+}

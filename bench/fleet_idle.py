@@ -325,23 +325,34 @@ def _tick(directory):
             identity = process(os.getpid())
             lease = dict(session=session, pid=os.getpid(), start=identity[1], boot_id=boot_id(),
                          receipt=approved['receipt'], acquired_at=time.time())
-            write(directory / 'idle-recovery-owner.json', lease)
             holder = f'{session}|{os.getpid()}|{socket.gethostname().split(".")[0]}|{int(time.time())}|60|automatic recovery after 5 idle minutes|boot\n'
-            (directory / 'holder').write_text(holder)
-            (directory / 'restore-debt.json').unlink(missing_ok=True)
             state.update(phase='recovering', session=session, reason='5-minute idle threshold reached')
-            write(directory / 'idle-recovery.json', state)
+        # Publish the holder and the recovery lease inside the try that releases
+        # them: if a write fails (disk full, EIO) the finally still clears them,
+        # instead of leaving a live holder that makes holder_live() true forever
+        # and blocks every later recovery.
         rc = 1
+        entered = False
         try:
+            with lock(directory):
+                write(directory / 'idle-recovery-owner.json', lease)
+                tmp = directory / 'holder.tmp'
+                tmp.write_text(holder)
+                tmp.replace(directory / 'holder')       # atomic: no partial holder
+                (directory / 'restore-debt.json').unlink(missing_ok=True)
+                write(directory / 'idle-recovery.json', state)
+                entered = True
             rc = restore(directory, approved['receipt'], session)
         finally:
             with lock(directory):
                 if (directory / 'holder').exists() and (directory / 'holder').read_text() == holder:
                     (directory / 'holder').unlink()
                 (directory / 'idle-recovery-owner.json').unlink(missing_ok=True)
-                state = activity(directory, 'idle recovery completed' if rc == 0 else 'idle recovery failed')
-                state.update(phase='healthy' if rc == 0 else 'retry', returncode=rc)
-                write(directory / 'idle-recovery.json', state)
+                (directory / 'holder.tmp').unlink(missing_ok=True)
+                if entered:
+                    state = activity(directory, 'idle recovery completed' if rc == 0 else 'idle recovery failed')
+                    state.update(phase='healthy' if rc == 0 else 'retry', returncode=rc)
+                    write(directory / 'idle-recovery.json', state)
         return state
 
 

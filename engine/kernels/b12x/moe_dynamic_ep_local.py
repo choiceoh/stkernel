@@ -40,7 +40,7 @@ from ._moe_dynamic.gated import (
     load_shared_bf16x16_to_f32x16, load_shared_i32_f32_pair,
 )
 
-STOCK_GATED_SHA256 = "7c01dd68229f38a630d77ce0a2b3e28cc0c89f1008ee4bb880fcc9c26adceef6"
+STOCK_GATED_SHA256 = "adf2c7336b785a96d2865fb1aa42d636392845b55ca84c733210d24193ca24ba"
 
 
 @lru_cache(maxsize=1)

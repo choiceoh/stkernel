@@ -437,17 +437,17 @@ class Glm53Net:
         return result
 
     def smoothing_groups(self):
-        """(norm key, dense consumer keys, bf16 consumer keys) of every norm output a dense weight reads: the channel
+        """(norm key, dense consumer keys, resident consumer keys) of every norm output a dense weight reads: the channel
         smoothing of kernels/dense/smoothing divides the norm's weight and multiplies EVERY reader's columns -- a
         reader left out would see an input it was not prepared for. KDA: in_norm -> in_proj. MLA: in_norm -> qkv_a
-        and the indexer's wk / gate (bf16); q_a_norm -> q_b and the indexer's wq_b. Dense MLP: post_norm -> gate_up.
+        and the indexer's wk / gate (bf16) / w_heads (fp32); q_a_norm -> q_b and the indexer's wq_b. Dense MLP: post_norm -> gate_up.
         A MoE layer's post_norm feeds the routed experts and the router as well, which cannot take the factor: none."""
         F = self.F
         groups = []
         for L in self.layers:
             n = f"L{L}."
             if F.is_dsa(L):
-                groups.append((n + "in_norm", [n + "mla.qkv_a"], [n + "idx.wk", n + "idx.gate"]))
+                groups.append((n + "in_norm", [n + "mla.qkv_a"], [n + "idx.wk", n + "idx.gate", n + "idx.w_heads"]))
                 groups.append((n + "mla.q_a_norm", [n + "mla.q_b", n + "idx.wq_b"], []))
             else:
                 groups.append((n + "in_norm", [n + "kda.in_proj"], []))
@@ -455,24 +455,29 @@ class Glm53Net:
                 groups.append((n + "post_norm", [n + "mlp.gate_up"], []))
         return groups
 
-    def smooth_inputs(self, amax_of) -> dict:
+    def smooth_inputs(self, amax_of, *, shared_comm=None) -> dict:
         """Fold the calibration's channel smoothing into the norms (kernels/dense/smoothing): `amax_of(store name)`
         gives a norm output's channel peaks or None. Returns {dense key: (smoothed weight, s_eff)} for the packs;
-        the bf16 readers are rescaled in place, the norms divided in place."""
-        from engine.kernels.dense.smoothing import fold, scales, smooth_weight
+        the resident readers retain their dtype and are rescaled in place, the norms divided in place.
+        Native token-sharded prefill exchanges in_norm/post_norm outputs: their factors must agree across TP."""
+        from engine.kernels.dense.smoothing import fold, scales, shared_scales, smooth_weight
         names = self.dense_weight_names(self.p)
         smoothed = {}
-        for norm_key, dense_keys, bf16_keys in self.smoothing_groups():
-            if any(self.p.get(k) is None for k in dense_keys + bf16_keys + [norm_key]) or dense_keys[0] not in names:
+        for norm_key, dense_keys, resident_keys in self.smoothing_groups():
+            if any(self.p.get(k) is None for k in dense_keys + resident_keys + [norm_key]) or dense_keys[0] not in names:
                 continue                                                    # a layer subset (a local boot), or a reader already retired
             amax = amax_of(names[dense_keys[0]])
-            if amax is None:
+            readers = [self.p[k] for k in dense_keys + resident_keys]
+            if shared_comm is not None and norm_key.endswith((".in_norm", ".post_norm")):
+                factor = shared_scales(amax, readers, shared_comm.all_reduce_max)
+            else:
+                factor = None if amax is None else scales(amax, readers)
+            if factor is None:
                 continue
-            readers = [self.p[k] for k in dense_keys + bf16_keys]
-            s_eff = fold(self.p[norm_key], scales(amax, readers))
+            s_eff = fold(self.p[norm_key], factor)
             for k in dense_keys:
                 smoothed[k] = (smooth_weight(self.p[k], s_eff), s_eff)
-            for k in bf16_keys:
+            for k in resident_keys:
                 self.p[k].copy_(smooth_weight(self.p[k], s_eff))
         return smoothed
 
@@ -480,7 +485,7 @@ class Glm53Net:
         """Declare and prepare the same dense families as the fleet's MK path."""
         from engine.kernels.dense import DenseLinear
         self.dense = {}
-        smoothed = self.smooth_inputs(store.amax) if store is not None else {}
+        smoothed = self.smooth_inputs(store.amax, shared_comm=self.comm) if store is not None else {}
         for key, name in self.dense_weight_names(self.p).items():
             weight = self.p[key]
             packed, smooth = smoothed.get(key, (weight, None))

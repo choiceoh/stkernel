@@ -28,6 +28,7 @@ the log rather than hiding.
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import random
 import statistics
@@ -223,7 +224,7 @@ def main() -> int:
 
     def report(label: str, ms: list[float], budget: float) -> float:
         med = statistics.median(ms)
-        p95 = sorted(ms)[min(int(len(ms) * 0.95), len(ms) - 1)]
+        p95 = sorted(ms)[min(math.ceil(len(ms) * 0.95) - 1, len(ms) - 1)]
         verdict = "" if budget <= 0 else (
             "  FITS" if p95 <= budget else "  OVER by "
             f"{p95 - budget:.2f} ms at p95")

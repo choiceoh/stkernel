@@ -292,11 +292,16 @@ def _token_publish_fc1_ready(
     chunks_per_token: Int32,
     is_cta_leader: Int32,
 ):
+    cute.arch.sync_threads()
+    threadfence()
     if is_cta_leader > Int32(0):
         count_addr = get_ptr_as_int64(barrier_count, token_idx)
         epoch_addr = get_ptr_as_int64(barrier_epoch, token_idx)
         arrived = atomic_add_global_i32(count_addr, Int32(1))
         if arrived == chunks_per_token - Int32(1):
+            # Acquire every chunk's intermediate stores before publishing
+            # the token's completed FC1 epoch to FC2 consumers.
+            threadfence()
             st_global_i32(count_addr, Int32(0))
             st_global_release_i32(epoch_addr, expected_epoch + Int32(1))
 
@@ -722,6 +727,10 @@ class MoEDirectMicroKernel:
             old_epoch = ld_global_acquire_i32(barrier_epoch_addr)
             arrived = atomic_add_global_i32(barrier_count_addr, Int32(1))
             if arrived == grid_x - Int32(1):
+                # Acquire all earlier counter arrivals before releasing the
+                # epoch. The entry fence only publishes this CTA's writes;
+                # the final relaxed RMW must be followed by an acquire fence.
+                threadfence()
                 st_global_i32(barrier_count_addr, Int32(0))
                 st_global_release_i32(barrier_epoch_addr, old_epoch + Int32(1))
             else:

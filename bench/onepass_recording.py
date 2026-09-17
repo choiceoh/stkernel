@@ -3,6 +3,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextvars import ContextVar
 from datetime import datetime, timezone
 import base64
+import fcntl
 import gzip
 import hashlib
 import json
@@ -31,6 +32,29 @@ def write(path, value):
         f.flush()
         os.fsync(f.fileno())
     tmp.replace(path)
+
+
+def append_line(path, payload) -> None:
+    """Append one JSON line to a possibly shared ledger, atomically per line.
+
+    `self.out` is the fleet-wide ledger, not a per-run file, and a record can
+    be tens of KB -- a TextIOWrapper splits that across several write(2) calls
+    on the O_APPEND fd, so a concurrent writer or a kill can interleave or
+    truncate it. Build the whole line, take an exclusive flock, and write it
+    with one (looped) os.write, then fsync before the caller claims success."""
+    data = (json.dumps(payload, ensure_ascii=False) + '\n').encode('utf-8')
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view):]
+            os.fsync(fd)
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def steady_errors(report, requests, concurrency):
@@ -99,10 +123,7 @@ class Run:
         value = dict(phase=phase or self.phase, ctx=item['ctx'], question=item['question'],
                      client=timing.get('client'), request_sha256=timing.get('request_sha256'),
                      output_sha256=timing.get('output_sha256'), results=result)
-        with (self.path / 'quality.jsonl').open('a') as f:
-            f.write(json.dumps(value, ensure_ascii=False) + '\n')
-            f.flush()
-            os.fsync(f.fileno())
+        append_line(self.path / 'quality.jsonl', value)
         return result
 
     def control(self, **body):
@@ -176,10 +197,7 @@ class Run:
         value = dict(timing, phase=self.phase, text=text, channels=events)
         with self.lock:
             self.requests.append(timing.copy())
-            with (self.path / 'requests.jsonl').open('a') as f:
-                f.write(json.dumps(value, ensure_ascii=False) + '\n')
-                f.flush()
-                os.fsync(f.fileno())
+            append_line(self.path / 'requests.jsonl', value)
 
     def finish(self, error=None):
         if error:
@@ -189,10 +207,7 @@ class Run:
         else:
             self.record['recording']['status'] = 'complete'
         self.checkpoint()
-        with self.out.open('a') as f:
-            f.write(json.dumps(self.record, ensure_ascii=False) + '\n')
-            f.flush()
-            os.fsync(f.fileno())
+        append_line(self.out, self.record)
         self.complete = True
 
 

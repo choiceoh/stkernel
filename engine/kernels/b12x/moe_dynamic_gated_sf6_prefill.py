@@ -33,10 +33,10 @@ from . import moe_dynamic_gated_sf6 as _sf6
 from .moe_dynamic_gated_sf6_words import MoEGatedDynamicKernelSF6Words
 from .moe_dynamic_ep_local import MoEGatedEPLocalKernel
 
-Q0_SOURCE_SHA256 = '427e73dd5391cedd640441efd0df3f64741a67942721d42d1c56faafb0107616'
+Q0_SOURCE_SHA256 = 'fc62f7e59f660d741c68b1ccb32173055914279c40052e62972b03b881650593'
 # The epilogue is grafted from the EP-local kernel: its method body is part of
 # this kernel's arithmetic, so its source is pinned exactly like the Q0 parent's.
-EP_LOCAL_SOURCE_SHA256 = '34c6bf3c5eeb824b294a9577b62ae1dcd762a14de563aaf25deb0d6d5cd1830b'
+EP_LOCAL_SOURCE_SHA256 = '9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b'
 
 
 @lru_cache(maxsize=1)

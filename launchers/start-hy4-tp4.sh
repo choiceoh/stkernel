@@ -207,6 +207,20 @@ if [ "${DRY_RUN:-0}" != 1 ] && ! ip -4 -o addr show 2>/dev/null | grep -qw "$HEA
   exit 1
 fi
 
+# DRY_RUN resolves the profile and stops before any ssh/docker. Without this
+# the only DRY_RUN reads bypass the head-node check, and the run then does
+# `docker rm -f hy4` and starts the fleet -- a "preview" that tears down live
+# production. (The glm53 lane exits the same way.)
+if [ "${DRY_RUN:-0}" = 1 ]; then
+  echo "profile   : ${PROFILE_ENV:-<none>}  head=${HEAD_IP}  workers=${WORKERS}"
+  for _k in IMAGE MODEL_PATH SERVED_NAME COMPILE_CFG CUSTOM_OPS_AXIS EXTRA_ENV \
+            GRAPH_DEBUG LOAD_FORMAT MAX_NUM_BATCHED OSAR_MAXEL DRAFT_BLOCK DRAFT_KV \
+            DRAFT_PATH LONG_PREFILL SPEC_METHOD DECODE_FIRST QUANT GPU_MEM; do
+    printf '  %-16s %s\n' "$_k" "${!_k:-<unset>}"
+  done
+  exit 0
+fi
+
 # Compilation/diagnostic axes. Defaults reproduce the previously hard-coded
 # serve argument byte-for-byte. CUSTOM_OPS_AXIS is intentionally not a
 # performance default; it only makes the valid vLLM values reachable without
