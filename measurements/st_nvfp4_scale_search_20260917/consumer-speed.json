@@ -1,0 +1,2704 @@
+[
+  {
+    "name": "B",
+    "t": "2026-09-17 17:59:54",
+    "git": "bd646ae6",
+    "evidence_scope": "full",
+    "quality": {
+      "version": "ko-reasoning-v2",
+      "ok": 3,
+      "total": 3,
+      "score": 19,
+      "max_score": 19,
+      "dimensions": {
+        "format": {
+          "ok": 3,
+          "total": 3
+        },
+        "completion": {
+          "ok": 3,
+          "total": 3
+        },
+        "result": {
+          "ok": 3,
+          "total": 3
+        },
+        "derivation": {
+          "ok": 3,
+          "total": 3
+        },
+        "evidence": {
+          "ok": 3,
+          "total": 3
+        },
+        "counterfactual": {
+          "ok": 3,
+          "total": 3
+        },
+        "witnesses": {
+          "ok": 1,
+          "total": 1
+        }
+      },
+      "scope": "visible final content; deterministic proof certificates"
+    },
+    "quality_c4": {
+      "version": "ko-reasoning-v2",
+      "ok": 6,
+      "total": 6,
+      "score": 38,
+      "max_score": 38,
+      "dimensions": {
+        "format": {
+          "ok": 6,
+          "total": 6
+        },
+        "completion": {
+          "ok": 6,
+          "total": 6
+        },
+        "result": {
+          "ok": 6,
+          "total": 6
+        },
+        "derivation": {
+          "ok": 6,
+          "total": 6
+        },
+        "evidence": {
+          "ok": 6,
+          "total": 6
+        },
+        "counterfactual": {
+          "ok": 6,
+          "total": 6
+        },
+        "witnesses": {
+          "ok": 2,
+          "total": 2
+        }
+      },
+      "scope": "visible final content; deterministic proof certificates"
+    },
+    "korean": {
+      "dirty": 0,
+      "n": 3,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 0,
+        "control": 0
+      },
+      "hits": []
+    },
+    "harness": 46,
+    "workload": {
+      "ctx": [
+        2000
+      ],
+      "seed": 7,
+      "max_tokens": 16384,
+      "combine_min_ctx": 32000,
+      "fixed_decode_tokens": 0,
+      "fixed_decode_reps": 0,
+      "fixed_concurrency_tokens": 1024,
+      "require_exclusive": true
+    },
+    "workload_profile": "custom",
+    "engine_shape": {
+      "model": "glm-5.3-flash",
+      "max_model_len": 1048576,
+      "max_concurrent_requests": 2,
+      "speculative_tokens": 7,
+      "prefix_cache": true,
+      "conversation_tier": true,
+      "engine": "ST",
+      "parked": 0
+    },
+    "generation_budget": {
+      "individual_max_tokens": 16384,
+      "individual_reasoning_budget": 8192,
+      "combined_max_tokens": 49152,
+      "combined_reasoning_budget": 24576
+    },
+    "engine": "st",
+    "boot_id": "a3792412822cd220d59065df46a8ef5b2241ff2ecaa7508fba553069279174b3|2026-09-17T08:57:58.205771622Z",
+    "knobs": {},
+    "release": "bd646ae621ef",
+    "image": "st-engine:bracket-bd646ae621ef",
+    "engine_source_sha256": "63a7a3a61f8cdbb41917f3c0184e80227d83d0e30431c79951ed1ec64807a7e0",
+    "kda_state_dtype": "fp32",
+    "run_index": 1,
+    "concurrency_coverage": {
+      "policy": "c1-twice-c2-once-no-128k-v3",
+      "width": 2,
+      "included": [
+        1,
+        2
+      ],
+      "contexts": {
+        "1": [
+          2000
+        ],
+        "2": [
+          2000
+        ]
+      },
+      "c4_excluded_contexts": [],
+      "c4_status": "measured"
+    },
+    "arm_sha": "bd646ae621ef5b5979106f924a3a5ae75969eca5",
+    "arm_tree": "bc0e8c490f81",
+    "run_id": "20260917T085954-db0ad21c8a9c",
+    "artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T085954-db0ad21c8a9c",
+    "measurement_policy": {
+      "version": 2,
+      "concurrency": [
+        1,
+        4
+      ],
+      "c4_excluded_contexts": [
+        128000,
+        131072
+      ],
+      "prefix": "unique salt per request",
+      "preparation": "full prompt with bounded output before each concurrency arm",
+      "measurement": "profiler off; no observed specialization or graph capture",
+      "diagnostic": "separate replay; one prefill chunk and four decode steps per context and concurrency"
+    },
+    "session": "fp4-scale-base17v5",
+    "steady_state": {
+      "valid": true,
+      "issues": [],
+      "profile": "off",
+      "prefix": "fresh",
+      "preparation": "no observed specialization or capture"
+    },
+    "evidence_issues": [],
+    "prefill": [
+      {
+        "ctx": 2000,
+        "tok": 2627,
+        "cold_s": 1.113576342992019,
+        "warm_s": 1.113576342992019,
+        "cold_tok_s": 2359.0659199365086,
+        "warm_tok_s": 2359.0659199365086,
+        "ttft_samples_s": [
+          1.113576342992019,
+          1.1373421820462681,
+          1.0966511410078965
+        ],
+        "first_s": 1.113576342992019,
+        "median_s": 1.113576342992019,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": false
+      }
+    ],
+    "diagnostics": [
+      {
+        "phase": "diagnostic-c1-2000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c2-2000",
+        "complete": true
+      }
+    ],
+    "diagnostic_budget": {
+      "version": 1,
+      "max_tokens": 64,
+      "min_tokens": 64,
+      "reasoning_budget": 32,
+      "scope": "diagnostic replay only; consumer generation_budget and quality workloads unchanged"
+    },
+    "source_record_sha256": "a2e7cc9cfd4da50bfd43934c8e1d5fffad51f2a80f4a4ac27e2929ae1ac174c4",
+    "decode": {
+      "gen_tokens": 8629,
+      "wall_s": 90.86071038246155,
+      "acc_raw": 0.5702711640211641,
+      "tokens_per_step": 4.991898148148149,
+      "windows_med": 19.895525979147003,
+      "windows_by_ctx": {
+        "2000": [
+          19.892726048471715,
+          19.921131522647993,
+          19.905119203815,
+          19.87351793614577,
+          19.911653506560402,
+          19.89368625078357,
+          19.888127572752165,
+          19.893469376621486,
+          19.864368614964462,
+          19.916927391269173,
+          21.895642259900345,
+          19.922180873468644,
+          19.8925408524898,
+          19.89298406104739,
+          19.88545850602648,
+          19.921319473605063,
+          19.878049300809682,
+          19.898752005592954,
+          19.888070279386472,
+          19.893934176274698,
+          17.88593239506528,
+          19.912088348359283,
+          19.91080477163898,
+          19.88160079349735,
+          19.910178077717504,
+          19.913051414463993,
+          19.89991968197473,
+          19.890785307041398,
+          20.823548165955025,
+          19.893716011283605,
+          19.89811407562261,
+          19.9054586852885,
+          19.881714929833024,
+          19.894065256333832,
+          19.916320940400116,
+          18.945610770170173,
+          16.9211992435231,
+          19.890114299185804,
+          23.873759427842156,
+          19.907505984635556,
+          15.920914607419164,
+          19.919017342981263,
+          20.892796595328694,
+          19.89402536312138,
+          19.893110042488576,
+          19.909578419785316,
+          19.88115301203385,
+          18.91114342052856,
+          16.916722123042828,
+          19.888837983803814,
+          18.928816538286775,
+          19.888913912367535,
+          19.91156089108006,
+          19.903608931025172,
+          19.87446492938894,
+          19.92170239157132,
+          17.909541662660672,
+          19.89644400292077,
+          19.907181966940374,
+          19.86139065183614,
+          19.890308647515297,
+          19.914363536932225,
+          19.91277319231208,
+          19.893026167169758,
+          19.847255146896053,
+          19.92072676237891,
+          15.900087412929011,
+          19.919704547166585,
+          19.904543601416282,
+          19.89460795537324,
+          21.870797150901364,
+          19.902764387600975,
+          19.91669729813984,
+          19.877308348055756,
+          19.902651256839263,
+          19.896634634846876,
+          19.915009511114658,
+          19.89945240481877,
+          19.90238221805271,
+          16.919915249854746
+        ]
+      }
+    },
+    "requests": [
+      {
+        "ctx": 2000,
+        "question": 0,
+        "concurrency": 1,
+        "completion_tokens": 3232,
+        "prompt_tokens": 2681,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "6e3d5886532797044a8e3e66ee633230dc1910563f2209b84afb3c588a44594e",
+        "output_sha256": "05d0677f0e9c38e46989a105f30fd6df35171dd995b2344ff106ad27679b51aa",
+        "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+        "ttft_s": 1.113576342992019,
+        "elapsed_s": 35.808964030002244,
+        "decode_s": 34.695387687010225,
+        "finish_reason": "stop",
+        "tpot_ms": 10.738281549678188,
+        "decode_tok_s": 93.12477004572195,
+        "first_channels_s": {
+          "reasoning_content": 1.113576342992019,
+          "reasoning": 1.113576342992019,
+          "content": 34.72266241395846
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 3064,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 1,
+        "concurrency": 1,
+        "completion_tokens": 3160,
+        "prompt_tokens": 2641,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "95047fff4df714b366862d02d1e34ccf4ae7c5ec8c0620bb2bdfb3f5024c2858",
+        "output_sha256": "bf3eca56880daeea884f7075f66baafb3130be94c49d7db05a0754c8cb5c481a",
+        "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+        "ttft_s": 1.1373421820462681,
+        "elapsed_s": 28.947436443006154,
+        "decode_s": 27.810094260959886,
+        "finish_reason": "stop",
+        "tpot_ms": 8.803448642279166,
+        "decode_tok_s": 113.59184799436795,
+        "first_channels_s": {
+          "reasoning_content": 1.1373421820462681,
+          "reasoning": 1.1373421820462681,
+          "content": 25.666559166042134
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 2663,
+        "quality": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 2,
+        "concurrency": 1,
+        "completion_tokens": 2237,
+        "prompt_tokens": 2627,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "e2b1da1956e9509fa4598248c38cfbf81e8907a573848bfe910a0e732fa78b47",
+        "output_sha256": "232d6fc0e64ed68468c908be454d02c49137a061eadb6b600c243ab84a688fc6",
+        "workload_sha256": "654d6e31507fa4f87b9ee5dd2bc5393844a2644b90b7922141b9410a1d7ecd50",
+        "ttft_s": 1.0966511410078965,
+        "elapsed_s": 26.051649136992637,
+        "decode_s": 24.95499799598474,
+        "finish_reason": "stop",
+        "tpot_ms": 11.160553665467237,
+        "decode_tok_s": 89.60128950360054,
+        "first_channels_s": {
+          "reasoning_content": 1.0966511410078965,
+          "reasoning": 1.0966511410078965,
+          "content": 24.68985690496629
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 2038,
+        "quality": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "11580ec2351360e0d1ce05167ef2fdb6c82df82eb328e8dbf5a9a973d52776a6",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      }
+    ],
+    "c2": [
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 57.29076879599597,
+        "aggregate_output_tok_s": 116.92983251549926,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": true,
+        "issues": [],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 0,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 3183,
+            "prompt_tokens": 2681,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "0d4e576c245b0b2d9afc5bce7700845bf0971e1ec8103aba07b69edd05ad3d59",
+            "output_sha256": "e37fef1c55b16638827820dfdf03257298f6f23f09e652c1f589d192f384707e",
+            "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+            "ttft_s": 2.929764604952652,
+            "elapsed_s": 53.382045795966405,
+            "decode_s": 50.45228119101375,
+            "finish_reason": "stop",
+            "tpot_ms": 15.855525201449954,
+            "decode_tok_s": 63.06949705510557,
+            "first_channels_s": {
+              "reasoning_content": 2.929764604952652,
+              "reasoning": 2.929764604952652,
+              "content": 51.685758893960156
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 3016,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+                "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 0,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 3516,
+            "prompt_tokens": 2681,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "faba6036e638fe736a7c735bc83b89270757f157e6d6cfb7839fc57b803bfcf2",
+            "output_sha256": "d78db39e03313228cf6906c8634addcad3ce25b7414dc28494226f3fdcdfa744",
+            "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+            "ttft_s": 1.2135081599699333,
+            "elapsed_s": 57.29076879599597,
+            "decode_s": 56.07726063602604,
+            "finish_reason": "stop",
+            "tpot_ms": 15.953701461173837,
+            "decode_tok_s": 62.68137851480281,
+            "first_channels_s": {
+              "reasoning_content": 1.2135081599699333,
+              "reasoning": 1.2135081599699333,
+              "content": 56.15728596498957
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 3348,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+                "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 40.353459006990306,
+        "aggregate_output_tok_s": 126.43277987932078,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": true,
+        "issues": [],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 1,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 2706,
+            "prompt_tokens": 2641,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "ba398910b1c84528d77f4614814e309ba8237ee7685181cdff984f9cfe852dcf",
+            "output_sha256": "fed65b7fbc52cef9a1e39efe10b85222425ae4e33b95cbf9c91c963c12d9d8ea",
+            "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+            "ttft_s": 1.1214853670098819,
+            "elapsed_s": 40.35335772699909,
+            "decode_s": 39.23187235998921,
+            "finish_reason": "stop",
+            "tpot_ms": 14.50346482809213,
+            "decode_tok_s": 68.94904161542658,
+            "first_channels_s": {
+              "reasoning_content": 1.1214853670098819,
+              "reasoning": 1.1214853670098819,
+              "content": 37.11331552301999
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 2213,
+            "quality": [
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "2804aa94beca869bcdbff531510189106f9d8cfbc9822401813aff2236827bc9",
+                "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 1,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 2396,
+            "prompt_tokens": 2641,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "1179f0124de11956b7309f848bed88f0d533e6ad575ffd0a15d04e455b876997",
+            "output_sha256": "b79bd7df6295c9ad20a04e56e7cede52d0f77cddcf0849d41e3e76d41e213b46",
+            "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+            "ttft_s": 2.763909681001678,
+            "elapsed_s": 35.593300286040176,
+            "decode_s": 32.8293906050385,
+            "finish_reason": "stop",
+            "tpot_ms": 13.70746998122693,
+            "decode_tok_s": 72.95292284933328,
+            "first_channels_s": {
+              "reasoning_content": 2.763909681001678,
+              "reasoning": 2.763909681001678,
+              "content": 30.929984782997053
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 1946,
+            "quality": [
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+                "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 99.94074931496289,
+        "aggregate_output_tok_s": 101.6502284567024,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": true,
+        "issues": [],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 2,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 7216,
+            "prompt_tokens": 2627,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "22a60037275e75b2fd65c97ff5713ef96e41561bfd2e7a0b778384b2115c9bc9",
+            "output_sha256": "321ed9a641a54aac5a5d87c04994baab922c3c9315b13dde5939fccc9a1c12f9",
+            "workload_sha256": "654d6e31507fa4f87b9ee5dd2bc5393844a2644b90b7922141b9410a1d7ecd50",
+            "ttft_s": 1.1297600389807485,
+            "elapsed_s": 99.94074931496289,
+            "decode_s": 98.81098927598214,
+            "finish_reason": "stop",
+            "tpot_ms": 13.695216808867933,
+            "decode_tok_s": 73.01819415903512,
+            "first_channels_s": {
+              "reasoning_content": 1.1297600389807485,
+              "reasoning": 1.1297600389807485,
+              "content": 98.62455339799635
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 7017,
+            "quality": [
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": true
+                },
+                "score": 7,
+                "max_score": 7,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "1265b352d8c08045575e19ee68e231b6ddfdcad4ac15ae0e4cc201c91d1a1ff9",
+                "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 2,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 2943,
+            "prompt_tokens": 2627,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "299d2874a4eca80f1fd06f924f427ad5717e268583d113b7d2ff81e1e5543fc2",
+            "output_sha256": "199e9485071d2f22439467490e895e07c2b0bb605eab3e73925ebb0569b89318",
+            "workload_sha256": "654d6e31507fa4f87b9ee5dd2bc5393844a2644b90b7922141b9410a1d7ecd50",
+            "ttft_s": 2.7612102840212174,
+            "elapsed_s": 52.48654549004277,
+            "decode_s": 49.725335206021555,
+            "finish_reason": "stop",
+            "tpot_ms": 16.90188144324322,
+            "decode_tok_s": 59.165010910650125,
+            "first_channels_s": {
+              "reasoning_content": 2.7612102840212174,
+              "reasoning": 2.7612102840212174,
+              "content": 50.32426987803774
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 2744,
+            "quality": [
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": true
+                },
+                "score": 7,
+                "max_score": 7,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "456fe1aaa8f3a4ac0390f439aa809ff0a531ae4a7dfc4b849995ffb29ca2ec8c",
+                "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      }
+    ],
+    "concurrency_fixed": {
+      "tokens": 1024,
+      "clients": 4,
+      "concurrency": 2,
+      "definition": "bench-dec: four different 2K prompts with exactly `tokens` output tokens each; C=1 sends them one at a time, C=2 releases them 2 at a time; rate = output tokens / first start to last completion of each release, summed",
+      "c1_tok_s": 65.5128536766597,
+      "many_tok_s": 87.22899638701713,
+      "multiplier": 1.3314791142748565,
+      "c1_decode_tok_s": 72.62674055635094,
+      "many_decode_tok_s_sum": 103.15423488392962,
+      "decode_multiplier": 1.4203340820987618,
+      "issues": [],
+      "valid": true,
+      "preparation_policy": {
+        "version": 2,
+        "output_tokens": 1024,
+        "arrivals": "first-token ordered cyclic rotations; all prompts in all arrival roles",
+        "measured_arrivals": "simultaneous"
+      },
+      "c1_requests": [
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-0",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3391,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "868a93af8810d59c5470c02a66bb7827cd71dc8cb65c4e250a30683a3813ddf4",
+          "output_sha256": "abb4e728687a78df8f74184dea7b306dc232b57e3eae1d72f4c793d4b6d6c086",
+          "workload_sha256": "5d4799c3d5e08c45c03c88bc5272120dd7043ef1946754d1403df5d0272dab77",
+          "ttft_s": 1.3832841159892268,
+          "elapsed_s": 14.001164115034044,
+          "decode_s": 12.617879999044817,
+          "finish_reason": "length",
+          "tpot_ms": 12.334193547453388,
+          "decode_tok_s": 81.07542630595962,
+          "first_channels_s": {
+            "reasoning_content": 1.3832841159892268,
+            "reasoning": 1.3832841159892268,
+            "content": 8.575155643979087
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-1",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3405,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "a29b7a5c9d5745875dc608223593e4d81bfa106e0f753b35b7a0ebc0119ee87f",
+          "output_sha256": "22493f16bc6e1f7b7be929dbf040da24ae5f3378374509b725983a9ce7e042f5",
+          "workload_sha256": "42bdaed1f0cbd45ba4bc8706057fdb819a9abba5ba5c4ba9e4c600004ab63d38",
+          "ttft_s": 1.3596977000124753,
+          "elapsed_s": 17.659072050999384,
+          "decode_s": 16.29937435098691,
+          "finish_reason": "length",
+          "tpot_ms": 15.932917254141651,
+          "decode_tok_s": 62.7631452576619,
+          "first_channels_s": {
+            "reasoning_content": 1.3596977000124753,
+            "reasoning": 1.3596977000124753,
+            "content": 10.620576493965928
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-2",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3419,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "c65e2309e109a5c36a3f195353bc843a2af7f06ba252684285689f2eeca00f34",
+          "output_sha256": "9b80a3d7e24c106cc73092284afc6dd3370177a41dc9db1986cf45410923c6a7",
+          "workload_sha256": "45da7a1d12b1ee9bcb04d9a7c6b103d4912003f282c9cda4ceb3f903e15cdff4",
+          "ttft_s": 1.34852265403606,
+          "elapsed_s": 15.309939569036942,
+          "decode_s": 13.961416915000882,
+          "finish_reason": "length",
+          "tpot_ms": 13.647523866081018,
+          "decode_tok_s": 73.27336517691373,
+          "first_channels_s": {
+            "reasoning_content": 1.34852265403606,
+            "reasoning": 1.34852265403606,
+            "content": 8.017836590996012
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-3",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3404,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "55ffbe6ea6275b2e993438918ea5ab9cdc208cbf25d30c935bf80f466936c61a",
+          "output_sha256": "e34d49184446073966d11b039de7c5dd6ed79df7778b688391ff4e8ddb662714",
+          "workload_sha256": "2678899305db18aa4e8f05187883950274fa4b34f5125286752a299657ee5a76",
+          "ttft_s": 1.339647819986567,
+          "elapsed_s": 15.551906117994804,
+          "decode_s": 14.212258298008237,
+          "finish_reason": "length",
+          "tpot_ms": 13.892725609001209,
+          "decode_tok_s": 71.98011593578815,
+          "first_channels_s": {
+            "reasoning_content": 1.339647819986567,
+            "reasoning": 1.339647819986567,
+            "content": 8.08267924998654
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        }
+      ],
+      "many_requests": [
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-0",
+          "concurrency": 2,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3391,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "97962f3d2531e4a433bb99ddfc36b7db9e8465919a94efe747551b4014550918",
+          "output_sha256": "25ed9a811bc26f09f83d915659dd8873b58a227f959d5bd0667037fda142706e",
+          "workload_sha256": "5d4799c3d5e08c45c03c88bc5272120dd7043ef1946754d1403df5d0272dab77",
+          "ttft_s": 1.352709557977505,
+          "elapsed_s": 20.953010505996644,
+          "decode_s": 19.60030094801914,
+          "finish_reason": "length",
+          "tpot_ms": 19.159629470204436,
+          "decode_tok_s": 52.19307615291424,
+          "first_channels_s": {
+            "reasoning_content": 1.352709557977505,
+            "reasoning": 1.352709557977505,
+            "content": 12.28935370896943
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-1",
+          "concurrency": 2,
+          "client": 1,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3405,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "be89f2439c22c7ac003696721a4c5d28d169905988a6b7b42466227d9e4968ff",
+          "output_sha256": "0ae098ffa99bfc6850863cf6817e87c367154169d2bf4eac7ed781d08c6dd85d",
+          "workload_sha256": "42bdaed1f0cbd45ba4bc8706057fdb819a9abba5ba5c4ba9e4c600004ab63d38",
+          "ttft_s": 3.2885586849879473,
+          "elapsed_s": 24.663476803980302,
+          "decode_s": 21.374918118992355,
+          "finish_reason": "length",
+          "tpot_ms": 20.894348112406995,
+          "decode_tok_s": 47.85983245900854,
+          "first_channels_s": {
+            "reasoning_content": 3.2885586849879473,
+            "reasoning": 3.2885586849879473,
+            "content": 15.368757030984852
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-2",
+          "concurrency": 2,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3419,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "e2c14431f5020034cf0b66338b775bc06e189145c2aa76658ac42771dfce6514",
+          "output_sha256": "e2e272b08ce545abab533ee658ee4e97c65d7e87d528387b76258d2bd8324cb6",
+          "workload_sha256": "45da7a1d12b1ee9bcb04d9a7c6b103d4912003f282c9cda4ceb3f903e15cdff4",
+          "ttft_s": 3.1893982460023835,
+          "elapsed_s": 21.061186628998257,
+          "decode_s": 17.871788382995874,
+          "finish_reason": "length",
+          "tpot_ms": 17.469978869008674,
+          "decode_tok_s": 57.24105378135151,
+          "first_channels_s": {
+            "reasoning_content": 3.1893982460023835,
+            "reasoning": 3.1893982460023835,
+            "content": 11.804440348991193
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-3",
+          "concurrency": 2,
+          "client": 1,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3404,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "ea18e5aaef0c23517084960790b6b03bccad5db988d64fa76ce3631347dc1e35",
+          "output_sha256": "cc5e5925b7a5d0bfd8abdfd5e8aab7d658caccbc2c7191989da523ff0b809013",
+          "workload_sha256": "2678899305db18aa4e8f05187883950274fa4b34f5125286752a299657ee5a76",
+          "ttft_s": 1.4216796480468474,
+          "elapsed_s": 22.29305130505236,
+          "decode_s": 20.87137165700551,
+          "finish_reason": "length",
+          "tpot_ms": 20.402122831872443,
+          "decode_tok_s": 49.01450737458495,
+          "first_channels_s": {
+            "reasoning_content": 1.4216796480468474,
+            "reasoning": 1.4216796480468474,
+            "content": 12.177461340033915
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        }
+      ]
+    },
+    "source_quality_sha256": "069a20e9ab691384dd63d498193be1d5c7ba42177be472b00549bf7f76ebc6da",
+    "quality_details": [
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 0,
+        "client": null,
+        "request_sha256": "6e3d5886532797044a8e3e66ee633230dc1910563f2209b84afb3c588a44594e",
+        "output_sha256": "05d0677f0e9c38e46989a105f30fd6df35171dd995b2344ff106ad27679b51aa",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 1,
+        "client": null,
+        "request_sha256": "95047fff4df714b366862d02d1e34ccf4ae7c5ec8c0620bb2bdfb3f5024c2858",
+        "output_sha256": "bf3eca56880daeea884f7075f66baafb3130be94c49d7db05a0754c8cb5c481a",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 2,
+        "client": null,
+        "request_sha256": "e2b1da1956e9509fa4598248c38cfbf81e8907a573848bfe910a0e732fa78b47",
+        "output_sha256": "232d6fc0e64ed68468c908be454d02c49137a061eadb6b600c243ab84a688fc6",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "11580ec2351360e0d1ce05167ef2fdb6c82df82eb328e8dbf5a9a973d52776a6",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q0",
+        "ctx": 2000,
+        "question": 0,
+        "client": 0,
+        "request_sha256": "0d4e576c245b0b2d9afc5bce7700845bf0971e1ec8103aba07b69edd05ad3d59",
+        "output_sha256": "e37fef1c55b16638827820dfdf03257298f6f23f09e652c1f589d192f384707e",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q0",
+        "ctx": 2000,
+        "question": 0,
+        "client": 1,
+        "request_sha256": "faba6036e638fe736a7c735bc83b89270757f157e6d6cfb7839fc57b803bfcf2",
+        "output_sha256": "d78db39e03313228cf6906c8634addcad3ce25b7414dc28494226f3fdcdfa744",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q1",
+        "ctx": 2000,
+        "question": 1,
+        "client": 0,
+        "request_sha256": "ba398910b1c84528d77f4614814e309ba8237ee7685181cdff984f9cfe852dcf",
+        "output_sha256": "fed65b7fbc52cef9a1e39efe10b85222425ae4e33b95cbf9c91c963c12d9d8ea",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "2804aa94beca869bcdbff531510189106f9d8cfbc9822401813aff2236827bc9",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q1",
+        "ctx": 2000,
+        "question": 1,
+        "client": 1,
+        "request_sha256": "1179f0124de11956b7309f848bed88f0d533e6ad575ffd0a15d04e455b876997",
+        "output_sha256": "b79bd7df6295c9ad20a04e56e7cede52d0f77cddcf0849d41e3e76d41e213b46",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q2",
+        "ctx": 2000,
+        "question": 2,
+        "client": 0,
+        "request_sha256": "22a60037275e75b2fd65c97ff5713ef96e41561bfd2e7a0b778384b2115c9bc9",
+        "output_sha256": "321ed9a641a54aac5a5d87c04994baab922c3c9315b13dde5939fccc9a1c12f9",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "1265b352d8c08045575e19ee68e231b6ddfdcad4ac15ae0e4cc201c91d1a1ff9",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q2",
+        "ctx": 2000,
+        "question": 2,
+        "client": 1,
+        "request_sha256": "299d2874a4eca80f1fd06f924f427ad5717e268583d113b7d2ff81e1e5543fc2",
+        "output_sha256": "199e9485071d2f22439467490e895e07c2b0bb605eab3e73925ebb0569b89318",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "456fe1aaa8f3a4ac0390f439aa809ff0a531ae4a7dfc4b849995ffb29ca2ec8c",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "A",
+    "t": "2026-09-17 18:12:48",
+    "git": "bd646ae6",
+    "evidence_scope": "full",
+    "quality": {
+      "version": "ko-reasoning-v2",
+      "ok": 2,
+      "total": 3,
+      "score": 18,
+      "max_score": 19,
+      "dimensions": {
+        "format": {
+          "ok": 3,
+          "total": 3
+        },
+        "completion": {
+          "ok": 3,
+          "total": 3
+        },
+        "result": {
+          "ok": 3,
+          "total": 3
+        },
+        "derivation": {
+          "ok": 2,
+          "total": 3
+        },
+        "evidence": {
+          "ok": 3,
+          "total": 3
+        },
+        "counterfactual": {
+          "ok": 3,
+          "total": 3
+        },
+        "witnesses": {
+          "ok": 1,
+          "total": 1
+        }
+      },
+      "scope": "visible final content; deterministic proof certificates"
+    },
+    "quality_c4": {
+      "version": "ko-reasoning-v2",
+      "ok": 5,
+      "total": 6,
+      "score": 37,
+      "max_score": 38,
+      "dimensions": {
+        "format": {
+          "ok": 6,
+          "total": 6
+        },
+        "completion": {
+          "ok": 6,
+          "total": 6
+        },
+        "result": {
+          "ok": 6,
+          "total": 6
+        },
+        "derivation": {
+          "ok": 6,
+          "total": 6
+        },
+        "evidence": {
+          "ok": 6,
+          "total": 6
+        },
+        "counterfactual": {
+          "ok": 5,
+          "total": 6
+        },
+        "witnesses": {
+          "ok": 2,
+          "total": 2
+        }
+      },
+      "scope": "visible final content; deterministic proof certificates"
+    },
+    "korean": {
+      "dirty": 0,
+      "n": 3,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 0,
+        "control": 0
+      },
+      "hits": []
+    },
+    "harness": 46,
+    "workload": {
+      "ctx": [
+        2000
+      ],
+      "seed": 7,
+      "max_tokens": 16384,
+      "combine_min_ctx": 32000,
+      "fixed_decode_tokens": 0,
+      "fixed_decode_reps": 0,
+      "fixed_concurrency_tokens": 1024,
+      "require_exclusive": true
+    },
+    "workload_profile": "custom",
+    "engine_shape": {
+      "model": "glm-5.3-flash",
+      "max_model_len": 1048576,
+      "max_concurrent_requests": 2,
+      "speculative_tokens": 7,
+      "prefix_cache": true,
+      "conversation_tier": true,
+      "engine": "ST",
+      "parked": 0
+    },
+    "generation_budget": {
+      "individual_max_tokens": 16384,
+      "individual_reasoning_budget": 8192,
+      "combined_max_tokens": 49152,
+      "combined_reasoning_budget": 24576
+    },
+    "engine": "st",
+    "boot_id": "2ff49627ead89b34d7760b898aeac132d60fae904315df6bae028f7b2f09481f|2026-09-17T09:10:53.523501567Z",
+    "knobs": {},
+    "release": "d6a1663cbf54",
+    "image": "st-engine:bracket-d6a1663cbf54",
+    "engine_source_sha256": "ad4f8c3cb71c5e316df93f324cd2e38aa634229a45c295b6a0def5f613f3872f",
+    "kda_state_dtype": "fp32",
+    "run_index": 1,
+    "concurrency_coverage": {
+      "policy": "c1-twice-c2-once-no-128k-v3",
+      "width": 2,
+      "included": [
+        1,
+        2
+      ],
+      "contexts": {
+        "1": [
+          2000
+        ],
+        "2": [
+          2000
+        ]
+      },
+      "c4_excluded_contexts": [],
+      "c4_status": "measured"
+    },
+    "arm_sha": "d6a1663cbf5412ad71de8ac9d060c16c6d701988",
+    "arm_tree": "e099d675bfd7",
+    "run_id": "20260917T091248-5c11967deaa5",
+    "artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T091248-5c11967deaa5",
+    "measurement_policy": {
+      "version": 2,
+      "concurrency": [
+        1,
+        4
+      ],
+      "c4_excluded_contexts": [
+        128000,
+        131072
+      ],
+      "prefix": "unique salt per request",
+      "preparation": "full prompt with bounded output before each concurrency arm",
+      "measurement": "profiler off; no observed specialization or graph capture",
+      "diagnostic": "separate replay; one prefill chunk and four decode steps per context and concurrency"
+    },
+    "session": "fp4-scale-candidate17v5",
+    "steady_state": {
+      "valid": true,
+      "issues": [],
+      "profile": "off",
+      "prefix": "fresh",
+      "preparation": "no observed specialization or capture"
+    },
+    "evidence_issues": [
+      "C=1 quality or Korean corruption gate failed",
+      "C=2 ctx=2000: C=2 quality or Korean corruption gate failed"
+    ],
+    "prefill": [
+      {
+        "ctx": 2000,
+        "tok": 2627,
+        "cold_s": 1.132511398056522,
+        "warm_s": 1.1288306710193865,
+        "cold_tok_s": 2319.6234532457133,
+        "warm_tok_s": 2327.186944369342,
+        "ttft_samples_s": [
+          1.132511398056522,
+          1.1288306710193865,
+          1.1165396579890512
+        ],
+        "first_s": 1.132511398056522,
+        "median_s": 1.1288306710193865,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": false
+      }
+    ],
+    "diagnostics": [
+      {
+        "phase": "diagnostic-c1-2000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c2-2000",
+        "complete": true
+      }
+    ],
+    "diagnostic_budget": {
+      "version": 1,
+      "max_tokens": 64,
+      "min_tokens": 64,
+      "reasoning_budget": 32,
+      "scope": "diagnostic replay only; consumer generation_budget and quality workloads unchanged"
+    },
+    "source_record_sha256": "046a0d7e73bd9b0dbc07841b47d12a795c867379084661f19fcbb2a21a79f197",
+    "decode": {
+      "gen_tokens": 9227,
+      "wall_s": 101.67409992218018,
+      "acc_raw": 0.5398963730569948,
+      "tokens_per_step": 4.7792746113989635,
+      "windows_med": null,
+      "raw_windows_med": 19.89520276542146,
+      "windows_by_ctx": {
+        "2000": [
+          19.89671650242531,
+          19.90823630936745,
+          19.88825491669924,
+          17.89983869571014,
+          22.898312691932585,
+          16.90103606791532,
+          19.891477053571975,
+          19.90898494079431,
+          19.854130394504455,
+          19.90136869704556,
+          20.89778165653527,
+          19.89363163557942,
+          19.889486574453873,
+          19.887084494956806,
+          19.88278715267335,
+          19.892526765187515,
+          19.89589405744491,
+          19.904141217942186,
+          19.907420520752314,
+          16.913443659851396,
+          19.933653405357326,
+          19.907057511867627,
+          19.89156758453446,
+          19.915151179221027,
+          19.892792371547362,
+          19.919702801072305,
+          15.902994911682672,
+          11.94435111279614,
+          19.901675731319383,
+          20.901468699466303,
+          19.913503924340574,
+          19.888671035793333,
+          19.86519334710874,
+          19.892767677848422,
+          18.925426477027262,
+          16.919277905374745,
+          20.87216301037444,
+          19.892353899075015,
+          19.901569286042257,
+          19.898735059620744,
+          19.906189196562607,
+          19.89852694400137,
+          19.898661252498542,
+          17.904437446261305,
+          19.88001047930081,
+          19.90294737714882,
+          19.87103081042142,
+          19.899995873817954,
+          19.88020870211077,
+          19.915954909041194,
+          19.88574306294837,
+          15.910127270411202,
+          22.862364723098036,
+          15.917110976377769,
+          19.89952004048754,
+          19.889428323421736,
+          19.923951651605066,
+          19.891790114146616,
+          19.904241707647824,
+          17.907116966773913,
+          19.906440247809716,
+          19.92294021957832,
+          19.911998444033067,
+          19.865314893786902,
+          19.903390098380296,
+          19.878905520419565,
+          19.88961092851047,
+          18.889859895857356,
+          19.895278119075897,
+          19.868739951805555,
+          19.908530871369,
+          19.89512741176702,
+          19.907389748074724,
+          19.842791850937914,
+          19.9153079223721,
+          19.87397720238392,
+          19.891566634494005,
+          18.900954951268776,
+          19.896644294485565,
+          19.891123489092976,
+          19.895558702668183,
+          19.901474545377752,
+          23.899579964013935,
+          19.908112018747403,
+          19.90114215155505,
+          19.888904912995557,
+          19.91051218219118,
+          19.91761839992464,
+          19.90148690360646,
+          19.890688909587407,
+          19.887760658028693,
+          19.89407839668669
+        ]
+      }
+    },
+    "requests": [
+      {
+        "ctx": 2000,
+        "question": 0,
+        "concurrency": 1,
+        "completion_tokens": 3306,
+        "prompt_tokens": 2681,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "32752cbaf4bb25e7b692a40338feaf1c5e70117e078509337063b0aa2207a01d",
+        "output_sha256": "fec5c16a74c1c84c25af894deb2bb71542e203d0d0514feec7b99a8a3e17b34d",
+        "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+        "ttft_s": 1.132511398056522,
+        "elapsed_s": 37.0179396160529,
+        "decode_s": 35.88542821799638,
+        "finish_reason": "stop",
+        "tpot_ms": 10.857920792132036,
+        "decode_tok_s": 92.09866411298829,
+        "first_channels_s": {
+          "reasoning_content": 1.132511398056522,
+          "reasoning": 1.132511398056522,
+          "content": 35.9409394680406
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 3138,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 1,
+        "concurrency": 1,
+        "completion_tokens": 2444,
+        "prompt_tokens": 2641,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "ad19314288809a0f57b6ea9f174c20d1c068b96ed0815d1a1ba868e85f72604b",
+        "output_sha256": "e5ed50e45b068e933f27c1fe5087e79787edc897a74be7dc89d4cac44e8219d1",
+        "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+        "ttft_s": 1.1288306710193865,
+        "elapsed_s": 24.109528792032506,
+        "decode_s": 22.98069812101312,
+        "finish_reason": "stop",
+        "tpot_ms": 9.406753221863742,
+        "decode_tok_s": 106.30660509682978,
+        "first_channels_s": {
+          "reasoning_content": 1.1288306710193865,
+          "reasoning": 1.1288306710193865,
+          "content": 20.962454479013104
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 1994,
+        "quality": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 2,
+        "concurrency": 1,
+        "completion_tokens": 3477,
+        "prompt_tokens": 2627,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "9f9ca42e1014b61fa2334ccde590f770742759d3b47fe60f17878ab06db6cc86",
+        "output_sha256": "b6fc4f931de12c3b74168aaff5cd79a52be5325ad65f7bcaa44612a68badf169",
+        "workload_sha256": "654d6e31507fa4f87b9ee5dd2bc5393844a2644b90b7922141b9410a1d7ecd50",
+        "ttft_s": 1.1165396579890512,
+        "elapsed_s": 40.528354519978166,
+        "decode_s": 39.411814861989114,
+        "finish_reason": "stop",
+        "tpot_ms": 11.338266646141863,
+        "decode_tok_s": 88.1969026844395,
+        "first_channels_s": {
+          "reasoning_content": 1.1165396579890512,
+          "reasoning": 1.1165396579890512,
+          "content": 38.97276181797497
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 3244,
+        "quality": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 6,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "000110",
+                    "010011",
+                    "010110",
+                    "101110"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "000110",
+                    "010001",
+                    "010110",
+                    "101110"
+                  ]
+                }
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "cf4cdbd04935f7555e00a5818569d9acb01f7704dfb0cdcaf24f8c8021588031",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      }
+    ],
+    "c2": [
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 68.58007471798919,
+        "aggregate_output_tok_s": 98.26469317380749,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": false,
+        "issues": [
+          "C=2 quality or Korean corruption gate failed"
+        ],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 0,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 1787,
+            "prompt_tokens": 2681,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "0b7c17c44e83a39657fe4440161abbd639fff363b6766ad47f3b84aea3fcc241",
+            "output_sha256": "62601f444d9df5b1c586e30cf6567889d781fde7f6562b7293ac743eda5002f9",
+            "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+            "ttft_s": 2.8628241019905545,
+            "elapsed_s": 28.199188280967064,
+            "decode_s": 25.33636417897651,
+            "finish_reason": "stop",
+            "tpot_ms": 14.18609416516042,
+            "decode_tok_s": 70.49156648458577,
+            "first_channels_s": {
+              "reasoning_content": 2.8628241019905545,
+              "reasoning": 2.8628241019905545,
+              "content": 26.47534118895419
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 1620,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v2",
+                "passed": false,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": false
+                },
+                "score": 5,
+                "max_score": 6,
+                "failures": [
+                  {
+                    "dimension": "counterfactual",
+                    "expected": {
+                      "available": 288,
+                      "shortfall": 0,
+                      "decision": "전량승인"
+                    },
+                    "actual": {
+                      "available": 314,
+                      "shortfall": 0,
+                      "decision": "전량승인"
+                    }
+                  }
+                ],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "83e5c9d94ba00827627d5909e95006d417b0b3b17bc9d48e3f9420251d4ebc09",
+                "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 0,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 4952,
+            "prompt_tokens": 2681,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "2e2ac95c08484c00a3eb609816ea042d15f570d23e3c40ad9654d7329116bdc0",
+            "output_sha256": "c286fdafdaa7cc395c9e1542259391fad1d685ace04a3c468931cdfa53b93a80",
+            "workload_sha256": "168276b0bac68306bc56928c4b89ea51c1ea62dc1fed3655950bb0a9bc7a51ef",
+            "ttft_s": 1.1431290640030056,
+            "elapsed_s": 68.58007471798919,
+            "decode_s": 67.43694565398619,
+            "finish_reason": "stop",
+            "tpot_ms": 13.620873692988525,
+            "decode_tok_s": 73.41672953877838,
+            "first_channels_s": {
+              "reasoning_content": 1.1431290640030056,
+              "reasoning": 1.1431290640030056,
+              "content": 67.23227463802323
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 4751,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "33df8676f32fafd0829130663c25c1d0c76928682b73da5a777e9ee54b15b81a",
+                "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 40.36060568096582,
+        "aggregate_output_tok_s": 122.71867372733333,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": true,
+        "issues": [],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 1,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 2104,
+            "prompt_tokens": 2641,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "758cc1b1bb5d3537085e155f02f325e86e75ecc81728f4f86a576e199cfac6c2",
+            "output_sha256": "5417a6733bafcb798f1910ab6c91bf345f0077b3661bdc8db89d3c259bc02e0d",
+            "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+            "ttft_s": 2.951866035000421,
+            "elapsed_s": 33.08349084696965,
+            "decode_s": 30.131624811969232,
+            "finish_reason": "stop",
+            "tpot_ms": 14.327924304312521,
+            "decode_tok_s": 69.79378022670129,
+            "first_channels_s": {
+              "reasoning_content": 2.951866035000421,
+              "reasoning": 2.951866035000421,
+              "content": 28.542136339994613
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 1654,
+            "quality": [
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+                "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 1,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 2849,
+            "prompt_tokens": 2641,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "2166dbf7d6525187fd9a8b81ac3ee99032e5fb7c95818e0887ce6ac10d7cc035",
+            "output_sha256": "6b3bf0cac7c65d1c9a99b084fcde4856f55eb7c224a5d28efbc5bf3a5778a1db",
+            "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+            "ttft_s": 1.1228704520035535,
+            "elapsed_s": 40.36043492797762,
+            "decode_s": 39.23756447597407,
+            "finish_reason": "stop",
+            "tpot_ms": 13.777234717687524,
+            "decode_tok_s": 72.5835060874863,
+            "first_channels_s": {
+              "reasoning_content": 1.1228704520035535,
+              "reasoning": 1.1228704520035535,
+              "content": 37.04874847002793
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 2352,
+            "quality": [
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+                "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 39.14335739903618,
+        "aggregate_output_tok_s": 108.95846149633084,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": true,
+        "issues": [],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 2,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 1956,
+            "prompt_tokens": 2627,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "8006f17e843cf8571c40e105302cb595cfbc28ebe73bea42cfe87a6aa2b27353",
+            "output_sha256": "ba48a5f9db4e979275d8ab2d2c1efdbffe1f2d97623b766953d467ce2778d846",
+            "workload_sha256": "654d6e31507fa4f87b9ee5dd2bc5393844a2644b90b7922141b9410a1d7ecd50",
+            "ttft_s": 2.857594845001586,
+            "elapsed_s": 34.52900092303753,
+            "decode_s": 31.671406078035943,
+            "finish_reason": "stop",
+            "tpot_ms": 16.200207712550355,
+            "decode_tok_s": 61.72760360506345,
+            "first_channels_s": {
+              "reasoning_content": 2.857594845001586,
+              "reasoning": 2.857594845001586,
+              "content": 32.430410468019545
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 1756,
+            "quality": [
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": true
+                },
+                "score": 7,
+                "max_score": 7,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "a4f58ed4ed5efaa8ace48fd3707f03d39ce82ee6a2a86fa1c8c2ca0b45e6de2a",
+                "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 2,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 2309,
+            "prompt_tokens": 2627,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "2edbfc9e76c3fc396c126ea7815eb9c20126daa905ab0f7b07242b0211549058",
+            "output_sha256": "711468c3204e56204563facb5cec5c01921e5968a19ce7e0ae5038e952835567",
+            "workload_sha256": "654d6e31507fa4f87b9ee5dd2bc5393844a2644b90b7922141b9410a1d7ecd50",
+            "ttft_s": 1.1351978980237618,
+            "elapsed_s": 39.14319711003918,
+            "decode_s": 38.00799921201542,
+            "finish_reason": "stop",
+            "tpot_ms": 16.46793726690443,
+            "decode_tok_s": 60.7240593519686,
+            "first_channels_s": {
+              "reasoning_content": 1.1351978980237618,
+              "reasoning": 1.1351978980237618,
+              "content": 37.58785837702453
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 2109,
+            "quality": [
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v2",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": true
+                },
+                "score": 7,
+                "max_score": 7,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "a4f58ed4ed5efaa8ace48fd3707f03d39ce82ee6a2a86fa1c8c2ca0b45e6de2a",
+                "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      }
+    ],
+    "concurrency_fixed": {
+      "tokens": 1024,
+      "clients": 4,
+      "concurrency": 2,
+      "definition": "bench-dec: four different 2K prompts with exactly `tokens` output tokens each; C=1 sends them one at a time, C=2 releases them 2 at a time; rate = output tokens / first start to last completion of each release, summed",
+      "c1_tok_s": 67.5524266342337,
+      "many_tok_s": 99.76632335447049,
+      "multiplier": 1.4768725318286595,
+      "c1_decode_tok_s": 74.41627017572105,
+      "many_decode_tok_s_sum": 113.81481090259012,
+      "decode_multiplier": 1.529434499120102,
+      "issues": [],
+      "valid": true,
+      "preparation_policy": {
+        "version": 2,
+        "output_tokens": 1024,
+        "arrivals": "first-token ordered cyclic rotations; all prompts in all arrival roles",
+        "measured_arrivals": "simultaneous"
+      },
+      "c1_requests": [
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-0",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3391,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "82e1f541346b7057a57cdc0a5583e95f0f4673dbb48a771a348018e3e520be19",
+          "output_sha256": "4d2227f86edee627264caa3b95d2f3ddcc960a945726c38d421f6bbb6dfe8ef5",
+          "workload_sha256": "5d4799c3d5e08c45c03c88bc5272120dd7043ef1946754d1403df5d0272dab77",
+          "ttft_s": 1.3493966710520908,
+          "elapsed_s": 15.907702838012483,
+          "decode_s": 14.558306166960392,
+          "finish_reason": "length",
+          "tpot_ms": 14.230993320586894,
+          "decode_tok_s": 70.26916375214485,
+          "first_channels_s": {
+            "reasoning_content": 1.3493966710520908,
+            "reasoning": 1.3493966710520908,
+            "content": 9.44739386299625
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-1",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3405,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "991e97911fe1274600fcd6e3df5c09e4a8e7a249000023d1c2a9a43f3c187b7f",
+          "output_sha256": "a2c74201246147c8c14da34cfa6980b20b5626ea4e64408a0536b8920d27aef0",
+          "workload_sha256": "42bdaed1f0cbd45ba4bc8706057fdb819a9abba5ba5c4ba9e4c600004ab63d38",
+          "ttft_s": 1.3583112710039131,
+          "elapsed_s": 15.409951191977598,
+          "decode_s": 14.051639920973685,
+          "finish_reason": "length",
+          "tpot_ms": 13.735718397823739,
+          "decode_tok_s": 72.80289032122543,
+          "first_channels_s": {
+            "reasoning_content": 1.3583112710039131,
+            "reasoning": 1.3583112710039131,
+            "content": 8.840371875965502
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-2",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3419,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "e977ada20e9447f48464b0f4ecacc79890d79197f9a943bf5586e5c5106100db",
+          "output_sha256": "98eeed962d9c81bc1fe3accfd1f479568ef95f2aa61ed9b79e9f320d75358a6a",
+          "workload_sha256": "45da7a1d12b1ee9bcb04d9a7c6b103d4912003f282c9cda4ceb3f903e15cdff4",
+          "ttft_s": 1.366089268005453,
+          "elapsed_s": 14.821366249991115,
+          "decode_s": 13.455276981985662,
+          "finish_reason": "length",
+          "tpot_ms": 13.152763423250892,
+          "decode_tok_s": 76.02965003021669,
+          "first_channels_s": {
+            "reasoning_content": 1.366089268005453,
+            "reasoning": 1.366089268005453,
+            "content": 7.862226067984011
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-3",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3404,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "9d982329f7e17885d5b02b581bc00102948540c9b1cb6a694c0432b504691af8",
+          "output_sha256": "685df0e6cd2dc27167b42f6c90c1f2cf91c3396e556a0586c3e3ff85d86a7511",
+          "workload_sha256": "2678899305db18aa4e8f05187883950274fa4b34f5125286752a299657ee5a76",
+          "ttft_s": 1.3364770070184022,
+          "elapsed_s": 14.49536702601472,
+          "decode_s": 13.158890018996317,
+          "finish_reason": "length",
+          "tpot_ms": 12.863040096770593,
+          "decode_tok_s": 77.74211947384514,
+          "first_channels_s": {
+            "reasoning_content": 1.3364770070184022,
+            "reasoning": 1.3364770070184022,
+            "content": 8.11806665401673
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        }
+      ],
+      "many_requests": [
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-0",
+          "concurrency": 2,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3391,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "34a12d30fdac80ffc7035644e1b459b2bd1401f4ece93e4380ad13a4933fce6b",
+          "output_sha256": "59818913a6a99addb3ae535045c9a056be3f91cca26e9a590e69b97515c63aa5",
+          "workload_sha256": "5d4799c3d5e08c45c03c88bc5272120dd7043ef1946754d1403df5d0272dab77",
+          "ttft_s": 3.095858705986757,
+          "elapsed_s": 20.011062995996326,
+          "decode_s": 16.91520429000957,
+          "finish_reason": "length",
+          "tpot_ms": 16.534901554261555,
+          "decode_tok_s": 60.478134491358325,
+          "first_channels_s": {
+            "reasoning_content": 3.095858705986757,
+            "reasoning": 3.095858705986757,
+            "content": 11.69217650295468
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-1",
+          "concurrency": 2,
+          "client": 1,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3405,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "5163fe5977d20055bccfc2877977e215966449aae8d78e7d67a6935e2b2eea1e",
+          "output_sha256": "6120dbcb4072b6427350ea816656f360678b1216740746e99111f1578fe677c9",
+          "workload_sha256": "42bdaed1f0cbd45ba4bc8706057fdb819a9abba5ba5c4ba9e4c600004ab63d38",
+          "ttft_s": 1.3704643810051493,
+          "elapsed_s": 18.983422346995212,
+          "decode_s": 17.612957965990063,
+          "finish_reason": "length",
+          "tpot_ms": 17.216967708690188,
+          "decode_tok_s": 58.082237065197866,
+          "first_channels_s": {
+            "reasoning_content": 1.3704643810051493,
+            "reasoning": 1.3704643810051493,
+            "content": 12.062953800952528
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-2",
+          "concurrency": 2,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3419,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "eca5e3507e57adc65b333fb219653dba9511363c2f77d068528ba79807a2b533",
+          "output_sha256": "283a83d2361bec751134da4995aa554811b66b595d63f9fd8a3e36ee57b36fde",
+          "workload_sha256": "45da7a1d12b1ee9bcb04d9a7c6b103d4912003f282c9cda4ceb3f903e15cdff4",
+          "ttft_s": 3.1068106759921648,
+          "elapsed_s": 21.017870650975965,
+          "decode_s": 17.9110599749838,
+          "finish_reason": "length",
+          "tpot_ms": 17.5083675219783,
+          "decode_tok_s": 57.11554767997058,
+          "first_channels_s": {
+            "reasoning_content": 3.1068106759921648,
+            "reasoning": 3.1068106759921648,
+            "content": 11.59436274197651
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-3",
+          "concurrency": 2,
+          "client": 1,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3404,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "ab93bc575ecf6bbd1edf1ff7999d93b407c6fa10b28f6165083f5efa8720afe1",
+          "output_sha256": "43732ccfeacddbb2079931d6933d5111da668179b6f344e76bf6602efa1009b7",
+          "workload_sha256": "2678899305db18aa4e8f05187883950274fa4b34f5125286752a299657ee5a76",
+          "ttft_s": 1.3542669780435972,
+          "elapsed_s": 21.044875143037643,
+          "decode_s": 19.690608164994046,
+          "finish_reason": "length",
+          "tpot_ms": 19.247906319642272,
+          "decode_tok_s": 51.95370256865346,
+          "first_channels_s": {
+            "reasoning_content": 1.3542669780435972,
+            "reasoning": 1.3542669780435972,
+            "content": 12.053349160007201
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        }
+      ]
+    },
+    "source_quality_sha256": "3c5c0eb214fab152209d4c0278c3418ec11143b9446c46f66bcb4771a56fba86",
+    "quality_details": [
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 0,
+        "client": null,
+        "request_sha256": "32752cbaf4bb25e7b692a40338feaf1c5e70117e078509337063b0aa2207a01d",
+        "output_sha256": "fec5c16a74c1c84c25af894deb2bb71542e203d0d0514feec7b99a8a3e17b34d",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 1,
+        "client": null,
+        "request_sha256": "ad19314288809a0f57b6ea9f174c20d1c068b96ed0815d1a1ba868e85f72604b",
+        "output_sha256": "e5ed50e45b068e933f27c1fe5087e79787edc897a74be7dc89d4cac44e8219d1",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 2,
+        "client": null,
+        "request_sha256": "9f9ca42e1014b61fa2334ccde590f770742759d3b47fe60f17878ab06db6cc86",
+        "output_sha256": "b6fc4f931de12c3b74168aaff5cd79a52be5325ad65f7bcaa44612a68badf169",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 6,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "000110",
+                    "010011",
+                    "010110",
+                    "101110"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "000110",
+                    "010001",
+                    "010110",
+                    "101110"
+                  ]
+                }
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "cf4cdbd04935f7555e00a5818569d9acb01f7704dfb0cdcaf24f8c8021588031",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q0",
+        "ctx": 2000,
+        "question": 0,
+        "client": 0,
+        "request_sha256": "0b7c17c44e83a39657fe4440161abbd639fff363b6766ad47f3b84aea3fcc241",
+        "output_sha256": "62601f444d9df5b1c586e30cf6567889d781fde7f6562b7293ac743eda5002f9",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": false
+            },
+            "score": 5,
+            "max_score": 6,
+            "failures": [
+              {
+                "dimension": "counterfactual",
+                "expected": {
+                  "available": 288,
+                  "shortfall": 0,
+                  "decision": "전량승인"
+                },
+                "actual": {
+                  "available": 314,
+                  "shortfall": 0,
+                  "decision": "전량승인"
+                }
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "83e5c9d94ba00827627d5909e95006d417b0b3b17bc9d48e3f9420251d4ebc09",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q0",
+        "ctx": 2000,
+        "question": 0,
+        "client": 1,
+        "request_sha256": "2e2ac95c08484c00a3eb609816ea042d15f570d23e3c40ad9654d7329116bdc0",
+        "output_sha256": "c286fdafdaa7cc395c9e1542259391fad1d685ace04a3c468931cdfa53b93a80",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "33df8676f32fafd0829130663c25c1d0c76928682b73da5a777e9ee54b15b81a",
+            "oracle_sha256": "ea1074289d8498355bf058889f8063e714907b3d0c1dcb4b10fc823c8b79a219"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q1",
+        "ctx": 2000,
+        "question": 1,
+        "client": 0,
+        "request_sha256": "758cc1b1bb5d3537085e155f02f325e86e75ecc81728f4f86a576e199cfac6c2",
+        "output_sha256": "5417a6733bafcb798f1910ab6c91bf345f0077b3661bdc8db89d3c259bc02e0d",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q1",
+        "ctx": 2000,
+        "question": 1,
+        "client": 1,
+        "request_sha256": "2166dbf7d6525187fd9a8b81ac3ee99032e5fb7c95818e0887ce6ac10d7cc035",
+        "output_sha256": "6b3bf0cac7c65d1c9a99b084fcde4856f55eb7c224a5d28efbc5bf3a5778a1db",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q2",
+        "ctx": 2000,
+        "question": 2,
+        "client": 0,
+        "request_sha256": "8006f17e843cf8571c40e105302cb595cfbc28ebe73bea42cfe87a6aa2b27353",
+        "output_sha256": "ba48a5f9db4e979275d8ab2d2c1efdbffe1f2d97623b766953d467ce2778d846",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "a4f58ed4ed5efaa8ace48fd3707f03d39ce82ee6a2a86fa1c8c2ca0b45e6de2a",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q2",
+        "ctx": 2000,
+        "question": 2,
+        "client": 1,
+        "request_sha256": "2edbfc9e76c3fc396c126ea7815eb9c20126daa905ab0f7b07242b0211549058",
+        "output_sha256": "711468c3204e56204563facb5cec5c01921e5968a19ce7e0ae5038e952835567",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v2",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "a4f58ed4ed5efaa8ace48fd3707f03d39ce82ee6a2a86fa1c8c2ca0b45e6de2a",
+            "oracle_sha256": "3a468502d675a40a942c5e849f09fa7619e7f6b94a340e7cb3cebef6cc723ecc"
+          }
+        ]
+      }
+    ]
+  }
+]
