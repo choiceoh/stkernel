@@ -215,9 +215,12 @@ class Drafter:
         """`draws_seed`: capture the walk at each row's temperature too, its uniforms keyed inside the graph from
         the rows' nonces and generation counts (base/draws.step_block)."""
         from engine.profiles.glm53.decode_graphs import DrafterDecodeGraphs
-        from engine.modules.vocab import CandidateBuffer
-        self.candidate_buffer = CandidateBuffer(caches.pool.max_seqs * self.k,
-            self.target.vp * self.target.comm.world_size, self.F.sel_top_k * self.target.comm.world_size, caches.device)
+        from engine.modules.vocab import CandidateBuffer, compact_supported
+        rows = caches.pool.max_seqs * self.k
+        vocab_size = self.target.vp * self.target.comm.world_size
+        count = self.F.sel_top_k * self.target.comm.world_size
+        self.candidate_buffer = CandidateBuffer(rows, vocab_size, count, caches.device,
+            compact=compact_supported(rows, vocab_size, count, self.F.sel_top_k, caches.device))
         # The rotary table is a constant of the model; built here it belongs to the arena, not to whichever graph
         # happened to run first and would free it on close (kernels/norm_rope.warm).
         warm_rotary(caches.device, self.F.head_dim, self.F.rope_theta)
