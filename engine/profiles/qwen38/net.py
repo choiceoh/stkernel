@@ -473,34 +473,29 @@ class Qwen38Net:
         proj = self.linear(x, n + "in_proj")
         qg, k, v, idx = proj.split([Hq * 2 * D, Hkv * D, Hkv * D, idx_q + F.idx_dim], dim=-1)
         qg = qg.view(N, Hq, 2 * D)
-        q = lanes.norm_rope(qg[..., :D], p[n + "q_norm"], F.rms_eps, meta.positions, F.rope_theta, F.rotary_dim)
         gate = qg[..., D:]
-        k = lanes.norm_rope(k.view(N, Hkv, D), p[n + "k_norm"], F.rms_eps, meta.positions, F.rope_theta, F.rotary_dim)
-        v = v.reshape(N, Hkv, D)
         if Hkv != 1:
             raise ValueError("the QSA stores write one KV head a rank (2 KV heads replicated over TP=4)")
         K, V = caches.kv(cache_layer)
-        lanes.qsa_store(K, meta.kv_slots, k.reshape(N, D))
-        lanes.qsa_store(V, meta.kv_slots, v.reshape(N, D))
-        # the indexer: the index queries normalised and rotated at their positions; the raw key pooled into every group
-        # this step closes (ring members before the step, this step's rows after), normalised and rotated at the
-        # group's first position, stored; then the raw keys into the ring by position
-        iq = lanes.norm_rope(idx[:, :idx_q].reshape(N, F.idx_heads, F.idx_dim), p[n + "idx_q_norm"], F.rms_eps,
-                             meta.positions, F.rope_theta, F.rotary_dim)
-        # views, not copies: compression and the stores read the raw keys through their strides, the compression reads no
-        # raw positions without a rope cache (only their shape is checked), and the norm reads positions by stride
-        ik = idx[:, idx_q:]
         ring = caches.key_ring(cache_layer)
-        pooled, first = lanes.qsa_compress(ik[:, None, :], meta.positions[:, None, None].expand(N, 1, 3),
-                                           ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions,
-                                           meta.key_slots, F.idx_ratio)
-        keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0], F.rope_theta, F.rotary_dim)
-        lanes.qsa_store(caches.index_keys(cache_layer), meta.key_slots, keys[:, 0])
-        lanes.qsa_store(ring, meta.ring_slots, ik)
+        ik = idx[:, idx_q:]
+        # the indexer's keys first: each group this step closes pooled from the raw-key ring (members before the step)
+        # and this step's rows, normalised and rotated at its first position and stored -- one launch, which must read
+        # the ring before this step's raw keys overwrite it
+        lanes.qsa_index_keys(ik, ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions, meta.key_slots,
+                             F.idx_ratio, p[n + "idx_k_norm"], F.rms_eps, F.rope_theta, F.rotary_dim,
+                             caches.index_keys(cache_layer))
+        # then one launch for the rest, all read through their strides: the query and index query heads normalised and
+        # rotated at their positions, the key head the same straight into K, the value rows into V and the raw keys
+        # into the ring by position
+        q, iq = lanes.qsa_inputs(qg[..., :D], k.view(N, Hkv, D), v.view(N, Hkv, D),
+                                 idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, meta.positions, p[n + "q_norm"],
+                                 p[n + "k_norm"], p[n + "idx_q_norm"], F.rms_eps, F.rope_theta, F.rotary_dim, K, V,
+                                 meta.kv_slots, ring, meta.ring_slots)
         # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer)
         blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
                                   meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
-        attended = lanes.qsa_attend(q.contiguous(), K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
+        attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
                                     F.idx_budget, meta.page_table, meta.rows_req)
         out = (attended.float() * torch.sigmoid(gate.float())).to(x.dtype).reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))

@@ -87,12 +87,15 @@ class QsaViewTests(unittest.TestCase):
         self.assertTrue(bool(view.any()))
 
     def test_the_layer_hands_views(self):
-        """The call site itself: no `.contiguous()` left on the three tensors."""
+        """The call site itself: no `.contiguous()` in the layer; since Q3 the raw keys and the heads go to the two fused
+        launches as views of the in_proj row (the compression's positions and first positions are the kernel's own)."""
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1] / "engine/profiles/qwen38/net.py").read_text()
-        self.assertIn("ik = idx[:, idx_q:]\n", source)
-        self.assertIn("meta.positions[:, None, None].expand(N, 1, 3),", source)
-        self.assertIn('first[:, 0], F.rope_theta', source)
+        body = source[source.index("    def _qsa("):source.index("    # -- MoE")]
+        self.assertIn("ik = idx[:, idx_q:]\n", body)
+        self.assertIn("lanes.qsa_index_keys(ik, ring,", body)
+        self.assertIn("idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, meta.positions", body)
+        self.assertNotIn(".contiguous()", body)                  # q is qsa_inputs' own contiguous output
 
 
 if __name__ == "__main__":
