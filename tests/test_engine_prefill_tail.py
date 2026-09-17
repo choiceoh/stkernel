@@ -22,9 +22,15 @@ def glm53_contract():
              and node.func.attr == 'Contract']
     if len(calls) != 1:
         raise AssertionError('expected the single GLM53 serving contract')
+    # `lanes` is the served lane table: the contract's mark alignment is the KDA kernel's own
+    # chunk, so the stub takes the dataclass's value instead of a number copied into this file.
+    from dataclasses import fields
+    from engine.profiles.glm53.lanes import Lanes
+    kda_chunk = next(f for f in fields(Lanes) if f.name == 'kda_chunk_tokens').default
     return eval(compile(ast.Expression(calls[0]), str(path), 'eval'),
                 dict(sched=s, F=SimpleNamespace(chunk_align=2304), token_budget=32768,
                      drafter=SimpleNamespace(k=6), MAX_WAIT_S=0, max_seqs=4,
+                     lanes=SimpleNamespace(kda_chunk_tokens=kda_chunk),
                      facts=SimpleNamespace(TP=4)))
 
 
