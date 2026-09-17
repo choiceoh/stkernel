@@ -4421,7 +4421,7 @@ was corrected to the former serial order. A separate attention tile split
 was slower and rejected. No queue/deployment; GB10/TP4 speed and acceptance
 unmeasured. [Receipts and limits](measurements/st_draft_sample_20260917/README.md).
 
-### 45차 — ACE식 전문가 슬롯 스킵의 품질: 10% 에 +0.02~0.03 nats, 스텝 상한 −4.5% 와 맞바꿀 값이 아니다 — 레버를 닫는다 (2026-09-17, TP4 GB10 hold 1회, PR #NNNN)
+### 45차 — ACE식 전문가 슬롯 스킵의 품질: 10% 에 +0.02~0.03 nats, 스텝 상한 −4.5% 와 맞바꿀 값이 아니다 — 레버를 닫는다 (2026-09-17, TP4 GB10 hold 1회, PR #1102)
 
 바이트 쪽(#1076)의 나머지 절반. 기본 꺼진 노브 `Glm53Net.route_skip`(가중치만 0, id 유지, 재정규화)과 캡처 패스 스케줄을 더하고, **한 부팅에서
 133 대화 코퍼스를 다섯 번**(끔 · 전역 10% · 전역 15% · 층별 10% · 끔 반복) 먹여 프리필 head NLL 을 위치 단위로 짝지었다(패스마다 캐시 솔트,
