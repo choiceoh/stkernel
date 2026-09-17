@@ -635,7 +635,7 @@ class RecipeTests(unittest.TestCase):
                         with self.subTest(lane=v.lane, token=token):
                             self.assertTrue(self.resolves(token), token)
                         checked.add(token)
-        self.assertIn("probes/mk_mhc_geometry_bench.py", checked)
+        self.assertIn("engine/kernels/dense/mhc_reference.py", checked)
         self.assertIn("measurements/dsv41_mhc_20260910", checked)
         self.assertIn("engine/kernels/dense/mhc.MHCV41.prefill", checked)
         self.assertFalse(self.resolves("engine/kernels/dense/mhc.MHCV42"))      # a named attribute must be in its file

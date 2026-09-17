@@ -3,9 +3,7 @@
 #
 # QUICKSTART
 #   fleet.sh onepass s NAME [est] [note]                 reuse idle serving, onepass only
-#   fleet.sh pair s NAME "VLLM_X=1" [est] [note]          candidate + missing matched baseline
-#   fleet.sh chain s [est] [note] -- A="VLLM_X=1" B=""    onepass once per requested arm
-#   fleet.sh submit agent spec.json                      async CPU / canonical GPU pair, deduplicated
+#   fleet.sh submit agent spec.json                      async CPU / canonical GPU work, deduplicated
 #   fleet.sh result ID | inbox agent --after CURSOR       shared evidence without holding GPUs
 #   fleet.sh run --cpu s [est] [note] -- <cmd>             CPU work runs now in parallel
 #   fleet.sh run --gpu [--detach] s [est] [note] -- <canonical argv>
@@ -41,7 +39,7 @@
 # probe's own memory budget is exported as ST_PROBE_GIB when none was set, and a single check's
 # fresh files come back to results/<session> when it releases.
 #
-# TWO LANES. A boot, a pair, a chain, a live onepass take the fleet: four Sparks, one holder.
+# TWO LANES. A boot or a live onepass takes the fleet: four Sparks, one holder.
 # An ST check that needs ONE GPU (probes/run_engine_check.sh, or run_engine_probe.sh without
 # --distributed: one container, the four ranks as threads on one card) does not wait for the
 # Sparks. It takes the single-GPU lane: ONE Spark beside production -- srv4 by default
@@ -59,10 +57,10 @@
 # the image production runs there, and takes no fleet lease. Say --fleet to keep a one-GPU
 # check on the four Sparks (one that needs every rank file, say).
 #
-# GPU admission accepts current canonical pair, chain, ab-lever, onepass and
-# recorded pair/baseline execution. Unknown wrappers, standalone GPU checks,
-# sanitizers, custom probe manifests, chain --after and LEGS=none are refused
-# before preparation/queueing. Pending edits and execution recheck this policy.
+# GPU admission accepts the canonical onepass and the ST bracket arms. Unknown
+# wrappers, standalone GPU checks, sanitizers, custom probe manifests and
+# chain --after are refused before preparation/queueing. Pending edits and
+# execution recheck this policy.
 # The ST engine's canonical checks (probes/run_engine_check.sh and run_engine_probe.sh
 # over a named, byte-pinned probe) are admitted too: they take the same four nodes, so
 # they queue here rather than behind the launcher's own lock. The probe is named in
@@ -74,25 +72,24 @@
 # the quiet gate; a session's own boot is never asked (45차 §91). A grant is refused while
 # any st-* container is up or the lease is another's.
 # --probe is the internal idle-serving scheduling lane; only onepass.py may
-# enter it. A rehearsal skips GPUs only for canonical pair/chain/ab-lever.
+# enter it. A rehearsal skips GPUs only for ST bracket arms.
 # No bypass: a FAILed preflight is not queued. Fix the printed cause.
 #
 # Sessions release immediately after measurements. Recovery belongs exclusively
 # to the central controller after 300 seconds without fleet activity; its
 # authenticated boot-only maintenance action is separate from experiments.
-# A matching baseline is reused; pair and chain target one sample by default.
 # The queue retains aging, downstream priority, pending edits and pause/resume.
 #
 # Operator/control commands retained for owner lifecycle and compatibility:
 #   wait s [timeout_min] (registered supervisor only); release s
 #   front s; kick [--force]; busy; nodes
-#   preflight [--probe] s -- <canonical argv>; deploy s rev; yield s [max_est]
+#   preflight [--probe] s -- <canonical argv>; yield s [max_est]
 #   restore-needed s (always no); notify s "<cmd>" (event hook)
 # Bare request and unvalidated adopt are disabled.
 # None of these makes an arbitrary GPU payload an approved experiment.
 # Live owners are never killed by ordinary scheduling; dead owners can be kicked.
 #
-# Source copies ab-lever2.sh and fleet.sh are refreshed during preflight.
+# A source copy of fleet.sh is refreshed during preflight.
 # Control scripts and accepted source are pinned before waiting; the holder
 # executes the latest accepted command revision. CPU admission uses the fast
 # source gate; GPU quality, prefill, decode and acceptance use the same onepass.
@@ -143,13 +140,6 @@ case "${1:-}" in
   edit) shift; exec python3 "$REPO/bench/fleet_pending.py" "$@";;
   priority) exec python3 "$REPO/bench/fleet_priority.py" "$FLEET_DIR";;
 esac
-# "이 빌드의 기준점이 될 측정이 이미 있으면 알려주는 장치" (operator, 39차): before a
-# session spends a boot on a defaults arm, say whether the deployed build already
-# has one. bench/baseline.py reads the onepass records (overlay stamp + knobs).
-baseline_line() {
-  [ -f "$REPO/bench/baseline.py" ] || return 0
-  (cd "$REPO" 2>/dev/null && timeout 20 python3 bench/baseline.py --brief 2>/dev/null) || true
-}
 HEAD_URL=${HEAD_URL:-http://10.10.10.2:8000}
 # The single-GPU lane's host and card: one Spark beside production. `${VAR-default}`, not
 # `:-`: an explicitly EMPTY host is the switch that turns the lane off, and then a one-GPU
@@ -176,7 +166,7 @@ holder_file_of() {  # session -> the holder file naming it; 1 when it holds noth
 }
 lane_front() { awk -F'|' -v lane="$(lane_of "${1:-}")" '{ k = ($6 == "single") ? "single" : "fleet" } k == lane { print $2; exit }' "$Q"; }   # kind -> the first queued session of its lane, in the ranked order
 single_on_fleet() { case "${FLEET_SINGLE_GPU_ON_FLEET:-}" in 1) return 0;; 0) return 1;; esac; case "${FLEET_SINGLE_GPU_HOST#*@}" in srv[1-4]|srv[1-4].*|spark*|10.10.0.[1-4]|10.10.1.[1-4]|10.10.10.[1-4]|10.10.11.[1-4]) return 0;; *) return 1;; esac; }   # is the single host one of the fleet's own boxes? (= fleet_single.on_fleet)
-serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -qE '^(glm53|st-glm53)$'; }   # production: vLLM's or the ST engine's
+serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^st-glm53$'; }   # production: the ST engine
 st_serving_up() { docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^st-glm53$'; }
 # ---- the fleet lease: ONE record of who holds the four Sparks (engine/base/fleet_lease.py).
 # This queue is its authority for tickets. _try_hold takes it as queue/<session> at GO (or
@@ -425,7 +415,7 @@ _collect_single() {  # session t0
 }
 # ---- preflight: the traps that cost a boot on 09-06, checked before the boot
 preflight() {  # [--probe|--single] session [-- cmd...] -> 0 PASS, 1 FAIL
-  local ok=1 knobs="" chain="" kind=boot
+  local ok=1 kind=boot
   case "${1:-}" in --probe|--single) kind=${1#--}; shift;; esac
   echo "preflight $1 [$kind]:"
   shift
@@ -434,8 +424,8 @@ preflight() {  # [--probe|--single] session [-- cmd...] -> 0 PASS, 1 FAIL
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" \
       --repo "${FLEET_RUNNER_REPO:-$REPO}" --cwd "$PWD" --kind "$kind" -- "$@" || return 1
   fi
-  for pair in "ab-lever2.sh:bench/ab-lever.sh" "fleet.sh:bench/fleet.sh"; do
-    local copy=$LOGD/${pair%%:*} src=$REPO/${pair#*:} have want
+  for entry in "fleet.sh:bench/fleet.sh"; do
+    local copy=$LOGD/${entry%%:*} src=$REPO/${entry#*:} have want
     [ -f "$copy" ] || continue
     # The sync is one-directional in code but not in effect: it copies whatever $REPO the
     # caller ran from over the shared entry, so a stale checkout used to be able to move
@@ -453,60 +443,6 @@ preflight() {  # [--probe|--single] session [-- cmd...] -> 0 PASS, 1 FAIL
       echo "  SYNC $copy <- repo (was stale)"; logit "preflight synced $(basename "$copy") from the repo"
     else echo "  FAIL $copy differs from $src and could not be synced"; rm -f "$copy.new"; ok=0; fi
   done
-  if [ "${1:-}" = bash ] && [ -f "${2:-}" ]; then chain=$2; fi
-  if [ -n "$chain" ]; then
-    if bash -n "$chain" 2>/dev/null; then echo "  PASS syntax $chain"; else echo "  FAIL syntax $chain"; ok=0; fi
-    if grep -qF 'if [[ $touched == 1 ]]; then' "$chain" && grep -q 'RESTORE' "$chain"; then
-      echo "  FAIL legacy unconditional restore: guard cleanup with FLEET_RESTORE_MANAGED and use bench/fleet_entry.py idle (see probes/run_gemm_input_cta.sh)"; ok=0
-    fi
-    # Header examples describe the runner; only executable lines can set knobs.
-    knobs=$(grep -vE '^[[:space:]]*#' "$chain" | grep -oE "VLLM_[A-Z0-9_]+=[^ \"'\\]*" | sort -u)
-  fi
-  [ $# -gt 0 ] && knobs="$knobs $(printf '%s ' "$@" | grep -oE "VLLM_[A-Z0-9_]+=[^ \"']*" | sort -u)"
-  # The declared-knob rule is about the LAUNCHER: it forwards only the keys
-  # profiles/glm53.env declares, so a boot chain that sets an undeclared knob
-  # silently measures the default and costs a boot. A probe has no launcher --
-  # run_mk_probe.sh builds its own container and passes its own env -- so the
-  # VLLM_* names inside a probe runner are not knobs at all. Checking them
-  # FAILed a probe turn on 09-06 over run_mk_probe.sh's own PROBE_CACHE lines
-  # (VLLM_CACHE_ROOT, VLLM_FLASHINFER_AUTOTUNE_CACHE_DIR).
-  if [ "$kind" != boot ]; then
-    echo "  SKIP declared-knob check ($kind: no launcher in the path)"
-  else
-    # The profile that will serve is the one the chain deploys, and chains pull
-    # origin/main at their start (or the holder runs `fleet.sh deploy`): check
-    # against origin/main, falling back to the checkout when the fetch is
-    # impossible. A key declared only in the checkout (a branch not merged yet)
-    # passes with a note; a key declared only by a tree the chain `cd`s into (a
-    # PR checkout under ~/mkab) passes with a note; undeclared everywhere FAILs.
-    # 09-06: a key merged to main minutes earlier FAILed against the stale checkout.
-    local k undeclared="" prof_main="" prof_src=checkout behind=0
-    if timeout 20 git -C "$REPO" fetch -q origin 2>/dev/null; then
-      prof_main=$(git -C "$REPO" show origin/main:profiles/glm53.env 2>/dev/null) && prof_src=origin/main
-      behind=$(git -C "$REPO" rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
-    fi
-    local prof_here; prof_here=$(cat "$REPO/profiles/glm53.env")
-    local profiles="" d
-    for d in $( { [ -n "$chain" ] && grep -vE '^\s*#' "$chain"; printf '%s ' "$@"; } 2>/dev/null | grep -oE "cd +[^ ;&|)]+" | awk '{print $2}' | sed "s|^~|$HOME|" | sort -u); do
-      [ -f "$d/profiles/glm53.env" ] && profiles="$profiles $d/profiles/glm53.env"
-    done
-    local only_here="" only_tree=""
-    for k in $knobs; do
-      if [ -n "$prof_main" ] && grep -qE "^${k%%=*}=" <<< "$prof_main"; then continue; fi
-      if grep -qE "^${k%%=*}=" <<< "$prof_here"; then only_here="$only_here ${k%%=*}"
-      elif [ -n "$profiles" ] && grep -qE "^${k%%=*}=" $profiles 2>/dev/null; then only_tree="$only_tree ${k%%=*}"
-      else undeclared="$undeclared ${k%%=*}"; fi
-    done
-    if [ -n "$undeclared" ]; then echo "  FAIL undeclared in profiles/glm53.env (the launcher forwards only declared keys; checked $prof_src and checkout):$undeclared"; ok=0
-    elif [ -n "$knobs" ]; then echo "  PASS knobs declared in $prof_src: $(echo $knobs | tr ' ' ',')"; fi
-    [ -z "$only_here" ] || echo "  NOTE declared only in the checkout (not in origin/main yet):$only_here"
-    [ -z "$only_tree" ] || echo "  NOTE declared only by a tree the chain cd's into (a PR checkout):$only_tree"
-    [ "${behind:-0}" = 0 ] || echo "  NOTE checkout is $behind commit(s) behind origin/main -- the chain must pull (or fleet.sh deploy) before it boots"
-    if [ -f "$REPO/bench/baseline.py" ]; then
-      local kv; kv=$(echo $knobs | tr ' ' ',')
-      (cd "$REPO" && timeout 20 python3 bench/baseline.py --brief ${kv:+--knobs "$kv"} 2>/dev/null | sed 's/^/  /') || true
-    fi
-  fi
   [ $ok = 1 ] && { echo "  -> PASS"; return 0; }
   echo "  -> FAIL: fix the cause above and run again (there is no override)"; return 1
 }
@@ -540,46 +476,11 @@ classify_cmd() {  # cmd... -> gpu|nogpu|unknown
       *)    text="$text $(grep -vE '^\s*#' "$f" 2>/dev/null)";;
     esac
   done
-  local gpu='ab-lever|start-glm53|deploy-overlays|run_mk_probe|run_megakernel_bench|run_engine_probe|run_engine_check|docker run|--gpus|onepass\.py|bracket\.py|bench-dec|torch\.cuda|nvidia-smi|\.cu\b|cuda_'
-  local cpu='MK_PROBE_NO_GPU=1|head_pack_accuracy_cpu|baseline\.py|judge\.py|test_logic\.py|b12x_static_compile_check|compile\.sh|nvcc |bash -n|^git |md5sum|proof\.py'
+  local gpu='run_engine_probe|run_engine_check|st_bracket|docker run|--gpus|onepass\.py|torch\.cuda|nvidia-smi|\.cu\b|cuda_'
+  local cpu='MK_PROBE_NO_GPU=1|compile\.sh|nvcc |bash -n|^git |md5sum'
   if echo "$text" | grep -qE "$gpu"; then echo gpu
   elif echo "$text" | grep -qE "$cpu"; then echo nogpu
   else echo unknown; fi
-}
-audit_line() {  # a stale pin silently turns off CPU reuse and contract narrowing
-  local out
-  out=$( (cd "$REPO" 2>/dev/null && timeout 20 python3 - <<'PY'
-import hashlib, sys
-sys.path.insert(0, "bench")
-from pathlib import Path
-try:
-    import cpu_contracts as cc, cpu_evidence as ce
-except Exception as exc:                      # noqa: BLE001 -- never take status down
-    print(f"audit: unreadable ({type(exc).__name__})"); raise SystemExit
-root = Path(".").resolve()
-def sha(rel):
-    path = root / rel
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else ""
-stale = []
-if sha("tests/test_logic.py") != cc.LOGIC_AUDIT:
-    stale.append("tests/test_logic.py")
-for name in ("LOGIC_SOURCE_AUDIT", "FLEET_AUDIT", "STARTUP_AUDIT"):
-    for rel, want in (getattr(ce, name, {}) or {}).items():
-        if sha(rel) != want:
-            stale.append(rel)
-if not stale:
-    raise SystemExit
-print("audit: STALE -- CPU evidence falls back to full-tree and the planner cannot narrow")
-print("       a contract change, so every unrelated commit re-runs the work (it sat like")
-print("       this for five days once, seen only as four 'pre-existing' test failures).")
-for rel in sorted(set(stale))[:6]:
-    print("       drifted: " + rel)
-print("       fix: review the change, then update bench/cpu_contracts.LOGIC_AUDIT and")
-print("            bench/cpu_evidence.*_AUDIT. tests/test_fleet_source.py says it too.")
-PY
-  ) 2>/dev/null )
-  [ -n "$out" ] && echo "$out" | sed 's/^/  /'
-  return 0
 }
 production_line() {  # what is serving, judged from the container's env (idea 9)
   serving_up || { echo "production: no serving container"; return 0; }
@@ -597,19 +498,10 @@ PY
   local h; h=$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/health" 2>/dev/null)
   echo "production: ${k:-unknown} (health ${h:-000})"
 }
-deployed_line() {  # the build registry (idea 3): stamp <-> sha, and the checkout vs deployed
-  local stamp sha head; stamp=$(cut -c1-12 "${MK_OVERLAY_STAMP:-$HOME/glm53-cache/.overlay-sha}" 2>/dev/null)
-  [ -n "$stamp" ] || { echo "deployed: unknown (no overlay stamp)"; return 0; }
-  sha=$(awk -F'\t' -v st="$stamp" 'index($2, st)==1 {sha=$3; who=$4; at=$1} END {if (sha) print sha " (by " who ", " substr(at,12,5) ")"}' "$FLEET_DIR/builds.tsv" 2>/dev/null)
-  head=$(git -C "$REPO" rev-parse --short HEAD 2>/dev/null)
-  echo "deployed: $stamp${sha:+ = $sha}"
-  [ -n "$sha" ] && [ -n "$head" ] && [ "${sha%% *}" != "$head" ] && echo "  NOTE: the checkout ($head) is not the deployed build (${sha%% *}) -- a bench without a deploy runs the deployed one"
-  return 0
-}
 nodes_check() {  # idea 8: the four nodes before a boot; 0 = all fine
   local ok=0 ip out
   for ip in ${FLEET_NODES_IPS:-10.10.10.1 10.10.10.2 10.10.10.3 10.10.10.4}; do
-    out=$(timeout 12 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@$ip" "nvidia-smi -L >/dev/null 2>&1 && echo gpu=ok || echo gpu=FAIL; echo stray=\$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vc '^glm53\$'); echo ram=\$(free -g | awk 'NR==2{print \$7}')G; for p in ${FLEET_NODE_PATHS:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}; do [ -e \"\$p\" ] && echo path=ok || echo path=MISSING:\$p; done" 2>/dev/null | tr '\n' ' ')
+    out=$(timeout 12 ssh -o BatchMode=yes -o ConnectTimeout=5 "choiceoh@$ip" "nvidia-smi -L >/dev/null 2>&1 && echo gpu=ok || echo gpu=FAIL; echo stray=\$(docker ps --format '{{.Names}}' 2>/dev/null | grep -vcE '^(st-glm53)\$'); echo ram=\$(free -g | awk 'NR==2{print \$7}')G; for p in ${FLEET_NODE_PATHS:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}; do [ -e \"\$p\" ] && echo path=ok || echo path=MISSING:\$p; done" 2>/dev/null | tr '\n' ' ')
     [ -n "$out" ] || { out="ssh=FAIL"; }
     echo "  node $ip: $out"
     echo "$out" | grep -qE "FAIL|MISSING|stray=[1-9]" && ok=1
@@ -617,7 +509,7 @@ nodes_check() {  # idea 8: the four nodes before a boot; 0 = all fine
   return $ok
 }
 restore_needed() {  # session -> always no
-  echo "no (only the central controller restores after 300 seconds of idle fleet)"
+  echo "no (production recovery is the ST supervisor's own loop; nothing restores the retired vLLM fleet)"
   return 1
 }
 
@@ -625,7 +517,7 @@ restore_needed() {  # session -> always no
 # its chain / boot / bench process runs or the engine has requests in flight.
 # The patterns live here, in a file, so no caller's command line matches itself.
 busy_procs() {
-  ps -eo args | grep -cE "^(bash [a-zA-Z0-9_./-]*(lever-chain|ab-lever|onepass-after|chain|orchestrate)[a-zA-Z0-9_.-]*\.sh|bash /home/choiceoh/glm53-logs/ab-lever2\.sh|bash launchers/start-glm53|python3 (bench/onepass\.py|bench/bracket\.py|probes/))"
+  ps -eo args | grep -cE "^(bash [a-zA-Z0-9_./-]*(onepass-after|orchestrate|st_bracket)[a-zA-Z0-9_.-]*(\.sh)?|python3 (bench/onepass\.py|probes/))"
 }
 busy_reqs() {
   curl -s -m 3 "$HEAD_URL/metrics" 2>/dev/null | awk '/^vllm:num_requests_(running|waiting)/ {s+=$2} END {print s+0}'
@@ -635,8 +527,7 @@ booting() {  # a head container younger than 12 min is still booting (health not
   if docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^st-glm53 ' | grep -qE "$young"; then
     [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/v1/models")" != 200 ]; return
   fi
-  docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '^glm53 ' | grep -qE "$young" \
-    && [ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' "$HEAD_URL/health")" != 200 ]
+  return 1
 }
 legacy_busy() { [ "$(busy_procs)" != 0 ] || [ "$(busy_reqs)" != 0 ] || booting; }
 
@@ -926,7 +817,7 @@ case "$cmd" in
 esac
 case "$cmd" in
   request)
-    echo 'bare GPU reservations are disabled; use fleet.sh onepass, pair or chain' >&2; exit 2;;
+    echo 'bare GPU reservations are disabled; use fleet.sh onepass or the st-* lanes' >&2; exit 2;;
   wait)
     s=${1:?session}; tmo=${2:-720}; pid=${FLEET_PID:-$PPID}
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_onepass.py" --repo "${FLEET_RUNNER_REPO:-$REPO}" \
@@ -1016,7 +907,7 @@ case "$cmd" in
     export FLEET_SESSION=$s
     auto=$(classify_cmd "$@"); cls=${force:-$auto}
     if [ "$force" = nogpu ] && [ "$auto" = gpu ]; then
-      echo "REFUSED: you said --cpu but the job shows GPU use (a boot, ab-lever, a probe container, torch.cuda); run it --gpu, or fix the classifier if it is wrong" >&2
+      echo "REFUSED: you said --cpu but the job shows GPU use (a boot, a probe container, torch.cuda); run it --gpu, or fix the classifier if it is wrong" >&2
       python3 "$REPO/bench/fleet_classify.py" --classification "$auto" -- "$@" >&2
       logit "refused --cpu $s: classifier saw GPU use"; exit 5
     fi
@@ -1106,13 +997,12 @@ case "$cmd" in
       hbf=$(hb_file "$hs"); [ -f "$hbf" ] && [ $(( $(now) - $(stat -c %Y "$hbf") )) -gt 600 ] && echo "  SILENT: no heartbeat for $(( ($(now) - $(stat -c %Y "$hbf")) / 60 ))m"
     fi
     echo "legacy: $(busy_procs) bench/boot procs, $(busy_reqs) requests in flight$(booting && echo ', head booting')"
-    audit_line
     echo "queue ($(grep -c . "$Q")):"; n=0; eta=$remaining; while IFS='|' read -r t s at est note kind qpid; do n=$((n+1)); exp=$(expected_min "$s" "$est"); echo "  $n. $s${kind:+ [$kind]} (since $(date -d @$at +%H:%M), est ${est}m, expect ~${exp}m, ETA ~$(date -d "@$(( $(now) + eta * 60 ))" +%H:%M)) $note"; eta=$(( eta + exp )); done < "$Q"
     ls -t "$LOGD"/FLEET-*.done 2>/dev/null | head -4 | while read -r f; do echo "  marker $(stat -c %y "$f" | cut -c12-16) $(basename "$f")"; done
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_pause.py" list --format text
     echo "log:"; tail -4 "$L" | sed 's/^/  /'
     python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_idle.py" status "$FLEET_DIR"
-    production_line; deployed_line; baseline_line;;
+    production_line;;
   adopt) echo 'unvalidated GPU adoption is disabled; submit canonical onepass work' >&2; exit 2;;
   front) with_lock _front "${1:?session}"; echo "$1 -> position $(_position "$1")";;
   withdraw)
@@ -1133,26 +1023,13 @@ case "$cmd" in
     [ $# -ge 1 ] || { echo "usage: fleet.sh preflight [--probe|--single] <session> [-- cmd...]" >&2; exit 2; }
     preflight "$@";;
   startup)
-    echo 'GPU work requires onepass: use fleet.sh pair/chain for startup knobs; separate startup request campaigns are disabled' >&2; exit 2;;
+    echo 'startup campaigns are disabled: startup shape is owned by the engine profiles now' >&2; exit 2;;
   onepass)
     s=${1:?session}; name=${2:?NAME}; est=${3:-5}; note=${4:-live onepass $name}
     exec bash "$0" run --gpu --probe "$s" "$est" "$note" -- python3 "$REPO/bench/onepass.py" --name "$name";;
-  chain)
-    s=${1:?session}; shift; est=30; note=""
-    [ "${1:-}" != "--" ] && { est=$1; shift; }
-    [ "${1:-}" != "--" ] && { note=$1; shift; }
-    [ "${1:-}" = "--" ] && shift
-    [ $# -gt 0 ] || { echo "usage: fleet.sh chain <session> [est] [note] -- NAME=KNOBS [...]" >&2; exit 2; }
-    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
-    exec bash "$0" run $lane "$s" "$est" "${note:-chain $*}" -- bash "$REPO/bench/chain.sh" "$@";;
-  pair)
-    s=${1:?session}; name=${2:?NAME}; knobs=${3:-}; est=${4:-25}; note=${5:-pair $name}
-    [ "${FLEET_REHEARSE:-0}" = 1 ] && lane=--cpu || lane=--gpu
-    exec bash "$0" run $lane "$s" "$est" "$note" -- bash "$REPO/bench/pair.sh" "$name" "$knobs";;
   # ---- the ST engine's bracket (bench/st_bracket.sh): one committed sha per arm, production
   # shape, short C=1/C=4 screening by default (ST_BRACKET_VALIDATION=full for adoption).
-  # A boot ticket like pair/chain: it takes the fleet
-  # lease at GO and the release's own launcher verifies it.
+  # A boot ticket: it takes the fleet lease at GO and the release's own launcher verifies it.
   st-pair)   # fleet.sh st-pair s <sha> [--base <sha>] [est] [note]
     s=${1:?session}; sha=${2:?candidate sha}; shift 2; base=()
     [ "${1:-}" = --base ] && { base=(--base "${2:?base sha}"); shift 2; }
@@ -1183,13 +1060,6 @@ case "$cmd" in
     if [ -n "${1:-}" ] && [[ "$1" =~ ^[0-9a-f]{7,40}$ ]]; then sha=$1; shift; fi
     est=${1:-10}; note=${2:-st-probe ${sha:-deployed}}
     exec bash "$0" run --gpu --probe ${detach[@]+"${detach[@]}"} "$s" "$est" "$note" -- bash "$REPO/bench/st_bracket.sh" probe ${sha:+"$sha"};;
-  deploy)
-    s=${1:?session}; rev=${2:?rev}
-    [ -s "$H" ] && [ "$(cut -d'|' -f1 "$H")" = "$s" ] || { echo "deploy needs the fleet: $s is not the holder ($(holder_line 2>/dev/null || echo none))" >&2; exit 1; }
-    ( cd "$REPO" && git fetch -q origin "$rev" && git checkout -q -B ab FETCH_HEAD && git log --oneline -1 && bash launchers/deploy-overlays.sh glm53 2>&1 | tail -3 ) || { logit "deploy FAILED $s $rev"; exit 1; }
-    stamp=$(cut -c1-12 "${MK_OVERLAY_STAMP:-$HOME/glm53-cache/.overlay-sha}" 2>/dev/null); sha=$(git -C "$REPO" rev-parse --short HEAD)
-    printf '%s\t%s\t%s\t%s\t%s\n' "$(ts)" "$stamp" "$sha" "$s" "$rev" >> "$FLEET_DIR/builds.tsv"
-    logit "deploy $s $rev -> build $stamp = $sha"; echo "deployed build $stamp = $sha (registry: $FLEET_DIR/builds.tsv)";;
   yield)
     # The supervisor owns its payload and teardown. Do not drop that ownership
     # for a nested legacy yield; queued work runs immediately at finish.

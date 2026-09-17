@@ -1,15 +1,47 @@
 """Native ModelOpt dense and short-prefill accumulation contracts, without CUDA."""
 import ast
+import copy
+import math
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-import test_glm53_ep_scatter_fp32 as ep
 from engine.base.kernel_shape import MEASURED
 
 DISPATCH = Path(__file__).resolve().parents[1] / 'engine/kernels/b12x/moe_dispatch.py'
 CELL = MEASURED.moe     # the admitted MoE cell the gates compare against (engine/base/kernel_shape)
+
+
+class Tensor:
+    """The CPU torch stub the EP scatter oracle runs against (no CUDA here)."""
+    def __init__(self, shape=(1,), dtype='bf16', device='cuda:0', *, events=None, parent=None):
+        self.shape, self.dtype, self.device, self.ndim = shape,dtype,device,len(shape)
+        self.events = events if events is not None else []
+        self.parent = parent or self; self.contiguous = True
+    def data_ptr(self): return id(self.parent)
+    def is_contiguous(self): return self.contiguous
+    def numel(self): return math.prod(self.shape)
+    def view(self,*a): return self
+    def to(self,*a): return self
+    def record_stream(self, stream): self.events.append(('record',stream,self.data_ptr()))
+    def __getitem__(self, s): return Tensor((s.stop,self.shape[1]),self.dtype,self.device,events=self.events,parent=self.parent)
+    def copy_(self, other): self.events.append(('copy',other.data_ptr())); return self
+
+
+def ep_scatter_oracle():
+    """Extract the engine's own _ep_local_scatter_buffer under the stub torch."""
+    fn = copy.deepcopy(next(n for n in ast.walk(ast.parse(DISPATCH.read_text()))
+                            if isinstance(n, ast.FunctionDef) and n.name == '_ep_local_scatter_buffer'))
+    fn.decorator_list = []
+    events, allocations = [], []
+    def empty(shape, **kw):
+        result = Tensor(shape,events=events,**kw); allocations.append(result); return result
+    ns = dict(torch=SimpleNamespace(bfloat16='bf16',float32='f32',int32='i32',empty=empty,
+                                    cuda=SimpleNamespace(current_stream=lambda dev:'side-stream')))
+    exec(compile(ast.Module(body=[ast.parse('from __future__ import annotations').body[0], fn],
+                            type_ignores=[]), str(DISPATCH), 'exec'), ns)
+    return ns, events, allocations
 
 
 def functions(*names):
@@ -60,17 +92,16 @@ class ModelOptKernelDispatchTests(unittest.TestCase):
         self.assertTrue(gate(**dict(args,reform_sf_pack=False),m=129))
 
     def test_short_tp_scatter_reuses_and_grows_storage_without_loosening_ep(self):
-        with patch.object(ep,'MD',DISPATCH):
-            ns,events,allocations = ep.RuntimeTests().namespace()
+        ns,events,allocations = ep_scatter_oracle()
         fn=ns['_ep_local_scatter_buffer']
         ws=SimpleNamespace(device='cuda:0',ep_scatter_fp32=None)
         with self.assertRaises(ValueError):
-            fn(ws,ep.Tensor((129,4096)),129,4096)
-        first=fn(ws,ep.Tensor((129,4096)),129,4096,tp=True)
-        smaller=fn(ws,ep.Tensor((17,4096)),17,4096,tp=True)
+            fn(ws,Tensor((129,4096)),129,4096)
+        first=fn(ws,Tensor((129,4096)),129,4096,tp=True)
+        smaller=fn(ws,Tensor((17,4096)),17,4096,tp=True)
         self.assertEqual(first.data_ptr(),smaller.data_ptr())
         self.assertEqual(len(allocations),1)
-        bigger=fn(ws,ep.Tensor((4096,4096)),4096,4096,tp=True)
+        bigger=fn(ws,Tensor((4096,4096)),4096,4096,tp=True)
         self.assertNotEqual(first.data_ptr(),bigger.data_ptr())
         self.assertEqual(len(allocations),2)
 

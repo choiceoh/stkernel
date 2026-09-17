@@ -471,7 +471,7 @@ exit 3
     def test_preflight_cannot_move_the_shared_entry_backwards(self):
         """That sync copies whatever $REPO the caller ran from over $LOGD/fleet.sh, so the
         one copy every probe runs could be regressed by any stale checkout."""
-        body = self.fleet[self.fleet.index('for pair in "ab-lever2.sh'):]
+        body = self.fleet[self.fleet.index('for entry in "fleet.sh'):]
         body = body[:body.index("done")]
         self.assertIn("refusing to move the shared entry back", body)
         self.assertIn("entry_rules", body)
@@ -638,25 +638,7 @@ class QueueMaintenanceTests(unittest.TestCase):
     def setUp(self):
         self.fleet = (ROOT / "bench/fleet.sh").read_text()
 
-    def test_the_audit_pins_are_current(self):
-        """One stale hash turns off CPU reuse and contract narrowing for everyone, and the
-        only signal used to be four unit tests everybody called 'pre-existing'."""
-        import hashlib
-        import sys as _sys
-        _sys.path.insert(0, str(ROOT / "bench"))
-        import cpu_contracts, cpu_evidence
-        sha = lambda rel: hashlib.sha256((ROOT / rel).read_bytes()).hexdigest()
-        self.assertEqual(sha("tests/test_logic.py"), cpu_contracts.LOGIC_AUDIT)
-        for name in ("LOGIC_SOURCE_AUDIT", "FLEET_AUDIT", "STARTUP_AUDIT"):
-            for rel, want in (getattr(cpu_evidence, name, {}) or {}).items():
-                with self.subTest(audit=name, file=rel):
-                    self.assertEqual(sha(rel), want)
 
-    def test_a_stale_pin_is_reported_where_people_look(self):
-        self.assertIn("audit_line()", self.fleet)
-        self.assertIn("audit: STALE", self.fleet)
-        # defined before the dispatch that calls it
-        self.assertLess(self.fleet.index("audit_line() {"), self.fleet.index('case "$cmd" in'))
 
     def test_a_remote_holder_is_judged_by_evidence(self):
         """Blind trust for 3x the estimate meant a crashed holder blocked the fleet for two

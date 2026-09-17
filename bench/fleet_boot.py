@@ -339,10 +339,6 @@ class Supervisor:
                     contract = validate_onepass(accepted['command'], accepted['cwd'], self.repo,
                                                 environment=self.env, kind=self.kind)
                     payload, payload_env = self.accepted_payload(accepted)
-                    if contract['entry'] == 'bench/onepass.py':
-                        from onepass_deploy import ensure
-                        ensure(Path(payload_env.get('REPO', accepted['cwd'])), live=True,
-                               environment=payload_env)
                     rc = self.execute(payload, payload_environment(payload_env), accepted['cwd'])
                     self.mark_pending('running', phase='payload', payload_returncode=rc,
                                       payload_finished_at=time.time())

@@ -215,16 +215,6 @@ class RuntimeTests(unittest.TestCase):
         self.assertIsNotNone(store.db.execute('SELECT 1 FROM subscribers WHERE job=? AND session=?',(baseline,'baseline-'+old)).fetchone())
         self.assertEqual((self.fleet/'queue').read_text(),line)
 
-    def test_baseline_worker_reclaims_legacy_orphan_before_verification(self):
-        store=self.store();source=self.pair(store,'source',1);baseline=baselines.reserve(store,source)
-        with store.db:store.db.execute("UPDATE jobs SET state='failed' WHERE id=?",(source,))
-        with patch.object(ex,'verify') as verify:
-            self.assertEqual(ex.worker(store,baseline),0)
-        verify.assert_not_called()
-        self.assertEqual(store.get(baseline)['state'],'retired')
-
-
-class TimingTests(unittest.TestCase):
     def test_duration_assignment_balances_cost_and_keeps_exact_coverage(self):
         ids=['a','b','c','d'];costs=dict(a=8,b=1,c=7,d=1)
         cold,mode=cpu_unittest.shard_assignment(ids,2,{})

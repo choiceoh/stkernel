@@ -35,23 +35,19 @@ gate. It cannot satisfy final adoption or seed the next production baseline.
 
 For a direct measurement, use `fleet.sh onepass SESSION NAME`: it waits for idle
 serving and runs onepass once, without a boot. The checkout must describe that
-running source. For changed code or knobs, use `fleet.sh pair SESSION NAME KNOBS`
-or `fleet.sh chain SESSION EST NOTE -- NAME=KNOBS ...`. Each requested arm runs
-onepass once; the first arm publishes its committed source only when necessary.
-Both helpers reuse matching baselines and default to one baseline sample.
+running source. For changed code, use the ST bracket lanes (`st-pair`, `st-chain`,
+`st-hold`): one committed sha per arm, booted by the release's own launcher.
 
-`run --gpu` accepts only these current canonical runners and recorded pair or
-baseline jobs. Arbitrary wrappers, standalone GPU tests, sanitizer campaigns,
-`chain --after`, `--legs`, and experiment prefill warmup requests are rejected
-before CPU preparation or queueing. The internal `--probe` lane is retained only
-for the canonical live onepass. Old `startup` request campaigns must be expressed
-as pair/chain knob arms. Passive memory/proof collection can observe the same
-onepass workload. Pending command edits and final execution recheck the policy;
-already-running older controllers retain their accepted payloads.
+`run --gpu` accepts only the canonical runners: the live onepass, the ST bracket
+arms and the byte-pinned ST checks. Arbitrary wrappers, standalone GPU tests and
+sanitizer campaigns are rejected before CPU preparation or queueing. The internal
+`--probe` lane is retained only for the canonical live onepass. Pending command
+edits and final execution recheck the policy; already-running older controllers
+retain their accepted payloads.
 Bare `request`/`wait` and unvalidated `adopt` cannot create new GPU holds; the
 registered supervisor owns admission for every new GPU command.
 
-The queue has two GPU lanes. A boot, a pair, a chain and a live onepass take the
+The queue has two GPU lanes. A boot or a live onepass takes the
 fleet: four Sparks, one holder. An ST check that needs **one** GPU
 (`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
 takes the single-GPU lane instead: **one Spark beside production**, srv4 by
@@ -243,7 +239,7 @@ request_dir=$(mktemp -d /tmp/fleet-request.XXXXXX)
 jq -n --arg rev "$(git -C "$REPO" rev-parse HEAD)" '{
   kind: "cpu", revision: $rev,
   hypothesis: "The deployment identity change preserves onepass source selection",
-  command: ["python3", "bench/cpu_checks.py", "--test", "tests/test_onepass_deploy.py"],
+  command: ["python3", "bench/cpu_checks.py", "--suite", "fleet"],
   timeout_s: 30
 }' > "$request_dir/cpu.json"
 bash "$REPO/bench/fleet.sh" submit fusion "$request_dir/cpu.json"
@@ -316,13 +312,13 @@ remain separate.
 
 ## Edit a waiting reservation
 
-For a reservation created by the current `fleet.sh run --gpu` (including pair
-and chain wrappers), inspect and revise it before GO:
+For a reservation created by the current `fleet.sh run --gpu` (an ST bracket arm
+or a canonical check), inspect and revise it before GO:
 
 ```bash
 bash bench/fleet.sh edit fusion
 bash bench/fleet.sh edit fusion --expect-revision 1 --est 20 --note "updated cells" \
-  --cwd /home/choiceoh/stkernel -- bash bench/pair.sh revised "VLLM_TEST=1"
+  --cwd /home/choiceoh/stkernel -- bash bench/st_bracket.sh pair 0123456789abcdef
 # Metadata only; the existing command is retained:
 bash bench/fleet.sh edit fusion --note "CPU checks passed; smaller workload"
 ```
@@ -375,13 +371,16 @@ evidence identities. `--repeat REASON` requests independent executions.
 ## Plan from a decision
 
 `plan` connects the CPU checks, optional CPU compilation, and the eventual GPU
-pair. Manifests stay outside the checkout; every stage uses the same committed
-revision, external inputs and runtime identifiers.
+stage. Manifests stay outside the checkout; every stage uses the same committed
+revision, external inputs and runtime identifiers. The overlay math contracts
+and the startup suite retired with the overlay stack; the fleet suite is the
+planner's default CPU gate, and `cpu_tests` names additional files.
 
 ```json
 {
-  "hypothesis": "Reduce 2K prefill TTFT with all onepass quality gates intact",
-  "knobs": {"VLLM_GLM53_KDA_ONEPASS": "1"},
+  "hypothesis": "Reduce 2K prefill TTFT with the ST bracket",
+  "revision": "COMMITTED_SHA_OF_THE_CANDIDATE",
+  "command": ["bash", "bench/st_bracket.sh", "pair", "CANDIDATE_SHA"],
   "context": {
     "image": "sha256:IMMUTABLE_64_CHARACTER_LOCAL_IMAGE_ID",
     "model": "IMMUTABLE_MODEL_REVISION",
@@ -389,7 +388,7 @@ revision, external inputs and runtime identifiers.
   },
   "objective": {"metric": "prefill_ttft", "ctx": 2000},
   "workload": {"ctx": [2000, 32000, 128000]},
-  "cpu_suites": ["logic"],
+  "cpu_suites": ["fleet"],
   "resources": {
     "nodes": ["local", "choiceoh@10.10.10.1", "choiceoh@10.10.10.3", "choiceoh@10.10.10.4"],
     "disk_path": "/home/choiceoh", "disk_mb": 4096, "node_memory_mb": 4096
@@ -397,91 +396,6 @@ revision, external inputs and runtime identifiers.
   "estimate_min": 15
 }
 ```
-
-```bash
-bash bench/fleet.sh plan prefill /tmp/prefill-plan.json --base origin/main
-# Preview only; pending-stage dependencies deliberately cannot be submitted.
-bash bench/fleet.sh plan prefill /tmp/prefill-plan.json --prepare-only
-# Runs CPU checks/preparation now, without requiring a deployment or a GPU hold.
-# After deploying that revision through the fleet, submit the returned gpu.json:
-bash bench/fleet.sh submit prefill /absolute/returned/plan/directory/gpu.json
-# Or, for an already deployed revision, submit all stages in one call:
-bash bench/fleet.sh plan prefill /tmp/prefill-plan.json --submit
-```
-
-`--base` uses the committed diff to suggest checks. Edits confined to the three
-audited helpers below select their separate contracts plus sensitivity; any
-changed non-helper AST node, unknown path or modified test audit falls back to
-the conservative suite selection. Changes restricted to bench
-and fleet tests select `fleet`; other changes select `logic`, with `startup`
-added for launchers/profiles. This is a conservative convenience, not a
-dependency coverage proof. Override with `cpu_suites` and/or `cpu_tests` when
-the changed contract needs additional checks. A failed submission preserves
-the plan path and all previously submitted IDs; it does not lose running work.
-
-In a plan, `cpu_suites: ["logic", "startup"]` expands to independent required
-`checks-core`, `checks-fleet` and `checks-startup` jobs. With one suite/test group,
-its stage remains `checks`; contracts retain `checks-math`, `checks-layout` and
-`checks-dispatch`. The GPU stage requires every check and preparation stage.
-Fleet stages reserve up to two CPU slots by default (respecting a one-slot pool
-policy); set `cpu_jobs` to 1..8 to choose explicitly. The CPU stages are submitted
-as one batch. Their IDs and resolved manifests are saved and their workers start
-before GPU deployment attestation. While deployment checks are still pending,
-agents can read `plans/<plan-id>/plan.json` and use the recorded CPU IDs with
-`result`, `wait`, or their session inbox. Explicit preparation dependencies and
-all GPU prerequisites still apply. If deployment attestation fails, CPU work
-continues and its IDs remain available in the saved plan and error response.
-
-Dependency completion is checked every 50 ms using batched, indexed ID/state
-reads, so short checks and preparation chains avoid a one-second sleep at each
-edge. Full pinned payloads are not decoded on each poll. Recovery of unfinished
-workers remains limited to one pass per second per waiting worker; completed
-workers are skipped. Incomplete evidence is still refreshed before a dependent
-job is blocked, and retirement ends the dependency wait before execution.
-
-For multiple goals on the **same knobs/image/configuration**, replace
-`objective`/`workload` with `evaluations`, an array of up to six objects of that
-shape. Identical workloads produce one record used by multiple objectives;
-different workloads run sequentially on the same boot. Before each workload
-the source/artifact snapshot and serving boot are checked. A failed workload
-stops the rest; the normal fleet policy decides one final production restore.
-Different serving configurations still need separate submissions. Independent
-baseline samples still require separate boots.
-
-When a pair finishes definitively or is retired, it releases its internal
-baseline subscription. An unstarted reservation with no remaining subscribers or
-dependents is retired and removed from the queue. Shared demand, explicit
-operator subscriptions, incomplete evidence, started jobs and matching live
-holders are preserved. This does not stop an active boot or discard baseline
-results. Baseline workers also check for old orphan reservations before preflight.
-
-Separate agents' ready pair requests also share one serving boot when their
-committed revision, deployed snapshot, configuration, environment, runtime,
-inputs, prepared artifact hashes, resource requirements and port match exactly.
-Each request must first pass its own prerequisites, preflight and baseline gate.
-The first ready request collects peers for at most 0.5 seconds outside the GPU
-hold; the group stays open while queued and seals atomically at GO. A group has
-at most eight requests and six distinct workloads. Late/incompatible requests
-and explicit repeats run separately. The union of workloads runs once, with each
-request judged against its own original objectives. `execution_job` and the
-runner-owned measurement binding point to the actual producer record; records
-are never relabeled as new independent samples. Admission rechecks every member,
-and result publication rechecks each consumer's source and artifacts. Execution
-or restore failure reaches all consumers. This does not interrupt a live boot.
-
-| Objective | Direct measurement and interpretation |
-| --- | --- |
-| `decode_steps` | onepass decode-window median step/s; existing default |
-| `decode_tokens` | pooled `(completion_tokens - 1) / decode_s` from fixed-length client requests; requires `fixed_decode_tokens`, `fixed_decode_reps`, and `require_exclusive: true` |
-| `prefill_ttft` plus `ctx` | first content-chunk latency at that context; lower is better; compile-cold records do not fill the planned steady-compile baseline and cannot mix with warm-compile evidence |
-| `quality` | all declared onepass retrieval, corruption, decode-presence and lane-proof gates pass; no performance verdict or noise-floor claim |
-
-All workload defaults and record metadata come from `measurement_contract.py`,
-which both the actual onepass producer and shared baseline reader use. Older
-harness/workload records remain incompatible. A prefill plan may need one extra
-baseline boot if the first sample is marked compile-cold. Compiler-cache flags
-are coarse existing build markers; this does not benchmark startup cache gains.
-
 ## CPU preparation and resource admission
 
 Individual `python3 tests/test_foo.py` or exact unittest discovery commands are
@@ -550,7 +464,8 @@ successful preparation result records output hashes. The consumer copies them
 into its private checkout after checking runtime context and hashes, then
 rechecks them at execution. Changed/missing/conflicting artifacts block the job.
 These outputs are available to the consumer; they do not replace deployment,
-inject objects into vLLM, or prove GPU numerical correctness automatically.
+inject objects into the serving container, or prove GPU numerical correctness
+automatically.
 
 ## Receive results without frequent polling
 
@@ -646,115 +561,25 @@ with `inputs`. The existing GPU-use classifier still applies. If it identifies
 device calls in a test file's source even though the test uses mocks, use the
 named CPU suite entrypoint; do not weaken the classifier or add an override.
 
-## GPU pair manifest
+## The pair lane retired
 
-```json
-{
-  "kind": "pair",
-  "revision": "FULL_40_CHARACTER_COMMIT_SHA",
-  "hypothesis": "The candidate improves decode while preserving all onepass gates",
-  "knobs": {"VLLM_GLM53_KDA_ONEPASS": "1"},
-  "context": {
-    "image": "sha256:IMMUTABLE_64_CHARACTER_LOCAL_IMAGE_ID",
-    "model": "IMMUTABLE_MODEL_REVISION",
-    "hardware": "srv1-srv4 GPU identities and driver version"
-  },
-  "inputs": ["/absolute/path/to/model-config-or-weight-manifest.json"],
-  "depends_on": ["CPU_EXPERIMENT_ID"],
-  "estimate_min": 15
-}
-```
-
-Deploy the requested revision through the existing fleet flow first. Pair
-submission verifies the deployed manifest's `source_commit`, its overlay stamp,
-overlay files and immutable local image ID. It rechecks them at GO and after the
-run. Changes during the queue fail before a boot. The launcher pins `IMAGE` to
-the declared ID. The manifest's model/hardware identifiers are caller-declared;
-include external fixtures, model metadata and immutable weight manifests in
-`inputs`. The runner hashes those files; it does not rehash hundreds of GB of
-model weights or independently attest every hardware identifier.
-
-Pairs default to `"baseline_policy": "minimal"`. Once prerequisites and
-preflight pass, the worker reserves a shared defaults job only if the context
-has no usable baseline for a requested workload. One baseline supports the
-initial comparison; subsequent compatible candidates reuse it without a new
-defaults boot. A thin noise floor does not automatically trigger more samples.
-Compatible candidates join that reservation and wait outside the GPU queue.
-The defaults job measures only workloads still missing samples on each separate boot,
-then releases all waiting candidates. A new candidate therefore needs two
-measurement boots (one baseline, one candidate), instead of four. Later
-candidates need only their own boot while the context remains compatible.
-
-A minimal result uses `evidence: "gpu-pair-screen"`, `comparison_complete: true`
-and `promotion_ready: false`. `state: succeeded` means the comparison completed;
-the unchanged statistical judge may still report `incomplete` or `inconclusive`.
-Observed deltas are available to choose the next experiment without claiming a
-confirmed speedup. Result polling never acquires another baseline.
-
-Set `"baseline_policy": "confirm"` explicitly for confirmation. It requires
-three independent baselines for a performance workload and one for quality.
-Existing compatible samples count, so confirmation after a one-baseline screen
-adds only the two missing defaults boots. Confirmation runs its candidate again.
-Minimal and confirmation reservations remain distinct, but share compatible
-records. Already submitted jobs without a policy keep their previous contract.
-The shell `fleet.sh pair` path also defaults to one baseline; `PAIR_FLOOR_N=3`
-explicitly asks it to replenish the independent floor one sample per call.
-
-The reservation key includes revision, deployed sources, image, model/hardware
-context, workload/environment, external inputs and ledger location. Failed
-defaults block their consumers. Repeat the candidate with an explicit reason
-to retry a failed shared reservation. Container ID plus StartedAt supplies
-`boot_id`: repeated onepass runs on the same boot count once. Historical rows
-without boot identity cannot fill the shared reservation.
-
-Open baseline reservations now combine different objectives and workload
-subsets for the same attested serving configuration. Quality demands need one
-usable boot; confirmation performance demands need three, with the warm-compile rule
-retained for TTFT. A reservation accumulates at most six evaluation requirements
-and eight candidate dependencies. It collects for 0.5 seconds outside the GPU
-hold and seals when execution starts. Running reservations accept only demands
-already covered by their measurement plan, never additional workloads. Explicit
-repeats remain separate. Each candidate checks its own baseline requirements
-again before running; sharing does not turn repeated measurements into new boots.
-
-Each managed pair measures its declared onepass workloads on one attested serving
-boot and releases the fleet after the group. The `pair.sh` wrapper remains
-available for direct callers. Other agents can enqueue their own pairs between
-submissions; long multi-candidate experiments should be separate submissions.
-Candidate/baseline evidence stays together. There is no GPU preemption and no
-separate GPU probe stage.
-
-Pair results require fresh onepass records bearing the experiment ID, the
-requested knobs, a matching revision/build/workload/runtime, complete quality
-and corruption gates, known serving proof for every enabled non-default knob,
-and a usable baseline noise floor on the same build. A `0/0` proof with unknown
-enabled knobs, missing quality data, nonfinite timing, or an incompatible
-baseline cannot become a successful result. A measured slowdown can be a valid
-result; an effect within the noise floor remains inconclusive.
-
-`result ID` rejudges an incomplete pair if a later matching baseline becomes
-available, without rerunning the candidate. Completion of a shared baseline
-also publishes those updated results without needing an agent to poll them.
-Existing `chain.sh` also publishes
-each candidate's verdict before the next arm and stops dependent arms after
-execution or proof/quality failure. Failed pairs/chains release the fleet;
-production recovery belongs to the central five-minute idle controller.
+The `kind: pair` / `kind: baseline` GPU experiments booted the vLLM overlay
+stack's wrapper, which the decommission removed (2026-09-18). Queued pair jobs
+are blocked at the worker with `PAIR_RETIRED`; the ST bracket (`st-pair`,
+`st-chain`, `st-hold`) is the way one commit is measured against another.
 
 ## Onepass-only GPU submissions
 
-GPU submissions use `kind: "pair"` with literal `VLLM_*` knobs. A custom `command`
-is refused, so the worker always executes the standard onepass pair runner.
-`kind: "probe"` and nonempty `probe_contract` are no longer accepted. Historical
-queued probe requests are marked blocked before creating a worker checkout or
-acquiring GPUs; retrying one requires a new pair manifest. Completed historical
-reports remain readable.
+The pair manifest form retired with the overlay stack (see the section above).
+GPU work enters this queue through `fleet.sh st-pair` / `st-chain` / `st-hold`
+(the ST bracket) or `fleet.sh onepass` (a live measurement on the idle door),
+both admitted through bench/fleet_onepass.py's canonical-entry contract.
+Completed historical reports remain readable.
 
 Use an optional relevant CPU request in `depends_on`, then submit the candidate
-pair directly. Onepass supplies serving quality, corruption, proof and performance
-evidence. Compatible saved baselines remain reusable; unifying the workload does
-not request another baseline, another boot, or another measurement. Additional
-GPU microbenchmarks, prechecks, sanitizers and post-measurement sweeps are excluded
-from this path.
+arm directly. Onepass supplies serving quality, corruption and performance
+evidence. Additional GPU microbenchmarks, prechecks, sanitizers and
+post-measurement sweeps are excluded from this path.
 
 ## Queue policy and CPU content reuse
 
@@ -896,37 +721,13 @@ hold before recovery; the donor never accepts a transfer with no receiver hold.
 Older pinned protocols finish at a restored boundary instead of receiving a new
 protocol handoff.
 
-The final holder uses `bench/fleet_restore.sh`: clean approved main, public
-port 8000, profile defaults, warmup, no measurement leg. Candidate environment
-overrides are removed. An already healthy public defaults arm of that approved
-build and approved immutable image avoids a duplicate boot. The public bind is
-read from the launcher's decoded static command, without executing shell text.
-The production checkout comes from the `$FLEET_DIR/production-repo` pointer,
-falling back to the controller's own checkout; the resolved path is passed to
-`bench/fleet_restore.sh` as `FLEET_RECOVERY_REPO`. Restore failures return
-nonzero and retain `restore-debt.json`; a subsequent supervised boot can recover
-it before probes are admitted. SIGKILL/host loss cannot run a process's cleanup:
-the debt remains visible for recovery; this is not a host-level watchdog.
-An operator can put the path of a dedicated approved-main checkout in
-`$FLEET_DIR/production-repo`; this separates restoration from a common checkout that
-contains unmerged experiment work.
-The path may contain spaces and need not end with a newline. A clean checkout
-ahead of main is detached at approved main, preserving its candidate branch;
-dirty work is refused.
+The last vLLM production holder retired with the overlay stack; the queue no
+longer hands off to a restore boot. `restore-debt.json` bookkeeping remains
+inert for older queued protocols and is never written today.
 
-Custom boot scripts must accept stopped serving. Before stopping anything, use:
-
-```bash
-python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_entry.py" idle "$out/before-metrics.txt"
-```
-
-This allows an absent/stopped container while requiring health and both zero
-request counters for a live one, including an isolated experiment port. Validate
-the immutable image with `docker image inspect`; an existing stopped container
-can also attest its image. Guard a standalone restore fallback with
-`[[ ${FLEET_RESTORE_MANAGED:-0} != 1 ]]`. The tracked CTA/reuse wrappers demonstrate
-this contract; preflight rejects their old unconditional `touched` cleanup
-pattern before queuing. Arbitrary shell code is not exhaustively linted.
+Custom boot scripts must accept stopped serving and attest the serving image
+with `docker image inspect` before stopping anything. Arbitrary shell code is
+not exhaustively linted.
 
 `lifecycle.jsonl` records ready/source hashes, acceptance, payload completion,
 handoff, reclaim and restore duration. `fleet.sh version` exposes the active
@@ -1105,95 +906,9 @@ build and baseline identities remain exact. Experiment results report CPU
 `explanation.cache_reuse` as `cached`, `identity_match`, `changed` or `unknown`,
 including changed file/component names without environment values.
 
-## Quick experiment admission and stable release recovery
+## Production recovery
 
-New boot requests run a short CPU admission check before joining the GPU queue:
-shell syntax, composition of the selected profile, and syntax/manifest contracts
-for its overlay files. The check has a 30-second execution limit, imports no
-model kernels, runs no full logic/Fleet suite and starts no chat-check container.
-Its receipt binds clean source, the selected profile, checker and required tools;
-queue rechecks and deployment consume that receipt without repeating the checks.
-Admission is a syntax/deployment check, not numerical or release evidence. The
-experiment's GPU correctness and onepass validation remain responsible for actual
-kernel outputs, communication and performance. Explicitly declared experiment CPU
-prerequisites still run; they are not silently dropped.
-
-Literal campaign checkout and image/model overrides are bound to preparation;
-dynamic deployment scripts declare `deployment_targets` with `repo`, `profile`
-and optional `image`/`model`. Direct deployment still requires the complete CPU
-release gate: full logic, runtime guard audit, GLM overlay synchronization and
-CPU-only chat release checks. To request it separately:
-
-```bash
-python3 bench/fleet_validation.py validate --repo "$PWD" --profile glm53 --level release
-```
-
-Recovery reuses an existing release-validated approved main checkout, even after
-main advances. A private per-production-repository pointer keeps that choice
-stable. Older evidence is verified by its original approved validator; quick
-admission evidence can never authorize recovery. Source changes, rewritten main,
-changed release dependencies and altered receipts still reject reuse. Only the
-first setup without a valid recovery must acquire a complete release receipt.
-Refresh the recovery version explicitly, outside a GPU hold:
-
-```bash
-python3 bench/fleet_validation.py prepare-recovery --repo "$PRODUCTION_REPO" --refresh-recovery
-```
-
-The pointer changes only after the new release check succeeds. A failed refresh
-leaves the prior validated recovery intact. The fleet host can select its CPU
-Python environment with a private `FLEET_VALIDATION_STORE/python` file containing
-an absolute interpreter path. Full release evidence binds its installed packages,
-Python startup inputs, image and tokenizer/config files. Admission uses isolated
-stdlib Python and does not scan installed ML packages or tokenizer data.
-
-A receipt miss during a GPU hold refuses without starting CPU validation.
-Sessions prepare only their candidate; they no longer acquire a recovery receipt
-or own a restoration obligation. Successful, failed and cancelled sessions clean
-up their temporary resources and release immediately. `restore-needed` always
-returns no. Pair/chain baseline measurements remain, but cleanup RESTORE/RECOVER
-arms and automatic restarts of paused original containers are forbidden.
-
-## Automatic recovery after five idle minutes
-
-`fleet-idle-recovery.timer` checks every 15 seconds. Only its controller may run
-`fleet_restore.sh`, under a process-bound fleet lease, after at least 300 seconds
-of proven idle time. Enqueue, acquisition, release, cancellation and detected
-serving traffic reset the monotonic clock. A host reboot or unknown Docker/GPU
-state restarts observation. The controller rechecks requests, GPU processes and
-runnable reservations immediately before claiming the hold. Dead/paused tickets
-are excluded; probes waiting for absent serving can resume after recovery.
-
-Resident GPU processes belonging to other services do not block GLM recovery.
-The node check requires a readable driver process inventory, not exclusive GPU
-ownership. GLM requests, unmanaged experiments, holders and runnable tickets
-still block the idle window. Before boot, the launcher removes only the old GLM
-containers, releases file caches and sizes memory from the smallest node's
-`MemFree`, retaining the boot allowance and safety margin. It leaves unrelated
-processes running and aborts on a failed memory probe or an explicit GMU above
-the measured ceiling. The memory helper comes from the approved launcher's own
-checkout, so recovery cannot silently use an older central copy.
-
-Already healthy approved defaults need no reboot. Recovery consumes the stable
-release receipt and never starts a full CPU suite. Missing evidence defers recovery;
-prime or refresh it explicitly using the command above. Failures retry only after
-another quiet window. `fleet.sh status` shows the controller state and reason.
-
-Install the user service on srv2. It runs from `~/fleet-controller`, the queue's
-own checkout, which `st-deploy-watch` moves to the deployed commit after every
-deploy (PR #778) -- so the idle controller restores by production's rules and
-not by whatever branch a session left in `~/stkernel`. Create that checkout once
-as a detached worktree, then install:
-
-```bash
-git -C ~/stkernel worktree add --detach ~/fleet-controller "$(python3 launchers/st_release.py deployed)"
-install -m 0644 launchers/fleet-idle-recovery.{service,timer} ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now fleet-idle-recovery.timer
-```
-
-During migration, already running older controllers must also defer their final
-restore. Their restore entrypoint can be replaced with a recorded no-boot bridge
-after checking the current holder/queue and preserving the original script.
-Payloads and measured baseline arms are not interrupted or rewritten. New runner
-snapshots use the central policy directly.
+The five-minute idle controller and its `fleet_restore.sh` boot retired with
+the vLLM overlay stack (2026-09-18). Production recovery is the ST supervisor's
+own boot-start + crash-recovery loop (launchers/st-glm53.service,
+launchers/st-glm53-supervisor.sh); `fleet.sh restore-needed` always answers no.

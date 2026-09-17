@@ -428,9 +428,6 @@ def validate(value, *, refresh=False, external=True, directory=None):
         if check['kind'] == 'source-base':
             import fleet_source
             fleet_source.require_base(repo, check.get('accepted_ref', check['ref']), protected_paths=value.get('protected_paths', []))
-    if value.get('deployment_approvals'):
-        import fleet_approval
-        fleet_approval.validate(value)
     if external:
         for image in value['images']:
             actual = run(['docker', 'image', 'inspect', image, '--format', '{{.Id}}'], cwd, 5)
@@ -480,22 +477,13 @@ def reuse(directory, session, command, cwd, prepared, *, spec_path=None):
     return Path(prepared).resolve()
 
 
-def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, execute_cpu=True, prepared=None, approve_deploy=False, prior_approval=None):
+def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, execute_cpu=True, prepared=None):
     if not isinstance(command, (list, tuple)) or not command or not command[0] or not all(isinstance(x, str) and '\0' not in x for x in command):
         raise ValueError('prepare requires a command argv')
     command = list(command)
     cwd = str(Path(cwd).resolve())
     if prepared:
-        path = reuse(directory, session, command, cwd, prepared, spec_path=spec_path)
-        value = fleet_prepared.read(directory, path)
-        if not approve_deploy or value.get('deployment_approvals'):
-            return path
-        # A reusable CPU receipt can gain deployment approval before queueing
-        # without executing its successful CPU preparation again.
-        import fleet_approval
-        fleet_approval.freeze(value)
-        validate(value)
-        return write_receipt(directory, value)
+        return reuse(directory, session, command, cwd, prepared, spec_path=spec_path)
     spec = spec_read(spec_path)
     files = sources(command, cwd) + sources(spec['cpu_command'], cwd) if spec.get('cpu_command') else sources(command, cwd)
     if spec_path:
@@ -530,9 +518,9 @@ def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, exe
             value['head'] = [repo, run(['git', 'rev-parse', 'HEAD'], repo, 3)]
     value['deployment_sources'] = {}
     discovered_deployment = 'deployment_targets' in spec or any(
-        p.suffix == '.sh' and (p.name == 'deploy-overlays.sh' or any(
-            'deploy-overlays.sh' in line for line in p.read_text(errors='replace').splitlines()
-            if not line.lstrip().startswith('#'))) for p in sources(command, cwd))
+        p.suffix == '.sh' and any(
+            'deployment_targets' in line for line in p.read_text(errors='replace').splitlines()
+            if not line.lstrip().startswith('#')) for p in sources(command, cwd))
     value['deployment_source_scopes'] = {}
     trusted_wrapper = False
     if discovered_deployment:
@@ -585,11 +573,6 @@ def prepare(directory, session, command, cwd, *, spec_path=None, fleet=None, exe
             value['cpu_result']['reusable'] = True
         except (ValueError, OSError, subprocess.SubprocessError) as exc:
             value['cpu_result']['reason'] = str(exc)
-    if approve_deploy:
-        import fleet_approval
-        if prior_approval:
-            fleet_approval.retain(directory, prior_approval, value)
-        fleet_approval.freeze(value)
     validate(value, refresh=True)
     for path in files:
         if path.suffix == '.sh':
@@ -640,60 +623,6 @@ def write_receipt(directory, value):
         json.dump(value, out, ensure_ascii=False, sort_keys=True)
         out.write('\n')
     return path
-
-
-def validate_targets(directory, manifest, *, verify_only=False, _validated_value=None, controller=None):
-    """Check actual deployment sources under their reservation's pinned contract."""
-    value = _validated_value
-    if value is None:
-        value = fleet_prepared.read(directory, manifest)
-        validate(value, refresh=True, directory=directory)
-    targets = value.get('deployment_targets')
-    if not isinstance(targets, list) or not targets:
-        raise ValueError('prepared manifest has no deployment targets; prepare again')
-    _, validation_env = command_environment(value['command'])
-    # Target selections are explicit CLI arguments. Missing selections mean
-    # profile defaults, including when an env -u/-i prefix removed a value.
-    for name in ('IMAGE', 'MODEL_HOST_PATH', 'PROFILE'):
-        validation_env.pop(name, None)
-    for name in ('FLEET_DIR', 'FLEET_SESSION', 'FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED'):
-        if name in os.environ:
-            validation_env[name] = os.environ[name]
-    validator = Path(__file__).with_name('fleet_validation.py')
-    level = 'admission'
-    if controller is not None:
-        fleet = controller.get('fleet')
-        if not isinstance(fleet, str) or not Path(fleet).is_absolute():
-            raise ValueError('reservation has no pinned validation controller')
-        validator = Path(fleet).with_name('fleet_validation.py')
-        accepted_env = controller.get('validation_env', {})
-        level = accepted_env.get('FLEET_VALIDATION_LEVEL', 'release')
-        if level not in ('admission', 'release'):
-            raise ValueError('reservation has an unknown validation level')
-        for name in ('FLEET_VALIDATION_STORE', 'FLEET_VALIDATION_REQUIRED'):
-            if name in accepted_env:
-                validation_env[name] = accepted_env[name]
-        validation_env.update(FLEET_DIR=str(directory), FLEET_SESSION=controller['session'])
-    # Never let an editor's managed-admission context change a legacy helper's
-    # default release contract. Old helpers also do not accept --level.
-    validation_env.pop('FLEET_VALIDATION_LEVEL', None)
-    python = shutil.which('python3', path=validation_env.get('PATH', os.defpath))
-    if not python:
-        raise ValueError('deployment target environment has no python3 executable')
-    results = []
-    for target in targets:
-        target = deployment_target(target, value['cwd'])
-        argv = [python, str(validator), 'validate', '--repo', target['repo'], '--profile', target['profile']]
-        if level == 'admission':
-            argv += ['--level', 'admission']
-        for key in ('image', 'model'):
-            if target.get(key):
-                argv += ['--' + key, target[key]]
-        if verify_only:
-            argv.append('--verify-only')
-        result = json.loads(run(argv, target['repo'], 1800, env=validation_env))
-        results.append(dict(target=target, validation=result))
-    return results
 
 
 def checkout_moved(value):
