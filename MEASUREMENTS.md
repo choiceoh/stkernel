@@ -4420,3 +4420,16 @@ pass. The initially batched C=1 CDF changed rounding at exact cut points and
 was corrected to the former serial order. A separate attention tile split
 was slower and rejected. No queue/deployment; GB10/TP4 speed and acceptance
 unmeasured. [Receipts and limits](measurements/st_draft_sample_20260917/README.md).
+
+### 45차 — ACE식 전문가 슬롯 스킵의 품질: 10% 에 +0.02~0.03 nats, 스텝 상한 −4.5% 와 맞바꿀 값이 아니다 — 레버를 닫는다 (2026-09-17, TP4 GB10 hold 1회, PR #1102)
+
+바이트 쪽(#1076)의 나머지 절반. 기본 꺼진 노브 `Glm53Net.route_skip`(가중치만 0, id 유지, 재정규화)과 캡처 패스 스케줄을 더하고, **한 부팅에서
+133 대화 코퍼스를 다섯 번**(끔 · 전역 10% · 전역 15% · 층별 10% · 끔 반복) 먹여 프리필 head NLL 을 위치 단위로 짝지었다(패스마다 캐시 솔트,
+head 시드는 문서 번호 기준). main `ffc8b664` + 노브 + 디버그 팔 `4ff75add`, Red Hat 랭크.
+- **잡음 바닥**(끔 반복): fit +0.0011 [−0.0008, +0.0042], 위치의 94.9% 가 같은 값.
+- **전역 10%:** fit **+0.0323 [+0.0085, +0.0552]**, held-out +0.069. **층별 10%:** fit **+0.0244 [+0.0008, +0.0458]**.
+  **전역 15%:** fit +0.0070 [−0.0306, +0.0406] — 세 팔의 구간이 겹쳐 순위는 못 가린다.
+- 스킵한 패스는 위치의 99.5% 를 바꾸고(45% 좋아짐·55% 나빠짐) 문서별 평균 변화가 ±0.1~0.4 nats 로 퍼진다.
+- **판정.** 스킵 10% 의 대가(+0.02~0.03 nats)는 09-14 에 택하지 않은 NVIDIA 랭크의 +0.034 와 같은 크기이고 얻는 것은 스텝 상한 −4.5%
+  (수용률 손실 미반영). 기본값 후보가 아니다. 디코드 수용률·step/s 는 재지 않았다. 노브와 한 부팅 다중 패스 비교는 남긴다(기본 꺼짐).
+  [방법·표·원시](measurements/st_ace_quality_20260917/README.md).

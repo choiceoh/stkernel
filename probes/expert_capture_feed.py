@@ -67,6 +67,7 @@ def main():
     ap.add_argument("--wait-minutes", type=float, default=240.0)
     ap.add_argument("--model", default="glm-5.3-flash")
     ap.add_argument("--limit", type=int, default=0, help="stop after this many conversations (0: all)")
+    ap.add_argument("--cache-salt", default="", help="a prefix-cache salt: a pass of a corpus already fed must prefill again")
     ap.add_argument("--calibration-root", default="",
                     help="the calibration arm: feed every non-held-out conversation, POST the door to file the sums under "
                          "<root>-fit, then the held-out conversations, then file under <root>-heldout")
@@ -116,6 +117,8 @@ def main():
         messages = [dict(m) for m in conv["messages"]]
         messages[0]["content"] = f"[calibration document {conv['i']:04d}]\n" + messages[0]["content"]
         payload = dict(model=args.model, messages=messages, max_tokens=1, temperature=0.0, stream=False)
+        if args.cache_salt:
+            payload["cache_salt"] = args.cache_salt
         row = dict(i=conv["i"], source=conv["source"], split=conv["split"], corpus_tokens=conv["tokens"], t0=round(time.time(), 3))
         for attempt in (1, 2):
             t0 = time.perf_counter()

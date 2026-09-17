@@ -1,0 +1,37 @@
+From 4ff75addd4912e5b77cb4f14c2873c07f6815e97 Mon Sep 17 00:00:00 2001
+From: choiceoh <choiceoh@topsolar.kr>
+Date: Thu, 17 Sep 2026 09:10:28 +0900
+Subject: [PATCH] debug: ACE quality arm -- capture on, five prefill passes
+ (off, 10%, 15%, per-layer 10%, off) over the 133-conversation corpus (never
+ merge)
+
+Thresholds from measurements/st_ace_routes_20260917: global 10% 0.07012, 15% 0.07679,
+per-layer 10% from the same route dump.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+---
+ engine/profiles/glm53/boot.py | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/engine/profiles/glm53/boot.py b/engine/profiles/glm53/boot.py
+index 86fc8f7a..f3c2e969 100644
+--- a/engine/profiles/glm53/boot.py
++++ b/engine/profiles/glm53/boot.py
+@@ -107,11 +107,11 @@ TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem
+ # 2026-09-14 hybrid arms were read on (measurements/st_hybrid_head_nll_20260916) and the one #911 said it never ran.
+ # A commit that sets it is booted by a fleet hold and fed a corpus through the door; main keeps it False, and with it
+ # False nothing here runs. Carried over from the arm branch it was written on, which was never merged.
+-EXPERT_CAPTURE = False
++EXPERT_CAPTURE = True   # debug arm (never merge): ACE quality passes
+ # A capture arm may feed its corpus several times, one routed-slot skip per pass (capture.Capture skip_passes): a
+ # pass is None (every slot served), a normalised-gate threshold, or {layer: threshold}. Empty keeps one pass, no skip.
+-ROUTE_SKIP_PASSES = ()
+-ROUTE_SKIP_PASS_DOCUMENTS = 0
++ROUTE_SKIP_PASSES = (None, 0.07012, 0.07679, {3: 0.04608, 4: 0.06059, 5: 0.06676, 6: 0.05474, 7: 0.0638, 8: 0.05915, 9: 0.05216, 10: 0.05621, 11: 0.06147, 12: 0.07089, 13: 0.07009, 14: 0.06576, 15: 0.0528, 16: 0.0656, 17: 0.0771, 18: 0.06965, 19: 0.07395, 20: 0.07693, 21: 0.07857, 22: 0.07738, 23: 0.07392, 24: 0.076, 25: 0.0787, 26: 0.07565, 27: 0.08065, 28: 0.08094, 29: 0.07151, 30: 0.0789, 31: 0.07565, 32: 0.07504, 33: 0.0779, 34: 0.07502, 35: 0.07203, 36: 0.07876, 37: 0.07899, 38: 0.07882, 39: 0.07832, 40: 0.07495, 41: 0.08156, 42: 0.08205, 43: 0.08409, 44: 0.07351}, None)   # debug arm: off, 10%, 15%, per-layer 10%, off again
++ROUTE_SKIP_PASS_DOCUMENTS = 133   # debug arm: ~/expert-capture/corpus.jsonl
+ # Collect the decode FC pairs `bench/draft_tune.py fc-bias` fits. The bias the boot binds from
+ # `draft-fc-bias.json` has never been produced -- the fitter existed with no collector -- so
+ # production runs with draft_fc_bias_status="missing". A collecting boot serves normally and
+-- 
+2.54.0
+
