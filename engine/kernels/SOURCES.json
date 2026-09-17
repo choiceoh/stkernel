@@ -124,13 +124,21 @@
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/gated.py",
       "sha256": "993783308233288ddfa77293e9dbabdc825ba5bfdcc4dcc41e842a895ec33445",
       "origin": "image",
-      "local_sha256": "7c01dd68229f38a630d77ce0a2b3e28cc0c89f1008ee4bb880fcc9c26adceef6",
-      "local_modifications": "Optional activation scale search for FC1 and FC2; disabled branch retains imported arithmetic."
+      "local_sha256": "adf2c7336b785a96d2865fb1aa42d636392845b55ca84c733210d24193ca24ba",
+      "local_modifications": [
+        "Optional activation scale search for FC1 and FC2; disabled branch retains imported arithmetic.",
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+      ]
     },
     "b12x/_moe_dynamic/generic.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py",
       "sha256": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+      "local_modifications": [
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
+        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
+      ]
     },
     "b12x/moe_activation.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_activation.py",
@@ -141,16 +149,17 @@
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_direct_micro_kernel.py",
       "sha256": "9b18f54588c3f24cab74dff07545f323e2af8235a4532233655a5a75498e89cc",
       "origin": "image",
-      "local_sha256": "b14b207487fb1c81a2c2d664e87919fd0b4042f76b157b6540add758d0c43474",
+      "local_sha256": "7c19d4ebab268e082fef2dcf589af67fcbe5c287d96c287c5aaec46b2246ba71",
       "local_modifications": [
-        "2026-09-12: TVM-FFI compile/launch form (tvm_ffi=True) for the on-disk cache"
+        "2026-09-12: TVM-FFI compile/launch form (tvm_ffi=True) for the on-disk cache",
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
       ]
     },
     "b12x/moe_dispatch.py": {
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "38a6c647a9adc018e10a8dbf24a0cd6049df923729f0b269dd489af8003a7773",
+      "local_sha256": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -182,7 +191,8 @@
         "2026-09-17 Qwen3.8 EP decode cell (probes/engine_qwen38_moe.py): _MICRO_TILE_M_OVERRIDE / _MICRO_MAC_OVERRIDE probe hooks pin the micro kernel's M tile (32/64/128) and MAC (<= the SM count); the launcher's micro MAC arithmetic moves unchanged into _select_micro_mac. None keeps every selection.",
         "2026-09-17 private input fanout: cache only compact route metadata, reuse the quantized block in registers across equal-scale experts; separately keyed and disabled pending GPU and consumer qualification.",
         "2026-09-17 adopt numerically qualified fixed-K bundle by user decision; small or inconclusive component gains are retained with explicit controls. See st_fixed_k_next and st_moe_input_reuse measurements.",
-        "2026-09-17 final input reuse: select qualified compact-cache mode 3 for C1 and register-fanout mode 4 for C2; 56 raw-byte cases and 60 output comparisons pass. Whole-MoE gains remain small and cache-dependent; explicit mode 0 is retained."
+        "2026-09-17 final input reuse: select qualified compact-cache mode 3 for C1 and register-fanout mode 4 for C2; 56 raw-byte cases and 60 output comparisons pass. Whole-MoE gains remain small and cache-dependent; explicit mode 0 is retained.",
+        "2026-09-17: long-prefill SF6 and packet readers accumulate rounded route contributions in FP32 and cast once; shared workspace supports the declared 32768-row limit."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -194,19 +204,23 @@
       "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",
       "sha256": "1949bb2f6edbcfe7728b2fd3cddcd2f853605dbc55aac8fe614d737b29600e66",
       "origin": "repository",
-      "local_sha256": "a4baa0e28f959aadb784739cd4450f1f0337870311f8fedaa54f98a1373ab914",
+      "local_sha256": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
       "local_modifications": [
         "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic.",
-        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged."
+        "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
+        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
       ]
     },
     "b12x/moe_static_kernel.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_static_kernel.py",
       "sha256": "b87e2b80f706e1db91b95c8a619806af37f7be25021b33a1da7f117ff4d87610",
       "origin": "image",
-      "local_sha256": "dc24b0e1b73076fc4d3abeace44fa2c6a4c99a077f7687616d9c561a897c4de4",
+      "local_sha256": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
       "local_modifications": [
-        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic."
+        "2026-09-12 GB10: eight max.abs.f32 PTX operations form an NVFP4 amax tree; shorten SASS dependencies while preserving MXFP4 and quantizer arithmetic.",
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
+        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
       ]
     },
     "b12x/moe_w4a16_activations.py": {
@@ -265,17 +279,29 @@
     "b12x/moe_dynamic_ep_local.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_ep_local.py",
       "sha256": "89bab8e22514d4ce036e4cc6755a5dcfaeb8b12277766394dcdd101db8751595",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b",
+      "local_modifications": [
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+      ]
     },
     "b12x/moe_dynamic_gated_sf6.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_gated_sf6.py",
       "sha256": "6efb0a2ec044dfbaeb43af92f569b6c130a99bee751fb5a129f78dac1183300e",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "de87e617a3f52370e1bda1656438099c895618247e45a9a64313559e196033bb",
+      "local_modifications": [
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+      ]
     },
     "b12x/moe_dynamic_gated_sf6_q0.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_gated_sf6_q0.py",
       "sha256": "f343bd697c961733202ff18d55527f3cb9d3dae57b5caa3a94ad761dca3afb2e",
-      "origin": "repository"
+      "origin": "repository",
+      "local_sha256": "fc62f7e59f660d741c68b1ccb32173055914279c40052e62972b03b881650593",
+      "local_modifications": [
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+      ]
     },
     "b12x/moe_dynamic_gated_tiled.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_gated_tiled.py",
@@ -286,8 +312,11 @@
       "source": "overlay/modules/glm53_moe/moe_dynamic_prefill.py",
       "sha256": "6d1a2b709e7d21ad8a6e6bf946d5d980b9f7b4678b9a6af949bbed94668dd3a5",
       "origin": "repository",
-      "local_sha256": "21b25effb54dafad14439594fac302ccf0dc921199bce4ed65b128ee2bf41977",
-      "local_modifications": " Private N128 tiled candidate can retain original FC2 fragment reloads to bound register lifetime; default reuse path unchanged."
+      "local_sha256": "92b8b597cf534eee8fd57009be9b70d3ceed0ea7f37e776cdb6ae6a00c344475",
+      "local_modifications": [
+        " Private N128 tiled candidate can retain original FC2 fragment reloads to bound register lifetime; default reuse path unchanged.",
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
+      ]
     },
     "b12x/moe_dynamic_prefill_n128.py": {
       "source": "overlay/modules/glm53_moe/moe_dynamic_prefill_n128.py",
@@ -319,7 +348,7 @@
       "source": "overlay/modules/glm53_moe/moe_static_kernel_v4.py",
       "sha256": "eeb31ed9e3c0c285ea4aac48e95a2a9652ae390ba12a0f9d37de5cff4c00e42c",
       "origin": "repository",
-      "local_sha256": "c6320447ee8fba3d563cf988991a6f58c859201391c7278206cb933ef748359e",
+      "local_sha256": "b7a3a6220684fe60e083c317eff22be9aec78930287f916d0c23880b48eaf5a7",
       "local_modifications": [
         "2026-09-12 ST native execution: tiled static v2 preserves BF16 contribution rounding with FP32 route scatter; owned SF6 scales may reuse retired arena storage before capture",
         "2026-09-13: opt-in epilogue lifetime alias saves 4 KiB for the three-stage FC1 probe; separate-storage offsets and named barriers are preserved.",
@@ -328,7 +357,8 @@
         "2026-09-13 scatter recovery: preserve saturated BF16 rounding after route weighting and make wide-row normalization idempotent; stock arithmetic unchanged.",
         "2026-09-14 B12X 12b4eb257441: narrow SF6 shared loads with immediate offsets; retain volatile semantics, ring ownership and exact SFB mapping.",
         "2026-09-14 CUDA 13.2: replace SF6 split-base addition with native add.u8x4; preserve scale operands, storage and barriers.",
-        "2026-09-17 token input reuse: bounded quantization cache, compact deterministic routes with shared-to-async fence, and register fanout with ballot prefixes. Equal raw scales reuse identical bytes; other scales keep the original quantizer. GPU-qualified mode 3 at C1 and mode 4 at C2 are the scoped defaults."
+        "2026-09-17 token input reuse: bounded quantization cache, compact deterministic routes with shared-to-async fence, and register fanout with ballot prefixes. Equal raw scales reuse identical bytes; other scales keep the original quantizer. GPU-qualified mode 3 at C1 and mode 4 at C2 are the scoped defaults.",
+        "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable."
       ]
     },
     "b12x/moe_static_kernel_v5.py": {

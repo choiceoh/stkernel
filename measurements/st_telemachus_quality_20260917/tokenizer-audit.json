@@ -1,0 +1,174 @@
+{
+  "tokenizers_version": "0.23.2",
+  "gpu_used": false,
+  "tokenizer_sha256": "0cfe2c099a7702a0921abc315ee039deb51e4a34b4818fc509bd27fa3dc4acc1",
+  "alternate_tokenizer_sha256": "19e773648cb4e65de8660ea6365e10acca112d42a854923df93db4a6f333a82d",
+  "vocab_equal": true,
+  "vocab_size": 154856,
+  "different_json_fields": [
+    "truncation"
+  ],
+  "specials": {
+    "<|endoftext|>": 154820,
+    "[MASK]": 154821,
+    "[gMASK]": 154822,
+    "[sMASK]": 154823,
+    "<sop>": 154824,
+    "<eop>": 154825,
+    "<|system|>": 154826,
+    "<|user|>": 154827,
+    "<|assistant|>": 154828,
+    "<|observation|>": 154829,
+    "<|begin_of_image|>": 154830,
+    "<|end_of_image|>": 154831,
+    "<|begin_of_video|>": 154832,
+    "<|end_of_video|>": 154833,
+    "<|begin_of_audio|>": 154834,
+    "<|end_of_audio|>": 154835,
+    "<|begin_of_transcription|>": 154836,
+    "<|end_of_transcription|>": 154837
+  },
+  "cases": [
+    {
+      "name": "original",
+      "output_tokens": 907,
+      "text_sha256": "b11ec28f853b6fcd3ff8bb7e7b5b50805ab752a165cc8a50d4e18ef696f06153",
+      "all_ids_in_vocab": true,
+      "saved_text_equal": true,
+      "alternate_decode_equal": true,
+      "manual_byte_decode_equal": true,
+      "utf8_errors": 0,
+      "replacement_chars": 0,
+      "streams": [
+        {
+          "width": 1,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 2,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 7,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 8,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 64,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        }
+      ]
+    },
+    {
+      "name": "precision-baseline-t1",
+      "output_tokens": 537,
+      "text_sha256": "49a4e335c73ab1ce27dceaf369743337f20f8124e04e0db9fff797db70d66535",
+      "all_ids_in_vocab": true,
+      "saved_text_equal": true,
+      "alternate_decode_equal": true,
+      "manual_byte_decode_equal": true,
+      "utf8_errors": 1,
+      "replacement_chars": 1,
+      "streams": [
+        {
+          "width": 1,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 2,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 7,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 8,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 64,
+          "equals_full_decode": false,
+          "monotonic": true,
+          "repairs": {
+            "stalled": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "precision-torch-sampler-t1",
+      "output_tokens": 537,
+      "text_sha256": "5268aabeb9a5fea7effee1fd0942765bf2a1f3af84e53625a7a35b5b38352519",
+      "all_ids_in_vocab": true,
+      "saved_text_equal": true,
+      "alternate_decode_equal": true,
+      "manual_byte_decode_equal": true,
+      "utf8_errors": 1,
+      "replacement_chars": 1,
+      "streams": [
+        {
+          "width": 1,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 2,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 7,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 8,
+          "equals_full_decode": true,
+          "monotonic": true,
+          "repairs": {}
+        },
+        {
+          "width": 64,
+          "equals_full_decode": false,
+          "monotonic": true,
+          "repairs": {
+            "stalled": 1
+          }
+        }
+      ]
+    }
+  ],
+  "prompt": {
+    "tokens": 50005,
+    "round_trip_ids_equal": true,
+    "reencoded_tokens": 50005,
+    "alternate_encoding_equal": true,
+    "replacement_chars": 0,
+    "text_sha256": "6a0b86387dd3d8e872690107d51d5f822cb06ddd9072508353623524dff275fa"
+  }
+}

@@ -42,8 +42,8 @@ def main():
     parser.add_argument("--temperature", type=float, choices=(0.0, 1.0), required=True)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--max-tokens", type=int, default=1200)
-    parser.add_argument('--diagnostic-mode', type=int, choices=tuple(range(13)), default=0,
-                        help='Private diagnostic arm only: 1 host block, 2 host target, 3 host token rejection, 4 device reference, 5 single-position target, 6 device target; 7 FP8 dense scalar, 8 BF16 transport scalar, 9 both; 10 torch sampler scalar; 11 packet FFNs off; 12 shared fusion/overlap off')
+    parser.add_argument('--diagnostic-mode', type=int, choices=(0, 1, 2, 3, 4, 5, 6), default=0,
+                        help='Private diagnostic arm only: 1 host block, 2 host target, 3 host token rejection, 4 device reference, 5 single-position target, 6 device target')
     parser.add_argument('--expect-owner', help='Require this exact fleet owner before sending a request')
     args = parser.parse_args()
     if not 1 <= args.max_tokens <= 1200:
@@ -94,13 +94,13 @@ def main():
     if args.expect_owner is not None and (after.get('fleet', {}).get('owner') != owner
                                          or summary['served_delta'] != 1):
         raise SystemExit('replay did not preserve the isolated fleet owner and single-request control')
-    if args.diagnostic_mode in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12) and delta['st:async_decode_steps_total'] != 0:
+    if args.diagnostic_mode in (1, 2, 3, 5) and delta['st:async_decode_steps_total'] != 0:
         raise SystemExit('host control was bypassed by asynchronous decoding')
-    if args.diagnostic_mode in (2, 5, 6, 7, 8, 9, 10, 11, 12) and delta['vllm:spec_decode_num_accepted_tokens_total'] != 0:
+    if args.diagnostic_mode in (2, 5, 6) and delta['vllm:spec_decode_num_accepted_tokens_total'] != 0:
         raise SystemExit('target-only control accepted draft tokens')
     if args.diagnostic_mode in (4, 6) and delta['st:async_decode_steps_total'] <= 0:
         raise SystemExit('device control did not execute asynchronously')
-    if args.diagnostic_mode in (5, 7, 8, 9, 10, 11, 12) and delta['vllm:spec_decode_num_draft_tokens_total'] != 0:
+    if args.diagnostic_mode == 5 and delta['vllm:spec_decode_num_draft_tokens_total'] != 0:
         raise SystemExit('single-position target control proposed draft tokens')
 
 

@@ -44,7 +44,7 @@ from ._moe_dynamic.gated import (
 )
 from .moe_dynamic_gated_tiled import MoEGatedDynamicKernelTiled
 
-STOCK_GATED_SHA256 = "7c01dd68229f38a630d77ce0a2b3e28cc0c89f1008ee4bb880fcc9c26adceef6"
+STOCK_GATED_SHA256 = "adf2c7336b785a96d2865fb1aa42d636392845b55ca84c733210d24193ca24ba"
 SF6_STAGE_BYTES = 1552
 DYNAMIC_SF_BYTES = 1024
 
@@ -710,6 +710,10 @@ class MoEGatedDynamicKernelSF6(MoEGatedDynamicKernelTiled):
             ),
             launch_params,
         )
+
+        # The grid barrier acquired every producer's generic-global A/SFA
+        # stores. Bridge those writes to this CTA's subsequent TMA reads.
+        cute.arch.fence_proxy("async.global")
 
         # Deferred publication is complete after the resident-grid barrier
         # inside initialize_route_q0_and_publish.  Cache the immutable tail in

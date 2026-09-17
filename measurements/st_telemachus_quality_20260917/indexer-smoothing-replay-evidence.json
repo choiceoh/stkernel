@@ -1,0 +1,124 @@
+{
+  "cases": [
+    {
+      "case": "original-t1-seed11",
+      "source": "03e9c50551666156b89c799d967138a39cbb01d7",
+      "owner": "queue/st-telemachus-idxsmooth0918",
+      "prompt_tokens": 50005,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "seed": 11,
+      "temperature": 1,
+      "completion_tokens": 597,
+      "output_ids_sha256": "1437e506a4090f05527cb470025410fe2fce34982668cde5443a3b1375d4fd5a",
+      "output_text_sha256": "7126f1024da15abcbf2f6b89cb4f0412debe607f66eaf9eb4036fd4c7d542e8f",
+      "cap_hit": false,
+      "max_tokens": 32768,
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "seconds": 38.497617374989204,
+      "quality": "corrupted",
+      "execution_counter_scope": "served delta only; draft counters were not recorded per request"
+    },
+    {
+      "case": "original-t1-seed7",
+      "source": "03e9c50551666156b89c799d967138a39cbb01d7",
+      "owner": "queue/st-telemachus-idxsmooth0918",
+      "prompt_tokens": 50005,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "seed": 7,
+      "temperature": 1,
+      "completion_tokens": 10006,
+      "output_ids_sha256": "e61c5aa7e714099d6e0d18c1f6ebbb5b9414af849a2069a93cfdbd354fd28cc2",
+      "output_text_sha256": "b27ad43b53f2d78e958b0d05c875d34032e39e694a53be3dde659ecafd9144b4",
+      "cap_hit": false,
+      "max_tokens": 32768,
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "seconds": 211.3683728580363,
+      "quality": "corrupted",
+      "execution_counter_scope": "served delta only; draft counters were not recorded per request"
+    },
+    {
+      "case": "original-thinking-off",
+      "source": "03e9c50551666156b89c799d967138a39cbb01d7",
+      "owner": "queue/st-telemachus-idxsmooth0918",
+      "prompt_tokens": 50006,
+      "prompt_sha256": "a5c267f68dac71d35602e68f1df7fdf5f4adabd5322d857da1cfc5d1ab3a6375",
+      "seed": 7,
+      "temperature": 1,
+      "completion_tokens": 472,
+      "output_ids_sha256": "eadfc7cf70007b100f760b48e4f377465a2d93a5d1c9062c12399d5f26f3956a",
+      "output_text_sha256": "5d8d5b02bb872d5c74c1a58bfa7cbd1bf7d9de2e8104f115b33e7773b3b67b1e",
+      "cap_hit": false,
+      "max_tokens": 1024,
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "seconds": 37.76197499001864,
+      "quality": "corrupted",
+      "execution_counter_scope": "served delta only; draft counters were not recorded per request"
+    }
+  ],
+  "verdict": "All three responses remain corrupted; combined candidate does not resolve the incident.",
+  "runtime": [
+    {
+      "rank": 0,
+      "host": "10.10.10.2",
+      "container": "929a4cc594e95597f594bc852fd6235615b549376aa217bd5b91304c76473ca7",
+      "image_tag": "st-engine:bracket-03e9c5055166",
+      "image_id": "sha256:b58775a32c960c9036ddaad99129f10ad860d00484fac8c3013152fe8d186c16",
+      "started_at": "2026-09-17T16:01:05.621646186Z",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "5c07ef2a59c2f2278f9d4bd9a0e63ce9b832f3777a4d1e84115049695c1a1910",
+        "engine/profiles/glm53/boot.py": "5845fdbcd45b23d12bcafb283bfd3645674ae0a0c41382c608663ca82abfcc4f",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "48e74eea78a0dfe27e35c80296a3e5fbef8887a6abcddd2ef3233a0dcceab8bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "8e705519c390838b3b7f208d1c36f097fc8837c6b558ce4419bc84a1fa08e375",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2"
+      }
+    },
+    {
+      "rank": 1,
+      "host": "10.10.10.1",
+      "container": "6eb3c10dbf0a6d78c0e7b35744cb4b096b07d9f05544f4f9ace493fc97d3a03c",
+      "image_tag": "st-engine:bracket-03e9c5055166",
+      "image_id": "sha256:45b48e06ec3eb9c97c57add42445681e1ca62da8baed182a93e71e838e4330f0",
+      "started_at": "2026-09-17T16:01:05.916703318Z",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "5c07ef2a59c2f2278f9d4bd9a0e63ce9b832f3777a4d1e84115049695c1a1910",
+        "engine/profiles/glm53/boot.py": "5845fdbcd45b23d12bcafb283bfd3645674ae0a0c41382c608663ca82abfcc4f",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "48e74eea78a0dfe27e35c80296a3e5fbef8887a6abcddd2ef3233a0dcceab8bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "8e705519c390838b3b7f208d1c36f097fc8837c6b558ce4419bc84a1fa08e375",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2"
+      }
+    },
+    {
+      "rank": 2,
+      "host": "10.10.10.3",
+      "container": "3a248894ee553881302c77929f18396f97f099728dc0638730b35b03c7b366e3",
+      "image_tag": "st-engine:bracket-03e9c5055166",
+      "image_id": "sha256:43c3c4fe83205f2a7a6f9d08018c8b77add6779dd24c96deea8b29969422d90f",
+      "started_at": "2026-09-17T16:01:05.291509429Z",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "5c07ef2a59c2f2278f9d4bd9a0e63ce9b832f3777a4d1e84115049695c1a1910",
+        "engine/profiles/glm53/boot.py": "5845fdbcd45b23d12bcafb283bfd3645674ae0a0c41382c608663ca82abfcc4f",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "48e74eea78a0dfe27e35c80296a3e5fbef8887a6abcddd2ef3233a0dcceab8bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "8e705519c390838b3b7f208d1c36f097fc8837c6b558ce4419bc84a1fa08e375",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2"
+      }
+    },
+    {
+      "rank": 3,
+      "host": "10.10.10.4",
+      "container": "4a155ace011153038aa5d5fdfeba06e692b9740c5687d256fdb9379bce246dd9",
+      "image_tag": "st-engine:bracket-03e9c5055166",
+      "image_id": "sha256:45343f570d3cd119ec4c7257b03cd75b6630506f03c346931bc7b7cf4ba153b0",
+      "started_at": "2026-09-17T16:01:07.369923062Z",
+      "file_sha256": {
+        "engine/profiles/glm53/net.py": "5c07ef2a59c2f2278f9d4bd9a0e63ce9b832f3777a4d1e84115049695c1a1910",
+        "engine/profiles/glm53/boot.py": "5845fdbcd45b23d12bcafb283bfd3645674ae0a0c41382c608663ca82abfcc4f",
+        "engine/kernels/b12x/moe_dynamic_gated_sf6_prefill.py": "48e74eea78a0dfe27e35c80296a3e5fbef8887a6abcddd2ef3233a0dcceab8bd",
+        "engine/kernels/b12x/moe_dynamic_prefill_packets.py": "8e705519c390838b3b7f208d1c36f097fc8837c6b558ce4419bc84a1fa08e375",
+        "engine/kernels/b12x/moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2"
+      }
+    }
+  ]
+}

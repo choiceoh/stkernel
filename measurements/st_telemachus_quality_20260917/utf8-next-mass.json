@@ -1,0 +1,16 @@
+[
+  {
+    "capture": "admit1-gen125.pt",
+    "invalid_utf8_next_mass": 0.0006926064907205101,
+    "fp64_same_uniform_token": 17113,
+    "fp64_token_bytes": "6973616e",
+    "fp64_token_is_valid_utf8_continuation": false
+  },
+  {
+    "capture": "admit4-gen0.pt",
+    "invalid_utf8_next_mass": 0.0010481133089511607,
+    "fp64_same_uniform_token": 253,
+    "fp64_token_bytes": "9f",
+    "fp64_token_is_valid_utf8_continuation": true
+  }
+]

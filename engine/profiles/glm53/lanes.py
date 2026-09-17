@@ -247,7 +247,7 @@ def reference() -> Lanes:
 
 
 MOE_STATIC_STOCK = "stock"          # the §15~18 judged default of STK_moe_static
-MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0"  # incident control: same arithmetic, all searches off
+MOE_STATIC_PRODUCTION = "t,r,sf6,batch,q0,as1"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the
 # M16 reform C=1 has, with direct register scatter, retained route state and the FC2 prefetch ring (#955/#962/#970)
 # as1: three-candidate FC1/FC2 search across routed decode, prefill and dense MLPs; top-8 is unchanged.
 

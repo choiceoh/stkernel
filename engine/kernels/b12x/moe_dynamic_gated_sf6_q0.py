@@ -29,7 +29,7 @@ from ._moe_dynamic.gated import (
 from . import moe_dynamic_gated_sf6 as _sf6
 from .moe_dynamic_ep_local import MoEGatedEPLocalKernel
 
-SF6_SOURCE_SHA256 = "01fc34fddd90ca5b433ee26eb00286f7e7cf9f00d18b94bc68f2168245351b4e"
+SF6_SOURCE_SHA256 = "de87e617a3f52370e1bda1656438099c895618247e45a9a64313559e196033bb"
 
 
 @lru_cache(maxsize=1)

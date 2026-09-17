@@ -28,7 +28,7 @@ from ._moe_dynamic.gated import (
 from .moe_w4a16_fp4_helpers import cvt_e4m3x4_to_f32x4, st_shared_bf16_from_f32
 from .moe_dynamic_gated_sf6_prefill import MoEGatedDynamicKernelSF6Prefill
 
-PREFILL_SOURCE_SHA256 = '48e74eea78a0dfe27e35c80296a3e5fbef8887a6abcddd2ef3233a0dcceab8bd'
+PREFILL_SOURCE_SHA256 = '50ba375f321eafd6aa4f3bc6e396a4111c59c7e7123a7ca7881f3d86044384bd'
 
 
 @lru_cache(maxsize=1)

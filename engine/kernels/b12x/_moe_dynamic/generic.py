@@ -504,6 +504,10 @@ class MoEDynamicKernel:
             old_epoch = _ld_global_acquire_i32(barrier_epoch_addr)
             arrived = atomic_add_global_i32(barrier_count_addr, Int32(1))
             if arrived == grid_x - Int32(1):
+                # Acquire all earlier counter arrivals before releasing the
+                # epoch. The entry fence only publishes this CTA's writes;
+                # the final relaxed RMW must be followed by an acquire fence.
+                _threadfence()
                 st_global_i32(barrier_count_addr, Int32(0))
                 _st_global_release_i32(barrier_epoch_addr, old_epoch + Int32(1))
             else:
@@ -1510,6 +1514,10 @@ class MoEDynamicKernel:
             Int32(gdim_z),
             is_cta_leader,
         )
+
+        # Packed A and SFA were written through the generic global proxy.
+        # Each consuming CTA orders them after grid acquisition and before TMA.
+        cute.arch.fence_proxy("async.global")
 
         gA = cute.local_tile(mA, self.sa_tile_shape_mk, (None, None, None))
         # Tiled view over w13.

@@ -333,19 +333,7 @@ class AsyncDecode:
                                            self._dists(n * t, full.shape[-1])).view(n, t, -1)
             e.note_ceilings(probs, b["qprob"], b["qcand"])
             with mark("verify"):
-                modes = {getattr(e, 'incident_modes', {}).get(s, 0) for s in self.batch}
-                if modes == {4}:
-                    from engine.base.sampler import _block_verify_by_torch
-                    accepted, picks, _ = _block_verify_by_torch(probs, b["drafts"], b["qcand"], b["qprob"], b["draws"])
-                elif modes == {6}:
-                    from engine.base import draws
-                    keys = draws.row_keys(e.seed, b['nonce'], b['generated'])
-                    u = draws.uniform_tensor(keys, draws.RICH, 1).flatten()
-                    picks = torch.zeros((n, t), dtype=torch.int64, device=full.device)
-                    picks[:, 0] = sampler_rows(full.view(n, t, -1)[:, 0].contiguous(), b['temps'], b['top_k'], b['top_p'], u, e.decodable)
-                    accepted = torch.zeros(n, dtype=torch.int64, device=full.device)
-                else:
-                    accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], b["draws"])
+                accepted, picks, _ = block_verify_batch(probs, b["drafts"], b["qcand"], b["qprob"], b["draws"])
             with mark("agree"):
                 # every rank verified the same block, but not to the same bits: commit rank 0's verdict
                 accepted, picks = agree_verdict(e.net.comm, accepted, picks)

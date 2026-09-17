@@ -30,14 +30,30 @@ def main():
                         accepted = torch.tensor([kept]) if sampled else None
                         expected = commit_batch(picks, drafts, state['alive'], state['generated'],
                                                 state['limit'], state['ends'], accepted)
+                        ctx0 = int(state['ctx'].item())
+                        gen0 = int(state['generated'].item())
+                        alive0 = bool(state['alive'].item())
+                        anchor0 = int(state['anchor'].item())
+                        slot0 = int(state['real_slot'].item())
                         got = advance(picks, state, accepted)
-                        for actual, reference in zip(got[:4], expected):
+                        # count/done/kept against the shared commit reference.
+                        for actual, reference in zip(got[:3], expected[:3]):
                             torch.testing.assert_close(actual, reference, rtol=0, atol=0)
-                        assert state['ctx'].item() == 17 + got[0].item()
+                        count, done = int(got[0].item()), bool(got[1].item())
+                        # `picks` is the same object in got and expected, so the
+                        # old picks comparison was a no-op and no state store was
+                        # read. Check the readback and every store the kernel makes.
+                        assert int(got[4].item()) == ctx0, 'readback context'
+                        assert int(state['ctx'].item()) == ctx0 + count, 'context advance'
+                        assert int(state['generated'].item()) == gen0 + count, 'generated advance'
+                        assert bool(state['alive'].item()) == (alive0 and not done), 'alive clear'
+                        assert int(state['slot'].item()) == (slot0 if (alive0 and not done) else 0), 'slot release'
+                        want_anchor = int(picks[0, max(count - 1, 0)].item()) if count > 0 else anchor0
+                        assert int(state['anchor'].item()) == want_anchor, 'anchor follow'
                         cases += 1
     assert not torch.cuda.is_initialized()
     print(f'PASS Triton CPU interpreter: {cases} greedy/sampled K1/K3/K7 clipping cases; '
-          'counts, tokens, done, kept and context agree')
+          'counts, tokens, done, kept, context, generated, alive, slot and anchor agree')
 
 
 if __name__ == '__main__':

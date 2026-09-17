@@ -33,6 +33,27 @@ def scales(amax_x: torch.Tensor, weights, alpha: float = ALPHA, pow2: bool = POW
     return torch.exp2(torch.round(torch.log2(s))) if pow2 else s
 
 
+def shared_scales(amax_x, weights, all_reduce_max):
+    """One smoothing domain for inputs exchanged between TP ranks.
+
+    Weight columns are sharded by output row, and calibration may be absent on
+    only some ranks. Reduce both peaks and an availability bit before deciding
+    whether to fold, so every sender and receiver uses the same factor.
+    This collective runs only while preparing weights.
+    """
+    peaks = torch.stack([w.detach().float().abs().amax(0) for w in weights]).amax(0)
+    width = peaks.numel()
+    summary = torch.zeros((2, width + 1), device=peaks.device, dtype=torch.float32)
+    summary[1, :width] = peaks
+    if amax_x is not None:
+        summary[0, :width] = amax_x.detach().to(device=peaks.device, dtype=torch.float32)
+        summary[0, width] = 1
+    summary = all_reduce_max(summary)
+    if not bool(summary[0, width]):
+        return None
+    return scales(summary[0, :width], [summary[1, :width].unsqueeze(0)])
+
+
 def fold(norm_w: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
     """Divide the norm's weight by s in place (bf16), and return the EXACT factor the weights must be multiplied by:
     the ratio of the old weight to the rounded new one, so that (x * norm_w') @ (W * s_eff)^T == (x * norm_w) @ W^T

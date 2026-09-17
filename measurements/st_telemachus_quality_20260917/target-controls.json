@@ -1,0 +1,104 @@
+{
+  "source_sha": "89ebe27a20407b4c1802b6163d1582cfea659399",
+  "owner": "queue/st-telemachus-target0917d",
+  "image": "st-engine:bracket-89ebe27a2040",
+  "rank0_image_digest": "sha256:b8d1e4e77263a5291754dbf4a324ad5d3e1ffc4ddd94cc92bda493dd6b2e26ff",
+  "temperature": 1,
+  "cases": [
+    {
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 579,
+      "wall_seconds": 55.89113890193403,
+      "served_delta": 1,
+      "diagnostic_mode": 2,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 578.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 4046.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "case": "modes-host-target-t1",
+      "verdict": "malformed Korean",
+      "text_sha256": "410e629ac26ffb60502b44e2bf668ca2989a30fa257b15d688a43b84176e79a5"
+    },
+    {
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 537,
+      "wall_seconds": 92.72784467996098,
+      "served_delta": 1,
+      "diagnostic_mode": 5,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 536.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "case": "modes-single-target-t1",
+      "verdict": "malformed Korean with zero proposed and accepted drafts",
+      "text_sha256": "49a4e335c73ab1ce27dceaf369743337f20f8124e04e0db9fff797db70d66535"
+    },
+    {
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 343,
+      "wall_seconds": 30.444042535033077,
+      "served_delta": 1,
+      "diagnostic_mode": 0,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 207.0,
+        "st:steps_decode_total": 207.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 136.0,
+        "vllm:spec_decode_num_draft_tokens_total": 1442.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "case": "modes-device-baseline-t1",
+      "verdict": "malformed; text hash matches prior fp32-t1",
+      "text_sha256": "2c4258cb9b3358f5a02783de6360f343a4a1e1883831e5977282289ca2b965f7"
+    },
+    {
+      "prompt_tokens": 47,
+      "cached_tokens": 0,
+      "completion_tokens": 1200,
+      "wall_seconds": 34.96310396899935,
+      "served_delta": 1,
+      "diagnostic_mode": 0,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 433.0,
+        "st:steps_decode_total": 433.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 767.0,
+        "vllm:spec_decode_num_draft_tokens_total": 3024.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "case": "modes-short-natural-t1",
+      "verdict": "output cap reached; insufficient visible answer",
+      "text_sha256": "379a6adb465daa5627a656f6209a8e55e2dd0252e43e6f88a515f4dfef9c3e24"
+    },
+    {
+      "prompt_tokens": 43821,
+      "cached_tokens": 0,
+      "completion_tokens": 800,
+      "wall_seconds": 116.63892379996832,
+      "served_delta": 1,
+      "diagnostic_mode": 5,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 799.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "case": "modes-no-history-single-t1",
+      "verdict": "history ablation; output cap reached; not recovery evidence",
+      "text_sha256": "6c05bc6a5dd16e3d6cbf527c13d0443fb6871b3fbdecd8d521072e40160208b3"
+    }
+  ]
+}

@@ -1,0 +1,842 @@
+{
+  "event": "prefill_publication_audit",
+  "gpu_used": false,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "sources": {
+    "moe_dispatch.py": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
+    "_moe_dynamic/gated.py": "adf2c7336b785a96d2865fb1aa42d636392845b55ca84c733210d24193ca24ba",
+    "moe_dynamic_gated_sf6.py": "de87e617a3f52370e1bda1656438099c895618247e45a9a64313559e196033bb",
+    "moe_dynamic_gated_sf6_q0.py": "fc62f7e59f660d741c68b1ccb32173055914279c40052e62972b03b881650593",
+    "moe_dynamic_gated_sf6_words.py": "a8cf4d18829c304baaa2cf1ef686e60fe9c52d802a4c385388ec51002cafba52",
+    "moe_dynamic_gated_sf6_q0_words.py": "7e6662a438dab421a0ddb38bb857eb9a553fb8bab81d3865a02e6b6e338da755",
+    "moe_dynamic_gated_sf6_prefill.py": "50ba375f321eafd6aa4f3bc6e396a4111c59c7e7123a7ca7881f3d86044384bd",
+    "fp4_scale_search.py": "c3abc282d82b4cd40d4b7cf66758c022989b163aba141719b1e34b78197ef0d9"
+  },
+  "cells": [
+    {
+      "m": 2304,
+      "mac": 48,
+      "max_rows": 55168,
+      "kernel_class": "MoEGatedDynamicKernelSF6Q0Words",
+      "activation_radius": 1,
+      "ptx_sha256": "4634400da513132ef4ca249b54c29ecced44a5196d8e36b1e4c06861d316cbaf",
+      "cubin_sha256": "5f2fa66ce8408664843f665c00539a0d678d0e175af6257dce9e317e55e38fc8",
+      "ptx_version": [
+        ".version 9.3",
+        ".target sm_121a"
+      ],
+      "generic_u64_stores": 8,
+      "generic_byte_stores": 8,
+      "global_proxy_fences": 1,
+      "native_global_proxy_fences": 1,
+      "instructions": [
+        [
+          145,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          167,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          188,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          235,
+          "membar.gl;"
+        ],
+        [
+          239,
+          "ld.global.acquire.gpu.s32 %r752, [%rd24];"
+        ],
+        [
+          243,
+          "atom.global.add.s32 %r753, [%rd203], %r754;"
+        ],
+        [
+          249,
+          "membar.gl;"
+        ],
+        [
+          257,
+          "st.global.release.gpu.s32 [%rd24], %r757;"
+        ],
+        [
+          266,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          308,
+          "atom.global.add.s32 %r766, [%rd49], %r767;"
+        ],
+        [
+          314,
+          "membar.gl;"
+        ],
+        [
+          318,
+          "ld.global.acquire.gpu.s32 %r768, [%rd24];"
+        ],
+        [
+          322,
+          "atom.global.add.s32 %r769, [%rd203], %r770;"
+        ],
+        [
+          328,
+          "membar.gl;"
+        ],
+        [
+          336,
+          "st.global.release.gpu.s32 [%rd24], %r773;"
+        ],
+        [
+          345,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          480,
+          "membar.gl;"
+        ],
+        [
+          484,
+          "ld.global.acquire.gpu.s32 %r853, [%rd24];"
+        ],
+        [
+          488,
+          "atom.global.add.s32 %r854, [%rd203], %r855;"
+        ],
+        [
+          494,
+          "membar.gl;"
+        ],
+        [
+          502,
+          "st.global.release.gpu.s32 [%rd24], %r858;"
+        ],
+        [
+          511,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          528,
+          "{ mbarrier.init.shared::cta.b64 [%r860], 1; fence.proxy.async.shared::cta; }"
+        ],
+        [
+          555,
+          "atom.global.add.s32 %r865, [%rd56], %r864;"
+        ],
+        [
+          616,
+          "atom.global.add.s32 %r870, [%rd59], %r871;"
+        ],
+        [
+          668,
+          "atom.global.add.s32 %r880, [%rd62], %r871;"
+        ],
+        [
+          714,
+          "atom.global.add.s32 %r889, [%rd65], %r871;"
+        ],
+        [
+          760,
+          "atom.global.add.s32 %r898, [%rd68], %r871;"
+        ],
+        [
+          824,
+          "atom.global.add.s32 %r958, [%rd86], %r959;"
+        ],
+        [
+          876,
+          "atom.global.add.s32 %r968, [%rd89], %r959;"
+        ],
+        [
+          932,
+          "atom.global.add.s32 %r1004, [%rd101], %r1005;"
+        ],
+        [
+          3141,
+          "membar.gl;"
+        ],
+        [
+          3146,
+          "membar.gl;"
+        ],
+        [
+          3150,
+          "ld.global.acquire.gpu.s32 %r1506, [%rd24];"
+        ],
+        [
+          3154,
+          "atom.global.add.s32 %r1507, [%rd203], %r1508;"
+        ],
+        [
+          3160,
+          "membar.gl;"
+        ],
+        [
+          3168,
+          "st.global.release.gpu.s32 [%rd24], %r1511;"
+        ],
+        [
+          3177,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          3663,
+          "membar.gl;"
+        ],
+        [
+          3667,
+          "ld.global.acquire.gpu.s32 %r1725, [%rd24];"
+        ],
+        [
+          3671,
+          "atom.global.add.s32 %r1726, [%rd203], %r1727;"
+        ],
+        [
+          3677,
+          "membar.gl;"
+        ],
+        [
+          3685,
+          "st.global.release.gpu.s32 [%rd24], %r1730;"
+        ],
+        [
+          3694,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          3702,
+          "fence.proxy.async.global;"
+        ],
+        [
+          3705,
+          "ld.global.acquire.gpu.s32 %r1732, [%rd204];"
+        ],
+        [
+          3778,
+          "membar.cta;"
+        ],
+        [
+          3851,
+          "atom.global.add.s32 %r1758, [%rd11], %r1759;"
+        ],
+        [
+          7408,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          13278,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          14111,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          15318,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          16720,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          17955,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          19190,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          20424,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          21108,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2150+51200], [%rd239, {%r2148, %r2151}], [%r2153+64], %rd240;"
+        ],
+        [
+          21123,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2156+2048], [%rd241, {%r2162, %r2159, %r19840, %r709}], [%r2161+64], %rd242;"
+        ],
+        [
+          21137,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2165+6144], [%rd243, {%r2170, %r2167, %r19840, %r709}], [%r2169+64], %rd244;"
+        ],
+        [
+          21150,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2174+92160], [%rd245, {%r2177, %r2172, %r710}], [%r2176+64], %rd246;"
+        ],
+        [
+          21655,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2510+51200], [%rd277, {%r2508, %r2511}], [%r2513+64], %rd278;"
+        ],
+        [
+          21670,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2516+2048], [%rd279, {%r2522, %r2519, %r19840, %r709}], [%r2521+64], %rd280;"
+        ],
+        [
+          21684,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2525+6144], [%rd281, {%r2530, %r2527, %r19840, %r709}], [%r2529+64], %rd282;"
+        ],
+        [
+          21698,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2535+92160], [%rd283, {%r2538, %r2533, %r710}], [%r2537+64], %rd284;"
+        ],
+        [
+          22203,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2871+51200], [%rd315, {%r2869, %r2872}], [%r2874+64], %rd316;"
+        ],
+        [
+          22219,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2877+2048], [%rd317, {%r2884, %r2881, %r2878, %r709}], [%r2883+64], %rd318;"
+        ],
+        [
+          22234,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2887+6144], [%rd319, {%r2893, %r2890, %r2888, %r709}], [%r2892+64], %rd320;"
+        ],
+        [
+          22248,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2898+92160], [%rd321, {%r2901, %r2896, %r710}], [%r2900+64], %rd322;"
+        ],
+        [
+          22753,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3234+51200], [%rd353, {%r3232, %r3235}], [%r3237+64], %rd354;"
+        ],
+        [
+          22769,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3240+2048], [%rd355, {%r3247, %r3244, %r3241, %r709}], [%r3246+64], %rd356;"
+        ],
+        [
+          22784,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3250+6144], [%rd357, {%r3256, %r3253, %r3251, %r709}], [%r3255+64], %rd358;"
+        ],
+        [
+          22798,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3261+92160], [%rd359, {%r3264, %r3259, %r710}], [%r3263+64], %rd360;"
+        ],
+        [
+          23308,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3595+51200], [%rd389, {%r3593, %r3596}], [%r3598+64], %rd390;"
+        ],
+        [
+          23323,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3601+2048], [%rd391, {%r3607, %r3606, %r19844, %r709}], [%r3603+64], %rd392;"
+        ],
+        [
+          23338,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3610+6144], [%rd393, {%r3616, %r3613, %r19844, %r709}], [%r3615+64], %rd394;"
+        ],
+        [
+          23351,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3620+92160], [%rd395, {%r3623, %r3618, %r710}], [%r3622+64], %rd396;"
+        ],
+        [
+          23856,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3956+51200], [%rd427, {%r3954, %r3957}], [%r3959+64], %rd428;"
+        ],
+        [
+          23871,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3962+2048], [%rd429, {%r3968, %r3967, %r19844, %r709}], [%r3964+64], %rd430;"
+        ],
+        [
+          23886,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3971+6144], [%rd431, {%r3977, %r3974, %r19844, %r709}], [%r3976+64], %rd432;"
+        ],
+        [
+          23900,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3982+92160], [%rd433, {%r3985, %r3980, %r710}], [%r3984+64], %rd434;"
+        ],
+        [
+          24405,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4318+51200], [%rd465, {%r4316, %r4319}], [%r4321+64], %rd466;"
+        ],
+        [
+          24421,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4324+2048], [%rd467, {%r4331, %r4330, %r4325, %r709}], [%r4327+64], %rd468;"
+        ],
+        [
+          24437,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4334+6144], [%rd469, {%r4341, %r4337, %r4338, %r709}], [%r4340+64], %rd470;"
+        ],
+        [
+          24451,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4346+92160], [%rd471, {%r4349, %r4344, %r710}], [%r4348+64], %rd472;"
+        ],
+        [
+          24956,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4682+51200], [%rd503, {%r4680, %r4683}], [%r4685+64], %rd504;"
+        ],
+        [
+          24972,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4688+2048], [%rd505, {%r4695, %r4694, %r4689, %r709}], [%r4691+64], %rd506;"
+        ],
+        [
+          24988,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4698+6144], [%rd507, {%r4705, %r4701, %r4702, %r709}], [%r4704+64], %rd508;"
+        ],
+        [
+          25002,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4710+92160], [%rd509, {%r4713, %r4708, %r710}], [%r4712+64], %rd510;"
+        ],
+        [
+          25362,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4926+2048], [%rd529, {%r4931, %r4927, %r4930, %r709}], [%r4929+160], %rd530;"
+        ],
+        [
+          25375,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd527, {%r4923, %r4919, %r4922, %r709}], [%r4921+160], %rd528;"
+        ],
+        [
+          25675,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd547, {%r5121, %r5117, %r5120, %r709}], [%r5119+160], %rd548;"
+        ],
+        [
+          25690,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r5124+2048], [%rd549, {%r5129, %r5125, %r5128, %r709}], [%r5127+160], %rd550;"
+        ],
+        [
+          25990,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd567, {%r5319, %r5315, %r5318, %r709}], [%r5317+160], %rd568;"
+        ],
+        [
+          26005,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r5322+2048], [%rd569, {%r5327, %r5323, %r5326, %r709}], [%r5325+160], %rd570;"
+        ],
+        [
+          26305,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd587, {%r5517, %r5513, %r5516, %r709}], [%r5515+160], %rd588;"
+        ],
+        [
+          26320,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r5520+2048], [%rd589, {%r5525, %r5521, %r5524, %r709}], [%r5523+160], %rd590;"
+        ],
+        [
+          26358,
+          "atom.global.add.s32 %r5538, [%rd11], %r5539;"
+        ],
+        [
+          26394,
+          "membar.cta;"
+        ]
+      ],
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_dynamic_gated_sf6_q0_wordsMoEGatedDynamicKernelSF6Q0Words_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_te_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    },
+    {
+      "m": 32256,
+      "mac": 48,
+      "max_rows": 294784,
+      "kernel_class": "MoEGatedDynamicKernelSF6Prefill",
+      "activation_radius": 1,
+      "ptx_sha256": "8ad93122ba7af7019e1851c90335b9f3c11e7d5e18b643bbf8552f4b6b400170",
+      "cubin_sha256": "70f1905669ffe6b559ea1bdccbb76a8a2b717b6e5420770722d14f280fda91f1",
+      "ptx_version": [
+        ".version 9.3",
+        ".target sm_121a"
+      ],
+      "generic_u64_stores": 8,
+      "generic_byte_stores": 8,
+      "global_proxy_fences": 1,
+      "native_global_proxy_fences": 1,
+      "instructions": [
+        [
+          145,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          167,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          188,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          235,
+          "membar.gl;"
+        ],
+        [
+          239,
+          "ld.global.acquire.gpu.s32 %r752, [%rd24];"
+        ],
+        [
+          243,
+          "atom.global.add.s32 %r753, [%rd203], %r754;"
+        ],
+        [
+          249,
+          "membar.gl;"
+        ],
+        [
+          257,
+          "st.global.release.gpu.s32 [%rd24], %r757;"
+        ],
+        [
+          266,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          308,
+          "atom.global.add.s32 %r766, [%rd49], %r767;"
+        ],
+        [
+          314,
+          "membar.gl;"
+        ],
+        [
+          318,
+          "ld.global.acquire.gpu.s32 %r768, [%rd24];"
+        ],
+        [
+          322,
+          "atom.global.add.s32 %r769, [%rd203], %r770;"
+        ],
+        [
+          328,
+          "membar.gl;"
+        ],
+        [
+          336,
+          "st.global.release.gpu.s32 [%rd24], %r773;"
+        ],
+        [
+          345,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          480,
+          "membar.gl;"
+        ],
+        [
+          484,
+          "ld.global.acquire.gpu.s32 %r853, [%rd24];"
+        ],
+        [
+          488,
+          "atom.global.add.s32 %r854, [%rd203], %r855;"
+        ],
+        [
+          494,
+          "membar.gl;"
+        ],
+        [
+          502,
+          "st.global.release.gpu.s32 [%rd24], %r858;"
+        ],
+        [
+          511,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          528,
+          "{ mbarrier.init.shared::cta.b64 [%r860], 1; fence.proxy.async.shared::cta; }"
+        ],
+        [
+          555,
+          "atom.global.add.s32 %r865, [%rd56], %r864;"
+        ],
+        [
+          616,
+          "atom.global.add.s32 %r870, [%rd59], %r871;"
+        ],
+        [
+          668,
+          "atom.global.add.s32 %r880, [%rd62], %r871;"
+        ],
+        [
+          714,
+          "atom.global.add.s32 %r889, [%rd65], %r871;"
+        ],
+        [
+          760,
+          "atom.global.add.s32 %r898, [%rd68], %r871;"
+        ],
+        [
+          824,
+          "atom.global.add.s32 %r958, [%rd86], %r959;"
+        ],
+        [
+          876,
+          "atom.global.add.s32 %r968, [%rd89], %r959;"
+        ],
+        [
+          932,
+          "atom.global.add.s32 %r1004, [%rd101], %r1005;"
+        ],
+        [
+          3141,
+          "membar.gl;"
+        ],
+        [
+          3146,
+          "membar.gl;"
+        ],
+        [
+          3150,
+          "ld.global.acquire.gpu.s32 %r1506, [%rd24];"
+        ],
+        [
+          3154,
+          "atom.global.add.s32 %r1507, [%rd203], %r1508;"
+        ],
+        [
+          3160,
+          "membar.gl;"
+        ],
+        [
+          3168,
+          "st.global.release.gpu.s32 [%rd24], %r1511;"
+        ],
+        [
+          3177,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          3663,
+          "membar.gl;"
+        ],
+        [
+          3667,
+          "ld.global.acquire.gpu.s32 %r1725, [%rd24];"
+        ],
+        [
+          3671,
+          "atom.global.add.s32 %r1726, [%rd203], %r1727;"
+        ],
+        [
+          3677,
+          "membar.gl;"
+        ],
+        [
+          3685,
+          "st.global.release.gpu.s32 [%rd24], %r1730;"
+        ],
+        [
+          3694,
+          "ld.global.acquire.gpu.s32 %val, [%rd24];"
+        ],
+        [
+          3702,
+          "fence.proxy.async.global;"
+        ],
+        [
+          3705,
+          "ld.global.acquire.gpu.s32 %r1732, [%rd204];"
+        ],
+        [
+          3778,
+          "membar.cta;"
+        ],
+        [
+          3851,
+          "atom.global.add.s32 %r1758, [%rd11], %r1759;"
+        ],
+        [
+          7408,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          13278,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          14111,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          15318,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          16720,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          17955,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          19190,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          20424,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          21108,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2150+51200], [%rd239, {%r2148, %r2151}], [%r2153+64], %rd240;"
+        ],
+        [
+          21123,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2156+2048], [%rd241, {%r2162, %r2159, %r19840, %r709}], [%r2161+64], %rd242;"
+        ],
+        [
+          21137,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2165+6144], [%rd243, {%r2170, %r2167, %r19840, %r709}], [%r2169+64], %rd244;"
+        ],
+        [
+          21150,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2174+92160], [%rd245, {%r2177, %r2172, %r710}], [%r2176+64], %rd246;"
+        ],
+        [
+          21655,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2510+51200], [%rd277, {%r2508, %r2511}], [%r2513+64], %rd278;"
+        ],
+        [
+          21670,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2516+2048], [%rd279, {%r2522, %r2519, %r19840, %r709}], [%r2521+64], %rd280;"
+        ],
+        [
+          21684,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2525+6144], [%rd281, {%r2530, %r2527, %r19840, %r709}], [%r2529+64], %rd282;"
+        ],
+        [
+          21698,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2535+92160], [%rd283, {%r2538, %r2533, %r710}], [%r2537+64], %rd284;"
+        ],
+        [
+          22203,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2871+51200], [%rd315, {%r2869, %r2872}], [%r2874+64], %rd316;"
+        ],
+        [
+          22219,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2877+2048], [%rd317, {%r2884, %r2881, %r2878, %r709}], [%r2883+64], %rd318;"
+        ],
+        [
+          22234,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2887+6144], [%rd319, {%r2893, %r2890, %r2888, %r709}], [%r2892+64], %rd320;"
+        ],
+        [
+          22248,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r2898+92160], [%rd321, {%r2901, %r2896, %r710}], [%r2900+64], %rd322;"
+        ],
+        [
+          22753,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3234+51200], [%rd353, {%r3232, %r3235}], [%r3237+64], %rd354;"
+        ],
+        [
+          22769,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3240+2048], [%rd355, {%r3247, %r3244, %r3241, %r709}], [%r3246+64], %rd356;"
+        ],
+        [
+          22784,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3250+6144], [%rd357, {%r3256, %r3253, %r3251, %r709}], [%r3255+64], %rd358;"
+        ],
+        [
+          22798,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3261+92160], [%rd359, {%r3264, %r3259, %r710}], [%r3263+64], %rd360;"
+        ],
+        [
+          23308,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3595+51200], [%rd389, {%r3593, %r3596}], [%r3598+64], %rd390;"
+        ],
+        [
+          23323,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3601+2048], [%rd391, {%r3607, %r3606, %r19844, %r709}], [%r3603+64], %rd392;"
+        ],
+        [
+          23338,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3610+6144], [%rd393, {%r3616, %r3613, %r19844, %r709}], [%r3615+64], %rd394;"
+        ],
+        [
+          23351,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3620+92160], [%rd395, {%r3623, %r3618, %r710}], [%r3622+64], %rd396;"
+        ],
+        [
+          23856,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3956+51200], [%rd427, {%r3954, %r3957}], [%r3959+64], %rd428;"
+        ],
+        [
+          23871,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3962+2048], [%rd429, {%r3968, %r3967, %r19844, %r709}], [%r3964+64], %rd430;"
+        ],
+        [
+          23886,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3971+6144], [%rd431, {%r3977, %r3974, %r19844, %r709}], [%r3976+64], %rd432;"
+        ],
+        [
+          23900,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r3982+92160], [%rd433, {%r3985, %r3980, %r710}], [%r3984+64], %rd434;"
+        ],
+        [
+          24405,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4318+51200], [%rd465, {%r4316, %r4319}], [%r4321+64], %rd466;"
+        ],
+        [
+          24421,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4324+2048], [%rd467, {%r4331, %r4330, %r4325, %r709}], [%r4327+64], %rd468;"
+        ],
+        [
+          24437,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4334+6144], [%rd469, {%r4341, %r4337, %r4338, %r709}], [%r4340+64], %rd470;"
+        ],
+        [
+          24451,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4346+92160], [%rd471, {%r4349, %r4344, %r710}], [%r4348+64], %rd472;"
+        ],
+        [
+          24956,
+          "cp.async.bulk.tensor.2d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4682+51200], [%rd503, {%r4680, %r4683}], [%r4685+64], %rd504;"
+        ],
+        [
+          24972,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4688+2048], [%rd505, {%r4695, %r4694, %r4689, %r709}], [%r4691+64], %rd506;"
+        ],
+        [
+          24988,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4698+6144], [%rd507, {%r4705, %r4701, %r4702, %r709}], [%r4704+64], %rd508;"
+        ],
+        [
+          25002,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4710+92160], [%rd509, {%r4713, %r4708, %r710}], [%r4712+64], %rd510;"
+        ],
+        [
+          25362,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4926+2048], [%rd529, {%r4931, %r4927, %r4930, %r709}], [%r4929+160], %rd530;"
+        ],
+        [
+          25375,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd527, {%r4923, %r4919, %r4922, %r709}], [%r4921+160], %rd528;"
+        ],
+        [
+          25675,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd547, {%r5121, %r5117, %r5120, %r709}], [%r5119+160], %rd548;"
+        ],
+        [
+          25690,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r5124+2048], [%rd549, {%r5129, %r5125, %r5128, %r709}], [%r5127+160], %rd550;"
+        ],
+        [
+          25990,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd567, {%r5319, %r5315, %r5318, %r709}], [%r5317+160], %rd568;"
+        ],
+        [
+          26005,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r5322+2048], [%rd569, {%r5327, %r5323, %r5326, %r709}], [%r5325+160], %rd570;"
+        ],
+        [
+          26305,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1799+51200], [%rd587, {%r5517, %r5513, %r5516, %r709}], [%r5515+160], %rd588;"
+        ],
+        [
+          26320,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r5520+2048], [%rd589, {%r5525, %r5521, %r5524, %r709}], [%r5523+160], %rd590;"
+        ],
+        [
+          26358,
+          "atom.global.add.s32 %r5538, [%rd11], %r5539;"
+        ],
+        [
+          26394,
+          "membar.cta;"
+        ]
+      ],
+      "resources": "\nResource usage:\n Common:\n  GLOBAL:0\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_dynamic_gated_sf6_prefillMoEGatedDynamicKernelSF6Prefill_object_at__tensorptrbf16gmemalign16o409640961_tensorptri32gmemo1_tensorptrf32gmemo1_ten_0:\n  REG:168 STACK:112 SHARED:1024 LOCAL:0 CONSTANT[0]:1976 TEXTURE:0 SURFACE:0 SAMPLER:0\n"
+    }
+  ]
+}

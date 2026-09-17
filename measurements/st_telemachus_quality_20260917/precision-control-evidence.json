@@ -1,0 +1,147 @@
+{
+  "source": "654f42cad5cd5123e28a46d2b4b800701fdbbbac",
+  "runtime": {
+    "source_sha": "654f42cad5cd5123e28a46d2b4b800701fdbbbac",
+    "owner": "queue/st-telemachus-precision0917b",
+    "image": "st-engine:bracket-654f42cad5cd",
+    "observed_at": 1789655076.083511
+  },
+  "weights": "st-glm53-9391-up-gate-full",
+  "weight_layout": "st-glm53-b12x-up-gate-v1",
+  "quant_method": "compressed-tensors",
+  "cases": [
+    {
+      "name": "precision-baseline-t1",
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 537,
+      "wall_seconds": 93.33982856408693,
+      "served_delta": 1,
+      "diagnostic_mode": 5,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 536.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "text_sha256": "49a4e335c73ab1ce27dceaf369743337f20f8124e04e0db9fff797db70d66535",
+      "quality_recovered": false
+    },
+    {
+      "name": "precision-bf16-transport-t1",
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 494,
+      "wall_seconds": 88.73959978099447,
+      "served_delta": 1,
+      "diagnostic_mode": 8,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 493.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "text_sha256": "5e1467b9ca64ed376b30783df96db418bb3b0d36687dff369a7d9c4ef84974e5",
+      "quality_recovered": false
+    },
+    {
+      "name": "precision-fp8-dense-t1",
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 441,
+      "wall_seconds": 106.22670466499403,
+      "served_delta": 1,
+      "diagnostic_mode": 7,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 440.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "text_sha256": "2b7df7d304dbe85ff93e60e1c44907fb0c79b88112eb38a85577b37f0bb5d836",
+      "quality_recovered": false
+    },
+    {
+      "name": "precision-combined-t1",
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 410,
+      "wall_seconds": 92.01467060099822,
+      "served_delta": 1,
+      "diagnostic_mode": 9,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 409.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "text_sha256": "06384689f4bd07c646cd07235e49891282e5e3989f53d78ed4bf092e2cc5317b",
+      "quality_recovered": false
+    },
+    {
+      "name": "precision-torch-sampler-t1",
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 537,
+      "wall_seconds": 85.73781965405215,
+      "served_delta": 1,
+      "diagnostic_mode": 10,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 536.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "text_sha256": "5268aabeb9a5fea7effee1fd0942765bf2a1f3af84e53625a7a35b5b38352519",
+      "quality_recovered": false
+    },
+    {
+      "name": "ithaca-clean-prefix-single-t1",
+      "prompt_tokens": 47173,
+      "cached_tokens": 0,
+      "completion_tokens": 739,
+      "wall_seconds": 109.25865643296856,
+      "served_delta": 1,
+      "diagnostic_mode": 5,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 0.0,
+        "st:steps_decode_total": 738.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 0.0,
+        "vllm:spec_decode_num_draft_tokens_total": 0.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "text_sha256": "061ac777522d669939bb1f5e98c1a9f483b45fc6adc9ad27110360b1b408e84c",
+      "quality_recovered": false
+    },
+    {
+      "name": "top-p095-device-t1",
+      "prompt_tokens": 50005,
+      "cached_tokens": 0,
+      "completion_tokens": 415,
+      "wall_seconds": 33.180716402013786,
+      "served_delta": 1,
+      "diagnostic_mode": 0,
+      "underlying_seed": 7,
+      "execution_delta": {
+        "st:async_decode_steps_total": 233.0,
+        "st:steps_decode_total": 233.0,
+        "vllm:spec_decode_num_accepted_tokens_total": 183.0,
+        "vllm:spec_decode_num_draft_tokens_total": 1624.0
+      },
+      "scope": "same prompt IDs; fresh prefix; bounded output; seeded replay, not original RNG",
+      "text_sha256": "ce83d9da984c2a20b2aab88f75a155e5be4909eaf392eca79b381c45eb793536",
+      "quality_recovered": false
+    }
+  ]
+}

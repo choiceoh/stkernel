@@ -29,7 +29,7 @@ from . import moe_dynamic_gated_sf6 as _sf6
 from .moe_dynamic_gated_sf6_words import MoEGatedDynamicKernelSF6Words
 from .moe_dynamic_ep_local import MoEGatedEPLocalKernel
 
-Q0_SOURCE_SHA256 = '427e73dd5391cedd640441efd0df3f64741a67942721d42d1c56faafb0107616'
+Q0_SOURCE_SHA256 = 'fc62f7e59f660d741c68b1ccb32173055914279c40052e62972b03b881650593'
 
 
 @lru_cache(maxsize=1)

@@ -10,6 +10,8 @@ from unittest.mock import patch
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--recipe', default='t,r,sf6,batch,q0,as1',
+                        help='Compile the actual serving recipe; omit as1 for the incident control')
     args = parser.parse_args()
     if os.environ.get('CUDA_VISIBLE_DEVICES') != '':
         raise RuntimeError('use CUDA_VISIBLE_DEVICES= and a container without GPUs')
@@ -19,6 +21,10 @@ def main():
     with patch.object(torch.cuda, 'is_available', return_value=True), \
             patch.object(torch.cuda, 'get_device_capability', return_value=(12, 1)):
         from engine.kernels.b12x import moe_dispatch as md
+        from engine.profiles.glm53.lanes import parse_moe_static
+        spec, q0 = parse_moe_static(args.recipe)
+        md.configure_static_v2(spec)
+        md.configure_tp_sf6_q0(q0)
         def build(module, name, callback, **kwargs):
             start = time.monotonic()
             result = callback()
@@ -35,7 +41,8 @@ def main():
                     _prefill_packets=packets)
     if torch.cuda.is_initialized() or len(records) != 2:
         raise RuntimeError('both real ABIs must compile without CUDA initialization')
-    args.output.write_text(json.dumps(dict(status='PASS', gpu_used=False, kernels=records), indent=2)+'\n')
+    args.output.write_text(json.dumps(dict(status='PASS', gpu_used=False, recipe=args.recipe,
+                                         kernels=records), indent=2)+'\n')
 
 
 if __name__ == '__main__':

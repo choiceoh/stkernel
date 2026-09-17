@@ -33,11 +33,23 @@ HEX = re.compile(r"[0-9a-f]{7,40}")
 
 
 def load(path=JSONL):
+    """Every readable record; a truncated or corrupt line is skipped, not fatal.
+
+    The ledger is append-only and shared by every run, so one interrupted
+    write must not deny all later evidence."""
+    records = []
     try:
         with open(path, encoding="utf-8") as fh:
-            return [json.loads(line) for line in fh if line.strip()]
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except ValueError:
+                    continue
     except FileNotFoundError:
         return []
+    return records
 
 
 def identity(rec) -> str:
