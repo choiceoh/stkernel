@@ -117,7 +117,8 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
   `STK_mla_prefill` — 큰 M 프리필 후보 `stock | tile32 | pair | pair4`(tile32 프로덕션 기본값), `mla.configure_prefill()` 이 무장 전에 적용.
 - **프로브 훅으로 남긴 것**(env 가 아니라 인자·모듈 속성; 서빙은 안 건드림): MLA 분할 강제 `mla_decode(splits=)`, MLA 루프라인 모드
   `mla_decode(probe=)`(`.cu` `run_mla` 의 넷째 int), 쌍 프리필 겹침 통계 `mla.PAIR_STATS`, 동적 tile_m 고정
-  `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),
+  `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), KDA recurrent 값 타일 BV 고정
+  `kda/ring._BV_OVERRIDE`·`kda/kda._BV_OVERRIDE`(새 셀 BV 스윕용, `probes/engine_qwen38_kda.py`), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),
   GEMM v2 k-슬라이스 `mk_set_gemm2`(pybind), mHC 공유 패스 `engine.kernels.configure_mhc_passes()`(mhc 임포트 전; post의 고정 TMA 정책은 유지).
 - **버린 것(측정돼서 진 것)**: EP 타일 계열 5파일(E=72 전문가 병렬; 프로덕션은 절대 목표로 채택했으나 디코드 TP 보다 9.8% 느림, ST 는 TP=4 형태),
   강제 W4A16(API 인자 `activation_precision="bf16"` 는 그대로), prefill reuse(39차 NEUTRAL) 와 FC1 N128(기각, −71%), KDA regime(NEUTRAL),

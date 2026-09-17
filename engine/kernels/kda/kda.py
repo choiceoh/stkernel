@@ -33,6 +33,11 @@ from .utils import FLA_CHUNK_SIZE, is_amd
 BT_LIST_AUTOTUNE = [32, 64, 128]
 NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if is_amd else [4, 8, 16, 32]
 
+# Probe hook (ST, probes/engine_qwen38_kda.py): force fused_recurrent_kda_fwd's value tile BV -- a power of two no wider
+# than next_power_of_2(V) -- to sweep a cell under measurement; ring.py has its own. None keeps the rule in
+# fused_recurrent_kda_fwd. Measure, then fix the cell in the rule; never an env read (engine/kernels/README.md, D11).
+_BV_OVERRIDE: int | None = None
+
 
 # D11 (2026-09-12, ST): production glm53.env has carried VLLM_GLM53_KDA_PREFILL_QK_NORM=1
 # since 2026-09-06 (39차 P2D3); the strided Q/K norm is the served path, baked.
@@ -334,6 +339,12 @@ def fused_recurrent_kda_fwd(
     # one warp per CTA. Larger/other shapes retain the conservative tile.
     if state_kv and H == HV == 16 and K == V == 128 and 1 <= T <= 6:
         BV = 16
+    if _BV_OVERRIDE is not None:
+        if (type(_BV_OVERRIDE) is not int or _BV_OVERRIDE <= 0 or _BV_OVERRIDE & (_BV_OVERRIDE - 1)
+                or _BV_OVERRIDE > next_power_of_2(V)):
+            raise ValueError(f"_BV_OVERRIDE must be a power of two up to {next_power_of_2(V)} (V={V}), "
+                             f"got {_BV_OVERRIDE!r}")
+        BV = _BV_OVERRIDE
     NK, NV = cdiv(K, BK), cdiv(V, BV)
     assert NK == 1, "NK > 1 is not supported yet"
     num_stages = 3
