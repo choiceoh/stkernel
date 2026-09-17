@@ -17,8 +17,9 @@ are unchanged. What changed around them (engine/kernels/SOURCES.json lists it):
   rotates the whole head and weights plainly;
 - the sparse attention can read the chosen blocks themselves (FROM_BLOCKS: `qsa_select_paged_blocks` then
   `qsa_sparse_paged_attention_blocks`): each tile computes its columns' positions with the expansion kernel's
-  arithmetic instead of loading them from an expanded buffer -- the same int32 positions on the same tiles, so the
-  attention's bytes are the expanded path's, without the expansion launch and its [rows, top-k + ratio - 1] buffer;
+  arithmetic instead of loading them from an expanded buffer -- the int32 positions of the row's blocks sorted
+  ascending (-1 last; `tl.sort` in the program), so the attention's sums are the same for every selector's order of
+  the same set, without the expansion launch and its [rows, top-k + ratio - 1] buffer;
 - a layer's inputs take two launches instead of nine: `qsa_index_keys` runs the compression, the norm and rotation of
   the pooled keys and their store in one program a row, `qsa_inputs` the query, key and index query norms and rotations
   with the K, V and raw-key ring stores in one program a (row, head) -- the ported programs' arithmetic line for line
@@ -262,6 +263,7 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     stride_gate_row=0,
     stride_gate_head=0,
     GATED: tl.constexpr = False,
+    BLOCK_SORT: tl.constexpr = 1,
 ) -> None:
     row = tl.program_id(0)
     kv_head = tl.program_id(1)
@@ -287,6 +289,16 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
         expanded_count = complete_blocks * COMPRESS_RATIO
         tail_start = ((query_position + 1) // COMPRESS_RATIO) * COMPRESS_RATIO
         tail_count = (query_position + 1) - tail_start
+        # ST (carry Q6): the chosen blocks in ascending order, -1 last (BLOCK_SORT, a power of two, holds BLOCK_TOPK):
+        # every selector's set -- torch.topk's value order, prefill_topk's, st_dsa_select's -- then puts the same
+        # positions on the same tiles, so the attention's sums round alike whichever one ran
+        sort_ranks = tl.arange(0, BLOCK_SORT)
+        chosen = tl.load(
+            indices_ptr + row * stride_indices_row + sort_ranks,
+            mask=sort_ranks < BLOCK_TOPK,
+            other=2147483647,
+        )
+        ordered = tl.sort(tl.where(chosen < 0, 2147483647, chosen))
 
     head_offsets = tl.arange(0, BLOCK_M)
     dim_offsets = tl.arange(0, HEAD_DIM)
@@ -313,13 +325,8 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
         columns = tile * BLOCK_N + column_offsets
         if FROM_BLOCKS:
             is_expanded = columns < expanded_count
-            block = tl.load(
-                indices_ptr
-                + row * stride_indices_row
-                + tl.minimum(columns // COMPRESS_RATIO, BLOCK_TOPK - 1),
-                mask=is_expanded,
-                other=-1,
-            )
+            picked = tl.gather(ordered, tl.minimum(columns // COMPRESS_RATIO, BLOCK_TOPK - 1), 0)
+            block = tl.where(is_expanded & (picked != 2147483647), picked, -1)
             expanded = block * COMPRESS_RATIO + columns % COMPRESS_RATIO
             tail_offset = columns - expanded_count
             is_tail = (
@@ -1185,8 +1192,9 @@ def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_
                                       compress_ratio, token_topk, block_table, token_to_req, out=None, *, gate=None):
     """`qsa_sparse_paged_attention` at the positions `expand_qsa_block_indices_cuda` expands the chosen blocks to --
     int32 [rows, token_topk // compress_ratio] as `qsa_select_paged_blocks` writes them -- computed tile by tile in the
-    attention's own launch (FROM_BLOCKS): the same positions on the same tiles, so the same bytes, without the expansion
-    launch and its [rows, token_topk + compress_ratio - 1] buffer."""
+    attention's own launch (FROM_BLOCKS), without the expansion launch and its [rows, token_topk + compress_ratio - 1]
+    buffer. The blocks are read in ascending order, -1 last, whatever order a row holds them in: the output is the
+    expanded attention over the row's blocks sorted so, and the same for every order of the same set."""
     if token_topk <= 0 or compress_ratio <= 0 or token_topk % compress_ratio:
         raise ValueError("QSA token top-k must be divisible by compression ratio")
     block_topk = token_topk // compress_ratio
@@ -1281,6 +1289,7 @@ def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, t
         query_positions, sequence_lengths, compress_ratio, block_topk = blocks
         expansion = dict(query_positions_ptr=query_positions, sequence_lengths_ptr=sequence_lengths,
                          num_lengths=sequence_lengths.shape[0], FROM_BLOCKS=True, BLOCK_TOPK=block_topk,
+                         BLOCK_SORT=triton.next_power_of_2(block_topk),
                          COMPRESS_RATIO=compress_ratio)
     _qsa_sparse_paged_gqa_splitk_kernel[(q.shape[0], k_cache.shape[2], num_splits)](
         q, k_cache, v_cache, logical_indices, block_table, token_to_req, partial_output, partial_lse, out,

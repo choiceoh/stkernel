@@ -1,0 +1,3997 @@
+[
+  {
+    "name": "B",
+    "t": "2026-09-17 22:00:20",
+    "git": "1fd46c9e",
+    "evidence_scope": "full",
+    "quality": {
+      "version": "ko-reasoning-v3",
+      "ok": 6,
+      "total": 9,
+      "score": 52,
+      "max_score": 57,
+      "dimensions": {
+        "format": {
+          "ok": 9,
+          "total": 9
+        },
+        "completion": {
+          "ok": 9,
+          "total": 9
+        },
+        "result": {
+          "ok": 9,
+          "total": 9
+        },
+        "derivation": {
+          "ok": 7,
+          "total": 9
+        },
+        "evidence": {
+          "ok": 9,
+          "total": 9
+        },
+        "counterfactual": {
+          "ok": 8,
+          "total": 9
+        },
+        "witnesses": {
+          "ok": 1,
+          "total": 3
+        }
+      },
+      "scope": "visible final content; deterministic proof certificates"
+    },
+    "quality_c4": {
+      "version": "ko-reasoning-v3",
+      "ok": 10,
+      "total": 12,
+      "score": 72,
+      "max_score": 76,
+      "dimensions": {
+        "format": {
+          "ok": 12,
+          "total": 12
+        },
+        "completion": {
+          "ok": 12,
+          "total": 12
+        },
+        "result": {
+          "ok": 12,
+          "total": 12
+        },
+        "derivation": {
+          "ok": 10,
+          "total": 12
+        },
+        "evidence": {
+          "ok": 12,
+          "total": 12
+        },
+        "counterfactual": {
+          "ok": 12,
+          "total": 12
+        },
+        "witnesses": {
+          "ok": 2,
+          "total": 4
+        }
+      },
+      "scope": "visible final content; deterministic proof certificates"
+    },
+    "korean": {
+      "dirty": 0,
+      "n": 5,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 0,
+        "control": 0
+      },
+      "hits": []
+    },
+    "harness": 47,
+    "workload": {
+      "ctx": [
+        2000,
+        32000,
+        128000
+      ],
+      "seed": 7,
+      "max_tokens": 16384,
+      "combine_min_ctx": 32000,
+      "fixed_decode_tokens": 0,
+      "fixed_decode_reps": 0,
+      "fixed_concurrency_tokens": 1024,
+      "require_exclusive": true
+    },
+    "workload_profile": "custom",
+    "engine_shape": {
+      "model": "glm-5.3-flash",
+      "max_model_len": 1048576,
+      "max_concurrent_requests": 2,
+      "speculative_tokens": 7,
+      "prefix_cache": true,
+      "conversation_tier": true,
+      "engine": "ST",
+      "parked": 0
+    },
+    "generation_budget": {
+      "individual_max_tokens": 16384,
+      "individual_reasoning_budget": 8192,
+      "combined_max_tokens": 49152,
+      "combined_reasoning_budget": 24576
+    },
+    "engine": "st",
+    "boot_id": "6fbb0ae4ed99f93d7aba714561b6fdfabe33cd470c5d302a137c1374e34e1005|2026-09-17T12:56:56.978671654Z",
+    "knobs": {},
+    "release": "b2faf8169284",
+    "image": "st-engine:bracket-b2faf8169284",
+    "engine_source_sha256": "1a9c4efd0a09e2d1c46b1f142646d0ce9fc4730298a8d7d3b2c9ef559433059d",
+    "kda_state_dtype": "fp32",
+    "run_index": 1,
+    "concurrency_coverage": {
+      "policy": "c1-twice-c2-once-no-128k-v3",
+      "width": 2,
+      "included": [
+        1,
+        2
+      ],
+      "contexts": {
+        "1": [
+          2000,
+          32000,
+          128000
+        ],
+        "2": [
+          2000,
+          32000
+        ]
+      },
+      "c4_excluded_contexts": [
+        128000
+      ],
+      "c4_status": "measured"
+    },
+    "arm_sha": "b2faf8169284ee62b74e456042b4d97dda28a2a3",
+    "arm_tree": "17faf7f7941f",
+    "run_id": "20260917T130020-d15c307f7bb5",
+    "artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T130020-d15c307f7bb5",
+    "measurement_policy": {
+      "version": 2,
+      "concurrency": [
+        1,
+        4
+      ],
+      "c4_excluded_contexts": [
+        128000,
+        131072
+      ],
+      "prefix": "unique salt per request",
+      "preparation": "full prompt with bounded output before each concurrency arm",
+      "measurement": "profiler off; no observed specialization or graph capture",
+      "diagnostic": "separate replay; one prefill chunk and four decode steps per context and concurrency"
+    },
+    "session": "fp4-all-base17",
+    "steady_state": {
+      "valid": true,
+      "issues": [],
+      "profile": "off",
+      "prefix": "fresh",
+      "preparation": "no observed specialization or capture"
+    },
+    "evidence_issues": [
+      "C=1 quality or Korean corruption gate failed",
+      "C=2 ctx=2000: C=2 quality or Korean corruption gate failed",
+      "C=2 ctx=32000: C=2 quality or Korean corruption gate failed"
+    ],
+    "prefill": [
+      {
+        "ctx": 2000,
+        "tok": 2771,
+        "cold_s": 1.1062003999832086,
+        "warm_s": 1.1322233900427818,
+        "cold_tok_s": 2504.971070379347,
+        "warm_tok_s": 2447.396886841647,
+        "ttft_samples_s": [
+          1.1062003999832086,
+          1.1322233900427818,
+          1.16876761399908
+        ],
+        "first_s": 1.1062003999832086,
+        "median_s": 1.1322233900427818,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": false
+      },
+      {
+        "ctx": 32000,
+        "tok": 33955,
+        "cold_s": 9.5884435439948,
+        "warm_s": 9.5884435439948,
+        "cold_tok_s": 3541.242105061553,
+        "warm_tok_s": 3541.242105061553,
+        "ttft_samples_s": [
+          9.5884435439948
+        ],
+        "first_s": 9.5884435439948,
+        "median_s": 9.5884435439948,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": true
+      },
+      {
+        "ctx": 128000,
+        "tok": 129911,
+        "cold_s": 37.61755349696614,
+        "warm_s": 37.61755349696614,
+        "cold_tok_s": 3453.4675417017042,
+        "warm_tok_s": 3453.4675417017042,
+        "ttft_samples_s": [
+          37.61755349696614
+        ],
+        "first_s": 37.61755349696614,
+        "median_s": 37.61755349696614,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": true
+      }
+    ],
+    "diagnostics": [
+      {
+        "phase": "diagnostic-c1-2000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c1-32000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c1-128000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c2-2000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c2-32000",
+        "complete": true
+      }
+    ],
+    "diagnostic_budget": {
+      "version": 1,
+      "max_tokens": 64,
+      "min_tokens": 64,
+      "reasoning_budget": 32,
+      "scope": "diagnostic replay only; consumer generation_budget and quality workloads unchanged"
+    },
+    "source_record_sha256": "6a0762dc122761864ed145553b13db2ddebd69895174b7f92e71604d5fcebe89",
+    "decode": {
+      "gen_tokens": 22987,
+      "wall_s": 292.16511583328247,
+      "acc_raw": 0.5512533977650257,
+      "tokens_per_step": 4.858773784355179,
+      "windows_med": null,
+      "raw_windows_med": 19.885905366256075,
+      "windows_by_ctx": {
+        "2000": [
+          19.88650503193272,
+          19.896522523121074,
+          19.86604595442671,
+          19.892024222483037,
+          19.863345565753338,
+          19.892284117070982,
+          19.87201057911172,
+          19.904370864231733,
+          19.869106459156836,
+          19.880228798139044,
+          18.873977995791098,
+          19.895932851013185,
+          22.898188881514788,
+          19.868259433409172,
+          20.90233800587769,
+          15.926855263830964,
+          19.89942454832747,
+          19.9206981706538,
+          22.857467075574384,
+          19.898948720422567,
+          19.90382129217189,
+          19.884650909953475,
+          19.865427462665654,
+          15.92264831620242,
+          23.87102964857275,
+          19.856031678153794,
+          19.865037885666826,
+          19.877420558431698,
+          15.942920089971357,
+          20.892099887963035,
+          19.89566051121797,
+          19.913747108885286,
+          19.85629031752424,
+          15.915289692917067,
+          19.88431719757956,
+          19.88323864364752,
+          19.900456068450556,
+          19.913326112890214,
+          21.850807927183457,
+          19.89590213342548,
+          19.901771919442826,
+          15.948990884252357,
+          19.869775715935415,
+          19.894467370742277,
+          19.880443802073458,
+          18.892626121045275,
+          19.911725189992083,
+          19.88048964875543,
+          19.891259457202136,
+          19.869422289397157,
+          19.908737134901596,
+          19.866543553275342,
+          19.893922778841514,
+          17.868630081513015,
+          19.88143793926471,
+          19.86713590721177,
+          19.88004636413199,
+          19.859078055988707,
+          19.887597546317206,
+          19.870752992448452,
+          19.86718169138628,
+          19.90494138409345,
+          17.924868487257292,
+          19.866084473175906,
+          19.899758113355034,
+          19.90138820189014,
+          19.888411395623336,
+          19.88130259775423
+        ],
+        "32000": [
+          19.879704589320987,
+          15.943016422851109,
+          19.874304404952365,
+          19.886548711649606,
+          21.87750872459302,
+          19.894382830855506,
+          19.906719103803546,
+          19.904591145947645,
+          18.935511498755226,
+          20.872089177788624,
+          15.91163418340433,
+          23.88499325436358,
+          18.92130080526014,
+          16.920231851154874,
+          19.902379662258312,
+          19.914067850118105,
+          19.901510508891874,
+          19.891846638951208,
+          19.90372399467887,
+          19.819420248543217,
+          17.919922674131275,
+          19.874285761303483,
+          19.907866771025564,
+          19.906339636721885,
+          19.888488606828957,
+          19.872627901627833,
+          19.91505424880118,
+          19.87500247142274,
+          18.913069537828807,
+          19.8833123352537,
+          19.903557292437636,
+          19.85747352135282,
+          18.945156158493628,
+          16.92734114833362,
+          19.915800536020047,
+          19.920718826769484,
+          23.863176966154178,
+          16.915541967959832,
+          19.894031694836425,
+          19.882282276341332,
+          19.882351533743606,
+          19.88771715025995,
+          19.88553033702666,
+          19.84805562996332,
+          19.900634105416596,
+          19.88339646581031,
+          19.91151077587638,
+          18.94521542110958,
+          16.935025657252687,
+          19.87084396461123,
+          19.90187680259458,
+          19.886362346194748,
+          19.904561666535717,
+          19.900776064704463,
+          21.884690483947413,
+          19.886120658697855,
+          18.948880278906422,
+          16.914923938511635,
+          19.892491150844194,
+          19.903425453149165,
+          19.89084417860993,
+          19.88968546063604,
+          19.892018525434803,
+          20.890609788617592,
+          19.897882218392425,
+          19.880541188422118,
+          19.88227247187548,
+          19.867304821260134,
+          19.91353518910831,
+          19.900283403356493,
+          19.894444254439605,
+          19.87791432397651,
+          17.90429912086707,
+          19.908920729178803,
+          19.901549166442816,
+          19.879217394111084,
+          19.886607220902253
+        ],
+        "128000": [
+          19.900626837033844,
+          19.875748270859063,
+          19.89400351602857,
+          18.925536736863062,
+          16.904413537388542,
+          20.858774415205602,
+          19.8856900738143,
+          19.875180705104654,
+          19.91263330289041,
+          15.900368561132819,
+          19.883646012748944,
+          19.872128102726176,
+          19.887602628445407,
+          21.88019179237996,
+          19.889927589414715,
+          19.85847072473817,
+          18.91238216762392,
+          19.911935166118397,
+          16.91051365231795,
+          19.8691664663367,
+          19.878403035472566,
+          19.87527138210786,
+          18.891331337027786,
+          19.90004008882018,
+          19.88171020734468,
+          19.87331603630408,
+          15.926441563908499,
+          19.875786511063694,
+          19.899805652315404,
+          17.87722605806305,
+          19.91075180692683,
+          19.90060464002975,
+          19.891743442616264,
+          19.91009944969909,
+          19.916993064199016,
+          19.875141814222367,
+          19.87763805107129,
+          18.90870610167415,
+          19.894567109657142,
+          15.902078562411901,
+          19.90955114752352,
+          19.85664580044974,
+          19.89987944602936,
+          19.892456646835498,
+          19.909254650714576,
+          16.894582401909226,
+          19.890724220399374,
+          19.865675907526374,
+          19.905219366677514,
+          19.869823725343966,
+          19.88671259689553,
+          19.89949802228225,
+          15.927325334336016,
+          19.84807233494509,
+          21.876250796318146,
+          19.895220350205335,
+          18.92191706395003,
+          16.930068860227145,
+          19.896212166175204,
+          19.852430332879866,
+          19.916905178668184,
+          19.913979316371034,
+          19.88952629058199,
+          19.911409281592174,
+          16.918635760446907,
+          19.86771943229257,
+          19.888265219772023,
+          19.891466787475498,
+          19.902339122397592,
+          19.871304843738457,
+          15.899763313990219,
+          19.872287010526364,
+          19.90091198614852,
+          20.88002905358191,
+          19.896550730956154,
+          19.875747321179364,
+          19.908460004557302,
+          19.8505734395456,
+          18.943797352239745,
+          19.90760012874415,
+          16.937840377544195,
+          20.849417811878144,
+          19.883067856941445,
+          15.896565245985098,
+          19.877468940570644
+        ]
+      }
+    },
+    "requests": [
+      {
+        "ctx": 2000,
+        "question": 0,
+        "concurrency": 1,
+        "completion_tokens": 2139,
+        "prompt_tokens": 2680,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "3f8adad2ae372c8336c24667640b8ff49d2cb204cac62a80ed945243e65a8884",
+        "output_sha256": "596c1c1306cb349eeb8444e8147e2f1b22a44061b04458a4cb7b73a4ba161d15",
+        "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+        "ttft_s": 1.1062003999832086,
+        "elapsed_s": 22.694299580994993,
+        "decode_s": 21.588099181011785,
+        "finish_reason": "stop",
+        "tpot_ms": 10.097333573906354,
+        "decode_tok_s": 99.03604676230678,
+        "first_channels_s": {
+          "reasoning_content": 1.1062003999832086,
+          "reasoning": 1.1062003999832086,
+          "content": 21.532404522993602
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 1971,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 1,
+        "concurrency": 1,
+        "completion_tokens": 2648,
+        "prompt_tokens": 2641,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "6a79e774a4b13528c52963e4d01484485e422a88d4eac7ad57ce497f06c280eb",
+        "output_sha256": "f0744f924d2aac8e468fe0619fab8f9dffdf85e4892868d490a8552a9cd9b371",
+        "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+        "ttft_s": 1.1322233900427818,
+        "elapsed_s": 26.31495478504803,
+        "decode_s": 25.18273139500525,
+        "finish_reason": "stop",
+        "tpot_ms": 9.513687720062428,
+        "decode_tok_s": 105.11171161222832,
+        "first_channels_s": {
+          "reasoning_content": 1.1322233900427818,
+          "reasoning": 1.1322233900427818,
+          "content": 23.31330155301839
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 2198,
+        "quality": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 2,
+        "concurrency": 1,
+        "completion_tokens": 2462,
+        "prompt_tokens": 2771,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "e803ea73f3c33f215b5a70f9f99179542f84c6b3df61ac015f228db926633d0c",
+        "output_sha256": "4260974b30479f09651a0d2b21cb3e9a7e8df98a45217d7a9a8672a46384aa7b",
+        "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+        "ttft_s": 1.16876761399908,
+        "elapsed_s": 28.495328008953948,
+        "decode_s": 27.326560394954868,
+        "finish_reason": "stop",
+        "tpot_ms": 11.103844126353055,
+        "decode_tok_s": 90.0589010995456,
+        "first_channels_s": {
+          "reasoning_content": 1.16876761399908,
+          "reasoning": 1.16876761399908,
+          "content": 27.1319481949904
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 2271,
+        "quality": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": false,
+              "witnesses": true
+            },
+            "score": 6,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "counterfactual",
+                "expected": {
+                  "consistent": false,
+                  "minimal_cores": [
+                    [
+                      "U1",
+                      "U2",
+                      "U3",
+                      "U4",
+                      "U6"
+                    ]
+                  ]
+                },
+                "actual": {
+                  "consistent": false,
+                  "minimal_cores": [
+                    [
+                      "U3",
+                      "U4",
+                      "U6"
+                    ]
+                  ]
+                }
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "31aed21cdb39576ebcb8c0675be57b1320266cd1adc4800958a27204a66964e8",
+            "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+          }
+        ]
+      },
+      {
+        "ctx": 32000,
+        "question": "all",
+        "concurrency": 1,
+        "completion_tokens": 7540,
+        "prompt_tokens": 33955,
+        "min_tokens": 0,
+        "max_tokens": 49152,
+        "reasoning_budget": 24576,
+        "request_sha256": "58c001fb3d7f230458894532557fd44095f3a1b1d9cec4135d3bcabb575fb866",
+        "output_sha256": "1cb5d9fce966fe2319c3d4626131cbffee48b0913dd708144315184a99daf6a6",
+        "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+        "ttft_s": 9.5884435439948,
+        "elapsed_s": 89.36166409694124,
+        "decode_s": 79.77322055294644,
+        "finish_reason": "stop",
+        "tpot_ms": 10.581406095363635,
+        "decode_tok_s": 94.5053985252642,
+        "first_channels_s": {
+          "reasoning_content": 9.5884435439948,
+          "reasoning": 9.5884435439948,
+          "content": 83.84724406292662
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 6737,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "07bf779d22288ebccf90abb170c29cd64148549f610efb462797fb73a42fbd13",
+            "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "07bf779d22288ebccf90abb170c29cd64148549f610efb462797fb73a42fbd13",
+            "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "110000",
+                    "100110",
+                    "110010",
+                    "111001"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "110010",
+                    "111010",
+                    "101110",
+                    "110100"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "110000",
+                    "false": null
+                  },
+                  {
+                    "true": "111001",
+                    "false": "110000"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "110010"
+                  },
+                  {
+                    "true": "111010",
+                    "false": "110010"
+                  },
+                  {
+                    "true": "110010",
+                    "false": null
+                  },
+                  {
+                    "true": "110100",
+                    "false": "110010"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "07bf779d22288ebccf90abb170c29cd64148549f610efb462797fb73a42fbd13",
+            "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+          }
+        ]
+      },
+      {
+        "ctx": 128000,
+        "question": "all",
+        "concurrency": 1,
+        "completion_tokens": 8198,
+        "prompt_tokens": 129911,
+        "min_tokens": 0,
+        "max_tokens": 49152,
+        "reasoning_budget": 24576,
+        "request_sha256": "9fc416901a92fe9729785f8f65a9df5765da5cff579edaf1d6fc80a5c99d05b6",
+        "output_sha256": "187801f86e746c8fe269f2bd82448c22953c85ee38aee21f6e14592ae00fa394",
+        "workload_sha256": "a5ed54a501d0e5c42cc59571c0f19b8d8544c946d162c5b0f7406a128501f994",
+        "ttft_s": 37.61755349696614,
+        "elapsed_s": 125.2049891189672,
+        "decode_s": 87.58743562200107,
+        "finish_reason": "stop",
+        "tpot_ms": 10.685303845553381,
+        "decode_tok_s": 93.58648237374582,
+        "first_channels_s": {
+          "reasoning_content": 37.61755349696614,
+          "reasoning": 37.61755349696614,
+          "content": 119.68337833601981
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 7388,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "13c5dfd84393b7035d8199af428c2aa54aefb3b200cef42b1d26744ca7fe8984",
+            "oracle_sha256": "f747758d72228e0f284fadc2f33fc19c8dfd22e2efe56db67e53a61db48e35bd"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "13c5dfd84393b7035d8199af428c2aa54aefb3b200cef42b1d26744ca7fe8984",
+            "oracle_sha256": "fa4e49b38ce1364fc20aeeb297167874922f38c3b922c478cd45742db31251c3"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "001010",
+                    "111000",
+                    "101010",
+                    "001111"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "001000",
+                    "001111",
+                    "101000",
+                    "110000"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "001010"
+                  },
+                  {
+                    "true": "001010",
+                    "false": null
+                  },
+                  {
+                    "true": "001111",
+                    "false": "001010"
+                  },
+                  {
+                    "true": "111000",
+                    "false": "001010"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "001000"
+                  },
+                  {
+                    "true": "001000",
+                    "false": null
+                  },
+                  {
+                    "true": "001111",
+                    "false": "001000"
+                  },
+                  {
+                    "true": "110000",
+                    "false": "001000"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "13c5dfd84393b7035d8199af428c2aa54aefb3b200cef42b1d26744ca7fe8984",
+            "oracle_sha256": "a682ad40f60673c8aa2a5b329edce90748e4a5f0dfc5a67e57704d8aba774da7"
+          }
+        ]
+      }
+    ],
+    "c2": [
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 27.320165119017474,
+        "aggregate_output_tok_s": 112.29800356749585,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": true,
+        "issues": [],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 0,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 1732,
+            "prompt_tokens": 2680,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "163ccc5d83f240b43f3cc7eda629722215cd2fb7cba5e39cb73eefff79415736",
+            "output_sha256": "4e3d2792a4f101c8028aa72f36052de40e9b25a16edac4bfe4df16d2ea4b81c7",
+            "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+            "ttft_s": 1.1170700350776315,
+            "elapsed_s": 27.320165119017474,
+            "decode_s": 26.203095083939843,
+            "finish_reason": "stop",
+            "tpot_ms": 15.13754770880407,
+            "decode_tok_s": 66.06089831963966,
+            "first_channels_s": {
+              "reasoning_content": 1.1170700350776315,
+              "reasoning": 1.1170700350776315,
+              "content": 26.2153238740284
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 1564,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+                "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 0,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 1336,
+            "prompt_tokens": 2680,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "4855d3647b08698fd7800ec868ff184d202a37c2740e88a76ac1e2b5bf4c58a3",
+            "output_sha256": "10a8a21b523807c4393669239701f17e29bc99c489ec455e5678a7fdac44e878",
+            "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+            "ttft_s": 2.791293565998785,
+            "elapsed_s": 21.779560126946308,
+            "decode_s": 18.988266560947523,
+            "finish_reason": "stop",
+            "tpot_ms": 14.223420644904511,
+            "decode_tok_s": 70.30657568003842,
+            "first_channels_s": {
+              "reasoning_content": 2.791293565998785,
+              "reasoning": 2.791293565998785,
+              "content": 20.159998676972464
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 1168,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+                "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 43.34769528801553,
+        "aggregate_output_tok_s": 122.79776270992811,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": true,
+        "issues": [],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 1,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 3254,
+            "prompt_tokens": 2641,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "8db688cf8c106b0e9d41dfd850d388fd02ab6e82afbe7d54edec71a884ec7cd6",
+            "output_sha256": "ad88b6d082a4917d077f27d6e7d78050039adaf7f38967753e8dda4697f1b14c",
+            "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+            "ttft_s": 1.142786112963222,
+            "elapsed_s": 43.34760997595731,
+            "decode_s": 42.20482386299409,
+            "finish_reason": "stop",
+            "tpot_ms": 12.974123536118688,
+            "decode_tok_s": 77.07649747715891,
+            "first_channels_s": {
+              "reasoning_content": 1.142786112963222,
+              "reasoning": 1.142786112963222,
+              "content": 40.066423033946194
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 2757,
+            "quality": [
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+                "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 1,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 2069,
+            "prompt_tokens": 2641,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "20c002e6212b3749e8388faa116adc5b8e3f6747f5c08c390475ac794039c4e5",
+            "output_sha256": "c36289ff9f095913186b87d050000c509107bb01a475372a92396b3040a3bd83",
+            "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+            "ttft_s": 2.8203108010347933,
+            "elapsed_s": 32.09943425608799,
+            "decode_s": 29.279123455053195,
+            "finish_reason": "stop",
+            "tpot_ms": 14.158183488903866,
+            "decode_tok_s": 70.63052974159615,
+            "first_channels_s": {
+              "reasoning_content": 2.8203108010347933,
+              "reasoning": 2.8203108010347933,
+              "content": 27.520063280011527
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 1619,
+            "quality": [
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+                "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "concurrency": 2,
+        "elapsed_s": 49.0170863479143,
+        "aggregate_output_tok_s": 105.4938264444604,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": false,
+        "issues": [
+          "C=2 quality or Korean corruption gate failed"
+        ],
+        "requests": [
+          {
+            "ctx": 2000,
+            "question": 2,
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 2258,
+            "prompt_tokens": 2771,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "b7933725a26299eca45d3cc01292214f8d4663394863561292645d873aa2a85a",
+            "output_sha256": "f6f882c240d00ce4c165340434647811556965617635b15a650f02e79234c951",
+            "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+            "ttft_s": 2.888591000926681,
+            "elapsed_s": 41.413707619998604,
+            "decode_s": 38.52511661907192,
+            "finish_reason": "stop",
+            "tpot_ms": 17.06916996857418,
+            "decode_tok_s": 58.58515685537648,
+            "first_channels_s": {
+              "reasoning_content": 2.888591000926681,
+              "reasoning": 2.888591000926681,
+              "content": 39.01198982994538
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 2057,
+            "quality": [
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v3",
+                "passed": false,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": false,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": false
+                },
+                "score": 5,
+                "max_score": 7,
+                "failures": [
+                  {
+                    "dimension": "derivation",
+                    "expected": {
+                      "worlds": [
+                        "000110",
+                        "010011",
+                        "010110",
+                        "101110"
+                      ]
+                    },
+                    "actual": {
+                      "worlds": [
+                        "001101",
+                        "010011",
+                        "011101",
+                        "101110"
+                      ]
+                    }
+                  },
+                  {
+                    "dimension": "witnesses",
+                    "expected": [
+                      {
+                        "true": "101110",
+                        "false": "000110"
+                      },
+                      {
+                        "true": "000110",
+                        "false": null
+                      },
+                      {
+                        "true": null,
+                        "false": "000110"
+                      },
+                      {
+                        "true": "010011",
+                        "false": "000110"
+                      }
+                    ],
+                    "actual": [
+                      {
+                        "true": "101110",
+                        "false": "001101"
+                      },
+                      {
+                        "true": "001101",
+                        "false": null
+                      },
+                      {
+                        "true": null,
+                        "false": "001101"
+                      },
+                      {
+                        "true": "010011",
+                        "false": "001101"
+                      }
+                    ]
+                  }
+                ],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "3b952cc39854d212f2100b11ae56d3dd6523951c55b39f680990c635db550082",
+                "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 2000,
+            "question": 2,
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 2913,
+            "prompt_tokens": 2771,
+            "min_tokens": 0,
+            "max_tokens": 16384,
+            "reasoning_budget": 8192,
+            "request_sha256": "25676af4e07a7a8174cacbf15763411d2b2a2b9fef794744332d1a2961e49be4",
+            "output_sha256": "fc690a600da9addf5e787bdda6d18563a551c3a86932d3814e4acbece7edc872",
+            "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+            "ttft_s": 1.1721096839755774,
+            "elapsed_s": 49.0170863479143,
+            "decode_s": 47.84497666393872,
+            "finish_reason": "stop",
+            "tpot_ms": 16.430280447781154,
+            "decode_tok_s": 60.863233782174795,
+            "first_channels_s": {
+              "reasoning_content": 1.1721096839755774,
+              "reasoning": 1.1721096839755774,
+              "content": 47.54299617896322
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 2713,
+            "quality": [
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": true
+                },
+                "score": 7,
+                "max_score": 7,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "a4f58ed4ed5efaa8ace48fd3707f03d39ce82ee6a2a86fa1c8c2ca0b45e6de2a",
+                "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      },
+      {
+        "ctx": 32000,
+        "concurrency": 2,
+        "elapsed_s": 159.08918675594032,
+        "aggregate_output_tok_s": 104.1114128354267,
+        "rate_scope": "total completion tokens / first request start to last completion; includes prefill",
+        "valid": false,
+        "issues": [
+          "C=2 quality or Korean corruption gate failed"
+        ],
+        "requests": [
+          {
+            "ctx": 32000,
+            "question": "all",
+            "concurrency": 2,
+            "client": 0,
+            "completion_tokens": 7919,
+            "prompt_tokens": 33955,
+            "min_tokens": 0,
+            "max_tokens": 49152,
+            "reasoning_budget": 24576,
+            "request_sha256": "b30aaa9b01be6f6103616ea7b219b3a6ea55cebfc896efe220dee7dccd55adfc",
+            "output_sha256": "bdd07537c68c96fcd760b4f83092c6b6a1a5c3f9e3606bad8e409fa993afafd5",
+            "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+            "ttft_s": 27.66746450692881,
+            "elapsed_s": 156.44004735490307,
+            "decode_s": 128.77258284797426,
+            "finish_reason": "stop",
+            "tpot_ms": 16.263271387720923,
+            "decode_tok_s": 61.48824404141832,
+            "first_channels_s": {
+              "reasoning_content": 27.66746450692881,
+              "reasoning": 27.66746450692881,
+              "content": 148.2607051959494
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 7116,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "5095708f5053ac96455707e78495cc8eaba231d3c40334f571efe3e51b71cbf2",
+                "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+              },
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "5095708f5053ac96455707e78495cc8eaba231d3c40334f571efe3e51b71cbf2",
+                "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+              },
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": true
+                },
+                "score": 7,
+                "max_score": 7,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "5095708f5053ac96455707e78495cc8eaba231d3c40334f571efe3e51b71cbf2",
+                "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+              }
+            ],
+            "corruption": {}
+          },
+          {
+            "ctx": 32000,
+            "question": "all",
+            "concurrency": 2,
+            "client": 1,
+            "completion_tokens": 8644,
+            "prompt_tokens": 33955,
+            "min_tokens": 0,
+            "max_tokens": 49152,
+            "reasoning_budget": 24576,
+            "request_sha256": "3c631da4456367b435eee7374f9a119fb8899793c9490cd675b6cbe7bc7df459",
+            "output_sha256": "a4be9e895a5e0d6f1ff7be5b0741914436771e81971076686babca5b660f33df",
+            "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+            "ttft_s": 9.655727965990081,
+            "elapsed_s": 159.08918675594032,
+            "decode_s": 149.43345878995024,
+            "finish_reason": "stop",
+            "tpot_ms": 17.289535900723155,
+            "decode_tok_s": 57.838452445572806,
+            "first_channels_s": {
+              "reasoning_content": 9.655727965990081,
+              "reasoning": 9.655727965990081,
+              "content": 151.3799601040082
+            },
+            "cached_tokens": 0,
+            "reasoning_tokens": 7738,
+            "quality": [
+              {
+                "case": "ledger",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "8c68cf021f9c3dbeacae7d9cb7c7c9bcffc43e43dac9963aeb042a8d851fd29e",
+                "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+              },
+              {
+                "case": "portfolio",
+                "version": "ko-reasoning-v3",
+                "passed": true,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": true,
+                  "evidence": true,
+                  "counterfactual": true
+                },
+                "score": 6,
+                "max_score": 6,
+                "failures": [],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "8c68cf021f9c3dbeacae7d9cb7c7c9bcffc43e43dac9963aeb042a8d851fd29e",
+                "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+              },
+              {
+                "case": "logic",
+                "version": "ko-reasoning-v3",
+                "passed": false,
+                "checks": {
+                  "format": true,
+                  "completion": true,
+                  "result": true,
+                  "derivation": false,
+                  "evidence": true,
+                  "counterfactual": true,
+                  "witnesses": false
+                },
+                "score": 5,
+                "max_score": 7,
+                "failures": [
+                  {
+                    "dimension": "derivation",
+                    "expected": {
+                      "worlds": [
+                        "110000",
+                        "100110",
+                        "110010",
+                        "111001"
+                      ]
+                    },
+                    "actual": {
+                      "worlds": [
+                        "100110",
+                        "110000",
+                        "110010",
+                        "111000"
+                      ]
+                    }
+                  },
+                  {
+                    "dimension": "witnesses",
+                    "expected": [
+                      {
+                        "true": null,
+                        "false": "110000"
+                      },
+                      {
+                        "true": "100110",
+                        "false": "110000"
+                      },
+                      {
+                        "true": "110000",
+                        "false": null
+                      },
+                      {
+                        "true": "111001",
+                        "false": "110000"
+                      }
+                    ],
+                    "actual": [
+                      {
+                        "true": null,
+                        "false": "100110"
+                      },
+                      {
+                        "true": "100110",
+                        "false": "110000"
+                      },
+                      {
+                        "true": "100110",
+                        "false": null
+                      },
+                      {
+                        "true": "111000",
+                        "false": "100110"
+                      }
+                    ]
+                  }
+                ],
+                "parse_error": null,
+                "finish_reason": "stop",
+                "visible_sha256": "8c68cf021f9c3dbeacae7d9cb7c7c9bcffc43e43dac9963aeb042a8d851fd29e",
+                "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+              }
+            ],
+            "corruption": {}
+          }
+        ]
+      }
+    ],
+    "concurrency_fixed": {
+      "tokens": 1024,
+      "clients": 4,
+      "concurrency": 2,
+      "definition": "bench-dec: four different 2K prompts with exactly `tokens` output tokens each; C=1 sends them one at a time, C=2 releases them 2 at a time; rate = output tokens / first start to last completion of each release, summed",
+      "c1_tok_s": 87.13243268311226,
+      "many_tok_s": 109.168804574415,
+      "multiplier": 1.252906652697805,
+      "c1_decode_tok_s": 101.68844690750896,
+      "many_decode_tok_s_sum": 128.63286840340913,
+      "decode_multiplier": 1.2649703315894631,
+      "issues": [],
+      "valid": true,
+      "preparation_policy": {
+        "version": 2,
+        "output_tokens": 1024,
+        "arrivals": "first-token ordered cyclic rotations; all prompts in all arrival roles",
+        "measured_arrivals": "simultaneous"
+      },
+      "c1_requests": [
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-0",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3509,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "212bd47b3def3281e6f6f2948ce42f4a5c6ba82272cb5d2cb939911cd7efb42d",
+          "output_sha256": "044fb81d1e0fba467eb55bbe0da8ed7cafb03915e84c66bdc868b5143ba848e4",
+          "workload_sha256": "f9956cc53fb83196923d978c091e76d048f2f05b3bf2098e95e4aaaf15ac0dff",
+          "ttft_s": 1.3948529548943043,
+          "elapsed_s": 10.145672324928455,
+          "decode_s": 8.75081937003415,
+          "finish_reason": "length",
+          "tpot_ms": 8.554075630531917,
+          "decode_tok_s": 116.90333861799363,
+          "first_channels_s": {
+            "reasoning_content": 1.3948529548943043,
+            "reasoning": 1.3948529548943043,
+            "content": 5.974419496953487
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-1",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3529,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "d2a03cfedb6e9eb3074429db345d5a259bb831f988423d3c84f87143a1306ad0",
+          "output_sha256": "0f189b04b8131a0a2053f718dadc733b3af8ccc6b504018a578c0509d0a9fa6b",
+          "workload_sha256": "bdd209437ec6e4330ac5e71cf27c931839efbd3e229866e5fff6acaf2826e1aa",
+          "ttft_s": 1.3925184870604426,
+          "elapsed_s": 13.948931526043452,
+          "decode_s": 12.55641303898301,
+          "finish_reason": "length",
+          "tpot_ms": 12.274108542505386,
+          "decode_tok_s": 81.47231194322488,
+          "first_channels_s": {
+            "reasoning_content": 1.3925184870604426,
+            "reasoning": 1.3925184870604426,
+            "content": 7.80535991396755
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-2",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3545,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "30ad1f0ad1aeb70b252d3e6ef2d3c19a4b426af5b8121f464916740f7edbd589",
+          "output_sha256": "1dbc7d6bf35613f62875241106e9d3ed23b2f788abe43c5d60f96757950faa68",
+          "workload_sha256": "84144788d0f899d75a2a9359264073ade9370867b0a55f611e93634afbd9d2b4",
+          "ttft_s": 1.3842377050314099,
+          "elapsed_s": 11.86417672992684,
+          "decode_s": 10.47993902489543,
+          "finish_reason": "length",
+          "tpot_ms": 10.24431967242955,
+          "decode_tok_s": 97.61507176423746,
+          "first_channels_s": {
+            "reasoning_content": 1.3842377050314099,
+            "reasoning": 1.3842377050314099,
+            "content": 6.289993557031266
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-3",
+          "concurrency": 1,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3528,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "8aa3377f752b2f66352795b06c758b6330a56b7da9f3aad8f76e9a5e31092844",
+          "output_sha256": "8d263df521f04bb8e3c4807d79b9bdeb377823c91d1041c74901f3faa703f97b",
+          "workload_sha256": "4048a8ea1b5982a4fd2e0b6484f44ac5d06f3fa9826bfc5be44a67a24756e9d0",
+          "ttft_s": 1.3774440120905638,
+          "elapsed_s": 11.050121545093134,
+          "decode_s": 9.67267753300257,
+          "finish_reason": "length",
+          "tpot_ms": 9.455207754645718,
+          "decode_tok_s": 105.76182205078047,
+          "first_channels_s": {
+            "reasoning_content": 1.3774440120905638,
+            "reasoning": 1.3774440120905638,
+            "content": 6.0188595140352845
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        }
+      ],
+      "many_requests": [
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-0",
+          "concurrency": 2,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3509,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "60ba2713674151561b39c79ffadb7f0005091249eb2e6c03b0090a62733dc8c9",
+          "output_sha256": "336e9800ba9f004f68e19b35fbe49e393c3a891cbd702378f9549ad72ae5fb15",
+          "workload_sha256": "f9956cc53fb83196923d978c091e76d048f2f05b3bf2098e95e4aaaf15ac0dff",
+          "ttft_s": 1.4044999169418588,
+          "elapsed_s": 18.250189180951566,
+          "decode_s": 16.845689264009707,
+          "finish_reason": "length",
+          "tpot_ms": 16.466949427184463,
+          "decode_tok_s": 60.727702141912815,
+          "first_channels_s": {
+            "reasoning_content": 1.4044999169418588,
+            "reasoning": 1.4044999169418588,
+            "content": 10.498165634926409
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-1",
+          "concurrency": 2,
+          "client": 1,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3529,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "732461a5656d17588d9e0ff7c7019a04470b52ff00401ad19db0f24313041081",
+          "output_sha256": "cb29aed96f090f5df3486cb4478ec40483d9475e61a798598f6de4c653a0c0b1",
+          "workload_sha256": "bdd209437ec6e4330ac5e71cf27c931839efbd3e229866e5fff6acaf2826e1aa",
+          "ttft_s": 3.1922863989602774,
+          "elapsed_s": 19.959505792940035,
+          "decode_s": 16.767219393979758,
+          "finish_reason": "length",
+          "tpot_ms": 16.390243786881484,
+          "decode_tok_s": 61.01190519206222,
+          "first_channels_s": {
+            "reasoning_content": 3.1922863989602774,
+            "reasoning": 3.1922863989602774,
+            "content": 13.078051277901977
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-2",
+          "concurrency": 2,
+          "client": 0,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3545,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "98bc498397139fe6ea082598f3184c406022311c6afc045e23d04eca2918d6fd",
+          "output_sha256": "a16e7421c2208c9d87d84246a955cc9b20a1f47aebb222e03384d90e015dfc96",
+          "workload_sha256": "84144788d0f899d75a2a9359264073ade9370867b0a55f611e93634afbd9d2b4",
+          "ttft_s": 1.418255797936581,
+          "elapsed_s": 17.325343347038142,
+          "decode_s": 15.907087549101561,
+          "finish_reason": "length",
+          "tpot_ms": 15.549450194625182,
+          "decode_tok_s": 64.31095553112608,
+          "first_channels_s": {
+            "reasoning_content": 1.418255797936581,
+            "reasoning": 1.418255797936581,
+            "content": 10.274875054019503
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        },
+        {
+          "ctx": 2000,
+          "question": "fixed-concurrency-3",
+          "concurrency": 2,
+          "client": 1,
+          "completion_tokens": 1024,
+          "prompt_tokens": 3528,
+          "min_tokens": 1024,
+          "max_tokens": 1024,
+          "reasoning_budget": 512,
+          "request_sha256": "dc190ca00ef172c22ea414f862522504111af598a64929f70c970dfb6b03c4ec",
+          "output_sha256": "fa0625028811046f1622c2538b4ae1c5f8556b5efa208b1bb650fcbfbed69243",
+          "workload_sha256": "4048a8ea1b5982a4fd2e0b6484f44ac5d06f3fa9826bfc5be44a67a24756e9d0",
+          "ttft_s": 3.1952905660727993,
+          "elapsed_s": 17.56020668405108,
+          "decode_s": 14.364916117978282,
+          "finish_reason": "length",
+          "tpot_ms": 14.041951239470462,
+          "decode_tok_s": 71.21517394171717,
+          "first_channels_s": {
+            "reasoning_content": 3.1952905660727993,
+            "reasoning": 3.1952905660727993,
+            "content": 10.157860907027498
+          },
+          "cached_tokens": 0,
+          "reasoning_tokens": 512
+        }
+      ]
+    },
+    "source_quality_sha256": "fb6edd21f5a24727cb657f0580741e32ead3d805f1141b25532765f20c082038",
+    "quality_details": [
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 0,
+        "client": null,
+        "request_sha256": "3f8adad2ae372c8336c24667640b8ff49d2cb204cac62a80ed945243e65a8884",
+        "output_sha256": "596c1c1306cb349eeb8444e8147e2f1b22a44061b04458a4cb7b73a4ba161d15",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 1,
+        "client": null,
+        "request_sha256": "6a79e774a4b13528c52963e4d01484485e422a88d4eac7ad57ce497f06c280eb",
+        "output_sha256": "f0744f924d2aac8e468fe0619fab8f9dffdf85e4892868d490a8552a9cd9b371",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 2,
+        "client": null,
+        "request_sha256": "e803ea73f3c33f215b5a70f9f99179542f84c6b3df61ac015f228db926633d0c",
+        "output_sha256": "4260974b30479f09651a0d2b21cb3e9a7e8df98a45217d7a9a8672a46384aa7b",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": false,
+              "witnesses": true
+            },
+            "score": 6,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "counterfactual",
+                "expected": {
+                  "consistent": false,
+                  "minimal_cores": [
+                    [
+                      "U1",
+                      "U2",
+                      "U3",
+                      "U4",
+                      "U6"
+                    ]
+                  ]
+                },
+                "actual": {
+                  "consistent": false,
+                  "minimal_cores": [
+                    [
+                      "U3",
+                      "U4",
+                      "U6"
+                    ]
+                  ]
+                }
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "31aed21cdb39576ebcb8c0675be57b1320266cd1adc4800958a27204a66964e8",
+            "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 32000,
+        "question": "all",
+        "client": null,
+        "request_sha256": "58c001fb3d7f230458894532557fd44095f3a1b1d9cec4135d3bcabb575fb866",
+        "output_sha256": "1cb5d9fce966fe2319c3d4626131cbffee48b0913dd708144315184a99daf6a6",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "07bf779d22288ebccf90abb170c29cd64148549f610efb462797fb73a42fbd13",
+            "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "07bf779d22288ebccf90abb170c29cd64148549f610efb462797fb73a42fbd13",
+            "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "110000",
+                    "100110",
+                    "110010",
+                    "111001"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "110010",
+                    "111010",
+                    "101110",
+                    "110100"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "110000",
+                    "false": null
+                  },
+                  {
+                    "true": "111001",
+                    "false": "110000"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "110010"
+                  },
+                  {
+                    "true": "111010",
+                    "false": "110010"
+                  },
+                  {
+                    "true": "110010",
+                    "false": null
+                  },
+                  {
+                    "true": "110100",
+                    "false": "110010"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "07bf779d22288ebccf90abb170c29cd64148549f610efb462797fb73a42fbd13",
+            "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 128000,
+        "question": "all",
+        "client": null,
+        "request_sha256": "9fc416901a92fe9729785f8f65a9df5765da5cff579edaf1d6fc80a5c99d05b6",
+        "output_sha256": "187801f86e746c8fe269f2bd82448c22953c85ee38aee21f6e14592ae00fa394",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "13c5dfd84393b7035d8199af428c2aa54aefb3b200cef42b1d26744ca7fe8984",
+            "oracle_sha256": "f747758d72228e0f284fadc2f33fc19c8dfd22e2efe56db67e53a61db48e35bd"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "13c5dfd84393b7035d8199af428c2aa54aefb3b200cef42b1d26744ca7fe8984",
+            "oracle_sha256": "fa4e49b38ce1364fc20aeeb297167874922f38c3b922c478cd45742db31251c3"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "001010",
+                    "111000",
+                    "101010",
+                    "001111"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "001000",
+                    "001111",
+                    "101000",
+                    "110000"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "001010"
+                  },
+                  {
+                    "true": "001010",
+                    "false": null
+                  },
+                  {
+                    "true": "001111",
+                    "false": "001010"
+                  },
+                  {
+                    "true": "111000",
+                    "false": "001010"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "001000"
+                  },
+                  {
+                    "true": "001000",
+                    "false": null
+                  },
+                  {
+                    "true": "001111",
+                    "false": "001000"
+                  },
+                  {
+                    "true": "110000",
+                    "false": "001000"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "13c5dfd84393b7035d8199af428c2aa54aefb3b200cef42b1d26744ca7fe8984",
+            "oracle_sha256": "a682ad40f60673c8aa2a5b329edce90748e4a5f0dfc5a67e57704d8aba774da7"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q0",
+        "ctx": 2000,
+        "question": 0,
+        "client": 0,
+        "request_sha256": "163ccc5d83f240b43f3cc7eda629722215cd2fb7cba5e39cb73eefff79415736",
+        "output_sha256": "4e3d2792a4f101c8028aa72f36052de40e9b25a16edac4bfe4df16d2ea4b81c7",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q0",
+        "ctx": 2000,
+        "question": 0,
+        "client": 1,
+        "request_sha256": "4855d3647b08698fd7800ec868ff184d202a37c2740e88a76ac1e2b5bf4c58a3",
+        "output_sha256": "10a8a21b523807c4393669239701f17e29bc99c489ec455e5678a7fdac44e878",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q1",
+        "ctx": 2000,
+        "question": 1,
+        "client": 0,
+        "request_sha256": "8db688cf8c106b0e9d41dfd850d388fd02ab6e82afbe7d54edec71a884ec7cd6",
+        "output_sha256": "ad88b6d082a4917d077f27d6e7d78050039adaf7f38967753e8dda4697f1b14c",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q1",
+        "ctx": 2000,
+        "question": 1,
+        "client": 1,
+        "request_sha256": "20c002e6212b3749e8388faa116adc5b8e3f6747f5c08c390475ac794039c4e5",
+        "output_sha256": "c36289ff9f095913186b87d050000c509107bb01a475372a92396b3040a3bd83",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "d2c008149e652a501a4baa826e6e03ba57e2cd5b448a7e0f8ecd5f2e720fb67f",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q2",
+        "ctx": 2000,
+        "question": 2,
+        "client": 0,
+        "request_sha256": "b7933725a26299eca45d3cc01292214f8d4663394863561292645d873aa2a85a",
+        "output_sha256": "f6f882c240d00ce4c165340434647811556965617635b15a650f02e79234c951",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "000110",
+                    "010011",
+                    "010110",
+                    "101110"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "001101",
+                    "010011",
+                    "011101",
+                    "101110"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": "101110",
+                    "false": "000110"
+                  },
+                  {
+                    "true": "000110",
+                    "false": null
+                  },
+                  {
+                    "true": null,
+                    "false": "000110"
+                  },
+                  {
+                    "true": "010011",
+                    "false": "000110"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": "101110",
+                    "false": "001101"
+                  },
+                  {
+                    "true": "001101",
+                    "false": null
+                  },
+                  {
+                    "true": null,
+                    "false": "001101"
+                  },
+                  {
+                    "true": "010011",
+                    "false": "001101"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "3b952cc39854d212f2100b11ae56d3dd6523951c55b39f680990c635db550082",
+            "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-2000-q2",
+        "ctx": 2000,
+        "question": 2,
+        "client": 1,
+        "request_sha256": "25676af4e07a7a8174cacbf15763411d2b2a2b9fef794744332d1a2961e49be4",
+        "output_sha256": "fc690a600da9addf5e787bdda6d18563a551c3a86932d3814e4acbece7edc872",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "a4f58ed4ed5efaa8ace48fd3707f03d39ce82ee6a2a86fa1c8c2ca0b45e6de2a",
+            "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-32000-qall",
+        "ctx": 32000,
+        "question": "all",
+        "client": 0,
+        "request_sha256": "b30aaa9b01be6f6103616ea7b219b3a6ea55cebfc896efe220dee7dccd55adfc",
+        "output_sha256": "bdd07537c68c96fcd760b4f83092c6b6a1a5c3f9e3606bad8e409fa993afafd5",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "5095708f5053ac96455707e78495cc8eaba231d3c40334f571efe3e51b71cbf2",
+            "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "5095708f5053ac96455707e78495cc8eaba231d3c40334f571efe3e51b71cbf2",
+            "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "5095708f5053ac96455707e78495cc8eaba231d3c40334f571efe3e51b71cbf2",
+            "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c2-32000-qall",
+        "ctx": 32000,
+        "question": "all",
+        "client": 1,
+        "request_sha256": "3c631da4456367b435eee7374f9a119fb8899793c9490cd675b6cbe7bc7df459",
+        "output_sha256": "a4be9e895a5e0d6f1ff7be5b0741914436771e81971076686babca5b660f33df",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "8c68cf021f9c3dbeacae7d9cb7c7c9bcffc43e43dac9963aeb042a8d851fd29e",
+            "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "8c68cf021f9c3dbeacae7d9cb7c7c9bcffc43e43dac9963aeb042a8d851fd29e",
+            "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "110000",
+                    "100110",
+                    "110010",
+                    "111001"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "100110",
+                    "110000",
+                    "110010",
+                    "111000"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "110000",
+                    "false": null
+                  },
+                  {
+                    "true": "111001",
+                    "false": "110000"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "100110"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": null
+                  },
+                  {
+                    "true": "111000",
+                    "false": "100110"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "8c68cf021f9c3dbeacae7d9cb7c7c9bcffc43e43dac9963aeb042a8d851fd29e",
+            "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+          }
+        ]
+      }
+    ],
+    "quality_protocol": {
+      "version": "ko-reasoning-v3",
+      "workloads_sha256": "5879551efd702c47e0f2687f02af0d87a16d0cbe5f2f6516cd9070c32b01d107",
+      "grading": "visible final content only; deterministic proof certificates",
+      "artifact": "workloads.json"
+    },
+    "recording": {
+      "schema": 1,
+      "status": "complete",
+      "server": {
+        "schema": 1,
+        "boot_id": "c8886b1f2ede4a9f81914c8833107b69",
+        "ranks": 4,
+        "policy": "fresh-prefix; observed preparation; profiler-off measurement; separate diagnostic replay"
+      },
+      "phase": "diagnostic-c2-32000"
+    },
+    "cold": "boot"
+  },
+  {
+    "name": "B",
+    "t": "2026-09-17 22:19:47",
+    "git": "1fd46c9e",
+    "evidence_scope": "full",
+    "quality": {
+      "version": "ko-reasoning-v3",
+      "ok": 7,
+      "total": 9,
+      "score": 53,
+      "max_score": 57,
+      "dimensions": {
+        "format": {
+          "ok": 9,
+          "total": 9
+        },
+        "completion": {
+          "ok": 9,
+          "total": 9
+        },
+        "result": {
+          "ok": 9,
+          "total": 9
+        },
+        "derivation": {
+          "ok": 7,
+          "total": 9
+        },
+        "evidence": {
+          "ok": 9,
+          "total": 9
+        },
+        "counterfactual": {
+          "ok": 9,
+          "total": 9
+        },
+        "witnesses": {
+          "ok": 1,
+          "total": 3
+        }
+      },
+      "scope": "visible final content; deterministic proof certificates"
+    },
+    "quality_c4": null,
+    "korean": {
+      "dirty": 0,
+      "n": 5,
+      "kinds": {
+        "replacement": 0,
+        "lone_jamo": 0,
+        "cjk_mixed": 0,
+        "control": 0
+      },
+      "hits": []
+    },
+    "harness": 47,
+    "workload": {
+      "ctx": [
+        2000,
+        32000,
+        128000
+      ],
+      "seed": 7,
+      "max_tokens": 16384,
+      "combine_min_ctx": 32000,
+      "fixed_decode_tokens": 0,
+      "fixed_decode_reps": 0,
+      "fixed_concurrency_tokens": 1024,
+      "require_exclusive": true
+    },
+    "workload_profile": "custom",
+    "engine_shape": {
+      "model": "glm-5.3-flash",
+      "max_model_len": 1048576,
+      "max_concurrent_requests": 2,
+      "speculative_tokens": 7,
+      "prefix_cache": true,
+      "conversation_tier": true,
+      "engine": "ST",
+      "parked": 0
+    },
+    "generation_budget": {
+      "individual_max_tokens": 16384,
+      "individual_reasoning_budget": 8192,
+      "combined_max_tokens": 49152,
+      "combined_reasoning_budget": 24576
+    },
+    "engine": "st",
+    "boot_id": "6fbb0ae4ed99f93d7aba714561b6fdfabe33cd470c5d302a137c1374e34e1005|2026-09-17T12:56:56.978671654Z",
+    "knobs": {},
+    "release": "b2faf8169284",
+    "image": "st-engine:bracket-b2faf8169284",
+    "engine_source_sha256": "1a9c4efd0a09e2d1c46b1f142646d0ce9fc4730298a8d7d3b2c9ef559433059d",
+    "kda_state_dtype": "fp32",
+    "run_index": 2,
+    "concurrency_coverage": {
+      "policy": "c1-twice-c2-once-no-128k-v3",
+      "width": 2,
+      "included": [
+        1
+      ],
+      "contexts": {
+        "1": [
+          2000,
+          32000,
+          128000
+        ],
+        "2": []
+      },
+      "c4_excluded_contexts": [
+        128000
+      ],
+      "c4_status": "omitted_after_run_1"
+    },
+    "arm_sha": "b2faf8169284ee62b74e456042b4d97dda28a2a3",
+    "arm_tree": "17faf7f7941f",
+    "run_id": "20260917T131947-0bfbe0518c6e",
+    "artifacts": "/home/choiceoh/glm53-logs/onepass-runs/20260917T131947-0bfbe0518c6e",
+    "measurement_policy": {
+      "version": 2,
+      "concurrency": [
+        1,
+        4
+      ],
+      "c4_excluded_contexts": [
+        128000,
+        131072
+      ],
+      "prefix": "unique salt per request",
+      "preparation": "full prompt with bounded output before each concurrency arm",
+      "measurement": "profiler off; no observed specialization or graph capture",
+      "diagnostic": "separate replay; one prefill chunk and four decode steps per context and concurrency"
+    },
+    "session": "fp4-all-base17",
+    "steady_state": {
+      "valid": true,
+      "issues": [],
+      "profile": "off",
+      "prefix": "fresh",
+      "preparation": "no observed specialization or capture"
+    },
+    "evidence_issues": [
+      "C=1 quality or Korean corruption gate failed"
+    ],
+    "prefill": [
+      {
+        "ctx": 2000,
+        "tok": 2771,
+        "cold_s": 1.1072784989373758,
+        "warm_s": 1.1202498029451817,
+        "cold_tok_s": 2502.53211153224,
+        "warm_tok_s": 2473.555445147082,
+        "ttft_samples_s": [
+          1.1072784989373758,
+          1.1202498029451817,
+          1.1457690809620544
+        ],
+        "first_s": 1.1072784989373758,
+        "median_s": 1.1202498029451817,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": false
+      },
+      {
+        "ctx": 32000,
+        "tok": 33955,
+        "cold_s": 9.587413491099142,
+        "warm_s": 9.587413491099142,
+        "cold_tok_s": 3541.6225691656546,
+        "warm_tok_s": 3541.6225691656546,
+        "ttft_samples_s": [
+          9.587413491099142
+        ],
+        "first_s": 9.587413491099142,
+        "median_s": 9.587413491099142,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": true
+      },
+      {
+        "ctx": 128000,
+        "tok": 129911,
+        "cold_s": 37.278015960007906,
+        "warm_s": 37.278015960007906,
+        "cold_tok_s": 3484.9225918935535,
+        "warm_tok_s": 3484.9225918935535,
+        "ttft_samples_s": [
+          37.278015960007906
+        ],
+        "first_s": 37.278015960007906,
+        "median_s": 37.278015960007906,
+        "state": "prepared fresh-prefix; see steady_state validity",
+        "reused_tok": 0,
+        "reused_frac": 0.0,
+        "cache_hit": false,
+        "combined": true
+      }
+    ],
+    "diagnostics": [
+      {
+        "phase": "diagnostic-c1-2000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c1-32000",
+        "complete": true
+      },
+      {
+        "phase": "diagnostic-c1-128000",
+        "complete": true
+      }
+    ],
+    "diagnostic_budget": {
+      "version": 1,
+      "max_tokens": 64,
+      "min_tokens": 64,
+      "reasoning_budget": 32,
+      "scope": "diagnostic replay only; consumer generation_budget and quality workloads unchanged"
+    },
+    "source_record_sha256": "1012a3dc4de6bf2cb9513776b81da351e138077e1696b0880448539fd432964e",
+    "decode": {
+      "gen_tokens": 21911,
+      "wall_s": 276.558251619339,
+      "acc_raw": 0.5646781434708181,
+      "tokens_per_step": 4.952747004295727,
+      "windows_med": null,
+      "raw_windows_med": 19.885136056537664,
+      "windows_by_ctx": {
+        "2000": [
+          19.911277398261923,
+          19.87026408477745,
+          19.87027543788162,
+          19.88534090409599,
+          19.874061787346747,
+          19.878005085724507,
+          19.88001132701778,
+          19.87975049125361,
+          19.9044010337558,
+          19.887101482096828,
+          18.89220870814452,
+          19.887889342957774,
+          19.903443895556187,
+          19.878617738852633,
+          19.87113400685797,
+          19.881779817395227,
+          19.896481432203537,
+          19.874673864038535,
+          19.903465128117126,
+          19.911584102563523,
+          15.908298776572794,
+          19.902831627294276,
+          19.863909063490876,
+          23.854289315743525,
+          19.884507677748825,
+          15.899942600388382,
+          19.882091639774313,
+          19.875219002908313,
+          17.941098513623448,
+          19.926540726128053,
+          19.856696013949527,
+          19.89081923296798,
+          19.896052615142576,
+          19.89951740705922,
+          19.882983471437814,
+          19.87365546147511,
+          18.882822026055866,
+          13.730763631521118,
+          19.906818075230884,
+          19.894686227241618,
+          19.923653335929476,
+          18.884628891669724,
+          19.907794226067026,
+          19.889706424372168,
+          19.877653600734238,
+          19.88568190714606,
+          19.890201413035907,
+          19.87093497897734,
+          19.91221847918679,
+          20.902519801842487,
+          19.884681039290147,
+          19.902782489841176,
+          19.922084727071482,
+          19.878656309818975,
+          19.902370531956212,
+          19.894076398218512,
+          19.902854129013146,
+          19.886958175451394,
+          19.881690659372925,
+          17.886574274093423,
+          19.889532028801927,
+          19.866622864569564
+        ],
+        "32000": [
+          19.90561311597852,
+          19.890146956283647,
+          19.89008684418652,
+          19.906234430896717,
+          19.90959496776265,
+          17.904350465123105,
+          19.877405131025405,
+          19.895733405549326,
+          19.882990430090953,
+          19.892759664300794,
+          19.906343500194712,
+          19.888012748062266,
+          19.87601570013391,
+          20.885599151866167,
+          19.87340993547934,
+          19.889945055779172,
+          19.861925021811064,
+          19.88669713434426,
+          19.869200949344467,
+          19.88199202820923,
+          19.870934997364163,
+          21.886550038404355,
+          19.896897579919106,
+          18.91783106345636,
+          16.888359600350913,
+          19.90334153117472,
+          19.885231431870633,
+          19.87060016973168,
+          19.904206744314656,
+          18.887918563235207,
+          19.904376310074852,
+          19.880833094370477,
+          19.90128370081763,
+          19.888071919788676,
+          19.883682131631193,
+          19.888025424563725,
+          19.897361866878658,
+          18.8870882262774,
+          19.877855902663377,
+          19.899691009677703,
+          19.849699681710796,
+          19.891046495789034,
+          19.843452306569258,
+          19.89270552983457,
+          19.886544319498647,
+          19.868959345609753,
+          19.871753171210425,
+          19.867299847144814,
+          18.908212088562838,
+          16.919299912829374,
+          19.861120597768217,
+          19.88441278530565,
+          19.863482613875792,
+          19.89971352273582,
+          21.85622943714384,
+          18.911124786148786,
+          16.936519083034046,
+          19.925134889951295,
+          19.88052984658975,
+          19.881903480320666,
+          19.88765046619077,
+          19.897416976137713,
+          19.87216860005649,
+          19.893643904595095,
+          19.89516024430204,
+          19.910914249859513,
+          19.8811793357272,
+          19.910254251221588,
+          19.89769350183554,
+          19.889757042397875,
+          19.879799811798332,
+          19.88465065448397,
+          15.879872211125658,
+          19.906510546661295,
+          19.880491606535504,
+          19.87936793868626,
+          19.893341551252703,
+          19.89242947904372,
+          19.904576942408774,
+          19.89959787157465,
+          18.899831590784544,
+          19.89193817978248,
+          19.874212513644892,
+          18.92600281074839,
+          16.894653641228775
+        ],
+        "128000": [
+          19.90579316532838,
+          19.899083093387684,
+          19.886420004936117,
+          18.90905993916192,
+          16.900862044586535,
+          19.86032002711373,
+          21.874153704709155,
+          19.881629944943057,
+          18.923897302377668,
+          16.893702726846218,
+          19.900098737419956,
+          19.856154433479876,
+          19.885040681204696,
+          19.869069252290696,
+          18.88930451876197,
+          19.8927501673684,
+          19.89913504527437,
+          19.89489774372125,
+          19.884161951041087,
+          19.873560353025365,
+          19.885263698915097,
+          15.902695651800148,
+          19.90499089198033,
+          19.8981885700843,
+          19.894226474504983,
+          19.87494784264372,
+          19.88541649177813,
+          19.873395737324557,
+          15.900304880880292,
+          19.90965298280732,
+          18.89298448668805,
+          19.899561123212116,
+          19.890955336248293,
+          19.911167026441323,
+          19.90661072237354,
+          19.902374672869964,
+          19.91988618306286,
+          18.87456723165079,
+          19.915729200719277,
+          15.915834346371145,
+          19.916796051326696,
+          19.880271859057395,
+          19.8979687262004,
+          19.87656691701745,
+          17.920111677781,
+          19.916261341868278,
+          19.89108859255806,
+          19.870783058998544,
+          15.949293893551001,
+          19.87064123080939,
+          19.88870289725521,
+          19.889226655100707,
+          19.91066972458297,
+          19.869863560620733,
+          19.890029242474192,
+          19.85454561688791,
+          15.924660415915872,
+          19.873853240307522,
+          19.888533600735368,
+          19.860634944395347,
+          19.894783752024562,
+          18.908144347566363,
+          19.880287350727347,
+          15.922362908918686,
+          19.888120333071964,
+          19.848523393841262,
+          19.923209733592326
+        ]
+      }
+    },
+    "requests": [
+      {
+        "ctx": 2000,
+        "question": 0,
+        "concurrency": 1,
+        "completion_tokens": 2057,
+        "prompt_tokens": 2680,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "233354ceee0da512127af9ed87fb39b8c0bcfb47801338bb6f5f7d8710111e67",
+        "output_sha256": "652669bccdf97e24fc84b40545a6bd58d87db2fff09b30080f0489b6f6bfaf63",
+        "workload_sha256": "dd59130d9f35a8acf02c3c917328fe5fe04026e07881a1d44a97876aaa79fed4",
+        "ttft_s": 1.1072784989373758,
+        "elapsed_s": 22.542433889932,
+        "decode_s": 21.435155390994623,
+        "finish_reason": "stop",
+        "tpot_ms": 10.425659236865089,
+        "decode_tok_s": 95.91719595668387,
+        "first_channels_s": {
+          "reasoning_content": 1.1072784989373758,
+          "reasoning": 1.1072784989373758,
+          "content": 21.402556307963096
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 1889,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 1,
+        "concurrency": 1,
+        "completion_tokens": 2329,
+        "prompt_tokens": 2641,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "c0e6b1b75f5808b07cefd3a854a74484fbc32cf571a48135c2bf67dc5961d706",
+        "output_sha256": "12ba1fef99ec0167e905fa3debcdab53ea462d10db04b73e4679d7d991bc1b7d",
+        "workload_sha256": "09a8ca01b08a0a0e4e608b7af7d90423c76d9ab1c2b38a06e4355ed6c0a20f2d",
+        "ttft_s": 1.1202498029451817,
+        "elapsed_s": 23.244808632996865,
+        "decode_s": 22.124558830051683,
+        "finish_reason": "stop",
+        "tpot_ms": 9.503676473389898,
+        "decode_tok_s": 105.22243710631142,
+        "first_channels_s": {
+          "reasoning_content": 1.1202498029451817,
+          "reasoning": 1.1202498029451817,
+          "content": 19.50314269599039
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 1832,
+        "quality": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "ctx": 2000,
+        "question": 2,
+        "concurrency": 1,
+        "completion_tokens": 2196,
+        "prompt_tokens": 2771,
+        "min_tokens": 0,
+        "max_tokens": 16384,
+        "reasoning_budget": 8192,
+        "request_sha256": "543d7fff599e7ecc4e8204a19813794f49b1868624ea7c34a1b196a4b15b8e8e",
+        "output_sha256": "719a4df7357f2dfabe00d9d549a7139f84f007891d122a22f20ee58a821a95ec",
+        "workload_sha256": "f5e921e4b5c0ec7736d6b06aef75d7847490ef8a6976015c9865583fdf0f1e4a",
+        "ttft_s": 1.1457690809620544,
+        "elapsed_s": 26.609120992943645,
+        "decode_s": 25.46335191198159,
+        "finish_reason": "stop",
+        "tpot_ms": 11.600615905230793,
+        "decode_tok_s": 86.20231961555537,
+        "first_channels_s": {
+          "reasoning_content": 1.1457690809620544,
+          "reasoning": 1.1457690809620544,
+          "content": 25.21229396900162
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 1997,
+        "quality": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "11580ec2351360e0d1ce05167ef2fdb6c82df82eb328e8dbf5a9a973d52776a6",
+            "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+          }
+        ]
+      },
+      {
+        "ctx": 32000,
+        "question": "all",
+        "concurrency": 1,
+        "completion_tokens": 8361,
+        "prompt_tokens": 33955,
+        "min_tokens": 0,
+        "max_tokens": 49152,
+        "reasoning_budget": 24576,
+        "request_sha256": "e24da0d13c5d5b3bda3125edbfd56de44c6cb6d1e225128d4b8745d26e64129c",
+        "output_sha256": "68c15ecd60dbbb48c6545ebfbd1524dcbe5a06d556f8f1cb53715a7986ce57cd",
+        "workload_sha256": "ecaf6f190705fa6b8e52629cbdee685da94a6c5839e41ea1f51fcb91bf90b0c7",
+        "ttft_s": 9.587413491099142,
+        "elapsed_s": 96.83357843605336,
+        "decode_s": 87.24616494495422,
+        "finish_reason": "stop",
+        "tpot_ms": 10.436144132171558,
+        "decode_tok_s": 95.8208306952464,
+        "first_channels_s": {
+          "reasoning_content": 9.587413491099142,
+          "reasoning": 9.587413491099142,
+          "content": 90.49008779006545
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 7451,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "eb13e33485619777593c114ca3fe96f0e6c6ea2b35825c0db271da69cc5e45a0",
+            "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "eb13e33485619777593c114ca3fe96f0e6c6ea2b35825c0db271da69cc5e45a0",
+            "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "110000",
+                    "100110",
+                    "110010",
+                    "111001"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "100110",
+                    "110000",
+                    "110001",
+                    "110010"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "110000",
+                    "false": null
+                  },
+                  {
+                    "true": "111001",
+                    "false": "110000"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "100110"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": null
+                  },
+                  {
+                    "true": "110001",
+                    "false": "100110"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "eb13e33485619777593c114ca3fe96f0e6c6ea2b35825c0db271da69cc5e45a0",
+            "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+          }
+        ]
+      },
+      {
+        "ctx": 128000,
+        "question": "all",
+        "concurrency": 1,
+        "completion_tokens": 6968,
+        "prompt_tokens": 129911,
+        "min_tokens": 0,
+        "max_tokens": 49152,
+        "reasoning_budget": 24576,
+        "request_sha256": "26560a88c1dda1fec99a56dbfe694563d70a71395822cf677c1d09dfd77c7312",
+        "output_sha256": "715f178d15c751c8aab08f0d131486bb31743eb9dd089f1b9337d399d4ff8bd9",
+        "workload_sha256": "a5ed54a501d0e5c42cc59571c0f19b8d8544c946d162c5b0f7406a128501f994",
+        "ttft_s": 37.278015960007906,
+        "elapsed_s": 107.24123560194857,
+        "decode_s": 69.96321964194067,
+        "finish_reason": "stop",
+        "tpot_ms": 10.042086930090521,
+        "decode_tok_s": 99.58089458512443,
+        "first_channels_s": {
+          "reasoning_content": 37.278015960007906,
+          "reasoning": 37.278015960007906,
+          "content": 101.02320740802679
+        },
+        "cached_tokens": 0,
+        "reasoning_tokens": 6049,
+        "quality": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "af13de98754abbdd1728bd18e98d9becd874959a09b92b600d078cc40004c60f",
+            "oracle_sha256": "f747758d72228e0f284fadc2f33fc19c8dfd22e2efe56db67e53a61db48e35bd"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "af13de98754abbdd1728bd18e98d9becd874959a09b92b600d078cc40004c60f",
+            "oracle_sha256": "fa4e49b38ce1364fc20aeeb297167874922f38c3b922c478cd45742db31251c3"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "001010",
+                    "111000",
+                    "101010",
+                    "001111"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "001001",
+                    "110100",
+                    "101100",
+                    "001011"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "001010"
+                  },
+                  {
+                    "true": "001010",
+                    "false": null
+                  },
+                  {
+                    "true": "001111",
+                    "false": "001010"
+                  },
+                  {
+                    "true": "111000",
+                    "false": "001010"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "001001"
+                  },
+                  {
+                    "true": "001001",
+                    "false": null
+                  },
+                  {
+                    "true": "001011",
+                    "false": "001001"
+                  },
+                  {
+                    "true": "110100",
+                    "false": "001001"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "af13de98754abbdd1728bd18e98d9becd874959a09b92b600d078cc40004c60f",
+            "oracle_sha256": "a682ad40f60673c8aa2a5b329edce90748e4a5f0dfc5a67e57704d8aba774da7"
+          }
+        ]
+      }
+    ],
+    "c2": [],
+    "concurrency_fixed": null,
+    "source_quality_sha256": "39aac807e91028df1cd1b5f2452802789ac5934cbab31773456ddbae25d64e8c",
+    "quality_details": [
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 0,
+        "client": null,
+        "request_sha256": "233354ceee0da512127af9ed87fb39b8c0bcfb47801338bb6f5f7d8710111e67",
+        "output_sha256": "652669bccdf97e24fc84b40545a6bd58d87db2fff09b30080f0489b6f6bfaf63",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "74eb0e7eb69236a4b2f4bc61a2a0e42d04a7dbc8e0d9f2e1328e927394e985e8",
+            "oracle_sha256": "0f6671f021215a2245ab3bcb84f6d2f571b2e288c7c3876bd427183ec3da1eea"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 1,
+        "client": null,
+        "request_sha256": "c0e6b1b75f5808b07cefd3a854a74484fbc32cf571a48135c2bf67dc5961d706",
+        "output_sha256": "12ba1fef99ec0167e905fa3debcdab53ea462d10db04b73e4679d7d991bc1b7d",
+        "results": [
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "37335ca6d120e90c39b15e0391d531ffc47ea535d3314a9116f19b50d13b3a7c",
+            "oracle_sha256": "f5cc40a562881909fad55d988106404dd193fdfe04d371f45460652ad80205cc"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 2000,
+        "question": 2,
+        "client": null,
+        "request_sha256": "543d7fff599e7ecc4e8204a19813794f49b1868624ea7c34a1b196a4b15b8e8e",
+        "output_sha256": "719a4df7357f2dfabe00d9d549a7139f84f007891d122a22f20ee58a821a95ec",
+        "results": [
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": true
+            },
+            "score": 7,
+            "max_score": 7,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "11580ec2351360e0d1ce05167ef2fdb6c82df82eb328e8dbf5a9a973d52776a6",
+            "oracle_sha256": "6bb70528acabb26037f8ed426e07c5338112d2216b59c3d9b456ab0a1f1eea85"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 32000,
+        "question": "all",
+        "client": null,
+        "request_sha256": "e24da0d13c5d5b3bda3125edbfd56de44c6cb6d1e225128d4b8745d26e64129c",
+        "output_sha256": "68c15ecd60dbbb48c6545ebfbd1524dcbe5a06d556f8f1cb53715a7986ce57cd",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "eb13e33485619777593c114ca3fe96f0e6c6ea2b35825c0db271da69cc5e45a0",
+            "oracle_sha256": "15ae90f11c8ae2f925e75f660fde7b13fcfc35948f99cbe59ebf5be7a93c4e65"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "eb13e33485619777593c114ca3fe96f0e6c6ea2b35825c0db271da69cc5e45a0",
+            "oracle_sha256": "bf3dcea72e257f114442bb0ccfd206ff3b41f7a10bed04dbf60f1834204e6657"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "110000",
+                    "100110",
+                    "110010",
+                    "111001"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "100110",
+                    "110000",
+                    "110001",
+                    "110010"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "110000",
+                    "false": null
+                  },
+                  {
+                    "true": "111001",
+                    "false": "110000"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "100110"
+                  },
+                  {
+                    "true": "100110",
+                    "false": "110000"
+                  },
+                  {
+                    "true": "100110",
+                    "false": null
+                  },
+                  {
+                    "true": "110001",
+                    "false": "100110"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "eb13e33485619777593c114ca3fe96f0e6c6ea2b35825c0db271da69cc5e45a0",
+            "oracle_sha256": "0393002d86834a2d97b2a4814848ae28bf03a73f30214424573d3cbc789de0c1"
+          }
+        ]
+      },
+      {
+        "phase": "measure-c1",
+        "ctx": 128000,
+        "question": "all",
+        "client": null,
+        "request_sha256": "26560a88c1dda1fec99a56dbfe694563d70a71395822cf677c1d09dfd77c7312",
+        "output_sha256": "715f178d15c751c8aab08f0d131486bb31743eb9dd089f1b9337d399d4ff8bd9",
+        "results": [
+          {
+            "case": "ledger",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "af13de98754abbdd1728bd18e98d9becd874959a09b92b600d078cc40004c60f",
+            "oracle_sha256": "f747758d72228e0f284fadc2f33fc19c8dfd22e2efe56db67e53a61db48e35bd"
+          },
+          {
+            "case": "portfolio",
+            "version": "ko-reasoning-v3",
+            "passed": true,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": true,
+              "evidence": true,
+              "counterfactual": true
+            },
+            "score": 6,
+            "max_score": 6,
+            "failures": [],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "af13de98754abbdd1728bd18e98d9becd874959a09b92b600d078cc40004c60f",
+            "oracle_sha256": "fa4e49b38ce1364fc20aeeb297167874922f38c3b922c478cd45742db31251c3"
+          },
+          {
+            "case": "logic",
+            "version": "ko-reasoning-v3",
+            "passed": false,
+            "checks": {
+              "format": true,
+              "completion": true,
+              "result": true,
+              "derivation": false,
+              "evidence": true,
+              "counterfactual": true,
+              "witnesses": false
+            },
+            "score": 5,
+            "max_score": 7,
+            "failures": [
+              {
+                "dimension": "derivation",
+                "expected": {
+                  "worlds": [
+                    "001010",
+                    "111000",
+                    "101010",
+                    "001111"
+                  ]
+                },
+                "actual": {
+                  "worlds": [
+                    "001001",
+                    "110100",
+                    "101100",
+                    "001011"
+                  ]
+                }
+              },
+              {
+                "dimension": "witnesses",
+                "expected": [
+                  {
+                    "true": null,
+                    "false": "001010"
+                  },
+                  {
+                    "true": "001010",
+                    "false": null
+                  },
+                  {
+                    "true": "001111",
+                    "false": "001010"
+                  },
+                  {
+                    "true": "111000",
+                    "false": "001010"
+                  }
+                ],
+                "actual": [
+                  {
+                    "true": null,
+                    "false": "001001"
+                  },
+                  {
+                    "true": "001001",
+                    "false": null
+                  },
+                  {
+                    "true": "001011",
+                    "false": "001001"
+                  },
+                  {
+                    "true": "110100",
+                    "false": "001001"
+                  }
+                ]
+              }
+            ],
+            "parse_error": null,
+            "finish_reason": "stop",
+            "visible_sha256": "af13de98754abbdd1728bd18e98d9becd874959a09b92b600d078cc40004c60f",
+            "oracle_sha256": "a682ad40f60673c8aa2a5b329edce90748e4a5f0dfc5a67e57704d8aba774da7"
+          }
+        ]
+      }
+    ],
+    "quality_protocol": {
+      "version": "ko-reasoning-v3",
+      "workloads_sha256": "5879551efd702c47e0f2687f02af0d87a16d0cbe5f2f6516cd9070c32b01d107",
+      "grading": "visible final content only; deterministic proof certificates",
+      "artifact": "workloads.json"
+    },
+    "recording": {
+      "schema": 1,
+      "status": "complete",
+      "server": {
+        "schema": 1,
+        "boot_id": "c8886b1f2ede4a9f81914c8833107b69",
+        "ranks": 4,
+        "policy": "fresh-prefix; observed preparation; profiler-off measurement; separate diagnostic replay"
+      },
+      "phase": "diagnostic-c1-128000"
+    },
+    "cold": "boot"
+  }
+]

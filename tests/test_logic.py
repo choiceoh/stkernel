@@ -8861,7 +8861,7 @@ def test_glm53_megakernel_contracts() -> None:
           and "return expert // (n_routed_experts // world_size)" in layers_src,
           "the partition lives in the module, contiguous blocks")
     check("from dsv41_layers import expert_rank" in presh_src
-          and "def _rank_of_expert" not in presh_src,
+          and "def rank_of_expert" not in presh_src,
           "the builder IMPORTS the partition; a second copy is the failure "
           "mode this exists to prevent")
     check("if owners != sorted(owners):" in presh_src,
@@ -11685,13 +11685,12 @@ def test_common_tp4_library_is_the_one_implementation() -> None:
         check("outside the package root" not in src
               and "unsafe overlay target in manifest" not in src,
               "%s must not keep its own target case statement" % name)
-    # the root differs per lane by design: glm53 overlays reach outside vllm/
-    # (flashinfer), hy4 does not, so hy4 demands the stricter root.
-    check('ct_check_overlay_target "$target" "/opt/venv/lib/python3.12/site-packages/vllm/"'
-          in lanes["start-hy4-tp4.sh"],
-          "hy4 keeps the stricter vllm/ root")
-    check('ct_check_overlay_target "$target" "${TARGET_PREFIX:-' in lanes["start-glm53-nvfp4-tp4.sh"],
-          "glm53 derives its root from the profile's TARGET_PREFIX")
+    # both lanes derive their root from the profile's TARGET_PREFIX: the dsv41
+    # profile hy4 reaches with PROFILE_ENV binds files at the site-packages
+    # root (dsv41_vllm.py, deneb_boot_stamps.py), outside vllm/.
+    for name in ("start-hy4-tp4.sh", "start-glm53-nvfp4-tp4.sh"):
+        check('ct_check_overlay_target "$target" "${TARGET_PREFIX:-' in lanes[name],
+              "%s derives its root from the profile's TARGET_PREFIX" % name)
 
     # profile-declared VLLM_* values ride an UNQUOTED expansion into docker:
     #   ENVV="$ENVV -e $_k=${!_k}" ... docker run $COMMON $ENVV ...

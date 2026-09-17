@@ -181,11 +181,30 @@ def cmd_leg(args) -> int:
         tok_s = toks / dt
         s = step_s_of(tok_s, raw, k_eff)
         rates = win.rates()
+        # The sampler already collects traffic; check it here instead of
+        # dropping it, so a leg run against a busy server is marked rather
+        # than judged as if it were exclusive. Only checks that do not depend
+        # on the sampling window's exact edges (before/after request deltas
+        # would false-positive here).
+        samples = [s for s in win.traffic_samples if s.get("running") is not None]
+        issues = []
+        if not samples:
+            issues.append("traffic counters unavailable")
+        else:
+            if samples[0]["running"] + samples[0]["waiting"] != 0:
+                issues.append("server was not idle at leg start")
+            if any(s["running"] + s["waiting"] > 1 for s in samples):
+                issues.append("concurrent or queued external request observed")
+            if any(a["finished"] > b["finished"] for a, b in zip(samples, samples[1:])):
+                issues.append("request counter reset during leg")
         rec["reps"].append({"rep": r + 1, "tok_s": round(tok_s, 2),
                             "acc_legacy": None if legacy is None else round(legacy, 4),
                             "acc_raw": None if raw is None else round(raw, 4),
                             "step_s": None if s is None else round(s, 2),
-                            "win_step_s": [round(x, 2) for x in rates]})
+                            "win_step_s": [round(x, 2) for x in rates],
+                            "traffic_issues": issues})
+        if issues:
+            print(f"  ! {args.tag} C={args.conc} rep{r + 1} 배타성: {issues}", flush=True)
         wtxt = ""
         if rates:
             q = sorted(rates)
@@ -205,24 +224,33 @@ def judge(records: list, conc_judge: int = 1) -> dict:
     줄은 한 다리(rep 목록)이고, 판정 단위는 rep 다."""
     flat = []
     other = 0
+    contaminated = []
     for r in records:
         for rep in r.get("reps", []):
-            if r.get("conc") == conc_judge:
-                wins = rep.get("win_step_s") or []
-                if wins:
-                    # step windows: the engine's own step counter sampled
-                    # through the rep -- one sample per window, many per rep
-                    for w in wins:
-                        flat.append({"tag": r["tag"], "env": r.get("env", {}),
-                                     "tok_s": rep["tok_s"], "step_s": w})
-                else:
-                    flat.append({"tag": r["tag"], "env": r.get("env", {}),
-                                 "tok_s": rep["tok_s"],
-                                 "step_s": rep.get("step_s")})
-            else:
+            if r.get("conc") != conc_judge:
                 other += 1
-    out: dict = {"ok": True, "conc": conc_judge, "problems": [],
+                continue
+            if rep.get("traffic_issues"):
+                contaminated.append({"tag": r["tag"], "rep": rep.get("rep"),
+                                     "issues": rep["traffic_issues"]})
+                continue
+            wins = rep.get("win_step_s") or []
+            if wins:
+                # step windows: the engine's own step counter sampled
+                # through the rep -- one sample per window, many per rep
+                for w in wins:
+                    flat.append({"tag": r["tag"], "env": r.get("env", {}),
+                                 "tok_s": rep["tok_s"], "step_s": w})
+            else:
+                flat.append({"tag": r["tag"], "env": r.get("env", {}),
+                             "tok_s": rep["tok_s"],
+                             "step_s": rep.get("step_s")})
+    out: dict = {"ok": True, "conc": conc_judge, "problems": [], "contaminated": contaminated,
                  "segments": [], "cands": [], "other_conc": other}
+    if contaminated:
+        out["problems"].append(
+            f"배타성 위반 leg를 판정에서 제외: {contaminated} "
+            "(같은 서버를 다른 클라이언트가 쳤다)")
     if not flat:
         out["ok"] = False
         out["problems"].append(f"C={conc_judge} 기록이 없다")
@@ -290,10 +318,14 @@ def cmd_judge(args) -> int:
     with open(args.out, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line:
+            if not line:
+                continue
+            try:
                 r = json.loads(line)
-                if args.name in (None, r.get("name")):
-                    records.append(r)
+            except ValueError:
+                continue          # one truncated append must not deny the rest
+            if args.name in (None, r.get("name")):
+                records.append(r)
     if not records:
         print(f"!! {args.out} 에 기록이 없다")
         return 2
@@ -321,8 +353,8 @@ def main() -> int:
     lg.add_argument("--tag", required=True, choices=("base", "cand"))
     lg.add_argument("--reps", type=int, default=3)
     lg.add_argument("--conc", type=int, default=1)
-    lg.add_argument("--num-spec", type=int, default=6,
-                    help="스페큘레이티브 토큰 수 k (step/s 정규화 계수)")
+    lg.add_argument("--num-spec", type=int, default=int(os.environ.get("SPEC_K", "7")),
+                    help="스페큘레이티브 토큰 수 k (step/s 정규화 계수; 기본 SPEC_K)")
     lg.add_argument("--out", default="runs/bracket.jsonl")
     lg.set_defaults(fn=cmd_leg)
     jd = sub.add_parser("judge", help="기록된 다리들로 판정")

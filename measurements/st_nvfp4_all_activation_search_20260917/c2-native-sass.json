@@ -1,0 +1,566 @@
+{
+  "scope": "C2 as1 native machine-code comparison; GPU hidden; no kernel execution",
+  "image": "sha256:e9e80b94d41277b171cef5785483989acd1c91d450d0d1068269e99f60bc75bd",
+  "before": {
+    "event": "native_ptx_audit",
+    "gpu_used": false,
+    "torch": "2.13.0+cu132",
+    "cuda": "13.2",
+    "sources": {
+      "engine/kernels/b12x/moe_dispatch.py": "9dec38542bfd42e678237f4cca5600675e2ac6ef36bb4b6cf31d94d5edcc2faf",
+      "engine/kernels/b12x/moe_static_kernel_v4.py": "5eb5b9f73c8e5a9481fe3da7b902209520d7c7ea929ec4cacf31fe268ae76970",
+      "engine/kernels/b12x/moe_static_kernel_v5.py": "296dc4a522916ffc134cfee84467cfefdc391a5f94ad836e0c9ed52c1721bf78",
+      "engine/kernels/b12x/moe_static_common.py": "c88f1244eff7d9df0461e1e95f972e03968601c67e85516642bbb98ca06bf952",
+      "engine/kernels/b12x/fp4_scale_search.py": "c3abc282d82b4cd40d4b7cf66758c022989b163aba141719b1e34b78197ef0d9"
+    },
+    "cells": [
+      {
+        "m": 16,
+        "arm": "as1",
+        "input_reuse": 4,
+        "activation_radius": 1,
+        "fc2_radius": 1,
+        "ptx_sha256": "ca9b15740b23b5c258de01ddcb9563075c18f099c8fe6c4d313abf110a3ed1c1",
+        "cubin_sha256": "749245f753effcf2dce439f1d5ca211c2f8391334e6febae4a7ad29f4efefe6d",
+        "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+        "sass_fences": [
+          "/*0130*/                   UTMACCTL.PF [UR10] ;                                                      /* 0x000000000a0079b9 */",
+          "/*0140*/                   UTMACCTL.PF [UR12] ;                                                      /* 0x000000000c0079b9 */",
+          "/*0150*/                   UTMACCTL.PF [UR14] ;                                                      /* 0x000000000e0079b9 */",
+          "/*0160*/                   UTMACCTL.PF [UR6] ;                                                       /* 0x00000000060079b9 */",
+          "/*0170*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*0200*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*02d0*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*4a90*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*4aa0*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*4b20*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*4b30*/                   MEMBAR.SC.GPU ;                                                           /* 0x0000000000007992 */",
+          "/*4b40*/                   ERRBAR;                                                                   /* 0x00000000000079ab */",
+          "/*4b50*/                   CGAERRBAR ;                                                               /* 0x00000000000075ab */",
+          "/*4b60*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*4bc0*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*4c60*/              @!P0 MEMBAR.ALL.CTA ;                                                          /* 0x0000000000008992 */",
+          "/*4c70*/              @!P0 MEMBAR.ALL.GPU ;                                                          /* 0x0000000000008992 */",
+          "/*4c80*/              @!P0 ERRBAR;                                                                   /* 0x00000000000089ab */",
+          "/*4c90*/              @!P0 CGAERRBAR ;                                                               /* 0x00000000000085ab */",
+          "/*4cd0*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*8e60*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*8e70*/                   MEMBAR.SC.GPU ;                                                           /* 0x0000000000007992 */",
+          "/*8e80*/                   ERRBAR;                                                                   /* 0x00000000000079ab */",
+          "/*8e90*/                   CGAERRBAR ;                                                               /* 0x00000000000075ab */",
+          "/*8ea0*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*8f00*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*8fa0*/              @!P0 MEMBAR.ALL.CTA ;                                                          /* 0x0000000000008992 */",
+          "/*8fb0*/              @!P0 MEMBAR.ALL.GPU ;                                                          /* 0x0000000000008992 */",
+          "/*8fc0*/              @!P0 ERRBAR;                                                                   /* 0x00000000000089ab */",
+          "/*8fd0*/              @!P0 CGAERRBAR ;                                                               /* 0x00000000000085ab */",
+          "/*9010*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*bc40*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*bc50*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*e150*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*e160*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */"
+        ],
+        "ptx_version": [
+          ".version 9.3",
+          ".target sm_121a"
+        ],
+        "fences": [
+          [
+            148,
+            "fence.mbarrier_init.release.cluster;"
+          ],
+          [
+            596,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            602,
+            "membar.gl;"
+          ],
+          [
+            2657,
+            "membar.gl;"
+          ],
+          [
+            3729,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            4870,
+            "fence.proxy.async.shared::cta;"
+          ]
+        ],
+        "memory_instructions": [
+          [
+            148,
+            "fence.mbarrier_init.release.cluster;"
+          ],
+          [
+            173,
+            "st.global.b32 \t[%rd36], 0;"
+          ],
+          [
+            189,
+            "st.global.b32 \t[%rd38], 0;"
+          ],
+          [
+            194,
+            "st.global.b32 \t[%rd40], 0;"
+          ],
+          [
+            199,
+            "st.global.b32 \t[%rd42], 0;"
+          ],
+          [
+            204,
+            "st.global.b32 \t[%rd44], 0;"
+          ],
+          [
+            556,
+            "st.global.b32 \t[%rd12], %r348;"
+          ],
+          [
+            562,
+            "st.global.b32 \t[%rd48], %r3481;"
+          ],
+          [
+            564,
+            "st.global.b32 \t[%rd49], %r3479;"
+          ],
+          [
+            567,
+            "st.global.b32 \t[%rd51], %r3484;"
+          ],
+          [
+            574,
+            "st.global.b32 \t[%rd53], %r349;"
+          ],
+          [
+            579,
+            "st.global.b32 \t[%rd56], %r352;"
+          ],
+          [
+            584,
+            "st.global.b8 \t[%rd58+75496449], %r354;"
+          ],
+          [
+            585,
+            "st.global.b8 \t[%rd58+75496448], %r3484;"
+          ],
+          [
+            586,
+            "st.global.b8 \t[%rd58+75496451], 0;"
+          ],
+          [
+            587,
+            "st.global.b8 \t[%rd58+75496450], 0;"
+          ],
+          [
+            589,
+            "st.global.b8 \t[%rd58+75496455], %r355;"
+          ],
+          [
+            591,
+            "st.global.b8 \t[%rd58+75496454], %r356;"
+          ],
+          [
+            593,
+            "st.global.b8 \t[%rd58+75496453], %r357;"
+          ],
+          [
+            594,
+            "st.global.b8 \t[%rd58+75496452], %r3482;"
+          ],
+          [
+            596,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            602,
+            "membar.gl;"
+          ],
+          [
+            606,
+            "ld.global.acquire.gpu.s32 %r358, [%rd18];"
+          ],
+          [
+            610,
+            "atom.global.add.s32 %r359, [%rd102], %r360;"
+          ],
+          [
+            617,
+            "st.global.s32 [%rd102], %r362;"
+          ],
+          [
+            621,
+            "st.global.release.gpu.s32 [%rd18], %r363;"
+          ],
+          [
+            630,
+            "ld.global.acquire.gpu.s32 %val, [%rd18];"
+          ],
+          [
+            2605,
+            "st.global.u64 [%rd98], %rd290;"
+          ],
+          [
+            2646,
+            "st.global.b8 \t[%rd101], %rs197;"
+          ],
+          [
+            2657,
+            "membar.gl;"
+          ],
+          [
+            2661,
+            "ld.global.acquire.gpu.s32 %r817, [%rd18];"
+          ],
+          [
+            2665,
+            "atom.global.add.s32 %r818, [%rd102], %r819;"
+          ],
+          [
+            2672,
+            "st.global.s32 [%rd102], %r821;"
+          ],
+          [
+            2676,
+            "st.global.release.gpu.s32 [%rd18], %r822;"
+          ],
+          [
+            2685,
+            "ld.global.acquire.gpu.s32 %val, [%rd18];"
+          ],
+          [
+            3729,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            4870,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            7016,
+            "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+8192], [%rd110, {%r853, %r200, %r3511}], [%r4+8], %rd111;"
+          ],
+          [
+            7026,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+10240], [%rd112, {%r857, %r856, %r3516, %r199}], [%r4+8], %rd113;"
+          ],
+          [
+            7035,
+            "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+43008], [%rd114, {%r860, %r859, %r3511}], [%r4+8], %rd115;"
+          ],
+          [
+            7077,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+26624], [%rd123, {%r871, %r870, %r3516, %r199}], [%r4+16], %rd124;"
+          ],
+          [
+            7135,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r886+45056], [%rd132, {%r889, %r884, %r3512, %r199}], [%r888+40], %rd133;"
+          ],
+          [
+            7194,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r911+45056], [%rd141, {%r914, %r909, %r3512, %r199}], [%r913+40], %rd142;"
+          ],
+          [
+            7254,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r937+45056], [%rd150, {%r940, %r935, %r3512, %r199}], [%r939+40], %rd151;"
+          ],
+          [
+            7314,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r963+45056], [%rd159, {%r966, %r961, %r3512, %r199}], [%r965+40], %rd160;"
+          ]
+        ]
+      }
+    ]
+  },
+  "after": {
+    "event": "native_ptx_audit",
+    "gpu_used": false,
+    "torch": "2.13.0+cu132",
+    "cuda": "13.2",
+    "sources": {
+      "engine/kernels/b12x/moe_dispatch.py": "9dec38542bfd42e678237f4cca5600675e2ac6ef36bb4b6cf31d94d5edcc2faf",
+      "engine/kernels/b12x/moe_static_kernel_v4.py": "87904c8fa20263f87f69c23b001fd98fbce66b6397c709da942a1245953ee947",
+      "engine/kernels/b12x/moe_static_kernel_v5.py": "296dc4a522916ffc134cfee84467cfefdc391a5f94ad836e0c9ed52c1721bf78",
+      "engine/kernels/b12x/moe_static_common.py": "c88f1244eff7d9df0461e1e95f972e03968601c67e85516642bbb98ca06bf952",
+      "engine/kernels/b12x/fp4_scale_search.py": "c3abc282d82b4cd40d4b7cf66758c022989b163aba141719b1e34b78197ef0d9"
+    },
+    "cells": [
+      {
+        "m": 16,
+        "arm": "as1",
+        "input_reuse": 4,
+        "activation_radius": 1,
+        "fc2_radius": 1,
+        "ptx_sha256": "ece4ba345150fccfabdc8c88e14380479e980445d2b4484d2b31968f88b0aa79",
+        "cubin_sha256": "78d09574363acf853a17225c92a60cf782a03cc47dd45946df3a52f5a86b411a",
+        "resources": "\nResource usage:\n Common:\n  GLOBAL:0 CONSTANT[4]:8\n Function kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernel_v5MoEStaticKernelV5_object_at__tensorptrbf16gmemalign16o16409640961_tensorptri32gmemo1281_tensorptrf32gmemo1281_tensorptri8gmemali_0:\n  REG:96 STACK:0 SHARED:1024 LOCAL:0 CONSTANT[0]:1912 TEXTURE:0 SURFACE:0 SAMPLER:0\n",
+        "sass_fences": [
+          "/*0130*/                   UTMACCTL.PF [UR10] ;                                                      /* 0x000000000a0079b9 */",
+          "/*0140*/                   UTMACCTL.PF [UR12] ;                                                      /* 0x000000000c0079b9 */",
+          "/*0150*/                   UTMACCTL.PF [UR14] ;                                                      /* 0x000000000e0079b9 */",
+          "/*0160*/                   UTMACCTL.PF [UR6] ;                                                       /* 0x00000000060079b9 */",
+          "/*0170*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*0200*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*02d0*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*4a90*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*4aa0*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*4b20*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*4b30*/                   MEMBAR.SC.GPU ;                                                           /* 0x0000000000007992 */",
+          "/*4b40*/                   ERRBAR;                                                                   /* 0x00000000000079ab */",
+          "/*4b50*/                   CGAERRBAR ;                                                               /* 0x00000000000075ab */",
+          "/*4b60*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*4bc0*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*4c60*/              @!P0 MEMBAR.ALL.CTA ;                                                          /* 0x0000000000008992 */",
+          "/*4c70*/              @!P0 MEMBAR.ALL.GPU ;                                                          /* 0x0000000000008992 */",
+          "/*4c80*/              @!P0 ERRBAR;                                                                   /* 0x00000000000089ab */",
+          "/*4c90*/              @!P0 CGAERRBAR ;                                                               /* 0x00000000000085ab */",
+          "/*4cd0*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*8e60*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*8e70*/                   MEMBAR.SC.GPU ;                                                           /* 0x0000000000007992 */",
+          "/*8e80*/                   ERRBAR;                                                                   /* 0x00000000000079ab */",
+          "/*8e90*/                   CGAERRBAR ;                                                               /* 0x00000000000075ab */",
+          "/*8ea0*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*8f00*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*8fa0*/              @!P0 MEMBAR.ALL.CTA ;                                                          /* 0x0000000000008992 */",
+          "/*8fb0*/              @!P0 MEMBAR.ALL.GPU ;                                                          /* 0x0000000000008992 */",
+          "/*8fc0*/              @!P0 ERRBAR;                                                                   /* 0x00000000000089ab */",
+          "/*8fd0*/              @!P0 CGAERRBAR ;                                                               /* 0x00000000000085ab */",
+          "/*9010*/                   CCTL.IVALL ;                                                              /* 0x00000000ff00798f */",
+          "/*9080*/                   FENCE.VIEW.ASYNC.G ;                                                      /* 0x00000000000073c6 */",
+          "/*bc50*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*bc60*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */",
+          "/*e160*/                   MEMBAR.ALL.CTA ;                                                          /* 0x0000000000007992 */",
+          "/*e170*/                   FENCE.VIEW.ASYNC.S ;                                                      /* 0x00000000000073c6 */"
+        ],
+        "ptx_version": [
+          ".version 9.3",
+          ".target sm_121a"
+        ],
+        "fences": [
+          [
+            148,
+            "fence.mbarrier_init.release.cluster;"
+          ],
+          [
+            596,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            602,
+            "membar.gl;"
+          ],
+          [
+            2657,
+            "membar.gl;"
+          ],
+          [
+            2692,
+            "fence.proxy.async.global;"
+          ],
+          [
+            3730,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            4871,
+            "fence.proxy.async.shared::cta;"
+          ]
+        ],
+        "memory_instructions": [
+          [
+            148,
+            "fence.mbarrier_init.release.cluster;"
+          ],
+          [
+            173,
+            "st.global.b32 \t[%rd36], 0;"
+          ],
+          [
+            189,
+            "st.global.b32 \t[%rd38], 0;"
+          ],
+          [
+            194,
+            "st.global.b32 \t[%rd40], 0;"
+          ],
+          [
+            199,
+            "st.global.b32 \t[%rd42], 0;"
+          ],
+          [
+            204,
+            "st.global.b32 \t[%rd44], 0;"
+          ],
+          [
+            556,
+            "st.global.b32 \t[%rd12], %r348;"
+          ],
+          [
+            562,
+            "st.global.b32 \t[%rd48], %r3481;"
+          ],
+          [
+            564,
+            "st.global.b32 \t[%rd49], %r3479;"
+          ],
+          [
+            567,
+            "st.global.b32 \t[%rd51], %r3484;"
+          ],
+          [
+            574,
+            "st.global.b32 \t[%rd53], %r349;"
+          ],
+          [
+            579,
+            "st.global.b32 \t[%rd56], %r352;"
+          ],
+          [
+            584,
+            "st.global.b8 \t[%rd58+75496449], %r354;"
+          ],
+          [
+            585,
+            "st.global.b8 \t[%rd58+75496448], %r3484;"
+          ],
+          [
+            586,
+            "st.global.b8 \t[%rd58+75496451], 0;"
+          ],
+          [
+            587,
+            "st.global.b8 \t[%rd58+75496450], 0;"
+          ],
+          [
+            589,
+            "st.global.b8 \t[%rd58+75496455], %r355;"
+          ],
+          [
+            591,
+            "st.global.b8 \t[%rd58+75496454], %r356;"
+          ],
+          [
+            593,
+            "st.global.b8 \t[%rd58+75496453], %r357;"
+          ],
+          [
+            594,
+            "st.global.b8 \t[%rd58+75496452], %r3482;"
+          ],
+          [
+            596,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            602,
+            "membar.gl;"
+          ],
+          [
+            606,
+            "ld.global.acquire.gpu.s32 %r358, [%rd18];"
+          ],
+          [
+            610,
+            "atom.global.add.s32 %r359, [%rd102], %r360;"
+          ],
+          [
+            617,
+            "st.global.s32 [%rd102], %r362;"
+          ],
+          [
+            621,
+            "st.global.release.gpu.s32 [%rd18], %r363;"
+          ],
+          [
+            630,
+            "ld.global.acquire.gpu.s32 %val, [%rd18];"
+          ],
+          [
+            2605,
+            "st.global.u64 [%rd98], %rd290;"
+          ],
+          [
+            2646,
+            "st.global.b8 \t[%rd101], %rs197;"
+          ],
+          [
+            2657,
+            "membar.gl;"
+          ],
+          [
+            2661,
+            "ld.global.acquire.gpu.s32 %r817, [%rd18];"
+          ],
+          [
+            2665,
+            "atom.global.add.s32 %r818, [%rd102], %r819;"
+          ],
+          [
+            2672,
+            "st.global.s32 [%rd102], %r821;"
+          ],
+          [
+            2676,
+            "st.global.release.gpu.s32 [%rd18], %r822;"
+          ],
+          [
+            2685,
+            "ld.global.acquire.gpu.s32 %val, [%rd18];"
+          ],
+          [
+            2692,
+            "fence.proxy.async.global;"
+          ],
+          [
+            3730,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            4871,
+            "fence.proxy.async.shared::cta;"
+          ],
+          [
+            7017,
+            "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+8192], [%rd110, {%r853, %r200, %r3511}], [%r4+8], %rd111;"
+          ],
+          [
+            7027,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+10240], [%rd112, {%r857, %r856, %r3516, %r199}], [%r4+8], %rd113;"
+          ],
+          [
+            7036,
+            "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+43008], [%rd114, {%r860, %r859, %r3511}], [%r4+8], %rd115;"
+          ],
+          [
+            7078,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+26624], [%rd123, {%r871, %r870, %r3516, %r199}], [%r4+16], %rd124;"
+          ],
+          [
+            7136,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r886+45056], [%rd132, {%r889, %r884, %r3512, %r199}], [%r888+40], %rd133;"
+          ],
+          [
+            7195,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r911+45056], [%rd141, {%r914, %r909, %r3512, %r199}], [%r913+40], %rd142;"
+          ],
+          [
+            7255,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r937+45056], [%rd150, {%r940, %r935, %r3512, %r199}], [%r939+40], %rd151;"
+          ],
+          [
+            7315,
+            "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r963+45056], [%rd159, {%r966, %r961, %r3512, %r199}], [%r965+40], %rd160;"
+          ]
+        ]
+      }
+    ]
+  },
+  "added_fence_instructions": {
+    "FENCE.VIEW.ASYNC.G ;": 1
+  },
+  "removed_fence_instructions": {},
+  "resources_unchanged": true
+}

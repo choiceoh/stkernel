@@ -341,7 +341,7 @@ def _pct(values, q):
     if not values:
         return None
     s = sorted(values)
-    return s[min(len(s) - 1, int(q * len(s)))]
+    return s[min(len(s) - 1, max(0, math.ceil(q * len(s)) - 1))]
 
 
 def _pools(prompts, gens, block, k):

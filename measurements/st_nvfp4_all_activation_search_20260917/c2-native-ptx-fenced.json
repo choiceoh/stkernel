@@ -1,0 +1,1112 @@
+{
+  "event": "native_ptx_audit",
+  "gpu_used": false,
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "sources": {
+    "engine/kernels/b12x/moe_dispatch.py": "9dec38542bfd42e678237f4cca5600675e2ac6ef36bb4b6cf31d94d5edcc2faf",
+    "engine/kernels/b12x/moe_static_kernel_v4.py": "87904c8fa20263f87f69c23b001fd98fbce66b6397c709da942a1245953ee947",
+    "engine/kernels/b12x/moe_static_kernel_v5.py": "296dc4a522916ffc134cfee84467cfefdc391a5f94ad836e0c9ed52c1721bf78",
+    "engine/kernels/b12x/moe_static_common.py": "c88f1244eff7d9df0461e1e95f972e03968601c67e85516642bbb98ca06bf952",
+    "engine/kernels/b12x/fp4_scale_search.py": "c3abc282d82b4cd40d4b7cf66758c022989b163aba141719b1e34b78197ef0d9"
+  },
+  "cells": [
+    {
+      "m": 8,
+      "arm": "ss1",
+      "input_reuse": 3,
+      "activation_radius": 0,
+      "fc2_radius": 1,
+      "ptx_sha256": "c7a4b4bc5cd671fbdabef1a2f0dc63ed4424d65a7282ca5f7eaca47fc6b98626",
+      "ptx_version": [
+        ".version 9.3",
+        ".target sm_121a"
+      ],
+      "fences": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          1291,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          1297,
+          "membar.gl;"
+        ],
+        [
+          1704,
+          "membar.gl;"
+        ],
+        [
+          1739,
+          "fence.proxy.async.global;"
+        ],
+        [
+          2789,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          3945,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4340,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4652,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4961,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5270,
+          "fence.proxy.async.shared::cta;"
+        ]
+      ],
+      "memory_instructions": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          173,
+          "st.global.b32 \t[%rd29], 0;"
+        ],
+        [
+          189,
+          "st.global.b32 \t[%rd31], 0;"
+        ],
+        [
+          194,
+          "st.global.b32 \t[%rd33], 0;"
+        ],
+        [
+          199,
+          "st.global.b32 \t[%rd35], 0;"
+        ],
+        [
+          204,
+          "st.global.b32 \t[%rd37], 0;"
+        ],
+        [
+          468,
+          "st.global.b8 \t[%rd49+37729799], %rd50;"
+        ],
+        [
+          470,
+          "st.global.b8 \t[%rd49+37729798], %rd51;"
+        ],
+        [
+          472,
+          "st.global.b8 \t[%rd49+37729797], %rd52;"
+        ],
+        [
+          474,
+          "st.global.b8 \t[%rd49+37729796], %rd53;"
+        ],
+        [
+          476,
+          "st.global.b8 \t[%rd49+37729795], %rd54;"
+        ],
+        [
+          478,
+          "st.global.b8 \t[%rd49+37729794], %rd55;"
+        ],
+        [
+          480,
+          "st.global.b8 \t[%rd49+37729793], %rd56;"
+        ],
+        [
+          481,
+          "st.global.b8 \t[%rd49+37729792], %rd231;"
+        ],
+        [
+          483,
+          "st.global.b8 \t[%rd57+37746176], %rs56;"
+        ],
+        [
+          1249,
+          "st.global.b32 \t[%rd5], %r13;"
+        ],
+        [
+          1255,
+          "st.global.b32 \t[%rd61], %r3401;"
+        ],
+        [
+          1257,
+          "st.global.b32 \t[%rd62], %r3399;"
+        ],
+        [
+          1260,
+          "st.global.b32 \t[%rd64], %r14;"
+        ],
+        [
+          1267,
+          "st.global.b32 \t[%rd66], %r697;"
+        ],
+        [
+          1272,
+          "st.global.b32 \t[%rd69], %r700;"
+        ],
+        [
+          1277,
+          "st.global.b8 \t[%rd71+37748227], %r702;"
+        ],
+        [
+          1279,
+          "st.global.b8 \t[%rd71+37748226], %r703;"
+        ],
+        [
+          1281,
+          "st.global.b8 \t[%rd71+37748225], %r704;"
+        ],
+        [
+          1282,
+          "st.global.b8 \t[%rd71+37748224], %r14;"
+        ],
+        [
+          1284,
+          "st.global.b8 \t[%rd71+37748231], %r705;"
+        ],
+        [
+          1286,
+          "st.global.b8 \t[%rd71+37748230], %r706;"
+        ],
+        [
+          1288,
+          "st.global.b8 \t[%rd71+37748229], %r707;"
+        ],
+        [
+          1289,
+          "st.global.b8 \t[%rd71+37748228], %r3402;"
+        ],
+        [
+          1291,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          1297,
+          "membar.gl;"
+        ],
+        [
+          1301,
+          "ld.global.acquire.gpu.s32 %r708, [%rd11];"
+        ],
+        [
+          1305,
+          "atom.global.add.s32 %r709, [%rd116], %r710;"
+        ],
+        [
+          1312,
+          "st.global.s32 [%rd116], %r712;"
+        ],
+        [
+          1316,
+          "st.global.release.gpu.s32 [%rd11], %r713;"
+        ],
+        [
+          1325,
+          "ld.global.acquire.gpu.s32 %val, [%rd11];"
+        ],
+        [
+          1686,
+          "st.global.u64 [%rd112], %rd232;"
+        ],
+        [
+          1693,
+          "st.global.b8 \t[%rd115], %rs57;"
+        ],
+        [
+          1704,
+          "membar.gl;"
+        ],
+        [
+          1708,
+          "ld.global.acquire.gpu.s32 %r848, [%rd11];"
+        ],
+        [
+          1712,
+          "atom.global.add.s32 %r849, [%rd116], %r850;"
+        ],
+        [
+          1719,
+          "st.global.s32 [%rd116], %r852;"
+        ],
+        [
+          1723,
+          "st.global.release.gpu.s32 [%rd11], %r853;"
+        ],
+        [
+          1732,
+          "ld.global.acquire.gpu.s32 %val, [%rd11];"
+        ],
+        [
+          1739,
+          "fence.proxy.async.global;"
+        ],
+        [
+          2789,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          3945,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4340,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4652,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4961,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5270,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5512,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+7168], [%rd124, {%r885, %r183, %r3424}], [%r1+8], %rd125;"
+        ],
+        [
+          5522,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+9216], [%rd126, {%r889, %r888, %r3429, %r182}], [%r1+8], %rd127;"
+        ],
+        [
+          5531,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+41984], [%rd128, {%r892, %r891, %r3424}], [%r1+8], %rd129;"
+        ],
+        [
+          5573,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+25600], [%rd137, {%r903, %r902, %r3429, %r182}], [%r1+16], %rd138;"
+        ],
+        [
+          5624,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+44032], [%rd146, {%r914, %r913, %r3425, %r182}], [%r1+40], %rd147;"
+        ],
+        [
+          5668,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+60416], [%rd155, {%r926, %r925, %r3425, %r182}], [%r1+48], %rd156;"
+        ],
+        [
+          5713,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+44032], [%rd164, {%r939, %r938, %r3425, %r182}], [%r1+40], %rd165;"
+        ],
+        [
+          5758,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+60416], [%rd173, {%r952, %r951, %r3425, %r182}], [%r1+48], %rd174;"
+        ]
+      ],
+      "publication_instruction_order": {
+        "grid_membars": [
+          1297,
+          1704
+        ],
+        "global_proxy_fence": 1739,
+        "first_tma_read": 5512
+      }
+    },
+    {
+      "m": 8,
+      "arm": "as1",
+      "input_reuse": 3,
+      "activation_radius": 1,
+      "fc2_radius": 1,
+      "ptx_sha256": "a44757328dcdf22c2ee7e0eaa8d071cebfb463b95c6b8ff7cfc2edd8f19fe89b",
+      "ptx_version": [
+        ".version 9.3",
+        ".target sm_121a"
+      ],
+      "fences": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          2084,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          2090,
+          "membar.gl;"
+        ],
+        [
+          3290,
+          "membar.gl;"
+        ],
+        [
+          3325,
+          "fence.proxy.async.global;"
+        ],
+        [
+          4375,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5531,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5926,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          6238,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          6547,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          6856,
+          "fence.proxy.async.shared::cta;"
+        ]
+      ],
+      "memory_instructions": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          173,
+          "st.global.b32 \t[%rd29], 0;"
+        ],
+        [
+          189,
+          "st.global.b32 \t[%rd31], 0;"
+        ],
+        [
+          194,
+          "st.global.b32 \t[%rd33], 0;"
+        ],
+        [
+          199,
+          "st.global.b32 \t[%rd35], 0;"
+        ],
+        [
+          204,
+          "st.global.b32 \t[%rd37], 0;"
+        ],
+        [
+          1261,
+          "st.global.b8 \t[%rd60+37729799], %rd61;"
+        ],
+        [
+          1263,
+          "st.global.b8 \t[%rd60+37729798], %rd62;"
+        ],
+        [
+          1265,
+          "st.global.b8 \t[%rd60+37729797], %rd63;"
+        ],
+        [
+          1267,
+          "st.global.b8 \t[%rd60+37729796], %rd64;"
+        ],
+        [
+          1269,
+          "st.global.b8 \t[%rd60+37729795], %rd65;"
+        ],
+        [
+          1271,
+          "st.global.b8 \t[%rd60+37729794], %rd66;"
+        ],
+        [
+          1273,
+          "st.global.b8 \t[%rd60+37729793], %rd67;"
+        ],
+        [
+          1274,
+          "st.global.b8 \t[%rd60+37729792], %rd253;"
+        ],
+        [
+          1276,
+          "st.global.b8 \t[%rd68+37746176], %rs65;"
+        ],
+        [
+          2042,
+          "st.global.b32 \t[%rd5], %r13;"
+        ],
+        [
+          2048,
+          "st.global.b32 \t[%rd72], %r3694;"
+        ],
+        [
+          2050,
+          "st.global.b32 \t[%rd73], %r3692;"
+        ],
+        [
+          2053,
+          "st.global.b32 \t[%rd75], %r14;"
+        ],
+        [
+          2060,
+          "st.global.b32 \t[%rd77], %r843;"
+        ],
+        [
+          2065,
+          "st.global.b32 \t[%rd80], %r846;"
+        ],
+        [
+          2070,
+          "st.global.b8 \t[%rd82+37748227], %r848;"
+        ],
+        [
+          2072,
+          "st.global.b8 \t[%rd82+37748226], %r849;"
+        ],
+        [
+          2074,
+          "st.global.b8 \t[%rd82+37748225], %r850;"
+        ],
+        [
+          2075,
+          "st.global.b8 \t[%rd82+37748224], %r14;"
+        ],
+        [
+          2077,
+          "st.global.b8 \t[%rd82+37748231], %r851;"
+        ],
+        [
+          2079,
+          "st.global.b8 \t[%rd82+37748230], %r852;"
+        ],
+        [
+          2081,
+          "st.global.b8 \t[%rd82+37748229], %r853;"
+        ],
+        [
+          2082,
+          "st.global.b8 \t[%rd82+37748228], %r3695;"
+        ],
+        [
+          2084,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          2090,
+          "membar.gl;"
+        ],
+        [
+          2094,
+          "ld.global.acquire.gpu.s32 %r854, [%rd11];"
+        ],
+        [
+          2098,
+          "atom.global.add.s32 %r855, [%rd138], %r856;"
+        ],
+        [
+          2105,
+          "st.global.s32 [%rd138], %r858;"
+        ],
+        [
+          2109,
+          "st.global.release.gpu.s32 [%rd11], %r859;"
+        ],
+        [
+          2118,
+          "ld.global.acquire.gpu.s32 %val, [%rd11];"
+        ],
+        [
+          3272,
+          "st.global.u64 [%rd134], %rd254;"
+        ],
+        [
+          3279,
+          "st.global.b8 \t[%rd137], %rs67;"
+        ],
+        [
+          3290,
+          "membar.gl;"
+        ],
+        [
+          3294,
+          "ld.global.acquire.gpu.s32 %r1140, [%rd11];"
+        ],
+        [
+          3298,
+          "atom.global.add.s32 %r1141, [%rd138], %r1142;"
+        ],
+        [
+          3305,
+          "st.global.s32 [%rd138], %r1144;"
+        ],
+        [
+          3309,
+          "st.global.release.gpu.s32 [%rd11], %r1145;"
+        ],
+        [
+          3318,
+          "ld.global.acquire.gpu.s32 %val, [%rd11];"
+        ],
+        [
+          3325,
+          "fence.proxy.async.global;"
+        ],
+        [
+          4375,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5531,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5926,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          6238,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          6547,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          6856,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          7098,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+7168], [%rd146, {%r1177, %r183, %r3718}], [%r1+8], %rd147;"
+        ],
+        [
+          7108,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+9216], [%rd148, {%r1181, %r1180, %r3723, %r182}], [%r1+8], %rd149;"
+        ],
+        [
+          7117,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+41984], [%rd150, {%r1184, %r1183, %r3718}], [%r1+8], %rd151;"
+        ],
+        [
+          7159,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+25600], [%rd159, {%r1195, %r1194, %r3723, %r182}], [%r1+16], %rd160;"
+        ],
+        [
+          7210,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+44032], [%rd168, {%r1206, %r1205, %r3719, %r182}], [%r1+40], %rd169;"
+        ],
+        [
+          7254,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+60416], [%rd177, {%r1218, %r1217, %r3719, %r182}], [%r1+48], %rd178;"
+        ],
+        [
+          7299,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+44032], [%rd186, {%r1231, %r1230, %r3719, %r182}], [%r1+40], %rd187;"
+        ],
+        [
+          7344,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r1+60416], [%rd195, {%r1244, %r1243, %r3719, %r182}], [%r1+48], %rd196;"
+        ]
+      ],
+      "publication_instruction_order": {
+        "grid_membars": [
+          2090,
+          3290
+        ],
+        "global_proxy_fence": 3325,
+        "first_tma_read": 7098
+      }
+    },
+    {
+      "m": 16,
+      "arm": "ss1",
+      "input_reuse": 4,
+      "activation_radius": 0,
+      "fc2_radius": 1,
+      "ptx_sha256": "60de4355b4424cd7d3019a66e51fb1670afa0d4a4ee5a3a7a9b9e6083dff88f8",
+      "ptx_version": [
+        ".version 9.3",
+        ".target sm_121a"
+      ],
+      "fences": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          596,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          602,
+          "membar.gl;"
+        ],
+        [
+          1256,
+          "membar.gl;"
+        ],
+        [
+          1291,
+          "fence.proxy.async.global;"
+        ],
+        [
+          2329,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          3470,
+          "fence.proxy.async.shared::cta;"
+        ]
+      ],
+      "memory_instructions": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          173,
+          "st.global.b32 \t[%rd38], 0;"
+        ],
+        [
+          189,
+          "st.global.b32 \t[%rd40], 0;"
+        ],
+        [
+          194,
+          "st.global.b32 \t[%rd42], 0;"
+        ],
+        [
+          199,
+          "st.global.b32 \t[%rd44], 0;"
+        ],
+        [
+          204,
+          "st.global.b32 \t[%rd46], 0;"
+        ],
+        [
+          556,
+          "st.global.b32 \t[%rd14], %r350;"
+        ],
+        [
+          562,
+          "st.global.b32 \t[%rd50], %r3273;"
+        ],
+        [
+          564,
+          "st.global.b32 \t[%rd51], %r3271;"
+        ],
+        [
+          567,
+          "st.global.b32 \t[%rd53], %r3276;"
+        ],
+        [
+          574,
+          "st.global.b32 \t[%rd55], %r351;"
+        ],
+        [
+          579,
+          "st.global.b32 \t[%rd58], %r354;"
+        ],
+        [
+          584,
+          "st.global.b8 \t[%rd60+75496449], %r356;"
+        ],
+        [
+          585,
+          "st.global.b8 \t[%rd60+75496448], %r3276;"
+        ],
+        [
+          586,
+          "st.global.b8 \t[%rd60+75496451], 0;"
+        ],
+        [
+          587,
+          "st.global.b8 \t[%rd60+75496450], 0;"
+        ],
+        [
+          589,
+          "st.global.b8 \t[%rd60+75496455], %r357;"
+        ],
+        [
+          591,
+          "st.global.b8 \t[%rd60+75496454], %r358;"
+        ],
+        [
+          593,
+          "st.global.b8 \t[%rd60+75496453], %r359;"
+        ],
+        [
+          594,
+          "st.global.b8 \t[%rd60+75496452], %r3274;"
+        ],
+        [
+          596,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          602,
+          "membar.gl;"
+        ],
+        [
+          606,
+          "ld.global.acquire.gpu.s32 %r360, [%rd20];"
+        ],
+        [
+          610,
+          "atom.global.add.s32 %r361, [%rd89], %r362;"
+        ],
+        [
+          617,
+          "st.global.s32 [%rd89], %r364;"
+        ],
+        [
+          621,
+          "st.global.release.gpu.s32 [%rd20], %r365;"
+        ],
+        [
+          630,
+          "ld.global.acquire.gpu.s32 %val, [%rd20];"
+        ],
+        [
+          1031,
+          "st.global.u64 [%rd76], %rd277;"
+        ],
+        [
+          1072,
+          "st.global.b8 \t[%rd79], %rs194;"
+        ],
+        [
+          1204,
+          "st.global.u64 [%rd85], %rd278;"
+        ],
+        [
+          1245,
+          "st.global.b8 \t[%rd88], %rs195;"
+        ],
+        [
+          1256,
+          "membar.gl;"
+        ],
+        [
+          1260,
+          "ld.global.acquire.gpu.s32 %r609, [%rd20];"
+        ],
+        [
+          1264,
+          "atom.global.add.s32 %r610, [%rd89], %r611;"
+        ],
+        [
+          1271,
+          "st.global.s32 [%rd89], %r613;"
+        ],
+        [
+          1275,
+          "st.global.release.gpu.s32 [%rd20], %r614;"
+        ],
+        [
+          1284,
+          "ld.global.acquire.gpu.s32 %val, [%rd20];"
+        ],
+        [
+          1291,
+          "fence.proxy.async.global;"
+        ],
+        [
+          2329,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          3470,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          5616,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+8192], [%rd97, {%r645, %r202, %r3301}], [%r4+8], %rd98;"
+        ],
+        [
+          5626,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+10240], [%rd99, {%r649, %r648, %r3306, %r201}], [%r4+8], %rd100;"
+        ],
+        [
+          5635,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+43008], [%rd101, {%r652, %r651, %r3301}], [%r4+8], %rd102;"
+        ],
+        [
+          5677,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+26624], [%rd110, {%r663, %r662, %r3306, %r201}], [%r4+16], %rd111;"
+        ],
+        [
+          5735,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r678+45056], [%rd119, {%r681, %r676, %r3302, %r201}], [%r680+40], %rd120;"
+        ],
+        [
+          5794,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r703+45056], [%rd128, {%r706, %r701, %r3302, %r201}], [%r705+40], %rd129;"
+        ],
+        [
+          5854,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r729+45056], [%rd137, {%r732, %r727, %r3302, %r201}], [%r731+40], %rd138;"
+        ],
+        [
+          5914,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r755+45056], [%rd146, {%r758, %r753, %r3302, %r201}], [%r757+40], %rd147;"
+        ]
+      ],
+      "publication_instruction_order": {
+        "grid_membars": [
+          602,
+          1256
+        ],
+        "global_proxy_fence": 1291,
+        "first_tma_read": 5616
+      }
+    },
+    {
+      "m": 16,
+      "arm": "as1",
+      "input_reuse": 4,
+      "activation_radius": 1,
+      "fc2_radius": 1,
+      "ptx_sha256": "ece4ba345150fccfabdc8c88e14380479e980445d2b4484d2b31968f88b0aa79",
+      "ptx_version": [
+        ".version 9.3",
+        ".target sm_121a"
+      ],
+      "fences": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          596,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          602,
+          "membar.gl;"
+        ],
+        [
+          2657,
+          "membar.gl;"
+        ],
+        [
+          2692,
+          "fence.proxy.async.global;"
+        ],
+        [
+          3730,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4871,
+          "fence.proxy.async.shared::cta;"
+        ]
+      ],
+      "memory_instructions": [
+        [
+          148,
+          "fence.mbarrier_init.release.cluster;"
+        ],
+        [
+          173,
+          "st.global.b32 \t[%rd36], 0;"
+        ],
+        [
+          189,
+          "st.global.b32 \t[%rd38], 0;"
+        ],
+        [
+          194,
+          "st.global.b32 \t[%rd40], 0;"
+        ],
+        [
+          199,
+          "st.global.b32 \t[%rd42], 0;"
+        ],
+        [
+          204,
+          "st.global.b32 \t[%rd44], 0;"
+        ],
+        [
+          556,
+          "st.global.b32 \t[%rd12], %r348;"
+        ],
+        [
+          562,
+          "st.global.b32 \t[%rd48], %r3481;"
+        ],
+        [
+          564,
+          "st.global.b32 \t[%rd49], %r3479;"
+        ],
+        [
+          567,
+          "st.global.b32 \t[%rd51], %r3484;"
+        ],
+        [
+          574,
+          "st.global.b32 \t[%rd53], %r349;"
+        ],
+        [
+          579,
+          "st.global.b32 \t[%rd56], %r352;"
+        ],
+        [
+          584,
+          "st.global.b8 \t[%rd58+75496449], %r354;"
+        ],
+        [
+          585,
+          "st.global.b8 \t[%rd58+75496448], %r3484;"
+        ],
+        [
+          586,
+          "st.global.b8 \t[%rd58+75496451], 0;"
+        ],
+        [
+          587,
+          "st.global.b8 \t[%rd58+75496450], 0;"
+        ],
+        [
+          589,
+          "st.global.b8 \t[%rd58+75496455], %r355;"
+        ],
+        [
+          591,
+          "st.global.b8 \t[%rd58+75496454], %r356;"
+        ],
+        [
+          593,
+          "st.global.b8 \t[%rd58+75496453], %r357;"
+        ],
+        [
+          594,
+          "st.global.b8 \t[%rd58+75496452], %r3482;"
+        ],
+        [
+          596,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          602,
+          "membar.gl;"
+        ],
+        [
+          606,
+          "ld.global.acquire.gpu.s32 %r358, [%rd18];"
+        ],
+        [
+          610,
+          "atom.global.add.s32 %r359, [%rd102], %r360;"
+        ],
+        [
+          617,
+          "st.global.s32 [%rd102], %r362;"
+        ],
+        [
+          621,
+          "st.global.release.gpu.s32 [%rd18], %r363;"
+        ],
+        [
+          630,
+          "ld.global.acquire.gpu.s32 %val, [%rd18];"
+        ],
+        [
+          2605,
+          "st.global.u64 [%rd98], %rd290;"
+        ],
+        [
+          2646,
+          "st.global.b8 \t[%rd101], %rs197;"
+        ],
+        [
+          2657,
+          "membar.gl;"
+        ],
+        [
+          2661,
+          "ld.global.acquire.gpu.s32 %r817, [%rd18];"
+        ],
+        [
+          2665,
+          "atom.global.add.s32 %r818, [%rd102], %r819;"
+        ],
+        [
+          2672,
+          "st.global.s32 [%rd102], %r821;"
+        ],
+        [
+          2676,
+          "st.global.release.gpu.s32 [%rd18], %r822;"
+        ],
+        [
+          2685,
+          "ld.global.acquire.gpu.s32 %val, [%rd18];"
+        ],
+        [
+          2692,
+          "fence.proxy.async.global;"
+        ],
+        [
+          3730,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          4871,
+          "fence.proxy.async.shared::cta;"
+        ],
+        [
+          7017,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+8192], [%rd110, {%r853, %r200, %r3511}], [%r4+8], %rd111;"
+        ],
+        [
+          7027,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+10240], [%rd112, {%r857, %r856, %r3516, %r199}], [%r4+8], %rd113;"
+        ],
+        [
+          7036,
+          "cp.async.bulk.tensor.3d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+43008], [%rd114, {%r860, %r859, %r3511}], [%r4+8], %rd115;"
+        ],
+        [
+          7078,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r4+26624], [%rd123, {%r871, %r870, %r3516, %r199}], [%r4+16], %rd124;"
+        ],
+        [
+          7136,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r886+45056], [%rd132, {%r889, %r884, %r3512, %r199}], [%r888+40], %rd133;"
+        ],
+        [
+          7195,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r911+45056], [%rd141, {%r914, %r909, %r3512, %r199}], [%r913+40], %rd142;"
+        ],
+        [
+          7255,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r937+45056], [%rd150, {%r940, %r935, %r3512, %r199}], [%r939+40], %rd151;"
+        ],
+        [
+          7315,
+          "cp.async.bulk.tensor.4d.shared::cta.global.tile.mbarrier::complete_tx::bytes.L2::cache_hint [%r963+45056], [%rd159, {%r966, %r961, %r3512, %r199}], [%r965+40], %rd160;"
+        ]
+      ],
+      "publication_instruction_order": {
+        "grid_membars": [
+          602,
+          2657
+        ],
+        "global_proxy_fence": 2692,
+        "first_tma_read": 7017
+      }
+    }
+  ],
+  "image": "sha256:e9e80b94d41277b171cef5785483989acd1c91d450d0d1068269e99f60bc75bd",
+  "source_snapshot": "original read-only source with patched moe_static_kernel_v4.py mounted read-only",
+  "local_source_matches": {
+    "engine/kernels/b12x/moe_dispatch.py": true,
+    "engine/kernels/b12x/moe_static_kernel_v4.py": true,
+    "engine/kernels/b12x/moe_static_kernel_v5.py": true,
+    "engine/kernels/b12x/moe_static_common.py": true,
+    "engine/kernels/b12x/fp4_scale_search.py": true
+  }
+}

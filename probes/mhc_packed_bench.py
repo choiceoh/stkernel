@@ -116,7 +116,7 @@ def main():
     assert original == (root / "build/glm53/glm53_megakernel.cu").read_bytes()
     source = original.decode() if args.integrated else packed_source(original.decode())
     sha = hashlib.sha256(source.encode()).hexdigest()
-    directory = Path(os.environ["VLLM_GLM53_MK_BUILD_DIR"]) / ("prototype-" + sha[:12])
+    directory = Path(os.environ.get("VLLM_GLM53_MK_BUILD_DIR", "/tmp/mhc-reuse")) / ("prototype-" + sha[:12])
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "prototype.cu"
     path.write_text(source)

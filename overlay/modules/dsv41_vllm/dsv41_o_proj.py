@@ -60,6 +60,13 @@ import logging
 
 import torch
 
+_FP8_DTYPES = tuple(
+    dtype for dtype in (
+        getattr(torch, "float8_e4m3fn", None), getattr(torch, "float8_e5m2", None),
+        getattr(torch, "float8_e4m3fnuz", None), getattr(torch, "float8_e5m2fnuz", None),
+    ) if dtype is not None
+)
+
 logger = logging.getLogger(__name__)
 
 QUANT_GROUP = 128          # the activation quant block the fused kernel uses
@@ -113,6 +120,13 @@ def build_wo_a_bf16(attn) -> torch.Tensor:
     rank = attn.o_lora_rank
 
     if scale is None:
+        # An fp8 weight without its block scale is not a bf16 weight: its
+        # values are already divided by the scale. Casting it silently is
+        # finite, plausible and wrong by a block factor, so refuse instead.
+        if weight.dtype in _FP8_DTYPES:
+            raise ValueError(
+                "wo_a is fp8 but carries no weight_scale_inv; refusing an "
+                "unscaled cast to bf16")
         dense = weight.to(torch.bfloat16)
     else:
         dense = dequantize_block_scaled(weight, scale, _block_shape(wo_a))

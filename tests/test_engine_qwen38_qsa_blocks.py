@@ -5,7 +5,9 @@ _expand_qsa_indices_kernel: int32 [rows, top-k + ratio - 1], the causal tail of 
 buffer to the sparse attention, which loads a tile of it at a time. `qsa_select_paged_blocks` keeps the blocks and
 `qsa_sparse_paged_attention_blocks` computes each tile's positions with the expansion's own int32 arithmetic where it
 loaded them (FROM_BLOCKS): the same positions on the same tiles and splits, so the attention's bytes are the expanded
-path's -- 13 launches fewer a step (12 layers and the MTP head's) and no [rows, 2051] buffer at prefill.
+path's -- 13 launches fewer a step (12 layers and the MTP head's) and no [rows, 2051] buffer at prefill. Since Q6 the
+attention reads a row's blocks sorted ascending (-1 last) in its own program: its bytes are the expanded attention over
+the sorted row, and every order of the same set gives them.
 
 Both paths run on the served kernels -- on a GPU, or under TRITON_INTERPRET=1 with tests/test_engine_qwen38_kernels'
 accommodations -- and are compared byte for byte; their agreement with the oracles is that file's.
@@ -21,6 +23,13 @@ from tests.test_engine_qwen38_kernels import (DEVICE, INTERPRET, RUNS, RUNS_REAS
                                               host_meta, paged, randn, served_kernels, torch)
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def sorted_blocks(blocks):
+    """Each row ascending with -1 last: the order the block attention reads the chosen blocks in."""
+    big = torch.iinfo(torch.int32).max
+    ordered = torch.where(blocks < 0, torch.full_like(blocks, big), blocks).sort(dim=1).values
+    return torch.where(ordered == big, torch.full_like(ordered, -1), ordered)
 
 
 @unittest.skipUnless(RUNS, RUNS_REASON)
@@ -46,7 +55,8 @@ class BlockSelectionTests(unittest.TestCase):
 @unittest.skipUnless(RUNS, RUNS_REASON)
 class BlockAttentionTests(unittest.TestCase):
     """qsa_sparse_paged_attention_blocks against qsa_sparse_paged_attention over expand_qsa_block_indices_cuda's
-    positions, byte for byte, in one split and in several."""
+    positions of the sorted blocks, byte for byte, in one split and in several; and the same bytes for every order of a
+    row's blocks."""
 
     def case(self, gen, budget, kv_heads):
         ratio, page, D = W.ratio, W.block, W.head_dim
@@ -82,8 +92,8 @@ class BlockAttentionTests(unittest.TestCase):
                 meta, q, k_cache, v_cache, blocks = self.case(gen, budget, kv_heads)
                 attend = Launches(qsa._qsa_sparse_paged_gqa_splitk_kernel)
                 with served_kernels(), mock.patch.object(qsa, "_qsa_sparse_paged_gqa_splitk_kernel", attend):
-                    positions = qsa.expand_qsa_block_indices_cuda(blocks, meta.positions32, meta.lengths, meta.rows_req,
-                                                                  W.ratio, budget)
+                    positions = qsa.expand_qsa_block_indices_cuda(sorted_blocks(blocks), meta.positions32, meta.lengths,
+                                                                  meta.rows_req, W.ratio, budget)
                     want = qsa.qsa_sparse_paged_attention(q, k_cache, v_cache, positions, meta.page_table, meta.rows_req)
                     got = qsa.qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, blocks, meta.positions32,
                                                                 meta.lengths, W.ratio, budget, meta.page_table,
@@ -95,6 +105,26 @@ class BlockAttentionTests(unittest.TestCase):
                     self.assertTrue(bool((positions >= 0).any()) and bool((positions < 0).any()))
                     self.assertTrue(torch.equal(got, want))
         self.assertTrue(1 in splits and max(splits) > 1, splits)                     # one split and several both ran
+
+    def test_every_order_of_a_row_s_blocks_attends_alike(self):
+        """The selectors leave a row's set in their own orders (torch.topk by value, prefill_topk and st_dsa_select by
+        their bins): reversed, rotated or shuffled with its -1 entries anywhere, the output is the same bytes."""
+        from engine.kernels import qsa
+        gen = generator(73)
+        for budget in ((12, 64) if INTERPRET else (12, W.budget)):
+            meta, q, k_cache, v_cache, blocks = self.case(gen, budget, W.kv_heads)
+            args = lambda b: (q, k_cache, v_cache, b, meta.positions32, meta.lengths, W.ratio, budget, meta.page_table,
+                              meta.rows_req)
+            shuffled = torch.stack([row[torch.randperm(row.numel(), generator=gen).to(row.device)] for row in blocks])
+            orders = {"sorted": sorted_blocks(blocks), "reversed": blocks.flip(1), "rotated": blocks.roll(1, dims=1),
+                      "shuffled": shuffled}
+            with served_kernels():
+                want = qsa.qsa_sparse_paged_attention_blocks(*args(blocks))
+                got = {name: qsa.qsa_sparse_paged_attention_blocks(*args(order.contiguous()))
+                       for name, order in orders.items()}
+            for name, out in got.items():
+                with self.subTest(budget=budget, order=name):
+                    self.assertTrue(torch.equal(out, want))
 
     def test_the_blocks_entry_refuses_what_the_expansion_refuses(self):
         from engine.kernels import qsa

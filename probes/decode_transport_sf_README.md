@@ -51,8 +51,9 @@ captured launches. Legacy `q` remains probe-only and cannot be combined with
 percentage is inferred from the old `t` experiments.
 
 For E=288, hidden=4096, intermediate=512, the two packed planes add 81.844 MiB
-per layer, or about 3.44 GiB per rank if all 43 layers are eligible. This is
-additional to the retained original scales. Packing uses bounded chunks;
+per layer, or about 3.36 GiB per rank if all 42 layers are eligible. This is a
+replacement, not an addition: the raw scale bytes it displaces are what the
+release above frees. Packing uses bounded chunks;
 the v4 boot prepared 42 layers, adding 3.35687 GiB per rank. GMU and memory
 guards are unchanged. The operator subsequently requested a smaller KV target
 for both arms, as described below.

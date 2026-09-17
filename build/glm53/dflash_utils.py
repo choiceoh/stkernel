@@ -4,11 +4,14 @@ import torch.nn as nn
 
 from vllm.config import VllmConfig, replace
 from vllm.distributed.parallel_state import get_pp_group
+from vllm.logger import init_logger
 from vllm.model_executor.model_loader import get_model
 from vllm.v1.worker.gpu.spec_decode.eagle.utils import (
     _should_share,
     get_target_lm_head,
 )
+
+logger = init_logger(__name__)
 
 
 def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Module:
@@ -78,7 +81,12 @@ def load_dflash_model(target_model: nn.Module, vllm_config: VllmConfig) -> nn.Mo
             # back before KV sizing (28차, operator).
             maybe_free_fp8_dense_bf16(dflash_model, label="drafter")
     except Exception:
-        pass
+        # maybe_build_fp8_dense swaps quant_method in place, so a failure part
+        # way through leaves the drafter partly on fp8 and partly on bf16. Do
+        # not hide that: say it loudly and let the boot owner decide.
+        logger.exception(
+            "[dflash2] fp8-dense drafter swap did not complete; the drafter "
+            "may be partly converted")
 
     target_language_model = (
         target_model.get_language_model()

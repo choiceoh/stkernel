@@ -77,8 +77,9 @@ def check(report):
                             us.append(start.elapsed_time(end) * 1000. / CHAIN)
                         if not torch.equal(out.view(torch.int16), expected.view(torch.int16)):
                             raise RuntimeError(f'{arm} sum differs from the rank-ordered fold at {rows} rows')
-                        samples.append(dict(arm=arm, median_us=round(median(us), 2), min_us=round(min(us), 2),
-                                            mean_us=round(mean(us[1:]), 2)))
+                        warm = us[1:] or us      # us[0] is the first replay of a just-captured graph
+                        samples.append(dict(arm=arm, median_us=round(median(warm), 2), min_us=round(min(warm), 2),
+                                            mean_us=round(mean(warm), 2)))
                     arms = {arm: [s for s in samples if s['arm'] == arm] for arm in ('ordinary', 'consumer')}
                     row = dict(rows=rows, producer=producer, cache=cache, chain=CHAIN, replays=REPLAYS,
                                producer_us=PRODUCER_US if producer == 'pdl' else None, samples=samples,

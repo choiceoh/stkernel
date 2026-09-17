@@ -150,7 +150,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "042bc56494ef04b1c47f89c3f9b3192486eb44b7ce74c926c28a8dacafb1dd1d",
+      "local_sha256": "77d5df11cab033a513270002b579fa904262909a66f09d6afd344392d6595ee2",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -407,7 +407,7 @@
       "source": "overlay/modules/qwen38_qsa/ops_qsa.py",
       "sha256": "8c99d362ec6c168f83a1f7f55a2834b495fb417a9fea983dee1e5d8d4c241dd0",
       "origin": "repository",
-      "local_sha256": "5519ec55aaf01a12bcb7a1e4bfc9dab2025c065ff997a5e64e95f752fe698dbc",
+      "local_sha256": "6d62139d05866d02cfe96d484c812f4b9af8698d6971bf6f7d7501d71b767c06",
       "local_modifications": [
         "2026-09-15 engine port: Triton kernel bodies unchanged; imports are triton's own (no vllm.triton_utils, no vllm.platforms)",
         "2026-09-15 block selection: engine/kernels/prefill_topk where it admits the shape, torch.topk over masked logits otherwise, instead of vLLM's persistent_topk/cooperative_topk C++ ops",
@@ -419,7 +419,8 @@
         "2026-09-17 norm_rope_partial reads positions through their stride (a group's first positions are a column of [rows, 3]); the wrapper no longer copies them. Same arithmetic, same bytes",
         "2026-09-17 FROM_BLOCKS (Qwen3.8 carry Q5): _qsa_sparse_paged_gqa_splitk_kernel can read the chosen blocks and compute each tile's positions with _expand_qsa_indices_kernel's int32 arithmetic instead of loading them (qsa_select_paged_blocks, qsa_sparse_paged_attention_blocks); off by default, the expanded path's launch is unchanged.",
         "2026-09-17 fused inputs (Qwen3.8 carry Q3): _qsa_index_keys_kernel (compression -> norm -> rope -> index key store, one program a row) and _qsa_inputs_kernel (query/key/index query norm and rope with the K, V and ring stores, one program a (row, head)) repeat the ported programs' arithmetic and addresses; the existing kernels are unchanged.",
-        "2026-09-17 GATED (Qwen3.8 carry Q4): the sparse attention's one-split store and the merge's store can apply the layer's output gate -- BF16(round(attention) * sigmoid(gate)) in fp32 -- off by default, the ungated stores unchanged."
+        "2026-09-17 GATED (Qwen3.8 carry Q4): the sparse attention's one-split store and the merge's store can apply the layer's output gate -- BF16(round(attention) * sigmoid(gate)) in fp32 -- off by default, the ungated stores unchanged.",
+        "2026-09-17 sorted blocks (Qwen3.8 carry Q6): the FROM_BLOCKS attention sorts a row's chosen blocks ascending, -1 last (tl.sort over BLOCK_SORT, a power of two), and reads them through tl.gather, so every order of the same set gives the same bytes; the positions entry is unchanged."
       ]
     }
   }
