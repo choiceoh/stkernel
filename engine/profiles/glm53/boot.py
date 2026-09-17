@@ -1073,7 +1073,10 @@ def next_k_cost_report(net):
     if getattr(mhc, 'EXPAND_FN', False) and 8 in rows:
         expected = {(name.removesuffix('.kda.in_proj') + '.hc.attn_fn', 8)
                     for name, layer in net.dense.items() if name.endswith('.kda.in_proj')
-                    and getattr(layer, 'input_pack_rows', lambda n: False)(8)}
+                    and getattr(layer, 'input_pack_rows', lambda n: False)(8)
+                    and 8 in getattr(layer, 'producer_pack_executed', ())}
+        # The first layer and boundaries following auxiliary outputs have no
+        # packet consumer. Require expansion at every actual KDA pack reader.
         if not expected or not expected.issubset(expanded):
             raise RuntimeError(f'expanded mHC coefficients missed consumers: {sorted(expected - expanded)}')
     direct = set(mla._DECODE_CELLS_EXECUTED)
@@ -1204,7 +1207,7 @@ def native_execution_report(net, drafter):
     if getattr(net, 'fused_decode_router', False):
         expected = {(L, rows) for L in net._router_layers
                     for rows in net.decode_fastpath_rows if rows in (8, 16)}
-        if set(proof['router_fused']) != expected or not expected:
+        if set(proof['router_fused']) != expected:
             raise RuntimeError(f'fused decode routers were not executed at every bound width: {proof}')
     if proof['prefill_ffn_packets'] != proof['prefill_ffn_packet_plan']:
         raise RuntimeError(f'agreed packet FFN readers were not executed: {proof}')

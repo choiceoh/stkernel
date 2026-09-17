@@ -1,0 +1,226 @@
+diff --git a/engine/kernels/dense/kernels.cu b/engine/kernels/dense/kernels.cu
+index ebe3ff34..1ac87b78 100644
+--- a/engine/kernels/dense/kernels.cu
++++ b/engine/kernels/dense/kernels.cu
+@@ -1829,7 +1829,7 @@ __device__ __forceinline__ float mk_ldcg_bf16(const __nv_bfloat16* p) {
+ // p2 for ONE token, by one warp: the 24 chunk reductions, rms, the post /
+ // comb (sinkhorn) / pre mixes. Reads the other blocks' partials through
+ // L2 (__ldcg): they were published with a fence + the arrival counter.
+-template <int HID = HIDDEN, bool V41 = false, typename Args = MKMhcArgs>
++template <int HID = HIDDEN, bool V41 = false, bool SHARED_RCP = false, typename Args = MKMhcArgs>
+ __device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
+   // Shadows the file-scope NCHUNK so the chunk loops below read unchanged.
+   constexpr int NCHUNK = HID / HCHUNK;
+@@ -1903,18 +1903,20 @@ __device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
+         m[j][k] = __expf(m[j][k] - rm);
+         rs += m[j][k];
+       }
++      const float inv = SHARED_RCP ? __fdividef(1.0f, rs) : 0.0f;
+ #pragma unroll
+       for (int k = 0; k < HC; ++k)
+-        m[j][k] = __fdividef(m[j][k], rs) + a.sinkhorn_eps;
++        m[j][k] = (SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], rs)) + a.sinkhorn_eps;
+     }
+ #pragma unroll
+     for (int k = 0; k < HC; ++k) {
+       float cs = 0.0f;
+ #pragma unroll
+       for (int j = 0; j < HC; ++j) cs += m[j][k];
++      const float inv = SHARED_RCP ? __fdividef(1.0f, cs + a.sinkhorn_eps) : 0.0f;
+ #pragma unroll
+       for (int j = 0; j < HC; ++j)
+-        m[j][k] = __fdividef(m[j][k], cs + a.sinkhorn_eps);
++        m[j][k] = SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], cs + a.sinkhorn_eps);
+     }
+     for (int it = 0; it < a.sinkhorn_repeat - 1; ++it) {
+ #pragma unroll
+@@ -1922,18 +1924,20 @@ __device__ void mk_mhc_p2_token(const Args& a, int t, float* s_pmix) {
+         float rs = 0.0f;
+ #pragma unroll
+         for (int k = 0; k < HC; ++k) rs += m[j][k];
++        const float inv = SHARED_RCP ? __fdividef(1.0f, rs + a.sinkhorn_eps) : 0.0f;
+ #pragma unroll
+         for (int k = 0; k < HC; ++k)
+-          m[j][k] = __fdividef(m[j][k], rs + a.sinkhorn_eps);
++          m[j][k] = SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], rs + a.sinkhorn_eps);
+       }
+ #pragma unroll
+       for (int k = 0; k < HC; ++k) {
+         float cs = 0.0f;
+ #pragma unroll
+         for (int j = 0; j < HC; ++j) cs += m[j][k];
++        const float inv = SHARED_RCP ? __fdividef(1.0f, cs + a.sinkhorn_eps) : 0.0f;
+ #pragma unroll
+         for (int j = 0; j < HC; ++j)
+-          m[j][k] = __fdividef(m[j][k], cs + a.sinkhorn_eps);
++          m[j][k] = SHARED_RCP ? (m[j][k] * inv) : __fdividef(m[j][k], cs + a.sinkhorn_eps);
+       }
+     }
+     MK_MHC_PROBE(3);  // sinkhorn done
+@@ -2056,7 +2060,7 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
+ 
+ template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
+           bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false,
+-          bool PACK_INPUT = false>
++          bool PACK_INPUT = false, bool SHARED_RCP = false>
+ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
+   static_assert(!STATIC_TAILS || (BF16_FN && AR_CONSUMER && HID == HIDDEN && !V41));
+   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
+@@ -2295,7 +2299,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
+     if (warp != 0) mk_mhc_p34_load<HID>(a, t, tr);
+     MK_MHC_PROBE(4);  // p34 loads issued
+     if (warp == 0) {
+-      mk_mhc_p2_token<HID, V41>(a, t, s_pmix);
++      mk_mhc_p2_token<HID, V41, SHARED_RCP>(a, t, s_pmix);
+       mk_mhc_p34_load<HID>(a, t, tr);
+     }
+     __syncthreads();
+@@ -2356,18 +2360,18 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
+   MK_MHC_TS(7);
+ }
+ 
+-template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false, bool PACK_INPUT = false>
++template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false, bool PACK_INPUT = false, bool SHARED_RCP = false>
+ __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
+   asm volatile("griddepcontrol.launch_dependents;");
+   MK_MHC_TS(0);
+-  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS, PACK_INPUT>(a, blockIdx.x);
++  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS, PACK_INPUT, SHARED_RCP>(a, blockIdx.x);
+   MK_MHC_TS(7);
+ }
+ 
+-template <bool BF16_FN, bool STATIC_TAILS = false, bool PACK_INPUT = false>
++template <bool BF16_FN, bool STATIC_TAILS = false, bool PACK_INPUT = false, bool SHARED_RCP = false>
+ __global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
+   asm volatile("griddepcontrol.launch_dependents;");
+-  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS, PACK_INPUT>(a, blockIdx.x);
++  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS, PACK_INPUT, SHARED_RCP>(a, blockIdx.x);
+ }
+ 
+ // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
+@@ -4060,7 +4064,7 @@ std::vector<int64_t> mk_rows16_info() {
+ // arrays grow with it, and a register allocation that changes changes
+ // occupancy. Sharing one cached grid across instantiations would launch the
+ // 5120 kernel on a residency measured for 4096 and deadlock its barrier.
+-template <int HID>
++template <int HID, bool SHARED_RCP = false>
+ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool static_c1) {
+   auto stream = c10::cuda::getCurrentCUDAStream();
+   // Separate occupancy for both new instantiations. Only immutable fn may
+@@ -4069,12 +4073,12 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
+   // what lets 16 rows (C=2 at K=7) take this path: a sum too wide for the
+   // one-shot consumer releases nothing early, and this launch follows it.
+   if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 16) {
+-    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
++    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, false, SHARED_RCP> : mk_mhc_ar_kernel<false, HID, false, false, SHARED_RCP>;
+     if constexpr (HID == HIDDEN) {
+-      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true>;
++      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, false, SHARED_RCP>;
+       if (a.input_pack) {
+-        kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, true> : mk_mhc_ar_kernel<false, HID, false, true>;
+-        if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, true>;
++        kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, true, SHARED_RCP> : mk_mhc_ar_kernel<false, HID, false, true, SHARED_RCP>;
++        if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, true, SHARED_RCP>;
+       }
+     }
+     static int ar_grids[6] = {};
+@@ -4131,6 +4135,7 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
+   mk_launch(mk_mhc_kernel<HID>, mhc_grid, 0, stream, a);
+ }
+ 
++template <bool SHARED_RCP = false>
+ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
+                 std::vector<int64_t> ints, bool bf16_fn = false,
+                 bool ar_consumer = false, const at::Tensor& packets = {}, int tail_mode = -1) {
+@@ -4162,6 +4167,8 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
+   const bool static_shape = hidden == HIDDEN && ints[0] == 8 && bf16_fn && (direct || ar_consumer);
+   TORCH_CHECK(tail_mode != 1 || static_shape, "static MHC tails require a packed C1 consumer");
+   const bool static_c1 = tail_mode != 0 && static_shape;
++  TORCH_CHECK(!SHARED_RCP || (hidden == HIDDEN && (ints[0] == 8 || ints[0] == 16)
++              && (direct || ar_consumer)), "shared MHC reciprocals require an 8/16-row GLM consumer");
+   MKMhcArgs a{};
+   if (ptrs.size() == 19) {
+     TORCH_CHECK(hidden == HIDDEN && ints[0] == 8 && (direct || ar_consumer) && mk_pdl_enabled()
+@@ -4201,11 +4208,11 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
+     MKMhcPacketsArgs packet_args{};
+     static_cast<MKMhcArgs&>(packet_args) = a;
+     packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
+-    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
+-    if (static_c1) kernel = mk_mhc_packets_kernel<true, true>;
++    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, false, SHARED_RCP> : mk_mhc_packets_kernel<false, false, false, SHARED_RCP>;
++    if (static_c1) kernel = mk_mhc_packets_kernel<true, true, false, SHARED_RCP>;
+     if (a.input_pack) {
+-      kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, true> : mk_mhc_packets_kernel<false, false, true>;
+-      if (static_c1) kernel = mk_mhc_packets_kernel<true, true, true>;
++      kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, true, SHARED_RCP> : mk_mhc_packets_kernel<false, false, true, SHARED_RCP>;
++      if (static_c1) kernel = mk_mhc_packets_kernel<true, true, true, SHARED_RCP>;
+     }
+     static int grids[6] = {};
+     int& grid = grids[(a.input_pack ? 3 : 0) + (static_c1 ? 2 : bf16_fn ? 1 : 0)];
+@@ -4219,18 +4226,20 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
+     TORCH_CHECK(!static_c1 || grid == 48, "C1 static MHC tails require 48 resident CTAs");
+     packet_args.grid = grid;
+     mk_launch(kernel, grid, 0, stream, packet_args);
+-  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer, static_c1);
+-  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer, static_c1);
++  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41, SHARED_RCP>(a, bf16_fn, ar_consumer, static_c1);
++  else mk_mhc_launch<HIDDEN, SHARED_RCP>(a, bf16_fn, ar_consumer, static_c1);
+ }
+ 
+ void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
+-                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1) {
+-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
++                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1, bool shared_rcp = false) {
++  if (shared_rcp) mk_run_mhc_impl<true>(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
++  else mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
+ }
+ 
+ void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
+-                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1) {
+-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
++                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1, bool shared_rcp = false) {
++  if (shared_rcp) mk_run_mhc_impl<true>(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
++  else mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
+ }
+ 
+ // V4.1 has a separate occupancy cache from every legacy PR518 kernel.
+@@ -4971,10 +4980,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
+         pybind11::arg("scalars"), pybind11::arg("ints"),
+         pybind11::arg("bf16_fn") = false,
+-        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1);
++        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1, pybind11::arg("shared_rcp") = false);
+   m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC",
+         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
+-        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1);
++        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1, pybind11::arg("shared_rcp") = false);
+   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
+         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
+         pybind11::arg("hidden") = HIDDEN_V41);
+diff --git a/engine/kernels/dense/mhc.py b/engine/kernels/dense/mhc.py
+index 7a1846fd..ca08ec18 100644
+--- a/engine/kernels/dense/mhc.py
++++ b/engine/kernels/dense/mhc.py
+@@ -44,6 +44,7 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
+ 
+ 
+ class MHC:
++    SHARED_RCP = False  # same-build candidate, no serving change before GPU proof
+     # Rows whose consumer kernels read the lossless BF16 pack: K=7 verify steps at C=1 (8 rows) and C=2 (16 rows).
+     # `packed_rows=8` is the same-build control, the C=1-only gate, for the probe that qualifies 16 rows
+     # (measurements/st_c2_mhc_packed_20260915). Serving never passes it.
+@@ -104,12 +105,12 @@ class MHC:
+             tensors.append(output_pack)
+         args = ([t.data_ptr() for t in tensors], [eps,hc_eps,hc_eps,post_mult,eps], [n, sinkhorn, self.hidden])
+         if packets is None:
+-            self.ext.run_mhc(*args,weight is packed,small)
++            self.ext.run_mhc(*args,weight is packed,small, **({"shared_rcp": True} if self.SHARED_RCP else {}))
+         else:
+             if (packets.device != x.device or packets.dtype != torch.int64 or
+                     packets.shape != (4,) or not packets.is_contiguous()):
+                 raise ValueError("MHC needs a same-device contiguous int64[4] rank descriptor")
+-            self.ext.run_mhc_packets(*args,packets,weight is packed)
++            self.ext.run_mhc_packets(*args,packets,weight is packed, **({"shared_rcp": True} if self.SHARED_RCP else {}))
+         self.executed.add(key)
+         return rc,pm,cm,li
+ 

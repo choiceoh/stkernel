@@ -48,11 +48,15 @@ class InputPackTests(unittest.TestCase):
         scope = {'mla': mla}
         exec(compile(ast.Module(body=[fn], type_ignores=[]), str(path), 'exec'), scope)
         net = NS(decode_fastpath_rows=(8, 16),
-                 dense={'L0.kda.in_proj': NS(input_pack_rows=lambda n: n == 8)},
-                 mhc=NS(EXPAND_FN=True, expanded_executed={('L0.hc.attn_fn', 8)}))
+                 dense={'L0.kda.in_proj': NS(input_pack_rows=lambda n: n == 8, producer_pack_executed=set()),
+                        'L1.kda.in_proj': NS(input_pack_rows=lambda n: n == 8, producer_pack_executed={8})},
+                 mhc=NS(EXPAND_FN=True, expanded_executed={('L1.hc.attn_fn', 8)}))
         report = scope['next_k_cost_report']
         self.assertEqual(report(net)['mla_direct'], [(8, 10), (16, 12)])
         net.mhc.expanded_executed.clear()
+        with self.assertRaisesRegex(RuntimeError, 'mHC'):
+            report(net)
+        net.dense['L1.kda.in_proj'].producer_pack_executed.clear()
         with self.assertRaisesRegex(RuntimeError, 'mHC'):
             report(net)
         net.mhc.EXPAND_FN = False
