@@ -100,7 +100,49 @@ error and BF16 differences above are the direct numerical observations.
 The strengthened final probe additionally checks nonzero fixtures, output
 hash changes, reconstruction of each one-route result from its four isolated
 K slices, and repeated-row prefill at 337/2304/32256 rows with changed and zero
-payloads. Its final receipt is recorded after the queued run completes.
+payloads. Ticket `fc-pub18c` passed the nonzero/hash guards and both exact
+reconstructions, then rejected the probe's decode-only finalizer before
+prefill launched. The [failed-run receipt](publication-repair-prefill-harness-failure.jsonl)
+is retained. The corrected probe uses the ordinary BF16 prefill output buffer.
+
+The [final GPU receipt](publication-repair-final-gpu.jsonl), ticket `fc-pub18d`,
+**passes** on integrated source `744d08ec2275398a55f042b940432f8fb7849ac2`:
+
+| Final check | Cases | Observed result |
+|---|---:|---|
+| Identical-input M8/M16 | 12 | 1,536 packed A/SFA pairs identical; BF16 differences 0; FP32 max absolute difference 4.76837158203125e-7 |
+| Isolated FC2 K128 contributions | 8 | Exact, nonzero outputs at both widths |
+| Sum four K slices back into one route | 2 | Exact reconstruction |
+| Changed-payload and zero-route CUDA graphs | 4 | BF16 differences 0; changed hashes; exact zero-route output |
+| M=337/2304/32256, two changed payloads and zero routes each | 9 | All repeated input rows produce identical BF16 output; changed hashes and exact zeros |
+
+The final width and graph maxima are both 1 in the RMS-floored ULP metric.
+The graph maximum absolute difference remains 5.960464477539063e-8. These are
+layer-local observations, including casting the static FP32 sums to BF16;
+they are not a whole-model or consumer-response equivalence claim.
+
+## Concurrent-merge follow-up
+
+PR #1141 merged at `a2fd1ccd`. PR #1142 independently added the same fence to
+stock static, micro and generic dynamic, producing two fences in each owner.
+The next deduplication (#1143, `cd8cc080`) removed both copies. The existing
+publication test reproduces three missing-fence failures on that exact main
+snapshot; [the regression receipt](publication-repair-merge-regression.json)
+records the affected owners.
+
+PR #1145 restores exactly one fence per owner and its provenance hash. Those
+three files are byte-for-byte identical to the earlier native-validated repair.
+All eight publication, source-contract and targeted provenance tests pass on
+the integrated source, `744d08ec`, and the PR's complete CI check passes. Both
+independent source-contract suites are retained. PR #1145 subsequently merged;
+the final GPU receipt completes the queued validation.
+
+The integration also includes #1139's separate FP32 long-prefill accumulation
+change. The [final prefill native audit](publication-repair-prefill-final-native.json)
+recompiles the current short and long paths, confirming one global proxy fence
+in both PTX and SASS with the updated source hashes. The earlier prefill native
+receipt applies to the pre-#1139 implementation. The final GPU ticket is pinned
+to the integrated source; it does not reuse a pre-#1139 prefill result.
 
 ## Runtime and lifecycle
 
@@ -116,23 +158,37 @@ changes no serving code. The native audit and GPU receipts retain source hashes.
   The whole images have different identities; this is not a claim of image
   equivalence.
 
+The [runtime receipt](publication-repair-runtime.json) records both inspections;
+neither inspection mounted a GPU or initialized CUDA.
+
 The first ticket `fc-pub18` failed before kernel execution because its pinned
 CPU image was absent on srv4. Ticket `fc-pub18b` used the explicitly pinned
 srv4 image and passed in 29.3 seconds, with peak allocation 1,932,266,496 bytes.
 The runner removed its container and returned the single-GPU reservation at
 completion. No four-node serving fleet was started for this repair.
 
-The final ticket `fc-pub18c` uses the same queue/runner and pinned GPU image:
+Ticket `fc-pub18c` ended and released its reservation after the finalizer
+contract rejection. The corrected ticket `fc-pub18d` uses the same
+queue/runner and pinned GPU image. It was paused before admission to integrate
+the concurrent changes, updated through `fleet.sh edit`, and resumed with its
+original queue ticket. The admitted source is pinned at `744d08ec`.
+
+The run completed successfully in **45.9 seconds**, with peak allocation
+4,466,283,520 bytes. The runner removed its container and returned the
+reservation on completion. The [release receipt](publication-repair-release.json)
+records the finished ticket, zero remaining containers mounted from this
+probe's source tree, and all 50 deployed source hashes matching the pinned
+workspace. Other fleet jobs were not stopped.
 
 ```bash
 ST_IMAGE=sha256:926d2267c0683bade767f640108b4afe6ab3060ea803555d4e606800fc7d3fb5 \
 ST_PROBE_TREE=st-probe-fc-publication18 \
-bash bench/fleet.sh run --gpu --detach fc-pub18c 5 \
-  "FC publication repair: isolated decode contributions and short/long prefill publication" \
+bash bench/fleet.sh run --gpu --detach fc-pub18d 5 \
+  "FC publication repair: current FP32 prefill, one fence per owner, BF16 probe output" \
   -- bash probes/run_engine_probe.sh probes/engine_kernel_check.py \
   --lanes moe_c2_cells:publication:layers=3:chunks=256 \
   --ranks /home/choiceoh/models/st-glm53-9391-up-gate-full/rank3of4.safetensors \
-  --output /cache/fc-publication18-final-gpu.jsonl
+  --output /cache/fc-publication18-verified-gpu.jsonl
 ```
 
 Consumer quality, natural-EOS acceptance, throughput and a causal explanation

@@ -1,0 +1,9 @@
+{
+  "baseline": "cd8cc080",
+  "missing_fence_failures": [
+    "test_each_tma_consumer_bridges_after_input_publication (tests.test_engine_moe_global_publication.GlobalPublicationTests.test_each_tma_consumer_bridges_after_input_publication) (path='moe_static_kernel.py')",
+    "test_each_tma_consumer_bridges_after_input_publication (tests.test_engine_moe_global_publication.GlobalPublicationTests.test_each_tma_consumer_bridges_after_input_publication) (path='moe_micro_kernel.py')",
+    "test_each_tma_consumer_bridges_after_input_publication (tests.test_engine_moe_global_publication.GlobalPublicationTests.test_each_tma_consumer_bridges_after_input_publication) (path='_moe_dynamic/generic.py')"
+  ],
+  "expected_failures": 3
+}

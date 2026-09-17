@@ -1,0 +1,49 @@
+{
+  "scope": "CPU-only inspection; no GPU device mounted or CUDA context initialized",
+  "cpu": {
+    "image": "sha256:e9e80b94d41277b171cef5785483989acd1c91d450d0d1068269e99f60bc75bd",
+    "host": "srv2",
+    "packages": {
+      "torch": "2.13.0+cu132",
+      "torchcodec": "0.16.0+cu132",
+      "torchvision": "0.28.0+cu132",
+      "nvidia-cutlass-dsl-libs-base": "4.6.2",
+      "nvidia-cutlass-dsl-libs-cu12": "4.6.2",
+      "nvidia-cutlass-dsl": "4.6.2",
+      "nvidia-cutlass-dsl-libs-core": "4.6.2",
+      "flashinfer-python": "0.6.18.dev20260819",
+      "flashinfer-cubin": "0.6.18.dev20260819",
+      "nvidia-cutlass-dsl-libs-cu13": "4.6.2",
+      "torch_c_dlpack_ext": "0.1.5"
+    },
+    "torch": "2.13.0+cu132",
+    "cuda": "13.2",
+    "cuda_initialized": false,
+    "sources": {
+      "flashinfer/cute_dsl/fp4_common.py": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1"
+    }
+  },
+  "gpu": {
+    "image": "sha256:926d2267c0683bade767f640108b4afe6ab3060ea803555d4e606800fc7d3fb5",
+    "host": "srv4",
+    "packages": {
+      "torch": "2.13.0+cu132",
+      "torchvision": "0.28.0+cu132",
+      "torchcodec": "0.16.0+cu132",
+      "nvidia-cutlass-dsl-libs-cu12": "4.6.2",
+      "nvidia-cutlass-dsl": "4.6.2",
+      "nvidia-cutlass-dsl-libs-base": "4.6.2",
+      "nvidia-cutlass-dsl-libs-core": "4.6.2",
+      "flashinfer-python": "0.6.18.dev20260819",
+      "flashinfer-cubin": "0.6.18.dev20260819",
+      "torch_c_dlpack_ext": "0.1.5",
+      "nvidia-cutlass-dsl-libs-cu13": "4.6.2"
+    },
+    "torch": "2.13.0+cu132",
+    "cuda": "13.2",
+    "cuda_initialized": false,
+    "sources": {
+      "flashinfer/cute_dsl/fp4_common.py": "a430b3171c7c972a2b98a176e5a47ddcaf36ac71e6231420e961e269d0d045d1"
+    }
+  }
+}

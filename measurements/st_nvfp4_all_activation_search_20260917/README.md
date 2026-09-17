@@ -182,3 +182,5 @@ The [publication repair](publication-repair.md) then fixes both ordering
 boundaries across the kernel families and adds real-weight, identical-input
 M8/M16 validation. It keeps kernel correctness evidence separate from the
 still-unmeasured consumer quality and performance after these repairs.
+The final GPU check passes, including all nine short/long prefill fixtures;
+its container and single-GPU reservation were released at completion.
