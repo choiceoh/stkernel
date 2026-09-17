@@ -7,8 +7,8 @@ from pathlib import Path
 def namespace():
     path = Path(__file__).resolve().parents[1] / 'engine/kernels/b12x/moe_dispatch.py'
     tree = ast.parse(path.read_text())
-    names = {'_parse_glm53_static_v2', '_static_v2_decode_config', '_static_v2_cache_key'}
-    constants = {'_STATIC_V2_DEFAULT', '_STATIC_SUNSET_TOKENS', '_GLM53_B12X_STATIC_V2_ENV'}
+    names = {'_parse_glm53_static_v2', '_static_v2_decode_config', '_static_v2_cache_key', '_static_v2_input_reuse_config'}
+    constants = {'_STATIC_V2_DEFAULT', '_STATIC_SUNSET_TOKENS', '_GLM53_B12X_STATIC_V2_ENV', 'INPUT_REUSE_DEFAULT'}
     nodes = [node for node in tree.body
              if (isinstance(node, ast.FunctionDef) and node.name in names)
              or (isinstance(node, ast.Assign) and any(
@@ -38,6 +38,28 @@ class ScatterConfigTests(unittest.TestCase):
         for scheduler in ('even', 'split', 'probe_route_scatter'):
             with self.assertRaises(ValueError):
                 select(dict(base, input_reuse=3, **{scheduler: True}), 8)
+
+    def test_served_input_reuse_is_bounded_and_explicit_control_wins(self):
+        ns = namespace()
+        choose = ns['_static_v2_input_reuse_config']
+        base = ns['_parse_glm53_static_v2']('t,r,sf6,batch')
+        for rows in (1, 7, 8, 12, 16, 32, 128):
+            cfg = ns['_static_v2_decode_config'](base, rows)
+            geometry = (288, 288, rows, 4096, 512, 8, rows * 8)
+            got = choose(cfg, *geometry)
+            self.assertEqual(got.get('input_reuse', 0), 3 if rows in (8, 16) else 0)
+            self.assertEqual(choose(got, *geometry), got)
+            self.assertEqual(choose(dict(cfg, input_reuse=0), *geometry)['input_reuse'], 0)
+        cfg = ns['_static_v2_decode_config'](base, 8)
+        geometry = [288, 288, 8, 4096, 512, 8, 64]
+        for index, value in ((0, 256), (1, 256), (3, 2048), (4, 1024), (5, 4), (6, 1)):
+            changed = geometry.copy()
+            changed[index] = value
+            self.assertNotIn('input_reuse', choose(cfg, *changed))
+        for field in ('tiled', 'reform_sf_pack', 'decode_reform', 'input_vec16'):
+            self.assertNotIn('input_reuse', choose(dict(cfg, **{field: False}), *geometry))
+        for field in ('even', 'split', 'probe_route_scatter', 'probe_direct_scatter'):
+            self.assertNotIn('input_reuse', choose(dict(cfg, **{field: True}), *geometry))
 
     def test_vector_input_scope_rollback_and_cache_identity(self):
         ns = namespace()

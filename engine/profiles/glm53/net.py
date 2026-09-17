@@ -185,7 +185,7 @@ class Glm53Net:
         self.route_skip = None
         self._router_weights = {}
         self._router_fp32 = set()
-        self.fused_decode_router = False
+        self.fused_decode_router = True
         self._router_fused_bias = {}
         self._router_fused_executed = set()
         self._decode_pairs = {}

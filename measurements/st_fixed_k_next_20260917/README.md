@@ -1,7 +1,10 @@
 # Fixed K7 follow-up experiments, 2026-09-17
 
 This campaign starts from the three scoped defaults merged in #1068. The
-additional selectors remain off while component and consumer trials run.
+additional selectors are now enabled as a combined default by explicit user
+decision: small or inconclusive component gains do not by themselves block
+adoption. Numerical failures and clear regressions remain disqualifying.
+Full consumer comparison is still running; no combined speed claim is made.
 K=7, FP32 KDA state, expert weight storage and selection width are retained.
 These are component measurements, not engine throughput claims.
 
@@ -98,7 +101,10 @@ runtime identity and diagnostic launch counts retain the source evidence.
 Candidate A is temporarily paused under the same immutable reservation to
 prioritize the requested MoE input-reuse experiments. Resume its existing
 ticket after the component probes; do not silently substitute a new base.
-The candidate comparison and final adoption decision remain pending.
+The candidate comparison remains pending. The user subsequently authorized
+combined adoption even where an individual gain is small or inconclusive.
+The retained input-reuse mode 3 has separate same-build component evidence in
+`st_moe_input_reuse_20260917`; this older consumer A/B does not include it.
 
 The first control ticket (`fixedk-next-consumer-b-0917`, source `4de8c56f`)
 was interrupted before a complete onepass record. Fixing the candidate's

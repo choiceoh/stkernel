@@ -44,7 +44,7 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
 
 
 class MHC:
-    EXPAND_FN = False  # same-build candidate, no serving change before GPU proof
+    EXPAND_FN = True  # exact coefficient expansion at measured KDA pack consumers
     # Rows whose consumer kernels read the lossless BF16 pack: K=7 verify steps at C=1 (8 rows) and C=2 (16 rows).
     # `packed_rows=8` is the same-build control, the C=1-only gate, for the probe that qualifies 16 rows
     # (measurements/st_c2_mhc_packed_20260915). Serving never passes it.

@@ -24,8 +24,10 @@ block once in phase 1, and writes it directly to every selected expert with
 an equal input scale. Different scales use the original quantizer. Its compact
 expert prefix uses warp ballots instead of scanning each first-occurrence flag.
 
-No candidate is selected by serving. The selector defaults to zero and is
-restricted to eight/sixteen-row vector-input reform cells.
+Serving now selects mode 3 only for the exact GLM TP4 eight/sixteen-row SF6
+reform geometry. The user explicitly accepted small or inconclusive gains as
+part of the combined fixed-K bundle. Explicit mode zero remains the same-build
+control. Mode 4 remains a private candidate pending its GPU comparison.
 
 ## Evidence
 
@@ -86,3 +88,7 @@ latencies. Full-engine acceptance and throughput remain a separate gate.
 ```sh
 python3 measurements/st_moe_input_reuse_20260917/summarize.py gpu-v1.jsonl
 ```
+
+Mode 4 ticket: `moe-input-reuse-fanout-0917`, frozen source `b1233ea1`,
+compares modes 0 through 4 on actual rank0 weights. It predates the serving
+adoption, and every arm explicitly supplies its selector.

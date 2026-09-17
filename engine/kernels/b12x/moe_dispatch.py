@@ -2495,6 +2495,28 @@ def _static_v2_decode_config(config: dict, m: int) -> dict:
                 scatter_packed_load=bool(scatter_vec4 and config.get("scatter_packed_load", True)))
 
 
+# Numerically qualified K7 input cache and compact route preparation. The
+# whole-MoE gain is small/inconclusive; adopted with the fixed-K bundle by user
+# decision. Explicit input_reuse=0 remains the same-build control.
+INPUT_REUSE_DEFAULT = 3
+
+
+def _static_v2_input_reuse_config(config: dict, state_E: int, weight_E: int,
+                                  m: int, k: int, n: int, num_topk: int,
+                                  max_rows: int) -> dict:
+    if "input_reuse" in config:
+        return config
+    # Other model geometries and private schedulers retain their own cell.
+    if ((state_E, weight_E, k, n, num_topk) == (288, 288, 4096, 512, 8)
+            and m in (8, 16) and max_rows >= m and config.get("decode_reform")
+            and config.get("tiled") and config.get("reform_sf_pack")
+            and config.get("input_vec16")
+            and not any(config.get(key) for key in
+                        ("even", "split", "probe_route_scatter", "probe_direct_scatter"))):
+        return dict(config, input_reuse=INPUT_REUSE_DEFAULT)
+    return config
+
+
 def _get_static_kernel_v2(
     state_E: int,
     weight_E: int,
@@ -2540,6 +2562,8 @@ def _get_static_kernel_v2(
     # The explicit batch recipe extends the same tile to K7/C2. All SF6
     # launches read the same packed scales; other shapes keep the t tile.
     config = _static_v2_decode_config(config, m)
+    config = _static_v2_input_reuse_config(config, state_E, weight_E, m, k, n,
+                                          num_topk, max_rows)
     if config.get("input_reuse", 0):
         cache_bytes = 0 if config["input_reuse"] == 4 else m * (k // 2 + k // 16)
         if config["input_reuse"] in (3, 4):

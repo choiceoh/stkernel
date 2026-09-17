@@ -147,7 +147,7 @@
       "source": "overlay/modules/glm53_moe/moe_dispatch.py",
       "sha256": "b080f55d470dca58fc31b1d64bb2929aa4cfa9e02f3419bd1626ec084c88f844",
       "origin": "repository",
-      "local_sha256": "3581bf45c5d2a5e2cb576afed1ba04d1a67c28fb298787dda53472d5b4be9ddb",
+      "local_sha256": "39d59f5b839406d3533e00a30fa28b802d4fb5b0637738e52bd0cae23f861229",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults; configure_static_v2/configure_tp_sf6_q0 (STK_moe_static), _DYNAMIC_TILE_M_OVERRIDE probe hook",
         "2026-09-12: direct micro through the on-disk CuTe-DSL cache with a block-dim sidecar (_build_direct_micro_on_disk)",
@@ -177,7 +177,8 @@
         "2026-09-14: include the native packed-byte device helper in the CuTe compile cache identity.",
         "2026-09-17: separately keyed K7/C1-C2 token quantization caches and compact route preparation probes, with exact shape and workspace capacity guards; input reuse remains disabled pending GPU qualification.",
         "2026-09-17 Qwen3.8 EP decode cell (probes/engine_qwen38_moe.py): _MICRO_TILE_M_OVERRIDE / _MICRO_MAC_OVERRIDE probe hooks pin the micro kernel's M tile (32/64/128) and MAC (<= the SM count); the launcher's micro MAC arithmetic moves unchanged into _select_micro_mac. None keeps every selection.",
-        "2026-09-17 private input fanout: cache only compact route metadata, reuse the quantized block in registers across equal-scale experts; separately keyed and disabled pending GPU and consumer qualification."
+        "2026-09-17 private input fanout: cache only compact route metadata, reuse the quantized block in registers across equal-scale experts; separately keyed and disabled pending GPU and consumer qualification.",
+        "2026-09-17 adopt numerically qualified fixed-K bundle by user decision; small or inconclusive component gains are retained with explicit controls. See st_fixed_k_next and st_moe_input_reuse measurements."
       ]
     },
     "b12x/moe_dynamic_kernel.py": {
@@ -380,7 +381,7 @@
       "source": "overlay/modules/glm53_megakernel/glm53_megakernel.py",
       "sha256": "a7e5b0331818b8a74627d3db883df16ce3b3bbdd1195ae53c57ff74196041a6e",
       "origin": "repository",
-      "local_sha256": "0a025655272f0f294ffce85472dfe80b69540133d8442f0d6a955b32a6dc7b85",
+      "local_sha256": "963a63d1848b6dfb4cf8677273da7b24cdb241d2ab71551bd1c826642551a0ae",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; tile32 large-M MLA prefill is qualified and selected by the production boot default; configure_prefill (STK_mla_prefill), mla_decode(splits=, probe=), PAIR_STATS, ENABLE_MLA_CLUSTER baked on",
         "2026-09-13 native build cache: stage content-addressed source inputs so identical checkout paths and timestamps do not trigger NVCC; keep Torch/Ninja build validation.",
@@ -392,7 +393,8 @@
         "2026-09-13 phase 2: short-prefill tile32 admission; short MLA GPU gates passed on 3c7bcc0a. Retain current bound-shape and sink guards; later integration has no new consumer result.",
         "2026-09-13 kernel glue: maybe_arm(check=None) takes the admission check -- _check_cell by default, engine/kernels/mla/glue.check for the cells the glue's exact adapters put on the compiled one; the build, the device check and the self-test at the compiled cell are unchanged.",
         "2026-09-14 CUDA 13.2 migration: compiler-aware native/cache identity; no launch arithmetic change.",
-        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured."
+        "2026-09-14 tree MLA: optional canonical/private FP8 banks with signed node addresses; same split/cluster math and unchanged ordinary machine instructions under CUDA 13.2.86. GPU execution remains unmeasured.",
+        "2026-09-17 adopt numerically qualified fixed-K bundle by user decision; small or inconclusive component gains are retained with explicit controls. See st_fixed_k_next and st_moe_input_reuse measurements."
       ]
     },
     "qsa.py": {
