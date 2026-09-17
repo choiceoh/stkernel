@@ -682,6 +682,16 @@ class Glm53Engine:
         getattr(self, "_rich_policies", {}).pop(seq, None)
         getattr(self, "_ends_tensor", {}).pop(seq, None)
         options = dict(options or {})
+        # Private incident arm only: 1000+seed = host block verification,
+        # 2000+seed = target-only, 3000+seed = token-level verification.
+        # All modes use the SAME underlying request seed after this decode.
+        code = int(options.get("seed") or 0)
+        mode = code // 1000 if 1000 <= code < 4000 else 0
+        if not hasattr(self, "incident_modes"):
+            self.incident_modes = {}
+        self.incident_modes[seq] = mode
+        if mode:
+            options["seed"] = code % 1000
         self.options[seq] = options
         self.ends[seq] = self.eos | set(options.get("stop_token_ids") or ())
         self.thinking[seq] = options.get("reasoning_budget") is not None
@@ -961,6 +971,8 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
+        if getattr(self, "incident_modes", {}).get(seq, 0):
+            return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
         opts = self.options.get(seq, {})
@@ -974,9 +986,6 @@ class Glm53Engine:
         return None
 
     def async_ready(self, seqs) -> bool:
-        # Incident arm: _pick_rich is the target-only control. All serving
-        # decode steps must reach it; admission seeds also run on the device.
-        return self._chain_exit("incident_target_only")
         if self.pipeline is None or self.decode_graphs is None or not self.drafter.k:
             return self._chain_exit("no_pipeline")
         if not self.pipeline.ready_for(seqs):
@@ -1336,10 +1345,11 @@ class Glm53Engine:
         together. Doing it a position at a time meant a 154,880-wide sort and a `multinomial` per position: 11.8 ms
         for the 24 rows of one step.
         """
-        from engine.base.sampler import block_verify, rows as sampler_rows, top_logprobs_batch
+        from engine.base.sampler import block_verify, speculative_pick, rows as sampler_rows, top_logprobs_batch
         # Incident control: retain K7 target computation and state geometry,
         # but sample only its first distribution and commit exactly one token.
-        jobs = [(seq, raw[:1], [], None) for seq, raw, _, _ in jobs]
+        jobs = [(seq, raw[:1], [], None) if self.incident_modes.get(seq) == 2 else (seq, raw, drafts, q)
+                for seq, raw, drafts, q in jobs]
         device = jobs[0][1].device
         if masks is None:
             pending = [(seq, self.matchers[seq], drafts) for seq, _, drafts, _ in jobs if seq in self.matchers]
@@ -1386,7 +1396,8 @@ class Glm53Engine:
                 target = dists[at: at + count]
                 if k == count:
                     target = torch.cat([target, target[-1:]])
-                accepted, new = block_verify(target, drafts[:k], draft_probs,
+                verifier = speculative_pick if self.incident_modes.get(seq) == 3 else block_verify
+                accepted, new = verifier(target, drafts[:k], draft_probs,
                                              self._uniforms(seq, draws.VERIFY, k) + self._uniforms(seq, draws.FRESH, 1))
                 new = new[:count]
             verdicts.append((accepted, new))
