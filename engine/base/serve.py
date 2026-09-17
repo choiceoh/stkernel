@@ -1436,6 +1436,9 @@ class Server:
         self.tripwire = Tripwire.of(comm)
         self.latency_replies = {}
         self.latency_boot_id = uuid.uuid4().hex
+        from engine.base.diagnostic_metrics import DiagnosticMetrics
+        self.diagnostic_metrics = DiagnosticMetrics(self)
+        runner.diagnostic_metrics = self.diagnostic_metrics
         self.port, self.host, self.tok = port, host, tokenizer
         # D3 is about kernels, but its rule holds here too: a path that is taken silently is a
         # path nobody checks. /metrics says which detokenizer served, so a scrape settles it.
@@ -3094,7 +3097,7 @@ class Server:
             for series, value in histogram.rows("st:step_seconds"):
                 head, _, tail = series.partition('{engine="st"')
                 out.append(f'{head}{{engine="st",kind="{kind}"{tail} {value}\n')
-        return "".join(out)
+        return "".join(out) + self.diagnostic_metrics.render()
 
     def once(self) -> bool:
         """One ordered broadcast, bounded admission and homogeneous model step."""
@@ -3628,6 +3631,7 @@ class Server:
                             # on it, and would retry a 503 elsewhere instead), a timeout 504
                             self.reply(errors[0].error_status or 503, {"error": errors[0].error})
                         return
+                    server.diagnostic_metrics.response(choices)
                     budget = options.get("reasoning_budget")
                     details = {"reasoning_tokens": sum(len(c.streams["reasoning_content"].ids) for c in choices)}
                     if budget is not None:
