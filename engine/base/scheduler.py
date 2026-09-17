@@ -37,6 +37,7 @@ class Contract:
     max_running: int          # decode batch width the kernels support
     decode_token_budget: int | None = None  # smaller prefill budget while decoders are live
     prefill_tail_multiple: int = 0  # preserve a profile's fast row-sharded path before the true tail
+    mark_align: int = 1       # a prefill mark's offset from the step's start must be a multiple of this
 
     def __post_init__(self):
         for name in ("chunk_align", "token_budget", "max_running"):
@@ -51,6 +52,8 @@ class Contract:
         if (type(self.prefill_tail_multiple) is not int or self.prefill_tail_multiple < 0
                 or (self.prefill_tail_multiple and self.chunk_align % self.prefill_tail_multiple)):
             raise ValueError("prefill tail multiple must divide the chunk alignment, or be zero")
+        if type(self.mark_align) is not int or self.mark_align <= 0:
+            raise ValueError("mark alignment must be a positive integer")
         if self.decode_token_budget is not None:
             if (type(self.decode_token_budget) is not int or self.decode_token_budget > self.token_budget
                     or self.decode_token_budget <= self.draft_slots

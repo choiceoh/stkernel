@@ -93,6 +93,7 @@ class Runner:
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
         self.steps = 0
+        self.marks_unaligned = 0            # boundaries skipped because the step began off the model's chunk grid
         self.inflight = []                                  # [(step, pending, launched_at)]: decode steps ahead of their results
         self._salts = {}                                    # seq -> the prompt's media salts (base/prefix.chain), for boundaries after it
         # -- the prefix tier (45차 §23 A): evicted leaf boundaries survive on NVMe and come back by reading --
@@ -872,6 +873,14 @@ class Runner:
         for position in range(start + self.kv.block_size - start % self.kv.block_size, end, self.kv.block_size):
             h = chain.get(position)
             if h is None or self.prefix.has(h):
+                continue
+            if (position - start) % self.c.mark_align:
+                # The model takes a mark's state out of one uncut forward, at its kernel's own chunk
+                # boundaries, so a mark has to sit on one. Block boundaries are absolute and the kernel's
+                # chunks are counted from the STEP's start, so the two line up only when `start` does --
+                # and a continued conversation resumes at wherever the last turn stopped, which is any
+                # number at all. Skipping the mark costs this boundary's reuse; taking it killed the boot.
+                self.marks_unaligned += 1
                 continue
             snap = self.prefix.take_snapshot()
             self._note_fade(chain)
