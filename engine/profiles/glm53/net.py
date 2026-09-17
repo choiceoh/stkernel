@@ -158,6 +158,9 @@ def skip_route_weights(weights, tau: float, scale: float):
     return kept / kept.sum(-1, keepdim=True).clamp_min(1e-20) * scale
 
 
+from engine.modules.selection_capture import SelectionCapture, from_net
+
+
 class Glm53Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None):
         if comm.world_size != TP:
@@ -208,6 +211,9 @@ class Glm53Net:
         self.prefill_packet_planned = set()
         self.prefill_packet_peak_bytes = 0
         self.prefill_indexer_shards = False
+        # A diagnostic dump of one selection per layer for tools/selection_reference.py;
+        # inert unless ST_SELECTION_CAPTURE is set (engine/modules/selection_capture.py).
+        self.selection_capture = SelectionCapture()
         self.prefill_indexer_executed = set()
         self.prefill_dense_prefix = False
         self.prefill_dense_prefix_executed = set()
@@ -831,7 +837,7 @@ class Glm53Net:
                 if shard.score_rows:
                     cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                     selected = self._select_pools(q8, w_eff, keys[cand], scales[cand],
-                        seq_lens[shard.score_begin:shard.end] // kp, n_cand, F.topk // kp)
+                        seq_lens[shard.score_begin:shard.end] // kp, n_cand, F.topk // kp, layer=L)
                 pool_ids = shard.collect(selected, seq_lens // kp, self.comm)
                 self.prefill_indexer_executed.add(L)
             elif prefix:
@@ -841,10 +847,11 @@ class Glm53Net:
                 if prefix < s.length:
                     cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
                     self._select_pools(q8, w_eff, keys[cand], scales[cand], seq_lens[prefix:] // kp,
-                                       n_cand, F.topk // kp, out=pool_ids[prefix:])
+                                       n_cand, F.topk // kp, out=pool_ids[prefix:], layer=L)
             elif n_cand:
                 cand = caches.pool_slots(L, s.seq, index(n_cand, x.device)).long()
-                pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp)
+                pool_ids = self._select_pools(q8[sl], w_eff[sl], keys[cand], scales[cand], seq_lens // kp, n_cand, F.topk // kp,
+                                          layer=L)
             else:
                 pool_ids = torch.full((s.length, F.topk // kp), -1, dtype=torch.int32, device=x.device)
             self.lanes.pool_slots(pool_ids, seq_lens, kp, *caches.token_map(L, s.seq),
@@ -928,7 +935,8 @@ class Glm53Net:
         self.lanes.pool_slots(winners, seq_lens, kp, *caches.token_maps(L), slots_out, valid_out, tokens=t)
 
 
-    def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int, *, out=None) -> torch.Tensor:
+    def _select_pools(self, q8, w_eff, keys, scales, ke, n_cand: int, k: int, *, out=None,
+                      layer: "int | None" = None) -> torch.Tensor:
         """Top-k complete pools per query, in passes of SELECT_ROWS rows: every row's
         selection is independent, so the passes are exact and the transient is bounded."""
         rows = q8.shape[0]
@@ -952,13 +960,18 @@ class Glm53Net:
         if rows <= SELECT_ROWS:
             logits = self.lanes.indexer_logits(q8, keys, scales, w_eff, ke)
             selected = select(logits, ke)
-            return selected if out is None else out.copy_(selected)
+            result = selected if out is None else out.copy_(selected)
+            from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke,
+                     n_cand=n_cand, k=k, selected=result, prefill=rows > 64)
+            return result
         if out is None:
             out = torch.empty((rows, k), dtype=torch.int32, device=q8.device)
         for r0 in range(0, rows, SELECT_ROWS):
             r1 = min(rows, r0 + SELECT_ROWS)
             logits = self.lanes.indexer_logits(q8[r0:r1], keys, scales, w_eff[r0:r1], ke[r0:r1])
             out[r0:r1] = select(logits, ke[r0:r1])
+        from_net(self, layer, q8=q8, w_eff=w_eff, keys=keys, scales=scales, ke=ke,
+                 n_cand=n_cand, k=k, selected=out, prefill=rows > 64)
         return out
 
     @operation("dsa", layer_arg=1)
