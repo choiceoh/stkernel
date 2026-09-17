@@ -13,6 +13,10 @@ must not be used for this scratch. There are two CTA-local setup barriers in
 CTA 0, no additional grid barriers, and no per-route registration barriers in
 phase 1. Split/even/private route-scatter schedules are refused.
 
+A shared async-proxy fence retires CTA 0's generic scratch accesses before TMA
+reuses the FC2 stage. A CTA barrier alone is not a cross-proxy ordering guarantee
+([PTX async proxy](https://docs.nvidia.com/cuda/parallel-thread-execution/#asynchronous-data-movement-async-proxy)).
+
 This removes route-registration CAS, spin waits and row-count atomics. It also
 changes compact expert/row order, so matching quantized input bytes alone is
 insufficient: the final FP32 output gate remains mandatory, with the same

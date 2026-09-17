@@ -1510,6 +1510,9 @@ class MoEStaticKernelV4:
                     topk_ids, topk_weights, row_counts, active_expert_count,
                     weight_expert_ids, global_to_local_expert, token_map, token_weights,
                     reuse_routes, num_topk)
+                # Retire generic shared accesses before the async TMA proxy
+                # overwrites this stage. The existing CTA barrier follows.
+                cute.arch.fence_proxy("async.shared", space="cta")
         cute.arch.sync_threads()
         self._resident_grid_barrier(
             barrier_count, barrier_epoch, Int32(gdim_z), is_cta_leader
