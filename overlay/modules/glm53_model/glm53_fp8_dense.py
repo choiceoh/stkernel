@@ -158,9 +158,10 @@ _register_compile_factor(
 def _spec_k_value() -> str:
     # num_speculative_tokens (the launcher forwards SPEC_K): the drafter's
     # compiled graphs are shaped by it, and a K=5 boot's artifacts killed the
-    # next K=7 boot ('expected size 7==5', 29차). Unset = "6" (the production
-    # default); explicit A/B runs still carry their requested value.
-    return (os.environ.get("VLLM_GLM53_SPEC_K") or "6").strip()
+    # next K=7 boot ('expected size 7==5', 29차). Unset = "7", the profile's
+    # SPEC_K (spec served = 7 since 2026-09-13); explicit A/B runs still carry
+    # their requested value. The megakernel self-test uses the same default.
+    return (os.environ.get("VLLM_GLM53_SPEC_K") or "7").strip()
 
 
 _register_compile_factor("VLLM_GLM53_SPEC_K", _spec_k_value)
@@ -597,12 +598,16 @@ def install_drafter_serving_check(model, expected: int, forwards: int = 8) -> No
     itself after the verdict."""
     if expected <= 0 or forwards <= 0:
         return
+    instance_forward = "forward" in model.__dict__
     orig = model.forward
     state = {"left": forwards, "low": None, "done": False}
 
     def _report(seen):
         state["done"] = True
-        model.__dict__.pop("forward", None)
+        if instance_forward:
+            model.forward = orig          # restore what was there, not class lookup
+        else:
+            model.__dict__.pop("forward", None)
         if seen is None:
             logger.warning(
                 "[fp8-dense] drafter lane: no forward ran Python in the "

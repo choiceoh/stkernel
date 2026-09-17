@@ -87,14 +87,22 @@ def main():
             validate_baseline(record,fresh.records)
         else:
             if args.ctx is None:raise ValueError('instrumented context required')
-            cq=onepass._load('check-quality.py','observation_quality')
+            quality=onepass.quality
+            cq=onepass._load('check-quality.py','observation_doc')
             br=onepass._load('bracket.py','observation_bracket')
             bd=onepass._load('bench-dec.py','observation_bench')
-            doc=cq.build(args.ctx,7+args.ctx)
-            questions='\n'.join(f'{i+1}. {q}' for i,(_,q,_) in enumerate(cq.FACTS))
-            suffix=(onepass.INSTRUCTION+cq.FACTS[0][1] if args.ctx==2000
-                    else onepass.INSTRUCTION_COMBINED+questions)
-            content='문서:\n'+doc+'\n\n'+suffix
+            # Build the prompt with the same item builder the canonical workload
+            # uses (combine the three cases at 32K+, ask one at 2K). The old
+            # onepass.INSTRUCTION constants were removed in 850b23e0.
+            seed=7+args.ctx
+            cases=quality.cases(seed)
+            combined=args.ctx>=32000
+            item=quality.request_item(
+                args.ctx,seed,cases if combined else [cases[0]],cq.filler,
+                quality.MAX_TOKENS if not combined else quality.COMBINED_MAX_TOKENS,
+                quality.MAX_TOKENS//2 if not combined else quality.COMBINED_REASONING_BUDGET,
+                'all' if combined else 0)
+            content=item['content']
             def request():
                 with br._StepWindows(bd,period=1.0) as watch:
                     result=fresh.call(fresh.url,'glm-5.3-flash',content,1)

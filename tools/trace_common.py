@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import math
 
 STEP_ANCHORS = ("_gather_block_tables_kernel", "_glm53_prep_fused_kernel",
                 "_get_num_sampled_and_rejected")
@@ -133,7 +134,8 @@ def category(n: str) -> str:
 
 
 def percentile(sorted_vals: list[float], q: float) -> float:
+    """Nearest-rank: the ceil(q*n)-th smallest value (0-indexed, clamped)."""
     if not sorted_vals:
         return float("nan")
-    i = min(len(sorted_vals) - 1, int(len(sorted_vals) * q))
+    i = min(len(sorted_vals) - 1, max(0, math.ceil(q * len(sorted_vals)) - 1))
     return sorted_vals[i]

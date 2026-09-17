@@ -95,6 +95,8 @@ def main():
     original_ask = onepass.ask_stream
     original_argv = sys.argv
     fresh = FreshRequests(base + "/v1/chat/completions", original_ask, opener, metrics)
+    previous_c1_only = os.environ.get("ONEPASS_C1_ONLY")
+    os.environ["ONEPASS_C1_ONLY"] = "1"          # one cache_salt per request: no C=N group
     try:
         urllib.request.urlopen = fresh.open
         onepass.ask_stream = fresh.call
@@ -106,6 +108,10 @@ def main():
         onepass.ask_stream = original_ask
         urllib.request.urlopen = opener
         sys.argv = original_argv
+        if previous_c1_only is None:
+            os.environ.pop("ONEPASS_C1_ONLY", None)
+        else:
+            os.environ["ONEPASS_C1_ONLY"] = previous_c1_only
         report = dict(schema=1, name=args.name, requests=fresh.records,
                       note="Every TTFT sample is fresh prefill; later samples may have warm compilation.")
         (args.out / (args.name + ".fresh.json")).write_text(json.dumps(report, indent=2) + "\n")

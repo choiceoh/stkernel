@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -41,7 +42,7 @@ def _pct(values, q):
     if not values:
         return None
     s = sorted(values)
-    return s[min(len(s) - 1, int(q * len(s)))]
+    return s[min(len(s) - 1, max(0, math.ceil(q * len(s)) - 1))]
 
 
 def ring_stats(path: Path) -> dict:

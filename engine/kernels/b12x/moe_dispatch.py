@@ -559,19 +559,23 @@ def _parse_glm53_static_v2(raw: str | None, *, probe: bool = False) -> dict | No
 # configure_static_v2() before any weight view or launch exists. None = the
 # stock static kernel; "t,r,sf6" = production's 2026-09-09 adoption.
 _GLM53_B12X_STATIC_V2: dict | None = None
-# A tiled cell and the #368 prefill-reuse lane are mutually exclusive (the
-# reuse kernels read row-major storage). Diagnose it here, at import/boot,
-# instead of at the first m>=3456 prefill; the launch-time check below stays
-# for the _STATIC_V2_OVERRIDE probe hook.
-if (
-    _GLM53_B12X_STATIC_V2
-    and _GLM53_B12X_STATIC_V2.get("tiled")
-    and (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
-):
-    raise ValueError(
-        f"{_GLM53_B12X_STATIC_V2_ENV}: a tiled cell (t) cannot serve together "
-        "with the prefill reuse lanes -- they read row-major expert weights"
-    )
+
+
+def _reject_tiled_with_prefill_reuse(cfg: "dict | None") -> None:
+    # A tiled cell and the #368 prefill-reuse lane are mutually exclusive (the
+    # reuse kernels read row-major storage). Diagnose it when the profile
+    # applies the spec -- before any weight view or launch exists -- rather
+    # than at import, where the spec is still None. The launch-time checks stay
+    # for the _STATIC_V2_OVERRIDE probe hook.
+    if (
+        cfg
+        and cfg.get("tiled")
+        and (_GLM53_B12X_PREFILL_REUSE or _GLM53_B12X_PREFILL_FC1_N128)
+    ):
+        raise ValueError(
+            f"{_GLM53_B12X_STATIC_V2_ENV}: a tiled cell (t) cannot serve together "
+            "with the prefill reuse lanes -- they read row-major expert weights"
+        )
 # Probe hook: a config dict overrides the import-time env value; module-level
 # (a monkeypatch target), never read from the environment at launch time.
 _STATIC_V2_OVERRIDE: dict | None = None
@@ -591,6 +595,7 @@ def configure_static_v2(spec: "str | None") -> "dict | None":
         raise RuntimeError("configure_static_v2: weight views already exist in this process; "
                            "the static-lane spec is fixed before the first MoE bind")
     _GLM53_B12X_STATIC_V2 = cfg
+    _reject_tiled_with_prefill_reuse(cfg)
     return cfg
 
 
@@ -1347,8 +1352,11 @@ def consume_packed_scale_storage(views, first, second):
 def _packed_fc1_scales(sf: torch.Tensor, num_experts: int) -> torch.Tensor:
     """(E, blocks per expert, SF_STAGE_BYTES) u8 -- the FC1 weight scales
     6-bit packed per 4 KB block, the unit the kernel stages (39차 §4c). Cached
-    on the scale buffer's pointer: packing walks every scale byte once."""
-    key = (sf.data_ptr(), sf.numel())
+    on the scale buffer's identity plus generation: packing walks every scale
+    byte once, and the caller's buffer is a transient contiguous copy, so a
+    pointer-only key can hand back a previous generation's bytes."""
+    key = (id(sf), sf.data_ptr(), _sf6_tensor_version(sf), sf.numel(),
+           num_experts, str(sf.device))
     got = _SF_PACKED.get(key)
     if got is not None:
         return got
@@ -1363,6 +1371,7 @@ def _packed_fc1_scales(sf: torch.Tensor, num_experts: int) -> torch.Tensor:
         num_experts, blocks // num_experts, SF_STAGE_BYTES
     )
     _SF_PACKED[key] = packed
+    _register_cache_eviction(_SF_PACKED, key, sf)
     return packed
 
 
