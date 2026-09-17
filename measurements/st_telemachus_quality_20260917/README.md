@@ -17,7 +17,7 @@ recipe, still fails all three T=1 cases (12,592, 495 and 386 output tokens).
 The incident remains unresolved. A further captured-data audit identifies
 rank-dependent smoothing across token-sharded prefill; PR #1151 repairs that
 scale pairing, but its live thinking-off replay still severely corrupts Korean
-and the PR remains a draft. A further context ablation rules the
+after #1151 merged as `e394fccd`. A further context ablation rules the
 assistant-provenance memory records out as the differentiator: neutralizing them
 at the id level (same token count, everything else byte-identical) leaves the
 failure intact in both arms, and all three outputs score clean on the canonical
@@ -117,3 +117,32 @@ python3 probes/replay_engine_incident.py \
 The idle check is not an exclusive reservation. Use the fleet workflow for
 isolated runtime/kernel comparisons. The initial capture above used the
 production boot; subsequent experimental boots are recorded separately.
+
+## Full-operand and source-constant follow-up, 2026-09-18
+
+The incident remains unresolved. On exclusive build `746b9f695a13`, both the
+50,006-ID T=1 native target replay and the original-BF16-dense control fail
+semantic Korean quality. The latter preserves native attention, NVFP4 routed
+experts and the serving vocabulary head; it is not an all-BF16 model.
+
+The four-rank audit covers 680 KDA operation cases and 136 exact prefill
+chunk-state handoffs. One head per layer was replayed through each complete
+prefill chunk from its captured incoming state. Sparse selection matched the
+FP32 reference for all 220 sampled query sets, with no selected-cache mapping
+mismatch. Exact native activation quantization removes the earlier approximate
+CPU expert-reference discrepancy: all 15 sampled scalar expert outputs equal
+the sliced, BF16-rounded independent GEMM reference. These checks bound
+component errors; they do not prove end-to-end quality.
+
+The checkpoint comparison exposes a separate, consequential difference:
+all 110 router-bias and KDA-constant tensors in rank 3 equal the original
+NVIDIA FP32 tensors rounded through BF16. All 42 router gate matrices match
+the original. With actual inputs held fixed, restoring just the FP32 bias changes
+115 of 210 selected expert sets, replacing 149 expert slots. This includes
+58 of 84 sampled prefill selections and 57 of 126 decode selections.
+The same-boot original-request quality control is queued. Do not call this a
+root cause until the response quality gate passes.
+
+[Sanitized operands and constant evidence](causal-operands-0918.json) contains
+the runtime hashes, numerical comparisons and replay receipts. Private inputs,
+activations and generated prose remain outside Git.
