@@ -305,7 +305,8 @@ class Qwen38Net:
         if getattr(step, "captured", False):
             n, t = step.rows, step.tokens
             positions = (step.contexts[:, None] + iota(t, dev)).reshape(-1)
-            rows_req = iota(n, dev, torch.int32)[:, None].expand(n, t).reshape(-1)
+            # one row reshapes its expand into a stride-0 view, and the QSA kernels load this at `ptr + row`
+            rows_req = iota(n, dev, torch.int32)[:, None].expand(n, t).reshape(-1).contiguous()
             page_table = caches.block_table[:, :step.blocks].index_select(0, step.seqs).clamp_min_(0)
             starts = iota(n + 1, dev, torch.int32) * t
             slot_table = step.slots.to(torch.int32)[:, None]

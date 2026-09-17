@@ -52,6 +52,13 @@ class NativeQualificationTests(unittest.TestCase):
                  prefill_transport=NS(executed={'fp8_all_gather', 'fp8_reduce_scatter'}, project_tiles=False))
         drafter = NS(dense={'fc.weight': NS(executed=3), 'q': NS(executed=1)})
         self.assertEqual(native_execution_report(net, drafter)['target_fp8'], 1)
+        net.fused_decode_router, net.decode_fastpath_rows = True, ()
+        self.assertEqual(native_execution_report(net, drafter)['router_fused'], [])
+        net._router_fused_executed = {(1, 8)}
+        with self.assertRaisesRegex(RuntimeError, 'fused decode routers'):
+            native_execution_report(net, drafter)
+        net._router_fused_executed.clear()
+        net.fused_decode_router = False
         fc = drafter.dense['fc.weight']
         fc.decode_precision, fc.executed = 'fp8', 2
         self.assertEqual(native_execution_report(net, drafter)['drafter_w4'], 1)
