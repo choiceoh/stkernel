@@ -55,8 +55,10 @@ class Lanes:
     norm_rope: object       # (x [N, h, D], w [D], eps, positions [N] i64, theta, rotary_dim) -> [N, h, D]
     qsa_store: object       # (cache [pages, page, 1, D], flat slots [N] (-1 skipped), rows [N, D]) -> None
     qsa_compress: object    # qsa_compress_groups_with_ratio(...) -> (pooled [N, 1, D], first positions [N, 3] i64)
-    qsa_select: object      # qsa_select_paged_tokens(iq, key cache, page table, token_to_req, positions, lengths, topk, ratio)
-    qsa_attend: object      # qsa_sparse_paged_attention(q [N, Hq, D], k, v caches [pages, page, Hkv, D], indices, table, token_to_req)
+    qsa_select: object      # qsa_select_paged_blocks(iq, key cache, page table, token_to_req, positions, lengths, topk, ratio)
+                            #  -> the chosen blocks int32 [N, topk / ratio]
+    qsa_attend: object      # qsa_sparse_paged_attention_blocks(q [N, Hq, D], k, v caches [pages, page, Hkv, D], blocks,
+                            #  positions, lengths, ratio, topk, table, token_to_req): the blocks expanded inside its tiles
     # MoE
     route: object           # (logits [N, E], k) -> (ids int32 [N, k] global, weights f32 [N, k]): softmax fp32, top-k, renormalised
     moe: object             # (x [N, H] bf16, ids [N, k] global, weights [N, k] f32, w13, w13_sf, w2, w2_sf, *, scales,
@@ -334,7 +336,7 @@ def served(*, tp=None) -> Lanes:
     bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
              recurrent_gdn_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
              qsa.norm_rope_partial, qsa.qsa_store_cache_rows, qsa.qsa_compress_groups_with_ratio,
-             qsa.qsa_select_paged_tokens, qsa.qsa_sparse_paged_attention, route_softmax_topk, moe]
+             qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, route_softmax_topk, moe]
     return Lanes("served", *(on_main(f) for f in bound), moe_prepare=on_main(moe_prepare),
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
                  moe_finish=on_main(moe_output.gated_sum))
