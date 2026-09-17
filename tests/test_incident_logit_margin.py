@@ -141,6 +141,19 @@ class DrawAddressTests(unittest.TestCase):
         self.assertEqual(row["nonce"], nonce)
         self.assertEqual(margin.draw_address(row), (VERIFY, 3))
 
+    def test_a_rich_pick_is_found_too_not_only_the_step_block(self):
+        from engine.base.draws import RICH, row_key, uniform as draw_uniform
+
+        seed, nonce, generation = 7, 0, 11
+        value = draw_uniform(row_key(seed, nonce, generation), RICH, 2)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = capture(tmp, 1, generation, logits_row(1.0, 0.0), prefix="22" * 32)
+            payload = torch.load(path, map_location="cpu", weights_only=False)
+            payload.update(seed=seed, nonce=nonce, uniform=value)
+            torch.save(payload, path)
+            row = margin.read_capture(path)
+        self.assertEqual(margin.draw_address(row), (RICH, 2))
+
     def test_a_uniform_from_nowhere_is_reported_as_unmatched(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = capture(tmp, 1, 0, logits_row(1.0, 0.0), prefix="ff" * 32)
