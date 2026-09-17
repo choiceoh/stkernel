@@ -10,11 +10,19 @@ from .execution import begin, prepare, local, auxiliary, finish
 
 def consume(net, layer, carry, side, packet):
     n, f, p = f"L{layer}.", net.F, net.p
+    carry.input_pack = None
+    dense = net.dense.get(n + "kda.in_proj") if side == "attn" and not f.is_dsa(layer) else None
+    if (getattr(net, "producer_packs", False) and getattr(net, "mhc_input_packs", True) and
+            getattr(dense, "input_pack_rows", lambda rows: False)(carry.x.shape[0])):
+        import torch
+        from engine.kernels.dense import producer_pack_nbytes
+        carry.input_pack = torch.empty(producer_pack_nbytes(8, f.hidden), device=carry.x.device, dtype=torch.uint8)
     def mhc(source, descriptor):
         return net.mhc(n+f"hc.{side}_fn", source, carry.res, carry.post, carry.comb,
                        p[n+f"hc.{side}_scale"], p[n+f"hc.{side}_base"],
                        p[n+("in_norm" if side == "attn" else "post_norm")],
-                       f.rms_eps, f.hc_eps, f.post_mult, f.sinkhorn, packets=descriptor)
+                       f.rms_eps, f.hc_eps, f.post_mult, f.sinkhorn, packets=descriptor,
+                       **({"output_pack": carry.input_pack} if carry.input_pack is not None else {}))
     carry.res, carry.post, carry.comb, carry.x = packet.consume(mhc)
 
 

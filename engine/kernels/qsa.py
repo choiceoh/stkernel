@@ -14,7 +14,17 @@ are unchanged. What changed around them (engine/kernels/SOURCES.json lists it):
   the kernel package reads no knobs). Whether GB10 wants fewer splits is the wizard's measurement, not a default;
 - `norm_rope_partial` is new: Qwen3.8 normalises query and key heads with a unit-offset weight and rotates only the
   first `rotary_dim` channels (64 of 256, 64 of the indexer's 128) as neox halves -- engine/kernels/common/norm_rope
-  rotates the whole head and weights plainly.
+  rotates the whole head and weights plainly;
+- the sparse attention can read the chosen blocks themselves (FROM_BLOCKS: `qsa_select_paged_blocks` then
+  `qsa_sparse_paged_attention_blocks`): each tile computes its columns' positions with the expansion kernel's
+  arithmetic instead of loading them from an expanded buffer -- the same int32 positions on the same tiles, so the
+  attention's bytes are the expanded path's, without the expansion launch and its [rows, top-k + ratio - 1] buffer;
+- a layer's inputs take two launches instead of nine: `qsa_index_keys` runs the compression, the norm and rotation of
+  the pooled keys and their store in one program a row, `qsa_inputs` the query, key and index query norms and rotations
+  with the K, V and raw-key ring stores in one program a (row, head) -- the ported programs' arithmetic line for line
+  (`_norm_rope_into` is `_norm_rope_partial`'s), in the order that keeps the ring read before it is written;
+- the sparse attention can apply the layer's output gate in its final store (GATED: the one-split launch or the merge):
+  the attention rounded to BF16, times sigmoid(gate) in fp32, rounded once -- the layer's gate launches without them.
 
 The references are engine/modules: attention.Attention(select=QSA) and sparse_indexer.qsa_select. Paged caches here are
 [pages, page_size, heads, dim] with a page table of physical pages per request -- the served caches present their
@@ -242,12 +252,41 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     NUM_TILES: tl.constexpr,
     BLOCK_M: tl.constexpr,
     BLOCK_N: tl.constexpr,
+    query_positions_ptr=None,
+    sequence_lengths_ptr=None,
+    num_lengths=0,
+    FROM_BLOCKS: tl.constexpr = False,
+    BLOCK_TOPK: tl.constexpr = 0,
+    COMPRESS_RATIO: tl.constexpr = 1,
+    gate_ptr=None,
+    stride_gate_row=0,
+    stride_gate_head=0,
+    GATED: tl.constexpr = False,
 ) -> None:
     row = tl.program_id(0)
     kv_head = tl.program_id(1)
     split_id = tl.program_id(2)
     request = tl.load(token_to_req_ptr + row)
     safe_request = tl.minimum(tl.maximum(request, 0), num_requests - 1)
+    if FROM_BLOCKS:
+        # ST: indices_ptr holds the row's chosen blocks [rows, BLOCK_TOPK]; the positions they expand to are computed
+        # tile by tile below with _expand_qsa_indices_kernel's arithmetic (TOPK is its output width)
+        query_position = tl.load(query_positions_ptr + row)
+        sequence_length = tl.load(
+            sequence_lengths_ptr + tl.minimum(tl.maximum(request, 0), num_lengths - 1),
+            mask=(request >= 0) & (request < num_lengths),
+            other=0,
+        )
+        complete_blocks = tl.minimum(
+            tl.minimum(
+                (query_position + 1) // COMPRESS_RATIO,
+                sequence_length // COMPRESS_RATIO,
+            ),
+            BLOCK_TOPK,
+        )
+        expanded_count = complete_blocks * COMPRESS_RATIO
+        tail_start = ((query_position + 1) // COMPRESS_RATIO) * COMPRESS_RATIO
+        tail_count = (query_position + 1) - tail_start
 
     head_offsets = tl.arange(0, BLOCK_M)
     dim_offsets = tl.arange(0, HEAD_DIM)
@@ -272,11 +311,37 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     split_tile_end = (split_id + 1) * NUM_TILES // NUM_SPLITS
     for tile in range(split_tile_start, split_tile_end):
         columns = tile * BLOCK_N + column_offsets
-        logical_token = tl.load(
-            indices_ptr + row * stride_indices_row + columns,
-            mask=columns < TOPK,
-            other=-1,
-        )
+        if FROM_BLOCKS:
+            is_expanded = columns < expanded_count
+            block = tl.load(
+                indices_ptr
+                + row * stride_indices_row
+                + tl.minimum(columns // COMPRESS_RATIO, BLOCK_TOPK - 1),
+                mask=is_expanded,
+                other=-1,
+            )
+            expanded = block * COMPRESS_RATIO + columns % COMPRESS_RATIO
+            tail_offset = columns - expanded_count
+            is_tail = (
+                (columns >= expanded_count)
+                & (tail_offset < tail_count)
+                & (tail_offset < COMPRESS_RATIO - 1)
+            )
+            token = tl.where(is_expanded, expanded, tail_start + tail_offset)
+            logical_token = tl.where(
+                (columns < TOPK)
+                & (is_expanded | is_tail)
+                & (token >= 0)
+                & (token < sequence_length),
+                token,
+                -1,
+            )
+        else:
+            logical_token = tl.load(
+                indices_ptr + row * stride_indices_row + columns,
+                mask=columns < TOPK,
+                other=-1,
+            )
         safe_token = tl.maximum(logical_token, 0)
         logical_page = safe_token // PAGE_SIZE
         page_offset = safe_token % PAGE_SIZE
@@ -339,12 +404,26 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     )
     output_mask = head_offsets[:, None] < GROUP_SIZE
     if NUM_SPLITS == 1:
+        value = normalized_output
+        if GATED:
+            # ST (carry Q4): the output gate in the store -- the attention rounded to the output's dtype, times
+            # sigmoid(gate) in fp32 (1 / (1 + exp(-g)), torch's), rounded once: the layer's
+            # (attended.float() * torch.sigmoid(gate.float())).to(bf16) without its launches and fp32 temporaries
+            gate = tl.load(
+                gate_ptr
+                + row * stride_gate_row
+                + (first_head + head_offsets[:, None]) * stride_gate_head
+                + dim_offsets[None, :],
+                mask=output_mask,
+                other=0.0,
+            ).to(tl.float32)
+            value = normalized_output.to(output_ptr.dtype.element_ty).to(tl.float32) * tl.sigmoid(gate)
         tl.store(
             output_ptr
             + row * stride_output_row
             + (first_head + head_offsets[:, None]) * stride_output_head
             + dim_offsets[None, :],
-            normalized_output,
+            value,
             mask=output_mask,
         )
     else:
@@ -387,6 +466,10 @@ def _qsa_merge_splitk_kernel(
     NUM_QUERY_HEADS: tl.constexpr,
     NUM_SPLITS: tl.constexpr,
     BLOCK_SPLITS: tl.constexpr,
+    gate_ptr=None,
+    stride_gate_row=0,
+    stride_gate_head=0,
+    GATED: tl.constexpr = False,
 ) -> None:
     row = tl.program_id(0)
     head = tl.program_id(1)
@@ -413,6 +496,10 @@ def _qsa_merge_splitk_kernel(
     )
     merged = tl.sum(partial_output * weights[:, None], axis=0)
     merged = tl.where(denominator > 0, merged / denominator, 0.0)
+    if GATED:
+        # ST (carry Q4): the output gate in the merged store, as in the one-split store
+        gate = tl.load(gate_ptr + row * stride_gate_row + head * stride_gate_head + dim_offsets).to(tl.float32)
+        merged = merged.to(output_ptr.dtype.element_ty).to(tl.float32) * tl.sigmoid(gate)
     tl.store(
         output_ptr + row * stride_output_row + head * stride_output_head + dim_offsets,
         merged,
@@ -608,7 +695,7 @@ def _compress_qsa_groups_kernel(
 
 
 @triton.jit
-def _norm_rope_partial(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, R2: tl.constexpr,
+def _norm_rope_partial(X, W, POS, INV, OUT, sXr, sXh, sO, sP, EPS, D: tl.constexpr, R2: tl.constexpr,
                        BD: tl.constexpr, BR: tl.constexpr):
     # One program owns one head: the unit-offset RMS norm over the whole head, rounded once to the output's dtype
     # (engine/modules/norm.rmsnorm_unit_offset), then the neox rotation of the first 2 * R2 channels reading the
@@ -630,7 +717,7 @@ def _norm_rope_partial(X, W, POS, INV, OUT, sXr, sXh, sO, EPS, D: tl.constexpr, 
     wh = tl.load(W + R2 + i, mask=mi, other=0.0).to(tl.float32)
     lo = ((xl * scale) * (1.0 + wl)).to(OUT.dtype.element_ty).to(tl.float32)
     hi = ((xh * scale) * (1.0 + wh)).to(OUT.dtype.element_ty).to(tl.float32)
-    angle = tl.load(POS + r).to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
+    angle = tl.load(POS + r * sP).to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
     cos, sin = tl.cos(angle), tl.sin(angle)
     tl.store(out + i, (lo * cos - hi * sin).to(OUT.dtype.element_ty), mask=mi)
     tl.store(out + R2 + i, (lo * sin + hi * cos).to(OUT.dtype.element_ty), mask=mi)
@@ -654,17 +741,269 @@ def norm_rope_partial(x: torch.Tensor, w: torch.Tensor, eps: float, positions: t
     src = x if x.stride(2) == 1 else x.contiguous()
     out = torch.empty(rows, heads, D, device=x.device, dtype=x.dtype)
     inv = warm(x.device, rotary_dim, theta)
-    pos = positions.contiguous()
     if rows and heads:
-        _norm_rope_partial[(rows, heads)](src, w, pos, inv, out, src.stride(0), src.stride(1), out.stride(0), eps,
+        # positions are read through their stride: a group's first positions arrive as a column of [rows, 3]
+        _norm_rope_partial[(rows, heads)](src, w, positions, inv, out, src.stride(0), src.stride(1), out.stride(0),
+                                          positions.stride(0), eps,
                                           D=D, R2=rotary_dim // 2, BD=triton.next_power_of_2(D),
                                           BR=triton.next_power_of_2(rotary_dim // 2), num_warps=4)
     return out
 
 
+@triton.jit
+def _norm_rope_into(base, W, pos, INV, out, live, EPS, D: tl.constexpr, R2: tl.constexpr, BD: tl.constexpr,
+                    BR: tl.constexpr):
+    # _norm_rope_partial's program, line for line, for one head at `base` into `out` (both unit-stride along the head)
+    # when `live`: the fused QSA input launches below run it for several heads and caches in one program
+    d = tl.arange(0, BD)
+    m = (d < D) & live
+    x = tl.load(base + d, mask=m, other=0.0).to(tl.float32)
+    scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
+    w = tl.load(W + d, mask=m, other=0.0).to(tl.float32)
+    tl.store(out + d, ((x * scale) * (1.0 + w)).to(out.dtype.element_ty), mask=m)
+    i = tl.arange(0, BR)
+    mi = (i < R2) & live
+    xl = tl.load(base + i, mask=mi, other=0.0).to(tl.float32)
+    xh = tl.load(base + R2 + i, mask=mi, other=0.0).to(tl.float32)
+    wl = tl.load(W + i, mask=mi, other=0.0).to(tl.float32)
+    wh = tl.load(W + R2 + i, mask=mi, other=0.0).to(tl.float32)
+    lo = ((xl * scale) * (1.0 + wl)).to(out.dtype.element_ty).to(tl.float32)
+    hi = ((xh * scale) * (1.0 + wh)).to(out.dtype.element_ty).to(tl.float32)
+    angle = pos.to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
+    cos, sin = tl.cos(angle), tl.sin(angle)
+    tl.store(out + i, (lo * cos - hi * sin).to(out.dtype.element_ty), mask=mi)
+    tl.store(out + R2 + i, (lo * sin + hi * cos).to(out.dtype.element_ty), mask=mi)
+
+
+@triton.jit
+def _qsa_inputs_kernel(QG, KX, VX, IQX, IKX, POS, INV, WQ, WK, WIQ, QOUT, IQOUT, KC, VC, RC, KV_SLOTS, RING_SLOTS,
+                       sQGr, sQGh, sKr, sVr, sIQr, sIQh, sIKr, sQOr, sIQOr, sP, sKCb, sKCt, sVCb, sVCt, sRCb, sRCt,
+                       kv_pages, ring_pages, EPS, HQ: tl.constexpr, HI: tl.constexpr, D: tl.constexpr,
+                       DI: tl.constexpr, R2: tl.constexpr, KV_PAGE: tl.constexpr, RING_PAGE: tl.constexpr,
+                       BD: tl.constexpr, BDI: tl.constexpr, BR: tl.constexpr):
+    # One program a (row, query head): the query head's norm and rotation, the index query head's (h < HI), and at
+    # h == 0 the key head's straight into the K cache, the value row into V and the raw index key into the key ring --
+    # norm_rope_partial x 3 and qsa_store_cache_rows x 3, the same arithmetic and addresses (one KV head a rank)
+    r = tl.program_id(0)
+    h = tl.program_id(1)
+    pos = tl.load(POS + r * sP)
+    _norm_rope_into(QG + r * sQGr + h * sQGh, WQ, pos, INV, QOUT + r * sQOr + h * D, h < HQ, EPS, D, R2, BD, BR)
+    _norm_rope_into(IQX + r * sIQr + h * sIQh, WIQ, pos, INV, IQOUT + r * sIQOr + h * DI, h < HI, EPS, DI, R2, BDI,
+                    BR)
+    # qsa_store_cache_rows' address and validity: int64 before the page stride
+    kv_slot = tl.load(KV_SLOTS + r)
+    kv_live = (h == 0) & (kv_slot >= 0) & (kv_slot < kv_pages * KV_PAGE)
+    kv_block = (tl.maximum(kv_slot, 0) // KV_PAGE).to(tl.int64)
+    kv_token = tl.maximum(kv_slot, 0) % KV_PAGE
+    _norm_rope_into(KX + r * sKr, WK, pos, INV, KC + kv_block * sKCb + kv_token * sKCt, kv_live, EPS, D, R2, BD, BR)
+    dims = tl.arange(0, BD)
+    tl.store(VC + kv_block * sVCb + kv_token * sVCt + dims,
+             tl.load(VX + r * sVr + dims, mask=kv_live & (dims < D), other=0), mask=kv_live & (dims < D))
+    ring_slot = tl.load(RING_SLOTS + r)
+    ring_live = (h == 0) & (ring_slot >= 0) & (ring_slot < ring_pages * RING_PAGE)
+    ring_block = (tl.maximum(ring_slot, 0) // RING_PAGE).to(tl.int64)
+    ring_token = tl.maximum(ring_slot, 0) % RING_PAGE
+    idims = tl.arange(0, BDI)
+    tl.store(RC + ring_block * sRCb + ring_token * sRCt + idims,
+             tl.load(IKX + r * sIKr + idims, mask=ring_live & (idims < DI), other=0), mask=ring_live & (idims < DI))
+
+
+@triton.jit
+def _qsa_index_keys_kernel(raw_keys_ptr, compressor_state_cache_ptr, compressor_state_table_ptr, token_to_req_ptr,
+                           query_start_loc_ptr, logical_positions_ptr, compressed_slots_ptr, pooled_ptr, W, INV,
+                           KEYS, stride_raw_row, stride_compressor_state_block, stride_compressor_state_token,
+                           stride_compressor_state_table_req, stride_pooled_row, sKb, sKt, num_rows,
+                           num_compressor_state_blocks, num_requests, key_pages, EPS,
+                           COMPRESSOR_STATE_SIZE: tl.constexpr, COMPRESS_RATIO: tl.constexpr, HEAD_DIM: tl.constexpr,
+                           BLOCK_D: tl.constexpr, R2: tl.constexpr, BR: tl.constexpr, KEY_PAGE: tl.constexpr):
+    # _compress_qsa_groups_kernel's program (the pooled mean of the group a row closes, from the ring and this step's
+    # rows; unit strides along the head, no rope cache), then _norm_rope_partial's at the group's first position and
+    # qsa_store_cache_rows' write of the key at the row's slot: the three launches of a QSA layer's index keys in one
+    row = tl.program_id(0)
+    dims = tl.arange(0, BLOCK_D)
+    request = tl.load(token_to_req_ptr + row)
+    end_position = tl.load(logical_positions_ptr + row)
+    compressed_slot = tl.load(compressed_slots_ptr + row)
+    valid_request = (request >= 0) & (request < num_requests)
+    safe_request = tl.minimum(tl.maximum(request, 0), num_requests - 1)
+    query_row_start = tl.load(
+        query_start_loc_ptr + safe_request, mask=valid_request, other=0
+    )
+    query_row_end = tl.load(
+        query_start_loc_ptr + safe_request + 1, mask=valid_request, other=0
+    )
+    chunk_start_position = end_position - (row - query_row_start)
+    compressor_state_block = tl.load(
+        compressor_state_table_ptr + safe_request * stride_compressor_state_table_req,
+        mask=valid_request,
+        other=-1,
+    )
+    valid_compressor_state_block = (compressor_state_block >= 0) & (
+        compressor_state_block < num_compressor_state_blocks
+    )
+    valid_row = (
+        (row < num_rows)
+        & valid_request
+        & (row >= query_row_start)
+        & (row < query_row_end)
+        & (end_position >= COMPRESS_RATIO - 1)
+        & (compressed_slot >= 0)
+    )
+    accumulator = tl.zeros((BLOCK_D,), dtype=tl.float32)
+    for group_offset in tl.range(0, COMPRESS_RATIO):
+        position = end_position - (COMPRESS_RATIO - 1 - group_offset)
+        use_raw = position >= chunk_start_position
+        raw_row = query_row_start + position - chunk_start_position
+        raw_values = tl.load(
+            raw_keys_ptr + raw_row * stride_raw_row + dims,
+            mask=valid_row
+            & use_raw
+            & (raw_row >= query_row_start)
+            & (raw_row < query_row_end)
+            & (raw_row < num_rows)
+            & (dims < HEAD_DIM),
+            other=0.0,
+        ).to(tl.float32)
+        compressor_state_values = tl.load(
+            compressor_state_cache_ptr
+            + tl.maximum(compressor_state_block, 0).to(tl.int64)
+            * stride_compressor_state_block
+            + (position % COMPRESSOR_STATE_SIZE) * stride_compressor_state_token
+            + dims,
+            mask=valid_row
+            & ~use_raw
+            & valid_compressor_state_block
+            & (dims < HEAD_DIM),
+            other=0.0,
+        ).to(tl.float32)
+        accumulator += tl.where(use_raw, raw_values, compressor_state_values)
+    # the pooled row as the compression stored it (rounded to the keys' dtype), read back by the norm below
+    pooled = pooled_ptr + row * stride_pooled_row
+    tl.store(pooled + dims, accumulator / COMPRESS_RATIO, mask=(row < num_rows) & (dims < HEAD_DIM))
+    first_position = tl.where(valid_row, end_position - COMPRESS_RATIO + 1, 0)
+    key_live = (compressed_slot >= 0) & (compressed_slot < key_pages * KEY_PAGE)
+    key_block = (tl.maximum(compressed_slot, 0) // KEY_PAGE).to(tl.int64)
+    key_token = tl.maximum(compressed_slot, 0) % KEY_PAGE
+    _norm_rope_into(pooled, W, first_position, INV, KEYS + key_block * sKb + key_token * sKt, key_live, EPS,
+                    HEAD_DIM, R2, BLOCK_D, BR)
+
+
+def _paged_rows(cache: torch.Tensor, what: str, width: int) -> None:
+    if (cache.ndim != 4 or cache.shape[2] != 1 or cache.shape[3] != width or not all(cache.shape)
+            or cache.stride(3) != 1):
+        raise ValueError(f"{what} must be [pages, page_size, 1, {width}] with a unit stride along the row")
+
+
+def qsa_index_keys(raw_keys, compressor_state_cache, compressor_state_block_table, token_to_req, query_start_loc,
+                   logical_positions, compressed_slots, compress_ratio, weight, eps, theta, rotary_dim, key_cache):
+    """The index keys a step's rows close, in one launch: qsa_compress_groups_with_ratio (no rope cache), then
+    norm_rope_partial at each group's first position, then qsa_store_cache_rows at `compressed_slots` (-1 skipped) --
+    the same arithmetic and bytes. `raw_keys` is [rows, head_dim] with a unit stride along the head (the in_proj
+    columns). Launch it before this step's raw keys go into the ring: the pooled groups read the ring's older members,
+    and a long prefill's ring writes cover every ring cell."""
+    if not raw_keys.is_cuda:
+        raise RuntimeError("QSA index keys run on CUDA")
+    rows = token_to_req.numel()
+    if compress_ratio <= 0:
+        raise ValueError("QSA compression ratio must be positive")
+    if raw_keys.ndim != 2 or raw_keys.shape[0] != rows or raw_keys.stride(1) != 1:
+        raise ValueError("QSA raw keys must be [rows, head_dim] with a unit stride along the head")
+    head_dim = raw_keys.shape[1]
+    if (logical_positions.shape != (rows,) or compressed_slots.shape != (rows,)
+            or logical_positions.dtype != torch.int64):
+        raise ValueError("QSA compression metadata must match token rows (int64 positions)")
+    _packed_rows("QSA index keys", token_to_req, logical_positions, compressed_slots)
+    _paged_rows(compressor_state_cache, "QSA compressor-state cache", head_dim)
+    _paged_rows(key_cache, "QSA index key cache", head_dim)
+    if compressor_state_cache.shape[1] < compress_ratio or compressor_state_cache.dtype != raw_keys.dtype:
+        raise ValueError("QSA compressor-state cache does not match the compression layout")
+    if key_cache.dtype != raw_keys.dtype or weight.shape != (head_dim,):
+        raise ValueError("QSA index keys take the raw keys' dtype and a [head_dim] norm weight")
+    if compressor_state_block_table.ndim != 2 or compressor_state_block_table.shape[1] < 1:
+        raise ValueError("QSA compressor-state block table must contain one block per request")
+    if query_start_loc.ndim != 1 or query_start_loc.shape[0] < 2:
+        raise ValueError("QSA query starts must contain a terminal offset")
+    num_requests = query_start_loc.shape[0] - 1
+    if compressor_state_block_table.shape[0] < num_requests:
+        raise ValueError("QSA compressor-state block table has too few request rows")
+    if rotary_dim <= 0 or rotary_dim % 2 or rotary_dim > head_dim:
+        raise ValueError("QSA index keys rotate an even width no wider than the head")
+    if not rows:
+        return
+    from engine.kernels.common.norm_rope import warm
+    pooled = torch.empty((rows, head_dim), dtype=raw_keys.dtype, device=raw_keys.device)
+    inv = warm(raw_keys.device, rotary_dim, theta)
+    _qsa_index_keys_kernel[(rows,)](
+        raw_keys, compressor_state_cache, compressor_state_block_table, token_to_req, query_start_loc,
+        logical_positions, compressed_slots, pooled, weight, inv, key_cache,
+        raw_keys.stride(0), compressor_state_cache.stride(0), compressor_state_cache.stride(1),
+        compressor_state_block_table.stride(0), pooled.stride(0), key_cache.stride(0), key_cache.stride(1),
+        rows, compressor_state_cache.shape[0], num_requests, key_cache.shape[0], eps,
+        COMPRESSOR_STATE_SIZE=compressor_state_cache.shape[1], COMPRESS_RATIO=compress_ratio, HEAD_DIM=head_dim,
+        BLOCK_D=triton.next_power_of_2(head_dim), R2=rotary_dim // 2, BR=triton.next_power_of_2(rotary_dim // 2),
+        KEY_PAGE=key_cache.shape[1], num_warps=4,
+    )
+
+
+def qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta, rotary_dim, k_cache, v_cache, kv_slots,
+               ring, ring_slots):
+    """A QSA layer's inputs in one launch: norm_rope_partial of the query heads q [N, Hq, D] and of the index query
+    heads iq [N, Hi, Di] (both returned), of the key head k [N, 1, D] straight into k_cache, and qsa_store_cache_rows of
+    v [N, 1, D] into v_cache at `kv_slots` and of the raw index keys ik [N, Di] into the key ring at `ring_slots` (-1
+    skipped) -- the same arithmetic and bytes as those six launches. Views are read through their strides, unit along
+    the head. The ring write belongs after qsa_index_keys, which reads the ring."""
+    if not q.is_cuda:
+        raise RuntimeError("QSA inputs run on CUDA")
+    if q.ndim != 3 or k.ndim != 3 or v.shape != k.shape or iq.ndim != 3 or ik.ndim != 2:
+        raise ValueError("QSA inputs take q [N, Hq, D], k and v [N, 1, D], iq [N, Hi, Di] and ik [N, Di]")
+    rows, hq, dim = q.shape
+    hi, di = iq.shape[1:]
+    if k.shape != (rows, 1, dim) or iq.shape[0] != rows or ik.shape != (rows, di) or hi > hq:
+        raise ValueError("QSA inputs: one KV head a rank, as many rows everywhere, no more index heads than query heads")
+    if any(x.stride(-1) != 1 for x in (q, k, v, iq, ik)):
+        raise ValueError("QSA inputs are read with a unit stride along the head")
+    if positions.shape != (rows,) or positions.dtype != torch.int64:
+        raise ValueError("QSA inputs take int64 positions [N]")
+    if q_norm.shape != (dim,) or k_norm.shape != (dim,) or iq_norm.shape != (di,):
+        raise ValueError("QSA input norm weights must match their heads")
+    if rotary_dim <= 0 or rotary_dim % 2 or rotary_dim > di:
+        raise ValueError("QSA inputs rotate an even width no wider than either head")
+    _paged_rows(k_cache, "QSA K cache", dim)
+    _paged_rows(v_cache, "QSA V cache", dim)
+    _paged_rows(ring, "QSA key ring", di)
+    if k_cache.shape[:2] != v_cache.shape[:2] or kv_slots.shape != (rows,) or ring_slots.shape != (rows,):
+        raise ValueError("QSA inputs: K and V pages match and every row has a K/V and a ring slot")
+    if not (q.dtype == k.dtype == v.dtype == iq.dtype == ik.dtype == k_cache.dtype == v_cache.dtype == ring.dtype):
+        raise ValueError("QSA inputs and caches share one dtype")
+    _packed_rows("QSA inputs", positions, kv_slots, ring_slots)
+    q_out = torch.empty(rows, hq, dim, device=q.device, dtype=q.dtype)
+    iq_out = torch.empty(rows, hi, di, device=q.device, dtype=q.dtype)
+    if not rows:
+        return q_out, iq_out
+    from engine.kernels.common.norm_rope import warm
+    inv = warm(q.device, rotary_dim, theta)
+    _qsa_inputs_kernel[(rows, hq)](
+        q, k, v, iq, ik, positions, inv, q_norm, k_norm, iq_norm, q_out, iq_out, k_cache, v_cache, ring, kv_slots,
+        ring_slots, q.stride(0), q.stride(1), k.stride(0), v.stride(0), iq.stride(0), iq.stride(1), ik.stride(0),
+        q_out.stride(0), iq_out.stride(0), positions.stride(0), k_cache.stride(0), k_cache.stride(1),
+        v_cache.stride(0), v_cache.stride(1), ring.stride(0), ring.stride(1), k_cache.shape[0], ring.shape[0], eps,
+        HQ=hq, HI=hi, D=dim, DI=di, R2=rotary_dim // 2, KV_PAGE=k_cache.shape[1], RING_PAGE=ring.shape[1],
+        BD=triton.next_power_of_2(dim), BDI=triton.next_power_of_2(di), BR=triton.next_power_of_2(rotary_dim // 2),
+        num_warps=4,
+    )
+    return q_out, iq_out
+
+
 def _validate_mqa(q: torch.Tensor) -> None:
     if q.ndim != 3 or q.shape[1] <= 0 or q.shape[2] <= 0:
         raise ValueError("QSA query must be [rows, heads, head_dim]")
+
+
+def _packed_rows(what: str, *rows: torch.Tensor) -> None:
+    """The kernels load one-dimensional row metadata at `ptr + row`, without a stride: a strided view -- an expanded
+    one-row mapping has stride 0 -- would be read past its storage."""
+    if any(t.numel() > 1 and t.stride(0) != 1 for t in rows):
+        raise ValueError(f"{what} needs packed row metadata (stride 1)")
 
 
 def qsa_mqa_paged(q, k_cache, page_table, token_to_req, query_positions, sequence_lengths, compress_ratio,
@@ -689,6 +1028,7 @@ def qsa_mqa_paged(q, k_cache, page_table, token_to_req, query_positions, sequenc
         raise ValueError("QSA query positions must match query rows")
     if sequence_lengths.shape != (page_table.shape[0],):
         raise ValueError("QSA sequence lengths must match page-table requests")
+    _packed_rows("paged QSA scoring", token_to_req, query_positions)
     if compress_ratio <= 0:
         raise ValueError("QSA compression ratio must be positive")
     score_divisor = math.sqrt(q.shape[2]) if score_scale is None else score_scale
@@ -733,6 +1073,7 @@ def expand_qsa_block_indices_cuda(block_indices, query_positions, sequence_lengt
         raise ValueError("QSA compressed top-k has an invalid shape")
     if token_to_req.shape != query_positions.shape:
         raise ValueError("QSA request mapping must match query positions")
+    _packed_rows("QSA expansion", token_to_req, query_positions)
     if sequence_lengths.ndim != 1 or not sequence_lengths.shape[0]:
         raise ValueError("QSA request sequence lengths must be nonempty")
     if out is None:
@@ -805,9 +1146,72 @@ def qsa_select_paged_tokens(q, k_cache, page_table, token_to_req, query_position
     return out
 
 
-def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out=None):
+def qsa_select_paged_blocks(q, k_cache, page_table, token_to_req, query_positions, sequence_lengths, token_topk,
+                            compress_ratio, out=None):
+    """`qsa_select_paged_tokens` without its expansion: the chosen blocks, int32 [rows, token_topk // compress_ratio]
+    (-1 past a row's visible blocks), for `qsa_sparse_paged_attention_blocks` to expand inside its tiles. The scoring
+    chunks and the selection are `qsa_select_paged_tokens`' own, writing each chunk's rows in place."""
+    if token_topk <= 0 or compress_ratio <= 0 or token_topk % compress_ratio:
+        raise ValueError("QSA token top-k must be divisible by compression ratio")
+    rows = q.shape[0]
+    block_topk = token_topk // compress_ratio
+    if out is None:
+        out = torch.empty((rows, block_topk), dtype=torch.int32, device=q.device)
+    if out.shape != (rows, block_topk):
+        raise ValueError("QSA block selection output has an invalid shape")
+    if not rows:
+        return out
+    columns = page_table.shape[1] * k_cache.shape[1]
+    rows_per_chunk = max(1, _LOGITS_WORKSPACE_BYTES // max(columns * 4, 1))
+    for row_start in range(0, rows, rows_per_chunk):
+        row_slice = slice(row_start, min(row_start + rows_per_chunk, rows))
+        logits, visible_blocks = qsa_mqa_paged(q[row_slice], k_cache, page_table, token_to_req[row_slice],
+                                               query_positions[row_slice], sequence_lengths, compress_ratio)
+        select_blocks(logits, visible_blocks, block_topk, out[row_slice])
+    return out
+
+
+def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out=None, *, gate=None):
     """Sparse GQA over paged BF16 K/V caches [blocks, page_size, kv_heads, head_dim] at the selected positions
-    (int32 [rows, width], -1 skipped): softmax(q . k / sqrt(head_dim)) v per query head, [rows, heads, head_dim]."""
+    (int32 [rows, width], -1 skipped): softmax(q . k / sqrt(head_dim)) v per query head, [rows, heads, head_dim]. With
+    `gate` (BF16, q's shape, unit stride along the head) the output is BF16(attention * sigmoid(gate)), applied in the
+    final store."""
+    width = logical_indices.shape[1] if logical_indices.ndim == 2 else 0
+    return _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width,
+                                   gate=gate)
+
+
+def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_positions, sequence_lengths,
+                                      compress_ratio, token_topk, block_table, token_to_req, out=None, *, gate=None):
+    """`qsa_sparse_paged_attention` at the positions `expand_qsa_block_indices_cuda` expands the chosen blocks to --
+    int32 [rows, token_topk // compress_ratio] as `qsa_select_paged_blocks` writes them -- computed tile by tile in the
+    attention's own launch (FROM_BLOCKS): the same positions on the same tiles, so the same bytes, without the expansion
+    launch and its [rows, token_topk + compress_ratio - 1] buffer."""
+    if token_topk <= 0 or compress_ratio <= 0 or token_topk % compress_ratio:
+        raise ValueError("QSA token top-k must be divisible by compression ratio")
+    block_topk = token_topk // compress_ratio
+    rows = q.shape[0] if q.ndim == 3 else -1
+    if block_indices.shape != (rows, block_topk):
+        raise ValueError("QSA compressed top-k has an invalid shape")
+    if query_positions.shape != (rows,):
+        raise ValueError("QSA request mapping must match query positions")
+    if sequence_lengths.ndim != 1 or not sequence_lengths.shape[0]:
+        raise ValueError("QSA request sequence lengths must be nonempty")
+    if not (block_indices.dtype == query_positions.dtype == sequence_lengths.dtype == torch.int32):
+        raise ValueError("QSA sparse attention metadata is int32")
+    if query_positions.device != q.device or sequence_lengths.device != q.device:
+        raise ValueError("QSA sparse attention tensors share one device")
+    _packed_rows("QSA sparse attention", query_positions, sequence_lengths)
+    return _sparse_paged_attention(q, k_cache, v_cache, block_indices, block_table, token_to_req, out,
+                                   token_topk + compress_ratio - 1,
+                                   blocks=(query_positions, sequence_lengths, compress_ratio, block_topk), gate=gate)
+
+
+def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width, blocks=None,
+                            gate=None):
+    """The launch of both entries: `logical_indices` holds the positions at `width` columns, or (with `blocks` --
+    query positions, sequence lengths, the compression ratio and the block top-k) the chosen blocks whose expansion
+    is `width` columns wide. `gate`, when given, is applied in the final store (the one-split launch or the merge)."""
     if not q.is_cuda:
         raise RuntimeError("paged QSA sparse attention runs on CUDA")
     if q.ndim != 3 or k_cache.ndim != 4 or v_cache.shape != k_cache.shape:
@@ -818,7 +1222,7 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
         raise ValueError("QSA sparse attention metadata has invalid shapes")
     if not all(k_cache.shape[:3]) or not all(block_table.shape):
         raise ValueError("QSA sparse attention cache and block table must be nonempty")
-    if logical_indices.shape[1] <= 0:
+    if width <= 0:
         raise ValueError("QSA sparse attention requires a positive selection width")
     if q.shape[2] != k_cache.shape[3] or q.shape[1] % k_cache.shape[2]:
         raise ValueError("QSA sparse attention requires valid grouped-query heads")
@@ -839,6 +1243,11 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
         out = torch.empty_like(q)
     if out.shape != q.shape or out.dtype != q.dtype or out.device != q.device or out.stride(2) != 1:
         raise ValueError("QSA sparse output must match its query")
+    if gate is not None and (gate.shape != q.shape or gate.dtype != torch.bfloat16 or gate.device != q.device
+                             or gate.stride(2) != 1):
+        raise ValueError("the QSA output gate is BF16 in the query's shape with a unit stride along the head")
+    gated = {} if gate is None else dict(gate_ptr=gate, stride_gate_row=gate.stride(0), stride_gate_head=gate.stride(1),
+                                         GATED=True)
     if not q.shape[0]:
         return out
 
@@ -858,7 +1267,7 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
         block_n, target_splits, partial_warps = 64, 4, 2
     else:
         block_n, target_splits, partial_warps = 64, 1, 2
-    num_tiles = triton.cdiv(logical_indices.shape[1], block_n)
+    num_tiles = triton.cdiv(width, block_n)
     max_useful_splits = 1 << (num_tiles.bit_length() - 1)
     num_splits = min(max_useful_splits, target_splits)
     if num_splits == 1:
@@ -867,21 +1276,28 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
     else:
         partial_output = torch.empty((num_splits, *q.shape), dtype=torch.float32, device=q.device)
         partial_lse = torch.empty((num_splits, q.shape[0], q.shape[1]), dtype=torch.float32, device=q.device)
+    expansion = {}
+    if blocks is not None:
+        query_positions, sequence_lengths, compress_ratio, block_topk = blocks
+        expansion = dict(query_positions_ptr=query_positions, sequence_lengths_ptr=sequence_lengths,
+                         num_lengths=sequence_lengths.shape[0], FROM_BLOCKS=True, BLOCK_TOPK=block_topk,
+                         COMPRESS_RATIO=compress_ratio)
     _qsa_sparse_paged_gqa_splitk_kernel[(q.shape[0], k_cache.shape[2], num_splits)](
         q, k_cache, v_cache, logical_indices, block_table, token_to_req, partial_output, partial_lse, out,
         q.stride(0), q.stride(1), k_cache.stride(0), k_cache.stride(1), k_cache.stride(2),
         v_cache.stride(0), v_cache.stride(1), v_cache.stride(2), logical_indices.stride(0), block_table.stride(0),
         out.stride(0), out.stride(1), q.shape[0], k_cache.shape[0], block_table.shape[0],
-        TOPK=logical_indices.shape[1], PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=block_table.shape[1],
+        TOPK=width, PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=block_table.shape[1],
         GROUP_SIZE=group_size, HEAD_DIM=q.shape[2], NUM_QUERY_HEADS=q.shape[1], NUM_SPLITS=num_splits,
-        NUM_TILES=num_tiles, BLOCK_M=block_m, BLOCK_N=block_n, num_warps=partial_warps, num_stages=2,
+        NUM_TILES=num_tiles, BLOCK_M=block_m, BLOCK_N=block_n, num_warps=partial_warps, num_stages=2, **expansion,
+        **(gated if num_splits == 1 else {}),
     )
     if num_splits == 1:
         return out
     _qsa_merge_splitk_kernel[(q.shape[0], q.shape[1])](
         partial_output, partial_lse, out, out.stride(0), out.stride(1), q.shape[0],
         HEAD_DIM=q.shape[2], NUM_QUERY_HEADS=q.shape[1], NUM_SPLITS=num_splits,
-        BLOCK_SPLITS=triton.next_power_of_2(num_splits), num_warps=2, num_stages=1,
+        BLOCK_SPLITS=triton.next_power_of_2(num_splits), num_warps=2, num_stages=1, **gated,
     )
     return out
 
@@ -901,6 +1317,7 @@ def qsa_store_cache_rows(cache, slot_mapping, rows):
         rows = rows[:, 0]
     if rows.shape != (slot_mapping.numel(), cache.shape[3]):
         raise ValueError("QSA cache rows and slots have incompatible shapes")
+    _packed_rows("QSA cache stores", slot_mapping)
     if not rows.shape[0]:
         return
     _store_qsa_rows_kernel[(rows.shape[0],)](
@@ -927,6 +1344,7 @@ def qsa_compress_groups_with_ratio(raw_keys, raw_positions, compressor_state_cac
         raise ValueError("QSA raw positions must be [rows, 1, 3] int64")
     if logical_positions.shape != (rows,) or compressed_slots.shape != (rows,):
         raise ValueError("QSA compression metadata must match token rows")
+    _packed_rows("QSA compression", token_to_req, logical_positions, compressed_slots)
     if compressor_state_cache.ndim != 4 or compressor_state_cache.shape[2] != 1:
         raise ValueError("QSA compressor-state cache has an invalid shape")
     if (compressor_state_cache.shape[1] < compress_ratio or compressor_state_cache.shape[3] != raw_keys.shape[2]
@@ -999,5 +1417,6 @@ def qualify(device, *, heads=((6, 256), (4, 128)), rotary_dim: int, theta: float
 
 
 __all__ = ["norm_rope_partial", "qsa_mqa_paged", "expand_qsa_block_indices_cuda", "select_blocks",
-           "qsa_select_paged_tokens", "qsa_sparse_paged_attention", "qsa_store_cache_rows",
-           "qsa_compress_groups_with_ratio", "qualify"]
+           "qsa_index_keys", "qsa_inputs", "qsa_select_paged_tokens", "qsa_select_paged_blocks",
+           "qsa_sparse_paged_attention",
+           "qsa_sparse_paged_attention_blocks", "qsa_store_cache_rows", "qsa_compress_groups_with_ratio", "qualify"]

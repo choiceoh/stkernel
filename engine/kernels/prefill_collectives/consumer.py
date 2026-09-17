@@ -38,7 +38,7 @@ def _quantize_gather(Packed, Scales, Q, S, LOCAL_N, PAYLOAD_BYTES,
 @triton.jit(do_not_specialize=['M', 'LOCAL_N', 'PAYLOAD_BYTES'])
 def _quantize_gather_mx(Packed, Scales, Q, S, M, LOCAL_N, PAYLOAD_BYTES,
                         K: tl.constexpr, G: tl.constexpr, PACK_BLOCK: tl.constexpr, TILED: tl.constexpr,
-                        PAD: tl.constexpr = True):
+                        PAD: tl.constexpr = True, SCALAR_SCALE: tl.constexpr = False):
     row = _rows(M, TILED)
     group = tl.program_id(1)
     col = group*128 + tl.arange(0, 128)
@@ -52,24 +52,27 @@ def _quantize_gather_mx(Packed, Scales, Q, S, M, LOCAL_N, PAYLOAD_BYTES,
     output_scale, inverse = _power2_scale(amax)
     tl.store(Q + row[:, None]*K + col[None, :],
              (x*inverse[:, None]).to(tl.float8e4nv), row[:, None] < M)
-    _publish(S, output_scale, row, group, M, G, PAD)
+    _publish(S, output_scale, row, group, M, G, PAD, SCALAR_SCALE, TILED)
 
 
 @triton.jit
 def _quantize_gather_mx_bound(Packed, Scales, Q, S, M: tl.constexpr,
-                              LOCAL_N: tl.constexpr, PAYLOAD_BYTES: tl.constexpr, PACK_BLOCK: tl.constexpr):
+                              LOCAL_N: tl.constexpr, PAYLOAD_BYTES: tl.constexpr, PACK_BLOCK: tl.constexpr,
+                              SCALAR_SCALE: tl.constexpr = False):
     # A prepared packet has a fixed rank stride. Compile division/modulo by
     # local_rows into constant arithmetic instead of general integer division.
     _quantize_gather_mx(Packed, Scales, Q, S, M, LOCAL_N, PAYLOAD_BYTES,
-                        4096, 32, PACK_BLOCK, M >= 128, False)
+                        4096, 32, PACK_BLOCK, M >= 128, False, SCALAR_SCALE)
 
 
-def quantize_gather(received, local_rows, *, real_rows=None, routed=False, mx=False, out=None):
+def quantize_gather(received, local_rows, *, real_rows=None, routed=False, mx=False, out=None, num_warps=4):
     """Convert four rank-ordered packets to contiguous FP8 rows and FP32 scales.
 
 `received` is the byte output of the existing FP8-v3 all-gather. Its owner
 guarantees the packet values and scales obey that transport's contract.
 """
+    if type(num_warps) is not int or num_warps not in ((1, 2, 4) if mx else (4,)):
+        raise ValueError('packet producer requires 1/2/4 MX warps or 4 baseline warps')
     if (type(local_rows) is not int or local_rows < 32 or received.ndim != 1
             or not received.is_cuda or received.dtype != torch.uint8 or not received.is_contiguous()):
         raise ValueError("consumer requires CUDA byte packets and at least 32 local rows")
@@ -107,7 +110,7 @@ guarantees the packet values and scales obey that transport's contract.
     if mx:
         _quantize_gather_mx[(row_programs(rows), k//128)](
             received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales.view(torch.int32),
-            rows, local, stride, k, k//128, BLOCK, rows >= 128, bool(rows % 128), num_warps=4)
+            rows, local, stride, k, k//128, BLOCK, rows >= 128, bool(rows % 128), num_warps == 1, num_warps=num_warps)
     else:
         _quantize_gather[(rows, triton.cdiv(k//128, 4))](
             received.view(torch.float8_e4m3fn), received.view(torch.float32), q, scales,
@@ -115,11 +118,12 @@ guarantees the packet values and scales obey that transport's contract.
     return q, scales
 
 
-def bind_quantize_gather(received, local_rows, *, real_rows=None, routed=False):
+def bind_quantize_gather(received, local_rows, *, real_rows=None, routed=False, out=None, num_warps=4):
     """Freeze the MX packet ABI and initialize private scale padding once."""
     if torch.cuda.is_current_stream_capturing():
         raise RuntimeError('MX packet producer must be bound before capture')
-    outputs = quantize_gather(received, local_rows, real_rows=real_rows, routed=routed, mx=True)
+    outputs = quantize_gather(received, local_rows, real_rows=real_rows, routed=routed,
+                              mx=True, out=out, num_warps=num_warps)
     q, scales = outputs
     rows, k = q.shape
     words = scales.view(torch.int32)
@@ -127,7 +131,7 @@ def bind_quantize_gather(received, local_rows, *, real_rows=None, routed=False):
     local, stride = local_rows*k, received.numel()//4
     def run():
         _quantize_gather_mx_bound[(row_programs(rows), k//128)](
-            packed, transport_scales, q, words, rows, local, stride, BLOCK, num_warps=4)
+            packed, transport_scales, q, words, rows, local, stride, BLOCK, num_warps == 1, num_warps=num_warps)
         return outputs
     run()
     return run

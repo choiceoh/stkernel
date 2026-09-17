@@ -243,6 +243,8 @@ class MoEStaticKernelV5(MoEStaticKernelV4):
             next_item,
             sfb1_packed,
             sfb2_packed,
+            b_w13,
+            b_down,
         ).launch(
             grid=grid,
             block=[self.threads_per_cta, 1, 1],

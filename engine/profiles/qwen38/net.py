@@ -10,8 +10,10 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
 
     hyper-connection site     5 launches: the previous leave joined to the stream norm, down+inject in one GEMM,
                               the gates, up, the stream mean (engine/kernels/gated_residual)
-    GatedDeltaNet             one GEMM for q|k|v|z|b|a (merged at preshard), one launch for decay and beta, the conv
-                              and the delta rule on their ring kernels, the output norm in one launch, out_proj
+    GatedDeltaNet             one GEMM for q|k|v|z|b|a (merged at preshard), the conv and the delta rule on their ring
+                              kernels (the delta rule's launch computes the decay and beta from the projection's
+                              columns; a prefill chunk's gates are one launch before its chunk kernel), the output norm
+                              in one launch, out_proj
     attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
                               the query heads, one for the key head, one for the index queries; the QSA ops
     MoE                       the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
@@ -224,9 +226,15 @@ class Qwen38Net:
         """The dense lanes (engine/kernels/dense): W4A8 at decode rows, FP8 above; the shared expert's 160-column down
         projection through PaddedDenseLinear. No channel smoothing: its fold divides a plain norm weight, and every
         norm this model has is unit-offset. The hyper-connection mixers are BF16 matmuls inside their lane (10,240
-        wide, W4 packs do not tile) unless `hc_fp8` put them on FP8 (`_prepare_hc_fp8`); the router stays a BF16 GEMM."""
-        from engine.kernels.dense import DenseLinear, FP8Linear, PaddedDenseLinear
+        wide, W4 packs do not tile) unless `hc_fp8` put them on FP8 (`_prepare_hc_fp8`); the router stays a BF16 GEMM.
+
+        `consume_weights` moves a lane's W4 and FP8 packs into its BF16 source's arena region and drops the source, where
+        the packs fit it (engine/kernels/dense.packed_nbytes, the resident bound, against the source's bytes): every
+        projection but the shared expert's down projection, whose 160 columns pack at 256 -- 1,034,496 bytes of packs
+        against 819,200 of source -- until the preshard reserves its padded region."""
+        from engine.kernels.dense import DenseLinear, FP8Linear, PaddedDenseLinear, packed_nbytes, padded_columns
         self.dense = {}
+        self.retained_sources = []
         for key, name in self.dense_names(self.p).items():
             weight = self.p[key]
             aligned = weight.shape[1] % 128 == 0
@@ -234,8 +242,12 @@ class Qwen38Net:
                 PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None)
             self.dense[key] = lane
             if consume_weights and hasattr(lane, "consume_weight"):
-                lane.consume_weight(weight)
-                self.p[key] = None
+                cols = weight.shape[1] if aligned else padded_columns(weight.shape[1])
+                if packed_nbytes(weight.shape[0], cols) <= weight.numel() * weight.element_size():
+                    lane.consume_weight(weight)
+                    self.p[key] = None
+                else:
+                    self.retained_sources.append(key)
         head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
         self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
         self._hc_projections = self._prepare_hc_fp8() if self.hc_fp8 else {}
@@ -302,10 +314,19 @@ class Qwen38Net:
         cells more than once in one launch, and which write lands is not defined."""
         F = self.F
         dev = step.ids.device
+        from engine.profiles.qwen38.caches import QSA_KEY_RING
+        if getattr(step, "captured", False) and step.ids.is_cuda:
+            # one launch for what the composition below spells in about forty (engine/kernels/step_addresses); the
+            # composition stays the CPU's form and the reference the kernel is held to
+            from engine.kernels import step_addresses
+            return StepMeta(*step_addresses.captured(step.contexts, step.slots, step.seqs, caches.block_table,
+                                                     tokens=step.tokens, blocks=step.blocks, block=F.block,
+                                                     ratio=F.idx_ratio, ring=QSA_KEY_RING))
         if getattr(step, "captured", False):
             n, t = step.rows, step.tokens
             positions = (step.contexts[:, None] + iota(t, dev)).reshape(-1)
-            rows_req = iota(n, dev, torch.int32)[:, None].expand(n, t).reshape(-1)
+            # one row reshapes its expand into a stride-0 view, and the QSA kernels load this at `ptr + row`
+            rows_req = iota(n, dev, torch.int32)[:, None].expand(n, t).reshape(-1).contiguous()
             page_table = caches.block_table[:, :step.blocks].index_select(0, step.seqs).clamp_min_(0)
             starts = iota(n + 1, dev, torch.int32) * t
             slot_table = step.slots.to(torch.int32)[:, None]
@@ -332,7 +353,6 @@ class Qwen38Net:
         key_pages = page_table[rr, group // per_group]
         key_slots = torch.where(closes, key_pages.long() * per_group + group % per_group,
                                 torch.full_like(positions, -1)).to(torch.int32)
-        from engine.profiles.qwen38.caches import QSA_KEY_RING
         ring_slots = torch.where(positions >= lengths[rr] - QSA_KEY_RING,
                                  slot_table[rr, 0].long() * QSA_KEY_RING + positions % QSA_KEY_RING,
                                  torch.full_like(positions, -1)).to(torch.int32)
@@ -389,8 +409,9 @@ class Qwen38Net:
         proj = self.linear(x, n + "in_proj")
         qkv, z, b, a = proj.split([F.qkv_local, Hv * D, Hv, Hv], dim=-1)
         wc, wr = self.conv_ring, self.rec_ring
-        decode = all(s.length <= wr for s in step.segments)
-        decay, beta = lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=not decode)
+        # the ring lane computes the decay and beta from a and b in its own launch; the chunk lane takes them computed
+        decay, beta = ((None, None) if all(s.length <= wr for s in step.segments) else
+                       lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=True))
         core = torch.empty(N, Hv, D, dtype=x.dtype, device=x.device)
         for s in step.segments:
             sl = slice(s.start, s.start + s.length)
@@ -398,7 +419,8 @@ class Qwen38Net:
             if s.length <= wr:
                 y = lanes.conv_ring(qkv[sl], p[n + "conv"], conv[None], 0, s.ctx)
                 q, k, v = self._heads(y, s.length)
-                o = lanes.gdn_ring(q, k, v, decay[sl][None], beta[sl][None], rec[None], 0, s.ctx)
+                o = lanes.gdn_ring(q, k, v, a[sl][None], b[sl][None], p[n + "A_log"], p[n + "dt_bias"], rec[None], 0,
+                                   s.ctx)
             else:
                 hist_pos = s.ctx + torch.arange(-(F.conv - 1), 0, device=x.device)
                 hist = conv[:, hist_pos.clamp_min(0) % wc].masked_fill((hist_pos < 0)[None, :], 0) if s.ctx else None
@@ -434,11 +456,12 @@ class Qwen38Net:
             raise ValueError(f"a captured GDN step holds at most {min(self.rec_ring, self.conv_ring, 8)} tokens a row")
         proj = self.linear(x, n + "in_proj")
         qkv, z, b, a = proj.split([F.qkv_local, Hv * D, Hv, Hv], dim=-1)
-        decay, beta = lanes.gdn_gates(a, b, p[n + "A_log"], p[n + "dt_bias"], sigmoid_beta=False)
         conv, rec = caches.gdn_fields(L)
         y = lanes.conv_ring_rows(qkv, p[n + "conv"], conv, step.slots, step.contexts)
         q, k, v = self._heads(y, N)
-        o = lanes.gdn_ring_rows(q, k, v, decay[None], beta[None], rec, step.slots, step.contexts)
+        # the decay and beta come from a and b, read through their strides, in the delta rule's own launch
+        o = lanes.gdn_ring_rows(q, k, v, a[None], b[None], p[n + "A_log"], p[n + "dt_bias"], rec, step.slots,
+                                step.contexts)
         out = lanes.gdn_norm(o[0], z.view(N, Hv, D), p[n + "norm"], F.rms_eps)
         return self.comm.all_reduce(self.linear(out, n + "out_proj"))
 
@@ -460,33 +483,32 @@ class Qwen38Net:
         proj = self.linear(x, n + "in_proj")
         qg, k, v, idx = proj.split([Hq * 2 * D, Hkv * D, Hkv * D, idx_q + F.idx_dim], dim=-1)
         qg = qg.view(N, Hq, 2 * D)
-        q = lanes.norm_rope(qg[..., :D], p[n + "q_norm"], F.rms_eps, meta.positions, F.rope_theta, F.rotary_dim)
         gate = qg[..., D:]
-        k = lanes.norm_rope(k.view(N, Hkv, D), p[n + "k_norm"], F.rms_eps, meta.positions, F.rope_theta, F.rotary_dim)
-        v = v.reshape(N, Hkv, D)
         if Hkv != 1:
             raise ValueError("the QSA stores write one KV head a rank (2 KV heads replicated over TP=4)")
         K, V = caches.kv(cache_layer)
-        lanes.qsa_store(K, meta.kv_slots, k.reshape(N, D))
-        lanes.qsa_store(V, meta.kv_slots, v.reshape(N, D))
-        # the indexer: the index queries normalised and rotated at their positions; the raw key pooled into every group
-        # this step closes (ring members before the step, this step's rows after), normalised and rotated at the
-        # group's first position, stored; then the raw keys into the ring by position
-        iq = lanes.norm_rope(idx[:, :idx_q].reshape(N, F.idx_heads, F.idx_dim), p[n + "idx_q_norm"], F.rms_eps,
-                             meta.positions, F.rope_theta, F.rotary_dim)
-        ik = idx[:, idx_q:].contiguous()
         ring = caches.key_ring(cache_layer)
-        pooled, first = lanes.qsa_compress(ik[:, None, :], meta.positions[:, None, None].expand(N, 1, 3).contiguous(),
-                                           ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions,
-                                           meta.key_slots, F.idx_ratio)
-        keys = lanes.norm_rope(pooled, p[n + "idx_k_norm"], F.rms_eps, first[:, 0].contiguous(), F.rope_theta,
-                               F.rotary_dim)
-        lanes.qsa_store(caches.index_keys(cache_layer), meta.key_slots, keys[:, 0])
-        lanes.qsa_store(ring, meta.ring_slots, ik)
-        selected = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
-                                    meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
-        attended = lanes.qsa_attend(q.contiguous(), K, V, selected, meta.page_table, meta.rows_req)
-        out = (attended.float() * torch.sigmoid(gate.float())).to(x.dtype).reshape(N, Hq * D)
+        ik = idx[:, idx_q:]
+        # the indexer's keys first: each group this step closes pooled from the raw-key ring (members before the step)
+        # and this step's rows, normalised and rotated at its first position and stored -- one launch, which must read
+        # the ring before this step's raw keys overwrite it
+        lanes.qsa_index_keys(ik, ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions, meta.key_slots,
+                             F.idx_ratio, p[n + "idx_k_norm"], F.rms_eps, F.rope_theta, F.rotary_dim,
+                             caches.index_keys(cache_layer))
+        # then one launch for the rest, all read through their strides: the query and index query heads normalised and
+        # rotated at their positions, the key head the same straight into K, the value rows into V and the raw keys
+        # into the ring by position
+        q, iq = lanes.qsa_inputs(qg[..., :D], k.view(N, Hkv, D), v.view(N, Hkv, D),
+                                 idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, meta.positions, p[n + "q_norm"],
+                                 p[n + "k_norm"], p[n + "idx_q_norm"], F.rms_eps, F.rope_theta, F.rotary_dim, K, V,
+                                 meta.kv_slots, ring, meta.ring_slots)
+        # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer)
+        blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
+                                  meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
+        # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
+        attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
+                                    F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
+        out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 
     # -- MoE ----------------------------------------------------------------------------------------------------------
@@ -498,9 +520,12 @@ class Qwen38Net:
         scores = torch.mm(x, p[n + "gates"].t())                     # [N, experts + 1]: the router, then the shared gate
         ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
         routed = self._experts[prefix](x, ids, weights, compact=compact)
-        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up")), n + "sh_down")
+        # the down projection's 160 columns pad to 256 (PaddedDenseLinear): the activation's launch writes the zeros
+        down = getattr(self, "dense", {}).get(n + "sh_down")
+        pad_to = down.input_cols + down.pad if getattr(down, "pad", 0) else None
+        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up"), pad_to=pad_to), n + "sh_down")
         gate = torch.sigmoid(scores[:, F.experts:].float())
-        return self.comm.all_reduce((routed.float() + shared.float() * gate).to(x.dtype))
+        return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
 
     # -- PLE -----------------------------------------------------------------------------------------------------------
     def _ple_feature(self, L: int):

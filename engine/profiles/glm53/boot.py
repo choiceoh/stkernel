@@ -110,6 +110,10 @@ TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem
 EXPERT_CAPTURE = False
 DRAFT_REPLAY_CASES = 16                         # measurement only: bounded C1 greedy state capture; never production timing
 DRAFT_REPLAY_EVERY = 16
+# A capture arm may feed its corpus several times, one routed-slot skip per pass (capture.Capture skip_passes): a
+# pass is None (every slot served), a normalised-gate threshold, or {layer: threshold}. Empty keeps one pass, no skip.
+ROUTE_SKIP_PASSES = ()
+ROUTE_SKIP_PASS_DOCUMENTS = 0
 # Collect the decode FC pairs `bench/draft_tune.py fc-bias` fits. The bias the boot binds from
 # `draft-fc-bias.json` has never been produced -- the fitter existed with no collector -- so
 # production runs with draft_fc_bias_status="missing". A collecting boot serves normally and
@@ -684,6 +688,8 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 calib_bytes += need
     router_bytes = net.router_nbytes() if execution == "native" else 0
     projection_bytes = net.decode_projection_nbytes() if execution == "native" else 0
+    from engine.profiles.glm53.cublas import resident_bytes as cublas_resident_bytes
+    cublas_bytes = cublas_resident_bytes(F, D, draft_policy) if execution == 'native' else 0
     draft_bytes = total_bytes(dspecs)
     if D and execution == "native":
         from engine.profiles.glm53.drafter_storage import nbytes as draft_resident_bytes
@@ -691,7 +697,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         recorder.gauge("drafter_source_bytes", total_bytes(dspecs))
         recorder.gauge("drafter_resident_bytes", draft_bytes)
         recorder.gauge("drafter_arena_saved_bytes", total_bytes(dspecs) - draft_bytes)
-    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes
+    arena_bytes = (total_bytes(specs) + draft_bytes + total_bytes(vspecs) + router_bytes + projection_bytes + cublas_bytes
                    + 256 * (len(specs) + len(dspecs) + len(vspecs) + len(net.layers) + 64)
                    + cache_layout.nbytes(nb, max_seqs) + snapshots * snapshot_bytes + stage_bytes(F, net.layers, max_seqs, draft_shape) + calib_bytes)
     memory = None
@@ -755,7 +761,7 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                             snapshots=snapshots, tier_enabled=bool(tier_dir), kda_state_dtype=F.kda_state_dtype,
                             prefill_ffn_packets=bool(execution_plan is not None and execution_plan.prefill_ffn_packets),
                             draft_tp=comm.world_size if execution == "native" else 1,
-                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes,
+                            draft_native=execution == "native", router_bytes=router_bytes, projection_bytes=projection_bytes, cublas_bytes=cublas_bytes,
                             draft_policy=draft_policy, workspace_gib=workspace_gib)
         # With THIS boot's floor, not vLLM's 40th-boot constant. RuntimeMemory measured it
         # seconds ago in __init__, and this print is the moment anyone decides how much KV to
@@ -822,15 +828,24 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
                 if D:
                     # Do not overlap the temporary checkpoint with target packing.
                     drafter = load_drafter()
+                    if DRAFT_FC_CAPTURE or DRAFT_FC_CAPTURE_WHEN_MISSING:
+                        from engine.profiles.glm53.draft_fc_capture import retain_source
+                        retain_source(drafter)
                     with recorder.phase("drafter packs"):
                         drafter.prepare_fast(store, max_seqs=max_seqs, compact_into=arena,
                                              policy=draft_policy, tuning=tuning)
+                    if not DRAFT_FC_CAPTURE and drafter.fc_bias is not None:
+                        drafter.fc_capture_source = None
                     if capture_rows is not None:
                         recorder.gauge('drafter_decode_cells', len(drafter.bind_decode_cells(capture_rows)))
                     recorder.gauge('draft_fc_bias_applied', drafter.fc_bias is not None)
                     recorder.gauge('draft_fc_bias_status', drafter.fc_bias_status)
                     recorder.gauge("drafter_block_fp8_packs", sum(
                         layer.fp8 is not None for name, layer in drafter.dense.items() if name != "fc.weight"))
+                with recorder.phase('cuBLAS head and FC'):
+                    from engine.profiles.glm53.cublas import prepare as prepare_cublas
+                    cublas = prepare_cublas(net, drafter if D else None, arena, draft_policy)
+                    recorder.gauge('cublas_resident_bytes', cublas['resident_bytes'])
             if calib_plan:                                            # this boot sums what the store lacked, within the budget
                 calibration = Calibration(torch.device("cuda"), BUDGET_BYTES, arena=arena,
                                           max_decode_rows=max_seqs * (1 + drafter.k))
@@ -1048,7 +1063,53 @@ def decode_fastpath_report(net):
             missing.extend((name, m) for m in sorted(expected - actual))
     if pairs != expected_pairs or missing or not dense:
         raise RuntimeError(f'bound decode fastpaths were not executed: pairs={sorted(expected_pairs - pairs)}, dense={missing}')
-    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense)
+    input_packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+                   if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    weight_tiles = {name: list(layer.packs[0].data.shape) for name, layer in net.dense.items()
+                    if name in dense and getattr(layer.packs[0], 'data', None) is not None}
+    return dict(rows=list(rows), pairs=sorted(pairs), dense=dense, mhc_input_packs=input_packs,
+                resident_w4_tiles=weight_tiles)
+
+
+def next_k_cost_report(net):
+    """A candidate must reach the bound consumer before the serving door opens."""
+    from engine.kernels import mla
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows:
+        return {}
+    mhc = getattr(net, 'mhc', None)
+    expanded = set(getattr(mhc, 'expanded_executed', ()))
+    if getattr(mhc, 'EXPAND_FN', False) and 8 in rows:
+        expected = {(name.removesuffix('.kda.in_proj') + '.hc.attn_fn', 8)
+                    for name, layer in net.dense.items() if name.endswith('.kda.in_proj')
+                    and getattr(layer, 'input_pack_rows', lambda n: False)(8)
+                    and 8 in getattr(layer, 'producer_pack_executed', ())}
+        # The first layer and boundaries following auxiliary outputs have no
+        # packet consumer. Require expansion at every actual KDA pack reader.
+        if not expected or not expected.issubset(expanded):
+            raise RuntimeError(f'expanded mHC coefficients missed consumers: {sorted(expected - expanded)}')
+    direct = set(mla._DECODE_CELLS_EXECUTED)
+    if mla.ENABLE_MLA_DIRECT_CVT:
+        expected = {(n, 10 if n == 8 else 12) for n in rows if n in (8, 16)}
+        if expected and not expected.issubset(direct):
+            raise RuntimeError(f'direct MLA conversion missed captured rows: {sorted(expected - direct)}')
+    return dict(mhc_expanded=sorted(expanded), mla_direct=sorted(direct))
+
+
+def fixed_k_cost_report(net):
+    """Require target consumers, not a native self-test's launch, before opening the door."""
+    rows = getattr(net, 'decode_fastpath_rows', ())
+    if not rows:
+        return {}
+    packs = {name: sorted(layer.producer_pack_executed) for name, layer in net.dense.items()
+             if name.endswith('kda.in_proj') and getattr(layer, 'producer_pack_executed', ())}
+    if getattr(net, 'producer_packs', False) and getattr(net, 'mhc_input_packs', False):
+        for row_count in rows:
+            eligible = [name for name, layer in net.dense.items() if name.endswith('kda.in_proj')
+                        and getattr(layer, 'input_pack_rows', lambda rows: False)(row_count)]
+            if len(eligible) > 1 and not any(row_count in packs.get(name, ()) for name in eligible):
+                raise RuntimeError(f'fixed K7 mHC input packs did not reach a target projection at {row_count} rows')
+    return dict(mhc_input_packs=packs)
 
 
 def decode_dsa_report(net):
@@ -1126,7 +1187,10 @@ def native_execution_report(net, drafter):
         required_prefill.add('fp8_tiled_projection')
         if not calibrating:
             required_prefill.add('fp8_packet_projection')
-    proof = dict(decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+    from engine.profiles.glm53.cublas import execution_report as cublas_execution_report
+    cublas_proof = cublas_execution_report(net) if hasattr(net, 'cublas_readers') else {}
+    proof = dict(cublas=cublas_proof, decode_fastpaths=decode_fastpath_report(net), decode_dsa_inputs=decode_dsa_report(net),
+                 fixed_k_cost=fixed_k_cost_report(net), next_k_cost=next_k_cost_report(net),
                  decode_indexer_gate=decode_indexer_gate_report(net),
                  decode_absorb_tiles=decode_absorb_report(net),
                  drafter_decode_cells=drafter_decode_cell_report(drafter),
@@ -1140,6 +1204,7 @@ def native_execution_report(net, drafter):
                  shared_mlp=sum(p.executed for p in net.shared_mlp.values()),
                  shared_overlap=bool(net.shared_overlap and net.shared_overlap.executed),
                  router_fp32=len(net._router_fp32),
+                 router_fused=sorted(getattr(net, '_router_fused_executed', ())),
                  prefill_collectives=sorted(net.prefill_transport.executed),
                  prefill_indexer_shards=sorted(getattr(net, 'prefill_indexer_executed', ())),
                  prefill_dense_prefix=sorted(getattr(net, 'prefill_dense_prefix_executed', ())),
@@ -1148,6 +1213,11 @@ def native_execution_report(net, drafter):
                  prefill_ffn_packets=sorted(getattr(net, 'prefill_packet_executed', ())),
                  prefill_ffn_packet_plan=sorted(getattr(net, 'prefill_packet_planned', ())),
                  prefill_ffn_received_peak_bytes=getattr(net, 'prefill_packet_peak_bytes', 0))
+    if getattr(net, 'fused_decode_router', False):
+        expected = {(L, rows) for L in net._router_layers
+                    for rows in net.decode_fastpath_rows if rows in (8, 16)}
+        if set(proof['router_fused']) != expected:
+            raise RuntimeError(f'fused decode routers were not executed at every bound width: {proof}')
     if proof['prefill_ffn_packets'] != proof['prefill_ffn_packet_plan']:
         raise RuntimeError(f'agreed packet FFN readers were not executed: {proof}')
     if (getattr(net, 'prefill_absorb_tiles', False)
@@ -1747,7 +1817,9 @@ def fleet(a) -> int:
         if EXPERT_CAPTURE:                                  # after every warm-up and graph capture: only served prefill is recorded
             from engine.profiles.glm53 import capture as capture_mod
             engine.expert_capture = capture_mod.attach(engine, Path(a.dump_dir) / "expert-capture", a.ranks,
-                                                       sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS)
+                                                       sections=CAPTURE_SECTIONS, head_rows=CAPTURE_HEAD_ROWS,
+                                                       skip_passes=ROUTE_SKIP_PASSES,
+                                                       pass_documents=ROUTE_SKIP_PASS_DOCUMENTS)
             print(f"  expert capture: rank {comm.rank} armed; rows and stats under {Path(a.dump_dir) / 'expert-capture'} "
                   f"on rank {capture_mod.CAPTURE_RANK}", flush=True)
         if DRAFT_REPLAY_CASES:
@@ -1765,7 +1837,8 @@ def fleet(a) -> int:
                 engine, Path(a.dump_dir) / "draft-fc-pairs", rows=DRAFT_FC_CAPTURE_ROWS,
                 salt=str(engine.drafter.tuning.digest))
             print(f"  draft FC capture: rank {comm.rank} armed for {DRAFT_FC_CAPTURE_ROWS} committed rows "
-                  f"under {Path(a.dump_dir) / 'draft-fc-pairs'}", flush=True)
+                  f"under {Path(a.dump_dir) / 'draft-fc-pairs'} at "
+                  f"{', '.join(engine.draft_fc_capture.seams)}", flush=True)
         if CALIBRATION_CAPTURE and engine.calibration is not None:
             from engine.profiles.glm53 import capture as capture_mod
             capture_mod.arm_calibration_phases(engine)

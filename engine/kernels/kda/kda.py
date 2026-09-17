@@ -33,11 +33,20 @@ from .utils import FLA_CHUNK_SIZE, is_amd
 BT_LIST_AUTOTUNE = [32, 64, 128]
 NUM_WARPS_AUTOTUNE = [2, 4, 8, 16] if is_amd else [4, 8, 16, 32]
 
+# Probe hook (ST, probes/engine_qwen38_kda.py): force fused_recurrent_kda_fwd's value tile BV -- a power of two no wider
+# than next_power_of_2(V) -- to sweep a cell under measurement; ring.py has its own. None keeps the rule in
+# fused_recurrent_kda_fwd. Measure, then fix the cell in the rule; never an env read (engine/kernels/README.md, D11).
+_BV_OVERRIDE: int | None = None
+
 
 # D11 (2026-09-12, ST): production glm53.env has carried VLLM_GLM53_KDA_PREFILL_QK_NORM=1
 # since 2026-09-06 (39차 P2D3); the strided Q/K norm is the served path, baked.
 _GLM53_KDA_QK_L2NORM_STRIDED = True
 _GLM53_L2NORM_SHA256 = "203ff42abe4b30b6c28df3c07817fa4ed51ed93ae92da1c3fcfe460862cc4057"
+# (key heads, head dim) a rank's strided Q/K norm serves: GLM-5.3's 16 x 128 (the 39차 gate) and Qwen3.8's 4 x 128 (carry
+# K4). The reduction is per row over the head dim in 32-row programs, so the head count changes only which row a load
+# addresses, never the arithmetic or its tree.
+_QK_L2NORM_STRIDED_CELLS = ((16, 128), (4, 128))
 
 
 @lru_cache(maxsize=1)
@@ -103,7 +112,7 @@ def _glm53_qk_l2norm_strided(q, k):
         or q.ndim != 4 or k.ndim != 4
         or tuple(q.shape) != tuple(k.shape)
         or q.shape[0] != 1 or not 0 < q.shape[1] <= 32768
-        or tuple(q.shape[2:]) != (16, 128)
+        or tuple(q.shape[2:]) not in _QK_L2NORM_STRIDED_CELLS
         or any(stride <= 0 for stride in (*q.stride(), *k.stride()))
         or not _glm53_l2norm_source_matches(l2norm_fwd)
         # The alternate FLA mode divides by sqrt instead of multiplying by
@@ -126,12 +135,13 @@ def _glm53_qk_l2norm_strided(q, k):
     # The scheduler can emit 32,256 rows. Normalization is row-local; keep
     # the same reduction tree and extend only the launch grid so the larger
     # chunk does not silently restore both contiguous input copies.
-    rows = q.shape[1] * 16
+    heads = q.shape[2]
+    rows = q.shape[1] * heads
     _glm53_qk_l2norm_strided_kernel[(triton.cdiv(rows, 32), 2)](
         q, k, q_out, k_out, 1e-6, rows,
         QT=q.stride(1), QH=q.stride(2), QD=q.stride(3),
         KT=k.stride(1), KH=k.stride(2), KD=k.stride(3),
-        H=16, N=128, BD=128, MBLOCK=32, num_warps=4,
+        H=heads, N=128, BD=128, MBLOCK=32, num_warps=4,
     )
     return q_out, k_out
 
@@ -334,6 +344,12 @@ def fused_recurrent_kda_fwd(
     # one warp per CTA. Larger/other shapes retain the conservative tile.
     if state_kv and H == HV == 16 and K == V == 128 and 1 <= T <= 6:
         BV = 16
+    if _BV_OVERRIDE is not None:
+        if (type(_BV_OVERRIDE) is not int or _BV_OVERRIDE <= 0 or _BV_OVERRIDE & (_BV_OVERRIDE - 1)
+                or _BV_OVERRIDE > next_power_of_2(V)):
+            raise ValueError(f"_BV_OVERRIDE must be a power of two up to {next_power_of_2(V)} (V={V}), "
+                             f"got {_BV_OVERRIDE!r}")
+        BV = _BV_OVERRIDE
     NK, NV = cdiv(K, BK), cdiv(V, BV)
     assert NK == 1, "NK > 1 is not supported yet"
     num_stages = 3

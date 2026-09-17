@@ -1,0 +1,60 @@
+[
+  {
+    "session": "fixedkfull-0917",
+    "arm": "B",
+    "sha": "40272da2ee1d",
+    "stage": "boot",
+    "consumer_measured": false,
+    "artifacts": [
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull-0917-B/rank0-10.10.10.2.log",
+        "sha256": "84df9ef6e3239673e479c68b5664dc62425e94c84171f45cd2db208ceb1d5dd9",
+        "error": "[rank0]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)"
+      },
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull-0917-B/rank1-10.10.10.1.log",
+        "sha256": "6b9cecfde8c8e21c1b22ad69c7dcae5af8be9e5748dec18d459efa4af651b54b",
+        "error": "[rank1]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)"
+      },
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull-0917-B/rank2-10.10.10.3.log",
+        "sha256": "bff4dfadf0bde426f19b55c0f48f4a687aaa6398f736812ce38ba27255407061",
+        "error": "[rank2]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)"
+      },
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull-0917-B/rank3-10.10.10.4.log",
+        "sha256": "0c5b3389905815f206866af4659a3a5b5afb68d18ef3520eae85a5cf5eafbca6",
+        "error": "[rank3]: ValueError: draft FC capture needs the retained BF16 source (prepare without consume_weights)"
+      }
+    ]
+  },
+  {
+    "session": "fixedkfull2-0917",
+    "arm": "B",
+    "sha": "ef57c3b48cc6",
+    "stage": "boot",
+    "consumer_measured": false,
+    "artifacts": [
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull2-0917-B/rank0-10.10.10.2.log",
+        "sha256": "3bd42910a4d871c0769b8677d4901ad5e9b9d6ef631d82a51edf8e1ce6cad637",
+        "error": "[rank0]: ImportError: attempted relative import with no known parent package"
+      },
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull2-0917-B/rank1-10.10.10.1.log",
+        "sha256": "452a0833346a48c86bbae1ba7f447ef46d6d143c66ccf708522abf838d13e1e6",
+        "error": "[rank1]: ImportError: attempted relative import with no known parent package"
+      },
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull2-0917-B/rank2-10.10.10.3.log",
+        "sha256": "47a9979db881df0042c12908c570acf48288950570f14a8f4ec1ab8e78e85d23",
+        "error": "[rank2]: ImportError: attempted relative import with no known parent package"
+      },
+      {
+        "path": "/home/choiceoh/glm53-logs/st-bracket-dumps/fixedkfull2-0917-B/rank3-10.10.10.4.log",
+        "sha256": "bb132755d6b31eb71ea66174ffd57d69719112d77987ea9ed04881dc82aac6fb",
+        "error": "[rank3]: ImportError: attempted relative import with no known parent package"
+      }
+    ]
+  }
+]

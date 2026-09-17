@@ -109,7 +109,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             views = rank.load([s.name for s in specs], arena=arena, recorder=recorder)
             net.bind(views)
         with recorder.phase("prepare dense"):
-            net.prepare_dense(store)
+            # the packs move into their BF16 sources' arena regions (all but the shared expert's padded down projection)
+            net.prepare_dense(store, consume_weights=True)
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             store.release_pages()

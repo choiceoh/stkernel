@@ -1,0 +1,27 @@
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtCreate] lightHandle=0X61E16491E4D8
+[2026-09-16 15:39:09][cublasLt][1][Info][cublasLtCreate] Discovered per-ctx shared memory size limit = 0
+[2026-09-16 15:39:09][cublasLt][1][Info][cublasLtCreate] cuBLASLt v13.4 device #0: multiProcessorCount=20 maxSharedMemPerBlock=49152 maxSharedMemoryPerBlockOptin=101376
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulDescCreate] matmulDesc=0X61E1675F5E80 computeType=COMPUTE_32F scaleType=0
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulDescSetAttribute] matmulDesc=0X61E1676C37C0 attr=MATMUL_DESC_TRANSA buf=0X7FFD722ED534 sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulDescSetAttribute] matmulDesc=0X61E1676C37C0 attr=MATMUL_DESC_TRANSB buf=0X7FFD722ED538 sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulDescSetAttribute] matmulDesc=0X61E1676C37C0 attr=MATMUL_DESC_FAST_ACCUM buf=0X7FFD722ED533 sizeInBytes=1
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulDescSetAttribute] matmulDesc=0X61E1676C37C0 attr=MATMUL_DESC_A_SCALE_MODE buf=0X7FFD722ED53C sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulDescSetAttribute] matmulDesc=0X61E1676C37C0 attr=MATMUL_DESC_B_SCALE_MODE buf=0X7FFD722ED53C sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatrixLayoutCreate] matLayout=0X61E1675F5E88 type=R_8F_E4M3 rows=4096 cols=38784 ld=4096
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatrixLayoutCreate] matLayout=0X61E1675F5E90 type=R_8F_E4M3 rows=4096 cols=16 ld=4096
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatrixLayoutCreate] matLayout=0X61E1675F5E98 type=R_16BF rows=38784 cols=16 ld=38784
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceCreate] matmulPref=0X61E1675F5EA0
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceSetAttribute] pref=0X61E1689BC8E0 attr=MATMUL_PREF_REDUCTION_SCHEME_MASK buf=0X7FFD722ED5B8 sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceSetAttribute] pref=0X61E1689BC8E0 attr=MATMUL_PREF_MIN_ALIGNMENT_A_BYTES buf=0X7FFD722ED5BC sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceSetAttribute] pref=0X61E1689BC8E0 attr=MATMUL_PREF_MIN_ALIGNMENT_B_BYTES buf=0X7FFD722ED5BC sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceSetAttribute] pref=0X61E1689BC8E0 attr=MATMUL_PREF_MIN_ALIGNMENT_C_BYTES buf=0X7FFD722ED5BC sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceSetAttribute] pref=0X61E1689BC8E0 attr=MATMUL_PREF_MIN_ALIGNMENT_D_BYTES buf=0X7FFD722ED5BC sizeInBytes=4
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceSetAttribute] pref=0X61E1689BC8E0 attr=MATMUL_PREF_MAX_WORKSPACE_BYTES buf=0X7FFD722ED610 sizeInBytes=8
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulAlgoGetHeuristic] Adesc=[type=R_8F_E4M3 rows=4096 cols=38784 ld=4096] Bdesc=[type=R_8F_E4M3 rows=4096 cols=16 ld=4096] Cdesc=[type=R_16BF rows=38784 cols=16 ld=38784] Ddesc=[type=R_16BF rows=38784 cols=16 ld=38784] preference=[maxWavesCount=0.0 reductionSchemeMask=REDUCTION_SCHEME_COMPUTE_TYPE minBytesAlignmentA=16 minBytesAlignmentB=16 minBytesAlignmentC=16 minBytesAlignmentD=16] computeDesc=[computeType=COMPUTE_32F scaleType=R_32F transa=OP_T aScaleMode=VEC32_UE8M0 bScaleMode=VEC32_UE8M0]
+[2026-09-16 15:39:09][cublasLt][1][Error][cublasLtMatmulAlgoGetHeuristic] The scaling mode for A scale (VEC32_UE8M0) requires a custom pointer for A scale
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulPreferenceDestroy] matmulPref=0X61E1689BC8E0
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatrixLayoutDestroy] matLayout=0X61E16894A400
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatrixLayoutDestroy] matLayout=0X61E167AA4F90
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatrixLayoutDestroy] matLayout=0X61E167AA6FD0
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtMatmulDescDestroy] matmulDesc=0X61E1676C37C0
+[2026-09-16 15:39:09][cublasLt][1][Api][cublasLtDestroy] lightHandle=0X61E1676DE360

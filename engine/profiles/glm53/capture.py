@@ -267,11 +267,17 @@ class Capture:
     def __init__(self, engine, directory, *, head_bf16=None, capture_rank: int = CAPTURE_RANK, kv_rows: int = 8,
                  head_rows: int = 64, limit_gib: float = 160.0, disk_floor_gib: float = 250.0, queue_gib: float = 0.75,
                  kv_positions: int = 32768, kv_sequences: int = 2, report_every: int = 16, seed: int = 0,
-                 sections=SECTIONS):
+                 sections=SECTIONS, skip_passes=(), pass_documents: int = 0):
         unknown = set(sections) - set(ALL_SECTIONS)
         if unknown:
             raise ValueError(f"capture sections are {ALL_SECTIONS}, not {sorted(unknown)}")
         self.engine, self.net, self.caches = engine, engine.net, engine.caches
+        # Feeding the corpus several times in one boot, each pass under its own routed-slot skip (net.route_skip):
+        # documents [k * pass_documents, (k + 1) * pass_documents) are pass k. The head then scores the same positions
+        # of a conversation in every pass, so the passes pair position for position without a second boot.
+        if skip_passes and pass_documents <= 0:
+            raise ValueError("a skip schedule needs the corpus length it repeats over")
+        self.skip_passes, self.pass_documents = tuple(skip_passes), int(pass_documents)
         self.comm, self.F = self.net.comm, self.net.F
         self.rank = self.comm.rank
         self.capture_rank = capture_rank
@@ -329,10 +335,13 @@ class Capture:
             self.doc = self._document(step)
             self._chunk_start(step)
             self.step = step
+            if self.skip_passes and self.doc is not None:
+                net.route_skip = self.skip_passes[min(self.doc // self.pass_documents, len(self.skip_passes) - 1)]
             try:
                 h, aux = forward(step, last_hidden_only=False)
             finally:
                 self.step = self.layer = None
+                net.route_skip = None
             self._head(step, h)
             self._chunk_done(step)
             return h[-1:], aux
@@ -521,7 +530,8 @@ class Capture:
             return
         s = step.segments[0]
         k = min(self.head_rows, h.shape[0] - 1)
-        g = torch.Generator(device="cpu").manual_seed((s.seq * 1_000_003 + s.ctx) % (2**62))
+        key = self.doc % self.pass_documents if self.pass_documents and self.doc is not None else s.seq
+        g = torch.Generator(device="cpu").manual_seed((key * 1_000_003 + s.ctx) % (2**62))
         idx = torch.randperm(h.shape[0] - 1, generator=g)[:k].to(h.device)
         hs = h.index_select(0, idx).contiguous()
         fp8 = self.comm.all_gather(self.net.head_local(hs).float().contiguous(), dim=-1)

@@ -1,0 +1,80 @@
+--- engine/kernels/dense/cublaslt.cpp	2026-09-17 06:27:33
++++ /tmp/st-row-padding.cpp	2026-09-17 06:27:33
+@@ -50,7 +50,7 @@
+   Descriptors desc;
+   int64_t m, n, k;
+   int batches;
+-  int64_t weight_padding;
++  int64_t weight_padding, weight_row_padding;
+   cudaDataType_t output_type;
+   size_t workspace_limit;
+   std::vector<cublasLtMatmulHeuristicResult_t> choices;
+@@ -239,14 +239,15 @@
+  public:
+   Plan(std::shared_ptr<Context> context_, int64_t m_, int64_t n_, int64_t k_, size_t limit,
+        const torch::Tensor& query_s_q, const torch::Tensor& query_s_weight, int batches_ = 1, bool fp32 = false,
+-       bool prefer_serving = false, int64_t weight_padding_ = 0, const Plan* seed = nullptr, size_t seed_index = 0)
++       bool prefer_serving = false, int64_t weight_padding_ = 0, int64_t weight_row_padding_ = 0, const Plan* seed = nullptr, size_t seed_index = 0)
+       : context(std::move(context_)), m(m_), n(n_), k(k_), batches(batches_),
+-        weight_padding(weight_padding_),
++        weight_padding(weight_padding_), weight_row_padding(weight_row_padding_),
+         output_type(fp32 ? CUDA_R_32F : CUDA_R_16BF), workspace_limit(limit) {
+     TORCH_CHECK(m > 0 && n > 0 && k > 0 && n % 128 == 0 && k % 128 == 0
+                 && m <= INT32_MAX && n <= INT32_MAX && k <= INT32_MAX, "invalid ST MXFP8 shape");
+     TORCH_CHECK(batches >= 1 && batches <= 16 && (batches == 1 || fp32),
+                 "batched MXFP8 partials require FP32 output and at most 16 splits");
++    TORCH_CHECK(weight_row_padding >= 0 && weight_row_padding <= 128, "invalid weight row padding");
+     TORCH_CHECK(weight_padding >= 0 && weight_padding <= 4096 && weight_padding % 16 == 0,
+                 "weight padding must be 0..4096 aligned to 16");
+     c10::cuda::CUDAGuard guard(context->device);
+@@ -267,7 +268,7 @@
+     check(cublasLtMatrixLayoutCreate(&desc.b, CUDA_R_8F_E4M3, k, m, k), "X layout");
+     check(cublasLtMatrixLayoutCreate(&desc.d, output_type, n, m, n), "Y layout");
+     if (batches > 1) {
+-      for (auto item : {std::pair<cublasLtMatrixLayout_t, int64_t>{desc.a, n*(k+weight_padding)}, {desc.b, m*k}, {desc.d, m*n}}) {
++      for (auto item : {std::pair<cublasLtMatrixLayout_t, int64_t>{desc.a, (n+weight_row_padding)*(k+weight_padding)}, {desc.b, m*k}, {desc.d, m*n}}) {
+         check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT,
+                                                &batches, sizeof(batches)), "batch count");
+         check(cublasLtMatrixLayoutSetAttribute(item.first, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET,
+@@ -287,9 +288,6 @@
+       cublasLtMatmulAlgo_t algo{};
+       auto status = cublasLtMatmulAlgoInit(context->handle, CUBLAS_COMPUTE_32F, CUDA_R_32F,
+           CUDA_R_8F_E4M3, CUDA_R_8F_E4M3, output_type, output_type, 70, &algo);
+-      if (status != CUBLAS_STATUS_SUCCESS && status != CUBLAS_STATUS_NOT_SUPPORTED
+-          && status != CUBLAS_STATUS_INVALID_VALUE && status != CUBLAS_STATUS_ARCH_MISMATCH)
+-        check(status, "initialize preferred serving algorithm");
+       if (status == CUBLAS_STATUS_SUCCESS
+           && set(algo, CUBLASLT_ALGO_CONFIG_TILE_ID, 20)
+           && set(algo, CUBLASLT_ALGO_CONFIG_STAGES_ID, 36)
+@@ -367,7 +365,7 @@
+   std::shared_ptr<Plan> with_rows(int64_t rows, size_t index, const torch::Tensor& s_q,
+                                   const torch::Tensor& s_weight) {
+     return std::make_shared<Plan>(context, rows, n, k, workspace_limit, s_q, s_weight,
+-                                  batches, output_type == CUDA_R_32F, false, weight_padding, this, index);
++                                  batches, output_type == CUDA_R_32F, false, weight_padding, weight_row_padding, this, index);
+   }
+ 
+   py::list candidates() const {
+@@ -405,7 +403,7 @@
+                 "storage does not satisfy the selected cuBLAS algorithm alignment");
+     int rank = batches == 1 ? 2 : 3;
+     TORCH_CHECK(q.dim() == rank && q.size(-2) == m && q.size(-1) == k
+-                && weight.dim() == rank && weight.size(-2) == n && weight.size(-1) == k+weight_padding
++                && weight.dim() == rank && weight.size(-2) == n+weight_row_padding && weight.size(-1) == k+weight_padding
+                 && out.dim() == rank && out.size(-2) == m && out.size(-1) == n
+                 && s_q.dim() == rank-1 && s_q.numel() == batches * ((m + 127) / 128) * (k / 128) * 512
+                 && s_weight.dim() == rank-1 && s_weight.numel() == batches * n * (k / 32)
+@@ -492,11 +490,11 @@
+   py::class_<Plan::Bound, std::shared_ptr<Plan::Bound>>(module, "BoundMatmul").def("run", &Plan::Bound::run);
+   py::class_<Plan, std::shared_ptr<Plan>>(module, "Plan")
+       .def(py::init<std::shared_ptr<Context>, int64_t, int64_t, int64_t, size_t,
+-                    const torch::Tensor&, const torch::Tensor&, int, bool, bool, int64_t>(),
++                    const torch::Tensor&, const torch::Tensor&, int, bool, bool, int64_t, int64_t>(),
+            py::arg("context"), py::arg("m"), py::arg("n"), py::arg("k"), py::arg("workspace_limit"),
+            py::arg("query_activation_scales"), py::arg("query_weight_scales"),
+            py::arg("batches") = 1, py::arg("fp32") = false, py::arg("prefer_serving") = false,
+-           py::arg("weight_padding") = 0)
++           py::arg("weight_padding") = 0, py::arg("weight_row_padding") = 0)
+       .def("candidates", &Plan::candidates).def("run", &Plan::run)
+       .def("bind", &Plan::bind).def("statistics", &Plan::statistics)
+       .def("with_rows", &Plan::with_rows);

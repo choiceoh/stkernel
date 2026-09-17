@@ -1,0 +1,7 @@
+.........s.......W0916 23:57:17.223000 7 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+.................................
+----------------------------------------------------------------------
+Ran 50 tests in 8.256s
+
+OK (skipped=1)
+  expert_layout: tile-major bytes read back row-major per expert OK

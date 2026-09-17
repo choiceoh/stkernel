@@ -44,6 +44,7 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
 
 
 class MHC:
+    EXPAND_FN = True  # exact coefficient expansion at measured KDA pack consumers
     # Rows whose consumer kernels read the lossless BF16 pack: K=7 verify steps at C=1 (8 rows) and C=2 (16 rows).
     # `packed_rows=8` is the same-build control, the C=1-only gate, for the probe that qualifies 16 rows
     # (measurements/st_c2_mhc_packed_20260915). Serving never passes it.
@@ -61,6 +62,7 @@ class MHC:
         device = next(iter(weights.values())).device
         self.weights = {}
         self.executed = set()
+        self.expanded_executed = set()
         for key, fn in weights.items():
             if fn.shape != (self.nout, self.hc * self.hidden) or fn.dtype != torch.float32 or not fn.is_contiguous():
                 raise ValueError(f"MK MHC requires FP32 [{self.nout},{self.hc}*{self.hidden}] weights")
@@ -82,7 +84,7 @@ class MHC:
         from engine.kernels.prefill_mhc import post_pre
         return post_pre(x,res,post,comb,packed,scale,base,norm,eps,hc_eps,post_mult,sinkhorn)
 
-    def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn,*,packets=None):
+    def __call__(self,key,x,res,post,comb,scale,base,norm,eps,hc_eps,post_mult,sinkhorn,*,packets=None,output_pack=None):
         n = x.shape[0]
         if not 1 <= n <= 64 or res.shape != (n, self.hc, self.hidden):
             raise ValueError("MK MHC decode geometry mismatch")
@@ -95,15 +97,25 @@ class MHC:
         cm = torch.empty((n, self.hc, self.hc), device=x.device, dtype=torch.float32)
         li = torch.empty_like(x)
         tensors = [x,res,post,comb,weight,scale,base,norm,rc,pm,cm,li,*self.workspace]
+        if output_pack is not None:
+            from engine.kernels.dense import producer_pack_nbytes
+            if (n != 8 or self.hidden != 4096 or output_pack.device != x.device
+                    or output_pack.dtype != torch.uint8 or not output_pack.is_contiguous()
+                    or output_pack.numel() != producer_pack_nbytes(n, self.hidden)):
+                raise ValueError("MHC input pack requires same-device byte storage for eight 4096-wide rows")
+            tensors.append(output_pack)
+        expand_fn = self.EXPAND_FN and output_pack is not None and weight is packed
         args = ([t.data_ptr() for t in tensors], [eps,hc_eps,hc_eps,post_mult,eps], [n, sinkhorn, self.hidden])
         if packets is None:
-            self.ext.run_mhc(*args,weight is packed,small)
+            self.ext.run_mhc(*args,weight is packed,small, **({"expand_fn": True} if expand_fn else {}))
         else:
             if (packets.device != x.device or packets.dtype != torch.int64 or
                     packets.shape != (4,) or not packets.is_contiguous()):
                 raise ValueError("MHC needs a same-device contiguous int64[4] rank descriptor")
-            self.ext.run_mhc_packets(*args,packets,weight is packed)
+            self.ext.run_mhc_packets(*args,packets,weight is packed, **({"expand_fn": True} if expand_fn else {}))
         self.executed.add(key)
+        if expand_fn:
+            self.expanded_executed.add((key, n))
         return rc,pm,cm,li
 
 

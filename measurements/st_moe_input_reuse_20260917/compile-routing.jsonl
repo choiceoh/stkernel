@@ -1,0 +1,10 @@
+{"event": "identity", "torch": "2.13.0+cu132", "cuda": "13.2", "gpu_used": false, "sources": {"engine/kernels/b12x/moe_static_kernel_v4.py": "80f74cd2c962eb9a3f66ae73d735966b83f77ff7ab61cf945e4677971df20620", "engine/kernels/b12x/moe_dispatch.py": "b4754efc129a00842dd17aeaf2392914ba74a149f626d5eeb0a5e3d948d994ee"}}
+{"event": "compile", "rows": 8, "input_reuse": 0}
+{"event": "compile", "rows": 8, "input_reuse": 1}
+{"event": "compile", "rows": 8, "input_reuse": 2}
+{"event": "compile", "rows": 8, "input_reuse": 3}
+{"event": "compile", "rows": 16, "input_reuse": 0}
+{"event": "compile", "rows": 16, "input_reuse": 1}
+{"event": "compile", "rows": 16, "input_reuse": 2}
+{"event": "compile", "rows": 16, "input_reuse": 3}
+{"event": "complete", "passed": true, "scope": "component numerics and latency; consumer pending"}

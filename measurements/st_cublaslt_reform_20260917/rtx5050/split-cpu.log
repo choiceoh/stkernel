@@ -1,0 +1,31 @@
+test_bound_calls_allocate_nothing_and_independent_bindings_own_distinct_scratch (tests.test_engine_cublaslt.BoundExecutionTests.test_bound_calls_allocate_nothing_and_independent_bindings_own_distinct_scratch) ... ok
+test_replacing_bound_buffers_fails_before_matmul_and_capture_cannot_bind (tests.test_engine_cublaslt.BoundExecutionTests.test_replacing_bound_buffers_fails_before_matmul_and_capture_cannot_bind) ... ok
+test_selected_warp_configuration_reaches_bound_execution (tests.test_engine_cublaslt.BoundExecutionTests.test_selected_warp_configuration_reaches_bound_execution) ... ok
+test_packet_conversion_preserves_rounding_rank_stride_and_tail (tests.test_engine_cublaslt.InterpreterTests.test_packet_conversion_preserves_rounding_rank_stride_and_tail) ... ok
+test_quantizer_exact_bytes_odd_groups_padding_and_redzones (tests.test_engine_cublaslt.InterpreterTests.test_quantizer_exact_bytes_odd_groups_padding_and_redzones) ... ok
+test_scale_and_inverse_for_every_bf16_magnitude (tests.test_engine_cublaslt.InterpreterTests.test_scale_and_inverse_for_every_bf16_magnitude) ... /usr/local/lib/python3.12/site-packages/triton/runtime/interpreter.py:491: RuntimeWarning: invalid value encountered in divide
+  output = op(lhs.data, rhs.data)
+ok
+test_split_producer_layout_redzones_and_fp32_reduction (tests.test_engine_cublaslt.InterpreterTests.test_split_producer_layout_redzones_and_fp32_reduction) ... ok
+test_weight_scale_replication_covers_every_normal_exponent (tests.test_engine_cublaslt.InterpreterTests.test_weight_scale_replication_covers_every_normal_exponent) ... ok
+test_batched_partials_use_each_scale_slice_and_reject_bad_buffers (tests.test_engine_cublaslt.NativePreparationTests.test_batched_partials_use_each_scale_slice_and_reject_bad_buffers) ... skipped 'requires explicit owned-GPU permission'
+test_mx_query_uses_real_scales_and_binding_owns_execution_scales (tests.test_engine_cublaslt.NativePreparationTests.test_mx_query_uses_real_scales_and_binding_owns_execution_scales) ... skipped 'requires explicit owned-GPU permission'
+test_split_bindings_have_private_storage_and_replay_changed_sources (tests.test_engine_cublaslt.NativePreparationTests.test_split_bindings_have_private_storage_and_replay_changed_sources) ... skipped 'requires explicit owned-GPU permission'
+test_algorithm_alignment_uses_actual_storage_for_every_operand (tests.test_engine_cublaslt.PreparationTests.test_algorithm_alignment_uses_actual_storage_for_every_operand) ... ok
+test_both_paired_pipeline_samples_must_win (tests.test_engine_cublaslt.PreparationTests.test_both_paired_pipeline_samples_must_win) ... ok
+test_capture_cannot_prepare_an_algorithm (tests.test_engine_cublaslt.PreparationTests.test_capture_cannot_prepare_an_algorithm) ... ok
+test_custom_producer_cannot_silently_ignore_a_warp_choice (tests.test_engine_cublaslt.PreparationTests.test_custom_producer_cannot_silently_ignore_a_warp_choice) ... ok
+test_graph_reset_runs_on_success_and_capture_failure_preserves_original_error (tests.test_engine_cublaslt.PreparationTests.test_graph_reset_runs_on_success_and_capture_failure_preserves_original_error) ... ok
+test_non_fleet_cards_cannot_enter_timing (tests.test_engine_cublaslt.PreparationTests.test_non_fleet_cards_cannot_enter_timing) ... ok
+test_sm120_timing_requires_explicit_device_probe (tests.test_engine_cublaslt.PreparationTests.test_sm120_timing_requires_explicit_device_probe) ... ok
+test_winner_keeps_the_producer_layout_of_the_complete_pipeline (tests.test_engine_cublaslt.PreparationTests.test_winner_keeps_the_producer_layout_of_the_complete_pipeline) ... ok
+test_workspace_generations_survive_growth_and_streams_do_not_alias (tests.test_engine_cublaslt.PreparationTests.test_workspace_generations_survive_growth_and_streams_do_not_alias) ... ok
+test_preallocated_producer_buffers_cannot_alias (tests.test_engine_cublaslt.ProducerContracts.test_preallocated_producer_buffers_cannot_alias) ... ok
+test_scale_size_is_metadata_padding_only (tests.test_engine_cublaslt.ProducerContracts.test_scale_size_is_metadata_padding_only) ... ok
+test_preserves_quantized_bytes_without_cuda_or_requantization (tests.test_cublaslt_pack_input.PackedInputTests.test_preserves_quantized_bytes_without_cuda_or_requantization) ... ok
+test_rejects_wrong_format_and_scale_geometry (tests.test_cublaslt_pack_input.PackedInputTests.test_rejects_wrong_format_and_scale_geometry) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 76.981s
+
+OK (skipped=3)

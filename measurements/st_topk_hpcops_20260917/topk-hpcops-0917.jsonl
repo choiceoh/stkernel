@@ -1,0 +1,82 @@
+{"event": "device", "name": "NVIDIA GB10", "torch": "2.13.0+cu132", "cuda": "13.2", "smem_per_block": 49152}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 8192, "dist": "indexer", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 8192, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 8192, "dist": "normal", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 8192, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 8192, "dist": "plateau", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 8192, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 7}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 8192, "arm": "st_dsa_select", "median_us": 16.41, "best_us": 16.4, "visible_mib": 0.25, "gb_per_s": 16.0}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 8192, "arm": "hpcops", "median_us": 14.36, "best_us": 14.34, "visible_mib": 0.25, "gb_per_s": 18.2}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 8192, "arm": "read_floor", "median_us": 6.17, "best_us": 6.17, "visible_mib": 0.25, "gb_per_s": 42.4}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 32768, "dist": "indexer", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 32768, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 32768, "dist": "normal", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 32768, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 32768, "dist": "plateau", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 32768, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 8}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 32768, "arm": "st_dsa_select", "median_us": 32.78, "best_us": 32.78, "visible_mib": 1.0, "gb_per_s": 32.0}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 32768, "arm": "hpcops", "median_us": 22.56, "best_us": 22.55, "visible_mib": 1.0, "gb_per_s": 46.5}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 32768, "arm": "read_floor", "median_us": 8.81, "best_us": 8.8, "visible_mib": 1.0, "gb_per_s": 119.0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 131072, "dist": "indexer", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 131072, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 131072, "dist": "normal", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 131072, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 131072, "dist": "plateau", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 8, "n": 131072, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 8}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 131072, "arm": "st_dsa_select", "median_us": 228.42, "best_us": 228.34, "visible_mib": 4.0, "gb_per_s": 18.4}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 131072, "arm": "hpcops", "median_us": 53.76, "best_us": 53.73, "visible_mib": 4.0, "gb_per_s": 78.0}
+{"event": "timing", "kind": "decode", "rows": 8, "n": 131072, "arm": "read_floor", "median_us": 12.4, "best_us": 12.35, "visible_mib": 4.0, "gb_per_s": 338.3}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 32768, "dist": "indexer", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 32768, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 32768, "dist": "normal", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 32768, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 32768, "dist": "plateau", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 32768, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 16}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 32768, "arm": "st_dsa_select", "median_us": 32.85, "best_us": 32.84, "visible_mib": 2.0, "gb_per_s": 63.8}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 32768, "arm": "hpcops", "median_us": 24.48, "best_us": 24.41, "visible_mib": 2.0, "gb_per_s": 85.6}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 32768, "arm": "read_floor", "median_us": 9.78, "best_us": 9.76, "visible_mib": 2.0, "gb_per_s": 214.2}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 131072, "dist": "indexer", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 131072, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 131072, "dist": "normal", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 131072, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 131072, "dist": "plateau", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 131072, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 16}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 131072, "arm": "st_dsa_select", "median_us": 229.34, "best_us": 229.21, "visible_mib": 8.0, "gb_per_s": 36.6}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 131072, "arm": "hpcops", "median_us": 55.86, "best_us": 55.79, "visible_mib": 8.0, "gb_per_s": 150.1}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 131072, "arm": "read_floor", "median_us": 16.43, "best_us": 16.41, "visible_mib": 8.0, "gb_per_s": 510.6}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 236032, "dist": "indexer", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 236032, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 236032, "dist": "normal", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 236032, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 236032, "dist": "plateau", "arm": "st_dsa_select", "mismatched_rows": 0}
+{"event": "exactness", "kind": "decode", "rows": 16, "n": 236032, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 16}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 236032, "arm": "st_dsa_select", "median_us": 393.42, "best_us": 393.27, "visible_mib": 14.4, "gb_per_s": 38.4}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 236032, "arm": "hpcops", "median_us": 90.73, "best_us": 90.61, "visible_mib": 14.4, "gb_per_s": 166.5}
+{"event": "timing", "kind": "decode", "rows": 16, "n": 236032, "arm": "read_floor", "median_us": 22.58, "best_us": 22.55, "visible_mib": 14.4, "gb_per_s": 669.1}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 32768, "dist": "indexer", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 32768, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 32768, "dist": "normal", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 32768, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 32768, "dist": "plateau", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 32768, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 1002}
+{"event": "timing", "kind": "prefill", "rows": 1024, "n": 32768, "arm": "prefill_topk", "median_us": 938.66, "best_us": 918.53, "visible_mib": 127.5, "gb_per_s": 142.4}
+{"event": "timing", "kind": "prefill", "rows": 1024, "n": 32768, "arm": "hpcops", "median_us": 685.76, "best_us": 677.82, "visible_mib": 127.5, "gb_per_s": 195.0}
+{"event": "timing", "kind": "prefill", "rows": 1024, "n": 32768, "arm": "read_floor", "median_us": 586.3, "best_us": 583.52, "visible_mib": 127.5, "gb_per_s": 228.0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 131072, "dist": "indexer", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 131072, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 1}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 131072, "dist": "normal", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 131072, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 131072, "dist": "plateau", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 131072, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 1024}
+{"event": "timing", "kind": "prefill", "rows": 1024, "n": 131072, "arm": "prefill_topk", "median_us": 3367.9, "best_us": 3278.59, "visible_mib": 511.5, "gb_per_s": 159.3}
+{"event": "skipped_inexact", "kind": "prefill", "rows": 1024, "n": 131072, "arm": "hpcops"}
+{"event": "timing", "kind": "prefill", "rows": 1024, "n": 131072, "arm": "read_floor", "median_us": 2328.54, "best_us": 2279.46, "visible_mib": 511.5, "gb_per_s": 230.3}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 236032, "dist": "indexer", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 236032, "dist": "indexer", "arm": "hpcops", "mismatched_rows": 1}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 236032, "dist": "normal", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 236032, "dist": "normal", "arm": "hpcops", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 236032, "dist": "plateau", "arm": "prefill_topk", "mismatched_rows": 0}
+{"event": "exactness", "kind": "prefill", "rows": 1024, "n": 236032, "dist": "plateau", "arm": "hpcops", "mismatched_rows": 1024}
+{"event": "timing", "kind": "prefill", "rows": 1024, "n": 236032, "arm": "prefill_topk", "median_us": 8463.3, "best_us": 8421.76, "visible_mib": 921.5, "gb_per_s": 114.2}
+{"event": "skipped_inexact", "kind": "prefill", "rows": 1024, "n": 236032, "arm": "hpcops"}
+{"event": "timing", "kind": "prefill", "rows": 1024, "n": 236032, "arm": "read_floor", "median_us": 4123.87, "best_us": 4106.02, "visible_mib": 921.5, "gb_per_s": 234.3}

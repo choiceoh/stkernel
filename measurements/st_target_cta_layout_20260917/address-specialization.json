@@ -1,0 +1,13 @@
+{
+  "rejected_context_assignment": {
+    "source_sha256": "43a2cb88ba8b3d3aa0cb3fab6817f6b296b4bdda1b99a11891752ca96a081198",
+    "candidate_registers": 80,
+    "candidate_stack_bytes": 192,
+    "reason": "writing a copied kernel context introduces a stack frame; use compile-time address expression instead"
+  },
+  "final_address_expression": {
+    "source_sha256": "6509190eb06a7ed75b7db415b4f60b213fe4c37535b398ec24b69138237b0957",
+    "candidate_registers": 80,
+    "candidate_stack_bytes": 0
+  }
+}

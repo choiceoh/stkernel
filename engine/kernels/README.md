@@ -117,7 +117,9 @@ dispatch도 다른 레인과 같이 적용한다. 실제 가중치·반올림·�
   `STK_mla_prefill` — 큰 M 프리필 후보 `stock | tile32 | pair | pair4`(tile32 프로덕션 기본값), `mla.configure_prefill()` 이 무장 전에 적용.
 - **프로브 훅으로 남긴 것**(env 가 아니라 인자·모듈 속성; 서빙은 안 건드림): MLA 분할 강제 `mla_decode(splits=)`, MLA 루프라인 모드
   `mla_decode(probe=)`(`.cu` `run_mla` 의 넷째 int), 쌍 프리필 겹침 통계 `mla.PAIR_STATS`, 동적 tile_m 고정
-  `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),
+  `moe_dispatch._DYNAMIC_TILE_M_OVERRIDE`(새 형상 셀 측정용), micro 타일·MAC 고정 `moe_dispatch._MICRO_TILE_M_OVERRIDE`/`_MICRO_MAC_OVERRIDE`
+  (Qwen3.8 EP 디코드 셀 측정용, `probes/engine_qwen38_moe.py`), KDA recurrent 값 타일 BV 고정
+  `kda/ring._BV_OVERRIDE`·`kda/kda._BV_OVERRIDE`(새 셀 BV 스윕용, `probes/engine_qwen38_kda.py`), 백엔드·컷오버·MAC 사다리 `moe_dispatch._GLM53_B12X_*`(직접 대입),
   GEMM v2 k-슬라이스 `mk_set_gemm2`(pybind), mHC 공유 패스 `engine.kernels.configure_mhc_passes()`(mhc 임포트 전; post의 고정 TMA 정책은 유지).
 - **버린 것(측정돼서 진 것)**: EP 타일 계열 5파일(E=72 전문가 병렬; 프로덕션은 절대 목표로 채택했으나 디코드 TP 보다 9.8% 느림, ST 는 TP=4 형태),
   강제 W4A16(API 인자 `activation_precision="bf16"` 는 그대로), prefill reuse(39차 NEUTRAL) 와 FC1 N128(기각, −71%), KDA regime(NEUTRAL),
@@ -156,7 +158,7 @@ MLA는 필수 레인이므로 이전 `VLLM_GLM53_MEGAKERNEL`/`VLLM_GLM53_MK_MLA`
 | MLA (`mla.maybe_arm`) | `attention`, `device` | 16×512 MLA 셀로 컴파일 → 다른 어텐션 셀은 무장 전 거부. 헤드 묶음·잠재 폭 패딩·GQA 는 `mla/glue.py`(글루) |
 | 인덱서 (`kpool`) | `indexer.head_dim` | Hadamard-128 → 다른 폭은 첫 호출에서 거부 |
 | 드래프트 커널 (`draft_attention`, `draft_observe`) | `drafter.head_dim`, `device.sms` | D 는 constexpr 라 그대로 따라간다 |
-| KDA ring (`kda/ring.py`) | `linear.decay` | 커널 안 KDA 게이트 융합 → per-head(GDN) 셀은 거부; 그 셀은 같은 파일의 decay 진입점 `recurrent_decay_ring(_rows)`(글루) |
+| KDA ring (`kda/ring.py`) | `linear.decay` | 커널 안 KDA 게이트 융합 → per-head(GDN) 셀은 거부; 그 셀은 같은 파일의 GDN 진입점 `recurrent_gdn_ring(_rows)`(커널 안 GDN 게이트, HEAD_GATE). 밖에서 계산한 decay 는 decay 진입점 `recurrent_decay_ring(_rows)`(글루) |
 | dense W4A8/FP8 (`dense/__init__`) | `device` | 장치 계약만. TILE/KMAX 는 커널 상수. 128 정렬이 아닌 입력 폭은 `PaddedDenseLinear`(글루) |
 
 모델 무관으로 이미 보편인 커널(샘플러, 블록 검증, decode commit, 후보 키, SwiGLU, norm+RoPE, route 히스토그램,
@@ -216,7 +218,7 @@ config 해시가 맞으면 그것을 바인딩하며(낡은 기록은 사망: "�
 | --- | --- | --- | --- |
 | `mla/glue.grouped` | sink 없는 MLA, 헤드 수 무관, 잠재 폭 ≤ 512 | 헤드는 서로 섞이지 않는다: 16개씩 묶고 모자란 자리는 영 쿼리 헤드로 채워 출력을 버린다. 영 좌표는 내적에 아무것도 더하지 않는다: 잠재 행(`pad_rows`)과 쿼리를 512 로 확장한다 | 패딩 헤드만큼의 일, 좁은 잠재는 캐시 메모리 512/폭 배 |
 | `mla/glue.gqa` | sink 없는 GQA, 2 × head_dim ≤ 512 | KV 헤드의 키와 값을 한 잠재 행에 나란히 싣고(`pack_kv`: `[k·gk ; v·gv ; 0]`) 쿼리를 `[q/gk ; 0]` 으로 두면, 커널의 softmax(q'·c)·c 의 값 절반이 곧 GQA 출력이다. 이득은 2의 거듭제곱이라 BF16·e4m3 에서 정확하다 | KV 캐시가 잠재의 단일 스케일 e4m3 가 된다(BF16 KV 대비는 품질 게이트가 판정) |
-| `kda/ring.recurrent_decay_ring(_rows)` | per-head decay(GDN) | 링 레인의 같은 발사·같은 링 쓰기에서 커널 안 게이트만 끈다(COMPUTE_GATE). per-head decay 는 채널 축 stride 0 으로 복사 없이 읽는다 | 없음 |
+| `kda/ring.recurrent_decay_ring(_rows)` | per-head decay(GDN) | 링 레인의 같은 발사·같은 링 쓰기에서 커널 안 게이트만 끈다(COMPUTE_GATE). per-head decay 는 채널 축 stride 0 으로 복사 없이 읽는다. Qwen3.8 은 이 어댑터 대신 GDN 게이트를 커널 안에서 계산하는 `recurrent_gdn_ring(_rows)` 로 서빙한다 | 없음 |
 | `kda/chunk_decay.chunk_kda_with_decay` | per-head decay(GDN), 키 헤드 < 값 헤드 | 융합 게이트 청크 파이프라인에 밖에서 계산한 decay 를 청크 누적합·RCP_LN2·채널 확장해 넣는다(`states_at`, `out` 포함). 키 헤드는 값 헤드 수로 반복한다(링 커널의 i_h = i_hv // (HV/H) 묶음) | `out` 없이 부르면 출력이 `v` 저장소에 쓰인다(융합 진입점과 같음) |
 | `dense/mhc.MHCV41` (`prefill`) | split-sinkhorn, hidden 4096/5120, hc 4 | 메가커널의 V4.1 이음매 `run_mhc_v41` 를 20포인터 계약 그대로 감싼다. 토큰마다 따로 섞으므로 프리필은 128토큰 조각이 정확하다 | 조각마다 발사 한 번 |
 | `dense.PaddedDenseLinear` | 128 정렬이 아닌 입력 폭(≤ 20480) | 가중치에 영 열을, 입력에 영을 붙인다. 영 열은 곱에 아무것도 더하지 않고, W4 행 시프트·실제 열의 그룹 스케일·amax 활성값 스케일은 영이 올리지 못하는 최댓값이다 | 패딩 열만큼의 일. 패킷 프로젝터·슬롯 라이터는 제공하지 않는다 |

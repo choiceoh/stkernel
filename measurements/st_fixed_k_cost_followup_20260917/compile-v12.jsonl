@@ -1,0 +1,8 @@
+{"kind": "identity", "gpu_used": false, "torch": "2.13.0+cu132", "cuda": "13.2", "sources": {"engine/kernels/dense/kernels.cu": "f9eaa0aa926b3dc4ff71803423fd3ca0dd9736671b5d5fd67da19257d1f6be92", "engine/kernels/mla/glm53_megakernel.cu": "e2f14ac7b13752fee56ac3b5871e1186abea32b6b86a810023d6083b106d1224", "engine/kernels/b12x/moe_static_kernel_v4.py": "61fb4f685c0d6d19687ef182790460ec545219d4200f3852ab155e2922576317", "engine/kernels/b12x/moe_dispatch.py": "752a586652817319c5bfdb71a65f184a2fb2d0012d324ef575dbee98aa177c3a"}}
+{"kind": "compile", "component": "dense", "module": "/cache/fixed-k-0917/dense/73bd740f9cbbaaf9dc817f90/st_dense_73bd740f9cbbaaf9dc817f90.so", "binary_sha256": "87eaa3748fa48729d2053fbc30e9ddec876148879486ea7b3980fbe58bbdb835"}
+{"kind": "compile", "component": "mla", "module": "/cache/fixed-k-0917/mla/3c3250dfffa1641a5158ad37/st_mla_3c3250dfffa1641a5158ad37.so", "binary_sha256": "07bb48e86f4b5c98e49d04304a8007434428684cce238e7980a5ce7e36554359"}
+{"kind": "compile", "component": "moe", "cell": "scalar", "rows": 8}
+{"kind": "compile", "component": "moe", "cell": "vector", "rows": 8}
+{"kind": "compile", "component": "moe", "cell": "scalar", "rows": 16}
+{"kind": "compile", "component": "moe", "cell": "vector", "rows": 16}
+{"kind": "complete", "passed": true, "scope": "compile only"}

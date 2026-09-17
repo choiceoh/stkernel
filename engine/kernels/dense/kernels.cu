@@ -309,6 +309,16 @@ template <int N>
 __device__ __forceinline__ void mk_cp_wait() {
   asm volatile("cp.async.wait_group %0;\n" ::"n"(N));
 }
+// One bulk L2 prefetch of a contiguous global run (sm_90+): no smem, no
+// completion. A bench knob (g_mk2_l2_prefetch, 2026-09-16): the v2 GEMM's CTA
+// asks for its whole k slice of W and scales at entry, before the PDL wait,
+// so the ring's later records find their lines in L2 instead of DRAM -- the
+// ring keeps DIST x 8 KB in flight, ~2.7 GB/s a CTA over DRAM latency, and a
+// slice of four k-blocks never leaves the fill.
+__device__ __forceinline__ void mk_prefetch_l2(const void* p, unsigned bytes) {
+  asm volatile("cp.async.bulk.prefetch.L2.global [%0], %1;" ::"l"(p), "r"(bytes) : "memory");
+}
+
 __device__ __forceinline__ void mk_cp_commit() {
   asm volatile("cp.async.commit_group;\n");
 }
@@ -461,6 +471,7 @@ static_assert(2 * (GEMM2_SMEM + 1024) <= 102400, "v2 must fit twice per SM");
 // below are the only per-tile state, 320 x 4 B each.
 constexpr int MK2_TILES_MAX = 320;
 constexpr int MK2_KSR_MAX = 8;
+constexpr int MK2_L2_PREFETCH_KB = 16;   // k-blocks a CTA prefetches at most: 128 KB of W, 16 KB of scales
 // fp32 partials [ksr][m][n]: the widest per-rank linear (in_proj, 6528)
 // at m = 32 and ksr = 4; the host lowers ksr for anything wider.
 constexpr int MK2_PART_ELEMS = 32 * KDA_INPROJ_N_PAD * 4;
@@ -517,7 +528,8 @@ struct MKGemm2Ctx {
   int64_t x_stride = 0;    // 0 means dense; split projections may retain a wider parent row
   __nv_bfloat16* out;      // [m, n_orig]
   const int64_t* out_address = nullptr;  // replay-time reserved TX slot
-  const uint8_t* wq4;      // tile-major W4 pack [n/128, k/128, 128, 64]
+  const uint8_t* wq4;      // resident [n/tile_rows, k/128, tile_rows, 64]
+  bool w4_cta16 = false;  // explicit tensor layout, fixed before graph capture
   const int8_t* ws4;
   float wgs;
   const float* rgs = nullptr;  // per-row 2^-shift (33차 lever 3), 0 = wgs only
@@ -535,6 +547,7 @@ struct MKGemm2Ctx {
   int lr_slot = 0;
   int m, n, k, n_orig;
   int ksr;                 // k-slices per tile; grid = (n / 128) * ksr
+  int l2_prefetch = 0;     // bench knob: the CTA prefetches its k slice into L2 at entry
   // MK_SEG_SMLP2 (the shared-expert MLP as two PDL-chained v2 launches, no
   // grid barrier): the gate_up launch runs with pair_act -- whichever block
   // stores the SECOND final tile of a (gate, up) pair computes the clamped
@@ -551,6 +564,14 @@ struct MKGemm2Ctx {
   float act_limit = 0.0f, act_alpha = 1.0f, act_beta = 0.0f;
 };
 
+
+// Offset of a logical output row in either resident layout. A 16B load
+// never crosses a 16-row boundary (scales copy two rows at a time).
+template <int BYTES>
+__device__ __forceinline__ size_t mk_w4_row(const MKGemm2Ctx& c,int row,int kb,int kblk) {
+  if(c.w4_cta16) return (((size_t)(row/16)*kblk+kb)*16+row%16)*BYTES;
+  return (((size_t)(row/128)*kblk+kb)*128+row%128)*BYTES;
+}
 
 // RQ = rows each warp quantizes per k-block (1, 2, 4 for m <= 8, 16, 32):
 // MT (m-tiles in the mma) and the x lane mapping follow it at compile time,
@@ -680,10 +701,6 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
   // fragment loads below (eight rows, one word each, 64 B row pitch) hit
   // 32 distinct banks.
   auto stage_raw = [&](int kb, int buf) {
-    const uint8_t* nsrc =
-        c.wq4 + ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 64);
-    const uint8_t* ssrc = (const uint8_t*)c.ws4 +
-        ((size_t)nt * kblk + kb) * (SMEM_W_ROWS * 8);
     uint8_t* d = sraw + buf * W4_RAW_BYTES;
     // two chunks per thread, unrolled: the swizzled destinations are
     // per-thread constants (a runtime loop recomputed them every k-block)
@@ -693,11 +710,11 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
       const int t = (int)threadIdx.x + u * MK_THREADS;
       const int r = t >> 2, ch = t & 3;
       mk_cp_async16(d + r * W4_RAW_PITCH + ((ch ^ ((r >> 1) & 3)) << 4),
-                    nsrc + (size_t)t * 16);
+                    c.wq4 + mk_w4_row<64>(c,nt*128+r,kb,kblk) + ch*16);
     }
     if (threadIdx.x < SMEM_W_ROWS * 8 / 16)
       mk_cp_async16(d + W4_RAW_NIB + threadIdx.x * 16,
-                    ssrc + (size_t)threadIdx.x * 16);
+                    (const uint8_t*)c.ws4 + mk_w4_row<8>(c,nt*128+threadIdx.x*2,kb,kblk));
     mk_cp_commit();
   };
 
@@ -946,6 +963,16 @@ mk_gemm2_kernel(MKGemm2Ctx c) {
   // ---- prologue: the W ring first (independent of the previous kernel,
   // so it flies during that kernel's tail under PDL), then the wait, then
   // x(kb0) -> A buffer 0.
+  if (c.l2_prefetch && threadIdx.x == 0) {
+    // the slice's records are consecutive (tile-major [n/128][k/128] pack):
+    // one bulk request for W and one for the scales, before the PDL wait
+    const int nkb = min(kbn - kb0, MK2_L2_PREFETCH_KB);
+    const int tile_rows=c.w4_cta16?16:128;
+    for(int row=nt*128;row<(nt+1)*128;row+=tile_rows) {
+      mk_prefetch_l2(c.wq4+mk_w4_row<64>(c,row,kb0,kblk),(unsigned)nkb*tile_rows*64);
+      mk_prefetch_l2((const uint8_t*)c.ws4+mk_w4_row<8>(c,row,kb0,kblk),(unsigned)nkb*tile_rows*8);
+    }
+  }
 #pragma unroll
   for (int d = 0; d < DIST; ++d)
     if (kb0 + d < kbn) stage_raw(kb0 + d, (kb0 + d) % NB);
@@ -1247,17 +1274,17 @@ mk_gemm_input_kernel(MKGemm2Ctx c) {
   auto stage_raw=[&](int kb,int buf) {
     // The final 6416-wide tile has only one real 16-row warp.
     if(!live_warp) {mk_cp_commit();return;}
-    const uint8_t* w=c.wq4+((size_t)nt*kblk+kb)*8192;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)nt*kblk+kb)*1024;
+    const uint8_t* w=c.wq4+mk_w4_row<64>(c,nt*128+warp*16,kb,kblk);
+    const uint8_t* s=(const uint8_t*)c.ws4+mk_w4_row<8>(c,nt*128+warp*16,kb,kblk);
     uint8_t* d=sraw+buf*W4_RAW_BYTES;
 #pragma unroll
     for(int u=0;u<2;++u) {
       const int t=warp*64+lane+u*32,r=t>>2,ch=t&3;
-      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)t*16);
+      mk_cp_async16(d+r*W4_RAW_PITCH+((ch^((r>>1)&3))<<4),w+(size_t)(lane+u*32)*16);
     }
     if(lane<8) {
       const int st=warp*8+lane;
-      mk_cp_async16(d+W4_RAW_NIB+st*16,s+(size_t)st*16);
+      mk_cp_async16(d+W4_RAW_NIB+st*16,s+(size_t)lane*16);
     }
     mk_cp_commit();
   };
@@ -1364,7 +1391,7 @@ mk_gemm_input_kernel(MKGemm2Ctx c) {
 // W4 packs, FP8 preparation, per-slice arithmetic and reduction order are unchanged.
 // Exact route only: M6 or M7 / N6416 / K4096 and split8; two W staging buffers.
 // MODE 0 retains runtime geometry; MODE 1/2 specialize it, with 3/4 blocks per SM.
-template <int MODE, bool DIRECT = false, bool ORDERED=false, int KBLKS=32, int SLICES=8>
+template <int MODE, bool DIRECT = false, bool ORDERED=false, int KBLKS=32, int SLICES=8, bool CTA16=false>
 __global__ void __launch_bounds__(MK_THREADS,ORDERED?2:MODE==2?4:3)
 mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
   constexpr int NB=2;
@@ -1381,8 +1408,8 @@ mk_gemm_input_cta_kernel(MKGemm2Ctx c) {
   const int kbn=ORDERED?KBLKS*(warp+1)/8:MODE?kb0+4:kblk*(slice+1)/c.ksr;
   constexpr int DIST=NB-1;
   auto stage_raw=[&](int kb,int buf) {
-    const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+    const uint8_t* w=c.wq4+(CTA16?((size_t)nt*kblk+kb)*1024:mk_w4_row<64>(c,nt*16,kb,kblk));
+    const uint8_t* s=(const uint8_t*)c.ws4+(CTA16?((size_t)nt*kblk+kb)*128:mk_w4_row<8>(c,nt*16,kb,kblk));
     uint8_t* d=sraw+buf*W4_RAW_BYTES;
 #pragma unroll
     for(int u=0;u<2;++u) {
@@ -1523,8 +1550,8 @@ __device__ __forceinline__ void mk_gemm_input_cta3_body(MKGemm2Ctx c,int block) 
   const int kb0=KBLKS*slice/SLICES,kbn=KBLKS*(slice+1)/SLICES;
   constexpr int DIST=NB-1;
   auto stage_raw=[&](int kb,int buf) {
-    const uint8_t* w=c.wq4+((size_t)(nt/8)*kblk+kb)*8192+(nt%8)*1024;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/8)*kblk+kb)*1024+(nt%8)*128;
+    const uint8_t* w=c.wq4+mk_w4_row<64>(c,nt*16,kb,kblk);
+    const uint8_t* s=(const uint8_t*)c.ws4+mk_w4_row<8>(c,nt*16,kb,kblk);
     uint8_t* d=sraw+buf*RAW_BYTES;
 #pragma unroll
     for(int u=0;u<2;++u) {
@@ -1663,8 +1690,8 @@ __device__ __forceinline__ void mk_gemm_rows16_body(MKGemm2Ctx c,int block) {
   const int kb0=KBLKS*warp/8, kbn=KBLKS*(warp+1)/8;
   // Tile nt/16, W rows (nt%16)*8..+7: lane (g,q) copies row g's chunk q.
   auto stage_raw=[&](int kb,int buf) {
-    const uint8_t* w=c.wq4+((size_t)(nt/16)*KBLKS+kb)*8192+(nt%16)*512;
-    const uint8_t* s=(const uint8_t*)c.ws4+((size_t)(nt/16)*KBLKS+kb)*1024+(nt%16)*64;
+    const uint8_t* w=c.wq4+mk_w4_row<64>(c,nt*8,kb,KBLKS);
+    const uint8_t* s=(const uint8_t*)c.ws4+mk_w4_row<8>(c,nt*8,kb,KBLKS);
     uint8_t* d=sraw+buf*ROWS16_RAW_BYTES;
     mk_cp_async16(d+r*W4_RAW_PITCH+((q^((r>>1)&3))<<4),w+(size_t)lane*16);
     if(lane<4) mk_cp_async16(d+ROWS16_RAW_NIB+(warp*4+lane)*16,s+(size_t)lane*16);
@@ -1768,6 +1795,7 @@ struct MKMhcArgs {
   float* post_mix_out;               // [T, HC]
   float* comb_mix_out;               // [T, HC*HC]
   __nv_bfloat16* layer_input;        // [T, HIDDEN]
+  uint8_t* input_pack;              // optional C1 bound W4 input, then scales
   float* yp;                         // ws [NCHUNK, MHC_MAX_TOK, NOUT]
   float* rp;                         // ws [NCHUNK, MHC_MAX_TOK]
   float* sq;                         // ws [MHC_MAX_TOK]
@@ -1954,12 +1982,13 @@ __device__ __forceinline__ void mk_mhc_p34_load(const MKMhcArgs& a, int t,
   }
 }
 
-template <int HID = HIDDEN, bool V41 = false>
+template <int HID = HIDDEN, bool V41 = false, bool PACK_INPUT = false>
 __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
                                    const float* s_pmix,
                                    const MhcTailRegs<HID>& r) {
   constexpr int MHC_EPT_ = HID / MK_THREADS;
   __shared__ float sqred[MK_WARPS];
+  __shared__ __align__(16) __nv_bfloat16 pack_values[PACK_INPUT ? HID : 1];
   float pre[HC];
 #pragma unroll
   for (int j = 0; j < HC; ++j) pre[j] = s_pmix[j];
@@ -1992,10 +2021,33 @@ __device__ void mk_mhc_p34_compute(const MKMhcArgs& a, int t,
 #pragma unroll
   for (int i = 0; i < MHC_EPT_; ++i) {
     const int h = i * MK_THREADS + threadIdx.x;
-    a.layer_input[t * HID + h] =
-        __float2bfloat16(vals[i] * rsq * r.nw[i]);
+    const __nv_bfloat16 rounded = __float2bfloat16(vals[i] * rsq * r.nw[i]);
+    a.layer_input[t * HID + h] = rounded;
+    if constexpr (PACK_INPUT) pack_values[h] = rounded;
   }
   __syncthreads();  // sqred reuse
+  if constexpr (PACK_INPUT) {
+    // Keep the original normalization reduction and BF16 rounding. Transpose
+    // only the completed values in shared memory: a warp now owns all 128
+    // columns of a scale group, four adjacent values per lane. This removes
+    // cross-warp maxima, four value shuffles and the 16-pass pack loop.
+    const int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+#pragma unroll
+    for (int kb = warp; kb < HID / 128; kb += MK_WARPS) {
+      const __nv_bfloat16* values = pack_values + kb * 128 + lane * 4;
+      const float v0 = __bfloat162float(values[0]), v1 = __bfloat162float(values[1]);
+      const float v2 = __bfloat162float(values[2]), v3 = __bfloat162float(values[3]);
+      const float local = fmaxf(fmaxf(fabsf(v0), fabsf(v1)), fmaxf(fabsf(v2), fabsf(v3)));
+      const float mx = __uint_as_float(__reduce_max_sync(~0u, __float_as_uint(local)));
+      const float scale = mk_act_scale(mx), inv = mk_act_rcp(scale);
+      const int q = lane >> 3, word = lane & 7, ks = ((word >> 1) - q) & 3;
+      const size_t offset = (size_t)kb * 1024 + ks * 256 + (t * 4 + q) * 8 + (word & 1) * 4;
+      *(uint32_t*)(a.input_pack + offset) = mk_f32x4_to_e4m3(v0 * inv, v1 * inv, v2 * inv, v3 * inv);
+      if (lane == 0)
+        ((float*)(a.input_pack + (HID / 128) * 1024))[kb * 8 + t] = scale;
+    }
+    __syncthreads();
+  }
 }
 
 __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
@@ -2009,7 +2061,8 @@ __device__ __forceinline__ float2 mk_mhc_unpack_bf16_late(uint32_t packed) {
 }
 
 template <bool BF16_FN, bool AR_CONSUMER = false, int HID = HIDDEN,
-          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false>
+          bool V41 = false, typename Args = MKMhcArgs, bool PACKETS = false, bool STATIC_TAILS = false,
+          bool PACK_INPUT = false, bool EXPAND_FN = false>
 __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
   static_assert(!STATIC_TAILS || (BF16_FN && AR_CONSUMER && HID == HIDDEN && !V41));
   // Shadows the file-scope NCHUNK; every chunk loop below reads unchanged.
@@ -2087,7 +2140,17 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
       for (int m = 0; m < NOUT; ++m) {
         // An ordinary vector load participates in the memory clobber below.
         // __ldg is a read-only intrinsic that nvcc can sink past that wait.
-        fnv[m] = ((const uint2*)a.fn)[(size_t)m * HID + h];
+        const uint2 packed = ((const uint2*)a.fn)[(size_t)m * HID + h];
+        if constexpr (EXPAND_FN) {
+          // The served grid has one CTA per SM. Compare spending its spare
+          // registers on exact FP32 coefficients once for all token rows.
+          const float2 lo = mk_mhc_unpack_bf16_late(packed.x);
+          const float2 hi = mk_mhc_unpack_bf16_late(packed.y);
+          fnr[m][0] = lo.x; fnr[m][1] = lo.y;
+          fnr[m][2] = hi.x; fnr[m][3] = hi.y;
+        } else {
+          fnv[m] = packed;
+        }
       }
     } else {
 #pragma unroll
@@ -2139,7 +2202,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
 #pragma unroll
       for (int m = 0; m < NOUT; ++m) {
         float v = 0.0f;
-        if constexpr (BF16_FN && AR_CONSUMER) {
+        if constexpr (BF16_FN && AR_CONSUMER && !EXPAND_FN) {
           const float2 lo = mk_mhc_unpack_bf16_late(fnv[m].x);
           const float2 hi = mk_mhc_unpack_bf16_late(fnv[m].y);
           v += lo.x * r[0];
@@ -2253,7 +2316,7 @@ __device__ void mk_mhc_p1_impl(const Args& a, int bid) {
     }
     __syncthreads();
     MK_MHC_TS(3);  // (probe) p2 end / p34 start
-    mk_mhc_p34_compute<HID, V41>(a, t, s_pmix, tr);  // ends in a __syncthreads
+    mk_mhc_p34_compute<HID, V41, PACK_INPUT>(a, t, s_pmix, tr);  // ends in a __syncthreads
     MK_MHC_TS(4);  // (probe) p34 end
     if constexpr (STATIC_TAILS) break;
   }
@@ -2309,18 +2372,18 @@ __global__ void mk_mhc_bf16_kernel(const MKMhcArgs a) {
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false>
+template <bool BF16_FN, int HID = HIDDEN, bool STATIC_TAILS = false, bool PACK_INPUT = false, bool EXPAND_FN = false>
 __global__ void mk_mhc_ar_kernel(const MKMhcArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
   MK_MHC_TS(0);
-  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HID, false, MKMhcArgs, false, STATIC_TAILS, PACK_INPUT, EXPAND_FN>(a, blockIdx.x);
   MK_MHC_TS(7);
 }
 
-template <bool BF16_FN, bool STATIC_TAILS = false>
+template <bool BF16_FN, bool STATIC_TAILS = false, bool PACK_INPUT = false, bool EXPAND_FN = false>
 __global__ void mk_mhc_packets_kernel(const MKMhcPacketsArgs a) {
   asm volatile("griddepcontrol.launch_dependents;");
-  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS>(a, blockIdx.x);
+  mk_mhc_p1_impl<BF16_FN, true, HIDDEN, false, MKMhcPacketsArgs, true, STATIC_TAILS, PACK_INPUT, EXPAND_FN>(a, blockIdx.x);
 }
 
 // Actual V4.1 currently uses FP32 coefficients and no AR-consumer pack.
@@ -3168,6 +3231,8 @@ void set_kernel_attrs() {
   input_cta_attrs(mk_gemm_input_cta_kernel<0>,0);
   input_cta_attrs(mk_gemm_input_cta_kernel<1>,1);
   input_cta_attrs(mk_gemm_input_cta_kernel<2>,2);
+  MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_cta_kernel<1,false,false,32,8,true>,
+      cudaFuncAttributeMaxDynamicSharedMemorySize,INPUT_CTA_SMEM));
   MK_CHECK_CUDA(cudaFuncSetAttribute(mk_gemm_input_kernel<>,
       cudaFuncAttributeMaxDynamicSharedMemorySize, GEMM_INPUT_SMEM));
   MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -3333,6 +3398,7 @@ bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
       (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
 }
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
+int g_mk2_l2_prefetch = 0;  // bench knob: v2 CTAs prefetch their k slice into L2 (0 = the served path)
 // k-slices per tile for one v2 launch, from the 30차 sweeps (srv2, ksr 1/2/3/
 // 4/6/8 on every production shape, single and back-to-back): what wins is
 // ONE exact wave of the resident slots (blocks/SM x SMs = 96 on GB10) --
@@ -3515,14 +3581,17 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
               "x must have contiguous columns and disjoint 8 B aligned rows");
   // Tile-major packs -- see stage_raw. The shape is the only thing
   // standing between a stale row-major pack and silently wrong output.
-  TORCH_CHECK(wq4.dim() == 4 && wq4.size(2) == SMEM_W_ROWS
+  TORCH_CHECK(wq4.dim() == 4 && (wq4.size(2) == SMEM_W_ROWS ||
+                  (wq4.size(2) == 16 && n_orig == 6416 && c2.k == 4096))
                   && wq4.size(3) == 64 && wq4.is_contiguous(),
-              "wq4 must be a contiguous [n/128, k/128, 128, 64] pack");
+              "wq4 must identify a contiguous 128-row pack or target KDA 16-row pack");
   TORCH_CHECK(ws4.dim() == 4 && ws4.size(0) == wq4.size(0)
-                  && ws4.size(1) == wq4.size(1) && ws4.size(2) == SMEM_W_ROWS
+                  && ws4.size(1) == wq4.size(1) && ws4.size(2) == wq4.size(2)
                   && ws4.size(3) == 8 && ws4.is_contiguous(),
-              "ws4 must be a contiguous [n/128, k/128, 128, 8] pack");
-  c2.n = (int)wq4.size(0) * SMEM_W_ROWS;
+              "ws4 must match the resident W4 tile layout");
+  c2.w4_cta16 = wq4.size(2) == 16;
+  c2.n = (int)wq4.size(0) * (int)wq4.size(2);
+  TORCH_CHECK(c2.n == ((n_orig+127)/128)*128, "W4 padded rows disagree with output");
   c2.n_orig = (int)n_orig;
   TORCH_CHECK(c2.k % KSTEP == 0 && c2.k <= KBLK_LIMIT * KSTEP, "k out of contract");
   TORCH_CHECK(!c2.a_ready && !c2.pair_act, "the staged-A path is smlp2's, not a plain launch");
@@ -3535,6 +3604,7 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
   c2.lr_slot = bg != 0 ? 1 : 0;
   const int nblk = c2.n / SMEM_W_ROWS;
   c2.ksr = mk_choose_ksr2(c2.m, c2.n, c2.k, c2.lr_r > 0);
+  c2.l2_prefetch = g_mk2_l2_prefetch;   // captured by value: a graph keeps the knob it was captured with
   const bool bound_c1 = bound_input && c2.m == 8;
   TORCH_CHECK(!bound_c1 || ((c2.k == 4096 && (c2.n_orig == 6416 ||
               ((c2.n_orig == 4096 || c2.n_orig == 6144) && (c2.ksr == 2 || c2.ksr == 3)))) ||
@@ -3628,6 +3698,12 @@ void mk_run_gemm_impl(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4,
     } else if (cta==4 && c2.ksr==3 && (c2.n_orig==4096 || c2.n_orig==6144)) {
       mk_launch<192>(mk_gemm_input_cta3_kernel<2,2,3,DIRECT>,c2.n_orig/32,INPUT_CTA3_SMEM,stream,c2);
     } else if (cta && c2.ksr==8) {
+      if constexpr (!DIRECT) {
+        if(c2.w4_cta16 && bound_c1) {
+          mk_launch(mk_gemm_input_cta_kernel<1,false,false,32,8,true>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
+          return;
+        }
+      }
       if (cta==1)
         mk_launch(mk_gemm_input_cta_kernel<0,DIRECT>,c2.n_orig/16,INPUT_CTA_SMEM,stream,c2);
       else if (cta==2 || cta==4)
@@ -3815,7 +3891,8 @@ void mk_run_gemm_bound_input(torch::Tensor x, torch::Tensor wq4, torch::Tensor w
   TORCH_CHECK((c1 || wide) && rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device() &&
               wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8,
               "bound input requires a declared W4 cell and row scales");
-  TORCH_CHECK(wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128,
+  TORCH_CHECK(wq4.dim() == 4 && (wq4.size(2) == 128 || (wq4.size(2) == 16 && n == 6416 && k == 4096))
+              && wq4.size(0)*wq4.size(2) == ((n + 127) / 128)*128,
               "bound input pack rows must match the declared output");
   const uint8_t* producer_q = nullptr;
   const float* producer_s = nullptr;
@@ -3921,10 +3998,11 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
               "sixteen-row cells: KDA input, gate/up, qkv_a and MLP down to a matrix; KDA/MLA outputs and MLP down to a TX slot");
   TORCH_CHECK(rgs_ptr && wq4.device() == x.device() && ws4.device() == x.device()
               && wq4.scalar_type() == torch::kUInt8 && ws4.scalar_type() == torch::kInt8
-              && wq4.dim() == 4 && wq4.size(0) == (n + 127) / 128 && wq4.size(1) == k / KSTEP
-              && wq4.size(2) == SMEM_W_ROWS && wq4.size(3) == 64 && wq4.is_contiguous()
+              && wq4.dim() == 4 && (wq4.size(2) == 128 || (wq4.size(2) == 16 && n == 6416 && k == 4096))
+              && wq4.size(0)*wq4.size(2) == ((n + 127) / 128)*128 && wq4.size(1) == k / KSTEP
+              && wq4.size(3) == 64 && wq4.is_contiguous()
               && ws4.dim() == 4 && ws4.size(0) == wq4.size(0) && ws4.size(1) == wq4.size(1)
-              && ws4.size(2) == SMEM_W_ROWS && ws4.size(3) == 8 && ws4.is_contiguous(),
+              && ws4.size(2) == wq4.size(2) && ws4.size(3) == 8 && ws4.is_contiguous(),
               "sixteen-row cells need the bound tile-major W4 pack and its row scales");
   set_kernel_attrs();
   mk_rows16_attrs();
@@ -3935,7 +4013,8 @@ void mk_run_gemm_rows16(torch::Tensor x, torch::Tensor wq4, torch::Tensor ws4, t
   c.ws4 = (const int8_t*)ws4.data_ptr();
   c.wgs = 1.f;
   c.rgs = (const float*)rgs_ptr;
-  c.m = 16; c.k = (int)k; c.n = (int)wq4.size(0) * SMEM_W_ROWS; c.n_orig = (int)n;
+  c.w4_cta16 = wq4.size(2) == 16;
+  c.m = 16; c.k = (int)k; c.n = (int)wq4.size(0) * (int)wq4.size(2); c.n_orig = (int)n;
   c.ksr = mk_choose_ksr2(16, c.n, c.k);
   const int slices = n == 6416 ? 8 : n == 6144 ? 2 : n == 2048 ? 6 : 3;
   TORCH_CHECK(c.ksr == slices, "sixteen-row cells require the ordinary lane's K slices");
@@ -4011,7 +4090,7 @@ std::vector<int64_t> mk_rows16_info() {
 // arrays grow with it, and a register allocation that changes changes
 // occupancy. Sharing one cached grid across instantiations would launch the
 // 5120 kernel on a residency measured for 4096 and deadlock its barrier.
-template <int HID>
+template <int HID, bool EXPAND_FN = false>
 static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool static_c1) {
   auto stream = c10::cuda::getCurrentCUDAStream();
   // Separate occupancy for both new instantiations. Only immutable fn may
@@ -4020,12 +4099,16 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
   // what lets 16 rows (C=2 at K=7) take this path: a sum too wide for the
   // one-shot consumer releases nothing early, and this launch follows it.
   if (ar_consumer && mk_pdl_enabled() && a.num_tokens <= 16) {
-    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID> : mk_mhc_ar_kernel<false, HID>;
+    auto kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, false, EXPAND_FN> : mk_mhc_ar_kernel<false, HID, false, false, EXPAND_FN>;
     if constexpr (HID == HIDDEN) {
-      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true>;
+      if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, false, EXPAND_FN>;
+      if (a.input_pack) {
+        kernel = bf16_fn ? mk_mhc_ar_kernel<true, HID, false, true, EXPAND_FN> : mk_mhc_ar_kernel<false, HID, false, true, EXPAND_FN>;
+        if (static_c1) kernel = mk_mhc_ar_kernel<true, HID, true, true, EXPAND_FN>;
+      }
     }
-    static int ar_grids[3] = {0, 0, 0};
-    int& grid = ar_grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
+    static int ar_grids[6] = {};
+    int& grid = ar_grids[(a.input_pack ? 3 : 0) + (static_c1 ? 2 : bf16_fn ? 1 : 0)];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -4078,13 +4161,14 @@ static void mk_mhc_launch(MKMhcArgs a, bool bf16_fn, bool ar_consumer, bool stat
   mk_launch(mk_mhc_kernel<HID>, mhc_grid, 0, stream, a);
 }
 
+template <bool EXPAND_FN = false>
 static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints, bool bf16_fn = false,
                 bool ar_consumer = false, const at::Tensor& packets = {}, int tail_mode = -1) {
   set_kernel_attrs();
   // Ahead of the unpack, not after it: this used to sit below 19 ptrs[]
   // reads, so a short vector was already out of bounds before it fired.
-  TORCH_CHECK(ptrs.size() == 18 && (ints.size() == 2 || ints.size() == 3) && scalars.size() == 5,
+  TORCH_CHECK((ptrs.size() == 18 || ptrs.size() == 19) && (ints.size() == 2 || ints.size() == 3) && scalars.size() == 5,
               "run_mhc arg contract");
   // PR518 adds optional ints[2]. Validate the full int64 value before
   // narrowing it or reading pointers; otherwise a huge value could wrap.
@@ -4109,7 +4193,15 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
   const bool static_shape = hidden == HIDDEN && ints[0] == 8 && bf16_fn && (direct || ar_consumer);
   TORCH_CHECK(tail_mode != 1 || static_shape, "static MHC tails require a packed C1 consumer");
   const bool static_c1 = tail_mode != 0 && static_shape;
+  TORCH_CHECK(!EXPAND_FN || (hidden == HIDDEN && (ints[0] == 8 || ints[0] == 16)
+              && (direct || ar_consumer)), "expanded MHC coefficients require an 8/16-row GLM consumer");
   MKMhcArgs a{};
+  if (ptrs.size() == 19) {
+    TORCH_CHECK(hidden == HIDDEN && ints[0] == 8 && (direct || ar_consumer) && mk_pdl_enabled()
+                && ptrs[18] && (ptrs[18] & 15) == 0,
+                "MHC producer pack requires an eight-row hidden-4096 consumer and aligned storage");
+    a.input_pack = (uint8_t*)ptrs[18];
+  }
   a.x_in = (const __nv_bfloat16*)ptrs[0];
   a.residual_in = (const __nv_bfloat16*)ptrs[1];
   a.post_mix_in = (const float*)ptrs[2];
@@ -4142,10 +4234,14 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     MKMhcPacketsArgs packet_args{};
     static_cast<MKMhcArgs&>(packet_args) = a;
     packet_args.rank_inputs = reinterpret_cast<const __nv_bfloat16* const*>(packets.data_ptr());
-    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true> : mk_mhc_packets_kernel<false>;
-    if (static_c1) kernel = mk_mhc_packets_kernel<true, true>;
-    static int grids[3] = {0, 0, 0};
-    int& grid = grids[static_c1 ? 2 : bf16_fn ? 1 : 0];
+    auto kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, false, EXPAND_FN> : mk_mhc_packets_kernel<false, false, false, EXPAND_FN>;
+    if (static_c1) kernel = mk_mhc_packets_kernel<true, true, false, EXPAND_FN>;
+    if (a.input_pack) {
+      kernel = bf16_fn ? mk_mhc_packets_kernel<true, false, true, EXPAND_FN> : mk_mhc_packets_kernel<false, false, true, EXPAND_FN>;
+      if (static_c1) kernel = mk_mhc_packets_kernel<true, true, true, EXPAND_FN>;
+    }
+    static int grids[6] = {};
+    int& grid = grids[(a.input_pack ? 3 : 0) + (static_c1 ? 2 : bf16_fn ? 1 : 0)];
     if (!grid) {
       int per_sm = 0, sms = 0;
       MK_CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&per_sm, kernel, MK_THREADS, 0));
@@ -4156,18 +4252,20 @@ static void mk_run_mhc_impl(std::vector<int64_t> ptrs, std::vector<double> scala
     TORCH_CHECK(!static_c1 || grid == 48, "C1 static MHC tails require 48 resident CTAs");
     packet_args.grid = grid;
     mk_launch(kernel, grid, 0, stream, packet_args);
-  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41>(a, bf16_fn, ar_consumer, static_c1);
-  else mk_mhc_launch<HIDDEN>(a, bf16_fn, ar_consumer, static_c1);
+  } else if (hidden == HIDDEN_V41) mk_mhc_launch<HIDDEN_V41, EXPAND_FN>(a, bf16_fn, ar_consumer, static_c1);
+  else mk_mhc_launch<HIDDEN, EXPAND_FN>(a, bf16_fn, ar_consumer, static_c1);
 }
 
 void mk_run_mhc(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
+                std::vector<int64_t> ints, bool bf16_fn = false, bool ar_consumer = false, int tail_mode = -1, bool expand_fn = false) {
+  if (expand_fn) mk_run_mhc_impl<true>(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
+  else mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, ar_consumer, {}, tail_mode);
 }
 
 void mk_run_mhc_packets(std::vector<int64_t> ptrs, std::vector<double> scalars,
-                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1) {
-  mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
+                        std::vector<int64_t> ints, at::Tensor packets, bool bf16_fn, int tail_mode = -1, bool expand_fn = false) {
+  if (expand_fn) mk_run_mhc_impl<true>(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
+  else mk_run_mhc_impl(ptrs, scalars, ints, bf16_fn, false, packets, tail_mode);
 }
 
 // V4.1 has a separate occupancy cache from every legacy PR518 kernel.
@@ -4899,16 +4997,19 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("gemm_workspace_elements", []() { return MK2_PART_ELEMS + MK2_TILES_MAX; });
   m.def("gemm2_plan", &mk_gemm2_plan, "bench: {ksr, units, blocks/SM} of (m, n, k)");
   m.def("set_gemm2", &mk_set_gemm2, "bench: force the GEMM's ksr (-1 = keep)");
+  m.def("set_gemm2_l2_prefetch", [](int64_t v) { g_mk2_l2_prefetch = v ? 1 : 0; },
+        "bench: v2 CTAs prefetch their k slice into L2 at entry (0 = the served path)");
+  m.def("gemm2_l2_prefetch", []() { return (int64_t)g_mk2_l2_prefetch; }, "bench: the l2 prefetch knob");
   m.def("probe_state", &mk_probe_state, "snapshot the raw GEMM probe knob");
   m.def("restore_probe_state", &mk_restore_probe_state, "restore the raw GEMM probe knob");
   m.def("read_ts2", &mk_read_ts2, "v2 unit timestamps (MK_PHASE_TS builds)");
   m.def("run_mhc", &mk_run_mhc, "MK_SEG_MHC", pybind11::arg("ptrs"),
         pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("bf16_fn") = false,
-        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1);
+        pybind11::arg("ar_consumer") = false, pybind11::arg("tail_mode") = -1, pybind11::arg("expand_fn") = false);
   m.def("run_mhc_packets", &mk_run_mhc_packets, "TP4 packet input to native MHC",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
-        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1);
+        pybind11::arg("packets"), pybind11::arg("bf16_fn"), pybind11::arg("tail_mode") = -1, pybind11::arg("expand_fn") = false);
   m.def("run_mhc_v41", &mk_run_mhc_v41, "Experimental HF V4.1 MHC seam",
         pybind11::arg("ptrs"), pybind11::arg("scalars"), pybind11::arg("ints"),
         pybind11::arg("hidden") = HIDDEN_V41);

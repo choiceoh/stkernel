@@ -38,6 +38,14 @@ def main():
     parser.add_argument("--seqs", help="dense_cells: concurrencies to compare, 1 -> 8 rows, 2 -> 16 rows (default 1,2)")
     parser.add_argument("--samples", help="dense_cells: B/A/A/B brackets per comparison (default 2)")
     args = parser.parse_args()
+    if args.lanes == 'next_k_compile' or args.lanes == 'next_k_cost' or args.lanes.startswith('next_k_cost:'):
+        from probes.engine_fixed_k_next import run
+        run(args.output, args.ranks, compile_only=args.lanes == 'next_k_compile', sections=args.lanes.split(':')[1:])
+        return
+    if args.lanes in ('fixed_k_compile', 'fixed_k_cost'):
+        from probes.engine_fixed_k_cost import run
+        run(args.output, args.ranks, compile_only=args.lanes == 'fixed_k_compile')
+        return
     if args.lanes == 'boundary_stage':
         from probes.engine_boundary_stage import run as boundary_stage_check
         boundary_stage_check(args.output)
@@ -62,6 +70,15 @@ def main():
         # the routed experts' same-build cells: tile-major w13 chunk, stamped timeline, prefill (real rank weights)
         from probes.engine_moe_c2_cells import main as moe_c2_cells
         moe_c2_cells(args.ranks, sections=args.lanes.split(':')[1:], samples=args.samples, output=args.output)
+        return
+    if args.lanes in ('moe_input_reuse', 'moe_input_reuse_compile'):
+        from probes.engine_moe_input_reuse import run
+        run(args.output, args.ranks, compile_only=args.lanes.endswith('_compile'))
+        return
+    if args.lanes == 'router_cells':
+        # the decode router's launch fold: the served seven-launch chain against one fused launch (real rank gates)
+        from probes.engine_router_cells import main as router_cells
+        router_cells(args.ranks, samples=args.samples, output=args.output)
         return
     if args.lanes == 'dense_cells' or args.lanes.startswith('dense_cells:'):
         from probes.engine_dense_cells import main as dense_cells_check
@@ -110,6 +127,36 @@ def main():
         consumer_timing(report)
         if args.output:
             args.output.write_text(''.join(json.dumps(row) + '\n' for row in rows))
+        return
+    if args.lanes == 'topk_params':
+        # which host choice (bin cache, stash, block width) sets st_dsa_select's time on this device
+        from probes.engine_topk_hpcops import sweep as topk_params_sweep
+        topk_params_sweep(args.output)
+        return
+    if args.lanes == 'topk_hpcops':
+        # component only: HPC-Ops' exact top-k (vendored, MIT) against st_dsa_select / prefill_topk and a read floor
+        from probes.engine_topk_hpcops import run as topk_hpcops_check
+        topk_hpcops_check(args.output)
+        return
+    if args.lanes == 'qwen38_cells':
+        # correctness only: Qwen3.8's lanes qualified and the glue's GPU cases, from its config (engine/QWEN38_CARRY.md C1)
+        from probes.engine_qwen38_cells import run as qwen38_cells
+        qwen38_cells(args.output)
+        return
+    if args.lanes == 'qwen38_dense':
+        # component timings: the W4A8/FP8 switch at Qwen3.8's projection shapes and the padded widths, gated first (C2)
+        from probes.engine_qwen38_dense import run as qwen38_dense
+        qwen38_dense(args.output)
+        return
+    if args.lanes == 'qwen38_kda':
+        # component timings: Qwen3.8's GDN on the KDA kernels at its 4/12 x 128 cell, value tiles 8/16/32, exact gate first (C3)
+        from probes.engine_qwen38_kda import run as qwen38_kda
+        qwen38_kda(args.output)
+        return
+    if args.lanes == 'qwen38_moe':
+        # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
+        from probes.engine_qwen38_moe import run as qwen38_moe
+        qwen38_moe(args.output)
         return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings

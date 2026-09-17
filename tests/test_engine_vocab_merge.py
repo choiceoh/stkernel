@@ -117,7 +117,7 @@ class VocabMergeTests(unittest.TestCase):
                  for name in ('candidate_selector.predecessor_codebook', 'candidate_selector.successor_codebook')}
         drafter = NS(k=K, F=NS(mask_id=0, sel_top_k=16), p=books,
                      target=NS(head_local=lambda _: logits, comm=Comm(), rank=0, vp=vocab),
-                     block=lambda *args: h, selector_projection=lambda _: proj,
+                     block=lambda *args: h, selector_projection=lambda _: proj, _packed_head=lambda: False,
                      diagnostics=None, decodable=154856, selector_alpha=(1.,)*K)
         anchor = torch.tensor([19], device='cuda')
         ring = torch.zeros(1, device='cuda')

@@ -1,0 +1,122 @@
+{
+  "status": "PASS",
+  "device": "NVIDIA GeForce RTX 5050",
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "scope": "same synthetic weight layout, exact outputs and graph replay; performance unmeasured",
+  "cells": [
+    {
+      "rows": 1,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 6,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 7,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 8,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 8,
+      "mode": "bound",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 8,
+      "mode": "producer",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 14,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 16,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 16,
+      "mode": "bound",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 21,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 21,
+      "mode": "wide",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 24,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 24,
+      "mode": "bound",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 28,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 28,
+      "mode": "wide",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 32,
+      "mode": "plain",
+      "bit_exact": true,
+      "graph_replays": 3
+    },
+    {
+      "rows": 32,
+      "mode": "bound",
+      "bit_exact": true,
+      "graph_replays": 3
+    }
+  ],
+  "source_sha256": {
+    "engine/kernels/dense/kernels.cu": "6509190eb06a7ed75b7db415b4f60b213fe4c37535b398ec24b69138237b0957",
+    "engine/kernels/dense/__init__.py": "d739dbcf13c35050e68d39c4f16041c126c19b6c70e271e7c9267142e5c94895",
+    "probes/engine_dense_cta_layout_check.py": "923912cdf783ce2d67fde37b943541ca318e48b2d05f5b8dc354db2fcc3b1be0"
+  },
+  "arena_relocation": {
+    "bit_exact": true,
+    "fp8_unchanged": true,
+    "guard_bytes_intact": true,
+    "resident_extra_bytes": 0
+  }
+}

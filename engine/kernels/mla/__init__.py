@@ -35,6 +35,12 @@ PREFILL_MODES = ("stock", "tile32")
 # GB10 cluster-local split reduction (measurements/st_gb10_mla_20260911: wins for
 # 32 <= T <= 64 at split 2/3, adopted as the default dispatch). D11: the served form,
 # not an env switch -- an A/B flips this module attribute before maybe_arm().
+# C2 only: wider tiles save 3.6..7.3% over full sparse selections. C1 and
+# short selection widths keep their old cell (same-build component records
+# in measurements/st_fixed_k_cost_followup_20260917; consumer proof separate).
+ENABLE_MLA_QREG = True
+ENABLE_MLA_DIRECT_CVT = True
+_DECODE_CELLS_EXECUTED = set()
 ENABLE_MLA_CLUSTER = True
 ENABLE_MLA_PREFILL32 = False
 
@@ -255,13 +261,24 @@ def mla_decode(q_nope, ckv, slots, lens, sm_scale: float, ckv_scale: float,
           else {"part": ws["barrier"], "pml": ws["barrier"]})   # unused when splits == 1
     if out is None:
         out = torch.empty_like(q_nope)
+    cell = (2 if ENABLE_MLA_QREG and T == 16 and slots.shape[1] >= 128
+            and branch is None and probe == 0 else 0)
+    if ENABLE_MLA_DIRECT_CVT and branch is None and probe == 0 and T in (8, 16):
+        cell = 12 if T == 16 and slots.shape[1] >= 128 else 10
+    # Experimental cells can have a different resident grid. A monotonic
+    # ticket counter cannot switch divisors between their graph replays.
+    barrier_name = f"barrier_mla_cell{cell}" if cell >= 10 else "barrier_mla"
+    if barrier_name not in ws:
+        ws[barrier_name] = torch.zeros(8, dtype=torch.int32, device=q_nope.device)
     _EXT.run_mla(
         [q_nope.data_ptr(), ckv.data_ptr(), slots.data_ptr(), lens.data_ptr(),
          out.data_ptr(), mw["part"].data_ptr(), mw["pml"].data_ptr(),
-         ws["barrier_mla"].data_ptr()] + extra,
+         ws[barrier_name].data_ptr()] + extra,
         [float(sm_scale), float(ckv_scale)],
-        [int(T), int(slots.shape[1]), int(splits), int(probe)],
+        [int(T), int(slots.shape[1]), int(splits), int(probe), cell],
     )
+    if cell >= 10 and torch.cuda.is_current_stream_capturing():
+        _DECODE_CELLS_EXECUTED.add((T, cell))
     if branch is not None:
         _TREE_MLA_PREPARED.add(tree_key)
     return out

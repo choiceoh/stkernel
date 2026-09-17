@@ -145,6 +145,19 @@ def rmsnorm(x: torch.Tensor, w: torch.Tensor, eps: float) -> torch.Tensor:
 HEAD_NAME = "Glm5NextForCausalLM/lm_head"     # the pack store's name of the head's calibration (its FP8 GPTQ)
 
 
+def skip_route_weights(weights, tau: float, scale: float):
+    """ACE's slot skip on one layer's routes: a slot whose normalised gate is below `tau` gets weight 0 unless it is the
+    token's top-1, and the kept weights are renormalised to `scale`. The expert ids are left alone, so a skipped slot
+    still reads its expert and adds 0 x its output -- the numbers of skipping it, without the bytes (a measurement arm)."""
+    if not 0.0 <= tau < 1.0:
+        raise ValueError("a skip threshold is a normalised gate in [0, 1)")
+    p = weights / weights.sum(-1, keepdim=True).clamp_min(1e-20)
+    keep = p >= tau
+    keep.scatter_(-1, p.argmax(-1, keepdim=True), True)
+    kept = torch.where(keep, weights, torch.zeros_like(weights))
+    return kept / kept.sum(-1, keepdim=True).clamp_min(1e-20) * scale
+
+
 class Glm53Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None):
         if comm.world_size != TP:
@@ -163,11 +176,20 @@ class Glm53Net:
         self.rec_ring = F.spec_k + 1                 # recurrent states kept per slot: one per draft position
         self.p = None
         self.dense = {}
+        self.cublas_readers = {}
         self.shared_mlp = {}
         self.shared_overlap = None
         self._router_layers = None                         # None until every native FP32 router is resident
+        # A measurement arm's routed-slot skip (ACE, arXiv:2609.05228): None serves every routed slot. Read at call time,
+        # so only eager steps see a value set after capture -- the capture sets it per document for prefill passes.
+        self.route_skip = None
         self._router_weights = {}
         self._router_fp32 = set()
+        # The fused FP32 reduction changes routing order. Its full consumer
+        # bracket lost quality at C1/C2; retain the original router by default.
+        self.fused_decode_router = False
+        self._router_fused_bias = {}
+        self._router_fused_executed = set()
         self._decode_pairs = {}
         self.decode_fastpath_rows = ()
         self.decode_pairs_executed = set()
@@ -210,6 +232,7 @@ class Glm53Net:
         # A producer writes its bound C1 consumer's input pack (KDA o_proj from the output norm). False is the
         # same-build control for component probes; serving binds it before capture.
         self.producer_packs = True
+        self.mhc_input_packs = True
 
     # -- binding ----------------------------------------------------------------
     def specs(self):
@@ -273,7 +296,11 @@ class Glm53Net:
 
     def router_nbytes(self):
         """Replicated FP32 gates, read by every native decode and prefill router."""
-        return sum(self.F.experts * self.F.hidden * 4 for L in self.layers if self.F.is_moe(L))
+        from engine.base.arena import ALIGN
+        bias_bytes = ((self.F.experts * 4 + ALIGN - 1) // ALIGN * ALIGN
+                      if getattr(self, 'fused_decode_router', False) else 0)
+        return sum(self.F.experts * self.F.hidden * 4 + bias_bytes
+                   for L in self.layers if self.F.is_moe(L))
 
     def prepare_routers(self, arena):
         """Convert checkpoint gates once into the declared FP32 arena region."""
@@ -289,6 +316,15 @@ class Glm53Net:
             resident = arena.carve(weight.numel() * 4, f'router/{layer}').view(F32).view_as(weight)
             resident.copy_(weight)
             self._router_weights[layer] = resident
+        if self.fused_decode_router:
+            from engine.base.arena import ALIGN
+            if (self.F.hidden, self.F.experts, self.F.topk_experts, self.F.spec_k) != (4096, 288, 8, 7):
+                raise ValueError('fused decode router requires the GLM53 K7 profile')
+            size = (self.F.experts * 4 + ALIGN - 1) // ALIGN * ALIGN
+            for layer in sorted(layers):
+                bias = arena.carve(size, f'router-bias/{layer}').view(F32)[:self.F.experts]
+                bias.copy_(self.p[f'L{layer}.moe.bias'])
+                self._router_fused_bias[layer] = bias
         self._router_layers = layers
 
     def decode_projection_nbytes(self):
@@ -448,6 +484,8 @@ class Glm53Net:
             weight = self.p[key]
             packed, smooth = smoothed.get(key, (weight, None))
             self.dense[key] = DenseLinear(packed, store=store, name=name, smooth=smooth)
+            if key.endswith('.kda.in_proj') and tuple(packed.shape) == (6416, 4096):
+                self.dense[key].prepare_cta_layout()
             if consume_weights:
                 self.dense[key].consume_weight(weight)
                 self.p[key]=None
@@ -468,8 +506,12 @@ class Glm53Net:
             self.shared_overlap = SharedOverlap(self.p["norm"].device)
 
     @operation("linear", name_arg=2)
-    def linear(self, x, name, *, out=None):
+    def linear(self, x, name, *, out=None, producer_pack=None):
         layer = self.dense.get(name)
+        if producer_pack is not None:
+            if out is not None or layer is None:
+                raise ValueError("producer input pack requires its bound dense consumer")
+            return layer(x, producer_pack=producer_pack)
         if out is not None:
             return layer(x, out=out) if layer is not None else torch.mm(x, self.p[name].T, out=out)
         return layer(x) if layer is not None else Fn.linear(x, self.p[name])
@@ -499,7 +541,12 @@ class Glm53Net:
         return torch.empty(rows, width, device=device, dtype=torch.bfloat16)
 
     @operation("head_local")
-    def head_local(self, h: torch.Tensor, *, out=None) -> torch.Tensor:
+    def head_local(self, h: torch.Tensor, *, out=None, producer_pack=None) -> torch.Tensor:
+        if producer_pack is not None:
+            head = self.dense.get("head")
+            if head is None:
+                raise RuntimeError('head producer requires the prepared FP8 head')
+            return head.project_mx(h, *producer_pack, out=out)
         if out is None:
             return self.linear(h, "head")
         return self.linear(h, "head", out=out)
@@ -537,9 +584,9 @@ class Glm53Net:
                         F.rms_eps,F.hc_eps,F.post_mult,F.sinkhorn)
 
     @operation("kda", layer_arg=1)
-    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, projection=None, project=None) -> torch.Tensor:
+    def _kda(self, L: int, x: torch.Tensor, step: Step, caches: Caches, reduce=None, *, projection=None, project=None, input_pack=None) -> torch.Tensor:
         F, p, n = self.F, self.p, f"L{L}.kda."
-        proj = self.linear(x, n + "in_proj") if projection is None else projection
+        proj = self.linear(x, n + "in_proj", **({"producer_pack": input_pack} if input_pack is not None else {})) if projection is None else projection
         N = proj.shape[0]; Hl, D, K = self.Hk, F.kda_dim, F.conv
         qkv_all, b_all, f_a, g_a = proj.split([3 * Hl * D, Hl, D, D], dim=-1)
         pair = self._decode_pair(L, step, N)
@@ -1008,6 +1055,14 @@ class Glm53Net:
         Decode and every prefill width use IEEE FP32 operands, accumulation
         and logits. Native execution reads the resident gate directly; the
         unprepared reference converts its checkpoint gate at the call site."""
+        if (getattr(self, 'fused_decode_router', False) and self._router_layers is not None
+                and x.shape[0] in (8, 16) and x.shape[0] in self.decode_fastpath_rows):
+            from engine.kernels.router_fused import route
+            result = route(x, self._router_weights[L], self._router_fused_bias[L],
+                           self.F.topk_experts, self.F.routed_scale)
+            self._router_fp32.add(L)
+            self._router_fused_executed.add((L, x.shape[0]))
+            return result
         if self._router_layers is not None:
             from engine.kernels.glm_pointwise import router_logits
             logits = router_logits(x, self._router_weights[L])
@@ -1024,11 +1079,18 @@ class Glm53Net:
     def _select_routes(self, L, logits):
         F, p, n = self.F, self.p, f"L{L}.moe."
         if self.lanes.route_weights is not None:
-            return self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
-        s = torch.sigmoid(logits)
-        sel = (s + p[n + "bias"]).topk(F.topk_experts, dim=-1).indices
-        w = s.gather(-1, sel)
-        return sel.to(torch.int32), w / (w.sum(-1, keepdim=True) + 1e-20) * F.routed_scale
+            sel, w = self.lanes.route_weights(logits, p[n + "bias"], F.topk_experts, F.routed_scale)
+        else:
+            s = torch.sigmoid(logits)
+            sel = (s + p[n + "bias"]).topk(F.topk_experts, dim=-1).indices
+            w = s.gather(-1, sel)
+            sel, w = sel.to(torch.int32), w / (w.sum(-1, keepdim=True) + 1e-20) * F.routed_scale
+        skip = getattr(self, "route_skip", None)       # absent on lightweight stand-ins that borrow this method
+        if skip is not None:
+            tau = skip.get(L) if isinstance(skip, dict) else skip
+            if tau is not None:
+                w = skip_route_weights(w, float(tau), F.routed_scale)
+        return sel, w
 
 
     def _packet_ffn_layers(self, rows):

@@ -1,0 +1,23 @@
+NVIDIA GB10  torch 2.13.0+cu132  cuda 13.2  smem/block 49152 B
+   kind  rows  n_cand   ours us  hpcops us  floor us ours/floor hpc/floor ours/hpc
+ decode     8    8192      16.4       14.4       6.2       2.66      2.33     1.14
+ decode     8   32768      32.8       22.6       8.8       3.72      2.56     1.45
+ decode     8  131072     228.4       53.8      12.4      18.42      4.34     4.25
+ decode    16   32768      32.9       24.5       9.8       3.36      2.50     1.34
+ decode    16  131072     229.3       55.9      16.4      13.96      3.40     4.11
+ decode    16  236032     393.4       90.7      22.6      17.42      4.02     4.34
+prefill  1024   32768     938.7      685.8     586.3       1.60      1.17     1.37
+prefill  1024  131072    3367.9    inexact    2328.5       1.45         -        -
+prefill  1024  236032    8463.3    inexact    4123.9       2.05         -        -
+set mismatches against masked torch.topk:
+  decode 8x8192 plateau: hpcops 7 rows
+  decode 8x32768 plateau: hpcops 8 rows
+  decode 8x131072 plateau: hpcops 8 rows
+  decode 16x32768 plateau: hpcops 16 rows
+  decode 16x131072 plateau: hpcops 16 rows
+  decode 16x236032 plateau: hpcops 16 rows
+  prefill 1024x32768 plateau: hpcops 1002 rows
+  prefill 1024x131072 indexer: hpcops 1 rows
+  prefill 1024x131072 plateau: hpcops 1024 rows
+  prefill 1024x236032 indexer: hpcops 1 rows
+  prefill 1024x236032 plateau: hpcops 1024 rows

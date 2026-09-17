@@ -1,0 +1,17 @@
+{"rows": 1, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 6, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 7, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 8, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 8, "mode": "bound", "bit_exact": true, "graph_replays": 3}
+{"rows": 8, "mode": "producer", "bit_exact": true, "graph_replays": 3}
+{"rows": 14, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 16, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 16, "mode": "bound", "bit_exact": true, "graph_replays": 3}
+{"rows": 21, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 21, "mode": "wide", "bit_exact": true, "graph_replays": 3}
+{"rows": 24, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 24, "mode": "bound", "bit_exact": true, "graph_replays": 3}
+{"rows": 28, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 28, "mode": "wide", "bit_exact": true, "graph_replays": 3}
+{"rows": 32, "mode": "plain", "bit_exact": true, "graph_replays": 3}
+{"rows": 32, "mode": "bound", "bit_exact": true, "graph_replays": 3}

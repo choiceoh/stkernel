@@ -19,6 +19,7 @@ class RouterResidencyTests(unittest.TestCase):
         self.assertEqual(spec.dtype, torch.bfloat16, 'existing rank files retain their binding contract')
         for rank in range(4):
             net = Glm53Net(f, SimpleNamespace(rank=rank, world_size=4), SimpleNamespace(rmsnorm=None, swiglu=None), [2])
+            self.assertFalse(net.fused_decode_router)
             net.p = {spec.name: spec.build(source, rank, 4)}
             original = net.p[spec.name]
             self.assertEqual(net.router_nbytes(), weight.numel() * 4)

@@ -1,12 +1,13 @@
 """GatedDeltaNet's per-token arithmetic around the delta rule, in one launch each (Qwen3.8's linear attention).
 
-The delta rule itself runs on engine/kernels/kda: ring.recurrent_decay_ring(_rows) for decode and verify and
-chunk_decay.chunk_kda_with_decay for prefill, both with the decay computed outside the kernel -- the wizard's glue for a
+The delta rule itself runs on engine/kernels/kda: ring.recurrent_gdn_ring(_rows) for decode and verify, which computes
+`gates`' decay and beta from the raw projection inside its own launch (HEAD_GATE in kda/fused_recurrent.py, this file's
+arithmetic), and chunk_decay.chunk_kda_with_decay for prefill, with the decay computed here -- the wizard's glue for a
 per-head decay. What those kernels do not compute is the model's own arithmetic before and after them:
 
     gates        decay = -exp(A_log) * softplus(a + dt_bias) per value head, in fp32
                  (engine/modules/linear_attention.gdn_decay), and beta = sigmoid(b) when the consumer wants it applied
-                 (the chunk kernel; the ring kernel applies its own sigmoid to the raw logits)
+                 (the chunk kernel; the ring kernels apply their own sigmoid to the raw logits)
     gated_norm   the output norm with GDN's rounding: RMS over each head in fp32 rounded to the activations' dtype,
                  times the plain weight (rounds), times sigmoid(z) in fp32, rounded once
                  (engine/modules/norm.rmsnorm_gated, "rounded"; GLM's KDA output norm rounds only at the end,
@@ -42,7 +43,7 @@ def _gates(A, B, A_LOG, DT, DECAY, BETA, sA, sB, sD, sE, HV: tl.constexpr, BH: t
 
 
 @triton.jit
-def _gated_norm(X, Z, W, OUT, sX, sZ, sO, EPS, D: tl.constexpr, BD: tl.constexpr):
+def _gated_norm(X, Z, W, OUT, sX, sZr, sZh, sO, EPS, HV: tl.constexpr, D: tl.constexpr, BD: tl.constexpr):
     p = tl.program_id(0)                                   # one program a (row, head): X [rows*heads, D] flat
     d = tl.arange(0, BD)
     m = d < D
@@ -51,7 +52,8 @@ def _gated_norm(X, Z, W, OUT, sX, sZ, sO, EPS, D: tl.constexpr, BD: tl.constexpr
     scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
     normed = (x * scale).to(xr.dtype).to(tl.float32)               # the norm rounds to the activations' dtype
     weighted = (normed * tl.load(W + d, mask=m, other=0.0).to(tl.float32)).to(xr.dtype).to(tl.float32)
-    gate = tl.sigmoid(tl.load(Z + p * sZ + d, mask=m, other=0.0).to(tl.float32))
+    # z is a column slice of the in_proj row: read through its row and head strides rather than a packed copy
+    gate = tl.sigmoid(tl.load(Z + (p // HV) * sZr + (p % HV) * sZh + d, mask=m, other=0.0).to(tl.float32))
     tl.store(OUT + p * sO + d, (weighted * gate).to(OUT.dtype.element_ty), mask=m)
 
 
@@ -83,13 +85,14 @@ def gated_norm(core: torch.Tensor, z: torch.Tensor, weight: torch.Tensor, eps: f
         from engine.modules.norm import rmsnorm_gated
         return rmsnorm_gated(core, z, weight, eps, "sigmoid").reshape(rows, hv * dim)
     x = core.reshape(rows * hv, dim)
-    g = z.reshape(rows * hv, dim)
-    if x.stride(1) != 1 or g.stride(1) != 1:
+    if x.stride(1) != 1 or z.stride(2) != 1:
         raise ValueError("the GDN output norm reads packed heads")
     out = torch.empty(rows * hv, dim, device=core.device, dtype=core.dtype)
     if rows:
-        _gated_norm[(rows * hv,)](x, g, weight, out, x.stride(0), g.stride(0), out.stride(0), eps,
-                                  D=dim, BD=triton.next_power_of_2(dim), num_warps=2)
+        # z is not reshaped: at more than one row its [rows, HV, D] view over the in_proj split has no flat view, and
+        # the reshape would copy it on every GDN layer
+        _gated_norm[(rows * hv,)](x, z, weight, out, x.stride(0), z.stride(0), z.stride(1), out.stride(0), eps,
+                                  HV=hv, D=dim, BD=triton.next_power_of_2(dim), num_warps=2)
     return out.view(rows, hv * dim)
 
 

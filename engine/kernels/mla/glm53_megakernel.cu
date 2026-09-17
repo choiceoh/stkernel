@@ -2237,12 +2237,34 @@ __device__ __forceinline__ void mla_mma_bf16(float& c0, float& c1, float& c2, fl
       : "r"(a0), "r"(a1), "r"(a2), "r"(a3), "r"(b0), "r"(b1));
 }
 
-template <bool CLUSTER = false, bool TREE = false>
-__global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
+// Decode-only comparison: prefill retains the qualified half bridge.
+template <bool DIRECT>
+__device__ __forceinline__ uint32_t mla_decode_e4m3x2(uint32_t packed) {
+  if constexpr (DIRECT) {
+    uint32_t result;
+    asm("cvt.rn.bf16x2.e4m3x2 %0, %1;" : "=r"(result) : "h"((uint16_t)packed));
+    return result;
+  } else {
+    return mla_e4m3x2_value(packed);
+  }
+}
+
+template <bool CLUSTER = false, bool TREE = false, bool QREG = false, int TILE = 16, bool DIRECT = false>
+__global__ __launch_bounds__(MK_THREADS, TILE == 32 ? 2 : 1) void mk_mla_kernel(const MKMlaArgs a) {
+  static_assert(TILE == 16 || (TILE == 32 && QREG && !CLUSTER && !TREE));
+  constexpr int MLA_TILE = TILE;
+  constexpr int MLA_NSTAGE = TILE == 32 ? 2 : 3;
+  constexpr int MLA_KQ = MLA_WARPS * 8 / TILE;
+  constexpr int MLA_NG = TILE / 8;
+  static_assert(MLA_KQ * MLA_NG == MLA_WARPS, "score fragments must cover exactly the CTA warps");
+  constexpr int MLA_PP = TILE + 8;
+  constexpr int MLA_SMEM_RING = MLA_NSTAGE * TILE * MLA_RP;
+  constexpr int MLA_SMEM_S = MLA_KQ * MLA_H * TILE * 4;
+  constexpr int MLA_SMEM_P = MLA_H * MLA_PP * 2;
   extern __shared__ __align__(16) char mla_smem[];
   uint8_t* ring = (uint8_t*)mla_smem;
   __nv_bfloat16* sq = (__nv_bfloat16*)(ring + MLA_SMEM_RING);
-  float* ss = (float*)((uint8_t*)sq + MLA_SMEM_Q);
+  float* ss = (float*)((uint8_t*)sq + (QREG ? 0 : MLA_SMEM_Q));
   __nv_bfloat16* sp = (__nv_bfloat16*)((uint8_t*)ss + MLA_SMEM_S);
   float* scorr = (float*)((uint8_t*)sp + MLA_SMEM_P);
   const int lane = threadIdx.x & 31;
@@ -2264,7 +2286,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
     // Q joins the first KV async group, so its copy overlaps the ring preload
     // and the existing first wait covers both. Keep Q's L1 caching (.ca),
     // while the one-use KV ring keeps .cg. Empty splits never consume Q.
-    if (j1 > j0) {
+    if (!QREG && j1 > j0) {
       for (int i = threadIdx.x; i < MLA_H * (MLA_D / 8); i += MK_THREADS) {
         const int h = i / (MLA_D / 8), c8 = i - h * (MLA_D / 8);
         const uint32_t dst = static_cast<uint32_t>(__cvta_generic_to_shared(
@@ -2272,6 +2294,23 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         const __nv_bfloat16* src = a.q + ((size_t)t * MLA_H + h) * MLA_D + c8 * 8;
         asm volatile("cp.async.ca.shared.global [%0], [%1], 16;"
                      :: "r"(dst), "l"(src) : "memory");
+      }
+    }
+    // Each score tile consumes the same query fragments. Keep their BF16
+    // bits in registers for this split; no quantization or reduction changes.
+    uint32_t qreg[MLA_D / 16 / MLA_KQ][4];
+    if constexpr (QREG) {
+      if (j1 > j0) {
+        const int kq = warp / MLA_NG;
+        const __nv_bfloat16* q = a.q + ((size_t)t * MLA_H + g) * MLA_D;
+#pragma unroll
+        for (int ks = 0; ks < MLA_D / 16 / MLA_KQ; ++ks) {
+          const int k = kq * (MLA_D / MLA_KQ) + ks * 16 + q4 * 2;
+          qreg[ks][0] = *(const uint32_t*)(q + k);
+          qreg[ks][1] = *(const uint32_t*)(q + 8 * MLA_D + k);
+          qreg[ks][2] = *(const uint32_t*)(q + k + 8);
+          qreg[ks][3] = *(const uint32_t*)(q + 8 * MLA_D + k + 8);
+        }
       }
     }
     float acc[8][4];
@@ -2320,12 +2359,18 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         for (int ks = 0; ks < (MLA_D / 16) / MLA_KQ; ++ks) {
           const int k0 = kq * (MLA_D / MLA_KQ) + ks * 16 + q4 * 2;
           uint32_t a0, a1, a2, a3;
+          if constexpr (QREG) {
+            a0 = qreg[ks][0]; a1 = qreg[ks][1];
+            a2 = qreg[ks][2]; a3 = qreg[ks][3];
+          } else {
           const uint32_t qaddr = static_cast<uint32_t>(__cvta_generic_to_shared(
               sq + (lane & 15) * MLA_CP + kq * (MLA_D / MLA_KQ) + ks * 16 + (lane >> 4) * 8));
           asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
                        : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(qaddr));
+          }
           mla_mma_bf16(c0, c1, c2, c3, a0, a1, a2, a3,
-                       mla_e4m3x2(cb + k0), mla_e4m3x2(cb + k0 + 8));
+                       mla_decode_e4m3x2<DIRECT>(*(const uint16_t*)(cb + k0)),
+                       mla_decode_e4m3x2<DIRECT>(*(const uint16_t*)(cb + k0 + 8)));
         }
         float* sh = ss + (size_t)kq * MLA_H * MLA_TILE;
         sh[g * MLA_TILE + n0 + q4 * 2] = c0;
@@ -2369,11 +2414,14 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         for (int nt = 0; nt < 8; ++nt) {
           acc[nt][0] *= crg; acc[nt][1] *= crg; acc[nt][2] *= crg8; acc[nt][3] *= crg8;
         }
+#pragma unroll
+        for (int pv_k = 0; pv_k < TILE / 16; ++pv_k) {
         uint32_t a0, a1, a2, a3;
         const uint32_t paddr = static_cast<uint32_t>(__cvta_generic_to_shared(
-            sp + (lane & 15) * MLA_PP + (lane >> 4) * 8));
+            sp + (lane & 15) * MLA_PP + (lane >> 4) * 8 + pv_k * 16));
         asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0, %1, %2, %3}, [%4];"
                      : "=r"(a0), "=r"(a1), "=r"(a2), "=r"(a3) : "r"(paddr));
+
         // ldmatrix.trans produces four consecutive K bytes for column g
         // and four for g+8. Permute its row addresses so each register contains
         // the two MMA K pairs (2q,2q+1) and (8+2q,9+2q), in that order.
@@ -2381,16 +2429,16 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         const int row = lane & 15;
         const int krow = (row >> 2) * 2 + (row & 1) + ((row >> 1) & 1) * 8;
         const uint32_t cb = static_cast<uint32_t>(__cvta_generic_to_shared(
-            tile8 + (size_t)krow * MLA_RP + warp * 64));
+            tile8 + (size_t)(krow + pv_k * 16) * MLA_RP + warp * 64));
 #pragma unroll
         for (int nt = 0; nt < 8; nt += 2) {
           uint32_t v0, v1;
           asm volatile("ldmatrix.sync.aligned.m16n16.x1.trans.shared.b8 {%0, %1}, [%2];"
                        : "=r"(v0), "=r"(v1) : "r"(cb + nt * 8));
           mla_mma_bf16(acc[nt][0], acc[nt][1], acc[nt][2], acc[nt][3], a0, a1, a2, a3,
-                       mla_e4m3x2_value(v0), mla_e4m3x2_value(v0 >> 16));
+                       mla_decode_e4m3x2<DIRECT>(v0), mla_decode_e4m3x2<DIRECT>(v0 >> 16));
           mla_mma_bf16(acc[nt+1][0], acc[nt+1][1], acc[nt+1][2], acc[nt+1][3], a0, a1, a2, a3,
-                       mla_e4m3x2_value(v1), mla_e4m3x2_value(v1 >> 16));
+                       mla_decode_e4m3x2<DIRECT>(v1), mla_decode_e4m3x2<DIRECT>(v1 >> 16));
         }
 #else
         // sm_120 has neither ldmatrix's .b8 element type nor its .m16n16 shape, and this is
@@ -2405,7 +2453,7 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
         // the m16n8k16 fragment layouts against a CPU matmul (128/128 elements), then this
         // strided form against a CPU reference over a tile with a non-square row pitch
         // (256/256). A is left exactly as the ldmatrix above produced it -- .b16 is fine here.
-        const uint8_t* cbs = tile8 + (size_t)(q4 * 2) * MLA_RP + warp * 64;
+        const uint8_t* cbs = tile8 + (size_t)(q4 * 2 + pv_k * 16) * MLA_RP + warp * 64;
 #pragma unroll
         for (int nt = 0; nt < 8; ++nt) {
           const int n = nt * 8 + g;
@@ -2414,9 +2462,15 @@ __global__ __launch_bounds__(MK_THREADS) void mk_mla_kernel(const MKMlaArgs a) {
                        mla_e4m3x2_strided(cbs + 8 * MLA_RP + n, MLA_RP));
         }
 #endif
+
+        }
       }
-      __syncthreads();
+      // The next tile begins with cp.wait + a CTA barrier before issuing
+      // any overwrite of ring/score/probability storage. A second barrier
+      // here is redundant. Keep one after the final tile before item reuse.
+      if constexpr (!DIRECT) __syncthreads();
     }
+    if constexpr (DIRECT) __syncthreads();
 
     if constexpr (CLUSTER) {
       // Reuse the Q/ring/scores storage for FP32 partials only after all async
@@ -3541,8 +3595,8 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
                 std::vector<int64_t> ints) {
   set_kernel_attrs();
   MKMlaArgs a{};
-  TORCH_CHECK((ptrs.size() == 8 || ptrs.size() == 9) && (ints.size() == 3 || ints.size() == 4) && scalars.size() == 2,
-              "run_mla arg contract (ints: T, W, splits[, probe])");
+  TORCH_CHECK((ptrs.size() == 8 || ptrs.size() == 9) && (ints.size() >= 3 && ints.size() <= 5) && scalars.size() == 2,
+              "run_mla arg contract (ints: T, W, splits[, probe[, qreg]])");
   a.q = (const __nv_bfloat16*)ptrs[0];
   a.ckv = (const uint8_t*)ptrs[1];
   a.slots = (const int*)ptrs[2];
@@ -3562,8 +3616,25 @@ void mk_run_mla(std::vector<int64_t> ptrs, std::vector<double> scalars,
   // roofline probe mode (1 = streams only, 2 = + the dot): an explicit argument of the
   // Python driver (mla_decode(probe=)), never an environment read; serving passes 0
   a.probe = ints.size() > 3 ? (int)ints[3] : 0;
+  const int qreg = ints.size() == 5 ? (int)ints[4] : 0;
+  TORCH_CHECK((qreg == 0 || qreg == 2 || qreg == 10 || qreg == 12), "MLA decode cell must be 0, 2, 10 or 12");
+  TORCH_CHECK(!qreg || (ptrs.size() == 8 && (a.T == 8 || a.T == 16) && a.probe == 0),
+              "MLA query registers require the bound 8/16-row ordinary decode cell");
   auto stream = c10::cuda::getCurrentCUDAStream();
-  if (ptrs.size() == 9) {
+  if (qreg) {
+    static int grids[3] = {};
+    const bool tile32 = qreg == 2 || qreg == 12;
+    const int smem = tile32 ? 2 * 32 * MLA_RP + 2 * MLA_H * 32 * 4
+                              + MLA_H * 40 * 2 + MLA_SMEM_C : MLA_SMEM;
+    auto kernel = qreg == 2 ? mk_mla_kernel<false, false, true, 32>
+        : qreg == 10 ? mk_mla_kernel<false, false, false, 16, true>
+                     : mk_mla_kernel<false, false, true, 32, true>;
+    int& grid = grids[qreg == 2 ? 0 : qreg == 10 ? 1 : 2];
+    if (!grid) MK_CHECK_CUDA(cudaFuncSetAttribute(kernel,
+        cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
+    a.grid = mk_resident_grid(kernel, grid, smem, MLA_GRID_CAP);
+    mk_launch(kernel, a.grid, smem, stream, a);
+  } else if (ptrs.size() == 9) {
     TORCH_CHECK(ptrs[8] && (ptrs[8] & 15) == 0 && a.T >= 1 && a.T <= 32 && a.probe == 0,
                 "tree MLA requires aligned private rows and bounded exact decode");
     a.branch = (const uint8_t*)ptrs[8];

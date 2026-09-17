@@ -335,7 +335,20 @@ class Drafter:
             for L in range(F.layers):
                 for suffix in ("self_attn.k_proj.weight","self_attn.v_proj.weight","mlp.up_proj.weight"):
                     p[f"layers.{L}."+suffix]=None
+        # Built here, before any capture: the sampled walks multiply by it inside captured graphs, and a
+        # host list turned into a device tensor there is a pageable copy the graph cannot replay.
+        codebook = self.p.get("candidate_selector.predecessor_codebook")
+        if codebook is not None:
+            self.selector_alpha_tensor(codebook.device)
         self.fast_attention = True
+
+    def selector_alpha_tensor(self, device):
+        """The per-position selector alpha as an FP32 device tensor, built once per (alpha, device)."""
+        key = (tuple(self.selector_alpha), str(device))
+        if getattr(self, '_selector_alpha_key', None) != key:
+            self._selector_alpha_device = torch.tensor(self.selector_alpha, dtype=torch.float32, device=device)
+            self._selector_alpha_key = key
+        return self._selector_alpha_device
 
     # The block MLP has the target's input-cell shapes (gate_up 6144x4096, down 4096x3072), and a propose block is
     # one K=7 block of 8 rows per sequence: at C=1 those two projections take the C1 cells, at C=2 (16 rows) the
@@ -385,11 +398,23 @@ class Drafter:
     def context_linear(self, aux, keep=None, *, decode=False, observe=True):
         """Phase is explicit: row count cannot distinguish a short prompt."""
         layer = self.dense.get('fc.weight')
-        if layer is not None and getattr(layer, 'decode_fp8', None) is not None:
+        if layer is not None and (getattr(layer, 'decode_fp8', None) is not None
+                                  or getattr(getattr(layer, 'fp8', None), 'cublas', None) is not None):
             return layer(aux, keep, decode=decode, observe=observe)
         if not observe:
             return layer(aux, observe=False)
         return self.linear(aux, 'fc.weight', keep)
+
+    def context_projected_norm(self, aux, keep=None, *, decode=False, observe=True):
+        """The cuBLAS FC's FP32 sum and the established BF16/RMS boundary share one launch."""
+        layer = self.dense.get('fc.weight')
+        if decode and layer is not None and getattr(layer, 'decode_precision', None) == 'fp8':
+            lane = layer.decode_fp8 if layer.decode_fp8 is not None else layer.fp8
+            if getattr(lane, 'cublas', None) is not None:
+                return layer(aux, keep, decode=True, observe=observe,
+                             normalization=(self.p['hidden_norm.weight'], self.F.rms_eps,
+                                            getattr(self, 'fc_bias', None)))
+        return self.context_normed(self.context_linear(aux, keep, decode=decode, observe=observe), decode=decode)
 
     def observe(self, ring: torch.Tensor, positions: torch.Tensor, aux: torch.Tensor) -> None:
         """ring [L, 2, window, kv_heads, D] bf16 (a slot's); positions [n]; aux [n, 5*4096] target states."""
@@ -414,7 +439,7 @@ class Drafter:
         positions, aux = positions[-F.window:], aux[-F.window:]
         keep = (torch.arange(len(positions), device=positions.device) < valid) if valid is not None else None
         decode = decode or valid is not None
-        c = self.context_normed(self.context_linear(aux, keep, decode=decode), decode=decode)
+        c = self.context_projected_norm(aux, keep, decode=decode)
         idx = positions % F.window
         context = (Fn.linear(c,self.context_kv).reshape(-1,F.layers,2,self.local_kv_heads,F.head_dim)
                    if self.context_kv is not None else None)
@@ -484,24 +509,20 @@ class Drafter:
         o = torch.einsum("bhn,nhd->bhd", torch.softmax(scores, dim=-1), v_all.float()).to(x.dtype)
         return self.linear(o.reshape(B, F.heads * F.head_dim), q + "o_proj.weight")
 
-    def block(self, ids: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int) -> torch.Tensor:
-        """One block through the five layers; returns the final hidden [B, hidden]."""
+    def block(self, ids: torch.Tensor, positions: torch.Tensor, ring: torch.Tensor, ctx_len: int, *, head_input=False):
+        """Final hidden rows, or compact non-anchor rows plus native MX input for the head."""
         self._check_block_rows(ids.numel())
         F, p = self.F, self.p
         B = ids.shape[0]
         x = self.target.embed(ids)
-        res = None
+        res, h = x, norm(x, p["layers.0.input_layernorm.weight"], F.rms_eps)
         for L in range(F.layers):
             q = f"layers.{L}."
-            if res is None:
-                res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
-            else:
-                res, h = add_norm(res, x, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0])
             h = self._attn(L, h, positions, ring, ctx_len)
-            h = self._conv(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1])
-            res, h = add_norm(res, h, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1],
+                                          res, p[q + "post_attention_layernorm.weight"], B)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight").reshape(B, 2, F.conv_taps, -1)
             h = self._conv(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0])
             if self.fast_attention:
@@ -512,8 +533,12 @@ class Drafter:
             h = self.linear(h, q + "mlp.down_proj.weight")
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
-            x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
-        return add_norm(res, x, p["norm.weight"], F.rms_eps)[1]
+            if L + 1 < F.layers:
+                res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1],
+                                              res, p[f"layers.{L+1}.input_layernorm.weight"], B)
+            else:
+                x = self._conv(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1])
+        return self._finish_head_input(res, x, B, head_input)
 
     # -- every row of a step at once (45차 §23 GPU 판정 4차) --------------------------------------------
     # The pipeline used to replay the one-row graphs once per row: each replay read the whole drafter (2.03 GiB of
@@ -525,8 +550,7 @@ class Drafter:
         F, p = self.F, self.p
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t) if observe else None
-        projected = self.context_linear(aux, keep, decode=True, observe=observe)
-        c = self.context_normed(projected, decode=True)
+        c = self.context_projected_norm(aux, keep, decode=True, observe=observe)
         return Fn.linear(c, self.context_kv).reshape(n, t, F.layers, 2, self.local_kv_heads, F.head_dim)
 
     def observe_kv(self, positions: torch.Tensor, aux: torch.Tensor, valid: torch.Tensor):
@@ -579,7 +603,7 @@ class Drafter:
             return
         n, t = positions.shape
         keep = (torch.arange(t, device=positions.device) < valid.view(n, 1)).reshape(n * t)
-        c = self.context_normed(self.context_linear(aux, keep, decode=True), decode=True)
+        c = self.context_projected_norm(aux, keep, decode=True)
         flat = positions.reshape(-1)
         idx = positions % F.window
         rows = slots.view(n, 1)
@@ -591,6 +615,10 @@ class Drafter:
             v = Fn.linear(c, p[q + "v_proj.weight"]).view(n, t, F.kv_heads, F.head_dim)
             field[rows, L, 0, idx] = torch.where(keep, k, field[rows, L, 0, idx])
             field[rows, L, 1, idx] = torch.where(keep, v, field[rows, L, 1, idx])
+
+    def _post_conv_norm(self, x, delta, base, residual, weight, block):
+        from engine.kernels.draft_conv import tap_add_norm
+        return tap_add_norm(x, delta, base, residual, weight, self.F.rms_eps, self.F.conv_group, block)
 
     def _conv_rows(self, x, delta, base, t: int):
         """`_conv` over the step's blocks of t rows: the taps look back inside a block, never into the one before."""
@@ -641,25 +669,22 @@ class Drafter:
         return Fn.linear(o, p[q + "o_proj.weight"])
 
     def block_rows(self, ids: torch.Tensor, positions: torch.Tensor, slots: torch.Tensor, ctx: torch.Tensor,
-                   field: torch.Tensor, n: int, t: int, alive=None) -> torch.Tensor:
+                   field: torch.Tensor, n: int, t: int, alive=None, *, head_input=False):
         """`block` for n blocks of t rows at once: ids/positions [n*t] in row order, slots/ctx [n]; `alive` [n] marks the
-        rows that are real (a calibration run leaves the others out of its sums)."""
+        rows that are real (a calibration run leaves the others out of its sums).
+        `head_input` returns only non-anchor hidden rows plus their native MX pack."""
         self._check_block_rows(n * t)
         F, p = self.F, self.p
         rows_ok = alive.repeat_interleave(t) if alive is not None else None
         x = self.target.embed(ids)
-        res = None
+        res, h = x, norm(x, p["layers.0.input_layernorm.weight"], F.rms_eps)
         for L in range(F.layers):
             q = f"layers.{L}."
-            if res is None:
-                res, h = x, norm(x, p[q + "input_layernorm.weight"], F.rms_eps)
-            else:
-                res, h = add_norm(res, x, p[q + "input_layernorm.weight"], F.rms_eps)
             coeff = self.linear(h, q + "attention_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "attention_conv.base_kernel"][0], t)
             h = self._attn_rows(L, h, positions, slots, ctx, field, n, t, rows_ok)
-            h = self._conv_rows(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1], t)
-            res, h = add_norm(res, h, p[q + "post_attention_layernorm.weight"], F.rms_eps)
+            res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "attention_conv.base_kernel"][1],
+                                          res, p[q + "post_attention_layernorm.weight"], t)
             coeff = self.linear(h, q + "mlp_conv.kernel_projection.weight", rows_ok).reshape(n * t, 2, F.conv_taps, -1)
             h = self._conv_rows(h, coeff[:, 0], p[q + "mlp_conv.base_kernel"][0], t)
             if self.fast_attention:
@@ -670,8 +695,22 @@ class Drafter:
             h = self.linear(h, q + "mlp.down_proj.weight", rows_ok)
             if self.fast_attention:
                 h = self.target.comm.all_reduce(h)
-            x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
-        return add_norm(res, x, p["norm.weight"], F.rms_eps)[1]
+            if L + 1 < F.layers:
+                res, h = self._post_conv_norm(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1],
+                                              res, p[f"layers.{L+1}.input_layernorm.weight"], t)
+            else:
+                x = self._conv_rows(h, coeff[:, 1], p[q + "mlp_conv.base_kernel"][1], t)
+        return self._finish_head_input(res, x, t, head_input)
+
+    def _packed_head(self):
+        head = getattr(self.target, 'dense', {}).get('head')
+        return getattr(head, 'cublas', None) is not None
+
+    def _finish_head_input(self, res, x, block_rows, packed):
+        if packed:
+            from engine.kernels.dense.cublaslt_producer import add_norm_head
+            return add_norm_head(res, x, self.p['norm.weight'], self.F.rms_eps, block_rows)
+        return add_norm(res, x, self.p['norm.weight'], self.F.rms_eps)[1]
 
     def _check_block_rows(self, rows):
         if self.max_block_rows is not None and rows > self.max_block_rows:
@@ -690,9 +729,14 @@ class Drafter:
         dev = anchors.device
         from engine.modules.draft_inputs import build
         ids, pos = build(anchors, positions, K, F.mask_id)
-        h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
+        if self._packed_head():
+            h, pack = self.block_rows(ids, pos, slots, positions, field, n, t, alive, head_input=True)
+            local = self.target.head_local(h, producer_pack=pack)
+        else:
+            h = self.block_rows(ids, pos, slots, positions, field, n, t, alive).view(n, t, -1)[:, 1:].reshape(n * K, -1)
+            local = self.target.head_local(h)
         from engine.modules.vocab import topk
-        unary, cand = topk(self.target.head_local(h), self.target.comm, self.target.rank * self.target.vp,
+        unary, cand = topk(local, self.target.comm, self.target.rank * self.target.vp,
                            F.sel_top_k, self.decodable, workspace=self.candidate_buffer)
         unary, cand = unary.view(n, K, F.sel_top_k), cand.view(n, K, F.sel_top_k)
         if self.diagnostics is not None:
@@ -718,37 +762,13 @@ class Drafter:
         succ = p["candidate_selector.successor_codebook"][cand].float()
         edge = torch.einsum("nkpr,nkcr->nkpc", pred * proj[:, :, None, :], succ)
         if any(a != 1. for a in self.selector_alpha):
-            edge *= torch.tensor(self.selector_alpha, device=dev).view(1, K, 1, 1)
+            edge *= self.selector_alpha_tensor(dev).view(1, K, 1, 1)
         scores = unary[:, :, None, :] + edge   # [n, K, prev, cur]
-        rows = torch.arange(n, device=dev)
-        prev = torch.zeros(n, dtype=torch.int64, device=dev)
-        # The walk puts mass on `sel_top_k` candidates a position and nothing else. Handing that back as
-        # [n, K, vocab] meant allocating and zeroing 12.4 MiB every decode step (n=4, K=5, V=154,880) to carry
-        # 320 numbers, and the verifier then read it twice. The candidates and their mass are the same fact.
-        # Every position below writes all rows/candidates before the result is returned.
-        qprob = torch.empty(n, K, F.sel_top_k, dtype=torch.float32, device=dev)
-        qcand = cand.clone()                                                          # the candidates are the walk's, position by position
-        # The sampled walk stays a loop: each position picks among the sixteen the last one opened. Its draw
-        # is the cumulative walk over the caller's uniform for that position -- keyed, not drawn, so four ranks
-        # hold the same number whatever came before (base/draws) and a recorded step replays alone (D12). What
-        # does not change along the walk -- which rows sample, and their temperatures -- is computed once.
-        if uniforms is None or tuple(uniforms.shape) != (n, K):
-            raise ValueError(f"the sampled walk needs uniforms [{n}, {K}], one a position")
-        from engine.base.sampler import _inverse_cdf
-        stochastic = (temps > 0).view(n, 1)
-        heat = temps.clamp_min(1e-5).view(n, 1)
-        out = []
-        for s in range(K):
-            sel = scores[rows, s, prev]                                                                    # [n, 16]
-            best = sel.argmax(-1)
-            probs = torch.softmax(sel / heat, dim=-1)
-            probs = torch.where(stochastic, probs, torch.zeros_like(probs).scatter_(1, best.view(n, 1), 1.0))
-            pick = torch.where(stochastic.view(n), _inverse_cdf(probs, uniforms[:, s]), best)
-            qprob[:, s] = probs
-            out.append(cand[rows, s, pick])
-            prev = pick
+        from engine.kernels.draft_sample import sampled_walk
         from engine.modules.draft_agreement import agree_walk
-        return agree_walk(self.target.comm, torch.stack(out, 1), qcand, qprob)
+        if uniforms is None:
+            raise ValueError(f"the sampled walk needs uniforms [{n}, {K}], one a position")
+        return agree_walk(self.target.comm, *sampled_walk(scores, cand, temps, uniforms))
 
     def propose(self, anchor: int, position: int, ring: torch.Tensor, *, boundary=None) -> "list[int]":
         """K drafts for the block [anchor at `position`, K masks after it]; the ring holds the context up to position-1."""
@@ -766,9 +786,13 @@ class Drafter:
         dev = anchor.device
         from engine.modules.draft_inputs import build
         ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
-        h = self.block(ids, positions, ring, position)[1:]                                   # the K mask positions
+        if self._packed_head():
+            h, pack = self.block(ids, positions, ring, position, head_input=True)
+            local = self.target.head_local(h, producer_pack=pack)
+        else:
+            h = self.block(ids, positions, ring, position)[1:]
+            local = self.target.head_local(h)
         from engine.modules.vocab import topk
-        local = self.target.head_local(h)
         if boundary is not None:
             from engine.modules.draft_boundary import tensor, mask_ends
             boundary = tensor(boundary, dev)
@@ -818,9 +842,13 @@ class Drafter:
         dev = ring.device
         from engine.modules.draft_inputs import build
         ids, positions = build(anchor.reshape(1), position, K, F.mask_id)
-        h = self.block(ids, positions, ring, position)[1:]
+        if self._packed_head():
+            h, pack = self.block(ids, positions, ring, position, head_input=True)
+            local = self.target.head_local(h, producer_pack=pack)
+        else:
+            h = self.block(ids, positions, ring, position)[1:]
+            local = self.target.head_local(h)
         from engine.modules.vocab import topk
-        local = self.target.head_local(h)
         if boundary is not None:
             from engine.modules.draft_boundary import tensor, mask_ends
             boundary = tensor(boundary, dev)
@@ -843,27 +871,21 @@ class Drafter:
         succ = p["candidate_selector.successor_codebook"][cand].float()
         edge = torch.einsum("kpr,kcr->kpc", pred * proj[:, None, :], succ)
         if any(a != 1. for a in self.selector_alpha):
-            edge *= torch.tensor(self.selector_alpha, device=dev).view(K, 1, 1)
+            edge *= self.selector_alpha_tensor(dev).view(K, 1, 1)
         scores = unary[:, None, :] + edge
-        # Each step picks from the sixteen candidates the last one opened, so the walk cannot be batched --
-        # but its uniforms arrive together (keyed, base/draws), and over sixteen candidates the cumulative walk
-        # is the whole of a draw. `multinomial` was a kernel a position to do that.
+        # Conditional probabilities are batched; the predecessor choice stays
+        # sequential inside one kernel. Keyed uniforms remain caller-owned.
         u = torch.as_tensor(uniforms, dtype=torch.float32, device=dev).reshape(-1)
         if u.numel() != K:
             raise ValueError(f"the sampled walk needs {K} uniforms, one a position, got {u.numel()}")
-        drafts, probabilities = [], []
-        prev = torch.zeros(1, dtype=torch.int64, device=dev)
-        for s in range(K):
-            probs = torch.softmax(scores[s].index_select(0, prev)[0].float() / max(temperature, 1e-5), dim=-1)   # over the 16 candidates
-            walk = probs.cumsum(0)
-            pick = torch.searchsorted(walk.contiguous(), (u[s] * walk[-1]).reshape(1), right=True) \
-                .clamp_max(walk.argmax())                   # past the walk's end: its last candidate with mass
-            probabilities.append(probs)
-            drafts.append(cand[s].index_select(0, pick))
-            prev = pick
+        from engine.kernels.draft_sample import sampled_walk
         from engine.modules.draft_agreement import agree_walk
+        tokens, support, probabilities = sampled_walk(
+            scores.unsqueeze(0), cand.unsqueeze(0),
+            torch.full((1,), temperature, dtype=torch.float32, device=dev), u.reshape(1, K),
+            greedy_rows=False, last_mass=True)
         tokens, support, probabilities = agree_walk(
-            self.target.comm, torch.cat(drafts), cand, torch.stack(probabilities))
+            self.target.comm, tokens[0], support[0], probabilities[0])
         dists = torch.zeros(K, vocab, device=dev, dtype=torch.float32)
         dists.scatter_add_(1, support, probabilities)
         return tokens, dists

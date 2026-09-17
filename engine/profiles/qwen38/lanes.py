@@ -9,7 +9,7 @@ this table is where its wire items land (engine/kernels/cells.py names the servi
     dense         the projections are engine/kernels/dense lanes bound in net.bind (DenseLinear, PaddedDenseLinear for
                   the shared expert's 160-column down projection); not a table entry, as in GLM-5.3's profile
     kda_chunk     gdn_chunk: chunk_kda_with_decay over the decay `gdn_gates` computes (engine/kernels/gdn)
-    kda_ring      gdn_ring / gdn_ring_rows: recurrent_decay_ring(_rows), the gate computed outside the kernel
+    kda_ring      gdn_ring / gdn_ring_rows: recurrent_gdn_ring(_rows), GDN's gate computed in the ring kernel
     mhc_decode    hc_*: engine/kernels/gated_residual -- the gated residual in five launches a site, not the
     mhc_prefill     dozen of the composed form the wizard's recipe named (its "fused kernel when launches matter")
     mla           qsa_attend: the BF16-KV sparse paged GQA ported with the QSA ops (engine/kernels/qsa), the kernel
@@ -44,7 +44,8 @@ class Lanes:
     gdn_chunk: object       # (q, k [1, T, Hk, D], v [1, T, HV, D], decay f32 [1, T, HV], beta [1, T, HV] sigmoided,
                             #  state0 [1, HV, K, V] f32 | None, states_at=None) -> (o [1, T, HV, D], state [1, HV, K, V] f32
                             #  [, states [n, HV, K, V] at the starts of the named 64-token kernel chunks])
-    gdn_ring: object        # (q, k, v, decay, beta_raw, ring [slots, R, HV, K, V] f32, slot, context) -> o; writes every token's state
+    gdn_ring: object        # (q, k, v, a [1, T, HV], b_raw [1, T, HV], A_log f32, dt_bias f32, ring [slots, R, HV, K, V] f32, slot,
+                            #  context) -> o; GDN's decay and beta computed with the recurrence; writes every token's state
     gdn_ring_rows: object   # the same over every row of a captured decode step: inputs [1, rows*T, ...], slots and contexts [rows]
     gdn_norm: object        # (core [N, HV, D], z [N, HV, D], w [D], eps) -> [N, HV*D]: GDN's rounding, sigmoid gate
     conv_prefill: object    # (x [T, C] bf16, w [C, K] f32, state [C, K-1] | None) -> (y [T, C], state' [C, K-1])
@@ -54,8 +55,11 @@ class Lanes:
     norm_rope: object       # (x [N, h, D], w [D], eps, positions [N] i64, theta, rotary_dim) -> [N, h, D]
     qsa_store: object       # (cache [pages, page, 1, D], flat slots [N] (-1 skipped), rows [N, D]) -> None
     qsa_compress: object    # qsa_compress_groups_with_ratio(...) -> (pooled [N, 1, D], first positions [N, 3] i64)
-    qsa_select: object      # qsa_select_paged_tokens(iq, key cache, page table, token_to_req, positions, lengths, topk, ratio)
-    qsa_attend: object      # qsa_sparse_paged_attention(q [N, Hq, D], k, v caches [pages, page, Hkv, D], indices, table, token_to_req)
+    qsa_select: object      # qsa_select_paged_blocks(iq, key cache, page table, token_to_req, positions, lengths, topk, ratio)
+                            #  -> the chosen blocks int32 [N, topk / ratio]
+    qsa_attend: object      # qsa_sparse_paged_attention_blocks(q [N, Hq, D], k, v caches [pages, page, Hkv, D], blocks,
+                            #  positions, lengths, ratio, topk, table, token_to_req, *, gate): the blocks expanded inside
+                            #  its tiles, the output gate applied in its final store
     # MoE
     route: object           # (logits [N, E], k) -> (ids int32 [N, k] global, weights f32 [N, k]): softmax fp32, top-k, renormalised
     moe: object             # (x [N, H] bf16, ids [N, k] global, weights [N, k] f32, w13, w13_sf, w2, w2_sf, *, scales,
@@ -63,7 +67,16 @@ class Lanes:
                             #  step) runs only this rank's pairs, reading their count on the host
     moe_prepare: object = None      # (w13, w13_sf, w2, w2_sf, top_k, *, scales) -> views, once per bound layer before capture
     graph_resources: object = None  # () -> workspace owners to retain until the captured graphs close
-    swiglu: object = None           # (fused [N, 2I]) -> silu(gate) * up: the shared expert's activation
+    swiglu: object = None           # (fused [N, 2I], pad_to=None) -> silu(gate) * up: the shared expert's activation,
+                                    #  with zero columns to `pad_to` for its padded down projection
+    moe_finish: object = None       # (routed [N, H] bf16, shared [N, H] bf16, gate [N, 1] f32) -> BF16(f32 routed +
+                                    #  f32 shared * gate): the MoE output before its all-reduce
+    qsa_index_keys: object = None   # qsa.qsa_index_keys(ik [N, Di], ring, slot_table, token_to_req, starts, positions,
+                                    #  key_slots, ratio, idx_k_norm, eps, theta, rotary_dim, index key cache): compress,
+                                    #  norm, rope and store the keys the step's rows close, in one launch
+    qsa_inputs: object = None       # qsa.qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta,
+                                    #  rotary_dim, K, V, kv_slots, ring, ring_slots) -> (q, iq): the layer's norms and
+                                    #  rotations with the K/V and ring stores, in one launch
 
 
 def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -138,8 +151,9 @@ def reference() -> Lanes:
             lo = hi
         return torch.cat(outs, dim=1), state, torch.stack(states)
 
-    def gdn_ring(q, k, v, decay, beta_raw, ring, slot, context):
+    def gdn_ring(q, k, v, a, b_raw, A_log, dt_bias, ring, slot, context):
         q, k = value_heads(q, k, v)
+        decay = gdn_decay(a, A_log, dt_bias)
         slot, context = int(slot), int(context)
         r = ring.shape[1]
         state0 = ring[slot, (context - 1) % r].unsqueeze(0).float() if context else None
@@ -147,17 +161,18 @@ def reference() -> Lanes:
         state = state0
         for i in range(q.shape[1]):
             o, state = gated_delta_rule(q[:, i:i + 1], k[:, i:i + 1], v[:, i:i + 1], decay[:, i:i + 1],
-                                        torch.sigmoid(beta_raw[:, i:i + 1].float()), state, scale=q.shape[-1] ** -0.5,
+                                        torch.sigmoid(b_raw[:, i:i + 1].float()), state, scale=q.shape[-1] ** -0.5,
                                         qk_l2norm=True, decay_per_channel=False)
             ring[slot, (context + i) % r].copy_(state[0])
             outs.append(o)
         return torch.cat(outs, dim=1)
 
-    def gdn_ring_rows(q, k, v, decay, beta_raw, ring, slots, contexts):
+    def gdn_ring_rows(q, k, v, a, b_raw, A_log, dt_bias, ring, slots, contexts):
         rows = slots.numel()
         t = q.shape[1] // rows
         return torch.cat([gdn_ring(q[:, i * t:(i + 1) * t], k[:, i * t:(i + 1) * t], v[:, i * t:(i + 1) * t],
-                                   decay[:, i * t:(i + 1) * t], beta_raw[:, i * t:(i + 1) * t], ring, slots[i], contexts[i])
+                                   a[:, i * t:(i + 1) * t], b_raw[:, i * t:(i + 1) * t], A_log, dt_bias, ring, slots[i],
+                                   contexts[i])
                           for i in range(rows)], dim=1)
 
     def gdn_norm(core, z, w, eps):
@@ -218,14 +233,19 @@ def reference() -> Lanes:
             out.index_add_(0, rows, y.float() * gain[:, None])
         return out.to(x.dtype)
 
-    def swiglu(fused):
+    def swiglu(fused, pad_to=None):
         gate, up = fused.chunk(2, -1)
-        return torch.nn.functional.silu(gate) * up
+        out = torch.nn.functional.silu(gate) * up
+        return torch.nn.functional.pad(out, (0, pad_to - out.shape[-1])) if pad_to else out
+
+    def moe_finish(routed, shared, gate):
+        return (routed.float() + shared.float() * gate).to(routed.dtype)
 
     return Lanes("reference", hc_norm, hc_leave, hc_leave_norm, hc_mix, gdn_gates, gdn_chunk, gdn_ring, gdn_ring_rows,
                  gdn_norm, conv_prefill, conv_ring, conv_ring_rows, norm_rope, unported("qsa_store"),
                  unported("qsa_compress"), unported("qsa_select"), unported("qsa_attend"), route_softmax_topk, moe,
-                 swiglu=swiglu)
+                 swiglu=swiglu, moe_finish=moe_finish, qsa_index_keys=unported("qsa_index_keys"),
+                 qsa_inputs=unported("qsa_inputs"))
 
 
 def served(*, tp=None) -> Lanes:
@@ -233,12 +253,12 @@ def served(*, tp=None) -> Lanes:
     Triton's autotuner and the b12x JIT can run; on the fleet (one rank a process) the calls are direct."""
     from engine.base.lanes import served as common_lanes
     from engine.kernels import gated_residual as hcr
-    from engine.kernels import gdn, qsa
+    from engine.kernels import gdn, moe_output, qsa
     from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.causal_conv_single import causal_conv1d_single
     from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
     from engine.kernels.kda.index import single_sequence_bounds
-    from engine.kernels.kda.ring import recurrent_decay_ring, recurrent_decay_ring_rows
+    from engine.kernels.kda.ring import recurrent_gdn_ring, recurrent_gdn_ring_rows
     from engine.kernels.b12x import b12x_fused_moe
     from engine.kernels.b12x import moe_dispatch as md
     from engine.modules.nvfp4_sf import mma_sf_view
@@ -321,12 +341,14 @@ def served(*, tp=None) -> Lanes:
     # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
     md.configure_ep_zero_weight_micro(True)
     common = common_lanes()
-    bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_decay_ring,
-             recurrent_decay_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
+    bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
+             recurrent_gdn_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
              qsa.norm_rope_partial, qsa.qsa_store_cache_rows, qsa.qsa_compress_groups_with_ratio,
-             qsa.qsa_select_paged_tokens, qsa.qsa_sparse_paged_attention, route_softmax_topk, moe]
+             qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, route_softmax_topk, moe]
     return Lanes("served", *(on_main(f) for f in bound), moe_prepare=on_main(moe_prepare),
-                 graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu))
+                 graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
+                 moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
+                 qsa_inputs=on_main(qsa.qsa_inputs))
 
 
 def qualify(device, F) -> dict:

@@ -12,7 +12,9 @@ A cell is geometry AND math: two models can share 16 x 512 and still differ in t
 the key compression, or the hyper-connection form. The shape declares those operation variants
 (engine/base/kernel_shape) and a lane is admitted only when they match what it computes.
 
-Three verdicts. `admitted`: inside the compiled cell and inside a measured one. `unmeasured`:
+Three verdicts. `admitted`: inside the compiled cell -- directly, or through an exact adapter (glue) that a GPU judged --
+and inside a measured one (the operator's decision of 2026-09-17: a glue cell with a GPU judgment and a measurement
+record is admitted; engine/QWEN38_CARRY.md Q3). `unmeasured`:
 the wrapper serves it, but the lane's measured dispatch choices (split points, tiles, the BF16/FP8
 switch) were taken at another cell -- it runs by declaration. `refused`: the wrapper dies by name.
 The measured cells below are the widths a measurement record exists for; a width joins its tuple in
@@ -79,6 +81,12 @@ MHC_MEASURED_HIDDEN = (4096,)
 KDA_MEASURED_CELLS = ((16, 16, 128, 128),)
 # the DFlash kernels, timed on GLM-5.3-Flash-DFlash2
 DRAFT_MEASURED_HEAD = (128,)
+# glue and second cells with a GPU judgment and a measurement record. Empty until the records land (the single-GPU lane
+# tickets of engine/QWEN38_CARRY.md C2-C5); a cell joins its tuple in the change that lands the record it cites.
+DENSE_GLUE_MEASURED_COLUMNS = ()    # unaligned column widths PaddedDenseLinear serves, judged and timed
+KDA_DECAY_MEASURED_CELLS = ()       # (heads, v_heads, k_dim, v_dim): per-head decay cells on the decay entries
+MHC_V41_MEASURED_HIDDEN = ()        # hidden widths of the split-sinkhorn form on MHCV41
+MOE_MEASURED_CELLS = ()             # kernel_shape.MoE cells (dynamic_tile_m None) measured beyond MEASURED's
 
 ADMITTED, REFUSED, UNMEASURED = "admitted", "refused", "unmeasured"
 _KDA_CELLS_TEXT = ", ".join(f"{h}/{hv} x {k} x {v}" for h, hv, k, v in KDA_MEASURED_CELLS)
@@ -470,16 +478,6 @@ def _recipe_kda_measure(l):
                   "the rule and cells.KDA_MEASURED_CELLS name the cell", "hours")
 
 
-def _recipe_kda_ring():
-    return Recipe("wire", "engine/profiles/<profile>/lanes.py (kda_recurrent_ring, kda_recurrent_ring_rows)",
-                  "bind engine/kernels/kda/ring.recurrent_decay_ring and recurrent_decay_ring_rows: the ring lane's own "
-                  "launch and in-kernel ring writes with the gate computed outside the kernel (COMPUTE_GATE off), the "
-                  "per-head decay read through a stride-0 channel axis (linear_decay.per_channel)",
-                  f"{_GLUE_TEST} on {_GPU} (ring storage byte-identical to fused_recurrent_kda(compute_gate=False) with "
-                  "its states copied in; the same cases pass on the CPU under TRITON_INTERPRET=1) and " + _KDA_JUDGE,
-                  "the decode step replays byte-identically across rows (the tests/test_engine_kda_ring.py pattern)", "hours")
-
-
 def _recipe_kda_chunk():
     return Recipe("wire", "engine/profiles/<profile>/lanes.py (kda_chunk)",
                   "bind engine/kernels/kda/chunk_decay.chunk_kda_with_decay: chunk_kda_with_fused_gate's pipeline, "
@@ -529,6 +527,17 @@ def _nothing(note):
     return Serve(NONE, "", False, note)
 
 
+def _judged(serve):
+    """The same kernel after its GPU judgment and a timed record at this cell: what a measured glue cell serves."""
+    note = serve.note.replace("unjudged on a GPU", "judged on a GPU and timed at this cell")
+    return replace(serve, judged=True, note=note if note != serve.note else f"{note}; judged on a GPU and timed at this cell")
+
+
+def _v41_measured(shape) -> bool:
+    return (shape.hc_variant == MHC_V41_VARIANT and shape.hidden in MHC_V41_MEASURED_HIDDEN
+            and mhc_v41_refusal(shape) is None)
+
+
 # overlay/modules/dsv4_flashinfer_sparse/flashinfer_sparse.py: the sink-capable DSV4 decode's head size and query heads
 DSV4_SINK_HEAD, DSV4_SINK_MAX_HEADS = 512, 128
 
@@ -539,7 +548,8 @@ def _serve_attention(a, i):
     is the work."""
     qsa = i is not None and i.compress == "qsa"
     qsa_op = ("qsa_sparse_paged_attention in engine/kernels/qsa.py (vLLM's Triton QSA sparse paged GQA attention, the "
-              "kernel that served Qwen3.8 in the vLLM stack, ported: BF16 KV)")
+              "kernel that served Qwen3.8 in the vLLM stack, ported: BF16 KV; its blocks entry expands the chosen blocks "
+              "inside its tiles)")
     if a.kind != "mla":
         packed = 2 * a.head_dim <= MLA_LATENT
         if a.sink is None:
@@ -609,7 +619,7 @@ def _serve_indexer(i):
     """The fastest kernels for an indexer the kpool lane refuses."""
     if i.compress == "qsa":
         return _serve(SPECIALIZED, "engine/kernels/qsa (qsa_compress_groups_with_ratio, qsa_mqa_paged and "
-                      "qsa_select_paged_tokens: vLLM's Triton QSA ops, ported, with the engine's top-k)", False,
+                      "qsa_select_paged_blocks: vLLM's Triton QSA ops, ported, with the engine's top-k)", False,
                       "judge the compression against modules/sparse_indexer.qsa_select and the scoring against its relu "
                       "sum over the index heads; unjudged on a GPU")
     if i.compress == "ced":
@@ -688,6 +698,9 @@ def admission(shape) -> "list[Verdict]":
     if shape.hc_variant is None:
         refuse("mhc_decode", "the hyper-connection form is not established; the segment's math depends on it", hc_unknown,
                hc_nothing)
+    elif _v41_measured(shape):
+        admit("mhc_decode", f"the split-sinkhorn form on MHCV41 at hidden {shape.hidden}, judged and timed",
+              _judged(_serve_mhc_variant(shape, "mhc_decode")))
     elif shape.hc_variant != MHC_VARIANT:
         refuse("mhc_decode", f"the MK mHC segment computes {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
                _recipe_mhc_variant(shape, "mhc_decode"), _serve_mhc_variant(shape, "mhc_decode"))
@@ -705,6 +718,9 @@ def admission(shape) -> "list[Verdict]":
     if shape.hc_variant is None:
         refuse("mhc_prefill", "the hyper-connection form is not established; the mixes' math depends on it", hc_unknown,
                hc_nothing)
+    elif _v41_measured(shape):
+        admit("mhc_prefill", f"the split-sinkhorn form on MHCV41.prefill at hidden {shape.hidden}, judged and timed",
+              _judged(_serve_mhc_variant(shape, "mhc_prefill")))
     elif shape.hc_variant != MHC_VARIANT:
         refuse("mhc_prefill", f"the TileLang mixes compute {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
                _recipe_mhc_variant(shape, "mhc_prefill"), _serve_mhc_variant(shape, "mhc_prefill"))
@@ -744,7 +760,13 @@ def admission(shape) -> "list[Verdict]":
     # engine/base/kernel_shape.MoE) is judged on that width alone
     widths, asked = _dense_widths(shape, m)
     unaligned = [width for _, width in widths if width % DENSE_ALIGN]
-    if unaligned:
+    glue_fits = all(dense_glue_refusal(c) is None for c in unaligned)
+    if (unaligned and glue_fits and shape.hidden in DENSE_MEASURED_HIDDEN
+            and all(c in DENSE_GLUE_MEASURED_COLUMNS for c in unaligned)):
+        admit("dense", f"W4A8 decode / FP8 prefill over zero-padded columns ({asked}), judged and timed",
+              _serve(GLUE, "engine/kernels/dense.PaddedDenseLinear (the W4A8/FP8 lane over zero-padded columns)", True,
+                     "exact: zero weight columns and a zero-extended input; judged on a GPU with its dispatch timed"))
+    elif unaligned:
         refuse("dense", f"dense W4 tiles need {DENSE_ALIGN}-aligned columns; asked {asked}", _recipe_dense(shape, m),
                _serve(GLUE, "engine/kernels/dense.PaddedDenseLinear (the W4A8/FP8 lane over zero-padded columns)", False,
                       "exact: zero weight columns and a zero-extended input ("
@@ -783,24 +805,35 @@ def admission(shape) -> "list[Verdict]":
                            if per_head else
                            _serve(SPECIALIZED, "engine/kernels/kda (fused_recurrent_kda)", True,
                                   "tests/test_engine_kda_state.py" + ("" if measured_cell else f", at {_KDA_CELLS_TEXT}")))
-        if measured_cell and not per_head:
+        decay_measured = per_head and (l.heads, l.v_heads, l.k_dim, l.v_dim) in KDA_DECAY_MEASURED_CELLS
+        if decay_measured:
+            admit("kda_recurrent", f"{recurrent}; judged and timed at this cell", _judged(recurrent_serve))
+        elif measured_cell and not per_head:
             admit("kda_recurrent", recurrent, recurrent_serve)
         else:
             unmeasured("kda_recurrent", f"{recurrent}; the BV=16 tile is measured at {_KDA_CELLS_TEXT} only",
                        _recipe_kda_measure(l), recurrent_serve)
-        if per_head:
-            refuse("kda_ring", "the ring lane fuses KDA's per-channel gate; a head-decay cell cannot run it", _recipe_kda_ring(),
-                   _serve(GLUE, "engine/kernels/kda/ring.recurrent_decay_ring and recurrent_decay_ring_rows (the ring "
-                          "kernel with its gate computed outside it)", False,
-                          "the fused entry's launch and in-kernel ring writes, COMPUTE_GATE off; byte-identical to the "
-                          "functional lane and held to modules/linear_attention under Triton's CPU interpreter, unjudged on "
-                          "a GPU"))
+        # a per-head (GatedDeltaNet) cell's ring lane is the ring kernel's own launch with GDN's gate compiled in
+        # (HEAD_GATE): no adapter between the model's arithmetic and the kernel
+        ring_gdn = _serve(SPECIALIZED, "engine/kernels/kda/ring.recurrent_gdn_ring and recurrent_gdn_ring_rows (the ring "
+                          "kernel computing GatedDeltaNet's per-head decay from its projection)", False,
+                          "the fused entry's launch and in-kernel ring writes with engine/kernels/gdn.gates' arithmetic in "
+                          "place of KDA's gate: byte-identical to that launch followed by the decay entry "
+                          "(recurrent_decay_ring) and held to modules/linear_attention under Triton's CPU interpreter, "
+                          "unjudged on a GPU")
+        chunk_glue = _serve(GLUE, "engine/kernels/kda/chunk_decay.chunk_kda_with_decay (chunk_kda_with_fused_gate's "
+                            "pipeline on a precomputed decay)", False,
+                            "the per-head decay summed per chunk and widened per channel; held to modules/linear_attention "
+                            "(states_at included) under Triton's CPU interpreter, unjudged on a GPU")
+        if decay_measured:
+            admit("kda_ring", "the ring kernel computing GatedDeltaNet's per-head decay, judged and timed",
+                  _judged(ring_gdn))
+            admit("kda_chunk", "the chunk pipeline on a precomputed per-head decay, judged and timed", _judged(chunk_glue))
+        elif per_head:
+            unmeasured("kda_ring", f"the ring kernel computes GatedDeltaNet's per-head decay in its own launch; the BV=16 "
+                                   f"tile is measured at {_KDA_CELLS_TEXT} only", _recipe_kda_measure(l), ring_gdn)
             refuse("kda_chunk", "the chunk lane fuses KDA's gate; a head-decay prefill runs the pipeline on a decay computed "
-                                "outside it", _recipe_kda_chunk(),
-                   _serve(GLUE, "engine/kernels/kda/chunk_decay.chunk_kda_with_decay (chunk_kda_with_fused_gate's pipeline "
-                          "on a precomputed decay)", False,
-                          "the per-head decay summed per chunk and widened per channel; held to modules/linear_attention "
-                          "(states_at included) under Triton's CPU interpreter, unjudged on a GPU"))
+                                "outside it", _recipe_kda_chunk(), chunk_glue)
         elif measured_cell:
             admit("kda_ring", "the ring lane's fused per-channel KDA gate",
                   _serve(SPECIALIZED, "engine/kernels/kda/ring.py", True, "tests/test_engine_kda_ring.py"))
@@ -827,6 +860,10 @@ def admission(shape) -> "list[Verdict]":
     elif replace(m, dynamic_tile_m=None) == measured:
         admit("moe", "the measured GB10 TP4 cell" + ("" if m.dynamic_tile_m is None else f", tile pinned at {m.dynamic_tile_m}"),
               _serve(SPECIALIZED, b12x, True, "probes/engine_kernel_check.py --lanes moe --moe-experts 288"))
+    elif replace(m, dynamic_tile_m=None) in MOE_MEASURED_CELLS:
+        admit("moe", f"a measured cell ({m.experts} experts, {m.experts_local} local, I{m.inter_local}, top{m.topk}, "
+                     f"{m.activation})" + ("" if m.dynamic_tile_m is None else f", tile pinned at {m.dynamic_tile_m}"),
+              _serve(SPECIALIZED, b12x, True, "judged against modules/moe on a GPU with its tiles timed at this cell"))
     else:
         unmeasured("moe", f"admitted by declaration ({m.experts} experts, {m.experts_local} local, I{m.inter_local}, "
                           f"top{m.topk}, {m.activation}); its tiles and scale packing were measured at the GLM-5.3 cell",

@@ -124,9 +124,11 @@ def mk_w4_dequant(wq4, ws4, n_rows, gscale=1.0, rgs=None):
     what the exact gate and the by-design gate both need."""
     import torch
 
-    tn, tk, _, _ = wq4.shape
-    n_pad, k = tn * 128, tk * 128
-    # tile-major [n/128][k/128][128][64] -> row-major [n_pad, k/2]
+    tn, tk, tile_rows, _ = wq4.shape
+    if tile_rows not in (16, 128) or tuple(ws4.shape) != (tn, tk, tile_rows, 8):
+        raise ValueError('W4 data and scale tile layouts disagree')
+    n_pad, k = tn * tile_rows, tk * 128
+    # Either resident tile shape reconstructs the same logical row-major bytes.
     wq4_rm = wq4.permute(0, 2, 1, 3).reshape(n_pad, k // 2)
     ws4_rm = ws4.permute(0, 2, 1, 3).reshape(n_pad, k // 16)
     w = mk_w4_dequant_rowmajor(wq4_rm, ws4_rm, gscale, rgs)
@@ -403,4 +405,3 @@ def fp8_gptq(weight, H, blocksize=128, percdamp=0.01, act_order=True, factor_dev
         W[:, i2:] -= Err1 @ U[i1:i2, i2:]
     del W, U
     return Q, scale
-

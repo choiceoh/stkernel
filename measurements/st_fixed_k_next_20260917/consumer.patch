@@ -1,0 +1,39 @@
+diff --git a/engine/kernels/dense/mhc.py b/engine/kernels/dense/mhc.py
+index f5e9bb5f..495a33cc 100644
+--- a/engine/kernels/dense/mhc.py
++++ b/engine/kernels/dense/mhc.py
+@@ -44,7 +44,7 @@ def workspace_sizes(hidden: int, hc: int, nout: int, nchunk: int) -> "list[tuple
+ 
+ 
+ class MHC:
+-    EXPAND_FN = False  # same-build candidate, no serving change before GPU proof
++    EXPAND_FN = True  # same-build candidate, no serving change before GPU proof
+     # Rows whose consumer kernels read the lossless BF16 pack: K=7 verify steps at C=1 (8 rows) and C=2 (16 rows).
+     # `packed_rows=8` is the same-build control, the C=1-only gate, for the probe that qualifies 16 rows
+     # (measurements/st_c2_mhc_packed_20260915). Serving never passes it.
+diff --git a/engine/kernels/mla/__init__.py b/engine/kernels/mla/__init__.py
+index c78c3197..893f2e31 100644
+--- a/engine/kernels/mla/__init__.py
++++ b/engine/kernels/mla/__init__.py
+@@ -39,7 +39,7 @@ PREFILL_MODES = ("stock", "tile32")
+ # short selection widths keep their old cell (same-build component records
+ # in measurements/st_fixed_k_cost_followup_20260917; consumer proof separate).
+ ENABLE_MLA_QREG = True
+-ENABLE_MLA_DIRECT_CVT = False
++ENABLE_MLA_DIRECT_CVT = True
+ _DECODE_CELLS_EXECUTED = set()
+ ENABLE_MLA_CLUSTER = True
+ ENABLE_MLA_PREFILL32 = False
+diff --git a/engine/profiles/glm53/net.py b/engine/profiles/glm53/net.py
+index b17b3446..fdb83f1a 100644
+--- a/engine/profiles/glm53/net.py
++++ b/engine/profiles/glm53/net.py
+@@ -169,7 +169,7 @@ class Glm53Net:
+         self._router_layers = None                         # None until every native FP32 router is resident
+         self._router_weights = {}
+         self._router_fp32 = set()
+-        self.fused_decode_router = False
++        self.fused_decode_router = True
+         self._router_fused_bias = {}
+         self._router_fused_executed = set()
+         self._decode_pairs = {}
