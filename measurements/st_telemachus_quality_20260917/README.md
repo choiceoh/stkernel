@@ -17,7 +17,12 @@ recipe, still fails all three T=1 cases (12,592, 495 and 386 output tokens).
 The incident remains unresolved. A further captured-data audit identifies
 rank-dependent smoothing across token-sharded prefill; PR #1151 repairs that
 scale pairing, but its live thinking-off replay still severely corrupts Korean
-and the PR remains a draft. See [the follow-up audit](code-audit.md),
+and the PR remains a draft. A further context ablation rules the
+assistant-provenance memory records out as the differentiator: neutralizing them
+at the id level (same token count, everything else byte-identical) leaves the
+failure intact in both arms, and all three outputs score clean on the canonical
+Korean glyph counters while being semantically broken. See
+[the follow-up audit](code-audit.md),
 [the production replay receipts](merged-production-replay-evidence.json) and
 [the shared-smoothing replay](shared-smoothing-replay-evidence.json).
 
