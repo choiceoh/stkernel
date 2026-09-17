@@ -1511,10 +1511,6 @@ class MoEMicroKernel:
         # (the shared-memory fences do not order these writes). See #1133.
         cute.arch.fence_proxy("async.global")
 
-        # Packed A and SFA were written through the generic global proxy.
-        # Each consuming CTA orders them after grid acquisition and before TMA.
-        cute.arch.fence_proxy("async.global")
-
         gA = cute.local_tile(mA, self.sa_tile_shape_mk, (None, None, None))
         # Single tiled view over concatenated w13 [2*I_tp, K, E].
         # W13 is packed as [up, gate] across the concatenated N dimension.

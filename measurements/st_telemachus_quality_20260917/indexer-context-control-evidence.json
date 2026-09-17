@@ -1,0 +1,56 @@
+{
+  "scope": "Modified-input controls; no original-request recovery claim",
+  "cases": [
+    {
+      "case": "short-clean",
+      "source": "03e9c50551666156b89c799d967138a39cbb01d7",
+      "owner": "queue/st-telemachus-idxsmooth0918",
+      "prompt_tokens": 39,
+      "completion_tokens": 517,
+      "prompt_sha256": "b8c39377614cda45587af2e275d1fa87b896f4f7b220b731cb24811948fde669",
+      "text_sha256": "7fa29110e58fbddaa247bc4096fa75ab375f0a781cb0179f04b1a3adc830ab8e",
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "temperature": 1,
+      "seed": 7,
+      "max_tokens": 1024,
+      "cap_hit": false,
+      "seconds": 19.800535865011625,
+      "quality": "mostly readable; malformed words remain"
+    },
+    {
+      "case": "original-system-clean-user",
+      "source": "03e9c50551666156b89c799d967138a39cbb01d7",
+      "owner": "queue/st-telemachus-idxsmooth0918",
+      "prompt_tokens": 41509,
+      "completion_tokens": 33,
+      "prompt_sha256": "b94122db54d98137d2343ca4579ff019ac84f5a57da43dbb7da539e4e3959bc0",
+      "text_sha256": "2c0a6624068c80cfe4a5f8de0906685dfb58652a1d6d8de04c2803f3f32c0f9f",
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "temperature": 1,
+      "seed": 7,
+      "max_tokens": 1024,
+      "cap_hit": false,
+      "seconds": 14.818213580059819,
+      "quality": "tool call only; not answer-quality evidence"
+    },
+    {
+      "case": "original-history-clean-user",
+      "source": "03e9c50551666156b89c799d967138a39cbb01d7",
+      "owner": "queue/st-telemachus-idxsmooth0918",
+      "prompt_tokens": 47693,
+      "completion_tokens": 356,
+      "prompt_sha256": "3fa6b3c8a8868209dca4ef9faa2cde857fa6cedc2012cc8a58c18168472d01eb",
+      "text_sha256": "640fba1f5e7f42a544f9047443d41653489c987b72cb255ac05c5759d2e0df95",
+      "cached_tokens": 0,
+      "served_delta": 1,
+      "temperature": 1,
+      "seed": 7,
+      "max_tokens": 1024,
+      "cap_hit": false,
+      "seconds": 29.8948490859475,
+      "quality": "malformed Korean remains"
+    }
+  ]
+}
