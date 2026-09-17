@@ -207,13 +207,18 @@ class DenebGateLinear(GateLinear):
         # the M > 32 path instead of leaving it alone. Checked rather than
         # assumed: the premise lives in this module's docstring, and the tier
         # gates live in a file we do not own.
-        self._deneb_stock_is_tier6 = not (
-            getattr(self, "allow_ll_bf16_gemm", False)
-            or getattr(self, "allow_dsv3_router_gemm", False)
-            or getattr(self, "allow_fp32_router_gemm", False)
-            or getattr(self, "allow_bf16x3_router_gemm", False)
-            or getattr(self, "allow_cublas_router_gemm", False)
-        )
+        tier_flags = ("allow_ll_bf16_gemm", "allow_dsv3_router_gemm",
+                      "allow_fp32_router_gemm", "allow_bf16x3_router_gemm",
+                      "allow_cublas_router_gemm")
+        present = [flag for flag in tier_flags if hasattr(self, flag)]
+        if not present:
+            # Fail closed: the tier gates live in a file we do not own, so a
+            # rename must be an error, not a silent "Tier 6" assumption that
+            # would arm the fused fallback over a faster live tier.
+            raise RuntimeError(
+                "moe_gate_sm121: none of the stock router tier gates exist on "
+                "this module; refusing to assume Tier 6")
+        self._deneb_stock_is_tier6 = not any(getattr(self, flag) for flag in present)
         self._deneb_fused_ok = (
             _GATE_FUSED
             and self.weight.dtype == torch.bfloat16

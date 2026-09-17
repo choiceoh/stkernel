@@ -920,7 +920,7 @@ def _indexer_sp_owned_ranges(k_cache_prefix: str):
                 (int(chunk.token_start) + off, int(chunk.token_start) + end)
             )
     if not ranges:
-        return ranges
+        return None
     # Ranges ascend (decode rows first, then chunks in batch order); merging
     # adjacent spans preserves the owned-row SET exactly and shortens the
     # gather-index list the caller concatenates from these spans.

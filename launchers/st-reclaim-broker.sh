@@ -33,7 +33,15 @@ stop_dir() {
   pid=$(cat "$dir/broker.pid" 2>/dev/null || true)
   if alive "$pid"; then
     kill "$pid" 2>/dev/null || true
-    for _ in 1 2 3 4 5 6 7 8 9 10; do alive "$pid" || break; sleep 0.1; done
+    # The broker may be inside a bounded `timeout ... sync` in
+    # st-return-file-cache.sh, which delays trap delivery past a second. Wait
+    # longer, then escalate, so a fresh broker cannot start while this one is
+    # still alive.
+    for _ in $(seq 1 100); do alive "$pid" || break; sleep 0.1; done
+    if alive "$pid"; then
+      kill -9 "$pid" 2>/dev/null || true
+      for _ in $(seq 1 20); do alive "$pid" || break; sleep 0.1; done
+    fi
   fi
   rm -f "$dir/broker.pid" "$dir/heartbeat"
 }
@@ -57,7 +65,10 @@ case "${1:-}" in
     echo $$ > "$dir/broker.pid"
     poll=${ST_RECLAIM_POLL_S:-0.5} max=${ST_RECLAIM_MAX_S:-7200} unseen=${ST_RECLAIM_UNSEEN_S:-300}
     started=$(date +%s) checked=0 seen=0
-    trap 'rm -f "$dir/heartbeat" "$dir/broker.pid"; exit 0' TERM INT
+    # Remove the pid only if it still names this process: a stale broker whose
+    # TERM arrives after a replacement started must not delete the new broker's
+    # pid (which would make stop/stop-all miss a live broker).
+    trap 'if [ "$(cat "$dir/broker.pid" 2>/dev/null)" = "$$" ]; then rm -f "$dir/broker.pid" "$dir/heartbeat"; fi; exit 0' TERM INT
     echo "$(date '+%F %T') serving $dir for $name"
     while :; do
       now=$(date +%s)

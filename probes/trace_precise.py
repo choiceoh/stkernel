@@ -5,6 +5,7 @@ distribution on the compute stream (launch/sync stalls hidden inside the
 steady-state step's kernel sequence with cumulative gaps."""
 import gzip
 import json
+import math
 import sys
 from collections import defaultdict
 
@@ -65,7 +66,11 @@ for ts, d, nm in seq:
         m = re.search(r"impl<(\d+)u, (\d+)u, (\d+)u", nm)
         nm = f"gemm<{m.group(2)},{m.group(3)}>" if m else "gemm"
     else:
-        nm = re.match(r"([A-Za-z0-9_:]+)", nm).group(1)[:28]
+        # A demangled symbol or a truncated/empty name does not start with
+        # [A-Za-z0-9_:]; re.match returns None and this used to crash the whole
+        # outlier section (section (1) already guards the same way).
+        m = re.match(r"([A-Za-z0-9_:]+)", nm)
+        nm = m.group(1)[:28] if m else (nm.strip()[:28] or "?")
     percall[nm].append(d)
 print(f"\n=== per-call outliers (max/median ratio, top by total) ===")
 rows = [(sum(v), nm, v) for nm, v in percall.items()]
@@ -73,7 +78,7 @@ rows.sort(reverse=True)
 for tot, nm, v in rows[:12]:
     v.sort()
     med = v[len(v)//2]
-    p99 = v[min(len(v)-1, int(len(v)*0.99))]
+    p99 = v[min(len(v)-1, math.ceil(len(v)*0.99)-1)]
     mx = v[-1]
     ratio = mx / med if med > 0 else 0
     print(f"  {nm:<30} tot{tot/1e3:6.1f}ms n{len(v):<5} "
