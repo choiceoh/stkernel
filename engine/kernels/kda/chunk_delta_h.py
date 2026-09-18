@@ -74,6 +74,7 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     SAVE_NEW_VALUE: tl.constexpr,
     IS_VARLEN: tl.constexpr,
     USE_EXP2: tl.constexpr,
+    G_HEAD: tl.constexpr,
 ):
     i_v, i_nh = tl.program_id(0), tl.program_id(1)
     i_n, i_h = i_nh // H, i_nh % H
@@ -257,44 +258,60 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
 
         if USE_GK:
             o_k1 = tl.arange(0, 64)
-            b_gk_last1 = tl.load(
-                gk + (bos + last_idx) * H * K + i_h * K + o_k1,
-                mask=(o_k1 < K),
-                other=0.0,
-            )
+            if G_HEAD:
+                # carry K3: a per-head gk [T, H] is one value a head, read once and broadcast (kda.py)
+                b_gk_last1 = tl.load(gk + (bos + last_idx) * H + i_h) + tl.zeros([64], dtype=tl.float32)
+            else:
+                b_gk_last1 = tl.load(
+                    gk + (bos + last_idx) * H * K + i_h * K + o_k1,
+                    mask=(o_k1 < K),
+                    other=0.0,
+                )
             if USE_EXP2:
                 b_h1 *= exp2(b_gk_last1)[None, :]
             else:
                 b_h1 *= exp(b_gk_last1)[None, :]
             if K > 64:
                 o_k2 = 64 + o_k1
-                b_gk_last2 = tl.load(
-                    gk + (bos + last_idx) * H * K + i_h * K + o_k2,
-                    mask=(o_k2 < K),
-                    other=0.0,
-                )
+                if G_HEAD:
+                    # carry K3: a per-head gk [T, H] is one value a head, read once and broadcast (kda.py)
+                    b_gk_last2 = tl.load(gk + (bos + last_idx) * H + i_h) + tl.zeros([64], dtype=tl.float32)
+                else:
+                    b_gk_last2 = tl.load(
+                        gk + (bos + last_idx) * H * K + i_h * K + o_k2,
+                        mask=(o_k2 < K),
+                        other=0.0,
+                    )
                 if USE_EXP2:
                     b_h2 *= exp2(b_gk_last2)[None, :]
                 else:
                     b_h2 *= exp(b_gk_last2)[None, :]
             if K > 128:
                 o_k3 = 128 + o_k1
-                b_gk_last3 = tl.load(
-                    gk + (bos + last_idx) * H * K + i_h * K + o_k3,
-                    mask=(o_k3 < K),
-                    other=0.0,
-                )
+                if G_HEAD:
+                    # carry K3: a per-head gk [T, H] is one value a head, read once and broadcast (kda.py)
+                    b_gk_last3 = tl.load(gk + (bos + last_idx) * H + i_h) + tl.zeros([64], dtype=tl.float32)
+                else:
+                    b_gk_last3 = tl.load(
+                        gk + (bos + last_idx) * H * K + i_h * K + o_k3,
+                        mask=(o_k3 < K),
+                        other=0.0,
+                    )
                 if USE_EXP2:
                     b_h3 *= exp2(b_gk_last3)[None, :]
                 else:
                     b_h3 *= exp(b_gk_last3)[None, :]
             if K > 192:
                 o_k4 = 192 + o_k1
-                b_gk_last4 = tl.load(
-                    gk + (bos + last_idx) * H * K + i_h * K + o_k4,
-                    mask=(o_k4 < K),
-                    other=0.0,
-                )
+                if G_HEAD:
+                    # carry K3: a per-head gk [T, H] is one value a head, read once and broadcast (kda.py)
+                    b_gk_last4 = tl.load(gk + (bos + last_idx) * H + i_h) + tl.zeros([64], dtype=tl.float32)
+                else:
+                    b_gk_last4 = tl.load(
+                        gk + (bos + last_idx) * H * K + i_h * K + o_k4,
+                        mask=(o_k4 < K),
+                        other=0.0,
+                    )
                 if USE_EXP2:
                     b_h4 *= exp2(b_gk_last4)[None, :]
                 else:
@@ -427,5 +444,6 @@ def chunk_gated_delta_rule_fwd_h(
         V=V,
         BT=BT,
         USE_EXP2=use_exp2,
+        G_HEAD=gk is not None and gk.ndim == 3,                         # carry K3: one value a head (kda.py)
     )
     return h, v_new, final_state

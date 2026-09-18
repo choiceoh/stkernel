@@ -6,7 +6,7 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "abb4b449c2addabb024ebd8fdd64fb445e19bc12917dda90cf8cf8dee075a1bb",
+      "local_sha256": "f5b15c04b2961fd4657ae06586ae93c938cec02b3882af0d08010094367bc7db",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
         "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry",
@@ -16,17 +16,19 @@
         "2026-09-13 prefill: extend the existing strided Q/K norm eligibility from 8192 to 16384 rows; arithmetic unchanged.",
         "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
         "2026-09-17 probe hook _BV_OVERRIDE (probes/engine_qwen38_kda.py, Qwen3.8 carry C3): a set power of two replaces fused_recurrent_kda_fwd's value tile BV; None (the default) keeps the rule and the launch unchanged.",
-        "2026-09-17 strided Q/K norm cells (Qwen3.8 carry K4): _glm53_qk_l2norm_strided admits (key heads, head dim) 4 x 128 beside 16 x 128 and launches its kernel at the input's head count; the per-row reduction and its 32-row programs are unchanged, and 16 x 128 compiles the same kernel."
+        "2026-09-17 strided Q/K norm cells (Qwen3.8 carry K4): _glm53_qk_l2norm_strided admits (key heads, head dim) 4 x 128 beside 16 x 128 and launches its kernel at the input's head count; the per-row reduction and its 32-row programs are unchanged, and 16 x 128 compiles the same kernel.",
+        "2026-09-18 native GDN forms in the chunk pipeline (Qwen3.8 carry K3): the two K K^T kernels, recompute_w_u and chunk_gla_fwd_kernel_o take QG (q/k hold H // QG heads, value head i reads key head i // QG) and G_HEAD (a per-head gate [T, H], loaded one value a row and broadcast along the key channels -- a 1-D load, not a stride-0 block pointer, which moves the [rows, K] tensors to another thread layout and the sums along K to another reduction tree). With QG 1 and G_HEAD false every offset is the contiguous one; with them the output is the widened forms' byte for byte."
       ]
     },
     "kda/chunk_delta_h.py": {
       "source": "overlay/modules/glm53_kernels/chunk_delta_h.py",
       "sha256": "fc724e4fd0677f0e86524d01ed3f450f87e0e12ce024b282d5ae50e4c3482739",
       "origin": "repository",
-      "local_sha256": "988bfe72b5f5f3a24d6b29bbaaf1b47a5f3f1dfa567782a57d592374b09ee7d9",
+      "local_sha256": "5d4332b441680c196167bf7c77d3ceaeebb4cb70e7b7158d93782c58845a1681",
       "local_modifications": [
         "2026-09-12 prefix marks: optional fp32 side output of the per-chunk state before requested 64-token chunks (states_at / N_AT); the main computation is untouched and bit-identical with or without it",
-        "2026-09-13 prefill: replace mark-count specialization and unrolled mark scans with a runtime ordered cursor; preserve state arithmetic and snapshots bit exactly."
+        "2026-09-13 prefill: replace mark-count specialization and unrolled mark scans with a runtime ordered cursor; preserve state arithmetic and snapshots bit exactly.",
+        "2026-09-18 per-head gk (Qwen3.8 carry K3): G_HEAD reads the chunk's last gate row as one value a head and broadcasts it over the 64-channel blocks; false (KDA's per-channel gate) keeps every load where it was."
       ]
     },
     "kda/cumsum.py": {

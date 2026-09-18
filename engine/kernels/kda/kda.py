@@ -899,6 +899,8 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter(
     BK: tl.constexpr,
     NC: tl.constexpr,
     IS_VARLEN: tl.constexpr,
+    QG: tl.constexpr,
+    G_HEAD: tl.constexpr,
 ):
     i_t, i_c, i_bh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_b, i_h = i_bh // H, i_bh % H
@@ -916,14 +918,23 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter(
     else:
         bos, eos = i_b * T, i_b * T + T
 
+    # carry K3: q/k may hold H // QG heads -- value head i reads key head i // QG -- and a per-head gate [T, H]
+    # (G_HEAD) is loaded as one value a row and broadcast along the key channels: the values its widened form
+    # [T, H, K] holds. Not through a stride-0 block pointer: the coalesce pass reads pointer contiguity, and that
+    # load would move the [rows, K] tensors to another thread layout and the sums along K to another tree.
+    # With G_HEAD false and QG 1 every offset below is the contiguous [T, H, K] one.
+    HQ: tl.constexpr = H // QG
     if i_t * BT + i_i * BC >= T:
         return
     if i_i <= i_j:
         return
 
-    q += (bos * H + i_h) * K
-    k += (bos * H + i_h) * K
-    g += (bos * H + i_h) * K
+    q += (bos * HQ + i_h // QG) * K
+    k += (bos * HQ + i_h // QG) * K
+    if G_HEAD:
+        g += bos * H + i_h
+    else:
+        g += (bos * H + i_h) * K
     A += (bos * H + i_h) * BT
     Aqk += (bos * H + i_h) * BT
 
@@ -936,37 +947,47 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter(
     b_Aqk = tl.zeros([BC, BC], dtype=tl.float32)
     for i_k in range(tl.cdiv(K, BK)):
         p_q = tl.make_block_ptr(
-            q, (T, K), (H * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
+            q, (T, K), (HQ * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
         )
         p_k = tl.make_block_ptr(
-            k, (T, K), (H * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
-        )
-        p_g = tl.make_block_ptr(
-            g, (T, K), (H * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
+            k, (T, K), (HQ * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
         )
         b_kt = tl.make_block_ptr(
-            k, (K, T), (1, H * K), (i_k * BK, i_t * BT + i_j * BC), (BK, BC), (0, 1)
-        )
-        p_gk = tl.make_block_ptr(
-            g, (K, T), (1, H * K), (i_k * BK, i_t * BT + i_j * BC), (BK, BC), (0, 1)
+            k, (K, T), (1, HQ * K), (i_k * BK, i_t * BT + i_j * BC), (BK, BC), (0, 1)
         )
 
         o_k = i_k * BK + tl.arange(0, BK)
         m_k = o_k < K
-        # [BK,]
-        b_gn = tl.load(g + (i_t * BT + i_i * BC) * H * K + o_k, mask=m_k, other=0)
-        # [BC, BK]
-        b_g = tl.load(p_g, boundary_check=(0, 1))
-        b_k = tl.load(p_k, boundary_check=(0, 1)) * exp2(b_g - b_gn[None, :])
-        # [BK, BC]
-        b_gk = tl.load(p_gk, boundary_check=(0, 1))
+        if G_HEAD:
+            o_c = tl.arange(0, BC)
+            b_gn = tl.load(g + (i_t * BT + i_i * BC) * H)
+            b_g = tl.load(g + (i_t * BT + i_i * BC + o_c) * H, mask=i_t * BT + i_i * BC + o_c < T, other=0)[:, None]
+            b_gk = tl.load(g + (i_t * BT + i_j * BC + o_c) * H, mask=i_t * BT + i_j * BC + o_c < T, other=0)[None, :]
+            b_gn_row = b_gn
+            b_gn_col = b_gn
+        else:
+            p_g = tl.make_block_ptr(
+                g, (T, K), (H * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
+            )
+            p_gk = tl.make_block_ptr(
+                g, (K, T), (1, H * K), (i_k * BK, i_t * BT + i_j * BC), (BK, BC), (0, 1)
+            )
+            # [BK,]
+            b_gn = tl.load(g + (i_t * BT + i_i * BC) * H * K + o_k, mask=m_k, other=0)
+            # [BC, BK]
+            b_g = tl.load(p_g, boundary_check=(0, 1))
+            # [BK, BC]
+            b_gk = tl.load(p_gk, boundary_check=(0, 1))
+            b_gn_row = b_gn[None, :]
+            b_gn_col = b_gn[:, None]
+        b_k = tl.load(p_k, boundary_check=(0, 1)) * exp2(b_g - b_gn_row)
         b_kt = tl.load(b_kt, boundary_check=(0, 1))
         # [BC, BC]
-        b_ktg = b_kt * exp2(b_gn[:, None] - b_gk)
+        b_ktg = b_kt * exp2(b_gn_col - b_gk)
         b_A += tl.dot(b_k, b_ktg)
 
         b_q = tl.load(p_q, boundary_check=(0, 1))
-        b_qg = b_q * exp2(b_g - b_gn[None, :]) * scale
+        b_qg = b_q * exp2(b_g - b_gn_row) * scale
         b_Aqk += tl.dot(b_qg, b_ktg)
 
     b_A *= b_b[:, None]
@@ -1005,6 +1026,8 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra(
     BC: tl.constexpr,
     BK: tl.constexpr,
     IS_VARLEN: tl.constexpr,
+    QG: tl.constexpr,
+    G_HEAD: tl.constexpr,
 ):
     i_t, i_i, i_bh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_b, i_h = i_bh // H, i_bh % H
@@ -1021,6 +1044,12 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra(
     else:
         bos, eos = i_b * T, i_b * T + T
 
+    # carry K3: q/k may hold H // QG heads -- value head i reads key head i // QG -- and a per-head gate [T, H]
+    # (G_HEAD) is loaded as one value a row and broadcast along the key channels: the values its widened form
+    # [T, H, K] holds. Not through a stride-0 block pointer: the coalesce pass reads pointer contiguity, and that
+    # load would move the [rows, K] tensors to another thread layout and the sums along K to another tree.
+    # With G_HEAD false and QG 1 every offset below is the contiguous [T, H, K] one.
+    HQ: tl.constexpr = H // QG
     if i_t * BT + i_i * BC >= T:
         return
 
@@ -1031,51 +1060,61 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra(
     o_A = (bos + i_t * BT + i_i * BC + o_i) * H * BT + i_h * BT + i_i * BC
 
     p_q = tl.make_block_ptr(
-        q + (bos * H + i_h) * K,
+        q + (bos * HQ + i_h // QG) * K,
         (T, K),
-        (H * K, 1),
+        (HQ * K, 1),
         (i_t * BT + i_i * BC, 0),
         (BC, BK),
         (1, 0),
     )
     p_k = tl.make_block_ptr(
-        k + (bos * H + i_h) * K,
+        k + (bos * HQ + i_h // QG) * K,
         (T, K),
-        (H * K, 1),
-        (i_t * BT + i_i * BC, 0),
-        (BC, BK),
-        (1, 0),
-    )
-    p_g = tl.make_block_ptr(
-        g + (bos * H + i_h) * K,
-        (T, K),
-        (H * K, 1),
+        (HQ * K, 1),
         (i_t * BT + i_i * BC, 0),
         (BC, BK),
         (1, 0),
     )
     b_q = tl.load(p_q, boundary_check=(0, 1))
     b_k = tl.load(p_k, boundary_check=(0, 1))
-    b_g = tl.load(p_g, boundary_check=(0, 1))
+    if G_HEAD:
+        b_g = tl.load(g + (bos + i_t * BT + i_i * BC + o_i) * H + i_h, mask=m_A, other=0)[:, None]
+        p_gk = g + (bos + i_t * BT + i_i * BC) * H + i_h
+    else:
+        p_g = tl.make_block_ptr(
+            g + (bos * H + i_h) * K,
+            (T, K),
+            (H * K, 1),
+            (i_t * BT + i_i * BC, 0),
+            (BC, BK),
+            (1, 0),
+        )
+        b_g = tl.load(p_g, boundary_check=(0, 1))
+        p_gk = g + (bos + i_t * BT + i_i * BC) * H * K + i_h * K + o_k
 
     p_b = beta + (bos + i_t * BT + i_i * BC + o_i) * H + i_h
     b_k = b_k * tl.load(p_b, mask=m_A, other=0)[:, None]
 
-    p_kt = k + (bos + i_t * BT + i_i * BC) * H * K + i_h * K + o_k
-    p_gk = g + (bos + i_t * BT + i_i * BC) * H * K + i_h * K + o_k
+    p_kt = k + (bos + i_t * BT + i_i * BC) * HQ * K + (i_h // QG) * K + o_k
 
     for j in range(0, min(BC, T - i_t * BT - i_i * BC)):
         b_kt = tl.load(p_kt, mask=m_k, other=0).to(tl.float32)
-        b_gk = tl.load(p_gk, mask=m_k, other=0).to(tl.float32)
-        b_ktg = b_kt[None, :] * exp2(b_g - b_gk[None, :])
+        if G_HEAD:
+            b_ktg = b_kt[None, :] * exp2(b_g - tl.load(p_gk).to(tl.float32))
+        else:
+            b_gk = tl.load(p_gk, mask=m_k, other=0).to(tl.float32)
+            b_ktg = b_kt[None, :] * exp2(b_g - b_gk[None, :])
         b_A = tl.sum(b_k * b_ktg, 1)
         b_A = tl.where(o_i > j, b_A, 0.0)
         b_Aqk = tl.sum(b_q * b_ktg, 1)
         b_Aqk = tl.where(o_i >= j, b_Aqk * scale, 0.0)
         tl.store(A + o_A + j, b_A, mask=m_A)
         tl.store(Aqk + o_A + j, b_Aqk, mask=m_A)
-        p_kt += H * K
-        p_gk += H * K
+        p_kt += HQ * K
+        if G_HEAD:
+            p_gk += H
+        else:
+            p_gk += H * K
 
 
 def chunk_kda_scaled_dot_kkt_fwd(
@@ -1113,6 +1152,10 @@ def chunk_kda_scaled_dot_kkt_fwd(
     """
     B, T, H, K = k.shape
     assert K <= 256
+    # carry K3: a per-head gate [B, T, HV] names the value heads, and q/k may hold HV // QG heads (chunk_decay.py)
+    G_HEAD = gk.ndim == 3
+    QG = gk.shape[2] // H
+    H = gk.shape[2]
     BT = chunk_size
     if chunk_indices is None and cu_seqlens is not None:
         chunk_indices = prepare_chunk_indices(cu_seqlens, BT)
@@ -1141,6 +1184,8 @@ def chunk_kda_scaled_dot_kkt_fwd(
         BT=BT,
         BC=BC,
         NC=NC,
+        QG=QG,
+        G_HEAD=G_HEAD,
     )
 
     grid = (NT, NC, B * H)
@@ -1161,6 +1206,8 @@ def chunk_kda_scaled_dot_kkt_fwd(
         BT=BT,
         BC=BC,
         BK=BK,
+        QG=QG,
+        G_HEAD=G_HEAD,
     )
     return A, Aqk
 
@@ -1215,6 +1262,8 @@ def recompute_w_u_fwd_kernel(
     STORE_KG: tl.constexpr,
     IS_VARLEN: tl.constexpr,
     DOT_PRECISION: tl.constexpr,
+    QG: tl.constexpr,
+    G_HEAD: tl.constexpr,
 ):
     i_t, i_bh = tl.program_id(0), tl.program_id(1)
     i_b, i_h = i_bh // H, i_bh % H
@@ -1230,6 +1279,12 @@ def recompute_w_u_fwd_kernel(
         T = eos - bos
     else:
         bos, eos = i_b * T, i_b * T + T
+    # carry K3: q/k may hold H // QG heads -- value head i reads key head i // QG -- and a per-head gate [T, H]
+    # (G_HEAD) is loaded as one value a row and broadcast along the key channels: the values its widened form
+    # [T, H, K] holds. Not through a stride-0 block pointer: the coalesce pass reads pointer contiguity, and that
+    # load would move the [rows, K] tensors to another thread layout and the sums along K to another tree.
+    # With G_HEAD false and QG 1 every offset below is the contiguous [T, H, K] one.
+    HQ: tl.constexpr = H // QG
     p_b = tl.make_block_ptr(beta + bos * H + i_h, (T,), (H,), (i_t * BT,), (BT,), (0,))
     b_b = tl.load(p_b, boundary_check=(0,))
 
@@ -1270,9 +1325,9 @@ def recompute_w_u_fwd_kernel(
             (1, 0),
         )
         p_k = tl.make_block_ptr(
-            k + (bos * H + i_h) * K,
+            k + (bos * HQ + i_h // QG) * K,
             (T, K),
-            (H * K, 1),
+            (HQ * K, 1),
             (i_t * BT, i_k * BK),
             (BT, BK),
             (1, 0),
@@ -1280,21 +1335,25 @@ def recompute_w_u_fwd_kernel(
         b_k = tl.load(p_k, boundary_check=(0, 1))
         b_kb = b_k * b_b[:, None]
 
-        p_gk = tl.make_block_ptr(
-            gk + (bos * H + i_h) * K,
-            (T, K),
-            (H * K, 1),
-            (i_t * BT, i_k * BK),
-            (BT, BK),
-            (1, 0),
-        )
-        b_gk = tl.load(p_gk, boundary_check=(0, 1))
+        if G_HEAD:
+            o_t = i_t * BT + tl.arange(0, BT)
+            b_gk = tl.load(gk + (bos + o_t) * H + i_h, mask=o_t < T, other=0)[:, None]
+        else:
+            p_gk = tl.make_block_ptr(
+                gk + (bos * H + i_h) * K,
+                (T, K),
+                (H * K, 1),
+                (i_t * BT, i_k * BK),
+                (BT, BK),
+                (1, 0),
+            )
+            b_gk = tl.load(p_gk, boundary_check=(0, 1))
         b_kb *= exp2(b_gk)
         if STORE_QG:
             p_q = tl.make_block_ptr(
-                q + (bos * H + i_h) * K,
+                q + (bos * HQ + i_h // QG) * K,
                 (T, K),
-                (H * K, 1),
+                (HQ * K, 1),
                 (i_t * BT, i_k * BK),
                 (BT, BK),
                 (1, 0),
@@ -1315,10 +1374,13 @@ def recompute_w_u_fwd_kernel(
 
             o_k = i_k * BK + tl.arange(0, BK)
             m_k = o_k < K
-            b_gn = tl.load(
-                gk + ((bos + last_idx) * H + i_h) * K + o_k, mask=m_k, other=0.0
-            )
-            b_kg = b_k * exp2(b_gn - b_gk)
+            if G_HEAD:
+                b_kg = b_k * exp2(tl.load(gk + (bos + last_idx) * H + i_h) - b_gk)
+            else:
+                b_gn = tl.load(
+                    gk + ((bos + last_idx) * H + i_h) * K + o_k, mask=m_k, other=0.0
+                )
+                b_kg = b_k * exp2(b_gn - b_gk)
 
             p_kg = tl.make_block_ptr(
                 kg + (bos * H + i_h) * K,
@@ -1346,6 +1408,10 @@ def recompute_w_u_fwd(
     autotune_regime: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     B, T, H, K, V = *k.shape, v.shape[-1]
+    # carry K3: k may hold HV // QG heads; w and kg are one row a value head
+    QG = v.shape[2] // H
+    H = v.shape[2]
+    G_HEAD = gk is not None and gk.ndim == 3
     BT = A.shape[-1]
     BK = 64
     BV = 64
@@ -1354,9 +1420,9 @@ def recompute_w_u_fwd(
         chunk_indices = prepare_chunk_indices(cu_seqlens, BT)
     NT = cdiv(T, BT) if cu_seqlens is None else len(chunk_indices)
 
-    w = torch.empty_like(k)
+    w = torch.empty_like(k) if QG == 1 else k.new_empty(B, T, H, K)
     u = torch.empty_like(v)
-    kg = torch.empty_like(k) if gk is not None else None
+    kg = (torch.empty_like(k) if QG == 1 else k.new_empty(B, T, H, K)) if gk is not None else None
     recompute_w_u_fwd_kernel[(NT, B * H)](
         q=q,
         k=k,
@@ -1379,6 +1445,8 @@ def recompute_w_u_fwd(
         BK=BK,
         BV=BV,
         DOT_PRECISION="ieee",
+        QG=QG,
+        G_HEAD=G_HEAD,
     )
     return w, u, None, kg
 
@@ -1414,6 +1482,8 @@ def chunk_gla_fwd_kernel_o(
     BK: tl.constexpr,
     BV: tl.constexpr,
     IS_VARLEN: tl.constexpr,
+    QG: tl.constexpr,
+    G_HEAD: tl.constexpr,
 ):
     i_v, i_t, i_bh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_b, i_h = i_bh // H, i_bh % H
@@ -1434,22 +1504,20 @@ def chunk_gla_fwd_kernel_o(
         i_tg = i_b * NT + i_t
         bos, eos = i_b * T, i_b * T + T
 
+    # carry K3: q/k may hold H // QG heads -- value head i reads key head i // QG -- and a per-head gate [T, H]
+    # (G_HEAD) is loaded as one value a row and broadcast along the key channels: the values its widened form
+    # [T, H, K] holds. Not through a stride-0 block pointer: the coalesce pass reads pointer contiguity, and that
+    # load would move the [rows, K] tensors to another thread layout and the sums along K to another tree.
+    # With G_HEAD false and QG 1 every offset below is the contiguous [T, H, K] one.
+    HQ: tl.constexpr = H // QG
     m_s = tl.arange(0, BT)[:, None] >= tl.arange(0, BT)[None, :]
 
     b_o = tl.zeros([BT, BV], dtype=tl.float32)
     for i_k in range(tl.cdiv(K, BK)):
         p_q = tl.make_block_ptr(
-            q + (bos * H + i_h) * K,
+            q + (bos * HQ + i_h // QG) * K,
             (T, K),
-            (H * K, 1),
-            (i_t * BT, i_k * BK),
-            (BT, BK),
-            (1, 0),
-        )
-        p_g = tl.make_block_ptr(
-            g + (bos * H + i_h) * K,
-            (T, K),
-            (H * K, 1),
+            (HQ * K, 1),
             (i_t * BT, i_k * BK),
             (BT, BK),
             (1, 0),
@@ -1467,7 +1535,19 @@ def chunk_gla_fwd_kernel_o(
         b_q = tl.load(p_q, boundary_check=(0, 1))
         b_q = (b_q * scale).to(b_q.dtype)
         # [BT, BK]
-        b_g = tl.load(p_g, boundary_check=(0, 1))
+        if G_HEAD:
+            o_t = i_t * BT + tl.arange(0, BT)
+            b_g = tl.load(g + (bos + o_t) * H + i_h, mask=o_t < T, other=0)[:, None]
+        else:
+            p_g = tl.make_block_ptr(
+                g + (bos * H + i_h) * K,
+                (T, K),
+                (H * K, 1),
+                (i_t * BT, i_k * BK),
+                (BT, BK),
+                (1, 0),
+            )
+            b_g = tl.load(p_g, boundary_check=(0, 1))
         # [BT, BK]
         b_qg = (b_q * exp2(b_g)).to(b_q.dtype)
         # [BV, BK]
@@ -1517,6 +1597,9 @@ def chunk_gla_fwd_o_gk(
     autotune_regime: int = 0,
 ):
     B, T, H, K, V = *q.shape, v.shape[-1]
+    # carry K3: q may hold HV // QG heads, the gate one value a head
+    QG = v.shape[2] // H
+    H = v.shape[2]
     BT = chunk_size
 
     if chunk_indices is None and cu_seqlens is not None:
@@ -1542,6 +1625,8 @@ def chunk_gla_fwd_o_gk(
         K=K,
         V=V,
         BT=BT,
+        QG=QG,
+        G_HEAD=g.ndim == 3,
     )
     return o
 
