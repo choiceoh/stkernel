@@ -136,7 +136,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 |---|---|---|
 | "그냥 mtp로 해" | 드래프터는 체크포인트의 MTP 헤드(`SPEC_K=1`)로 간다. PixelML 의 Flash-Next DFlash 드래프터(srv2 `~/models/qwen38-flash-next-dflash-pixelml`; 자체 측정에서 수학만 네이티브 MTP 를 이기고 채팅은 느림)는 붙이지 않는다 | 결정 |
 | "e뭐시기 그건 ssd로 내리고" | PLE 표(랭크당 11.92 GiB)를 아레나에서 빼 `ple-r{r}of4.weight` 로 랭크 파일 옆에 두고 행을 번호로 읽는다(`profiles/qwen38/ple_table.py`; 레이아웃 `st-qwen38-tep4-modelopt-v3`) | PR |
-| "이미지는 파트로 사전 샤딩해서" | NVIDIA 허브 체크포인트(fc694b54, srv2)를 `preshard.py` 로 네 랭크 파일 + 네 표 파일로 자른다(MTP 전문가 FP8→NVFP4, 전문가 그룹은 랭크별) | 코드는 PR; 산출물은 플릿 창 대기 — 네 노드 모두 프로덕션이 떠 있어(MemAvailable 10~13 GB, earlyoom 6 GiB) 프로덕션 옆에서는 돌리지 않는다 |
+| "이미지는 파트로 사전 샤딩해서" | NVIDIA 허브 체크포인트(fc694b54)를 `preshard.py` 로 네 랭크 파일 + 네 표 파일로 자른다(MTP 전문가 FP8→NVFP4, 전문가 그룹은 랭크별, memmap 읽기) | 산출물 완성(srv4, 2026-09-18 15:38, 699 s, 3 GiB 캡): `~/models/st-qwen38-tep4`, 랭크 0 표 파일 sha = 09-11 파일과 동일; 랭크 r 을 GLM 과 같은 노드로 배포. GPU 부팅은 아직(D17) |
 
 ## 옮기지 않는 GLM 최적화
 

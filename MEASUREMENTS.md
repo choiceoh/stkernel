@@ -4589,7 +4589,19 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
   `tests/test_engine_qwen38_ple_ssd.py`: 표 gather(두 읽기 경로·중복·범위), 랭크 분할, 스테이징, 즉시 경로 == 캡처 스테이징
   (링의 carried id·DEAD 포함). `base/checkpoint` 가 두 번째 `.layers.` 접두(`mtp.layers.0.`)를 허용한다 — 전에는 Qwen 인덱스에서
   죽었다.
-- **안 한 것.** GPU 부팅·캡처·수용률·속도 없음(D17 미실측). 산출물(랭크 약 80 GB + 표 51 GB)은 만들지 않았다: 네 노드 모두
-  프로덕션 `st-glm53` 이 떠 있어(MemAvailable 9.8~13.3 GB, earlyoom 바닥 6 GiB) 프로덕션 옆에서 돌리지 않는다 — 플릿 창에서.
-  프리필의 SSD 모음 비용·페이지 캐시 거동·MTP 이중 양자화(FP8→NVFP4)의 수용률은 미실측; 예전 복사본의 BF16 MTP 로 자르면
-  한 번 양자화다(같은 표·전문가 바이트, `--ckpt` 만 다름).
+- **산출물(srv4, 15:26~15:38, 699 s).** 네 노드 모두 프로덕션이 떠 있어(MemAvailable 9.8~13.3 GB, earlyoom 바닥 6 GiB) 체크포인트를
+  srv2→srv4 로 fabric(10.10.10.2) rsync 해(124 GiB, 4 분, 허브 sha256 재검증) srv4 에서 3 GiB 캡·ionice idle 컨테이너로 잘랐다.
+  첫 시도는 5 초 만에 캡에서 죽었다(rc 137): `base/checkpoint.load` 가 1.27 GB 임베딩을 스테이징 두 번(범위 버퍼 + 블록 복사)으로
+  쥔다 → `Checkpoint.views`(numpy memmap; 정렬 안 된 작은 텐서만 복사)로 바꿔 최고 약 2.4 GiB(MTP 전문가 그룹). 결과
+  `~/models/st-qwen38-tep4`: `rank{0..3}of4.safetensors` 21,066,082,728 B(sha 0a748bcc·9ed43df9·807052c3·6bc8ca3f, 1,148 텐서
+  되읽어 대조), `ple-r{0..3}of4.weight` 12,800,061,440 B(**랭크 0 = ae7e9d59… = 09-11 의 `qwen38-ple-ssd/ple-r0of4.weight` 와
+  바이트 동일**; e4a7f934·a6339811·0d1adad6), 사이드카·`kernel_shape.json`·매니페스트·SHA256SUMS. 중단된 첫 완주 시도의 랭크 0
+  sha 가 같았다 — 프리샤드는 재현적이다. 랭크 r 은 GLM 과 같은 자리(rank0 srv2·rank1 srv1·rank2 srv3·rank3 srv4)로 fabric
+  rsync + 도착지 `sha256sum -c` 로 배포했다(`~/st-worktrees/qwen38-distribute.sh`).
+- **빌드 중 프로덕션 사고(빌드와 무관).** 15:09:47 srv1 랭크가 프리필 중 Triton JIT 로드에서 `CUDA: operation not permitted`
+  (`kda_output_norm` → `load_binary`)로 죽고(exit 1), 나머지 랭크는 NCCL 300 s stall trap 으로 15:16 종료(133). 제 복사는 srv2→srv4
+  (15:04~15:08), 프리샤드는 srv4 (15:11 이후)뿐이라 srv1 을 건드린 게 없다. 감독기가 15:26:16 재기동, 15:28:22 healthy — 제 빌드가
+  옆에서 도는 동안 승인이 통과했다(srv4 MemAvailable 22 GB). 재기동 승인과 겹치지 않으려 두 번째 시도를 한 번 멈췄다가
+  운영자 "얼른해" 로 즉시 다시 돌렸다.
+- **안 한 것.** GPU 부팅·캡처·수용률·속도 없음(D17 미실측). 프리필의 SSD 모음 비용·페이지 캐시 거동·MTP 이중 양자화(FP8→NVFP4)의
+  수용률은 미실측; 예전 복사본의 BF16 MTP 로 자르면 한 번 양자화다(같은 표·전문가 바이트, `--ckpt` 만 다름).
