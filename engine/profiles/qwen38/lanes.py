@@ -102,6 +102,18 @@ def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, tor
     return ids.to(torch.int32), w.float()
 
 
+STATIC_TILE_ROWS = 16                 # the static MoE kernel's smallest judged row count (static_pad)
+
+
+def static_pad(rows: int, micro_cap: int = 8) -> int:
+    """Rows a captured MoE launch adds when it is above the micro kernel's cap and below one 16-row tile of the static
+    kernel. On 2026-09-18 (srv4, Qwen3.8's cell E128/I640/top-10) the static kernel faulted -- an illegal address -- at
+    10 and 12 rows, in isolation and in the four-row K=3 boot's capture, and passed at 14, 16, 20, 24, 28 and 32 rows
+    (oracle within 0.7%, replay byte-equal). The served lane pads such a launch to 16 rows -- zero rows routed to this
+    rank's expert 0 at weight 0 -- and 10, 12 and 14 then pass through the 16-row kernel the four-row shape runs."""
+    return STATIC_TILE_ROWS - rows if micro_cap < rows < STATIC_TILE_ROWS else 0
+
+
 def local_routes(ids: torch.Tensor, weights: torch.Tensor, first: int, local: int,
                  sentinel: "int | None" = None) -> "tuple[torch.Tensor, torch.Tensor]":
     """Global expert ids to this rank's [0, local): a route to another rank's expert gets weight 0 and names local
@@ -363,9 +375,17 @@ def served(*, tp=None) -> Lanes:
                 raise ValueError("an eager step counts its own pairs from the global routes")
             return dispatch(x, ids, weights, w13, sf13, w2, sf2, views, scales, E)
         if not compact:
+            rows = x.shape[0]
+            pad = static_pad(rows, md._MICRO_MAX_TOKENS)
+            if pad:
+                # the static kernel's rows below one 16-row tile: zero rows routed to this rank's expert 0 at weight 0
+                x = torch.cat([x, x.new_zeros(pad, x.shape[1])])
+                ids = torch.cat([ids, ids.new_full((pad, ids.shape[1]), first_expert)])
+                weights = torch.cat([weights, weights.new_zeros(pad, weights.shape[1])])
             sentinel = sentinel_of(x.shape[0], ids.shape[1], w13, x.shape[1])
             local_ids, w = local_routes(ids, weights, first_expert, E, sentinel)
-            return dispatch(x, local_ids, w, w13, sf13, w2, sf2, views, scales, E)
+            out = dispatch(x, local_ids, w, w13, sf13, w2, sf2, views, scales, E)
+            return out[:rows] if pad else out
         local_ids, w = local_routes(ids, weights, first_expert, E)
         # An eager step runs only this rank's (token, route) pairs, one route a row: at EP=4 the other ranks' routes are
         # ~3/4 of a prefill chunk's pairs, and on expert 0 they are rows of compute for a product of zero. Each pair's
