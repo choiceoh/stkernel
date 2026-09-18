@@ -39,6 +39,39 @@ and no private record of that earlier turn exists. See
 [the production replay receipts](merged-production-replay-evidence.json) and
 [the shared-smoothing replay](shared-smoothing-replay-evidence.json).
 
+## Deviations from the model's own implementation, 2026-09-18
+
+The operator's rule for what remains: every place the engine differs from the model's own
+implementation (transformers 5.16.1 `glm5_next`, the checkpoint's author code) goes back to the
+model unless there is a large reason not to -- whether or not it is the incident's cause. A
+sweep of the served GLM-5.3 path against that reference, op for op (mHC, KDA, the DSA indexer
+and its k-pool, MLA, router, experts, norms, sampling defaults), found the semantics identical
+except for the entries below.
+
+| Place | Engine | Model | Disposition |
+|---|---|---|---|
+| Indexer tail (`index_kpool_always_select_tail`) | #1158/#1159 pin the pool that just completed above the top-k on rows whose length is a whole number of pools | `append_visible_tail` appends the `seq % 4` newest tokens and nothing else; every complete pool competes on its score (sglang's `append_tail_to_topk` agrees) | Kept (operator, 2026-09-18): the pin stays as the engine's reading of the flag; it is a deviation from the model on one pool of 512 on every fourth position, and it was in place for the #1174 replays, which still failed |
+| Sampling defaults for a request that omits `top_p` | the served meta's `generation_config.json` (cut from the quantised repository) names only temperature 1.0 | zai-org/GLM-5.3-Flash ships temperature 1.0, **top_p 0.95** | **Restored** (this sweep): `facts.GENERATION` fills what the meta omits; a meta or a request that speaks wins. Deneb sends `top_p 1` explicitly, so its requests are unchanged |
+| Routed-expert activation | b12x lanes call gpt-oss's `swigluoai_uninterleave` (`gate·σ(α·gate)·(up+β)`, kernel defaults α 1.702, β 1) | `silu(min(gate, 10))·clamp(up, ±10)` | Same function: every served launch passes α 1, β 0, limit 10 and the static dispatcher refuses anything else -- now pinned by `tests/test_engine_moe_activation_contract.py` |
+| Activation scale search `as2` (#1125/#1127/#1157) | the routed FC1/FC2 activation scale is searched per 16-block instead of flashinfer's `amax/6` | the model has no activation quantiser; `amax/6` is the serving default, not the model | Kept (operator, 2026-09-18): the search never worsens a block's SSE and reverting restores nothing the model was trained with |
+| Precision lanes | dense projections W4A8 (decode) / NVFP4 W4A4 or FP8 (prefill) with GPTQ and channel smoothing, the vocabulary head FP8 GPTQ, the MLA latent FP8 e4m3 at scale 1, the indexer q/k FP8 (Hadamard), NVFP4 W4A4 experts | BF16 everywhere but the checkpoint's NVFP4 experts | Not semantics: the engine's speed budget. Listed because it is the noise floor the incident sits on (below) |
+
+What the sweep says about the incident itself, from the captures already in hand rather than
+new runs: on the exact 50,005 IDs the greedy answer is nearly clean (a few near-miss syllables
+such as `수아이트스`, `장정답게`), the prior turn generated two minutes earlier at 47K is the
+same (`그리섬`, `대상도끼`), the 39-token clean question at T=1 also carried malformed words,
+and the recorded 907-token output is a sampling spiral: coherent for two sentences, then one
+low-probability draw after another until scripts mix. The engine's own two paths through the
+same prefix disagree by a total variation of up to 0.16 at one position, and the same token's
+per-stage outputs differ by 6.5-9.5% at layer 0 and 37-66% by layer 22 between prefill and
+decode. That is the precision floor of the served lanes, not a discrete defect: at temperature
+1 with the whole tail (`top_p 1`, what Deneb sends) the fat tail is drawn from, a drawn slip
+self-conditions, and a 47K agentic context with an already-degraded turn is where the model's
+own distribution is flattest. The semantic reverts above do not claim to repair that; the
+levers that would are the precision lanes (the FP8 head first: ~0.6 ms a step for a BF16
+head, and it shapes the sampled distribution directly), a nucleus or min-p on the product
+side, or context hygiene (Deneb's R1'/R2, 2026-09-18).
+
 ## Runtime and original request
 
 - Deneb run `stream_0043`, 2026-09-17 20:49:21–20:50:17 KST;

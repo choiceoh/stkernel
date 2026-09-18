@@ -243,10 +243,19 @@ def tokenizer(ckpt=facts.CKPT):
 
 
 def generation_defaults(ckpt=facts.CKPT) -> dict:
-    """What a request may omit: the checkpoint's generation_config (vLLM applies it the same way -- temperature 1.0 here)."""
+    """What a request may omit: the checkpoint's generation_config (vLLM applies it the same way -- temperature 1.0 here),
+    completed from the model's own defaults (facts.GENERATION) where the served meta is silent -- the quantised
+    repositories regenerate the file and drop top_p 0.95. A meta that names a key wins."""
     import json
+    import os
     g = json.loads((Path(ckpt) / "generation_config.json").read_text())
-    return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
+    out = {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
+    filled = {k: v for k, v in facts.GENERATION.items() if k not in out}
+    out.update(filled)
+    if filled and int(os.environ.get("RANK", "0")) == 0:
+        print(f"  generation: {filled} from the profile (the model's generation_config); "
+              f"{Path(ckpt) / 'generation_config.json'} omits {', '.join(sorted(filled))}", flush=True)
+    return out
 
 
 def grammars(ckpt, vocab: int, device=None, stop_token_ids=None, tokenizer=None):
