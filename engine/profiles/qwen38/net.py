@@ -17,8 +17,9 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
     attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
                               the query heads, one for the key head, one for the index queries; the QSA ops (a host
                               step the budget covers attends every group it sees: no scores, no top-k, the ids built
-                              once a step -- `_covered_blocks`; a boot that declares `query_shards` has each rank score
-                              a quarter of a long prefill step's index queries and gathers the ids -- `_sharded_blocks`)
+                              once a step -- `_covered_blocks`; past it each rank scores a quarter of a long prefill
+                              step's index queries and the ids are gathered -- `_sharded_blocks`, unless the boot
+                              declined `query_shards`)
     MoE                      the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
                               in one dispatcher launch (another rank's routes skip in the micro kernel on a captured
                               step), the shared expert's two GEMMs and activation, ONE all-reduce for routed and shared
@@ -168,7 +169,7 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = False):
+                 query_shards: bool = True):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
@@ -176,8 +177,10 @@ class Qwen38Net:
 
         `query_shards`: a long prefill step's index queries scored a quarter a rank and the chosen ids gathered
         (`_sharded_blocks`, carry Q11). The selection is the unsplit step's, row for row; what it trades is three
-        quarters of each QSA layer's scoring for one all-gather of ids, and which side of that a fleet lands on is not
-        measured (CHARTER D17) -- so a boot declares it, and the default scores every row on every rank."""
+        quarters of each QSA layer's scoring for one all-gather of ids. On by the operator's decision of 2026-09-18
+        with the fleet unmeasured (CHARTER D17): until an onepass record says which side of that trade a fleet lands
+        on, a boot can decline it (fleet.py --no-query-shards, the launcher's ST_QUERY_SHARDS=0) and every rank
+        scores every row as before."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
@@ -530,7 +533,8 @@ class Qwen38Net:
         are the unsplit step's, row for row, where the selection lane says its split calls select alike
         (`lanes.qsa_select_alike`: every chunk on both sides takes the radix select); the ranks ask it of the same
         numbers, so they split together or not at all. None where the step is not split: the boot did not declare
-        `query_shards`, a captured step, several segments, fewer rows than ranks, or a lane that will not say."""
+        `query_shards` (or a boot declined it), a captured step, several segments, fewer rows than ranks, or a lane that
+        will not say."""
         if not getattr(self, "query_shards", False) or getattr(step, "captured", False) or len(step.segments) != 1:
             return None
         F, lanes, N = self.F, self.lanes, iq.shape[0]

@@ -85,7 +85,7 @@ def rank_loader(path, *, expected_layout: str):
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
-          prelude=None):
+          prelude=None, query_shards: bool = True):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it."""
@@ -103,7 +103,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     from engine.profiles.qwen38.net import Qwen38Net
 
     F = facts.load(ckpt_meta)
-    net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8)
+    net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, SNAPSHOT_GIB, mtp=drafter)
     if nb < 2:
@@ -236,6 +236,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
                          "the first fleet boot, 2026-09-18, stalled in it at every sum)")
+    ap.add_argument("--no-query-shards", action="store_true",
+                    help="every rank scores every index query of a prefill step, as before carry Q11: the rollback of the "
+                         "quarter-a-rank scoring, on by the operator's decision of 2026-09-18 with the fleet unmeasured")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     a = ap.parse_args(argv)
 
@@ -276,7 +279,8 @@ def main(argv=None) -> int:
         prelude = Background(partial(door_host_half, a.ckpt_meta, renderer=comm.rank == 0), "boot-prelude").start()
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
-                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8, prelude=prelude)
+                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8, prelude=prelude,
+                                              query_shards=not a.no_query_shards)
         with rec.phase("door"):
             door = prelude.take()
             tok, chat, tools, efforts = door["tok"], door["chat"], door["tools"], door["efforts"]
