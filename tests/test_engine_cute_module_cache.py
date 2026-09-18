@@ -2,7 +2,9 @@
 
 flashinfer invalidates a whole module directory when a kernel with other key files is built into it. While the
 dynamic prefill kernels (static key files plus variant files) shared the static kernels' module, every boot erased
-and recompiled both families (2026-09-15, "Invalidating stale CuTe-DSL module" three times in one boot).
+and recompiled both families (2026-09-15, "Invalidating stale CuTe-DSL module" three times in one boot). The same
+wipe ran between trees: production's release and a Qwen3.8 window's tree built into one `st_b12x_moe` on the same
+/cache and took turns recompiling (2026-09-18), so the module is named by its files' contents too.
 """
 import importlib.util
 import os
@@ -33,7 +35,7 @@ class CuteModuleCacheTests(unittest.TestCase):
         static = md._kernel_source_files()
         packets = self.keys("moe_dynamic_prefill_packets.py", "moe_w4a16_fp4_helpers.py")
         batch8 = self.keys("moe_prefill_q0_batch8.py", "_prefill_q0_batch8.py")
-        self.assertEqual(md._cute_dsl_module(static), md._CUTE_DSL_MODULE)    # the static kernels keep their cache
+        self.assertTrue(md._cute_dsl_module(static).startswith(md._CUTE_DSL_MODULE + "_"))
         self.assertEqual(len({md._cute_dsl_module(k) for k in (static, packets, batch8)}), 3)
         self.assertEqual(md._cute_dsl_module(packets), md._cute_dsl_module(tuple(list(packets))))
         # the same files in another order hash differently in flashinfer's key, so they get another module too
@@ -63,6 +65,41 @@ class CuteModuleCacheTests(unittest.TestCase):
             shared = build(md._CUTE_DSL_MODULE + "_shared", "static_m1", static)
             build(md._CUTE_DSL_MODULE + "_shared", "dynamic_e288", dynamic)
             self.assertFalse(shared.is_compiled)
+
+    def test_two_trees_on_one_cache_keep_their_own_artifacts(self):
+        """Production's release and a window's tree: the same key file names, other contents, one /cache."""
+        from flashinfer.jit import cute_dsl_core
+        md = self.md
+
+        class Compiled:
+            def export_to_c(self, path, function_name):
+                Path(path).write_bytes(b"object")
+
+        with tempfile.TemporaryDirectory() as root, \
+                patch.object(cute_dsl_core.jit_env, "FLASHINFER_JIT_DIR", Path(root) / "jit"):
+            trees = []
+            for tree, body in (("release", "# production\n"), ("window", "# qwen38 window\n")):
+                keys = []
+                for name in ("moe_dispatch.py", "moe_static_kernel.py"):
+                    path = Path(root) / "repo" / name          # one path, as every tree is mounted at /repo
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(body + name)
+                    keys.append(str(path))
+                module = md._cute_dsl_module(tuple(keys))
+                cute_dsl_core.build_and_load_cute_dsl_kernel(module, "static_m1", Compiled, extra_key_files=keys)
+                trees.append((module, cute_dsl_core._hash_source_files(tuple(keys))))
+                md._MODULE_NAMES.clear()                        # the next tree is another process
+            (release, release_sha), (window, _) = trees
+            self.assertNotEqual(release, window)
+            spec = cute_dsl_core.JitSpecCuteDsl(release, "static_m1", Compiled, release_sha)
+            self.assertTrue(spec.is_compiled, "the window's build wiped the release's artifact")
+
+    def test_an_unreadable_key_file_keeps_a_name_and_is_not_remembered(self):
+        md = self.md
+        missing = ("/nonexistent/moe_dispatch.py",)
+        name = md._cute_dsl_module(missing)
+        self.assertTrue(name.startswith(md._CUTE_DSL_MODULE + "_"))
+        self.assertNotIn(missing, md._MODULE_NAMES)
 
 
 if __name__ == "__main__":

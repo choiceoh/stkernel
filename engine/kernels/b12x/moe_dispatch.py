@@ -1926,21 +1926,45 @@ def _kernel_source_files() -> Tuple[str, ...]:
     )
 
 
+_MODULE_NAMES: Dict[Tuple[str, ...], str] = {}
+
+
 def _cute_dsl_module(key_files: Tuple[str, ...]) -> str:
-    """The on-disk module of the kernels whose cache key is `key_files`.
+    """The on-disk module of the kernels whose cache key is `key_files`: named by
+    the files, in order, and by their contents.
 
     flashinfer wipes a module directory whose meta.json (the key files' hash)
     differs from the kernel it is building. The dynamic kernels add variant files
     to the static set, so while every family shared one module each build erased
     the others' artifacts: every boot recompiled the prefill and decode kernels
-    (about 53 s a rank, 2026-09-15). The static set keeps the historical module;
-    any other set gets its own, named by its files in order, while their
-    contents stay the key.
+    (about 53 s a rank, 2026-09-15). Naming by the files alone left the same wipe
+    between two trees: every node's /cache is shared by production's release and
+    whatever tree a window boots beside it, and both built into `st_b12x_moe`.
+    Qwen3.8's windows of 2026-09-18 and production's boots between them took
+    turns: a window's boot at 17:35 logged "Invalidating stale CuTe-DSL module
+    st_b12x_moe_sm121a_cute_dsl" over production's kernels, and production's
+    next boot at 17:48 logged it over the window's, recompiled six static
+    kernels (the first five back to back, about 9.5 s each) and opened its door
+    after 150 s -- as at 17:09, against 105 s at 15:26 and 16:48
+    (measurements/qwen38_boot_20260918). With the contents in the name, a tree
+    finds its own artifacts whatever ran in between, and a module's meta can
+    differ only across a DSL or arch change.
+
+    A key file that cannot be read keeps the name without its contents; flashinfer
+    then bypasses the disk cache for that kernel, as it did before.
     """
-    if tuple(key_files) == _kernel_source_files():
-        return _CUTE_DSL_MODULE
-    names = "\0".join(os.path.basename(path) for path in key_files)
-    return f"{_CUTE_DSL_MODULE}_{hashlib.sha256(names.encode()).hexdigest()[:8]}"
+    key_files = tuple(key_files)
+    name = _MODULE_NAMES.get(key_files)
+    if name is not None:
+        return name
+    from flashinfer.jit.cute_dsl_core import _hash_source_files
+    key = "\0".join(os.path.basename(path) for path in key_files)
+    try:
+        key += "\0" + _hash_source_files(key_files)
+    except (OSError, TypeError):
+        return f"{_CUTE_DSL_MODULE}_{hashlib.sha256(key.encode()).hexdigest()[:12]}"
+    name = _MODULE_NAMES[key_files] = f"{_CUTE_DSL_MODULE}_{hashlib.sha256(key.encode()).hexdigest()[:12]}"
+    return name
 
 
 def _disk_kernel_name(prefix: str, cache_key: Tuple) -> str:
@@ -2378,7 +2402,7 @@ def _get_static_kernel(
     )
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     compiled = build_and_load_cute_dsl_kernel(
-        _CUTE_DSL_MODULE,
+        _cute_dsl_module(_kernel_source_files()),
         _disk_kernel_name(f"static_m{'dyn' if dynamic_m else m}_k{k}_n{n}_t{num_topk}_r{max_rows}", cache_key),
         lambda: cute.compile(
             kernel,
@@ -2872,7 +2896,7 @@ def _get_static_kernel_v2(
         f"{'' if chunk == TILED_W13_K_IN else f'c{chunk}'}"
     )
     compiled = build_and_load_cute_dsl_kernel(
-        _CUTE_DSL_MODULE,
+        _cute_dsl_module(_kernel_source_files()),
         _disk_kernel_name(name, cache_key),
         lambda: cute.compile(
             kernel,
@@ -3297,7 +3321,7 @@ def _get_micro_kernel(
     )
     stream_fake = cute.runtime.make_fake_stream(use_tvm_ffi_env_stream=True)
     compiled = build_and_load_cute_dsl_kernel(
-        _CUTE_DSL_MODULE,
+        _cute_dsl_module(_kernel_source_files()),
         _disk_kernel_name(f"micro_m{m}_k{k}_n{n}_t{num_topk}_r{max_rows}", cache_key),
         lambda: cute.compile(
             kernel,
@@ -3344,7 +3368,8 @@ _DIRECT_MICRO_LAUNCH_CACHE: Dict[Tuple, Tuple] = {}
 _DIRECT_MICRO_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 # The direct micro kernel goes through the same on-disk CuTe-DSL cache as the
 # static/dynamic families (2026-09-12): its own module directory, keyed by the
-# sources that contribute device code to it.
+# sources that contribute device code to it and named by their hash, so two
+# trees sharing a /cache keep their own (_cute_dsl_module says why).
 _DIRECT_MICRO_MODULE = "st_b12x_direct_micro"
 
 
@@ -3402,7 +3427,8 @@ def _build_direct_micro_on_disk(kernel, prefix: str, compile_key: Tuple, topk_id
     except (OSError, TypeError):
         compiled = compile_fn()
         return compiled, verdict["accepts"]
-    spec = JitSpecCuteDsl(_DIRECT_MICRO_MODULE, _disk_kernel_name(prefix, compile_key), compile_fn, source_sha256)
+    spec = JitSpecCuteDsl(f"{_DIRECT_MICRO_MODULE}_{source_sha256[:12]}", _disk_kernel_name(prefix, compile_key),
+                          compile_fn, source_sha256)
     sidecar = spec.module_dir / f"{spec.kernel_name}.blockdim.json"
     if spec.object_path.exists() and not sidecar.exists():
         spec.object_path.unlink()

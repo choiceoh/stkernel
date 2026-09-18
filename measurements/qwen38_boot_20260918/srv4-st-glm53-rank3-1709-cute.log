@@ -1,0 +1,10 @@
+# srv4 st-glm53 (production, rank 3), container started 2026-09-18T08:09:37Z (17:09 KST), tree 6ad27304.
+# Read with `docker logs -t st-glm53 | grep -E "Invalidating stale|Compiling CuTe-DSL"` at 17:38 KST; the container was
+# replaced at 17:48 by the next production launch, so these lines are kept as read (each cut at 260 characters).
+2026-09-18T08:11:05.308309891Z 2026-09-18 08:11:05,308 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-18T08:11:05.309643105Z 2026-09-18 08:11:05,309 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfreg
+2026-09-18T08:11:14.495441787Z 2026-09-18 08:11:14,495 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfre
+2026-09-18T08:11:23.786192885Z 2026-09-18 08:11:23,785 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1c256_5164614cb63d4381
+2026-09-18T08:11:31.438897408Z 2026-09-18 08:11:31,438 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsf
+2026-09-18T08:11:41.220419603Z 2026-09-18 08:11:41,220 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfr
+2026-09-18T08:12:19.684273872Z 2026-09-18 08:12:19,683 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1c256_255257ee4f84b7d4

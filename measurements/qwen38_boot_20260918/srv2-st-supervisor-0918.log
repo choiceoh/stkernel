@@ -1,0 +1,38 @@
+2026-09-18 15:15:08 health check failed (1/3): containers=no door=yes chat=no
+2026-09-18 15:20:40 health check failed (2/3): containers=no door=yes chat=no
+2026-09-18 15:26:12 health check failed (3/3): containers=no door=yes chat=no
+2026-09-18 15:26:13 forensics: /home/choiceoh/glm53-logs/st-forensics/20260918-152612
+2026-09-18 15:26:16 launching the ST fleet (production lease as production/srv2/1921401)
+2026-09-18 15:28:21 launch: door up after 105s
+2026-09-18 15:28:22 launch: healthy after 105s (a chat answered)
+2026-09-18 16:14:13 fleet taken (lease: session session/qwen38-window on srv4 since 2026-09-18 16:14:09 (Qwen3.8 layout-v3 first fleet boot (operator: 올려봐, 2026-09-18)): phase=handed over): waiting -- no forensics, no launch attempt
+2026-09-18 16:29:16 fleet taken (10.10.10.2:st-qwen38): waiting -- no forensics, no launch attempt
+2026-09-18 16:31:17 fleet taken (lease: session session/qwen38-window on srv4 since 2026-09-18 16:14:09 (Qwen3.8 layout-v3 first fleet boot (operator: 올려봐, 2026-09-18)): phase=stopped): waiting -- no forensics, no launch attempt
+2026-09-18 16:46:23 fleet taken (10.10.10.2:st-qwen38): waiting -- no forensics, no launch attempt
+2026-09-18 16:47:25 health check failed (1/3): containers=no door=no chat=no
+2026-09-18 16:47:57 health check failed (2/3): containers=no door=no chat=no
+2026-09-18 16:48:28 health check failed (3/3): containers=no door=no chat=no
+2026-09-18 16:48:29 forensics: /home/choiceoh/glm53-logs/st-forensics/20260918-164828
+2026-09-18 16:48:32 launching the ST fleet (production lease as production/srv2/1921401)
+2026-09-18 16:50:34 launch: door up after 105s
+2026-09-18 16:50:34 launch: healthy after 105s (a chat answered)
+2026-09-18 16:59:06 === st-glm53 supervisor start ===
+2026-09-18 16:59:09 a fleet is booting (head container 6s old, no door yet): adopting it, not relaunching it
+2026-09-18 17:01:50 adoption: a rank died during boot
+2026-09-18 17:01:52 forensics: /home/choiceoh/glm53-logs/st-forensics/20260918-170150
+2026-09-18 17:02:22 fleet taken (lease: session session/qwen38-window2 on srv4 since 2026-09-18 17:01:38 (Qwen3.8 second window: C4 probe (dynamic prefill) + fleet boot (operator: 두 문제 해결해)): phase=handed over): waiting -- no forensics, no launch attempt
+2026-09-18 17:08:24 health check failed (1/3): containers=no door=no chat=no
+2026-09-18 17:08:55 health check failed (2/3): containers=no door=no chat=no
+2026-09-18 17:09:26 health check failed (3/3): containers=no door=no chat=no
+2026-09-18 17:09:28 forensics: /home/choiceoh/glm53-logs/st-forensics/20260918-170926
+2026-09-18 17:09:30 launching the ST fleet (production lease as production/srv2/2761649)
+2026-09-18 17:12:19 launch: door up after 150s
+2026-09-18 17:12:25 launch: healthy after 150s (a chat answered)
+2026-09-18 17:34:38 fleet taken (lease: session session/qwen38-k3 on srv4 since 2026-09-18 17:34:27 (Qwen3.8 MTP K=3 vs K=1 paired measurement (PR from qwen38-mtp-k3)): phase=handed over): waiting -- no forensics, no launch attempt
+2026-09-18 17:47:41 health check failed (1/3): containers=no door=no chat=no
+2026-09-18 17:48:12 health check failed (2/3): containers=no door=no chat=no
+2026-09-18 17:48:43 health check failed (3/3): containers=no door=no chat=no
+2026-09-18 17:48:45 forensics: /home/choiceoh/glm53-logs/st-forensics/20260918-174843
+2026-09-18 17:48:47 launching the ST fleet (production lease as production/srv2/2761649)
+2026-09-18 17:51:37 launch: door up after 150s
+2026-09-18 17:51:43 launch: healthy after 150s (a chat answered)

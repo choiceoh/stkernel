@@ -1,0 +1,278 @@
+{
+ "root": {
+  "name": "rank0",
+  "seconds": 0.0,
+  "counters": {
+   "weight_layout": "st-glm53-b12x-up-gate-v1",
+   "kda_state_dtype": "fp32",
+   "kda_state_storage_saved_bytes": 0,
+   "draft_policy_requested": "fc=fp8,calibration=auto,diagnostics=1",
+   "draft_tuning": "3ac25c0f89468678bc18a61b864e75f128be5db4b0ba96767545baa4bd8c1b6d",
+   "draft_selector_projection_fp32": true,
+   "draft_fc_bias_ranks": 0,
+   "draft_fc_bias_auto": true,
+   "draft_policy": "fc=fp8,calibration=decode,diagnostics=1",
+   "drafter_source_bytes": 2342160896,
+   "drafter_resident_bytes": 510027520,
+   "drafter_arena_saved_bytes": 1832133376,
+   "boot_immediately_free_GiB": 103.712,
+   "boot_reclaimed_GiB": 0.0,
+   "boot_model_cache_files_returned": 0,
+   "boot_file_cache_GiB": 2.244,
+   "boot_available_GiB": 98.011,
+   "boot_host_reclaim": 0,
+   "budget_unassigned_GiB": 18.85,
+   "budget_tenant_floor_GiB": 15.98,
+   "arena_expandable": 1,
+   "dense_pack_cache": 232,
+   "dense_pack_gptq": 232,
+   "dense_pack_calibration_digest_reused": 202,
+   "dense_pack_fp8_cache": 205,
+   "dense_pack_fp8_gptq": 205,
+   "dense_calibrated": 233,
+   "dense_fp8_calibrated": 204,
+   "dense_smoothed": 90,
+   "target_native_linears": 202,
+   "drafter_native_linears": 31,
+   "blocks": 2987,
+   "slots": 3,
+   "arena_GiB": 64.672,
+   "prefix_compressed_budget_bytes": 1077936128,
+   "prefix_snapshots": 96,
+   "snapshot_MiB": 45.2
+  },
+  "children": [
+   {
+    "name": "front",
+    "seconds": 6.167857,
+    "counters": {
+     "import_s": 2.749,
+     "lease_s": 0.006,
+     "box_s": 0.266,
+     "shape_s": 0.004
+    }
+   },
+   {
+    "name": "comm",
+    "seconds": 1.425911,
+    "dev_gib": 0.04
+   },
+   {
+    "name": "native builds",
+    "seconds": 0.131835,
+    "dev_gib": 0.008,
+    "counters": {
+     "native_cublaslt_s": 0.059,
+     "native_dense_s": 0.19,
+     "native_mla_s": 0.202,
+     "native_prefill-topk_s": 0.194,
+     "native_router-fp32_s": 0.049,
+     "native_router-fused_s": 0.197,
+     "native_decode-topk_s": 0.195,
+     "native_mapped-staging_s": 0.189,
+     "native_bounded-graph_s": 0.19,
+     "native_decode-queue_s": 0.195,
+     "native_one-shot_s": 0.125
+    }
+   },
+   {
+    "name": "prepare one-shot",
+    "seconds": 2.574655,
+    "dev_gib": 1.664,
+    "counters": {
+     "oneshot_sum_8rows_us": 32.2,
+     "oneshot_sum_8rows_p90_us": 32.7,
+     "oneshot_sum_16rows_us": 45.4,
+     "oneshot_sum_16rows_p90_us": 45.9,
+     "oneshot_sum_32rows_us": 74.7,
+     "oneshot_sum_32rows_p90_us": 75.1,
+     "oneshot_max_8keys_us": 16.6,
+     "oneshot_max_8keys_p90_us": 17.7
+    }
+   },
+   {
+    "name": "lanes",
+    "seconds": 0.588991,
+    "dev_gib": 0.034,
+    "counters": {
+     "kernel_imports_s": 2.435
+    },
+    "children": [
+     {
+      "name": "wait for the imports",
+      "seconds": 1.3e-05,
+      "dev_gib": 0.0
+     },
+     {
+      "name": "kernel imports",
+      "seconds": 2.8e-05,
+      "dev_gib": 0.0
+     }
+    ]
+   },
+   {
+    "name": "arena",
+    "seconds": 2.666073,
+    "dev_gib": 66.101
+   },
+   {
+    "name": "load",
+    "seconds": 9.672843,
+    "dev_gib": 3.274,
+    "counters": {
+     "blocks": 87,
+     "bytes": 47786335744,
+     "direct": 1,
+     "stage_s": 1.135,
+     "wait_s": 2.568,
+     "copy_s": 1.354,
+     "views_s": 0.066,
+     "tensors": 1120,
+     "read_bytes": 603987968
+    }
+   },
+   {
+    "name": "prepare native execution",
+    "seconds": 31.63846,
+    "dev_gib": 21.25,
+    "counters": {
+     "router_resident_bytes": 198234624,
+     "decode_projection_resident_bytes": 23068672,
+     "drafter_decode_cells": 10,
+     "draft_fc_bias_applied": false,
+     "draft_fc_bias_status": "missing",
+     "drafter_block_fp8_packs": 0
+    },
+    "children": [
+     {
+      "name": "routers",
+      "seconds": 0.001421,
+      "dev_gib": 0.0
+     },
+     {
+      "name": "dense packs",
+      "seconds": 23.265545,
+      "dev_gib": 12.734
+     },
+     {
+      "name": "decode projections",
+      "seconds": 0.003961,
+      "dev_gib": 0.0
+     },
+     {
+      "name": "load drafter",
+      "seconds": 0.577214,
+      "dev_gib": 0.801,
+      "counters": {
+       "blocks": 5,
+       "bytes": 2342160896,
+       "direct": 1,
+       "stage_s": 0.361,
+       "wait_s": 0.152,
+       "copy_s": 0.06,
+       "views_s": 0.001,
+       "tensors": 81,
+       "read_bytes": 520225536
+      }
+     },
+     {
+      "name": "drafter packs",
+      "seconds": 6.270617,
+      "dev_gib": 7.292
+     },
+     {
+      "name": "cuBLAS head and FC",
+      "seconds": 0.804773,
+      "dev_gib": 0.341,
+      "counters": {
+       "cublas_resident_bytes": 104579072
+      }
+     }
+    ]
+   },
+   {
+    "name": "load vision",
+    "seconds": 0.115518,
+    "dev_gib": -0.008,
+    "counters": {
+     "blocks": 3,
+     "bytes": 1127260160,
+     "direct": 1,
+     "stage_s": 0.0,
+     "wait_s": 0.078,
+     "copy_s": 0.029,
+     "views_s": 0.004,
+     "tensors": 347,
+     "read_bytes": 531398656
+    }
+   },
+   {
+    "name": "caches",
+    "seconds": 0.003609,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "engine",
+    "seconds": 0.002476,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "wait for weight preparation",
+    "seconds": 1.915861,
+    "dev_gib": -0.034
+   },
+   {
+    "name": "runner",
+    "seconds": 0.069962,
+    "dev_gib": 0.078,
+    "counters": {
+     "nvme_mapped_staging": 1,
+     "nvme_staging_saved_bytes": 99340290
+    }
+   },
+   {
+    "name": "prefill record",
+    "seconds": 0.05375,
+    "dev_gib": 0.001
+   },
+   {
+    "name": "wait for the prelude",
+    "seconds": 4.3e-05,
+    "dev_gib": 0.0,
+    "counters": {
+     "prelude_s": 12.887
+    }
+   },
+   {
+    "name": "capture decode",
+    "seconds": 90.798271,
+    "dev_gib": 5.509
+   },
+   {
+    "name": "warmup shapes",
+    "seconds": 0.596544,
+    "dev_gib": 0.001
+   },
+   {
+    "name": "qualify vision",
+    "seconds": 3.78277,
+    "dev_gib": 3.416
+   },
+   {
+    "name": "qualify grammar",
+    "seconds": 0.042452,
+    "dev_gib": 0.001
+   },
+   {
+    "name": "release warmup cache",
+    "seconds": 0.062851,
+    "dev_gib": -3.364,
+    "counters": {
+     "production_warmup_cache_returned_bytes": 3548381184
+    }
+   }
+  ]
+ },
+ "memory_sampling": true,
+ "when": "2026-09-18T08:12:11"
+}

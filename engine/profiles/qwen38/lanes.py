@@ -248,6 +248,26 @@ def reference() -> Lanes:
                  qsa_inputs=unported("qsa_inputs"))
 
 
+KERNEL_MODULES = ("engine.kernels.gated_residual", "engine.kernels.gdn", "engine.kernels.moe_output", "engine.kernels.qsa",
+                  "engine.kernels.causal_conv_ring", "engine.kernels.causal_conv_single", "engine.kernels.kda.chunk_decay",
+                  "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.modules.nvfp4_sf",
+                  "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope", "engine.kernels.common.swiglu")
+"""What `served` binds over, with the common lanes it starts from (engine/base/lanes). `import_kernels` exists so the
+fleet boot can pay for them where it is already waiting; a test holds this list to the `from` lines in both."""
+
+
+def import_kernels() -> None:
+    """Import the kernel packages, nothing else -- GLM-5.3's `import_kernels`, over this table's packages.
+
+    A Qwen3.8 fleet boot spent 3.96 s of rank 3 between `collectives` and `lanes qualified` (2026-09-18 17:35); these
+    imports alone take 1.76 s in the ST image on the CPU -- triton, flashinfer, the CuTe DSL under b12x. None of it
+    holds CUDA or reads anything the engine has produced, so the boot runs it on a thread under its rendezvous.
+    `served` still does its own `from` imports; after this they are dictionary lookups."""
+    import importlib
+    for name in KERNEL_MODULES:
+        importlib.import_module(name)
+
+
 def served(*, tp=None) -> Lanes:
     """Bind the ST kernel package for this shape. `tp` (a base/comm.LocalTP) hands each call to the main thread, where
     Triton's autotuner and the b12x JIT can run; on the fleet (one rank a process) the calls are direct."""
@@ -363,4 +383,4 @@ def qualify(device, F) -> dict:
                                          max_position=F.max_position)}
 
 
-__all__ = ["Lanes", "reference", "served", "qualify", "route_softmax_topk", "local_routes"]
+__all__ = ["Lanes", "KERNEL_MODULES", "import_kernels", "reference", "served", "qualify", "route_softmax_topk", "local_routes"]

@@ -275,10 +275,10 @@ one-shot은 Tensor 본체·기존 factory·pybind 헤더와 `AT_PER_OPERATOR_HEA
 매번 새 캐시로 세 쌍을 실행하고 생성된 GPU 코드·상수·실행 메타데이터를 대조한다.
 
 b12x 는 flashinfer 래퍼(`build_and_load_cute_dsl_kernel`)가
-`/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
-(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). 키 파일이 다른 커널은 다른 모듈에 둔다(`_cute_dsl_module`): flashinfer 는 키가 다른 커널을 빌드할 때 모듈 디렉터리를 통째로 지우므로, 변형 파일을 더하는 동적 커널이 정적 커널과 한 모듈을 쓰던 동안에는 부팅마다 서로의 `.o` 를 지우고 다시 컴파일했다(2026-09-15). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
+`/cache/.cache/flashinfer/<버전>/121a/cached_ops/st_b12x_moe_<키 해시>_sm121a_cute_dsl/*.o` 로 내보내고 적중 시 DSL 컴파일 없이 로드한다
+(키 = DSL 스택 버전 + `_kernel_source_files()` 해시, `moe_dispatch.py` 포함). 키 파일이 다른 커널은 다른 모듈에 둔다(`_cute_dsl_module`): flashinfer 는 키가 다른 커널을 빌드할 때 모듈 디렉터리를 통째로 지우므로, 변형 파일을 더하는 동적 커널이 정적 커널과 한 모듈을 쓰던 동안에는 부팅마다 서로의 `.o` 를 지우고 다시 컴파일했다(2026-09-15). 모듈 이름에는 키 파일의 이름과 **내용**이 함께 들어간다: 노드의 `/cache` 는 프로덕션 릴리스와 그 옆에서 창을 여는 다른 트리(Qwen3.8 창 등)가 함께 쓰는데, 이름만으로 짓던 동안 두 트리가 한 `st_b12x_moe` 를 번갈아 지웠다(2026-09-18: 17:35 Qwen3.8 창 부팅이 프로덕션의 커널을, 17:48 프로덕션 부팅이 그 창의 커널을 지웠고, 프로덕션은 정적 커널 6개를 다시 컴파일해 문 열기가 150 s — 같은 날 15:26·16:48 은 105 s; `measurements/qwen38_boot_20260918`). CuTe DSL 자체 파일 캐시(`CUTE_DSL_CACHE_DIR`)는
 `cute.compile` 에서 꺼지므로(`compile_only` → `no_cache`) ST 에는 무효다. direct micro 커널도 같은 래퍼를 탄다(모듈
-`st_b12x_direct_micro_sm121a_cute_dsl`, TVM-FFI 형태: 포인터는 정수 주소, 스트림은 env 스트림). 디스크에서 다시 읽은 `.o` 로는
+`st_b12x_direct_micro_<소스 해시>_sm121a_cute_dsl`, TVM-FFI 형태: 포인터는 정수 주소, 스트림은 env 스트림). 디스크에서 다시 읽은 `.o` 로는
 block-dim 프로브(레지스터 압력이 512 스레드 CTA 를 막는지)를 못 돌리므로, 빌드 때 판정을 `<커널>.blockdim.json` 사이드카로 `.o` 옆에
 남기고 적중 때 읽는다. 사이드카가 없거나 낡은 `.o` 는 다시 빌드한다. `--lanes conv,kda,mhc`처럼 일부 레인을 골라 재현할 수 있다.
 b12x는 `--lanes moe --moe-experts 288`로 실제 TP4 형상(288 experts, top-k 8,

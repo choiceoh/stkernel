@@ -1,0 +1,10 @@
+# srv4 st-glm53 (production, rank 3), container started 2026-09-18T08:48:54Z (17:48 KST), tree 6ad27304; read at 17:52 KST.
+2026-09-18T08:48:58.988950986Z   fleet reserved by production/srv2/2761649
+2026-09-18T08:48:59.240577422Z   box: GB10 (DGX Spark): SM121, unified 122 GiB (102 free)
+2026-09-18T08:50:22.182849730Z 2026-09-18 08:50:22,182 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-18T08:50:22.185611778Z 2026-09-18 08:50:22,185 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m1_k4096_n512_t8_r8_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfreg
+2026-09-18T08:50:31.730883711Z 2026-09-18 08:50:31,730 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r64_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfre
+2026-09-18T08:50:40.900769538Z 2026-09-18 08:50:40,900 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m64_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1c256_5164614cb63d4381
+2026-09-18T08:50:48.446216186Z 2026-09-18 08:50:48,445 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m16_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsf
+2026-09-18T08:50:58.287939150Z 2026-09-18 08:50:58,287 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m8_k4096_n512_t8_r512_tm32f2g2a32wutr16n128k256d256sf6v1fc1sepwordfc2worda2u64a1reusecompactsfr
+2026-09-18T08:51:37.511378358Z 2026-09-18 08:51:37,511 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static2_m14_k4096_n512_t8_r512_tm32f2g2a32wutsf6v1c256_255257ee4f84b7d4
