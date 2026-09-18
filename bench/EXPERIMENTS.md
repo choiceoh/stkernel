@@ -28,6 +28,33 @@ hardware match; changes to the tested path require new evidence for that path.
 The existing CPU receipt cache remains in use. A queued ticket keeps its frozen
 approval; advancing main alone is not a reason to repeat its CPU or GPU checks.
 
+Which CPU tests are "relevant", and which canonical check is "of the changed
+path", is what `bench/feedback.py` answers — per file, the nearest check first,
+the cheapest lane first:
+
+```bash
+python3 bench/feedback.py engine/kernels/mhc_contract.py
+python3 bench/feedback.py --base origin/main      # every file this branch changed
+python3 bench/feedback.py --index                 # the whole graph as JSON
+```
+
+| Rung | Read from | Cost |
+| --- | --- | --- |
+| `cpu` | `tests/test_*.py`, run through `tools/check.py` | seconds to minutes, no GPU |
+| `single` | `fleet_onepass.ST_PROBES` | one Spark beside production, no fleet drain |
+| `verdict` | `fleet.sh st-pair` | four Sparks; the only rung that is a speed verdict |
+
+Nothing in it is declared by hand. A rung's lane is whatever the queue admits
+today, read from `fleet_onepass.py` itself, and its distance is the import path
+from the check to the file (0 = the file is the check, 1 = the check imports it
+or names its repo path). It reads source with `ast` and imports nothing, so it
+answers without torch. `tests/test_feedback_router.py` holds it to the queue:
+every `single` command it prints must pass `fleet_onepass.validate` for one GPU.
+A probe that reaches the file but is not in `ST_PROBES` is listed as
+`unadmitted`: the queue rejects it, so it cannot run there until it is
+byte-pinned. A rung narrows a hypothesis; a file that does not ship into serving
+(`bench/`, `tests/`, `probes/`, `tools/`) has no speed verdict at all.
+
 Runtime failures (OOM, nonfinite state, token-order or communication errors) stay
 failures. A speed target miss is a recorded experimental result. Screening
 quality under the short generation cap is an observation, not a passed quality
