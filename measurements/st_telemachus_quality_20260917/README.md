@@ -27,7 +27,13 @@ on tree `048b682d75f9` (unseen(ko) 0.103 native vs 0.26 on the same morning's
 boot) — but texture is not recovery: an ablation arm that scored 0.108 still
 contains welded non-words, a follow-up on a #1157 build through the general
 inference path corrupted again, and the #1157 causal effect remains
-unverified — see [the clues0918 campaign](code-audit.md). As of 2026-09-18 the failing request's own frame is read off its bytes: the
+unverified — see [the clues0918 campaign](code-audit.md). As of 2026-09-18 the engine's own problem on this boot is located: the sparse indexer never
+honored `index_kpool_always_select_tail` -- nothing pinned the pool that had just completed, so on
+every decode step whose sequence length was a whole number of 4-token pools (generations 3, 7, 11, ...
+of this request) the model could read none of its own newest four tokens if that pool lost the
+indexer's top-k. PR #1159 pins it, ten hours after this boot. See
+[the indexer recency evidence](indexer-recency-evidence.json).
+As of 2026-09-18 the failing request's own frame is read off its bytes: the
 prompt already ends in `<|assistant|><think>` — exactly what its generation prompt writes — so that
 turn is not the missing half of anything, and the turn *before* it is already degraded inside the same
 prompt
@@ -96,6 +102,47 @@ cause. That earlier turn ran on the same unchanged boot `fd99f82e…` about two 
 request under audit, and no private record of its own prompt and engine state is retained. Reproducing
 that turn is the next anchor worth having, and the prefix it needs is inside this prompt (tokens
 `0..47171`) — though the per-turn recall block means that truncation is not a byte-exact prefix.
+
+## The engine's problem on this boot: the indexer's recency guarantee
+
+The checkpoint declares `index_kpool_always_select_tail`, `facts.architecture` asserts it, and on the
+incident's boot **nothing implemented it**. `select_with_tail` appends only the incomplete trailing
+pool, `[pool_len * pool_size, seq)` -- EMPTY whenever the sequence length is a whole number of pools
+(`index_kpool` is 4) -- so the newest complete pool was left to win the indexer's relevance top-k like
+any older pool. `pin_pools_in_logits`/`tail_pin_pools` (PR #1159, `16485bee`, 2026-09-18 06:31:33) is
+the pin that closes it, in prefill and in the captured decode path.
+
+| Fact | Value |
+|---|---|
+| Incident boot | `fd99f82e…`, committed 2026-09-17 20:28:42 +0900; container up 20:39; request 20:49-20:50 KST |
+| `pin` call sites in that boot's `engine/profiles/glm53/net.py` | **0** (the only two matches are `typing` and `skipping`); `sparse_indexer.py` at that commit has neither function, only the promise in its docstring |
+| Fix | #1159 `16485bee`, 2026-09-18 06:31:33 -- about ten hours after the boot |
+| Trigger | `seq % 4 == 0`; the request's prompt is 50,005 tokens, so decode first hits it at generation 3 (seq 50,008), then 7, 11, … |
+
+[indexer_recency_audit.py](indexer_recency_audit.py) runs the engine's own functions on those lengths:
+the appended tail is empty on exactly the steps the pin names, and when the top-k drops the newest
+pool the selection carries **0 of its 4 tokens** -- on the incident's boot no path could put them back.
+Receipts: [indexer-recency-evidence.json](indexer-recency-evidence.json).
+
+This is a *selection* defect, which is why every numeric arm missed it: scales, FP32 constants and
+BF16 dense change arithmetic, not what the model may read. It is also inert below the indexer's top-k
+budget, which is why the 47-token control was clean, and it is content-dependent, which is why the
+50,094-token neutral-filler control was clean while this prompt was not. It is the gap
+`engine/modules/selection_capture.py` names for this incident -- "the 2026-09-17 incident's last
+unverified path is the selection itself."
+
+What is **not** measured yet is the harm's frequency: whether the newest pool actually lost the top-k
+on this prompt during decode. `selection_capture` records only the first PREFILL selection per layer,
+and no `selection-*.pt` exists on the fleet. Arming it, extending it to the whole-pool decode steps
+and reading `tail_pin.would_have_been_dropped` from `tools/selection_reference.py` is the next step,
+not a claim; even then a frequency is not a text, so the pin-on/pin-off pair on the same prompt
+remains the end-to-end control.
+
+The sampling row itself is clean, which sharpens the contrast. Across all 2,313 captured positions
+`processed` equals `raw` exactly (bf16 to fp32) on the decodable 154,856 lanes, the 24 lanes past the
+tokenizer's vocabulary are exactly the ones masked, every width is 154,880 and no pick is out of
+range -- [sampling_row_audit.py](sampling_row_audit.py). So the engine is faithful in what it samples
+and was unfaithful in what it let the model read.
 
 ## Initial bounded live reproductions
 

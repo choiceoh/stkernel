@@ -1,0 +1,215 @@
+{
+  "question": "Why did the first answer of this incident arrive malformed? The engine path that engages only for long contexts is the sparse indexer's selection, and the checkpoint declares a recency guarantee it has to keep.",
+  "checkpoint_declares": {
+    "index_kpool": 4,
+    "index_kpool_always_select_tail": true,
+    "index_topk": 2048,
+    "pools_per_query": 512,
+    "selector_engages_above_tokens": 2048,
+    "source": "the served checkpoint's config.json; engine/profiles/glm53/facts.py asserts all three"
+  },
+  "incident_boot": {
+    "release": "fd99f82e2a12e533047159b58ebd74b601d70a90",
+    "commit_date": "2026-09-17 20:28:42 +0900",
+    "container_started": "2026-09-17T11:39:00.297032974Z (20:39 KST)",
+    "request": "2026-09-17 20:49:21-20:50:17 KST",
+    "pin_call_sites_in_net_py": 0,
+    "how_checked": "git cat-file -p fd99f82e:engine/profiles/glm53/net.py | grep -c pin -> 2, both 'typing' and 'skipping'; engine/modules/sparse_indexer.py at that commit has no tail_pin_pools and no pin_pools_in_logits",
+    "what_the_docstring_said": "engine/modules/sparse_indexer.py at that commit still promised '(`index_kpool_always_select_tail`: the newest tokens are always attended)'",
+    "negative_control": {
+      "how": "extract engine/modules/sparse_indexer.py from fd99f82e into a scratch package and import the pin from it",
+      "result": "ImportError: cannot import name 'tail_pin_pools' from 'engine.modules.sparse_indexer'",
+      "reading": "the function this request needed did not exist on the boot that served it; PR #1159 added it ten hours later"
+    }
+  },
+  "fix": {
+    "commit": "16485beedd97b4442c720d28a000b4f8957a4fcf",
+    "pr": 1159,
+    "date": "2026-09-18 06:31:33 +0900",
+    "what": "tail_pin_pools names the pool that just completed and pin_pools_in_logits raises it above the row's own maximum before the top-k, in prefill and in the captured decode path (_select_rows reads the lengths it already had)",
+    "its_test": "tests/test_engine_tail_pin.py names the lengths 50004 and 50005 and counts tail_pin.would_have_been_dropped"
+  },
+  "trigger": {
+    "rule": "the appended tail covers [pool_len * pool_size, seq) and is EMPTY when seq % kpool == 0",
+    "incident_prompt_tokens": 50005,
+    "first_trigger": {
+      "generation": 3,
+      "seq": 50008
+    },
+    "pin_armed_generations": [
+      3,
+      7,
+      11
+    ],
+    "reading": "on those steps the newest complete pool had to win the relevance top-k like any older pool; when it lost, the selection carried none of its tokens and the appended tail - empty there by construction - could not put them back"
+  },
+  "pin_arithmetic": {
+    "prompt_tokens": 50005,
+    "kpool": 4,
+    "topk": 2048,
+    "pools_per_query": 512,
+    "pin_armed_generations": [
+      3,
+      7,
+      11
+    ],
+    "first_trigger_seq": 50008,
+    "rows": [
+      {
+        "step": 0,
+        "seq": 50005,
+        "appended_tail_tokens": 1,
+        "pin": -1,
+        "newest_pool": 50000,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 1,
+        "seq": 50006,
+        "appended_tail_tokens": 2,
+        "pin": -1,
+        "newest_pool": 50000,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 2,
+        "seq": 50007,
+        "appended_tail_tokens": 3,
+        "pin": -1,
+        "newest_pool": 50000,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 3,
+        "seq": 50008,
+        "appended_tail_tokens": 0,
+        "pin": 12501,
+        "newest_pool": 50004,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 4,
+        "seq": 50009,
+        "appended_tail_tokens": 1,
+        "pin": -1,
+        "newest_pool": 50004,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 5,
+        "seq": 50010,
+        "appended_tail_tokens": 2,
+        "pin": -1,
+        "newest_pool": 50004,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 6,
+        "seq": 50011,
+        "appended_tail_tokens": 3,
+        "pin": -1,
+        "newest_pool": 50004,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 7,
+        "seq": 50012,
+        "appended_tail_tokens": 0,
+        "pin": 12502,
+        "newest_pool": 50008,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 8,
+        "seq": 50013,
+        "appended_tail_tokens": 1,
+        "pin": -1,
+        "newest_pool": 50008,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 9,
+        "seq": 50014,
+        "appended_tail_tokens": 2,
+        "pin": -1,
+        "newest_pool": 50008,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 10,
+        "seq": 50015,
+        "appended_tail_tokens": 3,
+        "pin": -1,
+        "newest_pool": 50008,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 11,
+        "seq": 50016,
+        "appended_tail_tokens": 0,
+        "pin": 12503,
+        "newest_pool": 50012,
+        "kept": 4,
+        "dropped": 0
+      },
+      {
+        "step": 12,
+        "seq": 50017,
+        "appended_tail_tokens": 1,
+        "pin": -1,
+        "newest_pool": 50012,
+        "kept": 4,
+        "dropped": 0
+      }
+    ]
+  },
+  "sampling_row_sweep": {
+    "files": 2313,
+    "vocab": 154856,
+    "dump": "/home/choiceoh/glm53-logs/st-bracket-dumps/st-lossless-logits0918-hold-8f87c211515c/incident-logits",
+    "processed_equals_raw_on_decodable": 2313,
+    "per_mode": {
+      "20": {
+        "positions": 954,
+        "processed_equals_raw": 954
+      },
+      "21": {
+        "positions": 497,
+        "processed_equals_raw": 497
+      },
+      "22": {
+        "positions": 407,
+        "processed_equals_raw": 407
+      },
+      "23": {
+        "positions": 455,
+        "processed_equals_raw": 455
+      }
+    },
+    "cut_lanes": {
+      "24 lanes past the vocabulary, all -inf=True": 2313
+    },
+    "transforms_applied": [],
+    "transforms_applied_count": 0,
+    "anomalies": [],
+    "anomaly_count": 0,
+    "padding_lane_bf16_top_max": 3.0781
+  },
+  "open_measurement": {
+    "what": "how often the newest pool actually lost the indexer's top-k during this request's decode, i.e. the frequency of the harm on this prompt",
+    "why_unmeasured": "engine/modules/selection_capture.py records only the first PREFILL selection per layer (its docstring says the selection is 'the 2026-09-17 incident's last unverified path'), and no selection-*.pt exists under the fleet's dumps",
+    "instrument": "arm ST_SELECTION_CAPTURE on a boot, extend the capture to the decode steps at whole-pool lengths, then read tail_pin.would_have_been_dropped from tools/selection_reference.py over those dumps",
+    "what_it_would_not_prove": "a frequency is not a text: the effect on the visible answer still needs the pin-on/pin-off pair on the same prompt"
+  }
+}
