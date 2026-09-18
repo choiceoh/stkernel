@@ -68,6 +68,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 import json
+import os
 from pathlib import Path
 import statistics
 import sys
@@ -90,7 +91,7 @@ TEXT_CONFIG = {
 }
 RANK = 0                                   # rank 0 holds experts [0, 128)
 DECODE_ROWS = (1, 2, 3, 4)                 # a captured step's rows; each carries SPEC_K + 1 tokens
-PREFILL_CHECKS = (128, 1024, 4096)
+PREFILL_CHECKS = (16, 64, 128, 1024, 4096)     # 16 and 64: the short prompts whose pairs the dynamic kernel now takes
 PREFILL_TIMINGS = (1024, 4096, 8192)
 MICRO_TILES = (32, 64, 128)
 MICRO_MACS = (16, 24, 32, 48)
@@ -861,9 +862,14 @@ def run(output=None):
             decode = [probe.decode_check(m) for m in sorted(decode_tokens(c), reverse=True)]   # largest first, as served
             for tokens in PREFILL_CHECKS:
                 probe.prefill_check(tokens)
-            prefill = [probe.prefill_sweep(tokens) for tokens in PREFILL_TIMINGS]
-            decode_best = [probe.decode_sweep(d) for d in decode]
-            probe.summary(decode_best, prefill)
+            if os.environ.get("ST_PROBE_CHECKS_ONLY") == "1":
+                # the correctness gates alone (a production window, not a lane ticket): no sweeps, no timings
+                report("checks_only", decode=[d["tokens"] if isinstance(d, dict) else None for d in decode],
+                       prefill=list(PREFILL_CHECKS), unstable=probe.unstable)
+            else:
+                prefill = [probe.prefill_sweep(tokens) for tokens in PREFILL_TIMINGS]
+                decode_best = [probe.decode_sweep(d) for d in decode]
+                probe.summary(decode_best, prefill)
     finally:
         torch.backends.cuda.matmul.allow_tf32 = tf32
     return events
