@@ -16,8 +16,18 @@ What it found on an RTX 5050 (sm_120, triton 3.6, torch 2.11; 2026-09-18), which
     the prototype           byte for byte the lane's output, 26 us at ONE row and 34 / 55 / 92 us at 2 / 4 / 8 rows: a
                             Triton matvec reads the weights again for each row.
 
-So the site is its two GEMMs' bytes, and what moves it is fewer bytes (H6: the mixers on block-scaled FP8), not fewer
-launches. The numbers are one desktop card's; run this on a GB10 through the single-GPU lane before closing H1/H2 on it:
+    one read for every row  a second prototype with the step's rows in one program a channel block (what cuBLAS does)
+                            was slower still, 40..107 us with a broadcast sum and a flat 188 us with tl.dot: a GEMM
+                            Triton generates does not reach cuBLAS at this shape, whatever the rows. It is not kept.
+
+So on that card the site is its two GEMMs' bytes, and what moves it is fewer bytes (H6: the mixers on block-scaled FP8),
+not fewer launches; and a fold written in Triton loses to the lane on any card, because its GEMM does.
+
+What one desktop card cannot say is what a launch costs on a GB10. There it was 1 us; the GLM campaign's ledger has a
+launch's fixed cost inside a captured graph at 15-25 us, about 5 of them removable (MEASUREMENTS_ARCHIVE.md, the dense
+GEMM entries). `headroom` below -- the lane less its two GEMMs alone -- is that number for this site: all a fold of
+any kind could recover. If a GB10 reports tens of microseconds there, the fold is worth a CUDA segment of the kind
+GLM's MK_SEG_MHC is, not a Triton launch. Run it through the single-GPU lane:
 
     bash probes/run_engine_probe.sh probes/engine_qwen38_hc_mix_fused.py
 """
@@ -119,12 +129,13 @@ def main(argv=None) -> int:
             best, equal = min(best, us), equal and bool(torch.equal(got, want))
         metrics[f"lane_us_rows{rows}"], metrics[f"fused_us_rows{rows}"] = round(lane, 2), round(best, 2)
         metrics[f"gemms_us_rows{rows}"] = round(gemms, 2)
+        metrics[f"headroom_us_rows{rows}"] = round(lane - gemms, 2)
         proof[f"byte_equal_rows{rows}"] = equal
         rows_out.append((rows, lane, gemms, best, equal))
     print(f"{torch.cuda.get_device_name()}: a site's mixer, microseconds a replay")
-    print("  rows   lane   its two GEMMs   fused prototype   byte-equal")
+    print("  rows   lane   its two GEMMs   headroom   fused prototype   byte-equal")
     for rows, lane, gemms, best, equal in rows_out:
-        print(f"  {rows:4d} {lane:6.1f} {gemms:15.1f} {best:17.1f}   {equal}")
+        print(f"  {rows:4d} {lane:6.1f} {gemms:15.1f} {lane - gemms:10.1f} {best:17.1f}   {equal}")
     pays = [rows for rows, lane, _, best, _ in rows_out if rows >= 2 and best < lane]
     metrics["rows_where_fused_wins"] = len(pays)
     print(f"  the prototype beats the lane at {pays or 'no'} captured row count(s) (2..8)")
