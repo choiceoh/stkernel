@@ -130,7 +130,7 @@ class ReferenceTests(unittest.TestCase):
 class LayerTests(unittest.TestCase):
     """`Qwen38Net._qsa` over recording lanes: what reaches the selection and the attention."""
 
-    def layer(self, segments, F):
+    def layer(self, segments, F, attend_covered=None):
         from engine.profiles.qwen38.net import Qwen38Net
         step, meta = host_step(*segments)
         rows, calls = meta.positions32.numel(), []
@@ -152,6 +152,8 @@ class LayerTests(unittest.TestCase):
 
         lanes = SimpleNamespace(qsa_index_keys=lambda *a: None, qsa_select=select, qsa_attend=attend,
                                 qsa_inputs=lambda *a: (torch.zeros(rows, heads, D), "iq"))
+        if attend_covered is not None:
+            lanes.qsa_attend_covered = attend_covered
         width = heads * 2 * D + D + D + wide.idx_heads * D + D
         net = SimpleNamespace(F=wide, lanes=lanes, p=mock.MagicMock(), comm=SimpleNamespace(all_reduce=lambda t: t),
                               linear=lambda x, name: torch.zeros(rows, width if name.endswith("in_proj") else 3))
@@ -161,6 +163,28 @@ class LayerTests(unittest.TestCase):
         caches = SimpleNamespace(kv=lambda L: ("K", "V"), key_ring=lambda L: "ring", index_keys=lambda L: f"keys{L}")
         Qwen38Net._qsa(net, 3, torch.zeros(rows, 3), step, meta, caches)
         return meta, calls, scored
+
+    def test_a_lane_table_with_the_covered_launch_attends_without_ids(self):
+        """Carry Q10: the served table's covered launch takes the step -- no selection, no ids, no sparse launch --
+        and only a step the budget covers."""
+        from engine.profiles.qwen38.net import Qwen38Net
+        seen = []
+
+        def attend_covered(q, K, V, *args, gate, group):
+            seen.append((args, group))
+            return torch.zeros(q.shape[0], 2, 8)
+
+        F = facts(ratio=4, budget=12)
+        meta, calls, _ = self.layer([(0, 9)], F, attend_covered)
+        self.assertEqual(calls, [])
+        self.assertIsNone(meta.covered_blocks)
+        self.assertEqual(seen, [((meta.positions32, "lengths", 4, 12, "page_table", "rows_req"), 4)])
+        _, calls, _ = self.layer([(0, 16)], F, attend_covered)             # one position past the reach
+        self.assertEqual([c[0] for c in calls], ["select", "attend"])
+        self.assertEqual(len(seen), 1)
+        self.assertTrue(Qwen38Net._covers(F, host_step((0, 15))[0]))
+        self.assertFalse(Qwen38Net._covers(F, host_step((0, 16))[0]))
+        self.assertFalse(Qwen38Net._covers(F, SimpleNamespace(captured=True)))
 
     def test_a_covered_step_never_reaches_the_selection(self):
         meta, calls, _ = self.layer([(0, 9)], facts(ratio=4, budget=12))

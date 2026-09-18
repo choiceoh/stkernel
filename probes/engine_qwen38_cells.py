@@ -38,6 +38,7 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               # wide one, where both sides take the native radix select -- the case no other box can run
               'tests.test_engine_qwen38_qsa_group_scores.GroupScoreTests',
               'tests.test_engine_qwen38_covered_blocks.ServedSelectionTests',
+              'tests.test_engine_qwen38_covered_attention.CoveredAttentionTests',
               'tests.test_engine_qwen38_query_shards.ServedSelectionTests')
 
 
