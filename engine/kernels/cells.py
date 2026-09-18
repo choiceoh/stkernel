@@ -482,7 +482,7 @@ def _recipe_kda_chunk():
     return Recipe("wire", "engine/profiles/<profile>/lanes.py (kda_chunk)",
                   "bind engine/kernels/kda/chunk_decay.chunk_kda_with_decay: chunk_kda_with_fused_gate's pipeline, "
                   "states_at and out included, with the decay computed outside the kernel -- a per-head decay summed per "
-                  "chunk and widened per channel, fewer key heads repeated to the value heads",
+                  "chunk and read one value a head (G_HEAD), fewer key heads read by their group (QG)",
                   f"{_GLUE_TEST} on {_GPU} (it passes on the CPU under TRITON_INTERPRET=1) and " + _KDA_JUDGE,
                   "the prefill lane binds it and chunked == recurrent on the oracle", "hours")
 
@@ -823,7 +823,7 @@ def admission(shape) -> "list[Verdict]":
                           "unjudged on a GPU")
         chunk_glue = _serve(GLUE, "engine/kernels/kda/chunk_decay.chunk_kda_with_decay (chunk_kda_with_fused_gate's "
                             "pipeline on a precomputed decay)", False,
-                            "the per-head decay summed per chunk and widened per channel; held to modules/linear_attention "
+                            "the per-head decay summed per chunk and read one value a head; held to modules/linear_attention "
                             "(states_at included) under Triton's CPU interpreter, unjudged on a GPU")
         if decay_measured:
             admit("kda_ring", "the ring kernel computing GatedDeltaNet's per-head decay, judged and timed",
