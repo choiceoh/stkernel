@@ -128,8 +128,10 @@ safetensors 라이브러리 없이 헤더와 numpy memmap 뿐이다. `python3 -m
 읽는다(`profiles/qwen38/ple_table.py`: 스레드 pread — srv2 NVMe 실측 128행 1.0 ms·20,000행 71 ms; 즉시 스텝은 호스트에서 해시해
 모으고, 캡처 스텝은 재생 전에 `net.stage_ple` 가 그래프의 정적 스테이징 행을 채운다). MTP 헤드의 전문가는 허브 체크포인트에서 FP8
 블록스케일(`weight_scale_inv` 를 곱한다 — BF16 복사본 대비 2.66%)이라 역양자화 뒤 NVFP4 로 인코딩한다(드래프터는 수용률만 바꾼다);
-예전 복사본(NVFP4 만, BF16 MTP)도 `facts.load` 가 읽는다. 전문가 그룹은 랭크별이라 프리샤드 상주 메모리는 약 2 GiB 다. GPU 로는 아직
-돌리지 않았다(D17 미실측).
+예전 복사본(NVFP4 만, BF16 MTP)도 `facts.load` 가 읽는다. 전문가 그룹은 랭크별이라 프리샤드 상주 메모리는 약 2 GiB 다. 첫 플릿 부팅
+(2026-09-18, `launchers/start-st-qwen38.sh`)은 네 랭크가 올라와 문을 열었지만 토큰을 내지 못했다: one-shot 집합통신이 hidden 2560
+에서 스톨해 `--no-oneshot`(launcher `ST_ONESHOT=0`, NCCL)을 더했고, 즉시 프리필의 정적 MoE 커널이 (행, 전문가) 조합마다 JIT 된다
+(QWEN38_CARRY C4 — 프리필을 dynamic 으로 보내는 것이 다음 창의 선행). D17 미실측.
 
 빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
 
