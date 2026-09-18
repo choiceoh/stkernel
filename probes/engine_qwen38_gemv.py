@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-SHAPES = {"hc down": (324, 10240), "hc up": (10240, 320), "router": (513, 2560)}   # (outputs, K) of W [outputs, K]
+SHAPES = {"router": (513, 2560), "hc down": (324, 10240), "hc up": (10240, 320)}   # (outputs, K) of W [outputs, K]
 ROWS = (2, 8)
 COPIES_BYTES = 64 << 20        # weights rotated over at least this many bytes: more than GB10's L2
 CALLS = 16                     # calls a graph (one per copy in turn)
@@ -109,8 +109,11 @@ def run(output=None) -> dict:
             ref = (x.float() @ weights[0].float().t())
             row = {"weight_MB": round(nbytes / 1e6, 2)}
 
+            keep = []                                     # a graph writes its outputs' addresses: they live with it
+
             def graph_of(fn):
                 outs = [torch.empty(m, n, device="cuda", dtype=torch.bfloat16) for _ in range(CALLS)]
+                keep.append(outs)
                 for i in range(CALLS):
                     fn(weights[i % copies], outs[i])
                 torch.cuda.synchronize()
@@ -142,7 +145,8 @@ def run(output=None) -> dict:
                 us = statistics.median(samples)
                 row[name] = {"us": round(us, 2), "GBps": round(nbytes / us / 1e3, 1),
                              **({"rel_err": errors[name]} if name in errors else {})}
-            best = min((name for name in arms if name != "cublas"), key=lambda name: row[name]["us"])
+            del arms, keep
+            best = min((name for name in times if name != "cublas"), key=lambda name: row[name]["us"])
             row["best"] = best
             row["speedup"] = round(row["cublas"]["us"] / row[best]["us"], 3)
             report["shapes"][f"{label} rows {m}"] = row
