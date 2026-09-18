@@ -13,9 +13,9 @@ def capture(adapter, jobs, block, dists, temps, ks, ps, uniforms, picks, verdict
     seq, raw, _, _ = jobs[0]
     mode = adapter.incident_modes.get(seq)
     generation = adapter._generated_count(seq)
-    if mode in (20, 25, 26, 27) and generation >= 32:
+    if mode in (20, 25, 26, 27, 28) and generation >= 32:
         return None
-    if mode not in (20, 21, 22, 23, 24, 25, 26, 27):
+    if mode not in (20, 21, 22, 23, 24, 25, 26, 27, 28):
         if mode not in (5, 10) or generation not in (0, 1, 64, *range(114, 129)):
             return None
     prefix = adapter.tokens[seq]

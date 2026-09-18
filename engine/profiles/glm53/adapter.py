@@ -698,7 +698,7 @@ class Glm53Engine:
         # 20 baseline without operand capture; 21 lossless Red Hat weight scales;
         # 22 adds calibrated input scales; 23 original FP32 constants;
         # 24 also uses original BF16 dense; 25 removes the extra completed-pool pin.
-        mode = code // 1000 if (1000 <= code < 17000 or 20000 <= code < 28000) else 0
+        mode = code // 1000 if (1000 <= code < 17000 or 20000 <= code < 29000) else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -983,7 +983,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26, 27):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1143,6 +1143,17 @@ class Glm53Engine:
             return self.net.forward(step, self.caches, aux_layers=self.aux_layers, **kwargs, **terminal)
         return self.net.forward(step, self.caches, **kwargs, **terminal), None
 
+    def _incident_head_local(self, hidden, seq):
+        mode = getattr(self, 'incident_modes', {}).get(seq, 0)
+        if mode not in (20, 28):
+            return self.net.head_local(hidden)
+        import hashlib
+        import json
+        from engine.profiles.glm53.incident_head_reference import project
+        prefix = hashlib.sha256(json.dumps(self.tokens[seq], separators=(',', ':')).encode()).hexdigest()
+        return project(self.net, hidden, mode=mode, admission=self.nonces[seq],
+                       generation=self._generated_count(seq), prefix_sha256=prefix)
+
     def _incident_forward(self, step, *, prefill=False, **kwargs):
         modes = getattr(self, 'incident_modes', {})
         mode = modes.get(step.segments[0].seq, 0)
@@ -1151,14 +1162,14 @@ class Glm53Engine:
             self.net.incident_step_identity = dict(
                 admission=self.admissions, seq=seq, mode=mode,
                 generation=self._generated_count(seq), prefill=prefill)
-        if mode in (20, 21, 22, 23, 24, 25, 26, 27):
+        if mode in (20, 21, 22, 23, 24, 25, 26, 27, 28):
             if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
                 raise ValueError('Red Hat scale control requires one isolated target position')
             from contextlib import ExitStack
             from engine.profiles.glm53.incident_redhat_scales import select
             from engine.profiles.glm53.incident_reference import original_fp32_constants, bf16_dense
             with ExitStack() as stack:
-                variant = None if mode in (20, 25, 26, 27) else ('weight' if mode == 21 else 'calibrated')
+                variant = None if mode in (20, 25, 26, 27, 28) else ('weight' if mode == 21 else 'calibrated')
                 stack.enter_context(select(self.net, variant=variant))
                 if mode in (23, 24):
                     stack.enter_context(original_fp32_constants(self.net, router=True, kda=True))
@@ -1599,7 +1610,7 @@ class Glm53Engine:
             self._observe_prefill(slot, start, aux, cuts)
         if self.ctx[seq] == self.prompt_len[seq]:                         # the prompt is in: the first token comes from its last position
             if self._rich(seq):
-                gathered = self._gather(self.net.head_local(h[-1:]))
+                gathered = self._gather(self._incident_head_local(h[-1:], seq))
                 (accepted, new, lps), = self._pick_rich([(seq, gathered, [], None)])
                 self._commit(seq, 0, new[:1], lps, 0)
             else:
@@ -1613,14 +1624,14 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
-        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26, 27) for seq in seqs):
+        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26, 27, 28) for seq in seqs):
             if len(seqs) != 1:
                 raise ValueError('incident single-token control requires an isolated request')
             seq, slot = seqs[0], slots[0]
             context = self.ctx[seq]
             ids = torch.tensor([self.tokens[seq][-1]], dtype=torch.int64, device=self.caches.device)
             h, aux = self._incident_forward(Step(ids, (Segment(seq, slot, context, 0, 1),)))
-            full = self._gather(self.net.head_local(h))
+            full = self._gather(self._incident_head_local(h, seq))
             (accepted, new, lps), = self._pick_rich([(seq, full, [], None)])
             new, done = self._commit(seq, accepted, new, lps, 0)
             count = len(new)
