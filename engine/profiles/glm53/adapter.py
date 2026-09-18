@@ -698,7 +698,7 @@ class Glm53Engine:
         # 20 baseline without operand capture; 21 lossless Red Hat weight scales;
         # 22 adds calibrated input scales; 23 original FP32 constants;
         # 24 also uses original BF16 dense; 25 removes the extra completed-pool pin.
-        mode = code // 1000 if (1000 <= code < 17000 or 20000 <= code < 26000) else 0
+        mode = code // 1000 if (1000 <= code < 17000 or 20000 <= code < 28000) else 0
         if not hasattr(self, "incident_modes"):
             self.incident_modes = {}
         self.incident_modes[seq] = mode
@@ -983,7 +983,7 @@ class Glm53Engine:
 
     def _blocked_by(self, seq: int) -> "str | None":
         """The first reason this row may not run ahead. `_plain_ahead` asks the same question as a yes or no."""
-        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25):
+        if getattr(self, "incident_modes", {}).get(seq, 0) in (1, 2, 3, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26, 27):
             return "incident_host_control"
         if getattr(getattr(self.drafter, 'tuning', None), 'trace_every', 0):
             return 'draft_trace'      # calibration trace is synchronous and excluded from timing
@@ -1151,20 +1151,28 @@ class Glm53Engine:
             self.net.incident_step_identity = dict(
                 admission=self.admissions, seq=seq, mode=mode,
                 generation=self._generated_count(seq), prefill=prefill)
-        if mode in (20, 21, 22, 23, 24, 25):
+        if mode in (20, 21, 22, 23, 24, 25, 26, 27):
             if len(step.segments) != 1 or (not prefill and step.ids.numel() != 1):
                 raise ValueError('Red Hat scale control requires one isolated target position')
             from contextlib import ExitStack
             from engine.profiles.glm53.incident_redhat_scales import select
             from engine.profiles.glm53.incident_reference import original_fp32_constants, bf16_dense
             with ExitStack() as stack:
-                variant = None if mode in (20, 25) else ('weight' if mode == 21 else 'calibrated')
+                variant = None if mode in (20, 25, 26, 27) else ('weight' if mode == 21 else 'calibrated')
                 stack.enter_context(select(self.net, variant=variant))
                 if mode in (23, 24):
                     stack.enter_context(original_fp32_constants(self.net, router=True, kda=True))
                 if mode == 25:
                     from engine.profiles.glm53.incident_tail_reference import unpinned_complete_pools
                     stack.enter_context(unpinned_complete_pools(self.net))
+                if mode in (26, 27):
+                    from engine.profiles.glm53.incident_latent_reference import control
+                    identity = (self.admissions, step.segments[0].seq, mode)
+                    stack.enter_context(control(self.net, identity, bf16=mode == 27))
+                    if prefill:
+                        print(f'[incident-latent-reference] rank={self.net.rank} mode={mode} '
+                              f'context={step.segments[0].ctx} rows={len(step.ids)} fp32_torch=True '
+                              f'cache={"bf16" if mode == 27 else "native_fp8"}', flush=True)
                 if mode == 24:
                     stack.enter_context(bf16_dense(self.net))
                 return self._forward(step, **kwargs)
@@ -1605,7 +1613,7 @@ class Glm53Engine:
 
     def decode(self, seqs, blocks, slots) -> "list[bool]":
         self._moved()
-        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25) for seq in seqs):
+        if any(getattr(self, 'incident_modes', {}).get(seq) in (5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 20, 21, 22, 23, 24, 25, 26, 27) for seq in seqs):
             if len(seqs) != 1:
                 raise ValueError('incident single-token control requires an isolated request')
             seq, slot = seqs[0], slots[0]

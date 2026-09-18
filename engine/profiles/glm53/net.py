@@ -1031,6 +1031,9 @@ class Glm53Net:
         for s in (() if folded else step.segments):                                # fp8 KV, scale 1 (no kv scales in the checkpoint)
             sl = slice(s.start, s.start + s.length)
             latent[caches.token_slots(L, s.seq, (s.ctx + index(s.length, x.device))).long()] = kv_n[sl].to(E4M3)
+        reference = getattr(self, 'incident_latent_reference', None)
+        if reference is not None:
+            reference.write(L, kv_n, step)
         slots, valid = (self._indexer(L, x, qr, step, caches, query=query) if shared
                         else self._indexer(L, x, qr, step, caches))
         kv_b = p[n + "kv_b"].view(Hl, F.qk_nope + F.v_dim, F.kv_lora)
@@ -1062,6 +1065,9 @@ class Glm53Net:
         return 0
 
     def _mla_context(self, L, q, latent, slots, valid, step, caches):
+        reference = getattr(self, 'incident_latent_reference', None)
+        if reference is not None:
+            return reference.context(L, q, latent, slots, valid, step, caches, self.F.mla_scale)
         prefix = self._mla_prefix(len(q), step)
         if not prefix:
             return self.lanes.mla_sparse(q, latent, slots, valid, self.F.mla_scale, 1.0)
