@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import array
+import builtins
 import collections
 import glob
 import json
@@ -23,6 +24,14 @@ import os
 import pickle
 import struct
 import zipfile
+
+# A capture reader must not run a pickle. Only these names may be reconstructed, and anything else in
+# the archive is refused by name -- `torch.load` on a private dump is a trusted-input operation, and a
+# reader that falls back to the standard resolver for unknown globals hands that trust to whoever
+# wrote the file. Keep this list minimal: names the engine's own torch.save output uses.
+SAFE_GLOBALS = {'dict', 'list', 'tuple', 'set', 'frozenset', 'str', 'bytes', 'bytearray', 'int',
+                'float', 'bool', 'complex', 'NoneType', 'object', 'OrderedDict'}
+MAX_STORAGE_BYTES = 1 << 30
 
 DTYPES = {'FloatStorage': ('f', 4), 'DoubleStorage': ('d', 8), 'HalfStorage': ('e', 2),
           'LongStorage': ('q', 8), 'IntStorage': ('i', 4), 'ShortStorage': ('h', 2),
@@ -64,8 +73,12 @@ class Reader:
                         return _STORAGE_TYPES[name]
                     if name.startswith('_rebuild_tensor'):
                         return _rebuild_tensor
-                    return type('Stub', (object,), {})
-                return super(U, self).find_class(module, name)
+                    return type('Stub', (object,), {})                   # other torch globals: inert stubs
+                if name not in SAFE_GLOBALS:
+                    raise pickle.UnpicklingError(f'refusing {module}.{name}: a capture reader does not run pickles')
+                if name == 'OrderedDict':
+                    return collections.OrderedDict
+                return getattr(builtins, name)
 
             def persistent_load(self, pid):
                 kind, storage_type, key, location, numel = pid
@@ -80,13 +93,17 @@ class Reader:
     def storage_bytes(self, tensor):
         """The tensor's own elements, as bytes, from the storage the archive holds."""
         entry = f'archive/data/{tensor.storage.key}'
-        if entry not in self.names:
+        info = self.zip.getinfo(entry) if entry in self.names else None
+        if info is None:
             raise KeyError(entry)
-        with self.zip.open(entry) as handle:
-            data = handle.read()
+        if info.file_size > MAX_STORAGE_BYTES:
+            raise ValueError(f'{entry} is {info.file_size} bytes: past this reader\'s bound')
         size = DTYPES[tensor.storage.dtype][1]
         start = tensor.offset * size
-        return data[start:start + self.lanes(tensor) * size]
+        need = self.lanes(tensor) * size
+        with self.zip.open(entry) as handle:
+            data = handle.read(start + need)          # bounded: never the whole entry into memory
+        return data[start:start + need]
 
     def lanes(self, tensor):
         total = 1
