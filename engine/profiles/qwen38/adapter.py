@@ -16,9 +16,9 @@ exactly those two:
 
 and ServedMTP, base/composed's Drafter over the net's MTP head. ComposedModel observes one row at a time after a verify
 step; the head's rows for those observations wait and run together in one captured draft step when the next step asks
-for proposals (decode_graphs.DraftGraphs) -- one replay a step, not one eager head a row. The ranks agree on every pick
-because the logits a pick reads are gathered (identical on every rank) and the draws are keyed (base/draws), as in
-GLM-5.3's engine.
+for proposals (decode_graphs.DraftGraphs) -- one replay a step, not one eager head a row, and for K > 1 the chain of
+K picks inside that replay (decode_graphs.draft_chain). The ranks agree on every pick because the logits a pick reads
+are gathered (identical on every rank) and the draws are keyed (base/draws), as in GLM-5.3's engine.
 
 What this is not yet: the asynchronous pipeline (engine/profiles/glm53/pipeline.py is GLM's): the host reads each
 step's picks before the next step is built.
@@ -167,31 +167,32 @@ class ServedComposition:
 class ServedMTP:
     """base/composed.Drafter over the net's MTP head (engine/modules/mtp.MTPDrafter's rule): observing the positions the
     target just kept -- each position's token is the next one, its given state the target's streams there -- leaves the
-    last position's draft; `propose` hands it out (and, eagerly, chains the head from its own streams for k > 1). The
-    head's rows sit in the target's blocks (caches region F.layers) at the positions they describe, so a rejected chain
-    is overwritten like any draft.
+    last position's draft; `propose` hands it out, and for k > 1 the chain: the head at each next position from its own
+    pick and its own streams. The head's rows sit in the target's blocks (caches region F.layers) at the positions they
+    describe, so a rejected chain is overwritten like any draft.
 
     With the draft graphs captured, an observation of up to k+1 positions waits -- its streams rows are the
-    composition's own copy, never a graph's output -- until `propose` runs every waiting row in one replay; a second
-    observation of the same row first runs the one waiting, and `forget` runs it while the row still holds its slot and
-    blocks (a park: the head's rows belong in blocks the tier keeps) and drops it once they are released. Longer
-    observations (a prompt) run the head eagerly at once."""
+    composition's own copy, never a graph's output -- until `propose` runs every waiting row in one replay, the chain
+    included (decode_graphs.draft_chain); a second observation of the same row first runs the one waiting, and `forget`
+    runs it while the row still holds its slot and blocks (a park: the head's rows belong in blocks the tier keeps) and
+    drops it once they are released. A waiting row whose reservation does not hold the replay's positions (a parked
+    row holds its kept positions, not the horizon the next step reserves) runs the head eagerly over its observed
+    positions alone, as longer observations (a prompt) do at once; the chain then runs eagerly at `propose`."""
 
     def __init__(self, net, caches, store, k: int):
         if k <= 0:
             raise ValueError("a drafter proposes at least one token")
         self.net, self.caches, self.store, self.k = net, caches, store, k
         self.graphs = None
-        self._next: dict = {}                     # seq -> (draft token, head streams [1, hc*H] | None, its position)
+        self._next: dict = {}                     # seq -> (picks, head streams [1, hc*H] | None, the chain's position)
         self._waiting: dict = {}                  # seq -> (slot, ctx, next ids, the target's streams rows [m, hc*H])
 
     def capture(self, max_seqs: int, *, ceiling: int, memory=None) -> None:
         from engine.profiles.qwen38.decode_graphs import DraftGraphs
-        if self.k != 1:
-            raise ValueError("the captured MTP head drafts one token a row (k=1): a chain would replay it k times")
         if self.graphs is not None:
             raise ValueError("the draft graphs are already captured")
-        self.graphs = DraftGraphs(self.net, self.caches, max_seqs, self.k + 1, ceiling=ceiling, memory=memory)
+        self.graphs = DraftGraphs(self.net, self.caches, max_seqs, self.k + 1, k=self.k, ceiling=ceiling,
+                                  memory=memory)
 
     def close(self) -> None:
         if self.graphs is not None:
@@ -207,12 +208,22 @@ class ServedMTP:
         return token, streams
 
     def _run_waiting(self, seqs) -> None:
-        rows = []
+        """The waiting rows of `seqs`: in one replay when each row's reservation holds the replay's positions (its
+        observation padded to the verify width, then the chain), else the head eagerly over its observed positions."""
+        pool, graphs = self.caches.pool, self.graphs
+        rows, eager = [], []
         for seq in seqs:
             slot, ctx, ids, streams = self._waiting.pop(seq)
-            rows.append((seq, slot, ctx, ids, streams))
-        for (seq, _slot, ctx, ids, _streams), token in zip(rows, self.graphs.run(rows)):
-            self._next[seq] = (token, None, ctx + len(ids))
+            if ctx + graphs.extent(len(ids)) <= pool.tokens[seq]:
+                rows.append((seq, slot, ctx, ids, streams))
+            else:
+                eager.append((seq, ctx, ids, streams))
+        if rows:
+            for (seq, _slot, ctx, ids, _streams), picks in zip(rows, graphs.run(rows)):
+                self._next[seq] = (picks, None, ctx + len(ids))
+        for seq, ctx, ids, streams in eager:
+            token, head = self._head(seq, ctx, torch.tensor(ids, dtype=torch.int64, device=streams.device), streams)
+            self._next[seq] = ([token], head, ctx + len(ids))
 
     def observe(self, seq: int, ctx: int, next_ids, hidden) -> None:
         n = min(len(next_ids), hidden.shape[0])
@@ -226,7 +237,7 @@ class ServedMTP:
             return
         ids = torch.tensor([int(t) for t in next_ids[:n]], dtype=torch.int64, device=hidden.device)
         token, streams = self._head(seq, ctx, ids, hidden[:n])
-        self._next[seq] = (token, streams, ctx + n)
+        self._next[seq] = ([token], streams, ctx + n)
 
     def propose(self, seqs) -> "list[list[int]]":
         waiting = [seq for seq in seqs if seq in self._waiting]
@@ -238,9 +249,10 @@ class ServedMTP:
             if got is None:
                 out.append([])
                 continue
-            token, streams, position = got
-            chain = [token]
-            for _ in range(1, self.k):
+            picks, streams, position = got
+            chain = [int(t) for t in picks[:self.k]]
+            while streams is not None and len(chain) < self.k:
+                # an eager head's chain: the next position from the row's last pick and the head's own streams
                 ids = torch.tensor([chain[-1]], dtype=torch.int64, device=streams.device)
                 token, streams = self._head(seq, position, ids, streams)
                 chain.append(token)
@@ -252,10 +264,10 @@ class ServedMTP:
         self._next.pop(seq, None)
         waiting = self._waiting.get(seq)
         if waiting is not None:
-            slot, ctx = waiting[0], waiting[1]
+            slot, ctx, ids = waiting[0], waiting[1], waiting[2]
             # a park forgets the row before its slot and blocks go (base/runner.park_begin): run the head's rows into
             # them; a released row's blocks are no longer its own, so its rows are dropped
-            if self.caches.slots.owner[slot] == seq and ctx + self.graphs.tokens <= self.caches.pool.tokens[seq]:
+            if self.caches.slots.owner[slot] == seq and ctx + len(ids) <= self.caches.pool.tokens[seq]:
                 self._run_waiting([seq])
                 self._next.pop(seq, None)
             else:

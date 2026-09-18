@@ -28,7 +28,7 @@ from engine.base.arena import ALIGN
 from engine.base.kv import BlockPool, SlotPool
 
 QSA_KEY_RING = 8            # raw index keys kept per sequence: the open group (3) plus a verify step (K+1), no aliasing
-PLE_ID_RING = 8             # token ids kept per sequence: the n-gram's previous 2 plus a verify step
+PLE_ID_RING = 8             # token ids kept per sequence: the n-gram's previous 2 plus a verify step (check_rings: K <= 4)
 SIZES = {"f32": 4, "f16": 2, "bf16": 2, "i64": 8}
 
 
@@ -68,8 +68,22 @@ def qsa_layers(F, layers, mtp: bool):
     return [L for L in layers if F.is_qsa(L)] + ([F.layers] if mtp else [])
 
 
+def check_rings(F) -> None:
+    """The fixed rings hold one launch's positions and what they read before them without aliasing a cell: a verify
+    step of spec_k+1 tokens after the open QSA group's idx_ratio-1 members (the raw index-key ring), or after the
+    n-gram's ngram_size-1 previous ids (the PLE id ring). The MTP head's chain adds one position a launch, after
+    those, so it needs no more. The rings derived from spec_k (GDN's, PLE's conv) size themselves."""
+    if F.idx_ratio - 1 + F.spec_k + 1 > QSA_KEY_RING:
+        raise ValueError(f"a verify step of {F.spec_k + 1} tokens after the open group's {F.idx_ratio - 1} members "
+                         f"passes the raw index-key ring of {QSA_KEY_RING} (spec_k <= {QSA_KEY_RING - F.idx_ratio - 1})")
+    if F.ngram_size - 1 + F.spec_k + 1 > PLE_ID_RING:
+        raise ValueError(f"a verify step of {F.spec_k + 1} tokens after the n-gram's {F.ngram_size - 1} previous ids "
+                         f"passes the PLE id ring of {PLE_ID_RING} (spec_k <= {PLE_ID_RING - F.ngram_size - 1})")
+
+
 def layout(F, layers, *, mtp: bool = True) -> CacheLayout:
     """Declared byte offsets; no CUDA allocation."""
+    check_rings(F)
     layers = tuple(layers)
     if not layers or len(set(layers)) != len(layers) or any(not 0 <= L < F.layers for L in layers):
         raise ValueError("cache layers must be nonempty, unique and inside the model")
@@ -348,7 +362,8 @@ def caches(tp: int = 4) -> "list[Cache]":
     ]
 
 
-__all__ = ["QSA_KEY_RING", "PLE_ID_RING", "CacheLayout", "layout", "snapshot_layout", "cache_capacity", "qsa_layers",
+__all__ = ["QSA_KEY_RING", "PLE_ID_RING", "CacheLayout", "check_rings", "layout", "snapshot_layout", "cache_capacity",
+           "qsa_layers",
            "Qwen38Caches", "caches"]
 
 
