@@ -1,0 +1,22 @@
+2026-09-18T11:28:58.720141534Z   warm prefill: memory/32256/0 26.062s, kernels/64/0 1.346s, kernels/512/0 0.46s, kernels/4095/0 1.395s, kernels/64/8384 1.345s, kernels/64/16832 0.296s, kernels/64/32960 0.299s, kernels/64/65984 0.299s, kernels/64/131264 0.298s, kernels/64/262080 0.3s
+2026-09-18T11:29:07.223500933Z phase                                      seconds   dev GiB  counters
+2026-09-18T11:29:07.223530565Z front                                        3.777            import_s=2.585 box_s=0.463 shape_s=0.003
+2026-09-18T11:29:07.223533461Z comm                                         2.240     +0.25  
+2026-09-18T11:29:07.223535733Z prepare one-shot                             0.000     +0.00  
+2026-09-18T11:29:07.223551477Z lanes                                        0.581     +0.02  kernel_imports_s=2.815
+2026-09-18T11:29:07.223553637Z   wait for the imports                       0.575     +0.02  
+2026-09-18T11:29:07.223555525Z qualify lanes                                1.893     +1.17  
+2026-09-18T11:29:07.223557269Z arena                                        1.564    +38.41  
+2026-09-18T11:29:07.223559141Z load                                         3.167     +1.13  blocks=51 bytes=2.1066e+10 direct=1 stage_s=0.613 wait_s=1.066 copy_s=0.63 views_s=0.053 tensors=1148 read_bytes=4.80171e+08
+2026-09-18T11:29:07.223561925Z ple table                                    0.001     +0.00  
+2026-09-18T11:29:07.223563669Z prepare dense                                6.857     +0.80  weight_digest_calls=196 weight_digest_s=2.92 pack_calls=196 pack_s=2.517 packs_cache=196 packs_rtn=196
+2026-09-18T11:29:07.223565605Z caches                                       0.003     +0.00  
+2026-09-18T11:29:07.223567285Z engine                                       0.027     +0.00  
+2026-09-18T11:29:07.223568997Z wait for weight preparation                  0.675     +0.00  
+2026-09-18T11:29:07.223570709Z runner                                       0.000     +0.00  
+2026-09-18T11:29:07.223572389Z wait for the prelude                         0.000     +0.00  
+2026-09-18T11:29:07.223574085Z warm prefill                                32.104     +0.98  
+2026-09-18T11:29:07.223575829Z capture decode                               8.369     +1.29  
+2026-09-18T11:29:07.223577461Z door                                         0.025     +0.00  
+2026-09-18T11:29:07.223579157Z total                                       61.283
+2026-09-18T11:29:07.223580869Z   rank 0: ready in 60.3 s, door on port 8000

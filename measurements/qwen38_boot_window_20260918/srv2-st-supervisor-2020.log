@@ -1,0 +1,8 @@
+2026-09-18 20:23:00 fleet taken (lease: session session/qwen38-boot-speed on srv2 since 2026-09-18 20:22:40 (Qwen3.8 boot-speed window: two boots of main f1d4dd9a (#1187 #1195: warm prefill, prebuild, boot table), operator: 전부 해): phase=handed over): waiting -- no forensics, no launch attempt
+2026-09-18 20:30:32 health check failed (1/3): containers=no door=no chat=no
+2026-09-18 20:31:03 health check failed (2/3): containers=no door=no chat=no
+2026-09-18 20:31:34 health check failed (3/3): containers=no door=no chat=no
+2026-09-18 20:31:36 forensics: /home/choiceoh/glm53-logs/st-forensics/20260918-203134
+2026-09-18 20:31:38 launching the ST fleet (production lease as production/srv2/3001080)
+2026-09-18 20:33:43 launch: door up after 105s
+2026-09-18 20:33:43 launch: healthy after 105s (a chat answered)

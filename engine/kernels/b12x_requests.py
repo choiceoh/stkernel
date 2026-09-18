@@ -10,7 +10,9 @@ compile does need is the list of kernels, and nothing knows that list better tha
 
     record(md, path, profile)   at boot: every getter call that adds a kernel to the process (built, or read from disk)
                                 becomes one JSON line holding the getter, its arguments, the three `configure_*` settings
-                                the getters read, and the device's SM and cluster counts
+                                the getters read, the device's SM and cluster counts, and the kernel shape the process
+                                bound (engine/base/kernel_shape: the dispatcher picks the micro kernel's tile and
+                                scatter from its MoE cell, and an unbound replay would pick GLM-5.3's)
     prebuild                    engine/runtime/b12x_prebuild.py, in a CPU container with the NEW tree: each line replayed
                                 through the same getter, so the key and module name are the new tree's own, and that
                                 tree's first boot finds the objects (it reads the environment it runs in, so it lives
@@ -40,7 +42,7 @@ CONFIG = ("_GLM53_B12X_STATIC_V2", "_TP_SF6_Q0_ENABLED", "_EP_ZERO_WEIGHT_MICRO_
 """The settings a profile's lanes put on the dispatcher (`configure_static_v2`, `configure_tp_sf6_q0`,
 `configure_ep_zero_weight_micro`) and the getters read."""
 ROOT = "st-b12x-requests"
-KEYED = ("getter", "args", "kwargs", "config", "device")
+KEYED = ("getter", "args", "kwargs", "config", "device", "shape")
 
 
 def path_under(base, profile: str) -> "Path | None":
@@ -142,8 +144,10 @@ class Recorder:
         if self.failed is not None:
             return
         try:
+            from engine.base import kernel_shape
             line = {"getter": getter, "args": encode(list(args)), "kwargs": {k: encode(v) for k, v in kwargs.items()},
-                    "config": {name: encode(getattr(self.md, name, None)) for name in CONFIG}, "device": self.device()}
+                    "config": {name: encode(getattr(self.md, name, None)) for name in CONFIG}, "device": self.device(),
+                    "shape": json.loads(json.dumps(kernel_shape.to_dict(kernel_shape.bound())))}
             k = key(line)
             if k in self.seen:
                 return
