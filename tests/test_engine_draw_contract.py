@@ -8,6 +8,9 @@ import importlib.util
 from pathlib import Path
 import struct
 import unittest
+from contextlib import redirect_stdout
+import io
+from unittest.mock import patch
 
 from engine.base import draws
 
@@ -51,6 +54,47 @@ class BitForBitTests(unittest.TestCase):
     def test_a_missing_key_is_not_a_pass(self):
         with self.assertRaises(KeyError):
             probe.compare("bit", {}, {("a",): 0.5})
+
+
+class ProbeFlowTests(unittest.TestCase):
+    """Exercise the whole orchestration with CPU tensors, not just compare()."""
+
+    def run_probe(self, corrupt_rich=False):
+        import torch
+
+        real_arange, real_uniform = torch.arange, draws.uniform_tensor
+
+        def cpu_arange(*args, **kwargs):
+            kwargs['device'] = 'cpu'
+            return real_arange(*args, **kwargs)
+
+        def uniform_tensor(keys, purpose, count):
+            result = real_uniform(keys, purpose, count)
+            if corrupt_rich and purpose == draws.RICH:
+                result[0, 0] = torch.nextafter(result[0, 0], torch.tensor(float('inf')))
+            return result
+
+        output = io.StringIO()
+        with (patch('sys.argv', ['probe', '--k', '7', '--rows', '4', '--seed', '7']),
+              patch('torch.cuda.is_available', return_value=True),
+              patch('torch.arange', side_effect=cpu_arange),
+              patch.object(draws, 'uniform_tensor', side_effect=uniform_tensor),
+              redirect_stdout(output)):
+            status = probe.main()
+        return status, output.getvalue()
+
+    def test_valid_fused_and_per_purpose_subsets_pass_the_complete_flow(self):
+        status, output = self.run_probe()
+        self.assertEqual(status, 0)
+        self.assertIn('60/60 equal', output)
+        self.assertEqual(output.count('32/32 equal'), 5)
+        self.assertTrue(output.endswith('PASS\n'))
+
+    def test_a_rich_device_mismatch_fails_the_complete_flow(self):
+        status, output = self.run_probe(corrupt_rich=True)
+        self.assertEqual(status, 1)
+        self.assertIn('uniform_tensor (RICH): 31/32 equal', output)
+        self.assertTrue(output.endswith('FAIL\n'))
 
 
 if __name__ == "__main__":

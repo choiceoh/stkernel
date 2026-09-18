@@ -1,0 +1,504 @@
+{
+  "status": "incident unresolved; requested full-position capture completed",
+  "capture_source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+  "captures": 2313,
+  "capture_bytes": 3588746501,
+  "sampler": "isolated eager N=1 target, T=1, seed=7, RICH@0; rich uniforms are computed on host and copied to GPU",
+  "scope": "This does not execute the Triton fused draw probe or establish whole-engine correctness.",
+  "manifest": {
+    "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+    "dump": "/home/choiceoh/glm53-logs/st-bracket-dumps/st-lossless-logits0918-hold-8f87c211515c/incident-logits",
+    "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+    "margin_tool_pr": 1170,
+    "margin_tool_base_commit": "e2c6f14275150b546613d68515f70bc96b60ca95",
+    "margin_tool_sha256": "c59c0ea52ab3606a066be6c89c65abc51db866f4e289f4fd98021d387ac8a4cd",
+    "alignment": "Each case is the same single incident request. View filenames use logical admission 1. Symlink targets and payloads preserve the actual runtime admission. Prefix hashes guard comparisons.",
+    "cases": [
+      {
+        "case": 0,
+        "mode": 20,
+        "admission": 1,
+        "captures": 477,
+        "bytes": 740093321,
+        "margin_input": "/tmp/telemachus-quality-0917/lossless-logits-replay/margin-input/case00-mode20",
+        "result": "/tmp/telemachus-quality-0917/lossless-logits-replay/case00-mode20-original-seed7.json",
+        "output_ids_sha256": "047edbf52908cc0d514a0451f0373eba33fc644fc42edbe0577714c08dec949f",
+        "verified": true
+      },
+      {
+        "case": 1,
+        "mode": 22,
+        "admission": 2,
+        "captures": 407,
+        "bytes": 631484763,
+        "margin_input": "/tmp/telemachus-quality-0917/lossless-logits-replay/margin-input/case01-mode22",
+        "result": "/tmp/telemachus-quality-0917/lossless-logits-replay/case01-mode22-original-seed7.json",
+        "output_ids_sha256": "f366077637f3b61ed47f7f61e0116968dc5d19bc6a1a5981693c9717eca1d904",
+        "verified": true
+      },
+      {
+        "case": 2,
+        "mode": 21,
+        "admission": 3,
+        "captures": 497,
+        "bytes": 771118285,
+        "margin_input": "/tmp/telemachus-quality-0917/lossless-logits-replay/margin-input/case02-mode21",
+        "result": "/tmp/telemachus-quality-0917/lossless-logits-replay/case02-mode21-original-seed7.json",
+        "output_ids_sha256": "ecef65be9f9cd63fa5726c20668b9e18c9e4bed3be86249ae3a0a7c57e25fa8e",
+        "verified": true
+      },
+      {
+        "case": 3,
+        "mode": 23,
+        "admission": 4,
+        "captures": 455,
+        "bytes": 705956811,
+        "margin_input": "/tmp/telemachus-quality-0917/lossless-logits-replay/margin-input/case03-mode23",
+        "result": "/tmp/telemachus-quality-0917/lossless-logits-replay/case03-mode23-original-seed7.json",
+        "output_ids_sha256": "f86273fb8c241230a1d83df2808183036a3fb61187ff960d5ba9e6bdc8bb9c86",
+        "verified": true
+      },
+      {
+        "case": 4,
+        "mode": 20,
+        "admission": 5,
+        "captures": 477,
+        "bytes": 740093321,
+        "margin_input": "/tmp/telemachus-quality-0917/lossless-logits-replay/margin-input/case04-mode20",
+        "result": "/tmp/telemachus-quality-0917/lossless-logits-replay/case04-mode20-original-seed7.json",
+        "output_ids_sha256": "047edbf52908cc0d514a0451f0373eba33fc644fc42edbe0577714c08dec949f",
+        "verified": true
+      }
+    ]
+  },
+  "comparisons": [
+    {
+      "left_case": 0,
+      "right_case": 1,
+      "right_mode": 22,
+      "shared_positions": 407,
+      "compared_same_prefix": 20,
+      "skipped_different_prefix": 387,
+      "all_shared_uniforms_equal": true,
+      "equal_raw_rows": 0,
+      "max_same_prefix_tv": 0.23124381474467579,
+      "top1_flips": 1,
+      "first_sampled_divergence": {
+        "generation": 19,
+        "prefix_sha256": "9afeb2ecfa1c7411c86a7855402c4a68ead219954ff39938602e43de818eac9d",
+        "same_uniform": true,
+        "left": {
+          "picked": 82651,
+          "probability": 0.6240745077173642,
+          "top1": 82651,
+          "top1_margin": 1.0,
+          "uniform": 0.5584545135498047,
+          "cdf_lower": 0.375558677783951,
+          "cdf_upper": 0.9996331855013152,
+          "cdf_margin": 0.18289583576585366,
+          "cdf_replay": 82651
+        },
+        "right": {
+          "picked": 21754,
+          "probability": 0.40259020264419315,
+          "top1": 82651,
+          "top1_margin": 0.0,
+          "uniform": 0.5584545135498047,
+          "cdf_lower": 0.18138265901433356,
+          "cdf_upper": 0.5839728616585267,
+          "cdf_margin": 0.025518348108722,
+          "cdf_replay": 21754
+        },
+        "distribution_tv": 0.23124381474467579,
+        "raw_logit_max_abs": 3.1171875
+      },
+      "output_ids_identical": false
+    },
+    {
+      "left_case": 0,
+      "right_case": 2,
+      "right_mode": 21,
+      "shared_positions": 477,
+      "compared_same_prefix": 27,
+      "skipped_different_prefix": 450,
+      "all_shared_uniforms_equal": true,
+      "equal_raw_rows": 0,
+      "max_same_prefix_tv": 0.1273226504175816,
+      "top1_flips": 1,
+      "first_sampled_divergence": {
+        "generation": 26,
+        "prefix_sha256": "ef2f51b22bd99f08ec81cf5bc96727f3c159d1de4d2428e01c319f5b52a7caa7",
+        "same_uniform": true,
+        "left": {
+          "picked": 13,
+          "probability": 0.8513441394084008,
+          "top1": 13,
+          "top1_margin": 2.75,
+          "uniform": 0.03602893650531769,
+          "cdf_lower": 0.02270200458470675,
+          "cdf_upper": 0.8740461439931075,
+          "cdf_margin": 0.013326931920610938,
+          "cdf_replay": 13
+        },
+        "right": {
+          "picked": 11,
+          "probability": 0.07309916366678543,
+          "top1": 13,
+          "top1_margin": 2.5,
+          "uniform": 0.03602893650531769,
+          "cdf_lower": 1.521955234525507e-06,
+          "cdf_upper": 0.07310068562201995,
+          "cdf_margin": 0.03602741455008316,
+          "cdf_replay": 11
+        },
+        "distribution_tv": 0.08965847612597241,
+        "raw_logit_max_abs": 2.9453125
+      },
+      "output_ids_identical": false
+    },
+    {
+      "left_case": 0,
+      "right_case": 3,
+      "right_mode": 23,
+      "shared_positions": 455,
+      "compared_same_prefix": 3,
+      "skipped_different_prefix": 452,
+      "all_shared_uniforms_equal": true,
+      "equal_raw_rows": 0,
+      "max_same_prefix_tv": 0.12995373423809942,
+      "top1_flips": 0,
+      "first_sampled_divergence": {
+        "generation": 2,
+        "prefix_sha256": "3f2eed9860c2b81aa65db86aab48223e64f58d12968bfe5bf179d4a44a6e010f",
+        "same_uniform": true,
+        "left": {
+          "picked": 311,
+          "probability": 0.6608229824971636,
+          "top1": 311,
+          "top1_margin": 1.0,
+          "uniform": 0.06517387926578522,
+          "cdf_lower": 0.05864744023364708,
+          "cdf_upper": 0.7194704227308107,
+          "cdf_margin": 0.006526439032138134,
+          "cdf_replay": 311
+        },
+        "right": {
+          "picked": 25,
+          "probability": 0.09867691103658285,
+          "top1": 311,
+          "top1_margin": 0.75,
+          "uniform": 0.06517387926578522,
+          "cdf_lower": 8.949512220260084e-05,
+          "cdf_upper": 0.09876640615878546,
+          "cdf_margin": 0.03359252689300024,
+          "cdf_replay": 25
+        },
+        "distribution_tv": 0.09750572431388281,
+        "raw_logit_max_abs": 2.40625
+      },
+      "output_ids_identical": false
+    },
+    {
+      "left_case": 0,
+      "right_case": 4,
+      "right_mode": 20,
+      "shared_positions": 477,
+      "compared_same_prefix": 477,
+      "skipped_different_prefix": 0,
+      "all_shared_uniforms_equal": true,
+      "equal_raw_rows": 477,
+      "max_same_prefix_tv": 0.0,
+      "top1_flips": 0,
+      "first_sampled_divergence": null,
+      "output_ids_identical": true
+    }
+  ],
+  "requests": [
+    {
+      "case": 0,
+      "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+      "owner": "queue/st-lossless-logits0918",
+      "mode": 20,
+      "control": "baseline",
+      "seed": 7,
+      "temperature": 1,
+      "top_p": 1,
+      "top_k": -1,
+      "prompt_tokens": 50005,
+      "completion_tokens": 477,
+      "max_tokens": 2048,
+      "cap_hit": false,
+      "seconds": 93.87720804894343,
+      "cached_tokens": 0,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "output_ids_sha256": "047edbf52908cc0d514a0451f0373eba33fc644fc42edbe0577714c08dec949f",
+      "output_text_sha256": "52b90baed704ef9913facc3b770c111238a11491f8b84121a11dddf85c7ac3f0",
+      "served_before": 0,
+      "served_after": 1,
+      "quality": "corrupted; identical output IDs to the previously reviewed no-logits-capture control"
+    },
+    {
+      "case": 1,
+      "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+      "owner": "queue/st-lossless-logits0918",
+      "mode": 22,
+      "control": "weight-input-scales",
+      "seed": 7,
+      "temperature": 1,
+      "top_p": 1,
+      "top_k": -1,
+      "prompt_tokens": 50005,
+      "completion_tokens": 407,
+      "max_tokens": 2048,
+      "cap_hit": false,
+      "seconds": 83.73631958698388,
+      "cached_tokens": 0,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "output_ids_sha256": "f366077637f3b61ed47f7f61e0116968dc5d19bc6a1a5981693c9717eca1d904",
+      "output_text_sha256": "32d06e8a5de8dbb1336729f5bb750eddf696e1addac20e0069f52e4e706b45cc",
+      "served_before": 1,
+      "served_after": 2,
+      "quality": "corrupted; identical output IDs to the previously reviewed no-logits-capture control"
+    },
+    {
+      "case": 2,
+      "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+      "owner": "queue/st-lossless-logits0918",
+      "mode": 21,
+      "control": "weight-scales",
+      "seed": 7,
+      "temperature": 1,
+      "top_p": 1,
+      "top_k": -1,
+      "prompt_tokens": 50005,
+      "completion_tokens": 497,
+      "max_tokens": 2048,
+      "cap_hit": false,
+      "seconds": 91.20973860600498,
+      "cached_tokens": 0,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "output_ids_sha256": "ecef65be9f9cd63fa5726c20668b9e18c9e4bed3be86249ae3a0a7c57e25fa8e",
+      "output_text_sha256": "c642ed3fab921147dadcd9b32b0013bb546c29260a8507120f775cdee75971c1",
+      "served_before": 2,
+      "served_after": 3,
+      "quality": "corrupted; identical output IDs to the previously reviewed no-logits-capture control"
+    },
+    {
+      "case": 3,
+      "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+      "owner": "queue/st-lossless-logits0918",
+      "mode": 23,
+      "control": "scales-fp32-constants",
+      "seed": 7,
+      "temperature": 1,
+      "top_p": 1,
+      "top_k": -1,
+      "prompt_tokens": 50005,
+      "completion_tokens": 455,
+      "max_tokens": 2048,
+      "cap_hit": false,
+      "seconds": 83.63479412102606,
+      "cached_tokens": 0,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "output_ids_sha256": "f86273fb8c241230a1d83df2808183036a3fb61187ff960d5ba9e6bdc8bb9c86",
+      "output_text_sha256": "ac384e7cf9dd159c197cd06a5443eb118ca42e9e9485af3ed10069763e8be143",
+      "served_before": 3,
+      "served_after": 4,
+      "quality": "corrupted; identical output IDs to the previously reviewed no-logits-capture control"
+    },
+    {
+      "case": 4,
+      "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+      "owner": "queue/st-lossless-logits0918",
+      "mode": 20,
+      "control": "baseline",
+      "seed": 7,
+      "temperature": 1,
+      "top_p": 1,
+      "top_k": -1,
+      "prompt_tokens": 50005,
+      "completion_tokens": 477,
+      "max_tokens": 2048,
+      "cap_hit": false,
+      "seconds": 87.93259592400864,
+      "cached_tokens": 0,
+      "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+      "output_ids_sha256": "047edbf52908cc0d514a0451f0373eba33fc644fc42edbe0577714c08dec949f",
+      "output_text_sha256": "52b90baed704ef9913facc3b770c111238a11491f8b84121a11dddf85c7ac3f0",
+      "served_before": 4,
+      "served_after": 5,
+      "quality": "same corrupted baseline; repetition is a determinism control"
+    }
+  ],
+  "runtime": {
+    "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+    "owner": "queue/st-lossless-logits0918",
+    "ranks": {
+      "0": {
+        "release": "8f87c211515c",
+        "runtime_root": "/repo",
+        "hashes": {
+          "engine/profiles/glm53/incident_logits.py": "3a7beacdc871311579eba033751a5370f0c08b1773a350475e1f913e9f1a5f9f",
+          "engine/profiles/glm53/incident_redhat_scales.py": "32a6febfd32e524f71d772a3372ff5bc3aad380401ca8aa7ed31f155dca5ceea",
+          "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+          "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+          "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7",
+          "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+          "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+          "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+          "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+          "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+          "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+        },
+        "incident_modules": [
+          "incident_operands.py",
+          "incident_kda.py",
+          "incident_redhat_scales.py",
+          "incident_reference.py",
+          "incident_logits.py"
+        ],
+        "as2_line": [
+          "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+        ],
+        "image": "st-engine:bracket-8f87c211515c sha256:c1b56fe58127fa5f3c908e997fb0400ec7371f65547653ecef444187394314c8",
+        "source_scale_layers": 42
+      },
+      "1": {
+        "release": "8f87c211515c",
+        "runtime_root": "/repo",
+        "hashes": {
+          "engine/profiles/glm53/incident_logits.py": "3a7beacdc871311579eba033751a5370f0c08b1773a350475e1f913e9f1a5f9f",
+          "engine/profiles/glm53/incident_redhat_scales.py": "32a6febfd32e524f71d772a3372ff5bc3aad380401ca8aa7ed31f155dca5ceea",
+          "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+          "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+          "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7",
+          "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+          "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+          "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+          "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+          "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+          "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+        },
+        "incident_modules": [
+          "incident_logits.py",
+          "incident_redhat_scales.py",
+          "incident_kda.py",
+          "incident_reference.py",
+          "incident_operands.py"
+        ],
+        "as2_line": [
+          "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+        ],
+        "image": "st-engine:bracket-8f87c211515c sha256:d528c2333fe62812e0cbd695bbe10c7e91771e62f7b099d36e242351dce968fa",
+        "source_scale_layers": 42
+      },
+      "2": {
+        "release": "8f87c211515c",
+        "runtime_root": "/repo",
+        "hashes": {
+          "engine/profiles/glm53/incident_logits.py": "3a7beacdc871311579eba033751a5370f0c08b1773a350475e1f913e9f1a5f9f",
+          "engine/profiles/glm53/incident_redhat_scales.py": "32a6febfd32e524f71d772a3372ff5bc3aad380401ca8aa7ed31f155dca5ceea",
+          "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+          "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+          "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7",
+          "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+          "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+          "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+          "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+          "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+          "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+        },
+        "incident_modules": [
+          "incident_redhat_scales.py",
+          "incident_reference.py",
+          "incident_operands.py",
+          "incident_logits.py",
+          "incident_kda.py"
+        ],
+        "as2_line": [
+          "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+        ],
+        "image": "st-engine:bracket-8f87c211515c sha256:bafa654bda96e6e265782e214018789c761eb409dede78b9f953afcf7ec5dc52",
+        "source_scale_layers": 42
+      },
+      "3": {
+        "release": "8f87c211515c",
+        "runtime_root": "/repo",
+        "hashes": {
+          "engine/profiles/glm53/incident_logits.py": "3a7beacdc871311579eba033751a5370f0c08b1773a350475e1f913e9f1a5f9f",
+          "engine/profiles/glm53/incident_redhat_scales.py": "32a6febfd32e524f71d772a3372ff5bc3aad380401ca8aa7ed31f155dca5ceea",
+          "engine/profiles/glm53/modelopt_scales.py": "5fb0fbbbc2011e0390248c696f5fb04e128e854d8544dbc113e932e8a28afbf3",
+          "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+          "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7",
+          "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+          "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/dense/smoothing.py": "470cef3fc8f7c29d00de17eada12643dfd6e9b0b4d2fe5c4e8f8599f24f96440",
+          "engine/kernels/b12x/moe_static_kernel.py": "789ff7a5bddd8edeaf7ac10ca8fd39b6fed15ab0dca111b6f601c812b9e8fba7",
+          "engine/kernels/b12x/moe_micro_kernel.py": "b4b529582ff806b8f539d63e6d21aa468dd46a6046c785582f4a71a9afe82aa1",
+          "engine/kernels/b12x/_moe_dynamic/generic.py": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+          "engine/kernels/b12x/moe_dynamic_ep_local.py": "9813b61e0da4024bcb3a6d51b045e241d3ca09f6ac6b8bbb3b5931565590706b"
+        },
+        "incident_modules": [
+          "incident_redhat_scales.py",
+          "incident_reference.py",
+          "incident_operands.py",
+          "incident_logits.py",
+          "incident_kda.py"
+        ],
+        "as2_line": [
+          "MOE_STATIC_PRODUCTION = \"t,r,sf6,batch,q0,as2\"  # native TP4 decode and prefill recipe; batch: 16 rows (C=2) take the"
+        ],
+        "image": "st-engine:bracket-8f87c211515c sha256:09cc30992f0062b253a61bad2ed9906b5d1f3a74ff7c4578b480ef5274a8b315",
+        "source_scale_layers": 42
+      }
+    }
+  },
+  "draw_runtime": {
+    "source": "8f87c211515cb5896036af53c3b18ed8d908aacd",
+    "expected": {
+      "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+      "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+      "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554",
+      "engine/kernels/decode_inputs.py": "2bb49da15a8c9d3021d32f029c76209cb840d8d369fc9eefc00ccdacdbc8f2b6",
+      "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7"
+    },
+    "ranks": {
+      "0": {
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554",
+        "engine/kernels/decode_inputs.py": "2bb49da15a8c9d3021d32f029c76209cb840d8d369fc9eefc00ccdacdbc8f2b6",
+        "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7"
+      },
+      "1": {
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554",
+        "engine/kernels/decode_inputs.py": "2bb49da15a8c9d3021d32f029c76209cb840d8d369fc9eefc00ccdacdbc8f2b6",
+        "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7"
+      },
+      "2": {
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554",
+        "engine/kernels/decode_inputs.py": "2bb49da15a8c9d3021d32f029c76209cb840d8d369fc9eefc00ccdacdbc8f2b6",
+        "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7"
+      },
+      "3": {
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554",
+        "engine/kernels/decode_inputs.py": "2bb49da15a8c9d3021d32f029c76209cb840d8d369fc9eefc00ccdacdbc8f2b6",
+        "engine/profiles/glm53/adapter.py": "8f3d7ae4456bee1fc0a591be1a8b286e8e3254c0a2a9ef9ea76a7957b36f2ba7"
+      }
+    },
+    "verified": true
+  }
+}
