@@ -243,9 +243,16 @@ def tokenizer(ckpt=facts.CKPT):
 
 
 def generation_defaults(ckpt=facts.CKPT) -> dict:
-    """What a request may omit: the checkpoint's generation_config (vLLM applies it the same way -- temperature 1.0 here)."""
+    """Checkpoint sampling values, with GLM-5.3's original nucleus default when absent.
+
+    zai-org/GLM-5.3-Flash ships top_p=0.95; the Red Hat NVFP4 derivative
+    omits it. Inheriting the sampler's 1.0 in that case changes the original
+    model's policy. Explicit checkpoint values and request overrides win.
+    The raw engine dialect remains caller-controlled and does not use this.
+    """
     import json
     g = json.loads((Path(ckpt) / "generation_config.json").read_text())
+    g.setdefault("top_p", 0.95)
     return {k: g[k] for k in ("temperature", "top_p", "top_k", "repetition_penalty") if k in g}
 
 
