@@ -130,6 +130,14 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 5. **스윕과 메모리:** Q9, H3, S2, X1, H6, M5, D5, D6, Q13, P4.
 6. **크고 위험한 것:** Q10, Q11, Q12, H4, H5, X2, S3, D4.
 
+## 운영자 지시 (2026-09-18) — 목록 밖의 결정
+
+| 지시 | 내용 | 상태 |
+|---|---|---|
+| "그냥 mtp로 해" | 드래프터는 체크포인트의 MTP 헤드(`SPEC_K=1`)로 간다. PixelML 의 Flash-Next DFlash 드래프터(srv2 `~/models/qwen38-flash-next-dflash-pixelml`; 자체 측정에서 수학만 네이티브 MTP 를 이기고 채팅은 느림)는 붙이지 않는다 | 결정 |
+| "e뭐시기 그건 ssd로 내리고" | PLE 표(랭크당 11.92 GiB)를 아레나에서 빼 `ple-r{r}of4.weight` 로 랭크 파일 옆에 두고 행을 번호로 읽는다(`profiles/qwen38/ple_table.py`; 레이아웃 `st-qwen38-tep4-modelopt-v3`) | PR |
+| "이미지는 파트로 사전 샤딩해서" | NVIDIA 허브 체크포인트(fc694b54, srv2)를 `preshard.py` 로 네 랭크 파일 + 네 표 파일로 자른다(MTP 전문가 FP8→NVFP4, 전문가 그룹은 랭크별) | 코드는 PR; 산출물은 플릿 창 대기 — 네 노드 모두 프로덕션이 떠 있어(MemAvailable 10~13 GB, earlyoom 6 GiB) 프로덕션 옆에서는 돌리지 않는다 |
+
 ## 옮기지 않는 GLM 최적화
 
 | 계열 | 항목 | 이유 |

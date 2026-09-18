@@ -11,7 +11,8 @@ The phases are GLM-5.3's fleet boot's (engine/profiles/glm53/boot.py `fleet` and
     lanes             lanes.served(); lanes.qualify() holds the lanes that own arithmetic to their oracles (D3)
     admission         the arena's bytes declared (weights + caches + snapshots + workspace ceiling) and admitted on
                       every rank before any rank allocates (base/arena.prepare_allocation, base/runtime_memory)
-    load              the rank file's views carved from the arena, bound; the dense lanes packed (PackStore)
+    load              the rank file's views carved from the arena, bound; the PLE table opened beside the rank file
+                      (ple-r{r}of4.weight on the SSD, ple_table.py -- not in the arena); the dense lanes packed (PackStore)
     engine            caches, the served composition behind base/composed.ComposedModel (adapter.py), the runner
     capture           the target's verify graphs and the MTP head's draft graphs, every row count and context bucket
                       (decode_graphs.py), before the door admits work
@@ -108,6 +109,10 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         with recorder.phase("load"):
             views = rank.load([s.name for s in specs], arena=arena, recorder=recorder)
             net.bind(views)
+        with recorder.phase("ple table"):
+            # the PLE table is not in the rank file: the rank's rows come off its SSD file beside it (ple_table.py)
+            from engine.profiles.qwen38.ple_table import PLETable
+            net.attach_ple(PLETable.open(ranks_dir, comm.rank, F), max_rows=max_seqs * (F.spec_k + 1))
         with recorder.phase("prepare dense"):
             # the packs move into their BF16 sources' arena regions (all but the shared expert's padded down projection)
             net.prepare_dense(store, consume_weights=True)

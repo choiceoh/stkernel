@@ -41,19 +41,24 @@ class Checkpoint:
         self._readers = {}                  # shard -> RankLoader: its header is parsed once
 
     def _probe_layers(self) -> tuple[str, int]:
-        prefixes, highest = set(), -1
+        """The model's layer prefix and its layer count. A checkpoint may carry a second `.layers.` prefix beside the
+        model's (Qwen3.8's MTP head is `mtp.layers.0.`): the model's is the one with the most tensors, and only its
+        layers are `layer_of`/`keys_for`'s."""
+        counts, highest = {}, {}
         for name in self.weight_map:
             m = _LAYER.match(name)
             if m:
-                prefixes.add(m.group("prefix"))
-                highest = max(highest, int(m.group("index")))
-        if len(prefixes) != 1:
-            raise ValueError(f"expected one layer prefix, found {sorted(prefixes)[:4]}")
-        return prefixes.pop(), highest + 1
+                prefix = m.group("prefix")
+                counts[prefix] = counts.get(prefix, 0) + 1
+                highest[prefix] = max(highest.get(prefix, -1), int(m.group("index")))
+        if not counts:
+            raise ValueError("no layer prefix in the index")
+        prefix = max(counts, key=lambda p: (counts[p], highest[p]))
+        return prefix, highest[prefix] + 1
 
     def layer_of(self, name: str) -> int | None:
         m = _LAYER.match(name)
-        return int(m.group("index")) if m else None
+        return int(m.group("index")) if m and m.group("prefix") == self.layer_prefix else None
 
     def keys_for(self, layers: range | list[int], *, include_shared: bool = False) -> list[str]:
         """Tensor names for these layers; `include_shared` adds everything that

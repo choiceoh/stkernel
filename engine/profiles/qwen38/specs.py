@@ -21,13 +21,21 @@ are ModelOpt's lossless layout (engine/profiles/glm53/modelopt_weights.quant_spe
 intermediate split): packed nibbles as they are with rows [up; gate] (the b12x kernel's order), E4M3 block scales
 tile-interleaved (modules/nvfp4_sf), the FP32 `weight_scale_2` multipliers and `input_scale` kept beside them.
 
-The MTP head's experts are BF16 in the checkpoint (a fused [512, 1280, 2560] and [512, 2560, 640]); they are written
-as NVFP4 in the same layout so the drafter's MoE runs on the target's lane. A drafter changes how many tokens a step
-yields, never which (engine/base/composed: verification picks), so the drafter's quantisation costs acceptance, not
-correctness.
+The MTP head's experts are written as NVFP4 in the same layout so the drafter's MoE runs on the target's lane, from
+either encoding a checkpoint copy keeps them in (Facts.mtp_experts): the older copy's fused BF16 experts
+([512, 1280, 2560] and [512, 2560, 640]; "bf16") or NVIDIA's Hub export's per-expert FP8 ones (e4m3 [out, in] under a
+BF16 [out/128, in/128] `weight_scale_inv`, which multiplies -- held against the BF16 copy on srv2, 2026-09-18, 2.66%
+relative error either projection, the FP8 rounding; "fp8_block", dequantised first). A drafter changes how many tokens
+a step yields, never which (engine/base/composed: verification picks), so the drafter's quantisation costs acceptance,
+not correctness -- twice quantised from the FP8 export, once from the BF16 copy; unmeasured.
 
-The PLE table (128 shards of [2,500,012, 160] e4m3, one scalar scale) is written as 32 parts a rank, one group each,
-so presharding never holds more than four shards (1.5 GiB) of it.
+The PLE table (128 shards of [2,500,012, 160] e4m3, one scalar scale) is NOT in the rank file: the operator's decision
+of 2026-09-18 puts it on the SSD. The preshard writes rank r's 32 shards back to back as `ple-r{r}of4.weight` beside
+its rank file (facts.ple_file; `ple_shards` names them in order) and the served net reads rows by id (ple_table.py).
+The injection's small tensors stay in the rank file (`ple_specs`).
+
+A layer's routed experts are read one rank's 128 at a time (`groups`), so presharding holds a quarter of a layer's
+experts, never the layer's.
 """
 from __future__ import annotations
 
@@ -39,7 +47,29 @@ from engine.profiles.qwen38.facts import TP, Facts
 
 CK = "model.language_model."
 BF, F32, U8, E4, I64 = torch.bfloat16, torch.float32, torch.uint8, torch.float8_e4m3fn, torch.int64
-PLE_SHARD_ROWS = 2_500_012                     # rows of one ngram_embedding shard (the checkpoint's header)
+
+
+def ple_table_name(F: Facts, L: int) -> str:
+    """The checkpoint name of the table before layer L (its shards are `<name>.shard_N.weight`, its scale
+    `<name>.weight_scale`)."""
+    return f"{CK}layers.{L}.ple.ple_embedding.ngram_embedding"
+
+
+def ple_shards(F: Facts, L: int, rank: int, world: int = TP) -> "list[str]":
+    """The checkpoint shards rank `rank`'s table file holds, in order: its vocabulary range is shards
+    [parts_per_rank * rank, parts_per_rank * (rank + 1)) of the table before layer L."""
+    per_rank = F.ngram_parts // world
+    return [f"{ple_table_name(F, L)}.shard_{per_rank * rank + j}.weight" for j in range(per_rank)]
+
+
+def dequant_fp8_block(weight: torch.Tensor, scale: torch.Tensor, block: int) -> torch.Tensor:
+    """An e4m3 [out, in] matrix under one scale per `block` x `block` tile ([out/block, in/block] -- NVIDIA's
+    `weight_scale_inv`, which MULTIPLIES) as float32 [out, in]."""
+    out, inn = weight.shape
+    if out % block or inn % block or tuple(scale.shape) != (out // block, inn // block):
+        raise ValueError(f"fp8 block scales {tuple(scale.shape)} do not tile {tuple(weight.shape)} by {block}")
+    tiles = weight.float().view(out // block, block, inn // block, block)
+    return (tiles * scale.float()[:, None, :, None]).reshape(out, inn)
 
 
 def _split(t, dim, r, W):
@@ -212,23 +242,48 @@ def nvfp4_from_bf16(w: torch.Tensor) -> "tuple[torch.Tensor, torch.Tensor, torch
     return packed.view(torch.uint8).contiguous(), scale.contiguous(), global_scale.to(F32)
 
 
+def routed_expert_keys(m: str, F: Facts, rank: int) -> "list[str]":
+    """The checkpoint tensors of rank `rank`'s routed experts under `m`: the four ModelOpt tensors of each projection."""
+    return [m + f"experts.{e}.{proj}_proj.{suf}" for e in _expert_ids(F, rank) for proj in ("up", "gate", "down")
+            for suf in ("weight", "weight_scale", "weight_scale_2", "input_scale")]
+
+
+def mtp_expert_keys(m: str, F: Facts, rank: int) -> "list[str]":
+    """The checkpoint tensors the MTP head's routed experts of rank `rank` are built from, in the encoding the
+    checkpoint keeps (Facts.mtp_experts): NVIDIA's per-expert e4m3 weight and its `weight_scale_inv`, or the fused
+    BF16 pair (every rank's experts in the same two tensors)."""
+    if F.mtp_experts == "fp8_block":
+        return [m + f"experts.{e}.{proj}.{suf}" for e in _expert_ids(F, rank)
+                for proj in ("gate_proj", "up_proj", "down_proj") for suf in ("weight", "weight_scale_inv")]
+    return [m + "experts.gate_up_proj", m + "experts.down_proj"]
+
+
 def _mtp_routed_specs(n: str, m: str, F: Facts) -> "list[Spec]":
-    """The MTP head's BF16 experts written as NVFP4 in the routed layout (see the module docstring)."""
+    """The MTP head's experts written as NVFP4 in the routed layout (the module docstring), from either encoding."""
     E, I, H = F.experts_local, F.moe_inter, F.hidden
     gate_up, down = m + "experts.gate_up_proj", m + "experts.down_proj"
+
+    def bf16_expert(s, e):
+        gu = s[gate_up][e]                                               # [2I, H] rows [gate; up]
+        return gu[:I].float(), gu[I:].float(), s[down][e].float()
+
+    def fp8_expert(s, e):
+        base = m + f"experts.{e}."
+        return tuple(dequant_fp8_block(s[base + proj + ".weight"], s[base + proj + ".weight_scale_inv"], F.mtp_block)
+                     for proj in ("gate_proj", "up_proj", "down_proj"))
+
+    expert = fp8_expert if F.mtp_experts == "fp8_block" else bf16_expert
 
     def encoded(s, r, part):
         cache = s.setdefault(("_mtp_nvfp4", r), {})
         if part in cache:
             return cache[part]
-        ids = list(_expert_ids(F, r))
         w13, sf13, g13, w2, sf2, g2 = [], [], [], [], [], []
-        for e in ids:
-            gu = s[gate_up][e]                                           # [2I, H] rows [gate; up]
-            first = torch.cat([gu[I:], gu[:I]], 0)                       # rows [up; gate], the kernel's order
-            p, sc, gs = nvfp4_from_bf16(first)
+        for e in _expert_ids(F, r):
+            gate, up, dn = expert(s, e)
+            p, sc, gs = nvfp4_from_bf16(torch.cat([up, gate], 0))          # rows [up; gate], the kernel's order
             w13.append(p); sf13.append(sc); g13.append(gs)
-            p, sc, gs = nvfp4_from_bf16(s[down][e])
+            p, sc, gs = nvfp4_from_bf16(dn)
             w2.append(p); sf2.append(sc); g2.append(gs)
         cache.update({
             "w13": torch.stack(w13).contiguous(),
@@ -240,7 +295,7 @@ def _mtp_routed_specs(n: str, m: str, F: Facts) -> "list[Spec]":
         })
         return cache[part]
 
-    src = (gate_up, down)
+    src = tuple(sorted({k for rank in range(TP) for k in mtp_expert_keys(m, F, rank)}))
     return [
         Spec(n + "moe.w13", (E, 2 * I, H // 2), U8, src, lambda s, r, W: encoded(s, r, "w13")),
         Spec(n + "moe.w13_sf", (E, 2 * I * (H // 16)), E4, src, lambda s, r, W: encoded(s, r, "w13_sf")),
@@ -268,25 +323,35 @@ def _moe_common_specs(n: str, m: str, F: Facts) -> "list[Spec]":
     ]
 
 
-def top_specs(F: Facts) -> "list[Spec]":
+def top_specs(F: Facts, part: "str | None" = None) -> "list[Spec]":
+    """The embedding, the head and the closing mixer; `part` picks one of "embed" | "head" | "close" (the preshard
+    reads the two 1.27 GB vocabularies as groups of their own, so it never holds both)."""
     vp = F.vocab_local
-    return ([Spec("embed", (vp, F.hidden), BF, (CK + "embed_tokens.weight",), _rows(CK + "embed_tokens.weight")),
-             Spec("head", (vp, F.hidden), BF, ("lm_head.weight",), _rows("lm_head.weight"))]
-            + _hc_specs("", CK, F, (("close", "hyper_connection_mixer"),)))
+    parts = {"embed": [Spec("embed", (vp, F.hidden), BF, (CK + "embed_tokens.weight",), _rows(CK + "embed_tokens.weight"))],
+             "head": [Spec("head", (vp, F.hidden), BF, ("lm_head.weight",), _rows("lm_head.weight"))],
+             "close": _hc_specs("", CK, F, (("close", "hyper_connection_mixer"),))}
+    return parts[part] if part is not None else parts["embed"] + parts["head"] + parts["close"]
 
 
-def layer_specs(F: Facts, L: int) -> "list[Spec]":
+def layer_specs(F: Facts, L: int, *, routed: bool = True) -> "list[Spec]":
+    """A layer's tensors; `routed=False` leaves out its routed experts (their own preshard groups, one a rank)."""
     p, n = f"{CK}layers.{L}.", f"L{L}."
     out = _hc_specs(n, p, F, (("attn", "attn_hyper_connection"), ("mlp", "mlp_hyper_connection")))
     out += _attention_specs(n, p + "self_attn.", F) if F.is_qsa(L) else _gdn_specs(n, p + "linear_attn.", F)
-    out += _moe_common_specs(n, p + "mlp.", F) + _routed_specs(n, p + "mlp.", F)
+    out += _moe_common_specs(n, p + "mlp.", F)
+    if routed:
+        out += routed_specs(F, L)
     if L in F.ple_layers:
         out += ple_specs(F, L)
     return out
 
 
+def routed_specs(F: Facts, L: int) -> "list[Spec]":
+    return _routed_specs(f"L{L}.", f"{CK}layers.{L}.mlp.", F)
+
+
 def ple_specs(F: Facts, L: int) -> "list[Spec]":
-    """The injection's small tensors; the table itself is `ple_table_specs` (parts)."""
+    """The injection's small tensors; the table itself is the rank's SSD file (ple_shards, ple_table.py)."""
     p, n = f"{CK}layers.{L}.ple.", f"L{L}.ple."
     width = F.hc * F.hidden
     e = p + "ple_embedding."
@@ -306,17 +371,9 @@ def ple_specs(F: Facts, L: int) -> "list[Spec]":
     ]
 
 
-def ple_table_specs(F: Facts, L: int, part: int) -> "list[Spec]":
-    """Part `part` of the rank's vocabulary range of the table: checkpoint shard (parts_per_rank * r + part)."""
-    per_rank = F.ngram_parts // TP
-    key = lambda shard: f"{CK}layers.{L}.ple.ple_embedding.ngram_embedding.shard_{shard}.weight"
-    sources = tuple(key(per_rank * r + part) for r in range(TP))
-    return [Spec(f"L{L}.ple.table.{part}", (PLE_SHARD_ROWS, F.ple_head_dim), E4, sources,
-                 lambda s, r, W: s[key(per_rank * r + part)].contiguous())]
-
-
-def mtp_specs(F: Facts) -> "list[Spec]":
-    """The MTP head: its fuse, one QSA + MoE layer at model layer F.layers, and its closing mixer."""
+def mtp_specs(F: Facts, *, routed: bool = True) -> "list[Spec]":
+    """The MTP head: its fuse, one QSA + MoE layer at model layer F.layers, and its closing mixer; `routed=False`
+    leaves out its experts (their own preshard groups)."""
     m, n = "mtp.", "mtp."
     L = f"{m}layers.0."
     out = [
@@ -330,7 +387,9 @@ def mtp_specs(F: Facts) -> "list[Spec]":
     out += _hc_specs(n, m, F, (("close", "hyper_connection_mixer"),))
     out += _hc_specs(n + "L0.", L, F, (("attn", "attn_hyper_connection"), ("mlp", "mlp_hyper_connection")))
     out += _attention_specs(n + "L0.", L + "self_attn.", F)
-    out += _moe_common_specs(n + "L0.", L + "mlp.", F) + _mtp_routed_specs(n + "L0.", L + "mlp.", F)
+    out += _moe_common_specs(n + "L0.", L + "mlp.", F)
+    if routed:
+        out += _mtp_routed_specs(n + "L0.", L + "mlp.", F)
     return out
 
 
@@ -338,22 +397,33 @@ def all_specs(F: Facts, layers=None, *, mtp: bool = True) -> "list[Spec]":
     return [s for _, _, specs_of in groups(F, layers, mtp=mtp) for s in specs_of(0)]
 
 
+def _keys(specs) -> "list[str]":
+    return sorted({k for s in specs for k in s.sources})
+
+
 def groups(F: Facts, layers=None, *, mtp: bool = True):
-    """(label, source keys, specs_of(rank)) per preshard group: the top, one group a layer (a layer's sources read
-    once), the PLE table a part at a time, then the MTP head."""
+    """(label, source keys, specs_of(rank)) per preshard group: the top; a layer's dense tensors, then its routed
+    experts one rank at a time (specs_of answers only for that rank, so a group holds a quarter of the layer's
+    experts); the MTP head likewise (its fused BF16 experts, when that is the encoding, in one group). The PLE table
+    is no group: the preshard streams its shards into each rank's table file (ple_shards)."""
     layers = range(F.layers) if layers is None else list(layers)
-    yield "top", sorted({k for s in top_specs(F) for k in s.sources}), lambda r: top_specs(F)
+    for part in ("embed", "head", "close"):
+        yield f"top {part}", _keys(top_specs(F, part)), (lambda r, part=part: top_specs(F, part))
     for L in layers:
-        keys = sorted({k for s in layer_specs(F, L) for k in s.sources})
-        yield f"layer {L}", keys, (lambda r, L=L: layer_specs(F, L))
-        if L in F.ple_layers:
-            for part in range(F.ngram_parts // TP):
-                specs = ple_table_specs(F, L, part)
-                yield f"layer {L} ple part {part}", sorted({k for s in specs for k in s.sources}), (lambda r, s=specs: s)
+        yield f"layer {L}", _keys(layer_specs(F, L, routed=False)), (lambda r, L=L: layer_specs(F, L, routed=False))
+        for rank in range(TP):
+            yield (f"layer {L} experts rank {rank}", sorted(routed_expert_keys(f"{CK}layers.{L}.mlp.", F, rank)),
+                   (lambda r, L=L, rank=rank: routed_specs(F, L) if r == rank else []))
     if mtp and F.mtp_layers:
-        keys = sorted({k for s in mtp_specs(F) for k in s.sources})
-        yield "mtp", keys, lambda r: mtp_specs(F)
+        m, n = "mtp.layers.0.mlp.", "mtp.L0."
+        yield "mtp", _keys(mtp_specs(F, routed=False)), lambda r: mtp_specs(F, routed=False)
+        if F.mtp_experts == "fp8_block":
+            for rank in range(TP):
+                yield (f"mtp experts rank {rank}", sorted(mtp_expert_keys(m, F, rank)),
+                       (lambda r, rank=rank: _mtp_routed_specs(n, m, F) if r == rank else []))
+        else:
+            yield "mtp experts", sorted(mtp_expert_keys(m, F, 0)), lambda r: _mtp_routed_specs(n, m, F)
 
 
-__all__ = ["CK", "PLE_SHARD_ROWS", "top_specs", "layer_specs", "ple_specs", "ple_table_specs", "mtp_specs",
-           "all_specs", "groups", "nvfp4_from_bf16"]
+__all__ = ["CK", "top_specs", "layer_specs", "routed_specs", "ple_specs", "ple_shards", "ple_table_name", "mtp_specs",
+           "all_specs", "groups", "nvfp4_from_bf16", "dequant_fp8_block", "routed_expert_keys", "mtp_expert_keys"]

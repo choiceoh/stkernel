@@ -121,6 +121,16 @@ safetensors 라이브러리 없이 헤더와 numpy memmap 뿐이다. `python3 -m
 블록 풀·슬롯 풀·prefix 캐시를 지나 토큰이 나온다. 참조 레인이다: 특징은 torch 수식을 부르고 저장소는 커널 대신 행을 모아 준다. 서빙
 레인(커널·글루·캡처 그래프)을 같은 특징 뒤에 묶는 것과 MTP 가 다음이다. GLM 의 net.py 는 그대로다.
 
+서빙 레이아웃 v3(`st-qwen38-tep4-modelopt-v3`, 2026-09-18, 운영자 지시): `profiles/qwen38/preshard.py` 가 NVIDIA 허브 체크포인트
+(`nvidia/Qwen3.8-Flash-Next-NVFP4` @ fc694b54, `quant_algo MIXED_PRECISION`; srv2 `~/models/qwen38-flash-next-nvidia-nvfp4`, sha256 검증)를
+네 랭크 파일과 네 PLE 표 파일로 자른다. PLE 표(47.68 GiB, 랭크당 11.92 GiB)는 랭크 파일에 들어가지 않고 `ple-r{r}of4.weight`(그 랭크의
+32 샤드를 그대로 이어 쓴 e4m3 행; `ple-r{r}of4.json` 이 행 수·폭·샤드·스케일·sha256)로 옆에 놓이며, 서빙 넷은 행을 번호로 SSD 에서
+읽는다(`profiles/qwen38/ple_table.py`: 스레드 pread — srv2 NVMe 실측 128행 1.0 ms·20,000행 71 ms; 즉시 스텝은 호스트에서 해시해
+모으고, 캡처 스텝은 재생 전에 `net.stage_ple` 가 그래프의 정적 스테이징 행을 채운다). MTP 헤드의 전문가는 허브 체크포인트에서 FP8
+블록스케일(`weight_scale_inv` 를 곱한다 — BF16 복사본 대비 2.66%)이라 역양자화 뒤 NVFP4 로 인코딩한다(드래프터는 수용률만 바꾼다);
+예전 복사본(NVFP4 만, BF16 MTP)도 `facts.load` 가 읽는다. 전문가 그룹은 랭크별이라 프리샤드 상주 메모리는 약 2 GiB 다. GPU 로는 아직
+돌리지 않았다(D17 미실측).
+
 빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
 
     PYTHONPATH=. python3 engine/profiles/glm53/check.py --layers 0-4              # 참조 레인: 랭크 동일 + 청크/verify/롤백 판정

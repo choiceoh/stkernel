@@ -30,25 +30,31 @@ the lanes differ (chunk vs ring kernels), the composition does not.
 A captured decode step (`DeviceStep`, decode_graphs.py) is the same forward with its per-row values on the device: the
 rows' contexts, slots and sequences are the graph's static inputs, the page table is gathered at the context bucket's
 width, and the three places a host step loops over its segments -- the GDN rings, the PLE rings and the PLE table --
-run over every row at once (the row ring kernels, `NGramHash.rows_batched`, the table gathered through its byte
-addresses). Nothing in it reads a device value on the host.
+run over every row at once (the row ring kernels; the PLE rows gathered off the SSD table on the host BEFORE the
+replay into the graph's static staging buffer, ple_table.py). Nothing in the replay reads a device value on the host.
+
+The PLE table is not in memory (the operator's decision of 2026-09-18): each rank's vocabulary range lives in
+`ple-r{r}of4.weight` beside its rank file and rows are read by id when a step needs them -- an eager step (prefill)
+hashes its tokens on the host and gathers into a fresh tensor (`_ple_embed`), a captured step's rows are staged by
+`stage_ple` before its replay. The scale, the gate, the norm and the conv are unchanged.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from functools import partial
 
+import numpy as np
 import torch
 
 from engine.base.constants import iota
 from engine.profiles.qwen38 import specs
 from engine.profiles.qwen38.facts import TP, Facts
 from engine.profiles.qwen38.lanes import Lanes
+from engine.profiles.qwen38.ple_table import PLEStaging, local_rows
 
 BF16, F32 = torch.bfloat16, torch.float32
 HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
 HC_NAME = "Qwen4ExpForCausalLM/hyper_connection"    # the FP8 mixer lanes' names (hc_fp8; no calibration yet)
-PLE_GATHER_ROWS = 2048                             # token rows a PLE table gather addresses at once: [2048, 16, 160] int64
 FIRST_BUCKET = 4096                                # tokens of the smallest context bucket; each next one doubles
 
 
@@ -174,7 +180,8 @@ class Qwen38Net:
         self.p = None
         self.dense = {}
         self._experts = {}
-        self._ple = self._ple_hash = self._ple_table = None
+        self._ple = self._ple_hash = self._ple_scale = None
+        self.ple_table = self.ple_stage = None          # attach_ple: the rank's SSD table and the staged rows
 
     # -- binding ---------------------------------------------------------------------------------------------------
     def specs(self):
@@ -198,11 +205,10 @@ class Qwen38Net:
         if ple:
             L = ple[0]
             self._ple = self._ple_feature(L)
-            # the hash over the checkpoint's own buffers, on the device (equal to the derived ones, checked above): a
-            # captured step must not copy host tensors in
-            self._ple_hash = replace(self._ple.hashes(L), multipliers=p[f"L{L}.ple.layer_multipliers"],
-                                     sizes=p[f"L{L}.ple.heads_vocab"], offsets=p[f"L{L}.ple.heads_offsets"])
-            self._ple_table = self._ple_table_bytes(L)
+            # the hash on the host (its tensors are the derived ones, equal to the checkpoint's buffers, checked
+            # above): a step's rows are gathered off the SSD table before it runs (ple_table.py)
+            self._ple_hash = self._ple.hashes(L)
+            self._ple_scale = p[f"L{L}.ple.scale"].float().reshape(())
 
     @staticmethod
     def dense_names(keys):
@@ -552,43 +558,57 @@ class Qwen38Net:
             raise ValueError("the PLE hash the engine derives differs from the checkpoint's buffers (D3)")
         return feature
 
-    def _ple_table_bytes(self, L: int):
-        """The rank's table parts as one byte range: (a uint8 view from the first part's first byte to the last part's
-        last, each part's byte offset in it [parts] int64 on the device, the scalar scale). The parts are views of the
-        arena the loader carved (256-byte aligned, so parts are not one strided view); a row's bytes are then an address
-        gather, with no host read of which parts a step touches."""
-        F, p = self.F, self.p
-        parts = [p[f"L{L}.ple.table.{j}"] for j in range(F.ngram_parts // TP)]
-        storage = parts[0].untyped_storage().data_ptr()
-        if any(t.untyped_storage().data_ptr() != storage or t.dtype != torch.float8_e4m3fn or not t.is_contiguous()
-               for t in parts):
-            raise ValueError("the PLE table parts must be contiguous e4m3 views of one storage (the arena's)")
-        lo = min(t.storage_offset() for t in parts)
-        hi = max(t.storage_offset() + t.numel() for t in parts)
-        flat = parts[0].view(torch.uint8).as_strided((hi - lo,), (1,), lo)
-        offsets = torch.tensor([t.storage_offset() - lo for t in parts], dtype=torch.int64, device=flat.device)
-        return flat, offsets, p[f"L{L}.ple.scale"].float()
-
-    def _ple_rows(self, L: int, rows: torch.Tensor) -> torch.Tensor:
-        """Vocabulary-parallel table rows [N, heads] int64 -> embeddings [N, heads * width] BF16: this rank's rows
-        gathered by byte address and dequantised by the scalar scale (fp32, rounded once), other ranks' rows zero --
-        the caller's all-reduce sums the one rank that holds each row. No host read: the captured step's gather is the
-        eager step's, in pieces of PLE_GATHER_ROWS token rows."""
+    def attach_ple(self, table, *, max_rows: int) -> None:
+        """The rank's PLE table on the SSD (ple_table.PLETable) and the staging rows a captured step reads: `max_rows`
+        is the widest captured step (rows x tokens). Before the graphs are captured, after the rank file is bound."""
         F = self.F
-        flat, offsets, scale = self._ple_table
-        per_rank = (F.ngram_parts // TP) * specs.PLE_SHARD_ROWS
-        width = F.ple_head_dim
-        columns = iota(width, rows.device)
-        out = torch.empty(rows.shape[0], rows.shape[1] * width, dtype=BF16, device=rows.device)
-        for lo in range(0, rows.shape[0], PLE_GATHER_ROWS):
-            local = rows[lo:lo + PLE_GATHER_ROWS] - self.rank * per_rank
-            mine = (local >= 0) & (local < per_rank)
-            local = torch.where(mine, local, torch.zeros_like(local))
-            at = offsets[local // specs.PLE_SHARD_ROWS] + (local % specs.PLE_SHARD_ROWS) * width
-            raw = flat[at[..., None] + columns].view(torch.float8_e4m3fn)
-            values = torch.where(mine[..., None], raw.float() * scale, torch.zeros((), dtype=F32, device=rows.device))
-            out[lo:lo + PLE_GATHER_ROWS] = values.to(BF16).flatten(-2)
-        return out
+        if self._ple is None:
+            raise ValueError("this net serves no PLE layer to attach a table to")
+        if (table.rows, table.width) != (F.ple_rows_per_rank, F.ple_head_dim):
+            raise ValueError(f"the table holds {table.rows} rows of {table.width}, the profile expects "
+                             f"{F.ple_rows_per_rank} of {F.ple_head_dim}")
+        scale = float(self._ple_scale)
+        if abs(table.scale - scale) > 1e-6 * max(abs(scale), 1e-30):
+            raise ValueError(f"the table's scale {table.scale} differs from the rank file's {scale}")
+        self.ple_table = table
+        self.ple_stage = PLEStaging(max_rows, F.ple_heads, F.ple_head_dim, self._ple_scale.device)
+
+    def _ple_values(self, raw: torch.Tensor) -> torch.Tensor:
+        """Gathered rows [N, heads, width] uint8 (e4m3 bytes; zero for rows of other ranks) -> embeddings
+        [N, heads * width] BF16: the scalar scale in fp32, rounded once."""
+        return (raw.view(torch.float8_e4m3fn).float() * self._ple_scale).to(BF16).flatten(-2)
+
+    def _ple_embed(self, rows: torch.Tensor) -> torch.Tensor:
+        """Table rows [N, heads] int64 on the host -> embeddings [N, heads * width] BF16 on the device: this rank's
+        rows read off its SSD table, other ranks' rows zero -- the caller's all-reduce sums the one rank that holds
+        each row."""
+        F = self.F
+        if self.ple_table is None:
+            raise RuntimeError("the PLE table is not attached (fleet.build attaches it after the rank file is bound)")
+        local, mine = local_rows(rows.numpy(), self.rank, F.ple_rows_per_rank)
+        raw = np.zeros((rows.shape[0], F.ple_heads, F.ple_head_dim), dtype=np.uint8)
+        if mine.any():
+            raw[mine] = self.ple_table.gather(local[mine])
+        return self._ple_values(torch.from_numpy(raw).to(self._ple_scale.device))
+
+    def stage_ple(self, slots, contexts, ids, t: int, caches) -> None:
+        """Before a captured step replays: the PLE rows its n x t tokens read, gathered into the staging buffer --
+        each row's carried ids from its slot's ring (DEAD before the sequence), the hash on the host, this rank's rows
+        read by id, other ranks' rows zero (the graph's all-reduce sums them). `ids` are the step's n * t tokens."""
+        from engine.modules.ngram_embedding import DEAD
+        F = self.F
+        n = len(slots)
+        context = F.ngram_size - 1
+        ids_ring, _ = caches.ple_fields()
+        r_ids, dev = ids_ring.shape[1], ids_ring.device
+        slot = torch.tensor(list(slots), dtype=torch.int64, device=dev)[:, None]
+        ctx = torch.tensor(list(contexts), dtype=torch.int64, device=dev)[:, None]
+        prev = ctx - context + iota(context, dev)                        # [n, context]
+        carried = torch.where(prev < 0, torch.full_like(prev, DEAD), ids_ring[slot, prev.clamp_min(0) % r_ids]).cpu()
+        history = torch.cat([carried, torch.tensor(list(ids), dtype=torch.int64).view(n, t)], dim=1)
+        rows = self._ple_hash.rows_batched(history, t).reshape(n * t, -1).numpy()
+        local, mine = local_rows(rows, self.rank, F.ple_rows_per_rank)
+        self.ple_stage.fill(self.ple_table, local, mine)
 
     def _ple_inject(self, L: int, h: torch.Tensor, step: Step, meta: StepMeta, caches) -> torch.Tensor:
         from engine.modules.causal_conv import causal_conv1d
@@ -607,8 +627,8 @@ class Qwen38Net:
             prev = torch.arange(s.ctx - context, s.ctx, device=ids.device)
             carried = torch.where(prev < 0, torch.full_like(prev, DEAD), ids_ring[prev.clamp_min(0) % r_ids])
             history = torch.cat([carried, ids])
-            rows = made.rows(history, ids.numel())
-            embeddings = self.comm.all_reduce(self._ple_rows(L, rows))
+            rows = made.rows(history.cpu(), ids.numel())                 # hashed on the host: the table is read there
+            embeddings = self.comm.all_reduce(self._ple_embed(rows))
             gated = feature._gated(h[sl], embeddings, w).flatten(-2)
             normed = feature._norm(gated, w("conv_norm"))
             taps = torch.arange(s.ctx - span, s.ctx, device=ids.device)
@@ -635,7 +655,6 @@ class Qwen38Net:
         together, the table gathered by address, the gate and norm over all rows, the dilated conv over each row's
         taps and new inputs (engine/modules/causal_conv.causal_conv1d_rows), and the rings written by position."""
         from engine.modules.causal_conv import causal_conv1d_rows
-        from engine.modules.ngram_embedding import DEAD
         F, feature = self.F, self._ple
         n, t, dev = step.rows, step.tokens, h.device
         ids_ring, conv_ring = caches.ple_fields()                       # [slots, R_ids] i64, [slots, C, R_conv] bf16
@@ -643,13 +662,13 @@ class Qwen38Net:
         context, span, width = F.ngram_size - 1, (F.ple_conv - 1) * F.ngram_size, F.hc * F.hidden
         if context + t > r_ids or span + t > r_conv:
             raise ValueError("a captured PLE step writes more tokens than its rings keep beside their history")
+        if self.ple_stage is None:
+            raise RuntimeError("a captured PLE step needs the staged table rows: attach_ple before capture")
         slot = step.slots[:, None]
         ctx = step.contexts[:, None]
-        prev = ctx - context + iota(context, dev)                        # [n, context]
-        carried = torch.where(prev < 0, torch.full_like(prev, DEAD), ids_ring[slot, prev.clamp_min(0) % r_ids])
         ids = step.ids.view(n, t)
-        rows = self._ple_hash.rows_batched(torch.cat([carried, ids], dim=1), t).reshape(n * t, -1)
-        embeddings = self.comm.all_reduce(self._ple_rows(L, rows))
+        # the rows were gathered off the SSD table before the replay (stage_ple) into the graph's static staging rows
+        embeddings = self.comm.all_reduce(self._ple_values(self.ple_stage.device[:n * t]))
         w = lambda name: feature.weights(L, name)
         gated = feature._gated(h, embeddings, w).flatten(-2)             # [n*t, hc*H]
         normed = feature._norm(gated, w("conv_norm"))
