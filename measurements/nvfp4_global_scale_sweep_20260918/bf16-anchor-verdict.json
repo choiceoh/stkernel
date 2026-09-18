@@ -1,0 +1,16 @@
+{
+  "scope": "True-bf16 anchor A/B: zai-org/GLM-5.3-Flash-BF16 layers.3 experts 1/10/11/(+1), range-downloaded; as2 (radius 2) NVFP4 encode; reference = the bf16 weights themselves. gate/up pooled SSE not captured (log truncated); their reductions are recorded.",
+  "pool": {
+    "down.f1.0":  {"sse": 83.71066324950542, "rel_l2_median": 0.08145159482955933},
+    "down.f1.68": {"sse": 85.72171744429933, "rel_l2_median": 0.08212805539369583},
+    "gate.f1.0":  {"rel_l2_median": 0.0817875787615776},
+    "gate.f1.68": {"rel_l2_median": 0.0828256905078888},
+    "up.f1.0":    {"rel_l2_median": 0.08187070488929749},
+    "up.f1.68":   {"rel_l2_median": 0.0832941010594368}
+  },
+  "gain": {
+    "gate": {"amax_anchor_rel": 0.0817875787615776, "clip_anchor_rel": 0.0828256905078888, "sse_reduction_pct": -1.7},
+    "up":   {"amax_anchor_rel": 0.08187070488929749, "clip_anchor_rel": 0.0832941010594368, "sse_reduction_pct": -3.3},
+    "down": {"amax_anchor_rel": 0.08145159482955933, "clip_anchor_rel": 0.08212805539369583, "sse_reduction_pct": -2.4}
+  }
+}
