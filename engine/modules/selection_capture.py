@@ -63,7 +63,8 @@ class SelectionCapture:
         self.done.add(layer)
         self.where.mkdir(parents=True, exist_ok=True)
         target = self.where / f"selection-L{layer}-rows{int(q8.shape[0])}.pt"
-        torch.save(dict(layer=int(layer), rows=int(q8.shape[0]), n_cand=int(n_cand), k=int(k),
+        torch.save(dict(selection_policy="scored_complete_pools",
+                        layer=int(layer), rows=int(q8.shape[0]), n_cand=int(n_cand), k=int(k),
                         heads=int(q8.shape[1]), width=int(q8.shape[2]), prefill=bool(prefill),
                         q8=q8.detach().to("cpu"), w_eff=w_eff.detach().float().to("cpu"),
                         keys=keys.detach().to("cpu"), scales=scales.detach().float().to("cpu"),
