@@ -15,7 +15,8 @@ class SolveTests(unittest.TestCase):
     def facts(self):
         cfg = json.loads((ROOT / "probes/qwen38_config.json").read_text())
         cfg = cfg.get("text_config", cfg)
-        return NS(config={"layer_types": cfg["layer_types"]}, ple_layers=list(cfg.get("ple_layer_ids") or ()))
+        # facts.load's convention: the PLE injects before layer (ple_layer_id - 1)
+        return NS(config={"layer_types": cfg["layer_types"]}, ple_layers=[i - 1 for i in cfg.get("ple_layer_ids") or ()])
 
     def test_the_layer_sets_hold_four_independent_unknowns(self):
         from probes import engine_qwen38_step as step

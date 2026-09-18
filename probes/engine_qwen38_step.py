@@ -17,7 +17,7 @@ of the rank file's own weights: the fixed part (embedding, head, closing mixer, 
 and the PLE injection are four unknowns from four layer sets, per graph and per kernel family --
 
     [4, 5, 6, 7]   fixed + 3 GDN + 1 QSA        [4, 5]   fixed + 2 GDN
-    [7]            fixed + 1 QSA                [2]      fixed + 1 GDN + PLE
+    [7]            fixed + 1 QSA                [1]      fixed + 1 GDN + PLE (facts.ple_layers: before layer 1)
 
     step(48 layers) = fixed + 36 GDN + 12 QSA + PLE        (the MTP head's draft graph is its own, whatever the layers)
 
@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-LAYER_SETS = ((4, 5, 6, 7), (4, 5), (7,), (2,))
+LAYER_SETS = ((4, 5, 6, 7), (4, 5), (7,), (1,))
 SHAPES = ((1, 6), (1, 43), (4, 43))       # (rows, bucket blocks): C=1 near 4K and 32K context, C=4 near 32K
 REPLAYS = 50
 KV_GIB = 0.25
@@ -136,6 +136,7 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, 0.05, mtp=True)
+    snapshots = min(snapshots, 9)           # a net with no GDN layer has empty snapshots, and the count would run away
     arena = Arena(total_bytes(specs) + 256 * (len(specs) + 64) + layout(F, net.layers, mtp=True).nbytes(nb, max_seqs)
                   + snapshots * snapshot_layout(F, net.layers)[0])
     loader = rank_loader(ranks / f"rank{rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
