@@ -42,6 +42,8 @@ class ProbeShapeTests(unittest.TestCase):
         self.assertIn("hcr.mix(normed, down, up, HC, inject=False)", source)
         self.assertIn("torch.equal(got, want)", source)
         self.assertIn("write_report(metrics, proof, len(ROWS), torch.cuda.get_device_name())", source)
+        # the number a GB10 run is for: what a launch costs there is what any fold could recover
+        self.assertIn('metrics[f"headroom_us_rows{rows}"] = round(lane - gemms, 2)', source)
 
     @unittest.skipUnless(TRITON, "the probe imports Triton")
     def test_without_a_device_it_refuses_rather_than_report(self):
