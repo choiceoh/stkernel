@@ -13,8 +13,11 @@ Just past the budget's reach relu leaves many equal zeros at the budget's edge, 
 only where every call on both sides takes the radix select (`prefill_topk.admits_calls`, `qsa.shards_select_alike`
 through `lanes.qsa_select_alike`); the ranks ask it of the same numbers and split together or not at all.
 
-Held here, on any box with torch: the call arithmetic; that nothing is split unless a boot declared it and the lane
-said its calls select alike (and that an unsplit step reaches no collective); and, over LocalTP with a selection lane
+It is on unless a boot declines it (the operator's decision of 2026-09-18, the fleet unmeasured -- CHARTER D17):
+fleet.py --no-query-shards, the launcher's ST_QUERY_SHARDS=0.
+
+Held here, on any box with torch: the call arithmetic; that nothing is split where a boot declined it or the lane did
+not say its calls select alike (and that an unsplit step reaches no collective); the default and its rollback's wiring; and, over LocalTP with a selection lane
 whose answer is each row's own, that every row is scored by exactly one rank or by none, that the gathered ids are the
 unsplit selection on every rank at both wire widths, and that a rank whose rows are all covered still meets the
 gather. On the served kernels -- a GPU, or TRITON_INTERPRET=1 -- the split selection is the whole one's bytes:
@@ -118,11 +121,28 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertIsNone(meta.groups_seen)
 
-    def test_a_boot_declares_it(self):
+    def test_a_boot_can_decline_it(self):
         self.unsplit(declared=False)
         stand_in = net(facts(), SimpleNamespace(rank=0, world_size=TP), None)
-        del stand_in.query_shards                                          # a net built before the choice existed
+        del stand_in.query_shards                                          # a stand-in that never made the choice
         self.assertIsNone(sharded(stand_in, *[prefill(40, 0)[i] for i in (2, 0, 1, 3)]))
+
+    def test_it_is_on_unless_a_boot_declines(self):
+        """The operator's decision of 2026-09-18: the default, and the rollback from the launcher to the net."""
+        import inspect
+        from pathlib import Path
+        from engine.profiles.qwen38.net import Qwen38Net
+        root = Path(__file__).resolve().parents[1]
+        self.assertIs(inspect.signature(Qwen38Net.__init__).parameters["query_shards"].default, True)
+        fleet = (root / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
+        self.assertIn("prelude=None, query_shards: bool = True):", fleet)
+        self.assertIn("hc_fp8=hc_fp8, query_shards=query_shards)", fleet)
+        self.assertIn('ap.add_argument("--no-query-shards", action="store_true",', fleet)
+        self.assertIn("query_shards=not a.no_query_shards)", fleet)
+        launcher = (root / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
+        self.assertIn('case "${ST_QUERY_SHARDS:-1}" in', launcher)
+        self.assertIn('0) SHARDS_ARG="--no-query-shards" ;;', launcher)
+        self.assertIn("$ONESHOT_ARG $SHARDS_ARG --port $PORT", launcher)
 
     def test_the_lane_says_its_calls_select_alike(self):
         asked = []
@@ -215,14 +235,16 @@ class ServedSelectionTests(unittest.TestCase):
         """One prefill segment that starts inside the budget's reach and ends well past it, on the served kernels:
         each rank's gathered ids against one `qsa_select_paged_blocks` call over every row. A covered row's scored
         selection is its ids in the selector's order, so both sides are read in the attention's (ascending, carry Q6).
-        On a GPU the step is wide enough for the radix select on both sides and the lane's own rule decides; the
-        interpreter's three-block budget never takes it, so there the rule is answered for it (torch.topk on the CPU
-        orders a row by that row alone)."""
+        Where the radix select builds -- a CUDA toolkit and the GB10 it is compiled for -- the step is wide enough to
+        take it on both sides and the lane's own rule decides. Anywhere else (the interpreter, whose three-block budget
+        never takes it; another GPU) the step stays under 64 rows and the rule is answered for it: torch.topk orders
+        a row of this width by that row alone."""
         from engine.base.comm import LocalTP
         from engine.kernels import qsa
         F = facts(ratio=W.ratio, budget=W.budget)
         edge = (F.index_blocks + 1) * F.idx_ratio - 1
-        rows, ctx = (40, edge - 5) if INTERPRET else (400, edge - 11)
+        small = INTERPRET or not radix_builds()
+        rows, ctx = (40, edge - 5) if small else (400, edge - 11)
         selection = harness.SelectionTests()
         selection.requests = lambda: ((0, 1, ctx, rows),)                  # (seq, slot, ctx, length)
         f = selection.fixture(1212)
@@ -230,7 +252,7 @@ class ServedSelectionTests(unittest.TestCase):
         meta.groups_seen = None
         step = SimpleNamespace(segments=[SimpleNamespace(ctx=ctx, length=rows)])
         tp = LocalTP(TP, timeout_s=600)
-        alike = (lambda *a: True) if INTERPRET else qsa.shards_select_alike
+        alike = (lambda *a: True) if small else qsa.shards_select_alike
 
         def rank(comm):
             lanes = SimpleNamespace(qsa_select=lambda *a: tp.on_main(qsa.qsa_select_paged_blocks, *a),
@@ -248,8 +270,15 @@ class ServedSelectionTests(unittest.TestCase):
         for got in results:
             self.assertIsNotNone(got)                                      # the step was split
             self.assertTrue(torch.equal(ascending(got), ascending(whole)))
-            scored = slice(11 if not INTERPRET else 5, rows)               # past the covered rows: the selector's own order
+            scored = slice(5 if small else 11, rows)                       # past the covered rows: the selector's own order
             self.assertTrue(torch.equal(got[scored], whole[scored]))
+
+
+def radix_builds() -> bool:
+    """engine/kernels/prefill_topk is a native build for the GB10 (sm_121a): it needs a CUDA toolkit and that device."""
+    from torch.utils import cpp_extension
+    return (torch.cuda.is_available() and cpp_extension.CUDA_HOME is not None
+            and torch.cuda.get_device_capability() == (12, 1))
 
 
 def ascending(blocks):
