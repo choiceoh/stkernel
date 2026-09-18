@@ -245,7 +245,13 @@ def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, shapes=SHAPES, replay
         rank = present[-1]
     free, total = torch.cuda.mem_get_info()
     torch.cuda.set_per_process_memory_fraction(min(1.0, max_gib * (1 << 30) / total))
-    report = {"rank": rank, "replays": replays, "device": torch.cuda.get_device_name(), "free_GiB_at_start":
+    # the fleet boot's first act (fleet.main): the record the preshard wrote, bound before any lane reads it -- the
+    # lanes admit their cells against it (b12x's EP zero-weight skip refuses an unbound, GLM-shaped process)
+    from engine.base import kernel_shape
+    from engine.profiles.qwen38 import facts
+    _, shape_source = kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
+    report = {"rank": rank, "kernel_shape": shape_source, "replays": replays, "device": torch.cuda.get_device_name(),
+              "free_GiB_at_start":
               round(free / 2**30, 1), "layer_sets": [list(s) for s in layer_sets], "shapes": [list(s) for s in shapes],
               "builds": {}}
     F = None

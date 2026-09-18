@@ -50,6 +50,12 @@ class LaneTests(unittest.TestCase):
         self.assertIn("if args.lanes == 'qwen38_step':", source)
         self.assertIn("qwen38_step(args.output, args.ranks)", source)
 
+    def test_the_kernel_shape_is_bound_before_any_lane_is_built(self):
+        """As fleet.main does first: the lanes admit their cells against the bound shape."""
+        source = (ROOT / "probes/engine_qwen38_step.py").read_text(encoding="utf-8")
+        run = source[source.index("def run("):]
+        self.assertLess(run.index("kernel_shape.bind_recorded("), run.index("build(ranks, ranks, rank"))
+
     def test_the_budget_fits_beside_production(self):
         from probes import engine_qwen38_step as step
         self.assertLessEqual(step.MAX_GIB, 4.0)
