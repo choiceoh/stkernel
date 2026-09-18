@@ -1,0 +1,331 @@
+{
+  "status": "root_cause_unresolved",
+  "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+  "session": "st-visible-ablation0918b",
+  "preparation": {
+    "original_tokens": 50005,
+    "candidate_tokens": 50005,
+    "assistant_turn": [
+      47171,
+      47663
+    ],
+    "replaced_visible_body": [
+      47379,
+      47663
+    ],
+    "replaced_tokens": 284,
+    "filler_id": 220,
+    "filler_text": " ",
+    "original_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+    "candidate_sha256": "20a5e65bf1ea27475229b8cebb75cace0d2e3d10901000fdda159864b5455d03",
+    "unchanged_prefix_sha256": "c344c17677ec5802385bee69091b0514f03272a45f15e58f11089514d94409cf",
+    "unchanged_suffix_sha256": "aaf2d0d13a79aa740f2bd0abc0fbc68f5a575a3e2db87af4577f89a845b8dea9",
+    "body_sha256": "e9e853e04261bd1aba6b17091a50f23513f36124aaf2984a529fad2b7f91e61e",
+    "kept": "all role markers, clean internal reasoning, all system/tool/memory records, latest user and open assistant prefix",
+    "changed": "only visible body of the immediately preceding malformed Ithaca assistant answer",
+    "tokenizer_sha256": "0cfe2c099a7702a0921abc315ee039deb51e4a34b4818fc509bd27fa3dc4acc1"
+  },
+  "runtime_identity": {
+    "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+    "owner": "queue/st-visible-ablation0918b",
+    "ranks": {
+      "0": {
+        "release": "f42be51dd3c6",
+        "hashes": {
+          "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+          "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+          "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+          "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+          "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+          "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+          "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+        }
+      },
+      "1": {
+        "release": "f42be51dd3c6",
+        "hashes": {
+          "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+          "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+          "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+          "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+          "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+          "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+          "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+        }
+      },
+      "2": {
+        "release": "f42be51dd3c6",
+        "hashes": {
+          "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+          "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+          "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+          "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+          "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+          "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+          "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+        }
+      },
+      "3": {
+        "release": "f42be51dd3c6",
+        "hashes": {
+          "engine/profiles/glm53/adapter.py": "fb3792b8bcc2d674c136e4f746b2db20f8c3e4441f936b279206e0723136caae",
+          "engine/profiles/glm53/net.py": "775326dc2e749060aba3efbc276c83c0f957dbc5e978ed12110dec9a4dd5a1a0",
+          "engine/profiles/glm53/boot.py": "92b16938936823c030587bb919a25f159b0f40d19ad49c3d0d1e93e6e83b4a76",
+          "engine/profiles/glm53/lanes.py": "84334868ca5b0b57e2b7ee08fa9206857d114f1c45f32509ee3c81ee1ac80c12",
+          "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+          "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+          "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+          "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+          "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+        }
+      }
+    }
+  },
+  "sampling_summary": {
+    "capture_count": 477,
+    "admission": 1,
+    "reasoning_end_generation": 27,
+    "non_argmax": 144,
+    "expected_non_argmax_mass": 145.0643302237202,
+    "median_sampled_probability_gen4_to_end": 0.7640455261420538,
+    "median_sampled_probability_visible": 0.724816917981903,
+    "selected_positions": [
+      {
+        "generation": 0,
+        "sampled_id": 12474,
+        "argmax_id": 12474,
+        "sampled_probability": 0.2647290772873737,
+        "argmax_probability": 0.2647290772873737,
+        "uniform": 0.5703168511390686,
+        "cdf_lower": 0.47496941432976575,
+        "cdf_upper": 0.7396984916171394,
+        "cdf_nearest_margin": 0.09534743680930285,
+        "position_in_selected_interval": 0.36016986795069555
+      },
+      {
+        "generation": 2,
+        "sampled_id": 311,
+        "argmax_id": 311,
+        "sampled_probability": 0.6608229824971636,
+        "argmax_probability": 0.6608229824971636,
+        "uniform": 0.06517387926578522,
+        "cdf_lower": 0.05864744023364708,
+        "cdf_upper": 0.7194704227308107,
+        "cdf_nearest_margin": 0.006526439032138134,
+        "position_in_selected_interval": 0.009876228891851755
+      },
+      {
+        "generation": 3,
+        "sampled_id": 23021,
+        "argmax_id": 358,
+        "sampled_probability": 0.10821999192950062,
+        "argmax_probability": 0.7056829767954029,
+        "uniform": 0.988545298576355,
+        "cdf_lower": 0.8876193754052949,
+        "cdf_upper": 0.9958393673347955,
+        "cdf_nearest_margin": 0.0072940687584405195,
+        "position_in_selected_interval": 0.9325996183478539
+      }
+    ]
+  },
+  "cases": [
+    {
+      "receipt": {
+        "case": "baseline-t1-seed7",
+        "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+        "owner": "queue/st-visible-ablation0918b",
+        "prompt_tokens": 50005,
+        "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+        "temperature": 1,
+        "seed": 7,
+        "top_p": 1,
+        "top_k": -1,
+        "max_tokens": 2048,
+        "completion_tokens": 415,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "seconds": 34.962122789002024,
+        "output_ids_sha256": "2261788fb18f14df8c60c1a2946261b03d46f964ab2e3f1f5cff2a6d85d5b05e",
+        "output_text_sha256": "b301c6a3bb2d65764839ddafbe9077328cac1a22224fc5d67c5a9fd1dbf9e3ce",
+        "served_before": 0,
+        "served_after": 1
+      },
+      "manual_review": {
+        "fluency": "failed",
+        "semantics": "failed",
+        "kind": "visible_answer",
+        "note": "Severely malformed Korean and unrelated phrases."
+      }
+    },
+    {
+      "receipt": {
+        "case": "neutralized-t1-seed7",
+        "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+        "owner": "queue/st-visible-ablation0918b",
+        "prompt_tokens": 50005,
+        "prompt_sha256": "20a5e65bf1ea27475229b8cebb75cace0d2e3d10901000fdda159864b5455d03",
+        "temperature": 1,
+        "seed": 7,
+        "top_p": 1,
+        "top_k": -1,
+        "max_tokens": 2048,
+        "completion_tokens": 357,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "seconds": 25.869789047981612,
+        "output_ids_sha256": "924620802231978617012cf0fcb8387acbe769772fb96a6fb35b6a894d929682",
+        "output_text_sha256": "fec52df9ff75efd8e1f58fb78617e316e8cbca76e6659dbef2d1fadfe6b35dec",
+        "served_before": 1,
+        "served_after": 2
+      },
+      "manual_review": {
+        "fluency": "not_scored",
+        "semantics": "not_scored",
+        "kind": "tool_calls",
+        "note": "Returns two search tool calls after coherent reasoning. No substantive visible answer; not scored as recovered."
+      }
+    },
+    {
+      "receipt": {
+        "case": "baseline-t0-seed7",
+        "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+        "owner": "queue/st-visible-ablation0918b",
+        "prompt_tokens": 50005,
+        "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+        "temperature": 0,
+        "seed": 7,
+        "top_p": 1,
+        "top_k": -1,
+        "max_tokens": 2048,
+        "completion_tokens": 478,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "seconds": 29.412318687071092,
+        "output_ids_sha256": "9294809b021316d35ac477efb19f6686ec1a2be189b9b04f3058cf861e8c3317",
+        "output_text_sha256": "69e9afc18733b0918585f053aee2680f5add05960216f1f6f88c92a62c68f4ae",
+        "served_before": 2,
+        "served_after": 3
+      },
+      "manual_review": {
+        "fluency": "failed",
+        "semantics": "failed",
+        "kind": "visible_answer",
+        "note": "Invented words and factual errors remain under greedy decoding."
+      }
+    },
+    {
+      "receipt": {
+        "case": "baseline-t1-seed11",
+        "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+        "owner": "queue/st-visible-ablation0918b",
+        "prompt_tokens": 50005,
+        "prompt_sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+        "temperature": 1,
+        "seed": 11,
+        "top_p": 1,
+        "top_k": -1,
+        "max_tokens": 2048,
+        "completion_tokens": 455,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "seconds": 37.06290521204937,
+        "output_ids_sha256": "5a4a7b8244ae70518c2950de4f95425caf61d49b290eb4f8821ba353511a3786",
+        "output_text_sha256": "58b01527b28773d1bd862ce6adec4660dfbd553a57bb9b88174f9533d0f85fb1",
+        "served_before": 3,
+        "served_after": 4
+      },
+      "manual_review": {
+        "fluency": "failed",
+        "semantics": "failed",
+        "kind": "visible_answer",
+        "note": "Grammatically and semantically malformed prose with unrelated concepts."
+      }
+    },
+    {
+      "receipt": {
+        "case": "neutralized-t1-seed11",
+        "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+        "owner": "queue/st-visible-ablation0918b",
+        "prompt_tokens": 50005,
+        "prompt_sha256": "20a5e65bf1ea27475229b8cebb75cace0d2e3d10901000fdda159864b5455d03",
+        "temperature": 1,
+        "seed": 11,
+        "top_p": 1,
+        "top_k": -1,
+        "max_tokens": 2048,
+        "completion_tokens": 604,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "seconds": 39.39270094700623,
+        "output_ids_sha256": "32d0d82f2636eac0a340a1b0b551b411f7fe868a5bb6cdbf4ee3e25c58e7c3a9",
+        "output_text_sha256": "9f42e97274994d36606db3d2fe30b41f54893754269437471a4f8728c3957a7a",
+        "served_before": 4,
+        "served_after": 5
+      },
+      "manual_review": {
+        "fluency": "improved_with_residual_errors",
+        "semantics": "partial",
+        "kind": "visible_answer",
+        "note": "Much more coherent overall; malformed wording and inappropriate meta-language remain. Not full recovery."
+      }
+    },
+    {
+      "receipt": {
+        "case": "neutralized-t0-seed7",
+        "source": "f42be51dd3c60de5d7f680efdc7a1f92663de24b",
+        "owner": "queue/st-visible-ablation0918b",
+        "prompt_tokens": 50005,
+        "prompt_sha256": "20a5e65bf1ea27475229b8cebb75cace0d2e3d10901000fdda159864b5455d03",
+        "temperature": 0,
+        "seed": 7,
+        "top_p": 1,
+        "top_k": -1,
+        "max_tokens": 2048,
+        "completion_tokens": 474,
+        "cap_hit": false,
+        "cached_tokens": 0,
+        "seconds": 29.733865537913516,
+        "output_ids_sha256": "39acc4295de7219d8217f53e6ba0a3983d3d0f6f8d825b62c54cc85ed0551c12",
+        "output_text_sha256": "95c6889222dc18289c07309aff351ac93a4e9f5d6ff2c4109562bde2b43e14a2",
+        "served_before": 5,
+        "served_after": 6
+      },
+      "manual_review": {
+        "fluency": "coherent",
+        "semantics": "factual_errors_remain",
+        "kind": "visible_answer",
+        "note": "No comparable word/sentence collapse; incorrect details and unsupported literary linkage remain. Not full quality recovery."
+      }
+    }
+  ],
+  "pre_release_state": {
+    "engine": "ST",
+    "model": "glm-5.3-flash",
+    "running": [],
+    "waiting": [],
+    "queued": 0,
+    "parked": 0,
+    "parking": 0,
+    "resuming": 0,
+    "steps": 1523,
+    "served": 6,
+    "fleet": {
+      "owner": "queue/st-visible-ablation0918b",
+      "path": "/home/choiceoh/glm53-logs/st-fleet.lock",
+      "draining": null,
+      "handed_over": null
+    }
+  },
+  "conclusions": [
+    "Stochastic sampling is not necessary for malformed output on the original input.",
+    "Neutralizing only the preceding malformed visible answer changes the subsequent trajectory and improves fluency in this matched set.",
+    "A tool-call continuation is not a recovered visible answer; residual semantic and wording errors prevent a general quality-recovery claim.",
+    "The source of the preceding malformed answer and the independent correctness of the engine model computation remain unresolved."
+  ]
+}
