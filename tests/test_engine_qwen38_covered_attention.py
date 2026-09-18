@@ -1,0 +1,146 @@
+"""A step the QSA budget covers attends densely, a run of rows a program, and the output is the sparse launch's bytes
+(engine/QWEN38_CARRY.md Q10).
+
+Every row of a covered step attends every position up to its own (carry Q11's covered half: its chosen blocks are all
+the groups it sees). The sparse launch still treated it as a selection: each program loaded its row's 512 block ids,
+sorted them, expanded them tile by tile into the positions 0, 1, 2, ... they always are, gathered K and V for its one
+row, and walked all 2,051 columns of the budget however short the prompt. `_qsa_covered_paged_gqa_kernel` reads a
+tile's positions off its columns, takes up to four consecutive rows of one request a program so a K/V tile is read
+once for the run, and stops where the run's furthest row does. Each row steps its own softmax with the sparse kernel's
+operations on the sparse launch's tiles and splits (`_split_profile`, shared), so nothing rounds differently.
+
+Held on the served kernels -- a GPU, or TRITON_INTERPRET=1 -- byte for byte against
+`qsa_sparse_paged_attention_blocks` over the covered ids: steps of several segments (runs of one) and prefill
+segments through every split profile their row counts reach, runs of 1..4 with a short last run, one and two KV
+heads, with and without the output gate (in the final store of a one-split launch, in the merge of a split one).
+
+    docker exec -e TRITON_INTERPRET=1 -w <repo> stk-test python3 -m unittest tests.test_engine_qwen38_covered_attention
+"""
+import unittest
+from unittest import mock
+
+from tests.test_engine_qwen38_kernels import (DEVICE, INTERPRET, RUNS, RUNS_REASON, TRITON, W, Launches, bits,
+                                              block_table, generator, host_meta, paged, randn, served_kernels, torch)
+
+
+def reach(budget: int) -> int:
+    return (budget // W.ratio + 1) * W.ratio - 1
+
+
+def case(gen, requests, kv_heads):
+    """A covered host step over paged BF16 K/V: its metadata, queries, caches and output gate."""
+    page, D = W.block, W.head_dim
+    pages = 8 * len(requests)
+    wide = max(-(-(ctx + length) // page) for _, _, ctx, length in requests)
+    table = block_table(gen, requests, wide, page, pages)
+    meta = host_meta(requests, table, block=page, ratio=W.ratio)
+    k_cache, _ = paged(gen, pages, page, kv_heads, D)
+    v_cache, _ = paged(gen, pages, page, kv_heads, D)
+    rows = meta.positions.numel()
+    return meta, randn(gen, rows, W.heads, D), k_cache, v_cache, randn(gen, rows, W.heads, D)
+
+
+def covered_ids(meta, budget):
+    from engine.modules.prefill_indexer import covered_pool_ids
+    return covered_pool_ids((meta.positions32 + 1) // W.ratio, budget // W.ratio)
+
+
+@unittest.skipUnless(RUNS, RUNS_REASON)
+class CoveredAttentionTests(unittest.TestCase):
+    def assertSparseBytes(self, gen, requests, budget, kv_heads, groups):
+        from engine.kernels import qsa
+        meta, q, k_cache, v_cache, gate = case(gen, requests, kv_heads)
+        self.assertLessEqual(max(ctx + length for _, _, ctx, length in requests), reach(budget))
+        ids = covered_ids(meta, budget)
+        splits = set()
+        for gated in (None, gate):
+            sparse = Launches(qsa._qsa_sparse_paged_gqa_splitk_kernel)
+            with served_kernels(), mock.patch.object(qsa, "_qsa_sparse_paged_gqa_splitk_kernel", sparse):
+                want = qsa.qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, ids, meta.positions32, meta.lengths,
+                                                             W.ratio, budget, meta.page_table, meta.rows_req, gate=gated)
+            for group in groups:
+                dense = Launches(qsa._qsa_covered_paged_gqa_kernel)
+                with served_kernels(), mock.patch.object(qsa, "_qsa_covered_paged_gqa_kernel", dense):
+                    got = qsa.qsa_covered_paged_attention(q, k_cache, v_cache, meta.positions32, meta.lengths, W.ratio,
+                                                          budget, meta.page_table, meta.rows_req, gate=gated, group=group)
+                with self.subTest(rows=q.shape[0], budget=budget, kv_heads=kv_heads, group=group, gate=gated is not None):
+                    rows, heads, split = sparse.grids[0]
+                    self.assertEqual(dense.grids[0], (-(-rows // group), heads, split))     # the sparse launch's splits
+                    self.assertTrue(torch.equal(got, want))
+                    self.assertTrue(torch.equal(bits(got), bits(want)))
+                    self.assertTrue(bool(got.float().abs().sum() > 0))
+                splits.add(split)
+        return splits
+
+    def test_a_step_of_several_segments(self):
+        """Runs of one: the rows are several requests'. A first position, a segment across a group boundary, one that
+        ends exactly at the reach."""
+        gen = generator(1010)
+        for budget in ((12, 64) if INTERPRET else (12, W.budget)):
+            edge = reach(budget)
+            for kv_heads in (W.kv_heads, 2):
+                self.assertSparseBytes(gen, ((0, 1, 0, 1), (1, 2, 3, 6), (2, 3, edge - 5, 5)), budget, kv_heads, (1,))
+
+    def test_a_prefill_segment_through_every_split_profile(self):
+        """Row counts on both sides of the profile's steps (8, 32, 256, 512 programs), the last run short."""
+        gen = generator(1011)
+        budget = 64 if INTERPRET else W.budget
+        edge = reach(budget)
+        splits = set()
+        for rows in ((3, 9, 33, edge) if INTERPRET else (3, 9, 33, 257, 515, edge)):
+            splits |= self.assertSparseBytes(gen, ((0, 1, edge - rows, rows),), budget, W.kv_heads, (1, 2, 3, 4))
+        # several splits ran, and at the model's widths one too (the interpreter's 67 columns always split here; its
+        # one-split launches are the 12-position budget's, in the other cases)
+        self.assertTrue(max(splits) > 1 and (INTERPRET or 1 in splits), splits)
+
+    def test_a_short_prompt_stops_at_its_own_end(self):
+        """The whole prompt from position 0: most of the budget's columns are past every row."""
+        gen = generator(1012)
+        budget = 64 if INTERPRET else W.budget
+        for rows in (1, 2, 7, 23):
+            self.assertSparseBytes(gen, ((0, 1, 0, rows),), budget, W.kv_heads, (4,))
+
+
+@unittest.skipUnless(torch is not None and TRITON, "engine/kernels/qsa imports Triton")
+class WrapperTests(unittest.TestCase):
+    def setUp(self):
+        patch = mock.patch.object(torch.Tensor, "is_cuda", property(lambda tensor: True))
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_it_refuses_what_it_cannot_run(self):
+        from engine.kernels import qsa
+        rows, D = 2, 16
+        q = torch.zeros(rows, 4, D, dtype=torch.bfloat16)
+        cache = torch.zeros(4, 8, 1, D, dtype=torch.bfloat16)
+        table, req = torch.zeros(1, 4, dtype=torch.int32), torch.zeros(rows, dtype=torch.int32)
+        positions, lengths = torch.zeros(rows, dtype=torch.int32), torch.ones(1, dtype=torch.int32)
+        run = lambda **kw: qsa.qsa_covered_paged_attention(**{**dict(
+            q=q, k_cache=cache, v_cache=cache, query_positions=positions, sequence_lengths=lengths, compress_ratio=4,
+            token_topk=12, block_table=table, token_to_req=req), **kw})
+        for group in (0, 5, True):
+            with self.assertRaisesRegex(ValueError, "groups 1..4 rows"):
+                run(group=group)
+        with self.assertRaisesRegex(ValueError, "divisible by compression ratio"):
+            run(token_topk=10)
+        with self.assertRaisesRegex(ValueError, "metadata is int32"):
+            run(query_positions=positions.long())
+        with self.assertRaisesRegex(ValueError, "packed row metadata"):
+            run(token_to_req=torch.zeros(1, dtype=torch.int32)[:, None].expand(1, rows).reshape(-1))
+        with self.assertRaisesRegex(ValueError, "is BF16"):
+            run(q=q.float())
+        with self.assertRaisesRegex(ValueError, "output gate is BF16"):
+            run(gate=q.float())
+
+    def test_the_profile_is_the_sparse_launchs(self):
+        """`_split_profile` is the rule `_sparse_paged_attention` always used, step for step."""
+        from engine.kernels import qsa
+        for rows, want in ((8, (16, 129, 64)), (9, (16, 129, 32)), (31, (16, 129, 32)), (32, (64, 33, 8)),
+                           (256, (64, 33, 8)), (257, (64, 33, 4)), (512, (64, 33, 4)), (513, (64, 33, 1))):
+            block_n, tiles, splits, _ = qsa._split_profile(rows, 1, 8, 2051)
+            self.assertEqual((block_n, tiles, splits), want, rows)
+        self.assertEqual(qsa._split_profile(4, 1, 8, 15)[:3], (16, 1, 1))     # one tile cannot split
+
+
+if __name__ == "__main__":
+    unittest.main()

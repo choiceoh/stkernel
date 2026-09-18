@@ -83,6 +83,11 @@ class Lanes:
     qsa_inputs: object = None       # qsa.qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta,
                                     #  rotary_dim, K, V, kv_slots, ring, ring_slots) -> (q, iq): the layer's norms and
                                     #  rotations with the K/V and ring stores, in one launch
+    qsa_attend_covered: object = None  # qsa.qsa_covered_paged_attention(q, k, v caches, positions, lengths, ratio, topk,
+                                    #  table, token_to_req, *, gate, group): qsa_attend for a step the budget covers,
+                                    #  without blocks -- a dense causal launch, a run of `group` rows of one request
+                                    #  sharing each K/V tile; the same bytes (carry Q10). None: such a step attends its
+                                    #  unscored ids through qsa_attend
     qsa_select_alike: object = None  # qsa.shards_select_alike(rows, shards, columns, topk / ratio, group) -> bool: whether
                                     #  qsa_select over disjoint row ranges of a step (their row counts) chooses row for
                                     #  row what one call does. The selection lane's own statement -- it picks its
@@ -392,7 +397,7 @@ def served(*, tp=None) -> Lanes:
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
-                 route_local=on_main(route_local))
+                 qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local))
 
 
 def qualify(device, F) -> dict:

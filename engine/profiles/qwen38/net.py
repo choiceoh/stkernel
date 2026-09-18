@@ -16,8 +16,8 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
                               in one launch, out_proj
     attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
                               the query heads, one for the key head, one for the index queries; the QSA ops (a host
-                              step the budget covers attends every group it sees: no scores, no top-k, the ids built
-                              once a step -- `_covered_blocks`; past it each rank scores a quarter of a long prefill
+                              step the budget covers attends every position it sees: no scores, no top-k, no ids,
+                              one dense causal launch whose runs of rows share their K/V tiles -- `_covers`; past it each rank scores a quarter of a long prefill
                               step's index queries and the ids are gathered -- `_sharded_blocks`, unless the boot
                               declined `query_shards`)
     MoE                      the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
@@ -505,6 +505,16 @@ class Qwen38Net:
                 v.reshape(1, t, F.v_heads_local, F.v_dim))
 
     # -- gated GQA with QSA selection ----------------------------------------------------------------------------------
+    @staticmethod
+    def _covers(F, step) -> bool:
+        """Whether the QSA budget covers a host step: its longest segment ends inside (index_blocks + 1) * ratio - 1
+        positions -- 2,051 at the model's widths -- so every row attends every position up to its own. Host
+        arithmetic. A captured step is never covered: its contexts are the device's, and its launches are one sequence
+        for every context."""
+        if getattr(step, "captured", False):
+            return False
+        return max(s.ctx + s.length for s in step.segments) // F.idx_ratio <= F.index_blocks
+
     def _covered_blocks(self, step, meta: StepMeta):
         """Every row's chosen blocks when no score can decide them (carry Q11, the covered half; GLM's covered queries,
         engine/modules/prefill_indexer): a row that sees no more complete groups than the budget holds attends all of
@@ -512,12 +522,11 @@ class Qwen38Net:
         positions at the model's widths -- needs neither the scores nor the top-k of any QSA layer. The ids are the
         positions' alone: built by the step's first QSA layer, read by the rest and by the MTP head's. They come
         ascending with -1 after, the order the block attention sorts any selection into before it reads it (carry Q6),
-        so its bytes are the scored selection's. None where a score decides something, and for a captured step, whose
-        contexts are the device's and whose launches are one sequence for every context."""
-        if getattr(step, "captured", False):
-            return None
+        so its bytes are the scored selection's. None where a score decides something (`_covers`). The served lanes
+        do not come here any more: a covered step's attention reads no ids at all (carry Q10, `_qsa`); this is what a
+        lane table without that launch still attends."""
         F = self.F
-        if max(s.ctx + s.length for s in step.segments) // F.idx_ratio > F.index_blocks:
+        if not Qwen38Net._covers(F, step):
             return None
         if meta.covered_blocks is None:
             from engine.modules.prefill_indexer import covered_pool_ids
@@ -598,18 +607,25 @@ class Qwen38Net:
                                  idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, meta.positions, p[n + "q_norm"],
                                  p[n + "k_norm"], p[n + "idx_q_norm"], F.rms_eps, F.rope_theta, F.rotary_dim, K, V,
                                  meta.kv_slots, ring, meta.ring_slots)
-        # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a step the
-        # budget covers has them already, unscored
-        blocks = self._covered_blocks(step, meta)
-        if blocks is None:
-            blocks = self._sharded_blocks(iq, step, meta, caches.index_keys(cache_layer))
-        if blocks is None:
-            blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
-                                      meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio,
-                                      group=self._score_runs(step))
-        # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
-        attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
-                                    F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
+        attend_covered = getattr(lanes, "qsa_attend_covered", None)
+        if attend_covered is not None and Qwen38Net._covers(F, step):
+            # a step the budget covers chooses nothing: one dense causal launch, a run of rows sharing each K/V tile,
+            # the sparse launch's bytes (carry Q10)
+            attended = attend_covered(q, K, V, meta.positions32, meta.lengths, F.idx_ratio, F.idx_budget,
+                                      meta.page_table, meta.rows_req, gate=gate, group=self._score_runs(step))
+        else:
+            # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a lane
+            # table without the covered launch attends a covered step's unscored ids
+            blocks = self._covered_blocks(step, meta)
+            if blocks is None:
+                blocks = self._sharded_blocks(iq, step, meta, caches.index_keys(cache_layer))
+            if blocks is None:
+                blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
+                                          meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio,
+                                          group=self._score_runs(step))
+            # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
+            attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
+                                        F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
         out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 
