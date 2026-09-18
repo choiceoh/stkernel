@@ -814,3 +814,48 @@ class SpeedClaimTests(unittest.TestCase):
         # both callers or neither: after_deploy queues its own ticket without going through ensure_probe
         self.assertIn("probe_wanted(head, log)", after)
         self.assertIn('log(f"  no D17 probe for', source)
+
+
+class PrebuildTests(unittest.TestCase):
+    """The release's b12x kernels are compiled before the deploy stops production, and nothing about it can stop a
+    deploy: a prebuild that fails leaves the boot to compile, as before."""
+
+    def release(self, root, script=True):
+        release = Path(root) / "st-releases" / "abc123"
+        (release / "launchers").mkdir(parents=True)
+        if script:
+            (release / "launchers" / "b12x-prebuild.sh").write_text("exit 0\n")
+        return release
+
+    def test_it_runs_the_releases_own_script_for_production(self):
+        import tempfile
+        lines = []
+        with tempfile.TemporaryDirectory() as root:
+            release = self.release(root)
+            with patch.object(watch, "run", return_value=(0, "10.10.10.2: {\"summary\": {}}\n", "")) as run:
+                watch.prebuild(release, lines.append)
+        cmd = run.call_args.args[0]
+        self.assertEqual(cmd, ["bash", str(release / "launchers/b12x-prebuild.sh"), "--tree", str(release),
+                               "--profile", "glm53"])
+        self.assertTrue(any("summary" in line for line in lines))
+
+    def test_a_prebuild_that_times_out_or_is_missing_is_said_and_passed(self):
+        import subprocess
+        import tempfile
+        lines = []
+        with tempfile.TemporaryDirectory() as root:
+            with patch.object(watch, "run", side_effect=subprocess.TimeoutExpired("bash", 1800)):
+                self.assertIsNone(watch.prebuild(self.release(root), lines.append))
+            with tempfile.TemporaryDirectory() as other, patch.object(watch, "run") as run:
+                watch.prebuild(self.release(other, script=False), lines.append)
+                run.assert_not_called()
+        self.assertTrue(any("TimeoutExpired" in line for line in lines))
+        self.assertTrue(any("no launchers/b12x-prebuild.sh" in line for line in lines))
+
+    def test_the_cycle_prebuilds_after_the_deferrals_and_before_production_stops(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("def cycle("):source.index("def follow_controller(")]
+        pre = body.index("prebuild(release, log)")
+        self.assertGreater(pre, body.index("boot_ticket_waiting()"))
+        self.assertLess(pre, body.index("ok = deploy(release, log)"))
+        self.assertIn('getattr(a, "prebuild", True)', body)

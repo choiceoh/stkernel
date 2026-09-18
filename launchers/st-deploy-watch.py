@@ -320,6 +320,33 @@ def cut(sha: str, log) -> "Path | None":
     return st_release.cut(sha, source=SOURCE, releases=RELEASES, log=log, meta=HOME / "st-engine" / "st-glm53-meta")
 
 
+PREBUILD_TIMEOUT = 1800
+
+
+def prebuild(release: Path, log) -> None:
+    """The release's b12x MoE kernels, compiled on every node's CPU while the deployed tree still serves.
+
+    A release that changes any of the dispatcher's key files used to compile its kernels inside the deploy's boot,
+    which is production's downtime: six of them put the door at 150 s instead of 105 s (2026-09-18,
+    measurements/qwen38_boot_20260918). `launchers/b12x-prebuild.sh` replays what production's last boots asked for
+    (engine/kernels/b12x_requests.py) into each node's /cache, where the boot then finds them. Best effort by design:
+    a prebuild that fails, times out or skips a short node leaves that boot to compile, as it always did.
+    """
+    script = release / "launchers" / "b12x-prebuild.sh"
+    if not script.exists():
+        log("  prebuild: the release has no launchers/b12x-prebuild.sh; its boot compiles what it needs")
+        return
+    started = time.time()
+    try:
+        code, out, err = run(["bash", str(script), "--tree", str(release), "--profile", "glm53"], timeout=PREBUILD_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        log(f"  prebuild: {type(exc).__name__}; the boot compiles what it needs")
+        return
+    for line in (out + err).strip().splitlines()[-8:]:
+        log(f"  prebuild: {line}")
+    log(f"  prebuild: rc={code} in {time.time() - started:.0f}s")
+
+
 def deploy(release: Path, log) -> bool:
     """Stop the supervisor, relaunch from `release`, start the supervisor again.
 
@@ -475,6 +502,8 @@ def cycle(a, log) -> int:
     if waiting:
         log(f"  a boot ticket waits ({waiting}): the queue goes first, the deploy comes when none waits")
         return 0
+    if getattr(a, "prebuild", True):
+        prebuild(release, log)                         # while the deployed tree still serves: no downtime spent
     log(f"  deploying {head[:12]}")
     ok = deploy(release, log)
     if not ok:
@@ -778,6 +807,8 @@ def main(argv=None) -> int:
     ap.add_argument("--min-gap", type=int, default=1800, help="never restart more often than this")
     ap.add_argument("--test-timeout", type=int, default=900)
     ap.add_argument("--no-gate", dest="gate", action="store_false")
+    ap.add_argument("--no-prebuild", dest="prebuild", action="store_false",
+                    help="deploy without compiling the release's b12x kernels on the nodes' CPUs first")
     ap.add_argument("--interval", type=int, default=300, help="seconds between cycles in the loop")
     ap.add_argument("--controller", default=str(CONTROLLER), help="the queue's checkout: moved to the deployed commit after a deploy")
     ap.add_argument("--no-follow", dest="follow", action="store_false", help="leave the controller checkout where it is")
