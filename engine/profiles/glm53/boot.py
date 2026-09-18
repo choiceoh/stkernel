@@ -42,6 +42,7 @@ from engine.base import kernel_shape                              # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact, Knob                # noqa: E402
 from engine.base import instruments                              # noqa: E402
+from engine.base.background import Background                   # noqa: E402
 from engine.base.instruments import Recorder                     # noqa: E402
 from engine.base.loader import RankLoader                        # noqa: E402
 from engine.base.params import total_bytes                       # noqa: E402
@@ -266,39 +267,6 @@ def grammars(ckpt, vocab: int, device=None, stop_token_ids=None, tokenizer=None)
     if tokenizer is None:
         return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids)
     return grammar.for_checkpoint(ckpt, vocab, device, stop_token_ids, tokenizer=tokenizer)
-
-
-class Background:
-    """Host work started where the boot is already waiting, and joined where its result is needed.
-
-    The boot has two kinds of dead time -- a rendezvous where the fast ranks wait for the slow one, and
-    a device phase where python holds nothing. Both are free seconds for work that touches no CUDA and
-    reads nothing the engine has built. The join is always its own recorder row, so a job that fails to
-    hide says so in seconds instead of disappearing into the phase it was supposed to hide under.
-    """
-
-    def __init__(self, work, name: str):
-        self.work, self.result, self.error, self.seconds = work, None, None, 0.0
-        self._thread = threading.Thread(target=self._run, name=name, daemon=True)
-
-    def start(self) -> "Background":
-        self._thread.start()
-        return self
-
-    def _run(self) -> None:
-        start = time.perf_counter()
-        try:
-            self.result = self.work()
-        except BaseException as exc:            # noqa: BLE001 -- re-raised on the main thread, in its phase
-            self.error = exc
-        finally:
-            self.seconds = time.perf_counter() - start
-
-    def take(self):
-        self._thread.join()
-        if self.error is not None:
-            raise self.error
-        return self.result
 
 
 class Prelude:

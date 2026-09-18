@@ -18,6 +18,12 @@ The phases are GLM-5.3's fleet boot's (engine/profiles/glm53/boot.py `fleet` and
                       (decode_graphs.py), before the door admits work
     serve             base/serve.Server on every rank (rank 0 answers HTTP; the others follow the control plane)
 
+The boot's host work runs where it is already waiting, as GLM-5.3's does (base/background): the kernel packages import
+under the rendezvous, and the door's host half -- the tokenizer, the chat template and what the door reads off it --
+builds under the load and the packs and is joined before the capture, which is Python dispatch and needs the GIL. Every
+rank writes its phase table (boot-rank{r}.json) and memory ledger (memory-rank{r}.json) under --dump-dir, and rank 0
+prints the table: the first fleet boot's 107.4 s and 40.1 s had no rows, only container timestamps.
+
 Not here yet: the asynchronous decode pipeline, the NVMe tier, self-calibration and the vision tower. Prefill runs
 eagerly.
 """
@@ -29,9 +35,13 @@ import time
 from functools import partial
 from pathlib import Path
 
-import torch
+_IMPORTS_BEGAN = time.perf_counter()
 
-from engine.profiles.qwen38 import facts
+import torch                                                    # noqa: E402
+
+from engine.profiles.qwen38 import facts                        # noqa: E402
+
+_IMPORT_SECONDS = time.perf_counter() - _IMPORTS_BEGAN
 
 GIB = 1 << 30
 KV_GIB = 16.0               # the vLLM stack's fixed KV (boot 8: KV_CACHE_MEMORY 16 GiB); Qwen3.8's KV is 15 KiB a token
@@ -42,6 +52,23 @@ WORKSPACE_GIB = 12.0        # everything outside the arena, base/runtime_memory'
 OS_RESERVE_GIB = 12.0       # twice earlyoom's 6 GiB floor
 SNAPSHOT_GIB = 2.0
 MODEL_NAME = "qwen3.8-flash-next"
+DUMP_DIR = "/home/choiceoh/glm53-logs/st-qwen38-dumps"   # the launcher mounts /home/choiceoh/glm53-logs on every node
+
+
+def door_host_half(ckpt_meta, *, renderer: bool) -> dict:
+    """What the door reads off the checkpoint, on the host: the tokenizer (every rank), and on the rank that renders,
+    the chat template with the think block, tool call layout and effort rungs read off it. No CUDA and nothing the
+    engine builds, so the boot runs it on a thread beside the load (base/background)."""
+    from engine.base import tool_formats
+    from engine.base.serve import effort_rungs_checked, reasoning_marks
+    from engine.profiles.qwen38.boot import EFFORT_RUNGS, chat_renderer, generation_defaults, tokenizer
+    tok = tokenizer(Path(ckpt_meta))
+    chat = chat_renderer(Path(ckpt_meta)) if renderer else None
+    end, tail = reasoning_marks(tok, chat) if chat is not None else (None, ())
+    return {"tok": tok, "chat": chat, "end": end, "tail": tail,
+            "tools": tool_formats.detect(chat) if chat is not None else None,
+            "efforts": effort_rungs_checked(chat, EFFORT_RUNGS) if chat is not None else None,
+            "generation": generation_defaults(Path(ckpt_meta))}
 
 
 def rank_loader(path, *, expected_layout: str):
@@ -57,7 +84,11 @@ def rank_loader(path, *, expected_layout: str):
 
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
-          temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False):
+          temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
+          prelude=None):
+    """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
+    base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
+    thread still running there would take the GIL from it."""
     from engine.base import scheduler as sched
     from engine.base.arena import Arena, host_reclaim, prepare_allocation
     from engine.base.params import total_bytes
@@ -139,6 +170,10 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             prefix = PrefixCache(F.block, sched.chunk_for(contract.chunk_align, contract.token_budget, k), snapshots)
             runner = Runner(model, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder,
                             keep_idle=True, prefix=prefix)
+        if prelude is not None:
+            with recorder.phase("wait for the prelude"):
+                prelude.take()
+            recorder.gauge("prelude_s", round(prelude.seconds, 3))
         with recorder.phase("capture decode"):
             capture(model, max_seqs, memory=memory)
         if memory is not None:
@@ -164,14 +199,27 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         raise
 
 
+def write_dumps(rec, memory, dump_dir, rank: int) -> None:
+    """This rank's phase table and memory ledger under `dump_dir`. A dump that cannot be written is said and skipped:
+    the boot serves either way."""
+    try:
+        Path(dump_dir).mkdir(parents=True, exist_ok=True)
+        rec.dump(Path(dump_dir) / f"boot-rank{rank}.json")
+        if memory is not None:
+            memory.write(Path(dump_dir) / f"memory-rank{rank}.json")
+    except OSError as exc:
+        print(f"  rank {rank}: no boot dump under {dump_dir}: {type(exc).__name__}: {exc}", flush=True)
+
+
 def main(argv=None) -> int:
-    from engine.base import kernel_shape
+    opened = time.perf_counter()
+    from engine.base import instruments, kernel_shape
+    from engine.base.background import Background
     from engine.base.comm import Comm
     from engine.base.instruments import Recorder
-    from engine.base.serve import Server, effort_rungs_checked, reasoning_marks
-    from engine.base import tool_formats
+    from engine.base.serve import Server
     from engine.profiles.qwen38 import lanes as lane_tables
-    from engine.profiles.qwen38.boot import EFFORT_ALIASES, EFFORT_RUNGS, chat_renderer, generation_defaults, tokenizer
+    from engine.profiles.qwen38.boot import EFFORT_ALIASES
 
     ap = argparse.ArgumentParser(prog="python3 -m engine.profiles.qwen38.fleet", description=__doc__.splitlines()[0])
     ap.add_argument("--ranks", default=str(facts.RANKS), help="rank{r}of4.safetensors and the kernel shape record")
@@ -188,37 +236,59 @@ def main(argv=None) -> int:
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
                          "the first fleet boot, 2026-09-18, stalled in it at every sum)")
+    ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     a = ap.parse_args(argv)
 
     started = time.perf_counter()
-    print(f"  box: {facts.check_box()}", flush=True)
+    print(f"  box: {facts.check_box()}", flush=True)       # CUDA is initialised here, on this thread, before any other
+    boxed = time.perf_counter()
     shape, source = kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / "config.json",
                                                lambda: facts.load(a.ckpt_meta).kernel_shape())
     print(f"  kernel shape ({source}): {shape.describe()}", flush=True)
     rec = Recorder("boot")
-    comm = Comm.init()
+    # What sat before the recorder -- python, torch, this module's imports, the box check and the shape -- as its first
+    # row (base/instruments.process_seconds), so the table's total is the boot's.
+    front = instruments.process_seconds()
+    if front is not None:
+        rec.mark("front", front, import_s=round(_IMPORT_SECONDS + (started - opened), 3),
+                 box_s=round(boxed - started, 3), shape_s=round(time.perf_counter() - boxed, 3))
+    # The kernel packages import while the ranks meet: the first ranks up wait at the rendezvous for the last one.
+    imports = Background(lane_tables.import_kernels, "kernel-imports").start()
+    with rec.phase("comm"):
+        comm = Comm.init()
+    rec.root.name = f"rank{comm.rank}"
     model = None
     try:
-        if not a.no_oneshot:
-            comm.prepare_oneshot()
+        with rec.phase("prepare one-shot"):
+            if not a.no_oneshot:
+                comm.prepare_oneshot()
         print(f"  collectives: {'NCCL' if a.no_oneshot else 'one-shot RDMA (NCCL where ineligible)'}", flush=True)
-        lanes = lane_tables.served()
+        with rec.phase("lanes"):
+            with rec.phase("wait for the imports"):
+                imports.take()
+            rec.gauge("kernel_imports_s", round(imports.seconds, 3))
+            lanes = lane_tables.served()
         F = facts.load(a.ckpt_meta)
-        print(f"  lanes qualified: {lane_tables.qualify(torch.device('cuda'), F)}", flush=True)
+        with rec.phase("qualify lanes"):
+            qualified = lane_tables.qualify(torch.device("cuda"), F)
+        print(f"  lanes qualified: {qualified}", flush=True)
+        # The door's host half builds under the load and the packs; build() joins it before the capture.
+        prelude = Background(partial(door_host_half, a.ckpt_meta, renderer=comm.rank == 0), "boot-prelude").start()
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
-                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8)
-        tok = tokenizer(Path(a.ckpt_meta))
-        chat = chat_renderer(Path(a.ckpt_meta)) if comm.rank == 0 else None
-        end, tail = reasoning_marks(tok, chat) if chat is not None else (None, ())
-        tools = tool_formats.detect(chat) if chat is not None else None
-        efforts = effort_rungs_checked(chat, EFFORT_RUNGS) if chat is not None else None
-        server = Server(model, runner, comm, port=a.port, tokenizer=tok, chat=chat, model_name=MODEL_NAME,
-                        generation=generation_defaults(Path(a.ckpt_meta)), reasoning_end=end, reasoning_tail=tail,
-                        effort_rungs=efforts, reasoning_effort_aliases=EFFORT_ALIASES if efforts is not None else None,
-                        tool_parser=tools.parse if tools else None, tool_stream=tools.partial if tools else None,
-                        tool_grammar=tools.grammar if tools else None,
-                        tool_call_start=tools.start_token(tok) if tools else None)
+                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8, prelude=prelude)
+        with rec.phase("door"):
+            door = prelude.take()
+            tok, chat, tools, efforts = door["tok"], door["chat"], door["tools"], door["efforts"]
+            server = Server(model, runner, comm, port=a.port, tokenizer=tok, chat=chat, model_name=MODEL_NAME,
+                            generation=door["generation"], reasoning_end=door["end"], reasoning_tail=door["tail"],
+                            effort_rungs=efforts, reasoning_effort_aliases=EFFORT_ALIASES if efforts is not None else None,
+                            tool_parser=tools.parse if tools else None, tool_stream=tools.partial if tools else None,
+                            tool_grammar=tools.grammar if tools else None,
+                            tool_call_start=tools.start_token(tok) if tools else None)
+        write_dumps(rec, model.memory, a.dump_dir, comm.rank)
+        if comm.rank == 0:
+            print(rec.table(), flush=True)
         print(f"  rank {comm.rank}: ready in {time.perf_counter() - started:.1f} s, door on port {a.port}", flush=True)
         server.loop()
         return 0

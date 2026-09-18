@@ -1,0 +1,47 @@
+2026-09-18T08:34:57.853066854Z   box: GB10 (DGX Spark): SM121, unified 122 GiB (103 free)
+2026-09-18T08:34:57.854129871Z   kernel shape (record): hidden 2560 hc 4 gated_residual tp 4 | gqa 6x256 no sink | linear 4/12x128x128 conv 4 decay/head | indexer qsa 4x128 pool 4 top 2048 | moe 512(128 local) I640/640 top10 nvfp4 silu | spec 1
+2026-09-18T08:35:01.203543464Z [W918 08:35:01.466705670 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+2026-09-18T08:35:03.077974552Z [oneshot] inline proxy serving peers=3 inline_bytes=8 wr_reuse=1
+2026-09-18T08:35:03.320701422Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-18T08:35:03.320736078Z   return func(*args, **kwargs)
+2026-09-18T08:35:03.375862020Z   collectives: one-shot RDMA (NCCL where ineligible)
+2026-09-18T08:35:07.335058615Z   lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0012355633080005646), 'inject': (0.004950494971126318, 0.0019775826949626207), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.00558659201487898
+2026-09-18T08:35:07.450031881Z boot rendezvous arena-admission: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-18T08:35:19.865604310Z boot rendezvous weights-loaded: rank 3 prepared; waiting for 4 ranks (deadline 1800s)
+2026-09-18T08:35:21.372067207Z 2026-09-18 08:35:21,371 - INFO - cute_dsl_core.py:174 - flashinfer.jit: Invalidating stale CuTe-DSL module st_b12x_moe_sm121a_cute_dsl
+2026-09-18T08:35:21.373016833Z 2026-09-18 08:35:21,372 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_2897a1e8df411b6a
+2026-09-18T08:35:25.675345404Z 2026-09-18 08:35:25,675 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_2897a1e8df411b6a.o
+2026-09-18T08:35:31.095303392Z /usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+2026-09-18T08:35:31.095327632Z   return func(*args, **kwargs)
+2026-09-18T08:35:47.706188951Z 2026-09-18 08:35:47,705 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_sm121a_cute_dsl/static_m12_k2560_n640_t10_r160_5982a71cede58661
+2026-09-18T08:35:50.136985635Z 2026-09-18 08:35:50,136 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_sm121a_cute_dsl/static_m12_k2560_n640_t10_r160_5982a71cede58661.o
+2026-09-18T08:35:50.240642572Z [rank3]:[W918 08:35:50.497409023 TCPStore.cpp:125] [c10d] recvValue failed on SocketImpl(fd=57, addr=[srv4]:34640, remote=[::ffff:10.10.10.2]:29555): Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdown or crash?
+2026-09-18T08:35:50.240688188Z Exception raised from recvBytes at /__w/pytorch/pytorch/torch/csrc/distributed/c10d/Utils.hpp:787 (most recent call first):
+2026-09-18T08:35:50.240711755Z 
+2026-09-18T08:35:50.240811067Z [rank3]:[W918 08:35:50.504183815 ProcessGroupNCCL.cpp:1876] [PG ID 0 PG GUID 0(default_pg) Rank 3] Failed to check the "should dump" flag on TCPStore, (maybe TCPStore server has shut down too early), with error: Failed to recv, got 0 bytes. Connection was likely closed. Did the remote server shutdo
+2026-09-18T08:35:50.368359766Z 
+2026-09-18T08:35:50.368393814Z [2026-09-18 08:35:50] srv4:1:1 [0] misc/strongstream.cc:404 NCCL WARN Cuda failure 'an illegal memory access was encountered'
+2026-09-18T08:35:50.368396470Z 
+2026-09-18T08:35:50.368398454Z [2026-09-18 08:35:50] srv4:1:1 [0] init.cc:2420 NCCL WARN commDestroySync: comm 0x38784790 rank 3 sync hostStream error 1
+2026-09-18T08:35:50.368400502Z 
+2026-09-18T08:35:50.368402150Z [2026-09-18 08:35:50] srv4:1:1 [0] misc/strongstream.cc:404 NCCL WARN Cuda failure 'an illegal memory access was encountered'
+2026-09-18T08:35:50.368420166Z 
+2026-09-18T08:35:50.368422982Z [2026-09-18 08:35:50] srv4:1:1 [0] init.cc:2423 NCCL WARN commDestroySync: comm 0x38784790 rank 3 sync deviceStream error 1
+2026-09-18T08:35:50.370374186Z 
+2026-09-18T08:35:50.370385674Z [2026-09-18 08:35:50] srv4:1:116 [0] include/alloc.h:142 NCCL WARN Cuda failure 'an illegal memory access was encountered'
+2026-09-18T08:35:50.372370127Z 
+2026-09-18T08:35:50.372374303Z [2026-09-18 08:35:50] srv4:1:1 [0] allocator.cc:129 NCCL WARN Cuda failure 'an illegal memory access was encountered'
+2026-09-18T08:35:50.372376511Z 
+2026-09-18T08:35:50.372378463Z [2026-09-18 08:35:50] srv4:1:1 [0] init.cc:2545 NCCL WARN commReclaim: cleanup comm 0x38784790 rank 3 failed in destroy/abort, error 1
+2026-09-18T08:35:50.380633662Z [rank3]: Traceback (most recent call last):
+2026-09-18T08:35:50.380705741Z [rank3]: RuntimeError: Triton Error [CUDA]: an illegal memory access was encountered
+2026-09-18T08:35:50.380707469Z 
+2026-09-18T08:35:50.380709037Z [rank3]: During handling of the above exception, another exception occurred:
+2026-09-18T08:35:50.380710749Z 
+2026-09-18T08:35:50.380712269Z [rank3]: Traceback (most recent call last):
+2026-09-18T08:35:50.380751341Z [rank3]: torch.AcceleratorError: CUDA error: an illegal memory access was encountered
+2026-09-18T08:35:50.380753341Z [rank3]: Search for `cudaErrorIllegalAddress' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.
+2026-09-18T08:35:50.380755229Z [rank3]: CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.
+2026-09-18T08:35:50.380756957Z [rank3]: For debugging consider passing CUDA_LAUNCH_BLOCKING=1
+2026-09-18T08:35:50.380758589Z 
+2026-09-18T08:35:51.036137102Z [W918 08:35:51.299250828 nccl_devcomm_manager.hpp:225] Failed to destroy the NCCL device communicator, skipping
