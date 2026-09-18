@@ -63,6 +63,11 @@ case "${ST_ONESHOT:-1}" in
   0) ONESHOT_ARG="--no-oneshot" ;;
   *) echo "ST_ONESHOT must be 0 or 1" >&2; exit 2 ;;
 esac
+SPEC_ARG=""                                                   # ST_SPEC_K=K: K drafts a step from the MTP head (the checkpoint's 1; K > 1 chains it)
+if [ -n "${ST_SPEC_K:-}" ]; then
+  [[ "$ST_SPEC_K" =~ ^[1-9][0-9]*$ ]] || { echo "ST_SPEC_K must be a positive draft count" >&2; exit 2; }
+  SPEC_ARG="--spec-k $ST_SPEC_K"
+fi
 RECLAIM_FILE_CACHE=${ST_RECLAIM_FILE_CACHE:-1}
 RECLAIM_ROOT=/home/choiceoh/glm53-logs/st-reclaim           # one broker directory per rank, on that rank's node
 case "$RECLAIM_FILE_CACHE" in
@@ -237,7 +242,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

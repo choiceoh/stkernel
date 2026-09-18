@@ -128,10 +128,15 @@ safetensors 라이브러리 없이 헤더와 numpy memmap 뿐이다. `python3 -m
 읽는다(`profiles/qwen38/ple_table.py`: 스레드 pread — srv2 NVMe 실측 128행 1.0 ms·20,000행 71 ms; 즉시 스텝은 호스트에서 해시해
 모으고, 캡처 스텝은 재생 전에 `net.stage_ple` 가 그래프의 정적 스테이징 행을 채운다). MTP 헤드의 전문가는 허브 체크포인트에서 FP8
 블록스케일(`weight_scale_inv` 를 곱한다 — BF16 복사본 대비 2.66%)이라 역양자화 뒤 NVFP4 로 인코딩한다(드래프터는 수용률만 바꾼다);
-예전 복사본(NVFP4 만, BF16 MTP)도 `facts.load` 가 읽는다. 전문가 그룹은 랭크별이라 프리샤드 상주 메모리는 약 2 GiB 다. 첫 플릿 부팅
-(2026-09-18, `launchers/start-st-qwen38.sh`)은 네 랭크가 올라와 문을 열었지만 토큰을 내지 못했다: one-shot 집합통신이 hidden 2560
-에서 스톨해 `--no-oneshot`(launcher `ST_ONESHOT=0`, NCCL)을 더했고, 즉시 프리필의 정적 MoE 커널이 (행, 전문가) 조합마다 JIT 된다
-(QWEN38_CARRY C4 — 프리필을 dynamic 으로 보내는 것이 다음 창의 선행). D17 미실측.
+예전 복사본(NVFP4 만, BF16 MTP)도 `facts.load` 가 읽는다. 전문가 그룹은 랭크별이라 프리샤드 상주 메모리는 약 2 GiB 다. 첫 서빙
+(2026-09-18, `launchers/start-st-qwen38.sh`, 세션 창): 즉시 프리필은 b12x dynamic 커널로 간다(expert-local 한 행 한 라우트, 8 행
+초과 — 정적 커널은 행 수마다 아티팩트를 만들어 첫 창에서 토큰을 내지 못했다), one-shot 집합통신은 기본 그대로(스톨 0; `--no-oneshot`
+/`ST_ONESHOT=0` 은 옵션). 네 랭크 53.5 s ready, 디코드 35.3 ms/스텝·1.74 토큰/스텝(MTP K=1 수용 72%), 450 토큰 생성 39.4 tok/s,
+웜 프리필 약 3.5K tok/s(`measurements/qwen38_fleet_boot_20260918`). D17 의 onepass 기록은 아직 없다. MTP 체인 K>1 은 `--spec-k K`
+(launcher `ST_SPEC_K`; 기본은 체크포인트의 1): 드래프트 재생 하나 안에서 헤드를 K 번(`decode_graphs.draft_chain` — 관측 스텝 뒤 행마다
+한 위치씩 K−1 런치, 직전 pick 이 토큰·헤드의 streams 가 상태), 검증 스텝은 행당 K+1 토큰, 고정 링(QSA raw key·PLE id 8)은 K ≤ 4
+(`caches.check_rings`). 두 행 C=1 실측(같은 날 창 3): 450 토큰 K=3 2.43 토큰/스텝·44.3 ms/스텝·46.2 tok/s vs K=1 1.69·34.7·39.5;
+4 행은 (3 행 × 4) 12 토큰이 micro 상한 8 을 넘어 정적 MoE 커널로 가고 그 첫 런치가 캡처에서 죽어(illegal access) 격리 전이다.
 
 빠른 확인(GLM-5.3, 실가중치, 한 노드, TP=4 스레드; 랭크 파일은 `profiles/glm53/preshard.py` 가 한 번 자른다):
 

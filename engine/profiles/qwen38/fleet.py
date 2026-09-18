@@ -15,7 +15,8 @@ The phases are GLM-5.3's fleet boot's (engine/profiles/glm53/boot.py `fleet` and
                       (ple-r{r}of4.weight on the SSD, ple_table.py -- not in the arena); the dense lanes packed (PackStore)
     engine            caches, the served composition behind base/composed.ComposedModel (adapter.py), the runner
     capture           the target's verify graphs and the MTP head's draft graphs, every row count and context bucket
-                      (decode_graphs.py), before the door admits work
+                      (decode_graphs.py), before the door admits work; `--spec-k K` (K > 1) chains the head K-1
+                      times inside the draft replay and widens the verify step to K+1 (the checkpoint's own is 1)
     serve             base/serve.Server on every rank (rank 0 answers HTTP; the others follow the control plane)
 
 The boot's host work runs where it is already waiting, as GLM-5.3's does (base/background): the kernel packages import
@@ -30,6 +31,7 @@ eagerly.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 import time
 from functools import partial
@@ -109,7 +111,7 @@ def rank_loader(path, *, expected_layout: str):
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
-          prelude=None, query_shards: bool = True):
+          spec_k: "int | None" = None, prelude=None, query_shards: bool = True):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it."""
@@ -127,6 +129,12 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     from engine.profiles.qwen38.net import Qwen38Net
 
     F = facts.load(ckpt_meta)
+    if spec_k is not None and spec_k != F.spec_k:
+        if spec_k < 1:
+            raise ValueError("--spec-k drafts at least one token a step (--no-drafter serves without the head)")
+        # the head chains its draft: K picks a step from one MTP layer, the verify step K+1 wide; the rings the
+        # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
+        F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, SNAPSHOT_GIB, mtp=drafter)
@@ -278,6 +286,9 @@ def main(argv=None) -> int:
                     help="every rank scores every index query of a prefill step, as before carry Q11: the rollback of the "
                          "quarter-a-rank scoring, on by the operator's decision of 2026-09-18 with the fleet unmeasured")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
+    ap.add_argument("--spec-k", type=int, default=None,
+                    help="drafts a step from the MTP head (the checkpoint's 1): K > 1 chains the head K-1 times inside "
+                         "the draft replay and the verify step is K+1 tokens wide")
     a = ap.parse_args(argv)
 
     started = time.perf_counter()
@@ -322,8 +333,10 @@ def main(argv=None) -> int:
         prelude = Background(partial(door_host_half, a.ckpt_meta, renderer=comm.rank == 0), "boot-prelude").start()
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
-                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8, prelude=prelude,
+                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
                                               query_shards=not a.no_query_shards)
+        print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
+              f"(verify step {model.k + 1} tokens a row)", flush=True)
         with rec.phase("door"):
             door = prelude.take()
             tok, chat, tools, efforts = door["tok"], door["chat"], door["tools"], door["efforts"]
