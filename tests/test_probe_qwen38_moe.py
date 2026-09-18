@@ -105,7 +105,9 @@ class ProbeModuleTests(unittest.TestCase):
         from engine.base.kernel_shape import MEASURED
         p = probe()
         c = p.cell_of(p.kernel_shape())
-        self.assertEqual(p.decode_tokens(c), (2, 4, 6, 8))        # 1..4 captured rows of SPEC_K + 1 tokens
+        # 1..8 captured rows of K + 1 tokens at K=1 and K=3: micro to 8, the static shapes above it
+        self.assertEqual(p.decode_tokens(c), (2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32))
+        self.assertEqual(p.decode_order(p.decode_tokens(c), 8), [8, 6, 4, 2, 10, 12, 14, 16, 20, 24, 28, 32])
         self.assertEqual((p.PREFILL_CHECKS, p.PREFILL_TIMINGS), ((16, 64, 128, 1024, 4096), (1024, 4096, 8192)))
         self.assertEqual(p.DYNAMIC_TILES, (16, 32, 64, 128))
         self.assertTrue(set(p.MICRO_TILES) <= {32, 64, 128} and 64 in p.MICRO_TILES)
@@ -124,6 +126,11 @@ class DispatcherReadingTests(unittest.TestCase):
         md._EP_ZERO_WEIGHT_MICRO_CELL = True                        # lanes.served() configures it
         for m in p.decode_tokens(c):
             with self.subTest(tokens=m):
+                if m > md._MICRO_MAX_TOKENS:
+                    # above the micro cap no sentinel is engaged: the launch is the static kernel's
+                    # (tests/test_engine_moe_backend_prefill.py holds the selector to it)
+                    self.assertIsNone(sentinel(md, m, c))
+                    continue
                 self.assertEqual(sentinel(md, m, c), c.local)
                 self.assertEqual(micro_tile(md, m, c), (64, 128))
                 self.assertEqual(md._select_micro_mac(m * c.topk, c.inter, 48, md._MICRO_MAC_LADDER), 48)
