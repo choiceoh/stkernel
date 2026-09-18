@@ -17,7 +17,8 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
     attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
                               the query heads, one for the key head, one for the index queries; the QSA ops (a host
                               step the budget covers attends every group it sees: no scores, no top-k, the ids built
-                              once a step -- `_covered_blocks`)
+                              once a step -- `_covered_blocks`; a boot that declares `query_shards` has each rank score
+                              a quarter of a long prefill step's index queries and gathers the ids -- `_sharded_blocks`)
     MoE                      the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
                               in one dispatcher launch (another rank's routes skip in the micro kernel on a captured
                               step), the shared expert's two GEMMs and activation, ONE all-reduce for routed and shared
@@ -161,17 +162,28 @@ class StepMeta:
     ring_slots: torch.Tensor    # [N] int32: slot * ring + pos % ring
     covered_blocks: "torch.Tensor | None" = None   # [N, index_blocks] int32, set by the step's first QSA layer when no
                                                    # row sees more groups than the budget holds (Qwen38Net._covered_blocks)
+    groups_seen: "torch.Tensor | None" = None      # [N] int32: the complete groups each row sees, set by the first QSA
+                                                   # layer that splits the step's index queries (Qwen38Net._sharded_blocks)
 
 
 class Qwen38Net:
-    def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False):
+    def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
+                 query_shards: bool = False):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
-        quality bracket judges, not a default."""
+        quality bracket judges, not a default.
+
+        `query_shards`: a long prefill step's index queries scored a quarter a rank and the chosen ids gathered
+        (`_sharded_blocks`, carry Q11). The selection is the unsplit step's, row for row; what it trades is three
+        quarters of each QSA layer's scoring for one all-gather of ids, and which side of that a fleet lands on is not
+        measured (CHARTER D17) -- so a boot declares it, and the default scores every row on every rank."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
+        if type(query_shards) is not bool:
+            raise ValueError("query_shards is a declared boolean")
         self.F, self.comm, self.lanes, self.mtp, self.hc_fp8 = F, comm, lanes, mtp, hc_fp8
+        self.query_shards = query_shards
         self._hc_projections = {}
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
@@ -509,6 +521,37 @@ class Qwen38Net:
             meta.covered_blocks = covered_pool_ids((meta.positions32 + 1) // F.idx_ratio, F.index_blocks)
         return meta.covered_blocks
 
+    def _sharded_blocks(self, iq: torch.Tensor, step, meta: StepMeta, keys: torch.Tensor):
+        """A prefill step's chosen blocks with each rank scoring its quarter of the rows (carry Q11, the rank half;
+        GLM's #881, engine/modules/prefill_indexer.QueryShard): the index queries and the index keys are replicated,
+        so four ranks scored the same [rows, columns] logits and took the same top-k four times over. A rank scores the
+        rows it owns that a score decides -- its covered rows are their positions' ids, as `_covered_blocks`' are -- and
+        one all-gather of the ids (two uint16 a word where the groups fit) makes every rank's selection whole. The ids
+        are the unsplit step's, row for row, where the selection lane says its split calls select alike
+        (`lanes.qsa_select_alike`: every chunk on both sides takes the radix select); the ranks ask it of the same
+        numbers, so they split together or not at all. None where the step is not split: the boot did not declare
+        `query_shards`, a captured step, several segments, fewer rows than ranks, or a lane that will not say."""
+        if not getattr(self, "query_shards", False) or getattr(step, "captured", False) or len(step.segments) != 1:
+            return None
+        F, lanes, N = self.F, self.lanes, iq.shape[0]
+        alike = getattr(lanes, "qsa_select_alike", None)
+        if alike is None or N < TP:
+            return None
+        from engine.modules.prefill_indexer import QueryShard
+        ctx = int(step.segments[0].ctx)
+        shards = [QueryShard(N, ctx, rank, TP, F.index_blocks, F.idx_ratio) for rank in range(TP)]
+        if not alike(N, [shard.score_rows for shard in shards], meta.page_table.shape[1] * keys.shape[1], F.index_blocks):
+            return None
+        if meta.groups_seen is None:
+            meta.groups_seen = (meta.positions32 + 1) // F.idx_ratio
+        mine = shards[self.rank]
+        scored = None
+        if mine.score_rows:
+            rows = slice(mine.score_begin, mine.end)
+            scored = lanes.qsa_select(iq[rows], keys, meta.page_table, meta.rows_req[rows], meta.positions32[rows],
+                                      meta.lengths, F.idx_budget, F.idx_ratio)
+        return mine.collect(scored, meta.groups_seen, self.comm)
+
     def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None):
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix or f"L{L}.attn."
@@ -541,6 +584,8 @@ class Qwen38Net:
         # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a step the
         # budget covers has them already, unscored
         blocks = self._covered_blocks(step, meta)
+        if blocks is None:
+            blocks = self._sharded_blocks(iq, step, meta, caches.index_keys(cache_layer))
         if blocks is None:
             blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
                                       meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)

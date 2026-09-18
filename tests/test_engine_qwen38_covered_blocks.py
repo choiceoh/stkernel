@@ -156,6 +156,7 @@ class LayerTests(unittest.TestCase):
         net = SimpleNamespace(F=wide, lanes=lanes, p=mock.MagicMock(), comm=SimpleNamespace(all_reduce=lambda t: t),
                               linear=lambda x, name: torch.zeros(rows, width if name.endswith("in_proj") else 3))
         net._covered_blocks = lambda s, m: Qwen38Net._covered_blocks(net, s, m)
+        net._sharded_blocks = lambda *a: Qwen38Net._sharded_blocks(net, *a)       # no query_shards declared: never splits
         caches = SimpleNamespace(kv=lambda L: ("K", "V"), key_ring=lambda L: "ring", index_keys=lambda L: f"keys{L}")
         Qwen38Net._qsa(net, 3, torch.zeros(rows, 3), step, meta, caches)
         return meta, calls, scored
