@@ -609,7 +609,7 @@ class _Probe:
             selector_mac = md._select_micro_mac(m * c.topk, c.inter, self.base_mac, md._MICRO_MAC_LADDER)
         else:
             selector_tile = selector_mac = None
-        row = dict(tokens=m, family=family, **route_stats(ids0, c), sentinel=sentinel,
+        row = dict(family=family, **route_stats(ids0, c), sentinel=sentinel,      # route_stats carries `tokens`
                    pool_sentinel_fraction=round(statistics.mean(route_stats(p[1], c)["sentinel_fraction"]
                                                                 for p in patterns), 4),
                    launched=launched, selector_tile_m=selector_tile, selector_mac=selector_mac,
