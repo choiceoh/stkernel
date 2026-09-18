@@ -94,7 +94,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
-| D1 | MTP 체인 K>1 을 드래프트 재생 안에서(SPEC_K 2–4 스윕). 지금 K=1 은 스텝당 최대 2 토큰이고, CPU 참조 레인 K=3 은 라운드당 3.67 토큰. k≠1 가드만 풀면 `streams=None` 에서 죽는다 | #869 #627 | `decode_graphs.py:DraftGraphs`, `adapter.py:ServedMTP`, `facts.py` | native | 스텝당 토큰 | gpu | 일 | 열림 |
+| D1 | MTP 체인 K>1 을 드래프트 재생 안에서(`fleet --spec-k K`, `decode_graphs.draft_chain`). 두 행 C=1 실측 K=3: 450 토큰 2.43 토큰/스텝·44.3 ms/스텝·46.2 tok/s(K=1 1.69·34.7·39.5). 4 행은 (3 행 × 4) 12 토큰의 정적 MoE 커널이 캡처에서 죽어 격리 전(C4 에 디코드 12/16 검사) | #869 #627 | `decode_graphs.py:DraftGraphs`, `adapter.py:ServedMTP`, `fleet.py` | native | 스텝당 토큰 | gpu | 일 | PR #1182 (2 행 실측; 4 행 열림) |
 | D2 | 검증 pick 을 전 vocab gather 없이: argmax 키 + max all-reduce, 캡처 샘플링 | #563 #929 | `decode_graphs.py:TargetGraphs`, `adapter.py` | fold | −1 all_gather(993 KB), −1 H2D | gpu | 일 | 열림 |
 | D3 | 드래프트를 GPU 에 남김: 스텝당 host sync 제거, streams 인계를 복사 한 번으로 | #605 #627 | `adapter.py`, `decode_graphs.py` | fold | −1 sync, −2 복사 | gpu | 일 | 열림 |
 | D4 | MTP 프롬프트 관측을 한 forward 로 묶기(P3 이 먼저 닫히면 불필요) | #627 #722 | `adapter.py:ServedMTP.observe` | fold | 청크당 최대 −41 헤드 forward | gpu | 일 | P3 의 PR 로 닫힘: 청크가 한 조각이라 `ServedMTP.observe` 도 청크당 한 번이다 |
@@ -139,6 +139,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | "이미지는 파트로 사전 샤딩해서" | NVIDIA 허브 체크포인트(fc694b54)를 `preshard.py` 로 네 랭크 파일 + 네 표 파일로 자른다(MTP 전문가 FP8→NVFP4, 전문가 그룹은 랭크별, memmap 읽기) | 산출물 완성(srv4, 2026-09-18 15:38, 699 s, 3 GiB 캡): `~/models/st-qwen38-tep4`, 랭크 0 표 파일 sha = 09-11 파일과 동일; 랭크 r 을 GLM 과 같은 노드로 배포 |
 | "올려봐" | 세션 창(quiet gate 양보)에서 `launchers/start-st-qwen38.sh` 로 첫 플릿 부팅 | 창 1: 네 랭크 부팅·문 열림(107 s, 캐시 뒤 40 s), 토큰 0 — 즉시 프리필의 정적 MoE 커널이 (행, 전문가) 조합마다 JIT(12 분에 75 개), one-shot 은 그 사이 STALL. |
 | "두 문제 해결해 / 폴백경로 말고 자체 경로 / 부팅도 한번 해보지그래" | 프리필은 b12x dynamic 커널(행 수 무관 아티팩트)로 보내는 규칙 하나; one-shot 은 기본 그대로 | 창 2(PR #1180): C4 프로브 오라클 안(프리필 0.5~0.9%, 디코드 0.5~0.6%), 플릿 53.5 s ready, STALL 0, 한글·영어 답 정상, 450 토큰 39.4 tok/s, 디코드 35.3 ms/스텝·1.74 토큰/스텝(수용 72%). `measurements/qwen38_fleet_boot_20260918` |
+| "k=3 정도 하지" / "k=3가 안되면 k=2까지만해" | `fleet --spec-k K`(launcher `ST_SPEC_K`): 드래프트 재생 안에서 헤드 K 번(`decode_graphs.draft_chain`), 검증 스텝 K+1 토큰; 고정 링 검사 K ≤ 4 | 창 3(PR #1182): 4 행 부팅은 12 토큰 정적 MoE 커널(`static_m12`)의 첫 런치에서 illegal access 로 캡처 실패, 2 행 부팅 OK. 두 행 C=1 짝: 450 토큰 K=3 2.43 토큰/스텝·44.3 ms/스텝·디코드 54.9·프리필 포함 46.2 tok/s vs K=1 1.69·34.7·48.8·39.5 (+12.5% / +17%). K=2 는 3 행에서 9 토큰으로 같은 정적 경로라 폴백이 아니다 |
 | "8행으로 가자" | 8행 부팅이 밟는 정적 MoE 디코드 모양(10~32 토큰)을 C4 프로브로 판정, 죽는 모양은 16행 패딩(`lanes.static_pad`), 레인 승인·`fleet_prepare` 수정 | srv4 세션 창(PR #1192): 정적 10·12 illegal access(네 행 K=3 부팅의 그것), 14~32 통과; 패딩 뒤 10·12·14 통과. 8행 K=3 플릿 부팅·C=1~8 측정은 다음 창 |
 
 ## 옮기지 않는 GLM 최적화
