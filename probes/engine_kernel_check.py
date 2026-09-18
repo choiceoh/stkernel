@@ -164,6 +164,12 @@ def main():
         from probes.engine_qwen38_step import run as qwen38_step
         qwen38_step(args.output, args.ranks)
         return
+    if args.lanes == 'qwen38_step_ab':
+        # the same step, each layer set built under the served lanes and again with the skinny GEMV's shapes on
+        # torch.mm -- what the router's and the mixers' down projections on it change in a replayed step
+        from probes.engine_qwen38_step import ARMS, run as qwen38_step
+        qwen38_step(args.output, args.ranks, arms=ARMS)
+        return
     if args.lanes == 'qwen38_gemv':
         # component timings: a skinny BF16 GEMV (one weight read for all rows) against cuBLAS at the decode step's mixer
         # and router shapes, interleaved in CUDA graphs -- whether the 11.2 ms of BF16 GEMM a step has a faster kernel

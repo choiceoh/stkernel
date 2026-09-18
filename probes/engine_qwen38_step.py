@@ -23,6 +23,10 @@ and the PLE injection are four unknowns from four layer sets, per graph and per 
 
     python3 probes/engine_kernel_check.py --lanes qwen38_step --ranks /home/choiceoh/models/st-qwen38-tep4 \\
         --output /cache/qwen38-step.json                                          (the queue's single-GPU lane)
+
+`--lanes qwen38_step_ab` builds every layer set twice, one after the other: the served lanes (`served`) and the same
+lanes with every BF16 product of a handful of rows back on torch.mm (`mm`: engine/kernels/common/skinny_gemv's table
+emptied, the lanes before it) -- the step and its families per arm, and the served arm less the other.
 """
 from __future__ import annotations
 
@@ -43,6 +47,7 @@ KV_GIB = 0.25
 SPEC_K = 3                                # the operator's K (#1182: fleet --spec-k 3): verify 4 tokens, draft a chain of 3
 MAX_GIB = 4.0                             # this process's own device-memory ceiling: the lane's budget beside production
 FULL = {"fixed": 1, "gdn": 36, "qsa": 12, "ple": 1}
+ARMS = ("served", "mm")                   # qwen38_step_ab: the served lanes, and the skinny GEMV's shapes on torch.mm
 
 FAMILIES = (
     ("moe b12x", r"[Mm]oe|[Mm]icro|[Ss]tatic|[Dd]ynamic|b12x|kernel_cutlass"),
@@ -293,9 +298,15 @@ def assemble(builds: dict, F) -> dict:
 
 
 def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REPLAYS, kv_gib: float = KV_GIB,
-            max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False) -> dict:
-    """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row."""
+            max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False, arm: str = "served") -> dict:
+    """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row.
+    `arm` "mm": the skinny GEMV's table emptied first, so its shapes run on torch.mm as the lanes did before it."""
     import torch
+    if arm not in ARMS:
+        raise ValueError(f"arm {arm!r}: one of {ARMS}")
+    if arm == "mm":
+        from engine.kernels.common import skinny_gemv
+        skinny_gemv.CONFIGS.clear()
     free, total = torch.cuda.mem_get_info()
     torch.cuda.set_per_process_memory_fraction(min(1.0, max_gib * (1 << 30) / total))
     # the fleet boot's first act (fleet.main): the record the preshard wrote, bound before any lane reads it -- the
@@ -316,7 +327,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                 continue
             seat(g, caches, F, shape)
             graphs[key] = replay_profile(g, shape, replays)
-            print(json.dumps({"layers": list(layers), "graph": key, "wall_us": graphs[key]["wall_us"],
+            print(json.dumps({"arm": arm, "layers": list(layers), "graph": key, "wall_us": graphs[key]["wall_us"],
                               "device_us": graphs[key]["device_us"], "launches": graphs[key]["launches"]}), flush=True)
     if loop:
         served = served_loop(F, net, caches, target, draft)
@@ -325,8 +336,8 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                       for label in ("target", "draft"))
         served["replays_us"] = round(replays, 1)
         served["host_us"] = round(served["wall_us"] - replays, 1)
-        print(json.dumps({"layers": list(layers), "served_loop": served}), flush=True)
-    row = {"counts": counts(F, layers), "kernel_shape": shape_source, "free_GiB_at_start": round(free / 2**30, 1),
+        print(json.dumps({"arm": arm, "layers": list(layers), "served_loop": served}), flush=True)
+    row = {"arm": arm, "counts": counts(F, layers), "kernel_shape": shape_source, "free_GiB_at_start": round(free / 2**30, 1),
            "build_s": round(built, 1), "peak_GiB": round(torch.cuda.max_memory_allocated() / 2**30, 2),
            "graphs": {k: v for k, v in graphs.items() if "error" not in v},
            "errors": {k: v for k, v in graphs.items() if "error" in v}}
@@ -337,10 +348,11 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     return row
 
 
-def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = None) -> dict:
+def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = None, arms=("served",)) -> dict:
     """The lane (probes/engine_kernel_check.py --lanes qwen38_step): each layer set measured in a process of its own --
     a built net's weights stay referenced by the lanes' prepared views, so one process cannot hold two in 4 GiB --
-    then assembled. `ranks`: the rank files' directory; `rank`: which one (default: the highest this host has)."""
+    then assembled. `ranks`: the rank files' directory; `rank`: which one (default: the highest this host has);
+    `arms`: ARMS to build each layer set under, in turn (qwen38_step_ab: both, and the first less the second)."""
     import subprocess
     import tempfile
     ranks = Path(ranks or "/home/choiceoh/models/st-qwen38-tep4")
@@ -350,28 +362,53 @@ def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = 
             raise SystemExit(f"no rank file under {ranks}")
         rank = present[-1]
     report = {"rank": rank, "layer_sets": [list(s) for s in layer_sets], "shapes": [list(s) for s in SHAPES],
-              "replays": REPLAYS, "builds": {}, "failed": {}}
+              "replays": REPLAYS, "arms": list(arms), "builds": {arm: {} for arm in arms}, "failed": {}}
     with tempfile.TemporaryDirectory() as scratch:
         for layers in layer_sets:
             name = ",".join(map(str, layers))
-            out = Path(scratch) / f"{name}.json"
-            args = ["--loop"] if layers == layer_sets[0] else []
-            done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--one", name, "--ranks", str(ranks),
-                                   "--rank", str(rank), "--output", str(out), *args], cwd=str(ROOT))
-            if done.returncode or not out.exists():
-                report["failed"][name] = f"rc={done.returncode}"
-                continue
-            report["builds"][name] = json.loads(out.read_text())
+            for arm in arms:                              # one after the other: production's load lands on both
+                out = Path(scratch) / f"{arm}-{name}.json"
+                args = ["--loop"] if layers == layer_sets[0] else []
+                done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--one", name, "--arm", arm,
+                                       "--ranks", str(ranks), "--rank", str(rank), "--output", str(out), *args],
+                                      cwd=str(ROOT))
+                if done.returncode or not out.exists():
+                    report["failed"][f"{arm} {name}"] = f"rc={done.returncode}"
+                    continue
+                report["builds"][arm][name] = json.loads(out.read_text())
     from engine.profiles.qwen38 import facts
-    report["step"] = assemble(report["builds"], facts.load(ranks))
-    report["served_loop"] = next((b["served_loop"] for b in report["builds"].values() if "served_loop" in b), None)
+    F = facts.load(ranks)
+    steps = {arm: assemble(report["builds"][arm], F) for arm in arms}
+    report["step"] = steps[arms[0]]
+    report["served_loop"] = next((b["served_loop"] for b in report["builds"][arms[0]].values() if "served_loop" in b), None)
+    if len(arms) == 2:
+        report["step_by_arm"] = steps
+        report["served_loop_by_arm"] = {arm: next((b["served_loop"] for b in report["builds"][arm].values()
+                                                   if "served_loop" in b), None) for arm in arms}
+        report["delta"] = difference(*(steps[arm] for arm in arms))
     text = json.dumps(report, indent=1)
     if output:
         Path(output).parent.mkdir(parents=True, exist_ok=True)
         Path(output).write_text(text + "\n")
-    print(json.dumps({k: {m: v[m]["step_48"] for m in ("wall_us", "device_us", "launches")}
-                      for k, v in report["step"].items()}, indent=1), flush=True)
+    print(json.dumps({arm: {k: {m: v[m]["step_48"] for m in ("wall_us", "device_us", "launches")}
+                            for k, v in steps[arm].items()} for arm in arms}, indent=1), flush=True)
+    if "delta" in report:
+        print(json.dumps({"delta": report["delta"]}, indent=1), flush=True)
     return report
+
+
+def difference(a: dict, b: dict) -> dict:
+    """Two assembled steps -> per graph, a less b: the 48-layer wall, device time and launches, and each family's
+    device time where either arm has it."""
+    out = {}
+    for key in sorted(set(a) & set(b)):
+        entry = {m: round(a[key][m]["step_48"] - b[key][m]["step_48"], 1) for m in ("wall_us", "device_us", "launches")}
+        fams = set(a[key]["families"]) | set(b[key]["families"])
+        entry["families_us"] = {f: round(a[key]["families"].get(f, {}).get("step_48_us", 0.0)
+                                         - b[key]["families"].get(f, {}).get("step_48_us", 0.0), 1) for f in sorted(fams)}
+        entry["families_us"] = {f: v for f, v in entry["families_us"].items() if abs(v) >= 1.0}
+        out[key] = entry
+    return out
 
 
 if __name__ == "__main__":
@@ -382,9 +419,10 @@ if __name__ == "__main__":
     ap.add_argument("--one", default=None, help="one layer set (comma separated), measured in this process")
     ap.add_argument("--rank", type=int, default=None)
     ap.add_argument("--loop", action="store_true", help="with --one: also decode one request through the served model")
+    ap.add_argument("--arm", default="served", choices=ARMS, help="with --one: the lanes it builds under")
     a = ap.parse_args()
     if a.one is not None:
-        row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")), loop=a.loop)
+        row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")), loop=a.loop, arm=a.arm)
         Path(a.output).write_text(json.dumps(row) + "\n")
     else:
         run(a.output, a.ranks, rank=a.rank)

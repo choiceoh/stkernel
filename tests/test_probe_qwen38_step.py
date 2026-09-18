@@ -42,6 +42,7 @@ class SolveTests(unittest.TestCase):
         self.assertEqual(step.family("_qsa_mqa_paged_kernel"), "qsa")
         self.assertEqual(step.family("fused_recurrent_gated_delta_rule_fwd_kernel"), "gdn / kda")
         self.assertEqual(step.family("nvjet_tst_128x64_64x7_1x1_v_bz_coopA_TNT"), "gemm (cublas/cutlass)")
+        self.assertEqual(step.family("_skinny_gemv_kernel"), "gemm (cublas/cutlass)")
         self.assertEqual(step.family("something_new"), "other")
 
 
@@ -50,6 +51,20 @@ class LaneTests(unittest.TestCase):
         source = (ROOT / "probes/engine_kernel_check.py").read_text(encoding="utf-8")
         self.assertIn("if args.lanes == 'qwen38_step':", source)
         self.assertIn("qwen38_step(args.output, args.ranks)", source)
+        self.assertIn("if args.lanes == 'qwen38_step_ab':", source)
+        self.assertIn("qwen38_step(args.output, args.ranks, arms=ARMS)", source)
+
+    def test_the_ab_lane_is_the_first_arm_less_the_second(self):
+        from probes.engine_qwen38_step import ARMS, difference
+
+        def step(wall, device, gemm, qsa):
+            return {"target rows 1 blocks 6": {"wall_us": {"step_48": wall}, "device_us": {"step_48": device},
+                                               "launches": {"step_48": 900.0},
+                                               "families": {"gemm": {"step_48_us": gemm}, "qsa": {"step_48_us": qsa}}}}
+        self.assertEqual(ARMS[0], "served")
+        got = difference(step(20000.0, 18000.0, 9000.0, 500.0), step(21000.0, 18900.0, 9900.0, 500.4))
+        self.assertEqual(got, {"target rows 1 blocks 6": {"wall_us": -1000.0, "device_us": -900.0, "launches": 0.0,
+                                                          "families_us": {"gemm": -900.0}}})
 
     def test_the_kernel_shape_is_bound_before_any_lane_is_built(self):
         """As fleet.main does first: the lanes admit their cells against the bound shape."""

@@ -92,6 +92,9 @@ class Lanes:
                                     #  qsa_select over disjoint row ranges of a step (their row counts) chooses row for
                                     #  row what one call does. The selection lane's own statement -- it picks its
                                     #  selector by the rows it is handed; None: no lane has said, and no net splits
+    rows_linear: object = None      # (x [N, K] bf16, w [M, K] bf16) -> x @ w.T: a decode step's handful of rows by
+                                    #  a weight it reads once -- the router and the mixers' down projections
+                                    #  (engine/kernels/common/skinny_gemv, torch.mm past its shapes); None: torch.mm
 
 
 def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -295,7 +298,7 @@ KERNEL_MODULES = ("engine.kernels.gated_residual", "engine.kernels.gdn", "engine
                   "engine.kernels.causal_conv_ring", "engine.kernels.causal_conv_single", "engine.kernels.kda.chunk_decay",
                   "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.kernels.moe_route",
                   "engine.modules.nvfp4_sf", "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope",
-                  "engine.kernels.common.swiglu")
+                  "engine.kernels.common.skinny_gemv", "engine.kernels.common.swiglu")
 """What `served` binds over, with the common lanes it starts from (engine/base/lanes). `import_kernels` exists so the
 fleet boot can pay for them where it is already waiting; a test holds this list to the `from` lines in both."""
 
@@ -325,6 +328,7 @@ def served(*, tp=None) -> Lanes:
     from engine.kernels.kda.ring import recurrent_gdn_ring, recurrent_gdn_ring_rows
     from engine.kernels.b12x import b12x_fused_moe
     from engine.kernels.b12x import moe_dispatch as md
+    from engine.kernels.common.skinny_gemv import linear_rows
     from engine.modules.nvfp4_sf import mma_sf_view
 
     def gdn_chunk(q, k, v, decay, beta, state0, states_at=None):
@@ -412,6 +416,14 @@ def served(*, tp=None) -> Lanes:
             out.index_add_(0, token, pairs.float())
         return out.to(x.dtype)
 
+    def mix(normed, down_inject, up, hc, *, inject=True, project_down=None, project_up=None):
+        # the down projection is a weight [r(+hc), hc*H] read once for the step's rows: the skinny GEMV where it has
+        # the shape; a quantised lane's projection (hc_fp8) stays that lane's
+        if project_down is None:
+            def project_down(normed, w=down_inject):
+                return linear_rows(normed, w)
+        return hcr.mix(normed, down_inject, up, hc, inject=inject, project_down=project_down, project_up=project_up)
+
     def on_main(fn):
         if tp is None:
             return fn
@@ -422,7 +434,7 @@ def served(*, tp=None) -> Lanes:
     # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
     md.configure_ep_zero_weight_micro(True)
     common = common_lanes()
-    bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
+    bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
              recurrent_gdn_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
              qsa.norm_rope_partial, qsa.qsa_store_cache_rows, qsa.qsa_compress_groups_with_ratio,
              qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, route_softmax_topk, moe]
@@ -430,19 +442,22 @@ def served(*, tp=None) -> Lanes:
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
-                 qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local))
+                 qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
+                 rows_linear=on_main(linear_rows))
 
 
 def qualify(device, F) -> dict:
     """The served lanes that own arithmetic the wizard's glue does not cover, held to their oracles on `device` before
-    a boot serves (D3): the gated residual at the model's widths, GDN's gates and output norm, and QSA's head norm with
-    its partial rotation (the query heads and the indexer's)."""
+    a boot serves (D3): the gated residual at the model's widths, GDN's gates and output norm, QSA's head norm with
+    its partial rotation (the query heads and the indexer's), and the skinny GEMV at the shapes it takes."""
     from engine.kernels import gated_residual, gdn, qsa
+    from engine.kernels.common import skinny_gemv
     return {"gated_residual": gated_residual.qualify(device, hc=F.hc, hidden=F.hidden, rank=F.hc_rank, eps=F.rms_eps),
             "gdn": gdn.qualify(device, heads=F.v_heads_local, dim=F.v_dim, eps=F.rms_eps),
             "qsa_norm_rope": qsa.qualify(device, heads=((F.heads_local, F.head_dim), (F.idx_heads, F.idx_dim)),
                                          rotary_dim=F.rotary_dim, theta=F.rope_theta, eps=F.rms_eps,
-                                         max_position=F.max_position)}
+                                         max_position=F.max_position),
+            "skinny_gemv": skinny_gemv.qualify(device)}
 
 
 __all__ = ["Lanes", "KERNEL_MODULES", "import_kernels", "reference", "served", "qualify", "route_softmax_topk", "local_routes",

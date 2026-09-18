@@ -1,11 +1,14 @@
 """A BF16 x @ W.T for a handful of rows that reads W once (kernels, common).
 
 A decode step multiplies 1-16 rows by weights it reads once a step, so such a product's floor is the weight's bytes
-over the memory's bandwidth. cuBLAS does not reach it at every shape: on a GB10 its gemv for Qwen3.8's router
-[513, 2560] ran 1.43x (2 rows) to 1.95x (8 rows) slower than this kernel's first form, and its sm80 WMMA GEMM for the
-hyper-connection mixer's down projection [324, 10240] 1.12-1.23x (probes/engine_qwen38_gemv, 2026-09-19, CUDA graphs
-interleaved beside production). `linear_rows` takes the shapes `CONFIGS` names and hands every other call to torch.mm --
-the same product in BF16 with FP32 accumulation, rounded once; only the order of the sums differs.
+over the memory's bandwidth (273 GB/s on a GB10). cuBLAS reaches it for one row (a gemv) and not for more: at Qwen3.8's
+router [513, 2560] it took 27.9 / 33.6 / 35.7 us for 4 / 8 / 16 rows (94-74 GB/s) where this kernel takes 14.3 / 14.2 /
+14.1 (184 GB/s), and at the mixers' down projection [324, 10240] 34.5-35.1 us against 31.1-31.7 (213 GB/s). At one row
+the two tie (13.8 against 14.0, 31.0 against 31.1), and at the mixers' up projection [10240, 320] they tie at every row
+count (30.3-31.3 against 29.1-30.8) -- so `linear_rows` takes 2..16 rows of the shapes in CONFIGS and hands everything
+else to torch.mm: the same product in BF16 with FP32 accumulation, rounded once; only the order of the sums differs.
+(probes/engine_qwen38_gemv, ticket q38gemv-0919c, 2026-09-19: CUDA graphs of 16 calls, interleaved, weights rotated
+over 64 MB, production idle beside it; medians of nine.)
 
 One launch: the rows pad to 16 for a tensor-core dot, a program keeps one [16, BLOCK_N] FP32 accumulator and walks its
 share of K in BLOCK_K tiles. A narrow output over a long K splits K into SPLIT programs a column block; each stores its
@@ -20,14 +23,16 @@ import torch
 import triton
 import triton.language as tl
 
-MAX_ROWS = 16
+MIN_ROWS, MAX_ROWS = 2, 16         # one row is cuBLAS's gemv, as fast; past 16 a GEMM's tiles serve
 MAX_BLOCKS = 4096                  # arrival words a device: column blocks of the widest split output
 
-# (N, K) of W -> (BLOCK_N, BLOCK_K, SPLIT, warps, stages); absent -> torch.mm
+# (N, K) of W -> (BLOCK_N, BLOCK_K, SPLIT, warps, stages), the fastest of twelve summed over 1/4/8/16 rows; absent ->
+# torch.mm. The sweep's median is 5-9% behind its best (15.0 against 14.3 us at the router's 4 rows, 32.4 against 31.1
+# at the down projection's): past the tile, the weight's read is the time.
 CONFIGS = {
-    (513, 2560): (32, 256, 1, 4, 3),      # Qwen3.8's router and shared gate (512 experts + 1)
-    (324, 10240): (16, 256, 8, 4, 3),     # Qwen3.8's mixer down + inject (rank 320 + hc 4)
-    (320, 10240): (16, 256, 8, 4, 3),     # its closing mixer's down (no inject)
+    (513, 2560): (16, 256, 1, 4, 3),      # Qwen3.8's router and shared gate (512 experts + 1): 33 programs
+    (324, 10240): (16, 256, 4, 4, 3),     # its mixers' down + inject (rank 320 + hc 4): 21 blocks x 4 splits
+    (320, 10240): (16, 256, 4, 4, 3),     # its closing mixers' down (no inject)
 }
 
 _LOCKS: "dict[torch.device, torch.Tensor]" = {}
@@ -106,9 +111,9 @@ def gemv(x: torch.Tensor, w: torch.Tensor, cfg: "tuple[int, int, int, int, int]"
 
 
 def linear_rows(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
-    """x @ w.T in BF16: this kernel for 1..16 rows of a CUDA shape `CONFIGS` names, torch.mm otherwise."""
+    """x @ w.T in BF16: this kernel for 2..16 rows of a CUDA shape `CONFIGS` names, torch.mm otherwise."""
     cfg = CONFIGS.get(tuple(w.shape))
-    if (cfg is None or not x.is_cuda or not 1 <= x.shape[0] <= MAX_ROWS or x.dtype != torch.bfloat16
+    if (cfg is None or not x.is_cuda or not MIN_ROWS <= x.shape[0] <= MAX_ROWS or x.dtype != torch.bfloat16
             or w.dtype != torch.bfloat16 or x.stride(-1) != 1 or w.stride(-1) != 1):
         return torch.mm(x, w.t())
     return gemv(x, w, cfg)
@@ -136,4 +141,4 @@ def qualify(device, rows=(1, 4, 16)) -> dict:
     return out
 
 
-__all__ = ["CONFIGS", "MAX_ROWS", "gemv", "linear_rows", "prepare", "qualify"]
+__all__ = ["CONFIGS", "MAX_ROWS", "MIN_ROWS", "gemv", "linear_rows", "prepare", "qualify"]
