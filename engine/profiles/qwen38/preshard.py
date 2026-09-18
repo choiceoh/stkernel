@@ -114,7 +114,7 @@ def write_ranks(F, groups, ck, partial: Path, report: dict, metadata: dict, star
                for r in range(facts.TP)]
     hashes = [{} for _ in writers]
     for label, keys, specs_of in groups:
-        source = ck.load(keys)
+        source = ck.views(keys)                   # mapped, not staged: a group costs its built tensors, not its sources
         for r, writer in enumerate(writers):
             for spec in specs_of(r):
                 tensor = spec.build(source, r, facts.TP)
@@ -162,7 +162,7 @@ def write_tables(F, ck: Checkpoint, partial: Path, report: dict, source_revision
     refuses such a table (ple_table.PLETable.open checks the row count)."""
     ple = report["ple"]
     L, width = ple["layer"], ple["width"]
-    scale = float(ck.load([ple["scale_name"]])[ple["scale_name"]].float().reshape(()))
+    scale = float(ck.views([ple["scale_name"]])[ple["scale_name"]].float().reshape(()))
     report["ple_files"] = []
     for r in range(facts.TP):
         shards = layout.ple_shards(F, L, r)
@@ -176,10 +176,10 @@ def write_tables(F, ck: Checkpoint, partial: Path, report: dict, source_revision
         written = 0
         with path.open("wb") as out:
             for name in shards:
-                t = ck.load([name])[name]
+                t = ck.views([name])[name]
                 if t.dtype != torch.float8_e4m3fn or tuple(t.shape) != (ple["rows_per_shard"], width):
                     raise ValueError(f"{name}: {t.dtype} {tuple(t.shape)}")
-                raw = memoryview(t.contiguous().view(torch.uint8).numpy().reshape(-1))
+                raw = memoryview(t.view(torch.uint8).numpy().reshape(-1))       # the mapped bytes themselves
                 out.write(raw)
                 digest.update(raw)
                 written += len(raw)
