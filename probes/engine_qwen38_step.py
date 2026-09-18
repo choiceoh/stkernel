@@ -40,6 +40,7 @@ LAYER_SETS = ((4, 5, 6, 7), (4, 5), (7,), (1,))
 SHAPES = ((1, 6), (1, 43), (4, 43))       # (rows, bucket blocks): C=1 near 4K and 32K context, C=4 near 32K
 REPLAYS = 50
 KV_GIB = 0.25
+SPEC_K = 3                                # the operator's K (#1182: fleet --spec-k 3): verify 4 tokens, draft a chain of 3
 MAX_GIB = 4.0                             # this process's own device-memory ceiling: the lane's budget beside production
 FULL = {"fixed": 1, "gdn": 36, "qsa": 12, "ple": 1}
 
@@ -121,8 +122,10 @@ def extrapolate(parts: dict, full=FULL) -> float:
     return sum(parts[u] * n for u, n in full.items())
 
 
-def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float):
-    """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft)."""
+def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K):
+    """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft), at
+    `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them)."""
+    import dataclasses
     import torch
     from engine.base.arena import Arena
     from engine.base.params import total_bytes
@@ -133,6 +136,8 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     from engine.profiles.qwen38.net import Qwen38Net
 
     F = facts.load(meta)
+    if spec_k != F.spec_k:
+        F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, 0.05, mtp=True)
@@ -148,7 +153,7 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     caches = Qwen38Caches(arena, F, net.layers, nb, max_seqs, snapshots, mtp=True)
     tokens = F.spec_k + 1
     target = TargetGraphs(net, caches, max_seqs, tokens, ceiling=F.max_position)
-    draft = DraftGraphs(net, caches, max_seqs, tokens, ceiling=F.max_position)
+    draft = DraftGraphs(net, caches, max_seqs, tokens, k=F.spec_k, ceiling=F.max_position)
     torch.cuda.synchronize()
     return F, net, caches, target, draft
 
@@ -163,7 +168,7 @@ def seat(graphs, caches, F, shape, seed: int = 0) -> None:
     for r in range(n):
         pages = (torch.arange(blocks) * max(1, pool // (blocks * n)) + r) % pool
         caches.block_table[r, :blocks].copy_(pages.to(torch.int32))
-    graphs.metadata[shape][0].fill_(blocks * F.block - t)
+    graphs.metadata[shape][0].fill_(blocks * F.block - t - F.spec_k)      # room for the draft chain's reach too
     inputs = graphs.graphs.inputs[shape]
     ids = inputs[0].ids if isinstance(inputs, tuple) else inputs.ids
     ids.copy_(torch.randint(0, F.vocab, (ids.numel(),), generator=gen))
