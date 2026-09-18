@@ -5,6 +5,8 @@ rehearsal end to end -- no GPU, no docker, no fleet.
 One committed sha per arm in production shape, two onepass runs per boot (D17), judged warm
 against warm; the queue takes the fleet lease at GO and the release's own launcher verifies it.
 """
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -157,6 +159,36 @@ class PrepareTests(unittest.TestCase):
         create = source[source.index('def prepare('):]
         self.assertIn('elif pins_its_own_revision(command):', create)
         self.assertLess(create.index('elif pins_its_own_revision(command):'), create.index("value['head'] = [repo"))
+
+
+class CreateTests(unittest.TestCase):
+    """`fleet.sh run` reaches the queue through `fleet_prepare.py create`: main() may hand prepare() only what it
+    takes. #1152 dropped prepare()'s approve_deploy and left main() passing it, and until 2026-09-18 every ticket
+    submitted from a fresh checkout died at startup with a TypeError, before preparation or queueing."""
+
+    def created(self, *flags):
+        import inspect
+        from unittest import mock
+        real, seen = inspect.signature(fleet_prepare.prepare), []
+
+        def prepare(*args, **kwargs):
+            real.bind(*args, **kwargs)                                     # TypeError on anything prepare() does not take
+            seen.append(kwargs)
+            return 'prepared'
+
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(os.environ, {'FLEET_DIR': directory}), \
+                mock.patch.object(fleet_prepare, 'prepare', prepare), contextlib.redirect_stdout(io.StringIO()) as out:
+            code = fleet_prepare.main(['create', 'a-session', *flags, '--', 'bash', 'probes/run_engine_probe.sh',
+                                       'probes/engine_kernel_check.py'])
+        return code, seen, out.getvalue()
+
+    def test_create_hands_prepare_only_what_it_takes(self):
+        for flags in ((), ('--approve-deploy',), ('--fleet', 'bench/fleet.sh', '--spec', 'spec.json')):
+            with self.subTest(flags=flags):
+                code, seen, printed = self.created(*flags)
+                self.assertFalse(code)
+                self.assertEqual(len(seen), 1)
+                self.assertIn('prepared', printed)
 
 
 class ReleaseCutTests(unittest.TestCase):

@@ -746,8 +746,10 @@ def main(argv=None):
     try:
         directory = Path(os.environ['FLEET_DIR'])
         if args.action == 'create':
-            print(prepare(directory,args.session,command,os.getcwd(),spec_path=args.spec,fleet=args.fleet,prepared=args.prepared,
-                          approve_deploy=args.approve_deploy))
+            # --approve-deploy stays accepted (fleet.sh passes it for a boot ticket) and says nothing any more: the
+            # deployment approvals it carried were the vLLM overlay stack's, decommissioned in #1152 -- which dropped
+            # prepare()'s parameter and left this call handing it over, so every `create` died on a TypeError
+            print(prepare(directory,args.session,command,os.getcwd(),spec_path=args.spec,fleet=args.fleet,prepared=args.prepared))
         elif args.action == 'validate-targets':
             if not args.prepared:
                 raise ValueError('validate-targets requires --prepared MANIFEST')
