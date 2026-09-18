@@ -164,6 +164,12 @@ def main():
         from probes.engine_qwen38_step import run as qwen38_step
         qwen38_step(args.output, args.ranks)
         return
+    if args.lanes == 'qwen38_gemv':
+        # component timings: a skinny BF16 GEMV (one weight read for all rows) against cuBLAS at the decode step's mixer
+        # and router shapes, interleaved in CUDA graphs -- whether the 11.2 ms of BF16 GEMM a step has a faster kernel
+        from probes.engine_qwen38_gemv import run as qwen38_gemv
+        qwen38_gemv(args.output)
+        return
     if args.lanes == 'qwen38_moe':
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe
