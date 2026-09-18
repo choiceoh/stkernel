@@ -31,7 +31,8 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               'tests.test_engine_qwen38_qsa_inputs.QsaInputsTests',
               'tests.test_engine_qwen38_attention_gate.AttentionGateTests',
               'tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests',
-              'tests.test_engine_qwen38_kernels.SparseAttentionTests')
+              'tests.test_engine_qwen38_kernels.SparseAttentionTests',
+              'tests.test_engine_qwen38_moe_route.SoftmaxTopkTests', 'tests.test_engine_qwen38_moe_route.LayerTests')
 
 
 def facts():
