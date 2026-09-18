@@ -142,8 +142,8 @@ class LayerTests(unittest.TestCase):
             setattr(meta, name, name)                                      # opaque: the lanes here only pass them on
         scored = torch.full((rows, F.index_blocks), 7, dtype=torch.int32)
 
-        def select(*args):
-            calls.append(("select", args))
+        def select(*args, group):
+            calls.append(("select", args, group))
             return scored
 
         def attend(q, K, V, blocks, *args, gate):
@@ -157,6 +157,7 @@ class LayerTests(unittest.TestCase):
                               linear=lambda x, name: torch.zeros(rows, width if name.endswith("in_proj") else 3))
         net._covered_blocks = lambda s, m: Qwen38Net._covered_blocks(net, s, m)
         net._sharded_blocks = lambda *a: Qwen38Net._sharded_blocks(net, *a)       # no query_shards declared: never splits
+        net._score_runs = Qwen38Net._score_runs
         caches = SimpleNamespace(kv=lambda L: ("K", "V"), key_ring=lambda L: "ring", index_keys=lambda L: f"keys{L}")
         Qwen38Net._qsa(net, 3, torch.zeros(rows, 3), step, meta, caches)
         return meta, calls, scored
@@ -171,6 +172,7 @@ class LayerTests(unittest.TestCase):
         meta, calls, scored = self.layer([(0, 16)], facts(ratio=4, budget=12))
         self.assertEqual([c[0] for c in calls], ["select", "attend"])
         self.assertEqual(calls[0][1], ("iq", "keys3", "page_table", "rows_req", meta.positions32, "lengths", 12, 4))
+        self.assertEqual(calls[0][2], 4)                                   # one segment: runs of four rows (carry Q8)
         self.assertIs(calls[1][1], scored)
         self.assertIsNone(meta.covered_blocks)
 
