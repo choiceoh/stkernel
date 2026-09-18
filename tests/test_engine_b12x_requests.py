@@ -92,6 +92,25 @@ class RecordTests(unittest.TestCase):
         self.assertEqual(self.br.decode(first["config"]["_EP_ZERO_WEIGHT_MICRO_CELL"]), (128, 2560))
         self.assertIs(self.br.decode(first["kwargs"]["topk_ids_dtype"]), torch.int32)
         self.assertEqual(first["profile"], "qwen38")
+        from engine.base import kernel_shape
+        self.assertEqual(kernel_shape.from_dict(first["shape"]), kernel_shape.bound())
+
+    def test_the_bound_kernel_shape_is_recorded_as_bound(self):
+        """The dispatcher picks the micro kernel's tile and scatter from the bound shape's MoE cell: a replay without it
+        compiled four of Qwen3.8's ten kernels under other names (2026-09-18)."""
+        import json as _json
+        from engine.base import kernel_shape
+        from engine.profiles.qwen38 import shapes
+        cfg = _json.loads((ROOT / "probes/qwen38_config.json").read_text())
+        qwen = shapes.kernel_shape(cfg.get("text_config", cfg), 4, 1)
+        md = fake_dispatcher()
+        self.br.record(md, self.path, "qwen38")
+        with unittest.mock.patch.object(kernel_shape, "_BOUND", qwen):
+            md._get_micro_kernel(128, 128, 8, 2560, 640, 10, 80)
+        md._get_micro_kernel(128, 128, 4, 2560, 640, 10, 40)            # nothing bound: the measured cell
+        first, second = self.lines()
+        self.assertEqual(kernel_shape.from_dict(first["shape"]), qwen)
+        self.assertEqual(kernel_shape.from_dict(second["shape"]), kernel_shape.MEASURED)
 
     def test_the_getters_still_answer_as_before(self):
         md = fake_dispatcher()
@@ -228,11 +247,19 @@ with patch.object(torch.cuda, "is_available", return_value=True), \
     def build(module, name, fn, **kw):
         names.append(f"{module}/{name}")
         return real(module, name, fn, **kw)
+    from engine.base import kernel_shape
+    from engine.profiles.qwen38 import shapes
+    cfg = json.load(open("probes/qwen38_config.json"))
+    kernel_shape.bind(shapes.kernel_shape(cfg.get("text_config", cfg), 4, 1))       # as the Qwen3.8 fleet boot does
+    md.configure_ep_zero_weight_micro(True)
     with patch.object(md, "get_num_sm", return_value=48), patch.object(md, "get_max_active_clusters", return_value=48), \
             patch.object(md, "build_and_load_cute_dsl_kernel", build):
         br.record(md, sys.argv[1], "test")
         md._get_static_kernel(128, 128, 16, 2560, 640, 10, 160)
-        md._get_micro_kernel(129, 128, 4, 2560, 640, 10, 40, skip_zero_weight_expert_id=128)
+        # the request the fleet's Qwen3.8 boot recorded (2026-09-18), whose key depends on the bound MoE cell
+        md._get_micro_kernel(128, 128, 8, 2560, 640, 10, 80, topk_ids_dtype=torch.int32, mac_override=48,
+                             skip_zero_weight_expert_id=128, activation="silu", swiglu_alpha=1.0, swiglu_beta=0.0,
+                             swiglu_limit=None)
     print("NAMES " + json.dumps(names))
     print("ARCH " + json.dumps([json.loads(l)["device"]["jit_arch"] for l in open(sys.argv[1])]))
 '''

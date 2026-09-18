@@ -1,0 +1,134 @@
+{
+ "root": {
+  "name": "rank1",
+  "seconds": 0.0,
+  "counters": {
+   "boot_immediately_free_GiB": 106.195,
+   "prelude_s": 0.379,
+   "blocks": 1555,
+   "arena_GiB": 37.594
+  },
+  "children": [
+   {
+    "name": "front",
+    "seconds": 2.887569,
+    "counters": {
+     "import_s": 1.83,
+     "box_s": 0.376,
+     "shape_s": 0.001
+    }
+   },
+   {
+    "name": "comm",
+    "seconds": 3.378882,
+    "dev_gib": 0.322
+   },
+   {
+    "name": "prepare one-shot",
+    "seconds": 2e-06,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "lanes",
+    "seconds": 0.002743,
+    "dev_gib": 0.0,
+    "counters": {
+     "kernel_imports_s": 2.464
+    },
+    "children": [
+     {
+      "name": "wait for the imports",
+      "seconds": 1.4e-05,
+      "dev_gib": 0.0
+     }
+    ]
+   },
+   {
+    "name": "qualify lanes",
+    "seconds": 1.604073,
+    "dev_gib": 1.124
+   },
+   {
+    "name": "arena",
+    "seconds": 1.553335,
+    "dev_gib": 38.36
+   },
+   {
+    "name": "load",
+    "seconds": 4.702686,
+    "dev_gib": 1.104,
+    "counters": {
+     "blocks": 51,
+     "bytes": 21065968920,
+     "direct": 1,
+     "stage_s": 0.522,
+     "wait_s": 3.355,
+     "copy_s": 0.545,
+     "views_s": 0.023,
+     "tensors": 1148,
+     "read_bytes": 480170520
+    }
+   },
+   {
+    "name": "ple table",
+    "seconds": 0.000621,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "prepare dense",
+    "seconds": 5.288129,
+    "dev_gib": 0.749,
+    "counters": {
+     "weight_digest_calls": 196,
+     "weight_digest_s": 2.451,
+     "pack_calls": 196,
+     "pack_s": 1.927,
+     "packs_cache": 196,
+     "packs_rtn": 196
+    }
+   },
+   {
+    "name": "caches",
+    "seconds": 0.003558,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "engine",
+    "seconds": 0.029258,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "wait for weight preparation",
+    "seconds": 0.726882,
+    "dev_gib": -0.007
+   },
+   {
+    "name": "runner",
+    "seconds": 7.1e-05,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "wait for the prelude",
+    "seconds": 1.4e-05,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "warm prefill",
+    "seconds": 32.103924,
+    "dev_gib": 0.981
+   },
+   {
+    "name": "capture decode",
+    "seconds": 8.369222,
+    "dev_gib": 1.259
+   },
+   {
+    "name": "door",
+    "seconds": 0.025585,
+    "dev_gib": 0.0
+   }
+  ]
+ },
+ "memory_sampling": true,
+ "when": "2026-09-18T11:29:07"
+}

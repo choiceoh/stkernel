@@ -1,0 +1,29 @@
+2026-09-18T11:25:24.680358084Z 2026-09-18 11:25:24,680 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_54db469c1fe84beb
+2026-09-18T11:25:37.123494142Z 2026-09-18 11:25:37,123 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_2e08db618f7a39c0
+2026-09-18T11:25:43.962451513Z 2026-09-18 11:25:43,962 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_00c976bdcc6b9099
+2026-09-18T11:26:34.212482639Z   warm prefill: memory/32256/0 94.122s, kernels/64/0 19.768s, kernels/512/0 12.594s, kernels/4095/0 11.086s, kernels/64/8384 20.058s, kernels/64/16832 5.989s, kernels/64/32960 3.315s, kernels/64/65984 3.339s, kernels/64/131264 3.
+2026-09-18T11:26:34.824445322Z 2026-09-18 11:26:34,824 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m8_k2560_n640_t10_r80_875f80d35b4461fc
+2026-09-18T11:26:39.982697962Z 2026-09-18 11:26:39,982 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m6_k2560_n640_t10_r80_a06d55f117d50ee0
+2026-09-18T11:26:44.387104080Z 2026-09-18 11:26:44,386 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r80_b99865bd8ad0381b
+2026-09-18T11:26:48.565302088Z 2026-09-18 11:26:48,564 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t10_r80_8abef7cd46d0e0c5
+2026-09-18T11:26:53.651857167Z phase                                      seconds   dev GiB  counters
+2026-09-18T11:26:53.651884127Z front                                        3.697            import_s=2.491 box_s=0.48 shape_s=0.003
+2026-09-18T11:26:53.651886767Z comm                                         1.212     +0.16  
+2026-09-18T11:26:53.651888831Z prepare one-shot                             0.000     +0.00  
+2026-09-18T11:26:53.651890767Z lanes                                        1.530     +0.13  kernel_imports_s=2.739
+2026-09-18T11:26:53.651892831Z   wait for the imports                       1.526     +0.13  
+2026-09-18T11:26:53.651894655Z qualify lanes                                1.827     +0.96  
+2026-09-18T11:26:53.651896383Z arena                                        1.564    +38.40  
+2026-09-18T11:26:53.651898239Z load                                         2.787     +1.14  blocks=51 bytes=2.1066e+10 direct=1 stage_s=0.585 wait_s=0.932 copy_s=0.671 views_s=0.077 tensors=1148 read_bytes=4.80171e+08
+2026-09-18T11:26:53.651900399Z ple table                                    0.001     +0.00  
+2026-09-18T11:26:53.651902031Z prepare dense                                7.079     +0.67  weight_digest_calls=196 weight_digest_s=2.882 pack_calls=196 pack_s=2.892 packs_cache=196 packs_rtn=196
+2026-09-18T11:26:53.651903855Z caches                                       0.003     +0.00  
+2026-09-18T11:26:53.651905487Z engine                                       0.029     +0.00  
+2026-09-18T11:26:53.651907119Z wait for weight preparation                  1.056     +0.00  
+2026-09-18T11:26:53.651908719Z runner                                       0.000     +0.00  
+2026-09-18T11:26:53.651910367Z wait for the prelude                         0.000     +0.00  
+2026-09-18T11:26:53.651911967Z warm prefill                               177.025     +1.81  
+2026-09-18T11:26:53.651913647Z capture decode                              19.304     +1.19  
+2026-09-18T11:26:53.651915359Z door                                         0.030     +0.00  
+2026-09-18T11:26:53.651917039Z total                                      217.144
+2026-09-18T11:26:53.651918799Z   rank 0: ready in 216.4 s, door on port 8000

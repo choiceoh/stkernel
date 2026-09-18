@@ -21,6 +21,7 @@ import sys
 import time
 from pathlib import Path
 
+from engine.base import kernel_shape
 from engine.kernels import b12x_requests as requests
 
 
@@ -76,9 +77,14 @@ def prebuild(paths, *, emit=print) -> dict:
                     for name, value in line["config"].items():
                         if name in requests.CONFIG:
                             setattr(md, name, requests.decode(value))
+                    # the shape the boot had bound, for this request only: the dispatcher reads its MoE cell to pick
+                    # the micro kernel's tile and scatter, and without it every micro key is GLM-5.3's cell's
+                    # (2026-09-18: four of Qwen3.8's ten were rebuilt under other names before this)
+                    shape = kernel_shape.from_dict(line["shape"])
                     with patch.object(md, "get_num_sm", lambda *a, **k: int(device["sm"])), \
                             patch.object(md, "get_max_active_clusters", lambda size=1, *a, **k: clusters[int(size)]), \
-                            patch.object(md, "build_and_load_cute_dsl_kernel", build):
+                            patch.object(md, "build_and_load_cute_dsl_kernel", build), \
+                            patch.object(kernel_shape, "_BOUND", shape):
                         getattr(md, line["getter"])(*requests.decode(line["args"]),
                                                     **{k: requests.decode(v) for k, v in line["kwargs"].items()})
                     result["status"] = ("cached" if not objects else
