@@ -36,7 +36,7 @@ class GenerationDefaultsTests(unittest.TestCase):
         with patch.object(s.engine, "add", wraps=s.engine.add) as add:
             http._serve(s, lambda base: http._post(base, endpoint, {**body, "max_tokens": 1}))
         self.assertEqual(add.call_count, 1)
-        return add.call_args.kwargs["temperature"], add.call_args.kwargs["options"]
+        return add.call_args.kwargs["temperature"], add.call_args.kwargs.get("options", {})
 
     def test_chat_and_text_completions_use_default_or_explicit_override(self):
         for endpoint, prompt in (("/v1/chat/completions", {"messages": [{"role": "user", "content": "ab"}]}),
