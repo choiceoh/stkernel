@@ -32,6 +32,7 @@ import zipfile
 SAFE_GLOBALS = {'dict', 'list', 'tuple', 'set', 'frozenset', 'str', 'bytes', 'bytearray', 'int',
                 'float', 'bool', 'complex', 'NoneType', 'object', 'OrderedDict'}
 MAX_STORAGE_BYTES = 1 << 30
+MAX_PICKLE_BYTES = 1 << 26
 
 DTYPES = {'FloatStorage': ('f', 4), 'DoubleStorage': ('d', 8), 'HalfStorage': ('e', 2),
           'LongStorage': ('q', 8), 'IntStorage': ('i', 4), 'ShortStorage': ('h', 2),
@@ -87,6 +88,11 @@ class Reader:
                 return StorageRef(getattr(storage_type, '__name__', str(storage_type)), key, numel, location)
 
         entry = 'archive/data.pkl' if 'archive/data.pkl' in self.names else next(n for n in self.names if n.endswith('data.pkl'))
+        declared = self.zip.getinfo(entry).file_size
+        if declared > MAX_PICKLE_BYTES:
+            # A tiny zip can declare gigabytes: the structure stream is capped before it is read, not
+            # after, because the read is what the attacker gets to size.
+            raise ValueError(f'{entry} declares {declared} bytes of structure: past this reader\'s bound')
         with self.zip.open(entry) as handle:
             return U(handle).load()
 
@@ -104,6 +110,8 @@ class Reader:
         # upper bound to check against it: trusting the declaration would let a hostile archive ask
         # for a gigabyte per storage, which is what the bound exists to stop.
         need = self.lanes(tensor) * size
+        if start < 0 or need < 0:
+            raise ValueError(f'{entry}: negative storage span (offset {start}, {need} bytes)')
         if start + need > info.file_size or start + need > MAX_STORAGE_BYTES:
             raise ValueError(f'{entry}: {start + need} bytes requested, archive declares {info.file_size}')
         with self.zip.open(entry) as handle:
