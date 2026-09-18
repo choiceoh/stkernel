@@ -39,7 +39,7 @@ def budget(chunk: int = 4096, box_gib: "float | None" = None, tenants_gib: float
         Line("runtime floor (CUDA ctx + NCCL)", RUNTIME_FLOOR_GIB, LEDGER,
              "GLM 40th boot table -- re-measure on qwen38"),
         Line("weights (this rank, TEP=4)", weights, READ,
-             "plan.py: census x pinned placement rules; PLE 11.92 of it is the D1 line"),
+             "plan.py: census x pinned placement rules; the PLE table (11.92 a rank) is on the SSD, not here"),
         Line("allocator slack", weights * 0.001, MEASURED, "expandable_segments:True -> 0.1%"),
         Line("module construction (cuBLAS, init)", CONSTRUCTION_UPPER_GIB, ESTIMATED,
              "UPPER BOUND from GLM; qwen38 has no pack step"),

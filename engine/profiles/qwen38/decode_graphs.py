@@ -130,10 +130,17 @@ class TargetGraphs(_Rows):
         else:
             ids = step.ids
         host = self._meta_host[:3 * n].view(3, n)
+        net = self.net
+        if net.ple_stage is not None:
+            # the PLE rows of the step's n x t tokens, read off the SSD table on the host before the replay (a replay
+            # reads no host value): a one-row read of the step's ids, the carried ids from the rings, the hash
+            net.stage_ple([s.slot for s in segments], [s.ctx for s in segments], ids.tolist(), t, self.caches)
 
         def fill(inputs):
             inputs.ids.copy_(ids)
             self.metadata[shape].copy_(host, non_blocking=True)
+            if net.ple_stage is not None:
+                net.ple_stage.upload()
 
         logits, streams = self.graphs.run(shape, fill)
         rows = [i * t + j for i, s in enumerate(segments) for j in range(s.length)] if padded else None

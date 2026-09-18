@@ -20,11 +20,14 @@ Two things the numbers say that the config does not:
     recurrent state that does not grow with context (27.5 MiB per sequence).
     A 40 GiB KV budget reaches the model's 262,144 ceiling at concurrency 8.
 
-  PLE is the D1 line.  47.68 GiB of n-gram table, vocab-parallel over TP, is
-    11.92 GiB on every rank -- the second-largest resident item after the
+  PLE is on the SSD.  47.68 GiB of n-gram table, vocab-parallel over TP, would
+    be 11.92 GiB on every rank -- the second-largest resident item after the
     experts, and the one the vLLM profile spends two knobs on
     (PLE_CPU_OFFLOAD, FORCE_FP8_EMBED). On unified memory "host RAM" is the
-    same pool, so the offload knob buys nothing here; the shard does.
+    same pool, so the offload knob buys nothing here. The operator's decision
+    (2026-09-18): the rank's range is a file beside its rank file
+    (ple-r{r}of4.weight) and rows are read by id per step (ple_table.py), so
+    the census counts it as 0 resident.
 """
 from __future__ import annotations
 
@@ -48,8 +51,8 @@ HF_PIN = ("transformers/models/qwen4_exp/modeling_qwen4_exp.py", "77fec77d87f2a0
 RULES = [
     ("routed experts (EP)", lambda n: ".mlp.experts." in n and "shared" not in n, 4,
      "TEP=4: an expert lives whole on one rank"),
-    ("PLE n-gram table (vocab-parallel)", lambda n: ".ple.ple_embedding" in n, 4,
-     "common/ple.py compute_ple_shard_overlap: one TP vocabulary range"),
+    ("PLE n-gram table (vocab-parallel, on the SSD)", lambda n: ".ple.ple_embedding.ngram_embedding.shard_" in n, 0,
+     "common/ple.py compute_ple_shard_overlap: one TP vocabulary range a rank, read by row off ple-r{r}of4.weight"),
     ("PLE other", lambda n: ".ple." in n, 1, "replicated, small"),
     ("vision (dropped)", lambda n: ".visual." in n, 0, "this fleet serves text only"),
     ("embed / lm_head (vocab-parallel)",

@@ -3,12 +3,12 @@
 This directory contains a portable code-graph snapshot for `engine/base`.
 
 - Source scope: `engine/base/`
-- Source revision: `2dbd7a36`
-- Source digest: `f59914908191af7f61c2daa2db3dd501bcbd94046a177d426b3ff03e1fbdef0f`
+- Source revision: `37b66bad`
+- Source digest: `f8f6e75be055ce0b77119ee9be2b9325ac0f3e1e4ff1a10820d59659de4bbf4d`
 - Generated: 2026-09-18
 - Extractor: `graphifyy 0.4.19`
 - Extraction mode: AST-only (code-only corpus)
-- Graph size: 1,501 nodes and 4,082 edges across 31 communities
+- Graph size: 1,509 nodes and 4,146 edges across 29 communities
 
 Files:
 
@@ -27,6 +27,3 @@ python3 tools/validate_graphify_engine_base.py
 
 The snapshot is intentionally scoped to `engine/base`; regenerate it when the
 source digest changes materially.
-
-The GitHub workflow `.github/workflows/graphify-check.yml` validates the
-committed snapshot whenever the source, graph, or graph tooling changes.

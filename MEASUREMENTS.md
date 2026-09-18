@@ -4565,3 +4565,43 @@ rank2 gate/bias 해시 전부가 이전 rank3 프로브와 같다. PyTorch gathe
   가설이다. **랭크 0 호스트 일이 경계 편차를 낸다는 것도 가설** (호스트 타임라인이 트레이스에 없다).
   **클럭 캡을 올린 실험 없음.** 트래픽은 64토큰 요청 하나, 긴 컨텍스트·C=2·C=4 없음.
   [상세·원시 기록](measurements/st_collective_skew_20260917/README.md).
+
+**Qwen3.8 서빙 레이아웃 v3 — PLE 표를 SSD 로, NVIDIA 허브 체크포인트, 드래프터는 MTP (2026-09-18, 운영자 지시 "그냥 mtp로 해 /
+e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서")**
+- **무엇.** `profiles/qwen38/preshard.py` 가 `nvidia/Qwen3.8-Flash-Next-NVFP4` @ fc694b54(srv2 `~/models/qwen38-flash-next-nvidia-nvfp4`,
+  132.7 GB, 25 파일 전부 허브 sha256 일치)를 읽는다. `quant_algo MIXED_PRECISION` 의 `quantized_layers` 로 "NVFP4 는 48 층의
+  라우팅 전문가뿐, PLE 표는 FP8, MTP 전문가는 FP8 블록스케일" 을 확인한다(`facts.quantised`; 예전 복사본의 NVFP4 전용 config 도
+  그대로 읽는다). MTP 전문가는 `weight_scale_inv` 를 **곱해** 역양자화한 뒤 NVFP4 로 인코딩한다 — srv2 에서 예전 복사본의 BF16
+  MTP 와 대조: 전문가 0/1/77/300/511 의 gate/up/down 모두 상대오차 0.0266(FP8 반올림), 나누면 10^7. PLE 표는 랭크 파일 밖
+  `ple-r{r}of4.weight`(그 랭크의 32 샤드를 이어 쓴 e4m3 행, 쓰면서 sha256, 되읽어 대조) + `ple-r{r}of4.json`; 서빙 넷은 행을
+  번호로 읽는다(`ple_table.py`: 즉시 스텝은 호스트에서 해시해 모으고, 캡처 스텝은 재생 전 `net.stage_ple` 가 그래프의 정적
+  스테이징 행을 채운다; 다른 랭크의 행은 0 바이트라 all-reduce 가 그대로 합친다). plan.py 인구조사의 랭크당 상주 31.83 → 19.91 GiB.
+  라우팅·MTP 전문가 그룹을 랭크별로 나눠 프리샤드가 한 번에 쥐는 것은 한 층의 4분의 1(상주 약 2 GiB 추정).
+- **재었다(srv2 NVMe, 기존 `qwen38-ple-ssd/ple-r0of4.weight` 12.8 GB).** 두 체크포인트 복사본의 표 바이트는 같다(shard_0·
+  weight_scale·layer_multipliers sha 일치; 그 파일의 첫 400,001,920 B = shard_0, 전체 sha256 ae7e9d59…). 무작위 160 B 행
+  읽기, 최선값: 버퍼드 pread 1 스레드 128행 1.2 ms · 8 스레드 1.0 ms(131K 행/s) · 32 스레드 1.7 ms; 20,000행 8 스레드 71 ms
+  (280K 행/s), 32 스레드 96 ms; O_DIRECT 4 KiB 섹터 읽기는 128행 3.0~25.8 ms, 20,000행 219~800 ms — 버퍼드 8 스레드를 쓴다.
+  디코드 스텝(4행×2토큰×16헤드 = 128행, 랭크당 약 4분의 1)은 스텝당 1 ms 미만, 32K 토큰 프리필 청크(랭크당 약 131K 행)는
+  약 0.5 s — **추정, 미실측**.
+- **CPU 판정.** `tests/test_engine_qwen38_preshard.py`: 합성 NVIDIA 레이아웃 체크포인트(혼합 정밀도 config, 전문가별 NVFP4 네
+  텐서, MTP FP8 블록 전문가, PLE 샤드+스칼라 스케일)를 TEP=4 로 잘라 왕복 — 랭크 파일의 스펙 전부(표 파트 없음), 표 파일 = 그
+  랭크 샤드 바이트, 사이드카·SHA256SUMS·매니페스트·shape 기록, MTP NVFP4 == dequant 후 `nvfp4_from_bf16`, 두 번째 실행 거부.
+  `tests/test_engine_qwen38_ple_ssd.py`: 표 gather(두 읽기 경로·중복·범위), 랭크 분할, 스테이징, 즉시 경로 == 캡처 스테이징
+  (링의 carried id·DEAD 포함). `base/checkpoint` 가 두 번째 `.layers.` 접두(`mtp.layers.0.`)를 허용한다 — 전에는 Qwen 인덱스에서
+  죽었다.
+- **산출물(srv4, 15:26~15:38, 699 s).** 네 노드 모두 프로덕션이 떠 있어(MemAvailable 9.8~13.3 GB, earlyoom 바닥 6 GiB) 체크포인트를
+  srv2→srv4 로 fabric(10.10.10.2) rsync 해(124 GiB, 4 분, 허브 sha256 재검증) srv4 에서 3 GiB 캡·ionice idle 컨테이너로 잘랐다.
+  첫 시도는 5 초 만에 캡에서 죽었다(rc 137): `base/checkpoint.load` 가 1.27 GB 임베딩을 스테이징 두 번(범위 버퍼 + 블록 복사)으로
+  쥔다 → `Checkpoint.views`(numpy memmap; 정렬 안 된 작은 텐서만 복사)로 바꿔 최고 약 2.4 GiB(MTP 전문가 그룹). 결과
+  `~/models/st-qwen38-tep4`: `rank{0..3}of4.safetensors` 21,066,082,728 B(sha 0a748bcc·9ed43df9·807052c3·6bc8ca3f, 1,148 텐서
+  되읽어 대조), `ple-r{0..3}of4.weight` 12,800,061,440 B(**랭크 0 = ae7e9d59… = 09-11 의 `qwen38-ple-ssd/ple-r0of4.weight` 와
+  바이트 동일**; e4a7f934·a6339811·0d1adad6), 사이드카·`kernel_shape.json`·매니페스트·SHA256SUMS. 중단된 첫 완주 시도의 랭크 0
+  sha 가 같았다 — 프리샤드는 재현적이다. 랭크 r 은 GLM 과 같은 자리(rank0 srv2·rank1 srv1·rank2 srv3·rank3 srv4)로 fabric
+  rsync + 도착지 `sha256sum -c` 로 배포했다(`~/st-worktrees/qwen38-distribute.sh`).
+- **빌드 중 프로덕션 사고(빌드와 무관).** 15:09:47 srv1 랭크가 프리필 중 Triton JIT 로드에서 `CUDA: operation not permitted`
+  (`kda_output_norm` → `load_binary`)로 죽고(exit 1), 나머지 랭크는 NCCL 300 s stall trap 으로 15:16 종료(133). 제 복사는 srv2→srv4
+  (15:04~15:08), 프리샤드는 srv4 (15:11 이후)뿐이라 srv1 을 건드린 게 없다. 감독기가 15:26:16 재기동, 15:28:22 healthy — 제 빌드가
+  옆에서 도는 동안 승인이 통과했다(srv4 MemAvailable 22 GB). 재기동 승인과 겹치지 않으려 두 번째 시도를 한 번 멈췄다가
+  운영자 "얼른해" 로 즉시 다시 돌렸다.
+- **안 한 것.** GPU 부팅·캡처·수용률·속도 없음(D17 미실측). 프리필의 SSD 모음 비용·페이지 캐시 거동·MTP 이중 양자화(FP8→NVFP4)의
+  수용률은 미실측; 예전 복사본의 BF16 MTP 로 자르면 한 번 양자화다(같은 표·전문가 바이트, `--ckpt` 만 다름).

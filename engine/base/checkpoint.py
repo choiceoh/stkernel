@@ -31,6 +31,25 @@ from engine.base.loader import MAX_RUN
 _LAYER = re.compile(r"(?P<prefix>.*\.layers\.)(?P<index>\d+)\.")
 
 
+def _view_dtypes():
+    """safetensors dtype name -> (the numpy element type the bytes are read as, the torch dtype they are viewed as, or
+    None when the numpy type is already it)."""
+    import numpy as np
+    import torch
+    return {"BF16": (np.uint16, torch.bfloat16), "F16": (np.float16, None), "F32": (np.float32, None),
+            "U8": (np.uint8, None), "I8": (np.int8, None), "F8_E4M3": (np.uint8, torch.float8_e4m3fn),
+            "I32": (np.int32, None), "I64": (np.int64, None), "BOOL": (np.bool_, None)}
+
+
+class _LazyDtypes(dict):
+    def __missing__(self, key):
+        self.update(_view_dtypes())
+        return dict.__getitem__(self, key)
+
+
+_VIEW_DTYPES = _LazyDtypes()
+
+
 class Checkpoint:
     def __init__(self, path: str):
         self.path = path
@@ -39,21 +58,27 @@ class Checkpoint:
             self.weight_map = json.load(fh)["weight_map"]
         self.layer_prefix, self.num_layers = self._probe_layers()
         self._readers = {}                  # shard -> RankLoader: its header is parsed once
+        self._maps = {}                     # shard -> numpy memmap, for `views`
 
     def _probe_layers(self) -> tuple[str, int]:
-        prefixes, highest = set(), -1
+        """The model's layer prefix and its layer count. A checkpoint may carry a second `.layers.` prefix beside the
+        model's (Qwen3.8's MTP head is `mtp.layers.0.`): the model's is the one with the most tensors, and only its
+        layers are `layer_of`/`keys_for`'s."""
+        counts, highest = {}, {}
         for name in self.weight_map:
             m = _LAYER.match(name)
             if m:
-                prefixes.add(m.group("prefix"))
-                highest = max(highest, int(m.group("index")))
-        if len(prefixes) != 1:
-            raise ValueError(f"expected one layer prefix, found {sorted(prefixes)[:4]}")
-        return prefixes.pop(), highest + 1
+                prefix = m.group("prefix")
+                counts[prefix] = counts.get(prefix, 0) + 1
+                highest[prefix] = max(highest.get(prefix, -1), int(m.group("index")))
+        if not counts:
+            raise ValueError("no layer prefix in the index")
+        prefix = max(counts, key=lambda p: (counts[p], highest[p]))
+        return prefix, highest[prefix] + 1
 
     def layer_of(self, name: str) -> int | None:
         m = _LAYER.match(name)
-        return int(m.group("index")) if m else None
+        return int(m.group("index")) if m and m.group("prefix") == self.layer_prefix else None
 
     def keys_for(self, layers: range | list[int], *, include_shared: bool = False) -> list[str]:
         """Tensor names for these layers; `include_shared` adds everything that
@@ -101,6 +126,34 @@ class Checkpoint:
             recorder.gauge("tensors", len(tensors))
             recorder.gauge("GiB", round(total / (1 << 30), 3))
         return tensors
+
+    def views(self, keys: list[str]) -> dict:
+        """{name: tensor} with every tensor a read-only view of its shard's mapped bytes (numpy memmap, one per
+        shard): nothing is read until it is touched, and what is touched is page cache, not the process's own memory.
+        What a preshard wants beside `load` (ranges into staging buffers, which hold a 1.27 GB vocabulary twice while
+        one rank's rows are cut): a build reads a tensor's slice and copies only that."""
+        import warnings
+        import numpy as np
+        import torch
+
+        out = {}
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", message="The given NumPy array is not writable")
+            for name in keys:
+                shard = self.weight_map[name]
+                loader = self.reader(shard)
+                entry = loader.header[name]
+                lo, hi = entry["data_offsets"]
+                mapped = self._maps.get(shard)
+                if mapped is None:
+                    mapped = self._maps[shard] = np.memmap(os.path.join(self.path, shard), dtype=np.uint8, mode="r")
+                raw = np.asarray(mapped[loader.data_base + lo:loader.data_base + hi])
+                np_dtype, torch_dtype = _VIEW_DTYPES[entry["dtype"]]
+                if (loader.data_base + lo) % np.dtype(np_dtype).itemsize:
+                    raw = np.array(raw)               # safetensors packs tensors unaligned: a small one is copied
+                tensor = torch.from_numpy(raw.view(np_dtype).reshape(entry["shape"]))
+                out[name] = tensor if torch_dtype is None else tensor.view(torch_dtype)
+        return out
 
     def summary(self) -> dict:
         dtypes: dict = {}
