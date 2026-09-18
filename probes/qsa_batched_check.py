@@ -76,9 +76,9 @@ def _time(fn, dev: str, budget_ms: float = 120.0) -> float:
     return best
 
 
-def case(t: int, ctx: int, *, dev: str, index_heads: int = 2, index_head_dim: int = 32, budget: int = 2048,
-         ratio: int = 4, hidden: int = 256, eps: float = 1e-6) -> bool:
-    dtype, total = torch.float32, ctx + t
+def case(t: int, ctx: int, *, dev: str, dtype=torch.float32, index_heads: int = 2, index_head_dim: int = 32,
+         budget: int = 2048, ratio: int = 4, hidden: int = 256, eps: float = 1e-6, timed: bool = True) -> bool:
+    total = ctx + t
     feature = _feature(hidden, index_heads, index_head_dim, budget, ratio, eps, dev, dtype)
     sel = feature.select
     g = torch.Generator(device=dev).manual_seed(7)
@@ -96,12 +96,16 @@ def case(t: int, ctx: int, *, dev: str, index_heads: int = 2, index_head_dim: in
 
     want, got = _was(sel, fresh()), sel.allowed(fresh())
     same = bool(torch.equal(got, want))
-    was_ms = _time(lambda: _was(sel, fresh()), dev)
-    now_ms = _time(lambda: sel.allowed(fresh()), dev)
     kept = int(want.sum(1).float().mean())
-    print(f"  t={t:>5} ctx={ctx:>6} blocks={total // ratio:>5} kept/query~{kept:>5}  "
-          f"per-query {was_ms:8.2f} ms -> batched {now_ms:7.2f} ms  ({was_ms / max(now_ms, 1e-9):5.1f}x)  "
-          f"{'mask identical' if same else 'MASKS DIFFER'}")
+    shape = f"  t={t:>5} ctx={ctx:>6} blocks={total // ratio:>5} budget={budget:>4} kept/query~{kept:>5}"
+    verdict = "mask identical" if same else "MASKS DIFFER"
+    if timed:
+        was_ms = _time(lambda: _was(sel, fresh()), dev)
+        now_ms = _time(lambda: sel.allowed(fresh()), dev)
+        print(f"{shape}  per-query {was_ms:8.2f} ms -> batched {now_ms:7.2f} ms  "
+              f"({was_ms / max(now_ms, 1e-9):5.1f}x)  {verdict}")
+    else:
+        print(f"{shape}  {str(dtype).replace('torch.', '')}  {verdict}")
     if not same:
         print(f"    first differing queries: {(got != want).any(1).nonzero().flatten()[:4].tolist()}")
     return same
@@ -118,6 +122,11 @@ def main() -> int:
         print(f"QSA selection, batched against the per-query form ({dev}):")
         for t, ctx in CASES:
             ok &= case(t, ctx, dev=dev)
+        # the oracle's geometry (tests/test_engine_composition: budget 8 over blocks of 4, so a 40-token prefill keeps
+        # 2 blocks of 10) and its chunked continuation, in both activation dtypes -- bf16 is where the casts bite
+        for dtype in (torch.float32, torch.bfloat16):
+            for t, ctx in ((40, 0), (17, 23), (1, 39), (333, 1000)):
+                ok &= case(t, ctx, dev=dev, dtype=dtype, budget=8, timed=False)
     print("  OK" if ok else "  FAILED: the batched path does not select what the per-query form selects")
     return 0 if ok else 1
 
