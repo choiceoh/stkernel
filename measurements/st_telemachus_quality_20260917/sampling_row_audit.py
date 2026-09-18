@@ -100,9 +100,16 @@ class Reader:
             raise ValueError(f'{entry} is {info.file_size} bytes: past this reader\'s bound')
         size = DTYPES[tensor.storage.dtype][1]
         start = tensor.offset * size
+        # The shape decides how much this reader reads. The archive's own declared size is only an
+        # upper bound to check against it: trusting the declaration would let a hostile archive ask
+        # for a gigabyte per storage, which is what the bound exists to stop.
         need = self.lanes(tensor) * size
+        if start + need > info.file_size or start + need > MAX_STORAGE_BYTES:
+            raise ValueError(f'{entry}: {start + need} bytes requested, archive declares {info.file_size}')
         with self.zip.open(entry) as handle:
             data = handle.read(start + need)          # bounded: never the whole entry into memory
+        if len(data) != start + need:
+            raise ValueError(f'{entry}: short read ({len(data)} of {start + need} bytes)')
         return data[start:start + need]
 
     def lanes(self, tensor):
