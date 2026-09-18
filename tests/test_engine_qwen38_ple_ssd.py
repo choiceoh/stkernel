@@ -52,6 +52,23 @@ class TableTests(unittest.TestCase):
         with self.assertRaises(IndexError):
             table.gather(np.array([-1], dtype=np.int64))
 
+    def test_a_gather_is_one_take_over_the_mapping_not_a_read_a_row(self):
+        """The rows come out of a read-only mapping of the file (one C loop, the GIL released): no `pread` a row on
+        either path, the counters count what was asked, and closing releases the mapping before the descriptor."""
+        from unittest import mock
+        from engine.profiles.qwen38 import ple_table
+        table = ple_table.PLETable(self.path, rows=self.rows, width=self.width, scale=0.5, threads=4)
+        many = np.random.default_rng(2).integers(0, self.rows, size=ple_table.SPLIT_AT * 9 + 5, dtype=np.int64)
+        with mock.patch.object(ple_table.os, "pread", side_effect=AssertionError("a row was read by pread"), create=True):
+            self.assertTrue(np.array_equal(table.gather(many[:7]), self.data[many[:7]]))
+            self.assertTrue(np.array_equal(table.gather(many), self.data[many]))       # the pool's chunks, in order
+        self.assertEqual((table.reads, table.rows_read), (2, 7 + many.shape[0]))
+        got = table.gather(many[:3])
+        table.close()
+        self.assertTrue(np.array_equal(got, self.data[many[:3]]))                      # a gather is a copy, not a view
+        self.assertEqual((table.fd, table._map, table._rows), (-1, None, None))
+        self.path.unlink()                                                             # nothing holds the file
+
     def test_a_file_of_the_wrong_size_is_refused(self):
         from engine.profiles.qwen38.ple_table import PLETable
         with self.assertRaises(ValueError):
@@ -165,11 +182,16 @@ class NetPathTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "t.weight"
             write_table(path, F.ple_rows_per_rank, F.ple_head_dim)
+            # a refused table is closed here: it maps its file, and a mapped file cannot be rewritten everywhere
+            table = PLETable(path, rows=F.ple_rows_per_rank, width=F.ple_head_dim, scale=self.scale * 2)
             with self.assertRaisesRegex(ValueError, "scale"):
-                self.net.attach_ple(PLETable(path, rows=F.ple_rows_per_rank, width=F.ple_head_dim, scale=self.scale * 2), max_rows=4)
+                self.net.attach_ple(table, max_rows=4)
+            table.close()
             write_table(path, F.ple_rows_per_rank + 1, F.ple_head_dim)
+            table = PLETable(path, rows=F.ple_rows_per_rank + 1, width=F.ple_head_dim, scale=self.scale)
             with self.assertRaisesRegex(ValueError, "rows"):
-                self.net.attach_ple(PLETable(path, rows=F.ple_rows_per_rank + 1, width=F.ple_head_dim, scale=self.scale), max_rows=4)
+                self.net.attach_ple(table, max_rows=4)
+            table.close()
 
     def test_an_eager_gather_is_the_rows_this_rank_holds_scaled_and_the_rest_zero(self):
         F = self.F

@@ -12,17 +12,32 @@ the SSD, not in memory.
                          names them), so a row's byte offset is row * 160 and the file is the shards' bytes exactly
     ple-r{r}of4.json     what the file is: rows, width, shards, the scale, the layout marker, its sha256
 
-Reads are buffered `pread`s from a thread pool -- measured on srv2's NVMe (2026-09-18, this file's rank-0 table):
-128 random rows in 1.0 ms with 8 threads, 20,000 rows in 71 ms; O_DIRECT sector reads were 3-11x slower, and the
-page cache is what makes a repeated n-gram free. A captured decode step cannot read the host: its rows are gathered
-before the replay into a staging buffer that is the graph's static input (PLEStaging; net.stage_ple from
-decode_graphs.TargetGraphs.run), and the graph reads the rows from there. An eager step (prefill) gathers into a
-fresh tensor (net._ple_embed). Rows of other ranks are zero bytes -- e4m3 zero -- so the step's all-reduce sums the one
-rank that holds each row, as the arena-resident table's gather did.
+Reads go through a read-only mapping of the file: a gather is one `np.take` over it -- a C loop of row copies with
+the GIL released -- and the page cache is what makes a repeated n-gram free, as it was for the buffered `pread`s this
+replaced (O_DIRECT sector reads were 3-11x slower on srv2's NVMe, 2026-09-18). The `pread` form read a row a Python
+iteration: 3.5 us a row on srv2 whatever the cache held (20,000 rows in 71 ms with 8 threads, so a 32K-token chunk's
+131K rows about half a second of host time a rank), and past SPLIT_AT its threads queued on the GIL. Measured on the
+development PC (WSL2 ext4, a 2 GiB synthetic table of 160-byte rows, 2026-09-19 -- not a fleet number): a warm cache
+gathers 131,072 random rows in 1.4 ms (10 ms on one thread) where the `pread` loop took 4.6 s, 128 rows in 0.38 ms
+(the pool's dispatch; 7 us on one thread) against 4.2 ms, 32 rows in 3 us against 30; with it a 32,256-token chunk's
+whole lookup on the host -- hash, split by rank, gather, scatter into the step's rows -- is about 10 ms. Cold (the
+file's pages evicted, a process a method) both forms wait on the disk at one thread, 8 threads read 20,000 rows in
+552 ms against 857 ms, and the take keeps scaling (32 threads 183 ms) where the loop had stopped at 8. THREADS and
+SPLIT_AT are still srv2's numbers for the loop; sweeping them for the take is a fleet box's measurement.
+
+A mapping turns a failed read into SIGBUS rather than an OSError: a table whose disk returns an error kills the
+process without a Python traceback. The file's size is checked when it is opened and the file is never written while
+it is served.
+
+A captured decode step cannot read the host: its rows are gathered before the replay into a staging buffer that is the
+graph's static input (PLEStaging; net.stage_ple from decode_graphs.TargetGraphs.run), and the graph reads the rows from
+there. An eager step (prefill) gathers into a fresh tensor (net._ple_embed). Rows of other ranks are zero bytes -- e4m3
+zero -- so the step's all-reduce sums the one rank that holds each row, as the arena-resident table's gather did.
 """
 from __future__ import annotations
 
 import json
+import mmap
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -31,7 +46,7 @@ import numpy as np
 
 from engine.profiles.qwen38 import facts
 
-THREADS = 8                     # the srv2 measurement's best for a decode step's rows; more threads lost to the GIL
+THREADS = 8                     # srv2's best for the pread loop this replaced; the take has not been swept there
 SPLIT_AT = 64                   # rows below which one thread reads them all (a decode step's rows are few)
 
 
@@ -53,11 +68,15 @@ class PLETable:
         if size != self.rows * self.width:
             raise ValueError(f"{self.path.name}: {size:,} bytes, not {self.rows:,} rows of {self.width}")
         self.fd = os.open(self.path, os.O_RDONLY)
-        if hasattr(os, "posix_fadvise"):
-            os.posix_fadvise(self.fd, 0, 0, os.POSIX_FADV_RANDOM)
+        self._map = self._rows = None
+        if size:
+            self._map = mmap.mmap(self.fd, 0, access=mmap.ACCESS_READ)
+            if hasattr(self._map, "madvise") and hasattr(mmap, "MADV_RANDOM"):
+                self._map.madvise(mmap.MADV_RANDOM)       # a row's neighbours are other n-grams: no readahead
+            self._rows = np.frombuffer(self._map, dtype=np.uint8).reshape(self.rows, self.width)
         self.threads = max(1, int(threads))
         self._pool = None
-        self.reads = self.rows_read = 0                   # counters: gathers, and distinct rows read
+        self.reads = self.rows_read = 0                   # counters: gathers, and rows read
 
     @classmethod
     def open(cls, ranks_dir: "str | Path", rank: int, F: facts.Facts, *, world: int = facts.TP,
@@ -80,38 +99,35 @@ class PLETable:
     def gather(self, rows: np.ndarray) -> np.ndarray:
         """uint8 [N, width]: the rows (int64 [N], local ids, repeats allowed) as stored."""
         rows = np.asarray(rows, dtype=np.int64).reshape(-1)
-        out = np.empty((rows.shape[0], self.width), dtype=np.uint8)
-        if rows.shape[0] == 0:
+        n = rows.shape[0]
+        out = np.empty((n, self.width), dtype=np.uint8)
+        if n == 0:
             return out
-        uniq, inverse = np.unique(rows, return_inverse=True)
-        if uniq[0] < 0 or uniq[-1] >= self.rows:
-            raise IndexError(f"table rows {int(uniq[0])}..{int(uniq[-1])} outside 0..{self.rows - 1}")
-        got = np.empty((uniq.shape[0], self.width), dtype=np.uint8)
-        n = uniq.shape[0]
+        lo, hi = int(rows.min()), int(rows.max())
+        if lo < 0 or hi >= self.rows:
+            raise IndexError(f"table rows {lo}..{hi} outside 0..{self.rows - 1}")
+        # mode="clip": the ids were just checked, and "raise" makes numpy buffer `out`
         if n < SPLIT_AT or self.threads == 1:
-            self._read(uniq, got, 0, n)
+            np.take(self._rows, rows, axis=0, out=out, mode="clip")
         else:
+            # the take releases the GIL, so the threads' page faults overlap: what a cold cache waits for
             if self._pool is None:
                 self._pool = ThreadPoolExecutor(self.threads)
             per = -(-n // self.threads)
-            list(self._pool.map(lambda lo: self._read(uniq, got, lo, min(n, lo + per)), range(0, n, per)))
+            list(self._pool.map(lambda at: np.take(self._rows, rows[at:at + per], axis=0, out=out[at:at + per],
+                                                   mode="clip"), range(0, n, per)))
         self.reads += 1
         self.rows_read += n
-        out[:] = got[inverse.reshape(-1)]
         return out
-
-    def _read(self, uniq, got, lo: int, hi: int) -> None:
-        fd, width = self.fd, self.width
-        for i in range(lo, hi):
-            raw = os.pread(fd, width, int(uniq[i]) * width)
-            if len(raw) != width:
-                raise OSError(f"{self.path.name}: short read at row {int(uniq[i])}")
-            got[i] = np.frombuffer(raw, dtype=np.uint8)
 
     def close(self) -> None:
         if self._pool is not None:
             self._pool.shutdown(wait=True)
             self._pool = None
+        self._rows = None                                 # the view holds the mapping's buffer: it goes first
+        if self._map is not None:
+            self._map.close()
+            self._map = None
         if self.fd >= 0:
             os.close(self.fd)
             self.fd = -1
