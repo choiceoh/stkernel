@@ -6,7 +6,7 @@
       "source": "overlay/modules/glm53_kernels/kda.py",
       "sha256": "d548131504821d06d550a4de5ad76d7d45704cdd7eec4f0c7f5f7f0e9a1d076e",
       "origin": "repository",
-      "local_sha256": "f5b15c04b2961fd4657ae06586ae93c938cec02b3882af0d08010094367bc7db",
+      "local_sha256": "659e61bd8039cb713ff466b1f77a25697eee926bd6dd59c6ced96d9948534d0b",
       "local_modifications": [
         "2026-09-12 D11 knob sunset: no environment read; production-adopted values are code defaults (strided Q/K norm on: production VLLM_GLM53_KDA_PREFILL_QK_NORM=1)",
         "2026-09-11 GB10 recurrent: explicit dense kv state layout, optional zero initial state, BV16/one-warp TP4 decode geometry",
@@ -17,7 +17,7 @@
         "2026-09-13 wide prefill: extend the existing row-local path to 32768 rows for 32256-token chunks; preserve kernel arithmetic and small decode.",
         "2026-09-17 probe hook _BV_OVERRIDE (probes/engine_qwen38_kda.py, Qwen3.8 carry C3): a set power of two replaces fused_recurrent_kda_fwd's value tile BV; None (the default) keeps the rule and the launch unchanged.",
         "2026-09-17 strided Q/K norm cells (Qwen3.8 carry K4): _glm53_qk_l2norm_strided admits (key heads, head dim) 4 x 128 beside 16 x 128 and launches its kernel at the input's head count; the per-row reduction and its 32-row programs are unchanged, and 16 x 128 compiles the same kernel.",
-        "2026-09-18 native GDN forms in the chunk pipeline (Qwen3.8 carry K3): the two K K^T kernels, recompute_w_u and chunk_gla_fwd_kernel_o take QG (q/k hold H // QG heads, value head i reads key head i // QG) and G_HEAD (a per-head gate [T, H], loaded one value a row and broadcast along the key channels -- a 1-D load, not a stride-0 block pointer, which moves the [rows, K] tensors to another thread layout and the sums along K to another reduction tree). With QG 1 and G_HEAD false every offset is the contiguous one; with them the output is the widened forms' byte for byte."
+        "2026-09-18 native GDN forms in the chunk pipeline (Qwen3.8 carry K3): the two K K^T kernels, recompute_w_u and chunk_gla_fwd_kernel_o take QG (q/k hold H // QG heads, value head i reads key head i // QG) and G_HEAD (a per-head gate [T, H], loaded one value a row and broadcast along the key channels -- a 1-D load, not a stride-0 block pointer, which moves the [rows, K] tensors to another thread layout and the sums along K to another reduction tree). With QG 1 and G_HEAD false every statement of the contiguous form is where it was: KDA's kernels compile to the TTIR they compiled to before (40 variants compared on an RTX 5050). With them the output is the widened forms' byte for byte."
       ]
     },
     "kda/chunk_delta_h.py": {

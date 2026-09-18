@@ -952,42 +952,48 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_inter(
         p_k = tl.make_block_ptr(
             k, (T, K), (HQ * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
         )
+        if not G_HEAD:
+            p_g = tl.make_block_ptr(
+                g, (T, K), (H * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
+            )
         b_kt = tl.make_block_ptr(
             k, (K, T), (1, HQ * K), (i_k * BK, i_t * BT + i_j * BC), (BK, BC), (0, 1)
         )
+        if not G_HEAD:
+            p_gk = tl.make_block_ptr(
+                g, (K, T), (1, H * K), (i_k * BK, i_t * BT + i_j * BC), (BK, BC), (0, 1)
+            )
 
         o_k = i_k * BK + tl.arange(0, BK)
         m_k = o_k < K
         if G_HEAD:
+            # one value a row: this sub-chunk's first row, its rows [BC, 1], the earlier sub-chunk's rows [1, BC]
             o_c = tl.arange(0, BC)
             b_gn = tl.load(g + (i_t * BT + i_i * BC) * H)
             b_g = tl.load(g + (i_t * BT + i_i * BC + o_c) * H, mask=i_t * BT + i_i * BC + o_c < T, other=0)[:, None]
+            b_k = tl.load(p_k, boundary_check=(0, 1)) * exp2(b_g - b_gn)
             b_gk = tl.load(g + (i_t * BT + i_j * BC + o_c) * H, mask=i_t * BT + i_j * BC + o_c < T, other=0)[None, :]
-            b_gn_row = b_gn
-            b_gn_col = b_gn
         else:
-            p_g = tl.make_block_ptr(
-                g, (T, K), (H * K, 1), (i_t * BT + i_i * BC, i_k * BK), (BC, BK), (1, 0)
-            )
-            p_gk = tl.make_block_ptr(
-                g, (K, T), (1, H * K), (i_k * BK, i_t * BT + i_j * BC), (BK, BC), (0, 1)
-            )
             # [BK,]
             b_gn = tl.load(g + (i_t * BT + i_i * BC) * H * K + o_k, mask=m_k, other=0)
             # [BC, BK]
             b_g = tl.load(p_g, boundary_check=(0, 1))
+            b_k = tl.load(p_k, boundary_check=(0, 1)) * exp2(b_g - b_gn[None, :])
             # [BK, BC]
             b_gk = tl.load(p_gk, boundary_check=(0, 1))
-            b_gn_row = b_gn[None, :]
-            b_gn_col = b_gn[:, None]
-        b_k = tl.load(p_k, boundary_check=(0, 1)) * exp2(b_g - b_gn_row)
         b_kt = tl.load(b_kt, boundary_check=(0, 1))
         # [BC, BC]
-        b_ktg = b_kt * exp2(b_gn_col - b_gk)
+        if G_HEAD:
+            b_ktg = b_kt * exp2(b_gn - b_gk)
+        else:
+            b_ktg = b_kt * exp2(b_gn[:, None] - b_gk)
         b_A += tl.dot(b_k, b_ktg)
 
         b_q = tl.load(p_q, boundary_check=(0, 1))
-        b_qg = b_q * exp2(b_g - b_gn_row) * scale
+        if G_HEAD:
+            b_qg = b_q * exp2(b_g - b_gn) * scale
+        else:
+            b_qg = b_q * exp2(b_g - b_gn[None, :]) * scale
         b_Aqk += tl.dot(b_qg, b_ktg)
 
     b_A *= b_b[:, None]
@@ -1075,12 +1081,7 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra(
         (BC, BK),
         (1, 0),
     )
-    b_q = tl.load(p_q, boundary_check=(0, 1))
-    b_k = tl.load(p_k, boundary_check=(0, 1))
-    if G_HEAD:
-        b_g = tl.load(g + (bos + i_t * BT + i_i * BC + o_i) * H + i_h, mask=m_A, other=0)[:, None]
-        p_gk = g + (bos + i_t * BT + i_i * BC) * H + i_h
-    else:
+    if not G_HEAD:
         p_g = tl.make_block_ptr(
             g + (bos * H + i_h) * K,
             (T, K),
@@ -1089,13 +1090,21 @@ def chunk_kda_scaled_dot_kkt_fwd_kernel_intra_sub_intra(
             (BC, BK),
             (1, 0),
         )
+    b_q = tl.load(p_q, boundary_check=(0, 1))
+    b_k = tl.load(p_k, boundary_check=(0, 1))
+    if G_HEAD:
+        b_g = tl.load(g + (bos + i_t * BT + i_i * BC + o_i) * H + i_h, mask=m_A, other=0)[:, None]
+    else:
         b_g = tl.load(p_g, boundary_check=(0, 1))
-        p_gk = g + (bos + i_t * BT + i_i * BC) * H * K + i_h * K + o_k
 
     p_b = beta + (bos + i_t * BT + i_i * BC + o_i) * H + i_h
     b_k = b_k * tl.load(p_b, mask=m_A, other=0)[:, None]
 
     p_kt = k + (bos + i_t * BT + i_i * BC) * HQ * K + (i_h // QG) * K + o_k
+    if G_HEAD:
+        p_gk = g + (bos + i_t * BT + i_i * BC) * H + i_h
+    else:
+        p_gk = g + (bos + i_t * BT + i_i * BC) * H * K + i_h * K + o_k
 
     for j in range(0, min(BC, T - i_t * BT - i_i * BC)):
         b_kt = tl.load(p_kt, mask=m_k, other=0).to(tl.float32)
@@ -1522,6 +1531,15 @@ def chunk_gla_fwd_kernel_o(
             (BT, BK),
             (1, 0),
         )
+        if not G_HEAD:
+            p_g = tl.make_block_ptr(
+                g + (bos * H + i_h) * K,
+                (T, K),
+                (H * K, 1),
+                (i_t * BT, i_k * BK),
+                (BT, BK),
+                (1, 0),
+            )
         p_h = tl.make_block_ptr(
             h + (i_tg * H + i_h) * K * V,
             (V, K),
@@ -1539,14 +1557,6 @@ def chunk_gla_fwd_kernel_o(
             o_t = i_t * BT + tl.arange(0, BT)
             b_g = tl.load(g + (bos + o_t) * H + i_h, mask=o_t < T, other=0)[:, None]
         else:
-            p_g = tl.make_block_ptr(
-                g + (bos * H + i_h) * K,
-                (T, K),
-                (H * K, 1),
-                (i_t * BT, i_k * BK),
-                (BT, BK),
-                (1, 0),
-            )
             b_g = tl.load(p_g, boundary_check=(0, 1))
         # [BT, BK]
         b_qg = (b_q * exp2(b_g)).to(b_q.dtype)
