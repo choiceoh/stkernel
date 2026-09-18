@@ -672,20 +672,37 @@ class ComposedModel:
     # -- steps -----------------------------------------------------------------------------------------------------------
     def prefill(self, seq: int, start: int, tokens: int, blocks, slot: int, marks=None) -> bool:
         """The prompt's tokens [start, start+tokens) through the composition, split where the prefix cache marks a
-        boundary (its snapshot is the state after that piece); the first token is sampled when the prompt is in."""
+        boundary (its snapshot is the state after that piece); the first token is sampled when the prompt is in.
+
+        A composition that snapshots a boundary out of its own uncut forward says so: `takes_mark(piece start,
+        position)`. Those marks ride the piece (`forward(..., marks=((position, snapshot), ...))`) and cost no forward
+        -- a served chunk of 42 blocks is one forward, not 42 -- and the step is cut only where it declines (a boundary
+        off its kernel's grid: the piece after the cut starts on the boundary, so the rest of the step's are on it)."""
         ids = self.tokens[seq][start:start + tokens]
         if len(ids) != tokens:
             raise ValueError(f"seq {seq} holds {len(self.tokens[seq])} tokens; asked to prefill to {start + tokens}")
         cuts = sorted((int(p), int(snap)) for p, snap in (marks or {}).items())
         if any(not start < p <= start + tokens for p, _ in cuts):
             raise ValueError("a prefill mark lies inside the step")
-        at, logits, kept = start, None, []
-        for stop in [p for p, _ in cuts if p < start + tokens] + [start + tokens]:
-            piece = torch.tensor(ids[at - start:stop - start], dtype=torch.int64, device=self.store.device)
-            if self.drafter is None:
-                logits = self.composition.forward(Step.of([(seq, at, piece)]), self.store)
+        takes = getattr(self.composition, "takes_mark", None)
+        pieces, at, inside = [], start, []                   # (stop, the marks the piece's forward takes on its way)
+        for p, snap in cuts:
+            if p == start + tokens:
+                break                                        # the step's end: the store holds that state afterwards
+            if takes is not None and takes(at, p):
+                inside.append((p, snap))
             else:
-                logits, hidden = self.composition.forward(Step.of([(seq, at, piece)]), self.store, hidden=True)
+                pieces.append((p, tuple(inside)))
+                at, inside = p, []
+        pieces.append((start + tokens, tuple(inside)))
+        at, logits, kept = start, None, []
+        for stop, inside in pieces:
+            piece = torch.tensor(ids[at - start:stop - start], dtype=torch.int64, device=self.store.device)
+            taken = {"marks": inside} if inside else {}
+            if self.drafter is None:
+                logits = self.composition.forward(Step.of([(seq, at, piece)]), self.store, **taken)
+            else:
+                logits, hidden = self.composition.forward(Step.of([(seq, at, piece)]), self.store, hidden=True, **taken)
                 kept.append((at, hidden))
             at = stop
             for p, snap in cuts:
