@@ -158,6 +158,12 @@ def main():
         from probes.engine_qwen38_kda import run as qwen38_kda
         qwen38_kda(args.output)
         return
+    if args.lanes == 'qwen38_step':
+        # component timings: a captured Qwen3.8 decode step's kernels on one rank's own weights, solved from small nets
+        # (fixed, GDN, QSA, PLE) and summed to 48 layers -- the decode levers ranked by the step, not by guesses
+        from probes.engine_qwen38_step import run as qwen38_step
+        qwen38_step(args.output, args.ranks)
+        return
     if args.lanes == 'qwen38_moe':
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe
