@@ -63,8 +63,13 @@ class Lanes:
     # MoE
     route: object           # (logits [N, E], k) -> (ids int32 [N, k] global, weights f32 [N, k]): softmax fp32, top-k, renormalised
     moe: object             # (x [N, H] bf16, ids [N, k] global, weights [N, k] f32, w13, w13_sf, w2, w2_sf, *, scales,
-                            #  first_expert, compact) -> [N, H] bf16: this rank's routed partial; `compact` (an eager
-                            #  step) runs only this rank's pairs, reading their count on the host
+                            #  first_expert, compact, local=False) -> [N, H] bf16: this rank's routed partial; `compact`
+                            #  (an eager step) runs only this rank's pairs, reading their count on the host; `local`:
+                            #  the routes are route_local's, already this rank's
+    route_local: object = None      # (scores [N, >= E] bf16, k, *, experts, first_expert, w13, hidden) -> (ids int32
+                                    #  [N, k] local, weights f32 [N, k]): a captured step's router and its EP remap
+                                    #  (local_routes, with the launch shape's sentinel) in one launch; None: the layer
+                                    #  composes route and moe
     moe_prepare: object = None      # (w13, w13_sf, w2, w2_sf, top_k, *, scales) -> views, once per bound layer before capture
     graph_resources: object = None  # () -> workspace owners to retain until the captured graphs close
     swiglu: object = None           # (fused [N, 2I], pad_to=None) -> silu(gate) * up: the shared expert's activation,
@@ -277,7 +282,7 @@ def served(*, tp=None) -> Lanes:
     Triton's autotuner and the b12x JIT can run; on the fleet (one rank a process) the calls are direct."""
     from engine.base.lanes import served as common_lanes
     from engine.kernels import gated_residual as hcr
-    from engine.kernels import gdn, moe_output, qsa
+    from engine.kernels import gdn, moe_output, moe_route, qsa
     from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.causal_conv_single import causal_conv1d_single
     from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
@@ -330,19 +335,30 @@ def served(*, tp=None) -> Lanes:
                               input_global_scale=scales.input13, activation="silu", swiglu_alpha=1.0, swiglu_beta=0.0,
                               swiglu_limit=None, activation_precision="fp4", quant_mode="nvfp4", _weight_views=views)
 
-    def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert, compact=False):
+    def sentinel_of(rows, k, w13, hidden):
+        # A captured step's shapes are fixed, so every route stays in the launch. Another rank's routes carry
+        # sentinel E where the shape admits the micro kernel's zero-weight skip (its pairs claim no rows and read no
+        # expert), else local expert 0 at weight 0. The decision is the dispatcher's, per launch shape.
+        return md.ep_zero_weight_sentinel(num_tokens=rows, num_topk=k, experts=w13.shape[0], hidden_size=hidden,
+                                          intermediate_size=w13.shape[1] // 2, activation="silu", swiglu_limit=None)
+
+    def route_local(scores, k, *, experts, first_expert, w13, hidden):
+        sentinel = sentinel_of(scores.shape[0], k, w13, hidden)
+        return moe_route.softmax_topk(scores, k, experts=experts, first=first_expert, local=w13.shape[0],
+                                      foreign=0 if sentinel is None else sentinel)
+
+    def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert, compact=False, local=False):
         E = w13.shape[0]
         views, sf13, sf2 = moe_prepare(w13, w13_sf, w2, w2_sf, ids.shape[1], scales=scales)
+        if local:
+            if compact:
+                raise ValueError("an eager step counts its own pairs from the global routes")
+            return dispatch(x, ids, weights, w13, sf13, w2, sf2, views, scales, E)
         if not compact:
-            # A captured step's shapes are fixed, so every route stays in the launch. Another rank's routes carry
-            # sentinel E where the shape admits the micro kernel's zero-weight skip (its pairs claim no rows and read no
-            # expert), else local expert 0 at weight 0. The decision is the dispatcher's, per launch shape.
-            sentinel = md.ep_zero_weight_sentinel(num_tokens=x.shape[0], num_topk=ids.shape[1], experts=E,
-                                                  hidden_size=x.shape[1], intermediate_size=w13.shape[1] // 2,
-                                                  activation="silu", swiglu_limit=None)
-            local, w = local_routes(ids, weights, first_expert, E, sentinel)
-            return dispatch(x, local, w, w13, sf13, w2, sf2, views, scales, E)
-        local, w = local_routes(ids, weights, first_expert, E)
+            sentinel = sentinel_of(x.shape[0], ids.shape[1], w13, x.shape[1])
+            local_ids, w = local_routes(ids, weights, first_expert, E, sentinel)
+            return dispatch(x, local_ids, w, w13, sf13, w2, sf2, views, scales, E)
+        local_ids, w = local_routes(ids, weights, first_expert, E)
         # An eager step runs only this rank's (token, route) pairs, one route a row: at EP=4 the other ranks' routes are
         # ~3/4 of a prefill chunk's pairs, and on expert 0 they are rows of compute for a product of zero. Each pair's
         # weighted output (bf16) is summed per token in fp32 and rounded once.
@@ -350,7 +366,7 @@ def served(*, tp=None) -> Lanes:
         token, route = ((shifted >= 0) & (shifted < E)).nonzero(as_tuple=True)
         out = torch.zeros(x.shape[0], x.shape[1], dtype=torch.float32, device=x.device)
         if token.numel():
-            pairs = dispatch(x.index_select(0, token), local[token, route][:, None], w[token, route][:, None],
+            pairs = dispatch(x.index_select(0, token), local_ids[token, route][:, None], w[token, route][:, None],
                              w13, sf13, w2, sf2, views, scales, E)
             out.index_add_(0, token, pairs.float())
         return out.to(x.dtype)
@@ -372,7 +388,8 @@ def served(*, tp=None) -> Lanes:
     return Lanes("served", *(on_main(f) for f in bound), moe_prepare=on_main(moe_prepare),
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
-                 qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike)
+                 qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
+                 route_local=on_main(route_local))
 
 
 def qualify(device, F) -> dict:

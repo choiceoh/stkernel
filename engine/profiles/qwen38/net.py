@@ -602,12 +602,19 @@ class Qwen38Net:
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix + "moe."
         scores = torch.mm(x, p[n + "gates"].t())                     # [N, experts + 1]: the router, then the shared gate
-        ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
-        routed = self._experts[prefix](x, ids, weights, compact=compact)
+        if compact or lanes.route_local is None:
+            ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
+            routed = self._experts[prefix](x, ids, weights, compact=compact)
+        else:
+            # a captured step's router and EP remap are one launch over the scores row (kernels/moe_route)
+            ids, weights = lanes.route_local(scores, F.topk_experts, experts=F.experts, first_expert=self.first_expert,
+                                             w13=p[n + "w13"], hidden=x.shape[1])
+            routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
         # the down projection's 160 columns pad to 256 (PaddedDenseLinear): the activation's launch writes the zeros
         down = getattr(self, "dense", {}).get(n + "sh_down")
         pad_to = down.input_cols + down.pad if getattr(down, "pad", 0) else None
         shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up"), pad_to=pad_to), n + "sh_down")
+        # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
         gate = torch.sigmoid(scores[:, F.experts:].float())
         return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
 
