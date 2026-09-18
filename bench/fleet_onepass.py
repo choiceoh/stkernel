@@ -56,6 +56,9 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_bounded_loop_check.py',
              'probes/engine_prefill_chunk_profile.py',
              'probes/engine_moe_prefill_m64.py',
+             # Qwen3.8's cell probes (engine/QWEN38_CARRY.md C2-C4): their docstrings name this lane
+             'probes/engine_qwen38_cells.py', 'probes/engine_qwen38_dense.py', 'probes/engine_qwen38_kda.py',
+             'probes/engine_qwen38_moe.py',
              'engine/profiles/glm53/check.py')
 ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-prefill',
             '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
