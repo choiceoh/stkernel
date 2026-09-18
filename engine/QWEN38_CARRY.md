@@ -53,7 +53,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | C1 | 셀 판정 프로브 모드(`engine_kernel_check --lanes qwen38_cells`). 단일 레인 티켓은 main 에 있는 프로브만 돌린다 | `probes/engine_qwen38_cells.py` | fix | cpu | 시간 | 머지 #1089; GPU 케이스 7건 중 픽스처 오류 3건은 #1107 에서 링 8칸으로 수정(`measurements/qwen38_lane_20260917`) |
 | C2 | dense 패딩 어댑터 GPU 판정 + W4A8/FP8 전환 행 수 실측: Qwen3.8 hidden 2560 · 중간 160, DSv4.1 576 | `kernels/dense`, `cells.py` | measure | gpu | 시간 | 프로브 머지 #1096; 첫 실행 FP8 320×2560 4행 오차 0.22 발견·멈춤, #1107 에서 broken_arms 로 계속, 재실행 예정 |
 | C3 | KDA decay 어댑터(ring·chunk·recurrent) GPU 판정 + BV 8/16/32 스윕(4/12×128×128, T=2, 1–4 행, 정확 롤백 게이트) | `kernels/kda`, `cells.KDA_DECAY_MEASURED_CELLS` | measure | gpu | 시간 | 프로브 머지 #1098, 티켓 `qwen38-kda-0917` 대기(8c25c625, K1 의 GDN 진입점) |
-| C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 프로브 머지 #1100; 첫 실행 디코드 통과, 정적 프리필 반복 불일치 발견·멈춤, #1107 에서 진단 추가, 재실행 예정 |
+| C4 | MoE EP 셀(로컬 128/512, I640, top-10, silu): 오라클 2% + micro 타일·MAC 사다리 + 프리필 `tile_m` 핀 | `kernels/b12x/moe_dispatch.py`, `cells.py` | measure | gpu | 일 | 프로브 머지 #1100; 첫 실행 디코드 통과, 정적 프리필 반복 불일치 발견·멈춤, #1107 에서 진단 추가, 재실행 예정. **플릿에서 확인(2026-09-18 첫 부팅):** 즉시 프리필이 routed pairs < 640 이라 정적 커널을 (행, 전문가) 조합마다 JIT(약 4 s, 랭크 0 이 12 분에 75 개) — 프리필(> 8 토큰)은 dynamic 으로 보내야 하고, 그 셀의 정합 판정이 선행 |
 | C5 | DSv4.1 mHC V41 이음매(`MHCV41`) GPU 판정 | `kernels/dense/mhc.py`, `cells.py` | measure | gpu | 시간 | 열림 |
 | C6 | Qwen3.8 자체 레인 GPU `qualify`(게이트 잔차·QSA·GDN). 수치 변경 작업의 기준점 | `profiles/qwen38/lanes.py` | measure | gpu | 시간 | 머지 #1107(GPU qualify 통과, measurements/qwen38_lane_20260917) |
 | C7 | `cells.py`: 측정된 어댑터 셀을 `admitted` 로(Q3). `summarize.py` 는 서빙 커널이 PR 이 최적화한 커널과 같을 때만 '그대로' 로 셈. 재집계 | `kernels/cells.py`, `measurements/st_model_dependence_20260917/summarize.py` | fix | cpu | 시간 | 장치는 머지 #1095(측정 튜플 넷은 기록이 붙을 때 채움) |
@@ -136,7 +136,8 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 |---|---|---|
 | "그냥 mtp로 해" | 드래프터는 체크포인트의 MTP 헤드(`SPEC_K=1`)로 간다. PixelML 의 Flash-Next DFlash 드래프터(srv2 `~/models/qwen38-flash-next-dflash-pixelml`; 자체 측정에서 수학만 네이티브 MTP 를 이기고 채팅은 느림)는 붙이지 않는다 | 결정 |
 | "e뭐시기 그건 ssd로 내리고" | PLE 표(랭크당 11.92 GiB)를 아레나에서 빼 `ple-r{r}of4.weight` 로 랭크 파일 옆에 두고 행을 번호로 읽는다(`profiles/qwen38/ple_table.py`; 레이아웃 `st-qwen38-tep4-modelopt-v3`) | PR |
-| "이미지는 파트로 사전 샤딩해서" | NVIDIA 허브 체크포인트(fc694b54)를 `preshard.py` 로 네 랭크 파일 + 네 표 파일로 자른다(MTP 전문가 FP8→NVFP4, 전문가 그룹은 랭크별, memmap 읽기) | 산출물 완성(srv4, 2026-09-18 15:38, 699 s, 3 GiB 캡): `~/models/st-qwen38-tep4`, 랭크 0 표 파일 sha = 09-11 파일과 동일; 랭크 r 을 GLM 과 같은 노드로 배포. GPU 부팅은 아직(D17) |
+| "이미지는 파트로 사전 샤딩해서" | NVIDIA 허브 체크포인트(fc694b54)를 `preshard.py` 로 네 랭크 파일 + 네 표 파일로 자른다(MTP 전문가 FP8→NVFP4, 전문가 그룹은 랭크별, memmap 읽기) | 산출물 완성(srv4, 2026-09-18 15:38, 699 s, 3 GiB 캡): `~/models/st-qwen38-tep4`, 랭크 0 표 파일 sha = 09-11 파일과 동일; 랭크 r 을 GLM 과 같은 노드로 배포 |
+| "올려봐" | 세션 창(quiet gate 양보)에서 `launchers/start-st-qwen38.sh` 로 첫 플릿 부팅 | 네 랭크 부팅·문 열림(107 s, 캐시 뒤 40 s). 토큰 0: one-shot 집합통신이 hidden 2560 에서 스톨(→ `--no-oneshot`/`ST_ONESHOT=0` 추가, NCCL), 즉시 프리필의 정적 MoE 커널이 (행, 전문가) 조합마다 JIT(C4; 12 분에 75 개). 다음 창 전에 C4(프리필을 dynamic 으로, 셀 정합 판정)가 선행 |
 
 ## 옮기지 않는 GLM 최적화
 

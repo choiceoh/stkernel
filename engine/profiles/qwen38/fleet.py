@@ -185,6 +185,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-drafter", action="store_true", help="serve without the MTP head")
     ap.add_argument("--hc-fp8", action="store_true",
                     help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them; the mixer's numbers change, so a quality bracket judges it)")
+    ap.add_argument("--no-oneshot", action="store_true",
+                    help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
+                         "the first fleet boot, 2026-09-18, stalled in it at every sum)")
     a = ap.parse_args(argv)
 
     started = time.perf_counter()
@@ -196,7 +199,9 @@ def main(argv=None) -> int:
     comm = Comm.init()
     model = None
     try:
-        comm.prepare_oneshot()
+        if not a.no_oneshot:
+            comm.prepare_oneshot()
+        print(f"  collectives: {'NCCL' if a.no_oneshot else 'one-shot RDMA (NCCL where ineligible)'}", flush=True)
         lanes = lane_tables.served()
         F = facts.load(a.ckpt_meta)
         print(f"  lanes qualified: {lane_tables.qualify(torch.device('cuda'), F)}", flush=True)

@@ -4603,5 +4603,18 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
   (15:04~15:08), 프리샤드는 srv4 (15:11 이후)뿐이라 srv1 을 건드린 게 없다. 감독기가 15:26:16 재기동, 15:28:22 healthy — 제 빌드가
   옆에서 도는 동안 승인이 통과했다(srv4 MemAvailable 22 GB). 재기동 승인과 겹치지 않으려 두 번째 시도를 한 번 멈췄다가
   운영자 "얼른해" 로 즉시 다시 돌렸다.
-- **안 한 것.** GPU 부팅·캡처·수용률·속도 없음(D17 미실측). 프리필의 SSD 모음 비용·페이지 캐시 거동·MTP 이중 양자화(FP8→NVFP4)의
-  수용률은 미실측; 예전 복사본의 BF16 MTP 로 자르면 한 번 양자화다(같은 표·전문가 바이트, `--ckpt` 만 다름).
+- **첫 플릿 부팅(운영자 "올려봐", 16:14~16:47 세션 창).** `fleet_lease.py yield --kind session` 으로 프로덕션에 양보를 청하니
+  quiet gate 가 몇 초 만에 넘겨줬고(감독기는 "fleet taken (session)" 로 대기), `launchers/start-st-qwen38.sh` 가 이 트리의
+  `st-engine:qwen38`(네 노드 사전 빌드, 캐시 레이어라 초 단위)로 네 랭크를 올렸다. 랭크 0 "ready in 107.4 s"(MoE 마이크로 커널 JIT
+  포함), 재부팅은 40.1 s(캐시). 문이 열리고 프리필은 돌지만 토큰은 나오지 않았다 — 두 가지:
+  (1) **one-shot RDMA 집합통신이 hidden 2560 에서 스톨**: 네 랭크 모두 `[oneshot] STALL phase=wait(peer-flags)` 를 반복하며 합 하나에
+  약 2 s(세 피어가 늘 4 시퀀스 뒤). kernel_shape 기록의 oneshot 셀은 '미실측' 이었다. `--no-oneshot`(launcher `ST_ONESHOT=0`) 을
+  더해 NCCL 로 재부팅(engine/base/comm 은 transport 가 없으면 NCCL 로 간다).
+  (2) **즉시 프리필의 MoE 정적 커널 JIT 폭풍**(QWEN38_CARRY C4 가 예고한 것): 67 토큰 프롬프트에서 랭크마다 `static_m{행}_k2560_n640_t1_r{전문가}`
+  변형을 (행 수, 전문가 수) 조합마다 약 4 s 씩 컴파일 — 랭크 0 이 12 분에 75 개, 프리필 스텝 1 이 5 분 넘게, 디코드 스텝 0, 생성 토큰 0.
+  `select_sm120_moe_backend` 가 routed pairs < 640 이면 static 을 고르고 Qwen 의 EP 로컬 프리필은 늘 그 아래다. 캐시에 남으니 언젠가는
+  수렴하지만 조합 수가 수백이라 창 안에서는 안 끝난다. 창을 닫았다(`stop` + lease release; 프로덕션은 감독기가 복귀).
+  **다음 창 전에**: Qwen3.8 프리필(> 8 토큰)을 dynamic 백엔드로 보내되 그 셀(E128 로컬/I640/top-10/silu)의 정합을 먼저 판정(C4 티켓의
+  일), one-shot 은 hidden 2560 셀 실측 뒤. 그때까지 D17 은 미실측이다.
+- **안 한 것.** 수용률·속도 없음(D17 미실측). 프리필의 SSD 모음 비용·페이지 캐시 거동·MTP 이중 양자화(FP8→NVFP4)의 수용률은 미실측;
+  예전 복사본의 BF16 MTP 로 자르면 한 번 양자화다(같은 표·전문가 바이트, `--ckpt` 만 다름).
