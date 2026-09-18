@@ -233,17 +233,10 @@ def assemble(builds: dict, F) -> dict:
     return out
 
 
-def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, shapes=SHAPES, replays: int = REPLAYS,
-        kv_gib: float = KV_GIB, max_gib: float = MAX_GIB, max_seqs: int = 4, rank: "int | None" = None) -> dict:
-    """The lane (probes/engine_kernel_check.py --lanes qwen38_step): every layer set built, captured and replayed in
-    turn, then assembled. `ranks`: the rank files' directory; `rank`: which one (default: the highest this host has)."""
+def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REPLAYS, kv_gib: float = KV_GIB,
+            max_gib: float = MAX_GIB, max_seqs: int = 4) -> dict:
+    """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row."""
     import torch
-    ranks = Path(ranks or "/home/choiceoh/models/st-qwen38-tep4")
-    if rank is None:
-        present = sorted(int(p.name[4]) for p in ranks.glob("rank?of4.safetensors"))
-        if not present:
-            raise SystemExit(f"no rank file under {ranks}")
-        rank = present[-1]
     free, total = torch.cuda.mem_get_info()
     torch.cuda.set_per_process_memory_fraction(min(1.0, max_gib * (1 << 30) / total))
     # the fleet boot's first act (fleet.main): the record the preshard wrote, bound before any lane reads it -- the
@@ -251,38 +244,56 @@ def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, shapes=SHAPES, replay
     from engine.base import kernel_shape
     from engine.profiles.qwen38 import facts
     _, shape_source = kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
-    report = {"rank": rank, "kernel_shape": shape_source, "replays": replays, "device": torch.cuda.get_device_name(),
-              "free_GiB_at_start":
-              round(free / 2**30, 1), "layer_sets": [list(s) for s in layer_sets], "shapes": [list(s) for s in shapes],
-              "builds": {}}
-    F = None
-    for layers in layer_sets:
-        torch.cuda.reset_peak_memory_stats()
-        began = time.perf_counter()
-        F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib)
-        built = time.perf_counter() - began
-        graphs = {}
-        for n, blocks in shapes:
-            shape = (n, F.spec_k + 1, blocks)
-            for label, g in (("target", target), ("draft", draft)):
-                key = f"{label} rows {n} blocks {blocks}"
-                if shape not in g.graphs.graphs:
-                    graphs[key] = {"error": f"no captured graph {shape} (buckets {g.buckets})"}
-                    continue
-                seat(g, caches, F, shape)
-                graphs[key] = replay_profile(g, shape, replays)
-                print(json.dumps({"layers": list(layers), "graph": key, "wall_us": graphs[key]["wall_us"],
-                                  "device_us": graphs[key]["device_us"], "launches": graphs[key]["launches"]}),
-                      flush=True)
-        report["builds"][",".join(map(str, layers))] = {"counts": counts(F, layers), "build_s": round(built, 1),
-                                                        "peak_GiB": round(torch.cuda.max_memory_allocated() / 2**30, 2),
-                                                        "graphs": {k: v for k, v in graphs.items() if "error" not in v},
-                                                        "errors": {k: v for k, v in graphs.items() if "error" in v}}
-        target.close()
-        draft.close()
-        del net, caches, target, draft
-        torch.cuda.empty_cache()
-    report["step"] = assemble(report["builds"], F)
+    began = time.perf_counter()
+    F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib)
+    built = time.perf_counter() - began
+    graphs = {}
+    for n, blocks in shapes:
+        shape = (n, F.spec_k + 1, blocks)
+        for label, g in (("target", target), ("draft", draft)):
+            key = f"{label} rows {n} blocks {blocks}"
+            if shape not in g.graphs.graphs:
+                graphs[key] = {"error": f"no captured graph {shape} (buckets {g.buckets})"}
+                continue
+            seat(g, caches, F, shape)
+            graphs[key] = replay_profile(g, shape, replays)
+            print(json.dumps({"layers": list(layers), "graph": key, "wall_us": graphs[key]["wall_us"],
+                              "device_us": graphs[key]["device_us"], "launches": graphs[key]["launches"]}), flush=True)
+    row = {"counts": counts(F, layers), "kernel_shape": shape_source, "free_GiB_at_start": round(free / 2**30, 1),
+           "build_s": round(built, 1), "peak_GiB": round(torch.cuda.max_memory_allocated() / 2**30, 2),
+           "graphs": {k: v for k, v in graphs.items() if "error" not in v},
+           "errors": {k: v for k, v in graphs.items() if "error" in v}}
+    target.close()
+    draft.close()
+    return row
+
+
+def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = None) -> dict:
+    """The lane (probes/engine_kernel_check.py --lanes qwen38_step): each layer set measured in a process of its own --
+    a built net's weights stay referenced by the lanes' prepared views, so one process cannot hold two in 4 GiB --
+    then assembled. `ranks`: the rank files' directory; `rank`: which one (default: the highest this host has)."""
+    import subprocess
+    import tempfile
+    ranks = Path(ranks or "/home/choiceoh/models/st-qwen38-tep4")
+    if rank is None:
+        present = sorted(int(p.name[4]) for p in ranks.glob("rank?of4.safetensors"))
+        if not present:
+            raise SystemExit(f"no rank file under {ranks}")
+        rank = present[-1]
+    report = {"rank": rank, "layer_sets": [list(s) for s in layer_sets], "shapes": [list(s) for s in SHAPES],
+              "replays": REPLAYS, "builds": {}, "failed": {}}
+    with tempfile.TemporaryDirectory() as scratch:
+        for layers in layer_sets:
+            name = ",".join(map(str, layers))
+            out = Path(scratch) / f"{name}.json"
+            done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--one", name, "--ranks", str(ranks),
+                                   "--rank", str(rank), "--output", str(out)], cwd=str(ROOT))
+            if done.returncode or not out.exists():
+                report["failed"][name] = f"rc={done.returncode}"
+                continue
+            report["builds"][name] = json.loads(out.read_text())
+    from engine.profiles.qwen38 import facts
+    report["step"] = assemble(report["builds"], facts.load(ranks))
     text = json.dumps(report, indent=1)
     if output:
         Path(output).parent.mkdir(parents=True, exist_ok=True)
@@ -297,5 +308,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ranks", default=None)
     ap.add_argument("--output", default=None)
+    ap.add_argument("--one", default=None, help="one layer set (comma separated), measured in this process")
+    ap.add_argument("--rank", type=int, default=None)
     a = ap.parse_args()
-    run(a.output, a.ranks)
+    if a.one is not None:
+        row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")))
+        Path(a.output).write_text(json.dumps(row) + "\n")
+    else:
+        run(a.output, a.ranks, rank=a.rank)

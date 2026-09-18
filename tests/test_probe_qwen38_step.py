@@ -54,8 +54,15 @@ class LaneTests(unittest.TestCase):
     def test_the_kernel_shape_is_bound_before_any_lane_is_built(self):
         """As fleet.main does first: the lanes admit their cells against the bound shape."""
         source = (ROOT / "probes/engine_qwen38_step.py").read_text(encoding="utf-8")
+        one = source[source.index("def measure("):source.index("def run(")]
+        self.assertLess(one.index("kernel_shape.bind_recorded("), one.index("build(ranks, ranks, rank"))
+
+    def test_each_layer_set_is_a_process_of_its_own(self):
+        """A built net's weights stay referenced by the lanes' prepared views: two in one process ran out of 4 GiB."""
+        source = (ROOT / "probes/engine_qwen38_step.py").read_text(encoding="utf-8")
         run = source[source.index("def run("):]
-        self.assertLess(run.index("kernel_shape.bind_recorded("), run.index("build(ranks, ranks, rank"))
+        self.assertIn('"--one", name', run)
+        self.assertNotIn("build(", run.split("def ")[1] if False else run[:run.index("return report")])
 
     def test_the_budget_fits_beside_production(self):
         from probes import engine_qwen38_step as step
