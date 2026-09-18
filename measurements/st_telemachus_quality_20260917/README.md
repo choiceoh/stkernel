@@ -27,7 +27,14 @@ on tree `048b682d75f9` (unseen(ko) 0.103 native vs 0.26 on the same morning's
 boot) — but texture is not recovery: an ablation arm that scored 0.108 still
 contains welded non-words, a follow-up on a #1157 build through the general
 inference path corrupted again, and the #1157 causal effect remains
-unverified — see [the clues0918 campaign](code-audit.md). See
+unverified — see [the clues0918 campaign](code-audit.md). As of 2026-09-18 the failing request's own frame is read off its bytes: the
+prompt already ends in `<|assistant|><think>` — exactly what its generation prompt writes — so that
+turn is not the missing half of anything, and the turn *before* it is already degraded inside the same
+prompt
+(`그리섬 기준으로`, `대상도끼보다`, `걸사 재단`). This request therefore inherits a broken assistant
+turn; the incident's first breakage is upstream of the request every replay so far has reproduced,
+and no private record of that earlier turn exists. See
+[the prompt frame evidence](prompt-structure-evidence.json) and
 [the follow-up audit](code-audit.md),
 [the production replay receipts](merged-production-replay-evidence.json) and
 [the shared-smoothing replay](shared-smoothing-replay-evidence.json).
@@ -49,6 +56,46 @@ On srv2, `/tmp/telemachus-quality-0917/original-engine-record.json` preserves th
 exact input/output IDs, prompt length and original request sampling metadata.
 The engine record came from the existing conversation tier, without enabling
 new capture or restarting the model.
+
+## Prompt frame, and the turn this request inherited
+
+[prompt_structure_audit.py](prompt_structure_audit.py) reads the private 50,005-token prompt's turn
+frame in the served image, with the tokenizer the door serves (`/repo/st-glm53-meta/tokenizer.json`,
+sha256 `0cfe2c099a7702…`). Receipts: [prompt-structure-evidence.json](prompt-structure-evidence.json).
+
+| Fact | Value |
+|---|---|
+| Head / tail frame | `[gMASK]<sop><|system|>` … `<|assistant|><think>` (indices 50,003 and 50,004) |
+| Generation prompt the tail matches | `<|assistant|>{{- '<think>' -}}` in the checkpoint's `chat_template.jinja` |
+| Role tokens | 4 `<|system|>`; `<|user|>` at 41,479 and 47,663; `<|assistant|>` at 44,021, 44,492, 44,622, 46,027, 47,171, 50,003 |
+| Between the last user turn and the request's own assistant turn | 2,341 tokens with no role token |
+| The preceding turn | index 47,171, 492 tokens, thinking closes at +207, visible answer already degraded |
+
+Three claims made while this incident was being chased do not survive that read. The request was never
+missing an assistant turn: the frame is what the checkpoint's own template writes. The last Korean
+instruction is not 50,000 tokens back — it is the user turn at 47,663, and the recall block after it
+is already tagged `trust="untrusted"` with a note that its contents are records and not instructions.
+And the third token of the thinking block is not a corruption onset: the arm drew ` 이` at p 0.108
+against top-1 ` I` at p 0.706, and its decoded text continues `Follow-up to 이타카` — the intended
+Korean continuation of that sentence.
+
+What this read does **not** establish is that the input was assembled the way the model's
+template prescribes. The frame's own pairing is regular — every assistant turn opens `<think>`, every
+`<tool_call>` is paired, and each of the six tool calls in the turns ends in
+`<|observation|><tool_response>…</tool_response>` — the seventh `<tool_call>` sits inside the system
+block's tool documentation (the vocabulary holds 12 of each argument tag; turns with no reasoning
+echoed back carry the template's empty `<think></think>`, as at 44,622) — but the message list this was
+rendered from is private, so a mis-assembly that still leaves balanced markers would not appear here. The corruption itself is not a rendering artifact: the
+selected IDs decode to the same text under the served tokenizer and the checkpoint's, and they are what
+Deneb displayed (the transcript hash above).
+
+What the read does change is where the failure starts. The visible answer of the **preceding** turn is
+already degraded inside this very prompt, so the recorded 907-token output is at least the second
+breakage: a prompt-borne copy of a broken answer can amplify a failure, but it cannot be the first
+cause. That earlier turn ran on the same unchanged boot `fd99f82e…` about two minutes before the
+request under audit, and no private record of its own prompt and engine state is retained. Reproducing
+that turn is the next anchor worth having, and the prefix it needs is inside this prompt (tokens
+`0..47171`) — though the per-turn recall block means that truncation is not a byte-exact prefix.
 
 ## Initial bounded live reproductions
 

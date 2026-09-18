@@ -42,6 +42,16 @@ margin alone misses this T=1 divergence. The other two first divergences also
 retain the same top-1 token. The measured distribution changes do not establish
 which remaining component causes the semantic corruption.
 
+Every divergence compared here sits inside the thinking block: the baseline arm closes thinking at
+index 27 of its 477 tokens, and the private prompt ends in `<|assistant|><think>` — the checkpoint's
+own generation prompt; that frame read is scoped to the frame, not a verification that the whole
+input was assembled as the model's template prescribes. The corruption onset is later than any position in the table, and the arms do
+not reach it cleanly: the recorded 907-token original ends `</arg_value></tool_call><|observation|>`
+and the baseline arm ends `<|user|>`, so both keep writing the conversation after answering. The
+preceding turn is already degraded inside this prompt — see
+[the prompt frame evidence](../st_telemachus_quality_20260917/prompt-structure-evidence.json) and the
+[incident ledger](../st_telemachus_quality_20260917/README.md).
+
 ## Private artifacts and reproduction
 
 On srv2, original capture files are under:

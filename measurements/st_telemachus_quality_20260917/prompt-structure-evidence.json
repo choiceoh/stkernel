@@ -1,0 +1,89 @@
+{
+  "prompt": {
+    "tokens": 50005,
+    "sha256": "e8aefde846b0c67641f9285d2646ca3977ab790534761306422ba81dcc4bb1dc",
+    "chars": 111463,
+    "record": "private; prompt IDs, full prompt and full output text stay out of git"
+  },
+  "tokenizer": {
+    "path": "/repo/st-glm53-meta/tokenizer.json",
+    "sha256": "0cfe2c099a7702a0921abc315ee039deb51e4a34b4818fc509bd27fa3dc4acc1",
+    "decoder": "ByteLevel"
+  },
+  "frame": {
+    "head": [
+      "[gMASK]",
+      "<sop>",
+      "<|system|>"
+    ],
+    "tail": [
+      "<|assistant|>",
+      "<think>"
+    ],
+    "last_assistant_index": 50003,
+    "thinking_open_index": 50004
+  },
+  "turn_layout": {
+    "system": 4,
+    "users": [
+      41479,
+      47663
+    ],
+    "assistants": [
+      44021,
+      44492,
+      44622,
+      46027,
+      47171,
+      50003
+    ],
+    "unmarked_tokens_after_last_user": 2341,
+    "note": "no role token is written between the last user turn and the assistant turn this request is served as"
+  },
+  "prior_turn": {
+    "assistant_index": 47171,
+    "tokens": 492,
+    "thinking_closes_at_index": 207,
+    "thinking": "a coherent English plan, as in the request under audit",
+    "visible_answer_degraded_fragments": [
+      "\uadf8\ub9ac\uc12c \uae30\uc900\uc73c\ub85c",
+      "\uace0\ub2f4 \uc2dc\uc801 \uc0c1\uc9d5",
+      "\ub300\uc0c1\ub3c4\ub07c\ubcf4\ub2e4",
+      "\uac78\uc0ac \uc7ac\ub2e8"
+    ],
+    "reading": "the turn before this request is already degraded inside this prompt; this request inherits it, so the first breakage is upstream of this request"
+  },
+  "outputs": {
+    "original": {
+      "tokens": 907,
+      "thinking_closes_at_index": 77,
+      "tail_tokens": [
+        "</arg_value>",
+        "</tool_call>",
+        "<|observation|>"
+      ]
+    },
+    "replay": {
+      "case": 0,
+      "mode": 20,
+      "tokens": 477,
+      "thinking_closes_at_index": 27,
+      "tail_tokens": [
+        "<|user|>"
+      ],
+      "text": "Follow-up to \uc774\ud0c0\uce74 \u2014 Telemachus, Odysseus's son. Stable knowledge, answer directly, concise.</think>**\ud154\ub808\ub9c8\ucf54\uc2a4(Telemachus)** "
+    }
+  },
+  "corrections": {
+    "assistant_turn_at_tail": "the prompt already ends in <|assistant|><think>; nothing is missing there",
+    "last_korean_instruction": "the last user turn is inside this prompt, not 50,000 tokens back",
+    "gen3_branch": "the thinking block's third token is a benign bilingual branch, not the corruption onset",
+    "isolation": "the recall block is already tagged untrusted and is not instructions; what it quotes is the assistant's own degraded prior answer"
+  },
+  "template": {
+    "path": "/repo/st-glm53-meta/chat_template.jinja",
+    "sha256": "34d5ee66b12fa6446cdae131c352b8f68cd85369e0e6fda115583805fada3891",
+    "generation_prompt": "<|assistant|>{{- '<think>' -}}",
+    "note": "the frame this request was served with ships with the checkpoint"
+  }
+}
