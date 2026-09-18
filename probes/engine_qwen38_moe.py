@@ -20,7 +20,8 @@ What the dispatcher does with this cell (engine/kernels/b12x/moe_dispatch.py, re
            expert, tile 32 below 48, 64 below 96, 128 above.
 
 Arms, each through a probe hook that keeps the selectors when None:
-  decode   N 2/4/6/8 (rows 1..4 x SPEC_K+1 tokens) x micro tile_m 32/64/128 (moe_dispatch._MICRO_TILE_M_OVERRIDE; M16 is
+  decode   N 2..32 (rows 1..8 x K+1 tokens at K=1 and K=3; micro to 8 tokens, the static kernel above -- checks only,
+           no arms) x micro tile_m 32/64/128 (moe_dispatch._MICRO_TILE_M_OVERRIDE; M16 is
            the GLM EP direct-scatter variant's) x MAC 16/24/32/48 (_MICRO_MAC_OVERRIDE, never above the SM count): each a
            captured graph of lanes.served()'s moe. The dispatcher's own arm is the one its selectors took.
   prefill  N 1024/4096/8192 x dynamic tile_m 16/32/64/128 (_DYNAMIC_TILE_M_OVERRIDE): the b12x call the eager lane makes
@@ -90,7 +91,8 @@ TEXT_CONFIG = {
     "num_experts_per_tok": 10, "hidden_act": "silu", "shared_expert_intermediate_size": 640,
 }
 RANK = 0                                   # rank 0 holds experts [0, 128)
-DECODE_ROWS = (1, 2, 3, 4)                 # a captured step's rows; each carries SPEC_K + 1 tokens
+DECODE_ROWS = (1, 2, 3, 4, 5, 6, 7, 8)     # the served row ladder (operator 2026-09-18: eight rows); a row is K + 1 tokens
+SPEC_KS = (1, 3)                            # the checkpoint's K=1 and the served chain K=3 (fleet --spec-k 3)
 PREFILL_CHECKS = (16, 64, 128, 1024, 4096)     # 16 and 64: the short prompts whose pairs the dynamic kernel now takes
 PREFILL_TIMINGS = (1024, 4096, 8192)
 MICRO_TILES = (32, 64, 128)
@@ -138,7 +140,17 @@ def cell_of(shape, rank: int = RANK) -> Cell:
 
 
 def decode_tokens(c: Cell) -> tuple:
-    return tuple(rows * (c.spec_k + 1) for rows in DECODE_ROWS)
+    """Every captured decode launch's tokens over the row ladder at K=1 and K=3: the micro shapes (<= 8) and the static
+    ones above the micro cap (10..32) that an eight-row boot captures -- 12 (three rows at K=3) killed the four-row K=3
+    boot on 2026-09-18 in its first launch."""
+    return tuple(sorted({rows * (k + 1) for rows in DECODE_ROWS for k in SPEC_KS}))
+
+
+def decode_order(tokens, cap: int) -> list:
+    """The checks' order: the micro shapes largest first, as a boot captures them, then the static shapes smallest
+    first -- the shape that killed the four-row boot is judged before the larger ones, and a dead CUDA context after it
+    still leaves its verdict."""
+    return sorted((m for m in tokens if m <= cap), reverse=True) + sorted(m for m in tokens if m > cap)
 
 
 # ---- routes ---------------------------------------------------------------------------------------------------------
@@ -556,9 +568,12 @@ class _Probe:
 
     # -- decode ---------------------------------------------------------------------------------------------------------
     def decode_check(self, m: int) -> dict:
-        """The dispatcher's own arm at m tokens: captured, and held to the oracle, zeros, replay and repeats."""
+        """The dispatcher's own arm at m tokens -- the micro kernel with the zero-weight skip up to the micro cap, the
+        static kernel above it (foreign routes at local expert 0, weight 0) -- captured, and held to the oracle, zeros,
+        replay and repeats."""
         from probes.engine_decode_fusions import _capture
         c, md, experts, gen = self.c, self.md, self.layers[0], self.generator
+        family = "micro" if m <= md._MICRO_MAX_TOKENS else "static"
         patterns = [pattern(m, c, gen, self.device, min_local=2)] + [pattern(m, c, gen, self.device)
                                                                 for _ in range(DECODE_PATTERNS - 1)]
         x0, ids0, w0 = patterns[0]
@@ -586,12 +601,15 @@ class _Probe:
         load(inputs, patterns[0])
         recip = oracle(x0, ids0, w0, experts, c, self.quant)
         division = reference_partial(x0, ids0, w0, experts, c, self.reference)
-        selector_tile = list(md._select_micro_mma_tiler_mn(
-            state_E=c.local, weight_E=c.local, m=m, k=c.hidden, n=c.inter, num_topk=c.topk,
-            skip_zero_weight_expert_id=sentinel, quant_mode="nvfp4", activation="silu", swiglu_alpha=1.0,
-            swiglu_beta=0.0, swiglu_limit=None, max_rows=launched.get("max_rows")))
-        selector_mac = md._select_micro_mac(m * c.topk, c.inter, self.base_mac, md._MICRO_MAC_LADDER)
-        row = dict(**route_stats(ids0, c), sentinel=sentinel,
+        if family == "micro":
+            selector_tile = list(md._select_micro_mma_tiler_mn(
+                state_E=c.local, weight_E=c.local, m=m, k=c.hidden, n=c.inter, num_topk=c.topk,
+                skip_zero_weight_expert_id=sentinel, quant_mode="nvfp4", activation="silu", swiglu_alpha=1.0,
+                swiglu_beta=0.0, swiglu_limit=None, max_rows=launched.get("max_rows")))
+            selector_mac = md._select_micro_mac(m * c.topk, c.inter, self.base_mac, md._MICRO_MAC_LADDER)
+        else:
+            selector_tile = selector_mac = None
+        row = dict(tokens=m, family=family, **route_stats(ids0, c), sentinel=sentinel,
                    pool_sentinel_fraction=round(statistics.mean(route_stats(p[1], c)["sentinel_fraction"]
                                                                 for p in patterns), 4),
                    launched=launched, selector_tile_m=selector_tile, selector_mac=selector_mac,
@@ -605,10 +623,16 @@ class _Probe:
                    new_inputs_replay_stable=stable(replay1, eager1),
                    zero_weights_nonzero=zero, all_foreign_nonzero=[foreign_eager, foreign_replay])
         failures = []
-        if sentinel != c.local:
-            failures.append(f"the zero-weight sentinel is {sentinel}, not {c.local}: the EP micro skip is not engaged")
-        if launched.get("kernel") != "micro" or launched.get("skip") != c.local:
-            failures.append("the captured launch did not take the micro kernel with the sentinel skip")
+        if family == "micro":
+            if sentinel != c.local:
+                failures.append(f"the zero-weight sentinel is {sentinel}, not {c.local}: the EP micro skip is not engaged")
+            if launched.get("kernel") != "micro" or launched.get("skip") != c.local:
+                failures.append("the captured launch did not take the micro kernel with the sentinel skip")
+        else:
+            if sentinel is not None:
+                failures.append(f"the zero-weight sentinel {sentinel} is engaged above the micro cap")
+            if launched.get("kernel") != "static":
+                failures.append(f"the captured launch took {launched.get('kernel')!r}, not the static kernel")
         if not row["finite"] or row["output_absmax"] == 0.0:
             failures.append("the output is not finite and nonzero")
         if row["oracle_relative"] > ORACLE_RELATIVE:
@@ -625,8 +649,9 @@ class _Probe:
         self.report("decode_check", **row, failures=failures)
         self.checks.append(("decode", m, row["oracle_relative"], row["reference_relative"]))
         self.fail("decode_check", row, failures)
-        return dict(tokens=m, patterns=patterns, foreign=foreign, inputs=inputs, oracle=recip, base=replay,
-                    default=(launched["tile"][0], launched["mac"]), graph=graph, out=out, launched=launched)
+        return dict(tokens=m, family=family, patterns=patterns, foreign=foreign, inputs=inputs, oracle=recip, base=replay,
+                    default=(launched.get("tile", [None])[0], launched.get("mac")), graph=graph, out=out,
+                    launched=launched)
 
     def decode_sweep(self, d: dict) -> dict:
         """Every micro tile x MAC arm at d's shape captured and judged exact, then the exact ones timed."""
@@ -859,7 +884,7 @@ def run(output=None):
                                             **{name: None for name in HOOKS}):
             probe.setup(shape)
             # correctness first -- every served default -- then the prefill tiles, then the micro variants
-            decode = [probe.decode_check(m) for m in sorted(decode_tokens(c), reverse=True)]   # largest first, as served
+            decode = [probe.decode_check(m) for m in decode_order(decode_tokens(c), md._MICRO_MAX_TOKENS)]
             for tokens in PREFILL_CHECKS:
                 probe.prefill_check(tokens)
             if os.environ.get("ST_PROBE_CHECKS_ONLY") == "1":
@@ -868,7 +893,8 @@ def run(output=None):
                        prefill=list(PREFILL_CHECKS), unstable=probe.unstable)
             else:
                 prefill = [probe.prefill_sweep(tokens) for tokens in PREFILL_TIMINGS]
-                decode_best = [probe.decode_sweep(d) for d in decode]
+                # the tile x MAC arms are the micro kernel's; a static shape has its one served kernel
+                decode_best = [probe.decode_sweep(d) for d in decode if d["family"] == "micro"]
                 probe.summary(decode_best, prefill)
     finally:
         torch.backends.cuda.matmul.allow_tf32 = tf32
