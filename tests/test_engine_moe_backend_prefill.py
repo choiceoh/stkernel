@@ -17,7 +17,8 @@ def select(**kw):
     return md.select_sm120_moe_backend(**args)
 
 
-@unittest.skipUnless(torch is not None, "requires torch")
+@unittest.skipUnless(torch is not None and importlib.util.find_spec("flashinfer") is not None,
+                     "requires torch and flashinfer (the dispatcher imports it)")
 class ExpertLocalPrefillBackendTests(unittest.TestCase):
     QWEN = dict(num_topk=1, num_experts=128, num_local_experts=128, hidden_size=2560, intermediate_size=640)
 
