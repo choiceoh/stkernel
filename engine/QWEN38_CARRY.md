@@ -82,12 +82,12 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 
 | ID | 내용 | GLM 출처 | 대상 | 종류 | 크기 | 판정 | 비용 | 상태 |
 |---|---|---|---|---|---|---|---|---|
-| H1 | down+inject GEMM 을 `leave_norm` 안으로 접기(디코드 ≤16 행) | MK_SEG_MHC | `kernels/gated_residual.py` | kernel | 사이트당 −1, −100 발사 | gpu | 일 | 열림 |
-| H2 | gates + up GEMM + `mix_mean` 한 발사 | MK_SEG_MHC | `gated_residual.py:mix` | kernel | 사이트당 −2, −200 발사 | gpu | 일 | 열림 |
+| H1 | down+inject GEMM 을 `leave_norm` 안으로 접기(디코드 ≤16 행) | MK_SEG_MHC | `kernels/gated_residual.py` | kernel | 사이트당 −1, −100 발사 | gpu | 일 | 기각 제안 — H2 와 같은 구조(down+inject GEMM 15.0 µs 도 대역폭 한계치, 접으면 Triton matvec 이 행마다 다시 읽음). H2 의 실측과 프로브 참조 |
+| H2 | gates + up GEMM + `mix_mean` 한 발사 | MK_SEG_MHC | `gated_residual.py:mix` | kernel | 사이트당 −2, −200 발사 | gpu | 일 | 기각 제안 — 짓기 전에 실측(`probes/engine_qwen38_hc_mix_fused.py`, RTX 5050·sm_120, CUDA 그래프 재생): 캡처 스텝의 행 수(2·4·6·8)에서 사이트 28 µs 중 두 cuBLAS GEMM 이 15.0 + 12.8 µs — 각자 가중치 6.5 MB 를 모든 행에 한 번 읽는 대역폭 한계치이고, H2 가 없애는 Triton 두 발사는 그래프 안에서 합쳐 1 µs 미만. 한 발사 프로토타입은 출력이 레인과 바이트 동일하지만 34 / 55 / 92 µs(2 / 4 / 8 행): Triton matvec 은 행마다 가중치를 다시 읽는다(1 행에서만 이김: 43 → 25 µs, cuBLAS 의 gemv 경로가 느려서). 사이트를 움직이는 것은 발사 수가 아니라 바이트 — H6. **GB10 미실측:** 단일 레인에서 이 프로브 한 번이면 닫힌다 |
 | H3 | hidden 폭 커널을 512 폭 5 타일로 재배치 | #634 | `gated_residual.py` | measure | 0 발사 | cpu·gpu | 시간 | 열림 |
 | H4 | `leave` 를 one-shot consumer 의 PDL 종속으로 | MK AR consumer, #689 | `gated_residual.py`, `lanes.py` | measure | 약 0.4 ms/스텝 추정 | gpu | 일 | 열림 |
 | H5 | `leave` 가 TP4 랭크 패킷을 직접 합산(생산자 TX 슬롯과 함께) | #812 #826 | `gated_residual.py`, `kernels/oneshot` | fold | 스텝당 약 1 MB | cpu | 일 | 열림 |
-| H6 | `--hc-fp8` 레인 실측(믹서 가중치 읽기가 스텝당 1.32 GB) | — | `net.py:_prepare_hc_fp8` | measure | 바이트 −40%, 발사 +300 | gpu | 시간 | 열림 |
+| H6 | `--hc-fp8` 레인 실측(믹서 가중치 읽기가 스텝당 1.32 GB) | — | `net.py:_prepare_hc_fp8` | measure | 바이트 −40%, 발사 +300 | gpu | 시간 | 열림 — H2 의 실측이 가리키는 레버: 디코드 사이트는 거의 전부 두 믹서 GEMM 의 바이트(사이트당 13 MB, 스텝 100 사이트에 1.32 GB → GB10 273 GB/s 로 나누면 약 4.8 ms, 산수이지 실측이 아님). FP8 은 그 절반 |
 | H7 | 작은 접기: 임베딩 `repeat`, PLE 층의 분리된 leave 와 out-of-place 덧셈 | — | `net.py` | fold | −3 발사 | cpu | 시간 | 기각: 임베딩 `repeat` 는 all-reduce 뒤라 접을 자리가 없고, PLE 층 둘은 게이트 잔차 커널에 변형을 하나 더 들여야 해서 스텝당 2 발사의 값이 없다 |
 
 ## 4. MTP 드래프터
