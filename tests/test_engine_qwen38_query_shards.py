@@ -41,8 +41,9 @@ def facts(ratio=4, budget=12):
 def row_local_select(calls, rank):
     """A selection lane whose answer for a row is that row's position's alone -- as the served lane's is, whatever
     rows share its launch -- recording the positions each call was handed."""
-    def select(iq, keys, table, rows_req, positions, lengths, budget, ratio):
+    def select(iq, keys, table, rows_req, positions, lengths, budget, ratio, group=None):
         calls.append((rank, positions.tolist()))
+        assert rank < 0 or group == 4                                      # a rank's call: one segment, runs of four (carry Q8)
         assert iq.shape[0] == rows_req.shape[0] == positions.shape[0]
         width = budget // ratio
         seen = ((positions + 1) // ratio).to(torch.int64)
@@ -63,7 +64,9 @@ def prefill(rows, ctx):
 
 def net(F, comm, select, *, declared=True, alike=lambda *a: True):
     lanes = SimpleNamespace(qsa_select=select, qsa_select_alike=alike)
-    return SimpleNamespace(F=F, lanes=lanes, comm=comm, rank=comm.rank, query_shards=declared)
+    from engine.profiles.qwen38.net import Qwen38Net
+    return SimpleNamespace(F=F, lanes=lanes, comm=comm, rank=comm.rank, query_shards=declared,
+                           _score_runs=Qwen38Net._score_runs)
 
 
 def sharded(stand_in, iq, step, meta, keys):
@@ -147,7 +150,7 @@ class DecisionTests(unittest.TestCase):
     def test_the_lane_says_its_calls_select_alike(self):
         asked = []
         self.unsplit(alike=lambda *a: asked.append(a) or False)
-        self.assertEqual(asked, [(40, [0, 5, 10, 10], 8 * 4, 3)])          # rows, each rank's scored rows, columns, top-k
+        self.assertEqual(asked, [(40, [0, 5, 10, 10], 8 * 4, 3, 4)])       # rows, each rank's scored rows, columns, top-k, runs
         self.unsplit(alike=None)                                           # a lane table that does not say
 
     def test_a_captured_step_several_segments_and_fewer_rows_than_ranks_are_whole(self):
@@ -233,14 +236,16 @@ class GatherTests(unittest.TestCase):
 class ServedSelectionTests(unittest.TestCase):
     def test_the_split_selection_is_the_whole_ones_bytes(self):
         """One prefill segment that starts inside the budget's reach and ends well past it, on the served kernels:
-        each rank's gathered ids against one `qsa_select_paged_blocks` call over every row. A covered row's scored
-        selection is its ids in the selector's order, so both sides are read in the attention's (ascending, carry Q6).
+        each rank's gathered ids against one `qsa_select_paged_blocks` call over every row, both read in the
+        attention's order (ascending, carry Q6): a covered row's scored selection is its ids in the selector's order,
+        and the radix select's order within a row is its launch's, not the row's.
         Where the radix select builds -- a CUDA toolkit and the GB10 it is compiled for -- the step is wide enough to
         take it on both sides and the lane's own rule decides. Anywhere else (the interpreter, whose three-block budget
         never takes it; another GPU) the step stays under 64 rows and the rule is answered for it: torch.topk orders
         a row of this width by that row alone."""
         from engine.base.comm import LocalTP
         from engine.kernels import qsa
+        from engine.profiles.qwen38.net import Qwen38Net
         F = facts(ratio=W.ratio, budget=W.budget)
         edge = (F.index_blocks + 1) * F.idx_ratio - 1
         small = INTERPRET or not radix_builds()
@@ -255,9 +260,10 @@ class ServedSelectionTests(unittest.TestCase):
         alike = (lambda *a: True) if small else qsa.shards_select_alike
 
         def rank(comm):
-            lanes = SimpleNamespace(qsa_select=lambda *a: tp.on_main(qsa.qsa_select_paged_blocks, *a),
+            lanes = SimpleNamespace(qsa_select=lambda *a, **k: tp.on_main(qsa.qsa_select_paged_blocks, *a, **k),
                                     qsa_select_alike=alike)
-            stand_in = SimpleNamespace(F=F, lanes=lanes, comm=comm, rank=comm.rank, query_shards=True)
+            stand_in = SimpleNamespace(F=F, lanes=lanes, comm=comm, rank=comm.rank, query_shards=True,
+                                       _score_runs=Qwen38Net._score_runs)
             own = SimpleNamespace(positions32=meta.positions32, lengths=meta.lengths, rows_req=meta.rows_req,
                                   page_table=meta.page_table, groups_seen=None)
             return sharded(stand_in, f.queries, step, own, f.key_cache)
@@ -270,8 +276,12 @@ class ServedSelectionTests(unittest.TestCase):
         for got in results:
             self.assertIsNotNone(got)                                      # the step was split
             self.assertTrue(torch.equal(ascending(got), ascending(whole)))
-            scored = slice(5 if small else 11, rows)                       # past the covered rows: the selector's own order
-            self.assertTrue(torch.equal(got[scored], whole[scored]))
+            if small:
+                # torch.topk orders a row by that row alone, so past the covered rows even the order is the whole's.
+                # The radix select's is not: its winners land as its bins fill, and the first GB10 run (2026-09-18,
+                # measurements/qwen38_qsa_folds_20260918) found a row's ids in another order in a rank's 100-row launch
+                # than in the step's 400 -- the same set, which is all the attention reads (it sorts them, carry Q6)
+                self.assertTrue(torch.equal(got[5:], whole[5:]))
 
 
 def radix_builds() -> bool:

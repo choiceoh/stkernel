@@ -55,8 +55,9 @@ class Lanes:
     norm_rope: object       # (x [N, h, D], w [D], eps, positions [N] i64, theta, rotary_dim) -> [N, h, D]
     qsa_store: object       # (cache [pages, page, 1, D], flat slots [N] (-1 skipped), rows [N, D]) -> None
     qsa_compress: object    # qsa_compress_groups_with_ratio(...) -> (pooled [N, 1, D], first positions [N, 3] i64)
-    qsa_select: object      # qsa_select_paged_blocks(iq, key cache, page table, token_to_req, positions, lengths, topk, ratio)
-                            #  -> the chosen blocks int32 [N, topk / ratio]
+    qsa_select: object      # qsa_select_paged_blocks(iq, key cache, page table, token_to_req, positions, lengths, topk, ratio,
+                            #  *, group) -> the chosen blocks int32 [N, topk / ratio]; `group`: the rows come in runs
+                            #  of that many of one request, scored from one read of each key tile (carry Q8)
     qsa_attend: object      # qsa_sparse_paged_attention_blocks(q [N, Hq, D], k, v caches [pages, page, Hkv, D], blocks,
                             #  positions, lengths, ratio, topk, table, token_to_req, *, gate): the blocks expanded inside
                             #  its tiles, the output gate applied in its final store
@@ -82,7 +83,7 @@ class Lanes:
     qsa_inputs: object = None       # qsa.qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta,
                                     #  rotary_dim, K, V, kv_slots, ring, ring_slots) -> (q, iq): the layer's norms and
                                     #  rotations with the K/V and ring stores, in one launch
-    qsa_select_alike: object = None  # qsa.shards_select_alike(rows, shards, columns, topk / ratio) -> bool: whether
+    qsa_select_alike: object = None  # qsa.shards_select_alike(rows, shards, columns, topk / ratio, group) -> bool: whether
                                     #  qsa_select over disjoint row ranges of a step (their row counts) chooses row for
                                     #  row what one call does. The selection lane's own statement -- it picks its
                                     #  selector by the rows it is handed; None: no lane has said, and no net splits

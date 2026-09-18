@@ -524,6 +524,17 @@ class Qwen38Net:
             meta.covered_blocks = covered_pool_ids((meta.positions32 + 1) // F.idx_ratio, F.index_blocks)
         return meta.covered_blocks
 
+    @staticmethod
+    def _score_runs(step) -> int:
+        """The rows of one request the index scoring may take a program (carry Q8; engine/kernels/qsa
+        `_qsa_mqa_paged_group_kernel`, 1..4): a run reads each key tile once for all its rows, and the logits are the
+        row launch's bytes. A captured step lays `tokens` rows a sequence back to back, so a run is the largest divisor
+        of that within four -- a K=1 verify step's two rows, K=3's four; a host step of one segment is one request
+        throughout; several segments are rows of several requests, and a run may not straddle two."""
+        if getattr(step, "captured", False):
+            return max(g for g in (1, 2, 3, 4) if step.tokens % g == 0)
+        return 4 if len(step.segments) == 1 else 1
+
     def _sharded_blocks(self, iq: torch.Tensor, step, meta: StepMeta, keys: torch.Tensor):
         """A prefill step's chosen blocks with each rank scoring its quarter of the rows (carry Q11, the rank half;
         GLM's #881, engine/modules/prefill_indexer.QueryShard): the index queries and the index keys are replicated,
@@ -544,7 +555,9 @@ class Qwen38Net:
         from engine.modules.prefill_indexer import QueryShard
         ctx = int(step.segments[0].ctx)
         shards = [QueryShard(N, ctx, rank, TP, F.index_blocks, F.idx_ratio) for rank in range(TP)]
-        if not alike(N, [shard.score_rows for shard in shards], meta.page_table.shape[1] * keys.shape[1], F.index_blocks):
+        runs = self._score_runs(step)
+        if not alike(N, [shard.score_rows for shard in shards], meta.page_table.shape[1] * keys.shape[1],
+                     F.index_blocks, runs):
             return None
         if meta.groups_seen is None:
             meta.groups_seen = (meta.positions32 + 1) // F.idx_ratio
@@ -553,7 +566,7 @@ class Qwen38Net:
         if mine.score_rows:
             rows = slice(mine.score_begin, mine.end)
             scored = lanes.qsa_select(iq[rows], keys, meta.page_table, meta.rows_req[rows], meta.positions32[rows],
-                                      meta.lengths, F.idx_budget, F.idx_ratio)
+                                      meta.lengths, F.idx_budget, F.idx_ratio, group=runs)
         return mine.collect(scored, meta.groups_seen, self.comm)
 
     def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None):
@@ -592,7 +605,8 @@ class Qwen38Net:
             blocks = self._sharded_blocks(iq, step, meta, caches.index_keys(cache_layer))
         if blocks is None:
             blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
-                                      meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
+                                      meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio,
+                                      group=self._score_runs(step))
         # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
         attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
                                     F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
