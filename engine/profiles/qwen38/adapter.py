@@ -118,17 +118,27 @@ class ServedComposition:
             self.graphs.close()
             self.graphs = None
 
-    def served_step(self, step, store) -> Step:
-        return Step(step.ids, tuple(Segment(s.seq, store.slot_of[s.seq], s.ctx, s.start, s.length) for s in step.segments))
+    def takes_mark(self, start: int, position: int) -> bool:
+        """base/composed.ComposedModel.prefill asks before it cuts a step at a prefix boundary: the net takes a
+        boundary on its kernels' grid out of the one uncut forward (net.Step.marks -> caches.mark_gdn, mark_ple), so a
+        chunk of whole blocks is one forward and one MTP observation, not one a block."""
+        return self.net.takes_mark(position - start)
 
-    def forward(self, step, store, *, logits: str = "last", hidden: bool = False, given=None):
+    def served_step(self, step, store, marks=()) -> Step:
+        """`marks`: ((absolute position, snapshot) ...) inside the step's one prefill segment, as net.Step counts them
+        -- from the segment's start."""
+        ctx = step.segments[0].ctx
+        return Step(step.ids, tuple(Segment(s.seq, store.slot_of[s.seq], s.ctx, s.start, s.length) for s in step.segments),
+                    tuple((int(p) - ctx, int(snap)) for p, snap in marks))
+
+    def forward(self, step, store, *, logits: str = "last", hidden: bool = False, given=None, marks=()):
         if given is not None:
             raise ValueError("the target composition opens from its embeddings")
         if logits not in ("last", "all"):
             raise ValueError("logits are 'last' or 'all'")
         store.check(step)
-        served = self.served_step(step, store)
-        if self.graphs is not None and self.graphs.admits(served, self.caches.pool):
+        served = self.served_step(step, store, marks)
+        if not served.marks and self.graphs is not None and self.graphs.admits(served, self.caches.pool):
             # rows: the graph's output row of each of the step's tokens (None: the same rows, nothing was padded)
             scores, streams, rows = self.graphs.run(served)
             t, device = self.graphs.tokens, scores.device

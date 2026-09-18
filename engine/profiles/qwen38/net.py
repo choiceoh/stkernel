@@ -366,6 +366,13 @@ class Qwen38Net:
                         kv_slots, key_slots, ring_slots)
 
     # -- the forward ---------------------------------------------------------------------------------------------------
+    def takes_mark(self, offset: int) -> bool:
+        """Whether `forward` snapshots a prefix boundary `offset` tokens into a prefill segment on its way
+        (Step.marks): `_gdn` is handed the state at the chunk kernel's own 64-token chunks, counted from the segment's
+        start, and `_ple_inject` reads the conv's taps before the boundary out of the segment."""
+        span = (self.F.ple_conv - 1) * self.F.ngram_size if any(L in self.F.ple_layers for L in self.layers) else 0
+        return offset > 0 and offset % 64 == 0 and offset >= span
+
     def forward(self, step: Step, caches, *, last_hidden_only: bool = False, streams: bool = False):
         """One step -> the closing mixer's hidden [N, H] (or the segments' last rows with `last_hidden_only`), and with
         `streams` also the residual streams before the close for every row (what the MTP head fuses)."""

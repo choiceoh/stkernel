@@ -43,7 +43,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 |---|---|---|---|---|---|---|
 | P1 | C=1 캡처 스텝의 `rows_req` 가 stride-0 뷰라 QSA 커널이 저장소 너머를 읽고 어텐션이 스텝을 거부 | `profiles/qwen38/net.py:step_meta`, `kernels/qsa.py` | fix | cpu | 시간 | 머지 #1084 |
 | P2 | Qwen3.8 서빙 커널의 CPU 인터프리터 하네스. QSA ops·게이트 잔차·GDN·캡처 `step_meta` 를 `engine/modules` 오라클에 대조. 지금은 테스트가 0 건이라 `cpu` 판정의 전제 | `tests/` | fix | cpu | 일 | 머지 #1099 |
-| P3 | 서빙 프리필이 768 토큰 블록마다 타깃 forward 를 따로 돈다. `served_step` 이 `marks` 를 버려서 청크당 최대 42 forward | `profiles/qwen38/adapter.py`, `base/composed.py` | fix | gpu | 일 | 열림 |
+| P3 | 서빙 프리필이 768 토큰 블록마다 타깃 forward 를 따로 돈다. `served_step` 이 `marks` 를 버려서 청크당 최대 42 forward | `profiles/qwen38/adapter.py`, `base/composed.py` | fix | gpu | 일 | 이 PR: 컴포지션이 `takes_mark` 로 통과 중에 떠낼 경계를 밝히고(`net.Step.marks` → `caches.mark_gdn`·`mark_ple`), `ComposedModel.prefill` 은 거절된 경계에서만 자른다. 32,256 토큰 청크가 타깃 1 forward + MTP 관측 1 회(전에는 각 42). 블록 격자 밖에서 시작한 스텝은 첫 경계에서 한 번만 자르고 나머지 경계를 다 챙긴다. CPU: 배관과 reference 레인의 GDN 상태·탭 대조(`tests/test_engine_qwen38_prefill_marks.py`). **GPU 미판정**: `chunk_kda_with_decay(states_at=)` 의 Qwen3.8 셀(4/12×128×128), uncut 청크의 액티베이션 피크가 `WORKSPACE_GIB` 12(GLM 값) 안인지 |
 | P4 | 부팅이 `prepare_dense` 에 `consume_weights` 를 주지 않아 BF16 원본이 랭크당 약 1.9 GB 상주. 프리샤드가 패딩 크기를 예약해야 함 | `profiles/qwen38/fleet.py`, `preshard.py` | fix | cpu | 일 | 머지 #1109(sh_down 원본 랭크당 약 40 MB 는 프리샤드 예약 전까지 남김) |
 
 ## 1. 셀 판정 — 단일 GPU 레인 기록으로 `cells.py` 에 `admitted`
@@ -97,7 +97,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | D1 | MTP 체인 K>1 을 드래프트 재생 안에서(SPEC_K 2–4 스윕). 지금 K=1 은 스텝당 최대 2 토큰이고, CPU 참조 레인 K=3 은 라운드당 3.67 토큰. k≠1 가드만 풀면 `streams=None` 에서 죽는다 | #869 #627 | `decode_graphs.py:DraftGraphs`, `adapter.py:ServedMTP`, `facts.py` | native | 스텝당 토큰 | gpu | 일 | 열림 |
 | D2 | 검증 pick 을 전 vocab gather 없이: argmax 키 + max all-reduce, 캡처 샘플링 | #563 #929 | `decode_graphs.py:TargetGraphs`, `adapter.py` | fold | −1 all_gather(993 KB), −1 H2D | gpu | 일 | 열림 |
 | D3 | 드래프트를 GPU 에 남김: 스텝당 host sync 제거, streams 인계를 복사 한 번으로 | #605 #627 | `adapter.py`, `decode_graphs.py` | fold | −1 sync, −2 복사 | gpu | 일 | 열림 |
-| D4 | MTP 프롬프트 관측을 한 forward 로 묶기(P3 이 먼저 닫히면 불필요) | #627 #722 | `adapter.py:ServedMTP.observe` | fold | 청크당 최대 −41 헤드 forward | gpu | 일 | 열림 |
+| D4 | MTP 프롬프트 관측을 한 forward 로 묶기(P3 이 먼저 닫히면 불필요) | #627 #722 | `adapter.py:ServedMTP.observe` | fold | 청크당 최대 −41 헤드 forward | gpu | 일 | P3 의 PR 로 닫힘: 청크가 한 조각이라 `ServedMTP.observe` 도 청크당 한 번이다 |
 | D5 | argmax partials/finish 를 한 warp 로 | #1004 | `kernels/common/vocab_candidates.py` | measure | 0 발사 | cpu·glm | 시간 | 열림 |
 | D6 | MTP dense 투영을 FP8 로 디코드하는 수용률 팔 | #862 #863 #871 | `net.py:prepare_dense` | measure | 수용률 | gpu | 시간 | 열림 |
 
