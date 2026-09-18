@@ -127,12 +127,9 @@ class DispatcherReadingTests(unittest.TestCase):
         for m in p.decode_tokens(c):
             with self.subTest(tokens=m):
                 if m > md._MICRO_MAX_TOKENS:
-                    # above the micro cap the selector names the static kernel and no sentinel is engaged
+                    # above the micro cap no sentinel is engaged: the launch is the static kernel's
+                    # (tests/test_engine_moe_backend_prefill.py holds the selector to it)
                     self.assertIsNone(sentinel(md, m, c))
-                    self.assertEqual(md.select_sm120_moe_backend(
-                        num_tokens=m, num_topk=c.topk, activation_precision="fp4", quant_mode="nvfp4",
-                        num_experts=c.local, num_local_experts=c.local, hidden_size=c.hidden,
-                        intermediate_size=c.inter, activation="silu", swiglu_limit=None), "static")
                     continue
                 self.assertEqual(sentinel(md, m, c), c.local)
                 self.assertEqual(micro_tile(md, m, c), (64, 128))
