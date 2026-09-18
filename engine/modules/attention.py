@@ -139,21 +139,47 @@ class QSA:
                           key="qsa_raw_keys", dtype=feature.dtype, shape=(self.index_head_dim,))]
 
     def allowed(self, at: Query):
-        from engine.modules.sparse_indexer import qsa_select
         if at.tables is None:
             raise ValueError("QSA rotates its index queries and keys: the attention needs a rotary_dim")
         cos_all, sin_all = at.tables
-        t, eps = at.t, at.feature.eps
+        t, D, ratio, eps = at.t, self.index_head_dim, self.ratio, at.feature.eps
         iq, ik = torch.split(torch.nn.functional.linear(at.xs, at.w("index_qk")),
-                             [self.index_heads * self.index_head_dim, self.index_head_dim], dim=-1)
-        iq = apply_rope(rmsnorm_unit_offset(iq.reshape(t, self.index_heads, self.index_head_dim), at.w("index_q_norm"), eps),
+                             [self.index_heads * D, D], dim=-1)
+        iq = apply_rope(rmsnorm_unit_offset(iq.reshape(t, self.index_heads, D), at.w("index_q_norm"), eps),
                         cos_all[at.ctx:], sin_all[at.ctx:])
         at.state.put_rows(at.layer, "qsa_raw_keys", at.seq, ik)
         raw_keys = at.state.rows(at.layer, "qsa_raw_keys", at.seq, at.total)
-        allowed = torch.zeros(t, at.total, dtype=torch.bool, device=at.xs.device)
-        for j in range(t):
-            allowed[j, qsa_select(iq[j], raw_keys, at.ctx + j, self.ratio, self.budget // self.ratio, cos_all, sin_all,
-                                  at.w("index_k_norm"), eps)] = True
+        dev = at.xs.device
+        # the incomplete block's positions are always attended: that mask IS the tensor the blocks are added to,
+        # so the zeros and the or-in the two passes would cost are not spent
+        cols, pos = torch.arange(at.total, device=dev), at.positions()
+        allowed = (cols[None, :] >= ((pos + 1) // ratio * ratio)[:, None]) & (cols[None, :] <= pos[:, None])
+        # A block's key is the raw keys of its `ratio` positions and nothing else: the query enters only through how
+        # many blocks it sees, a prefix. So the pool, the norm, the rotation and the scoring are the step's, done
+        # once over every block this step can reach -- modules/sparse_indexer.qsa_select is the same arithmetic for
+        # one query, and stays as the per-query reference the oracle is held to.
+        blocks = at.total // ratio
+        # how many complete blocks each query sees is the step's arithmetic, not a tensor's: reading it back per
+        # query would put a device sync in the loop
+        seen = [(at.ctx + j + 1) // ratio for j in range(t)]
+        if blocks:
+            offs = torch.arange(ratio, device=dev)
+            # reshape, not view: a store is free to hand back strided rows (the step's own are a split of the
+            # index projection), and the copy that costs is paid once here instead of once per query
+            pooled = raw_keys[:blocks * ratio].reshape(blocks, ratio, D).float().mean(dim=1).to(raw_keys.dtype)
+            starts = torch.arange(blocks, device=dev) * ratio
+            keys = apply_rope(rmsnorm_unit_offset(pooled, at.w("index_k_norm"), eps),
+                              cos_all.index_select(0, starts), sin_all.index_select(0, starts))
+            # heads outermost (MSA scores the same way): the head sum is then a reduction over whole [t, blocks]
+            # planes, not over the middle axis of [t, heads, blocks]
+            scores = torch.matmul(iq.float().transpose(0, 1), keys.float().T)                   # [heads, t, blocks]
+            scores = scores.relu_().sum(dim=0) / math.sqrt(D)                                   # [t, blocks]
+            # the top-k is over the query's own prefix, the vector qsa_select would have scored: masking a common
+            # width instead would hand torch.topk a different candidate count, and relu leaves many scores equal
+            for j, b in enumerate(seen):
+                if b:
+                    chosen = scores[j, :b].topk(min(self.budget // ratio, b)).indices
+                    allowed[j, (chosen[:, None] * ratio + offs).flatten()] = True
         return allowed
 
 
