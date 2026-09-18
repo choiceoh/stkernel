@@ -15,8 +15,10 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
                               columns; a prefill chunk's gates are one launch before its chunk kernel), the output norm
                               in one launch, out_proj
     attention                 one GEMM for query+gate|k|v|index (merged at preshard), one norm+partial-rope launch for
-                              the query heads, one for the key head, one for the index queries; the QSA ops
-    MoE                       the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
+                              the query heads, one for the key head, one for the index queries; the QSA ops (a host
+                              step the budget covers attends every group it sees: no scores, no top-k, the ids built
+                              once a step -- `_covered_blocks`)
+    MoE                      the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
                               in one dispatcher launch (another rank's routes skip in the micro kernel on a captured
                               step), the shared expert's two GEMMs and activation, ONE all-reduce for routed and shared
 
@@ -157,6 +159,8 @@ class StepMeta:
     kv_slots: torch.Tensor      # [N] int32: page * block + pos % block
     key_slots: torch.Tensor     # [N] int32: page * (block/4) + (pos/4) % (block/4) where pos closes a group, else -1
     ring_slots: torch.Tensor    # [N] int32: slot * ring + pos % ring
+    covered_blocks: "torch.Tensor | None" = None   # [N, index_blocks] int32, set by the step's first QSA layer when no
+                                                   # row sees more groups than the budget holds (Qwen38Net._covered_blocks)
 
 
 class Qwen38Net:
@@ -486,6 +490,25 @@ class Qwen38Net:
                 v.reshape(1, t, F.v_heads_local, F.v_dim))
 
     # -- gated GQA with QSA selection ----------------------------------------------------------------------------------
+    def _covered_blocks(self, step, meta: StepMeta):
+        """Every row's chosen blocks when no score can decide them (carry Q11, the covered half; GLM's covered queries,
+        engine/modules/prefill_indexer): a row that sees no more complete groups than the budget holds attends all of
+        them, whatever they score, so a host step whose longest segment ends inside the budget's reach -- 2,051
+        positions at the model's widths -- needs neither the scores nor the top-k of any QSA layer. The ids are the
+        positions' alone: built by the step's first QSA layer, read by the rest and by the MTP head's. They come
+        ascending with -1 after, the order the block attention sorts any selection into before it reads it (carry Q6),
+        so its bytes are the scored selection's. None where a score decides something, and for a captured step, whose
+        contexts are the device's and whose launches are one sequence for every context."""
+        if getattr(step, "captured", False):
+            return None
+        F = self.F
+        if max(s.ctx + s.length for s in step.segments) // F.idx_ratio > F.index_blocks:
+            return None
+        if meta.covered_blocks is None:
+            from engine.modules.prefill_indexer import covered_pool_ids
+            meta.covered_blocks = covered_pool_ids((meta.positions32 + 1) // F.idx_ratio, F.index_blocks)
+        return meta.covered_blocks
+
     def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None):
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix or f"L{L}.attn."
@@ -515,9 +538,12 @@ class Qwen38Net:
                                  idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, meta.positions, p[n + "q_norm"],
                                  p[n + "k_norm"], p[n + "idx_q_norm"], F.rms_eps, F.rope_theta, F.rotary_dim, K, V,
                                  meta.kv_slots, ring, meta.ring_slots)
-        # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer)
-        blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
-                                  meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
+        # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a step the
+        # budget covers has them already, unscored
+        blocks = self._covered_blocks(step, meta)
+        if blocks is None:
+            blocks = lanes.qsa_select(iq, caches.index_keys(cache_layer), meta.page_table, meta.rows_req,
+                                      meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio)
         # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
         attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
                                     F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
