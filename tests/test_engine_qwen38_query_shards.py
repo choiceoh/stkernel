@@ -236,8 +236,9 @@ class GatherTests(unittest.TestCase):
 class ServedSelectionTests(unittest.TestCase):
     def test_the_split_selection_is_the_whole_ones_bytes(self):
         """One prefill segment that starts inside the budget's reach and ends well past it, on the served kernels:
-        each rank's gathered ids against one `qsa_select_paged_blocks` call over every row. A covered row's scored
-        selection is its ids in the selector's order, so both sides are read in the attention's (ascending, carry Q6).
+        each rank's gathered ids against one `qsa_select_paged_blocks` call over every row, both read in the
+        attention's order (ascending, carry Q6): a covered row's scored selection is its ids in the selector's order,
+        and the radix select's order within a row is its launch's, not the row's.
         Where the radix select builds -- a CUDA toolkit and the GB10 it is compiled for -- the step is wide enough to
         take it on both sides and the lane's own rule decides. Anywhere else (the interpreter, whose three-block budget
         never takes it; another GPU) the step stays under 64 rows and the rule is answered for it: torch.topk orders
@@ -275,8 +276,12 @@ class ServedSelectionTests(unittest.TestCase):
         for got in results:
             self.assertIsNotNone(got)                                      # the step was split
             self.assertTrue(torch.equal(ascending(got), ascending(whole)))
-            scored = slice(5 if small else 11, rows)                       # past the covered rows: the selector's own order
-            self.assertTrue(torch.equal(got[scored], whole[scored]))
+            if small:
+                # torch.topk orders a row by that row alone, so past the covered rows even the order is the whole's.
+                # The radix select's is not: its winners land as its bins fill, and the first GB10 run (2026-09-18,
+                # measurements/qwen38_qsa_folds_20260918) found a row's ids in another order in a rank's 100-row launch
+                # than in the step's 400 -- the same set, which is all the attention reads (it sorts them, carry Q6)
+                self.assertTrue(torch.equal(got[5:], whole[5:]))
 
 
 def radix_builds() -> bool:
