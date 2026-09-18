@@ -106,7 +106,7 @@ class ProbeModuleTests(unittest.TestCase):
         p = probe()
         c = p.cell_of(p.kernel_shape())
         self.assertEqual(p.decode_tokens(c), (2, 4, 6, 8))        # 1..4 captured rows of SPEC_K + 1 tokens
-        self.assertEqual((p.PREFILL_CHECKS, p.PREFILL_TIMINGS), ((128, 1024, 4096), (1024, 4096, 8192)))
+        self.assertEqual((p.PREFILL_CHECKS, p.PREFILL_TIMINGS), ((16, 64, 128, 1024, 4096), (1024, 4096, 8192)))
         self.assertEqual(p.DYNAMIC_TILES, (16, 32, 64, 128))
         self.assertTrue(set(p.MICRO_TILES) <= {32, 64, 128} and 64 in p.MICRO_TILES)
         sms = MEASURED.device.sms

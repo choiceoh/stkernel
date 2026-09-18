@@ -4096,6 +4096,14 @@ def select_sm120_moe_backend(
             and mode == "nvfp4" and activation == "swigluoai_uninterleave"
             and swiglu_limit == 10.):
         return "static"
+    # An expert-local eager prefill -- one route a row over this rank's whole experts (num_topk 1, every expert
+    # local) with more rows than a decode step -- runs the dynamic prefill kernel, whose artifact is free of the row
+    # count. Below the cutover the static kernel is keyed by rows, capacity and MAC rung: Qwen3.8's first fleet boot
+    # (2026-09-18) compiled 75 of them on one rank for a 67-token prompt and served no token. Decode-sized launches
+    # (<= _MICRO_MAX_TOKENS rows) keep the static/micro path, whose artifacts are bounded.
+    if (num_topk == 1 and num_experts is not None and num_local_experts is not None
+            and num_experts == num_local_experts > 1 and num_tokens > _MICRO_MAX_TOKENS):
+        return "dynamic"
     routed_rows = num_tokens * num_topk
     cutover = _get_static_compact_cutover_pairs("fp4")
     if _GLM53_B12X_STATIC_CUTOVER_PAIRS is not None:
