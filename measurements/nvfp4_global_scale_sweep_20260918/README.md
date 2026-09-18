@@ -52,3 +52,22 @@ docker run --rm -v <worktree>:/src -v ~/models/st-glm53-9391-up-gate-full:/ranks
   /src/probes/nvfp4_global_scale_probe.py --ranks /ranks/rank0of4.safetensors \
   --samples 32 --output /out/gs-sweep.json
 ```
+
+## 최종 판정 (2026-09-18 추가) — 플릿에서 실행 불가, vendor 권고로 기록
+
+재팩 도구(`tools/nvfp4_reanchor_ranks.py`)를 만들어 레이어 3 전체(288 전문가 × 2 텐서) 쓰기를
+끝까지 검증했고, 그 과정에서 **이 leaver는 플릿에서 회수 불가**임이 증명됐다:
+
+1. **이중 양자화 공집합.** factor-1 재양자화의 SSE는 정확히 0이다 — dequant 가중치는 이미 FP4 격자 위에
+   있어 같은 앵커로는 비트 완벽 재현된다. 재앵커링(L3 쓰기에서 new_sse 139.3)은 서빙 가중치에 대한
+   fidelity를 오히려 낮춘다. 82%는 "vendor 패커가 bf16에서 팩할 때"의 이론 headroom이지 기존 FP4 비트에서
+   회수되는 것이 아니다.
+2. **bf16 타겟 원본이 플릿에 없다.** srv1(sources 디렉터 빈 폴더)/srv2/srv4 전수 검색: Glm5Next 타겟의
+   bf16은 부재하고, 있는 것은 ModelOpt NVFP4 33샤드(srv4, expert도 FP4, KV FP8)뿐. srv3은 접속 불가.
+3. **가족 전환은 이미 측정돼 기각됐다.** ModelOpt 전문가(전문가 출력오차 21.9%→14.6%로 더 좋음)로의
+   전환은 +0.034 nats로 이미 재었던 #911 시절 판정이 있다.
+
+**회수 경로는 하나 남는다: bf16 원본(Glm5NextForConditionalGeneration, 45층·288 전문가)을 확보해
+1.68 클리핑 앵커로 재팩하는 것.** 도구의 인코더·검증기·무결성 파이프라인은 그때 그대로 쓰인다
+(bf16 소스 모드만 추가). 그 전까지 이 레버는 vendor(Red Hat 패커)에 전달할 개선 권고로 남는다:
+"블록 스케일을 amax 앵커 대신 ~1.68× 클리핑 앵커로 잡으면 전문가 양자화 SSE가 ~5.8× 줄어든다."
