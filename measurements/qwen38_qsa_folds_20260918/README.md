@@ -9,8 +9,9 @@
 | 티켓 | 트리 | 프로브 | 결과 | 로그 |
 |---|---|---|---|---|
 | `qwen38-qsa-folds2-0918` | `af6032de`(PR #1196 의 머리, #1193 위) + 큐 수정 #1198 체리픽 = `660abb4a` | `engine_kernel_check.py --lanes qwen38_cells` | qualify 통과, GPU 케이스 **51 건 중 50 통과, 1 실패**(테스트의 단언이 설계보다 셌다 — 아래 2) | [cells-660abb4a.log](cells-660abb4a.log) |
+| `qwen38-qsa-folds3-0918` | `adb2a624`(그 단언을 좁힌 `fa725053` 포함) + #1198 체리픽 = `9d784bc7` | 같은 프로브 | qualify 통과, GPU 케이스 **51 건 전부 통과**, skip 0 | [cells-9d784bc7.log](cells-9d784bc7.log) |
 
-장치: NVIDIA GB10(sm_121a), 이미지 `st-engine:glm53`, 프로덕션 `st-glm53` 옆(예산 8 GiB, 플릿 임대 없음). 테스트 410 s.
+장치: NVIDIA GB10(sm_121a), 이미지 `st-engine:glm53`, 프로덕션 `st-glm53` 옆(예산 8 GiB, 플릿 임대 없음). 테스트 410 s(첫 실행, 커널 컴파일 포함) / 45 s(재실행, 캐시).
 
 ## 1. 통과한 것 — 새 발사는 GB10 에서도 기존 발사의 바이트다
 
@@ -42,15 +43,17 @@ radix select**(`engine/kernels/prefill_topk`)를 탄다 — 다른 박스에는 
 엔진 코드에는 영향이 없다: 선택기가 남긴 순서대로 블록을 읽는 곳은 없다. 테스트를 고쳤다(`fa725053`): id 대 id 비교는 `torch.topk` 경로에서만,
 GB10 의 넓은 스텝은 집합으로. 재실행은 아래 3.
 
-## 3. 재실행
+## 3. 재실행 — 51 건 전부 통과
 
-`qwen38-qsa-folds3-0918`(트리 `adb2a624` + #1198 체리픽 = `9d784bc7`)을 21:04 에 제출했다. 이 기록을 쓰는 시점에는 레인이 **방을 기다리는 중**이다:
+`qwen38-qsa-folds3-0918`(트리 `adb2a624` + #1198 체리픽 = `9d784bc7`). 21:04 에 제출했고, 레인이 먼저 방을 기다렸다:
 
 ```
 waiting: pos 1/1, srv4: no room beside production -- MemAvailable 24.0 GiB, this check's budget 8.0 GiB, floor 16.0: 16.0 GiB would be left
 ```
 
-프로덕션 옆이라 예산(`ST_PROBE_GIB`)을 낮춰 밀어 넣지 않았다. 결과는 새 기록으로 남긴다.
+프로덕션 옆이라 예산(`ST_PROBE_GIB`)을 낮춰 밀어 넣지 않았다. 21:06 에 방이 나 GO, `Ran 51 tests in 45.151s — OK`,
+`{"lane": "glue_gpu", "passed": true, "tests": 51, ...}`. GB10 의 넓은 스텝에서 분할한 선택과 분할하지 않은 선택은 모든 행에서 같은 집합이다 —
+캐리 Q11 랭크 절반의, 다른 박스로는 받을 수 없던 판정이다.
 
 ## 4. 이 실행이 찾은 큐 결함
 
