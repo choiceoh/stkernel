@@ -1,45 +1,63 @@
-"""A request that says nothing samples the way the model ships, not the way a quantiser's re-generated file says.
-
-zai-org/GLM-5.3-Flash's generation_config.json is do_sample, temperature 1.0, top_p 0.95. The quantised
-repositories the served meta is cut from regenerate the file from config.json and drop top_p, so the door
-used to sample the whole tail at temperature 1 for any client that omitted it. facts.GENERATION holds the
-model's defaults; boot.generation_defaults fills what the meta omits and lets the meta win where it speaks.
-"""
+"""GLM sampling defaults reach HTTP admission without overriding caller policy."""
 import importlib.util
 import json
 from pathlib import Path
 import tempfile
 import unittest
-
-
-def _meta(where, **generation):
-    (Path(where) / "generation_config.json").write_text(json.dumps(dict(eos_token_id=[1], **generation)))
-    return where
+from unittest.mock import patch
 
 
 @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires PyTorch")
 class GenerationDefaultsTests(unittest.TestCase):
-    def test_the_profile_supplies_what_the_quantised_meta_dropped(self):
-        from engine.profiles.glm53 import boot, facts
-        self.assertEqual(facts.GENERATION, {"temperature": 1.0, "top_p": 0.95})
-        with tempfile.TemporaryDirectory() as where:
-            self.assertEqual(boot.generation_defaults(_meta(where, temperature=1.0)), {"temperature": 1.0, "top_p": 0.95})
-            self.assertEqual(boot.generation_defaults(_meta(where)), {"temperature": 1.0, "top_p": 0.95})
+    def defaults(self, config):
+        from engine.profiles.glm53.boot import generation_defaults
 
-    def test_a_meta_that_speaks_wins(self):
-        from engine.profiles.glm53 import boot
-        with tempfile.TemporaryDirectory() as where:
-            got = boot.generation_defaults(_meta(where, temperature=0.7, top_p=0.9, top_k=40, repetition_penalty=1.1))
-        self.assertEqual(got, {"temperature": 0.7, "top_p": 0.9, "top_k": 40, "repetition_penalty": 1.1})
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "generation_config.json").write_text(json.dumps(config))
+            return generation_defaults(tmp)
 
-    def test_a_silent_request_gets_the_models_nucleus_and_an_explicit_one_keeps_its_own(self):
-        from engine.base.serve import sampling_options
-        defaults = {"temperature": 1.0, "top_p": 0.95}
-        self.assertEqual(sampling_options({}, defaults), (1.0, {"top_p": 0.95}))
-        self.assertEqual(sampling_options({"temperature": 0.3}, defaults), (0.3, {"top_p": 0.95}))
-        # a client that asks for the whole tail (top_p 1, as Deneb does) still gets it
-        self.assertEqual(sampling_options({"top_p": 1}, defaults), (1.0, {}))
-        self.assertEqual(sampling_options({"top_p": 0.8}, defaults), (1.0, {"top_p": 0.8}))
+    def test_derivative_missing_top_p_inherits_original_glm_default(self):
+        # Red Hat's production metadata carries temperature but no top_p.
+        self.assertEqual(self.defaults({"temperature": 1.0, "eos_token_id": [154820]}),
+                         {"temperature": 1.0, "top_p": 0.95})
+
+    def test_explicit_checkpoint_policy_is_preserved(self):
+        for top_p in (0.8, 0.95, 1.0):
+            with self.subTest(top_p=top_p):
+                config = {"temperature": 0.7, "top_p": top_p, "top_k": 40, "repetition_penalty": 1.1}
+                self.assertEqual(self.defaults(config), config)
+
+    def admitted(self, endpoint, body):
+        from tests.test_engine_serve import OpenAIDialectTests, chat_server
+
+        s = chat_server()
+        s.generation = self.defaults({"temperature": 1.0})
+        http = OpenAIDialectTests()
+        with patch.object(s.engine, "add", wraps=s.engine.add) as add:
+            http._serve(s, lambda base: http._post(base, endpoint, {**body, "max_tokens": 1}))
+        self.assertEqual(add.call_count, 1)
+        return add.call_args.kwargs["temperature"], add.call_args.kwargs.get("options", {})
+
+    def test_chat_and_text_completions_use_default_or_explicit_override(self):
+        for endpoint, prompt in (("/v1/chat/completions", {"messages": [{"role": "user", "content": "ab"}]}),
+                                 ("/v1/completions", {"prompt": "ab"})):
+            for override, temperature, top_p in (({}, 1.0, 0.95),
+                                                ({"top_p": 0.8}, 1.0, 0.8),
+                                                ({"top_p": 1.0}, 1.0, 1.0),
+                                                ({"temperature": 0}, 0.0, 0.95)):
+                with self.subTest(endpoint=endpoint, override=override):
+                    actual_t, options = self.admitted(endpoint, {**prompt, **override})
+                    self.assertEqual(actual_t, temperature)
+                    self.assertEqual(options.get("top_p", 1.0), top_p)
+
+    def test_raw_engine_dialect_keeps_explicit_replay_policy(self):
+        for override, temperature, top_p in (({}, 0.0, 1.0),
+                                            ({"temperature": 1.0}, 1.0, 1.0),
+                                            ({"temperature": 1.0, "top_p": 0.95}, 1.0, 0.95)):
+            with self.subTest(override=override):
+                actual_t, options = self.admitted("/v1/engine/completions", {"ids": [97, 98], **override})
+                self.assertEqual(actual_t, temperature)
+                self.assertEqual(options.get("top_p", 1.0), top_p)
 
 
 if __name__ == "__main__":

@@ -33,12 +33,6 @@ SPEC_K = 7                                                            # DFlash2 
 KV_DTYPE = "fp8_e4m3"                                                 # launcher KV_DTYPE
 KDA_STATE_DTYPE = "fp32"                                              # recurrent storage and arithmetic; FP16 remains experimental
 EXPERTS = "tp"                                                        # launcher ENABLE_EP=0
-# The model's own sampling defaults: zai-org/GLM-5.3-Flash generation_config.json (do_sample, temperature 1.0,
-# top_p 0.95). The quantised repositories the served meta is cut from (RedHatAI/GLM-5.3-Flash-NVFP4) regenerate
-# that file from config.json (`_from_model_config`) and DROP top_p, so a request that says nothing would sample
-# the whole tail at temperature 1 -- not what the model ships with. boot.generation_defaults reads the meta and
-# fills what it omits from here; a meta that speaks wins (D3: the file is the fact, this is its upstream).
-GENERATION = {"temperature": 1.0, "top_p": 0.95}
 
 
 @dataclass(frozen=True)

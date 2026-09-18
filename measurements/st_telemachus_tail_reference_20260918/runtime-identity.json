@@ -1,0 +1,70 @@
+{
+  "source": "c30bae949a9d5968389e50c58b83f6f4ee108b64",
+  "owner": "queue/st-tail-reference0918",
+  "ranks": {
+    "0": {
+      "release": "c30bae949a9d",
+      "hashes": {
+        "engine/profiles/glm53/adapter.py": "f0b2aa7a83ae18ed602bd6fd2c8e61de61d86eae3c25193a26ffbd74ef2a71d1",
+        "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+        "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+        "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+        "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/profiles/glm53/incident_tail_reference.py": "de7c16e5b9718b582344b921e03b157b2e315351c8ab11b2d5223ff6f13ef81d",
+        "engine/profiles/glm53/incident_logits.py": "3930635e1e37671290ccfb1030229bf683e3dcc5ef9e701d620e672f5713b7c1",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+      }
+    },
+    "1": {
+      "release": "c30bae949a9d",
+      "hashes": {
+        "engine/profiles/glm53/adapter.py": "f0b2aa7a83ae18ed602bd6fd2c8e61de61d86eae3c25193a26ffbd74ef2a71d1",
+        "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+        "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+        "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+        "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/profiles/glm53/incident_tail_reference.py": "de7c16e5b9718b582344b921e03b157b2e315351c8ab11b2d5223ff6f13ef81d",
+        "engine/profiles/glm53/incident_logits.py": "3930635e1e37671290ccfb1030229bf683e3dcc5ef9e701d620e672f5713b7c1",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+      }
+    },
+    "2": {
+      "release": "c30bae949a9d",
+      "hashes": {
+        "engine/profiles/glm53/adapter.py": "f0b2aa7a83ae18ed602bd6fd2c8e61de61d86eae3c25193a26ffbd74ef2a71d1",
+        "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+        "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+        "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+        "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/profiles/glm53/incident_tail_reference.py": "de7c16e5b9718b582344b921e03b157b2e315351c8ab11b2d5223ff6f13ef81d",
+        "engine/profiles/glm53/incident_logits.py": "3930635e1e37671290ccfb1030229bf683e3dcc5ef9e701d620e672f5713b7c1",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+      }
+    },
+    "3": {
+      "release": "c30bae949a9d",
+      "hashes": {
+        "engine/profiles/glm53/adapter.py": "f0b2aa7a83ae18ed602bd6fd2c8e61de61d86eae3c25193a26ffbd74ef2a71d1",
+        "engine/profiles/glm53/net.py": "dde56b593d21100850217e33704c5b5bd0b8c55b6f7636919cbf7d2710c2f459",
+        "engine/profiles/glm53/boot.py": "31740703f675ed11d6b24e67a1a461afd82cb175bd52acce9d891d6783fb17dd",
+        "engine/profiles/glm53/lanes.py": "75c88908c9038aa79019f34770a49471fa4cd4c502659a113ad7216287737144",
+        "engine/profiles/glm53/specs.py": "bb4bc4b6c6b8e5ab9a145459de715cfcdec16b467074d0f60d2a37576fb6f3b9",
+        "engine/base/draws.py": "774f8f5a2a97bb7bb9e20559c65dd941ee851c011413dc144628f8d07615d589",
+        "engine/profiles/glm53/incident_tail_reference.py": "de7c16e5b9718b582344b921e03b157b2e315351c8ab11b2d5223ff6f13ef81d",
+        "engine/profiles/glm53/incident_logits.py": "3930635e1e37671290ccfb1030229bf683e3dcc5ef9e701d620e672f5713b7c1",
+        "engine/base/sampler.py": "d6eb5c3a8a2c35b546a6df7912d659283d95f072a5deb5a2136a5960c65286e8",
+        "engine/base/serve.py": "7b1f9919148ad2f88f7342f0af68120e704727d7f5795e5d84c31cb0577827b4",
+        "engine/kernels/common/sampler.py": "44333b6ab57873d1a80af3cc387a55374c5934b633582c192bdf38ee5c733554"
+      }
+    }
+  }
+}
