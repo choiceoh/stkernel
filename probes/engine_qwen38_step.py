@@ -208,6 +208,60 @@ def replay_profile(graphs, shape, replays: int) -> dict:
                         for k, v in sorted(kernels.items(), key=lambda kv: -kv[1][1])[:40]}}
 
 
+def served_loop(F, net, caches, target, draft, *, prompt: int = 512, steps: int = 64) -> dict:
+    """One request decoded at C=1 through the served model (adapter.build_model: base/composed.ComposedModel's verify
+    over these graphs), the way the runner drives it -> wall a step, and what the host spent in its parts. A step's
+    replays are serialized by the host's reads (the draft's `.tolist()`, the picks' `.tolist()`), so the host's own
+    time is the step's wall less the two replays -- and it does not grow with the layers, so this net's is the
+    model's. The PLE table here is ZeroPLETable: the fleet's step also reads its rows off the SSD."""
+    import torch
+    from engine.profiles.qwen38.adapter import build_model
+    caches.reset()
+    model, _ = build_model(net, caches, F, eos_ids=[F.vocab + 7], max_new=(steps + 8) * (F.spec_k + 1) + 16, temperature=0.0,
+                           top_p=1.0, seed=0, drafter=True)
+    model.composition.graphs, model.drafter.graphs = target, draft
+    spent = {"stage_ple": 0.0, "target_run": 0.0, "draft_run": 0.0, "picks": 0.0}
+
+    def timed(name, fn):
+        def call(*args, **kwargs):
+            began = time.perf_counter()
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                spent[name] += time.perf_counter() - began
+        return call
+
+    net.stage_ple = timed("stage_ple", net.stage_ple)
+    target.run = timed("target_run", target.run)
+    draft.run = timed("draft_run", draft.run)
+    model._draw_ahead = timed("picks", model._draw_ahead)
+    seq, gen = 0, torch.Generator(device="cpu").manual_seed(1)
+    slot = caches.slots.take(seq)
+    try:
+        caches.pool.reserve(seq, prompt + (steps + 2) * (F.spec_k + 1) + 8)
+        model.add(seq, torch.randint(0, F.vocab, (prompt,), generator=gen).tolist(), temperature=0.0)
+        model.open(seq, slot)
+        model.prefill(seq, 0, prompt, None, slot)
+        for _ in range(4):                                   # the first steps settle the host's own caches
+            model.decode([seq], [None], [slot])
+        torch.cuda.synchronize()
+        for key in spent:
+            spent[key] = 0.0
+        made0, began = model.generated_count(seq), time.perf_counter()
+        for _ in range(steps):
+            model.decode([seq], [None], [slot])
+        torch.cuda.synchronize()
+        wall = (time.perf_counter() - began) / steps
+        made = model.generated_count(seq) - made0
+    finally:
+        model.close(seq)
+        caches.pool.release(seq)
+        caches.slots.give(slot)
+        caches.reset()
+    return {"steps": steps, "wall_us": round(wall * 1e6, 1), "tokens_a_step": round(made / steps, 3),
+            "spent_us_a_step": {k: round(v / steps * 1e6, 1) for k, v in spent.items()}}
+
+
 def assemble(builds: dict, F) -> dict:
     """Per graph: the four unknowns solved from the layer sets, for wall, device time, launches and each family, and
     the 48-layer step they add up to."""
@@ -234,7 +288,7 @@ def assemble(builds: dict, F) -> dict:
 
 
 def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REPLAYS, kv_gib: float = KV_GIB,
-            max_gib: float = MAX_GIB, max_seqs: int = 4) -> dict:
+            max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False) -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row."""
     import torch
     free, total = torch.cuda.mem_get_info()
@@ -259,10 +313,20 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
             graphs[key] = replay_profile(g, shape, replays)
             print(json.dumps({"layers": list(layers), "graph": key, "wall_us": graphs[key]["wall_us"],
                               "device_us": graphs[key]["device_us"], "launches": graphs[key]["launches"]}), flush=True)
+    if loop:
+        served = served_loop(F, net, caches, target, draft)
+        one = shapes[0]
+        replays = sum(graphs.get(f"{label} rows {one[0]} blocks {one[1]}", {}).get("wall_us", 0.0)
+                      for label in ("target", "draft"))
+        served["replays_us"] = round(replays, 1)
+        served["host_us"] = round(served["wall_us"] - replays, 1)
+        print(json.dumps({"layers": list(layers), "served_loop": served}), flush=True)
     row = {"counts": counts(F, layers), "kernel_shape": shape_source, "free_GiB_at_start": round(free / 2**30, 1),
            "build_s": round(built, 1), "peak_GiB": round(torch.cuda.max_memory_allocated() / 2**30, 2),
            "graphs": {k: v for k, v in graphs.items() if "error" not in v},
            "errors": {k: v for k, v in graphs.items() if "error" in v}}
+    if loop:
+        row["served_loop"] = served
     target.close()
     draft.close()
     return row
@@ -286,14 +350,16 @@ def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = 
         for layers in layer_sets:
             name = ",".join(map(str, layers))
             out = Path(scratch) / f"{name}.json"
+            args = ["--loop"] if layers == layer_sets[0] else []
             done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--one", name, "--ranks", str(ranks),
-                                   "--rank", str(rank), "--output", str(out)], cwd=str(ROOT))
+                                   "--rank", str(rank), "--output", str(out), *args], cwd=str(ROOT))
             if done.returncode or not out.exists():
                 report["failed"][name] = f"rc={done.returncode}"
                 continue
             report["builds"][name] = json.loads(out.read_text())
     from engine.profiles.qwen38 import facts
     report["step"] = assemble(report["builds"], facts.load(ranks))
+    report["served_loop"] = next((b["served_loop"] for b in report["builds"].values() if "served_loop" in b), None)
     text = json.dumps(report, indent=1)
     if output:
         Path(output).parent.mkdir(parents=True, exist_ok=True)
@@ -310,9 +376,10 @@ if __name__ == "__main__":
     ap.add_argument("--output", default=None)
     ap.add_argument("--one", default=None, help="one layer set (comma separated), measured in this process")
     ap.add_argument("--rank", type=int, default=None)
+    ap.add_argument("--loop", action="store_true", help="with --one: also decode one request through the served model")
     a = ap.parse_args()
     if a.one is not None:
-        row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")))
+        row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")), loop=a.loop)
         Path(a.output).write_text(json.dumps(row) + "\n")
     else:
         run(a.output, a.ranks, rank=a.rank)
