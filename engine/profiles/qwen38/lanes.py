@@ -77,6 +77,10 @@ class Lanes:
     qsa_inputs: object = None       # qsa.qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta,
                                     #  rotary_dim, K, V, kv_slots, ring, ring_slots) -> (q, iq): the layer's norms and
                                     #  rotations with the K/V and ring stores, in one launch
+    qsa_select_alike: object = None  # qsa.shards_select_alike(rows, shards, columns, topk / ratio) -> bool: whether
+                                    #  qsa_select over disjoint row ranges of a step (their row counts) chooses row for
+                                    #  row what one call does. The selection lane's own statement -- it picks its
+                                    #  selector by the rows it is handed; None: no lane has said, and no net splits
 
 
 def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -348,7 +352,7 @@ def served(*, tp=None) -> Lanes:
     return Lanes("served", *(on_main(f) for f in bound), moe_prepare=on_main(moe_prepare),
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
-                 qsa_inputs=on_main(qsa.qsa_inputs))
+                 qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike)
 
 
 def qualify(device, F) -> dict:

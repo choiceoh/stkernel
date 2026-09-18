@@ -1127,6 +1127,24 @@ def select_blocks(logits: torch.Tensor, visible_blocks: torch.Tensor, block_topk
     return out
 
 
+def shards_select_alike(rows: int, shards, columns: int, block_topk: int) -> bool:
+    """Whether `qsa_select_paged_blocks` over each of `shards` -- the row counts of disjoint row ranges of one step --
+    chooses for every row the set one call over the step's `rows` rows chooses (carry Q11: the ranks score a quarter
+    of a prefill step's index queries each and gather the ids).
+
+    A row's scores are its own whatever rows share its launch. Its selector is not: `select_blocks` takes the radix
+    select (ties to the lower block) where engine/kernels/prefill_topk admits the rows it was handed, a chunk of
+    `_LOGITS_WORKSPACE_BYTES` of logits at a time, and torch.topk (ties as its candidates fall) elsewhere -- and just
+    past the budget's reach relu leaves enough equal zeros for the two to part at the budget's edge. So a split is the
+    whole only where every chunk on both sides takes the radix select, whose choice is a row's alone; nothing else is
+    known to order a row's ties alike in launches of different sizes. The tensors' half of the radix rule (CUDA, eager,
+    fp32 logits) is the same on both sides and is not asked here."""
+    from engine.kernels import prefill_topk
+    per = max(1, _LOGITS_WORKSPACE_BYTES // max(columns * 4, 1))          # qsa_select_paged_blocks' rows a scoring call
+    return (prefill_topk.admits_calls(rows, per, columns, block_topk)
+            and all(prefill_topk.admits_calls(count, per, columns, block_topk) for count in shards if count))
+
+
 def qsa_select_paged_tokens(q, k_cache, page_table, token_to_req, query_positions, sequence_lengths, token_topk,
                             compress_ratio, out=None):
     """Score, select and expand QSA positions without a host synchronization: int32 [rows, token_topk + ratio - 1]."""
@@ -1425,7 +1443,7 @@ def qualify(device, *, heads=((6, 256), (4, 128)), rotary_dim: int, theta: float
     return worst
 
 
-__all__ = ["norm_rope_partial", "qsa_mqa_paged", "expand_qsa_block_indices_cuda", "select_blocks",
+__all__ = ["norm_rope_partial", "qsa_mqa_paged", "expand_qsa_block_indices_cuda", "select_blocks", "shards_select_alike",
            "qsa_index_keys", "qsa_inputs", "qsa_select_paged_tokens", "qsa_select_paged_blocks",
            "qsa_sparse_paged_attention",
            "qsa_sparse_paged_attention_blocks", "qsa_store_cache_rows", "qsa_compress_groups_with_ratio", "qualify"]
