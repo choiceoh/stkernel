@@ -8,8 +8,9 @@ are unchanged. What changed around them (engine/kernels/SOURCES.json lists it):
 
 - the imports are Triton's own, not vllm.triton_utils / vllm.platforms;
 - block selection uses the engine's top-k instead of vLLM's persistent_topk C++ op: engine/kernels/prefill_topk (a radix
-  select over the valid prefix, ties to the lower block) where it admits the shape, torch.topk otherwise (decode and
-  capture). Columns past a row's visible blocks are never written by the scorer; they are masked before torch.topk;
+  select over the valid prefix, ties to the lower block) where it admits the shape, engine/kernels/qsa_select (one
+  launch a step, the same rule) for every other device step -- decode and capture -- and torch.topk on the CPU. Columns
+  past a row's visible blocks are never written by the scorer; every selector reads a row's visible prefix only;
 - the split-K profile of the sparse attention is upstream's, without the DENEB_QSA_MAX_SPLITS environment cap (D11:
   the kernel package reads no knobs). Whether GB10 wants fewer splits is the wizard's measurement, not a default;
 - `norm_rope_partial` is new: Qwen3.8 normalises query and key heads with a unit-offset weight and rotates only the
@@ -1543,7 +1544,8 @@ def select_blocks(logits: torch.Tensor, visible_blocks: torch.Tensor, block_topk
     """The `block_topk` best blocks of each row among its first `visible_blocks` columns, into out int32
     [rows, block_topk]. Only a row's first min(visible, block_topk) picks are read downstream (the expansion), in any
     order. Where engine/kernels/prefill_topk admits the shape (k 512, 65..32768 rows, eager) it selects over the
-    valid prefix with ties to the lower block; otherwise torch.topk over the masked logits."""
+    valid prefix with ties to the lower block; any other step on a device -- every captured one -- takes
+    engine/kernels/qsa_select's one launch, the same rule; the CPU keeps torch.topk over the masked logits."""
     rows, columns = logits.shape
     if out.shape != (rows, block_topk) or out.dtype != torch.int32:
         raise ValueError("block selection writes int32 [rows, block_topk]")
@@ -1554,6 +1556,9 @@ def select_blocks(logits: torch.Tensor, visible_blocks: torch.Tensor, block_topk
     if picked is not None:
         out.copy_(picked)
         return out
+    from engine.kernels import qsa_select
+    if qsa_select.admits(logits, block_topk) and visible_blocks.dtype == torch.int32 and out.stride(1) == 1:
+        return qsa_select.select(logits, visible_blocks.contiguous(), block_topk, out)
     k = min(block_topk, columns)
     if k == 0:
         out.fill_(-1)
