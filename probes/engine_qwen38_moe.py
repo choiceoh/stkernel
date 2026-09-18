@@ -142,7 +142,11 @@ def cell_of(shape, rank: int = RANK) -> Cell:
 def decode_tokens(c: Cell) -> tuple:
     """Every captured decode launch's tokens over the row ladder at K=1 and K=3: the micro shapes (<= 8) and the static
     ones above the micro cap (10..32) that an eight-row boot captures -- 12 (three rows at K=3) killed the four-row K=3
-    boot on 2026-09-18 in its first launch."""
+    boot on 2026-09-18 in its first launch. `ST_PROBE_DECODE_TOKENS=16,24` names the shapes instead: a static shape
+    that faults takes the CUDA context with it, so the shapes after it are judged one process each."""
+    named = os.environ.get("ST_PROBE_DECODE_TOKENS")
+    if named:
+        return tuple(sorted({int(m) for m in named.split(",")}))
     return tuple(sorted({rows * (k + 1) for rows in DECODE_ROWS for k in SPEC_KS}))
 
 
@@ -885,8 +889,8 @@ def run(output=None):
             probe.setup(shape)
             # correctness first -- every served default -- then the prefill tiles, then the micro variants
             decode = [probe.decode_check(m) for m in decode_order(decode_tokens(c), md._MICRO_MAX_TOKENS)]
-            for tokens in PREFILL_CHECKS:
-                probe.prefill_check(tokens)
+            for tokens in () if os.environ.get("ST_PROBE_DECODE_TOKENS") else PREFILL_CHECKS:
+                probe.prefill_check(tokens)              # a named decode run is about those shapes alone
             if os.environ.get("ST_PROBE_CHECKS_ONLY") == "1":
                 # the correctness gates alone (a production window, not a lane ticket): no sweeps, no timings
                 report("checks_only", decode=[d["tokens"] if isinstance(d, dict) else None for d in decode],
