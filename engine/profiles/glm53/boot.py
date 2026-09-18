@@ -1657,6 +1657,10 @@ def fleet(a) -> int:
             lanes = lane_tables.served(moe_static=cfg["moe_static"], mla_prefill=cfg["mla_prefill"],
                                        consume_scales=True, dense_guard_rows=cfg["GLM53_DENSE_W4A16_GUARD_ROWS"],
                                        recorder=rec)
+            # every b12x kernel this boot builds or reads, for the next release's prebuild (kernels/b12x_requests)
+            from engine.kernels import b12x_requests
+            b12x_requests.record_loaded("glm53", b12x_requests.path_under(
+                os.environ.get("FLASHINFER_WORKSPACE_BASE"), "glm53"))
         from engine.profiles.glm53.execution import ExecutionPlan
         if any(cfg[k] not in (0, 1) for k in ("execution_overlap", "early_observe", "direct_mhc", "prefill_project_tiles", "nvme_mapped_staging", "deferred_kda", "terminal_mhc", "prefill_indexer_shards", "prefill_dense_prefix", "prefill_absorb_tiles", "decode_fastpaths", "prefill_ffn_packets", "decode_dsa_inputs", "decode_indexer_gate", "decode_absorb_tiles")):
             raise ValueError("execution switches must be 0 or 1")

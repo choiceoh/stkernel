@@ -6,6 +6,9 @@
 #   bash launchers/start-st-qwen38.sh            # start all four (rank 0=srv2, rank 1=srv1, then srv3/srv4)
 #   bash launchers/start-st-qwen38.sh stop       # docker rm -f st-qwen38 on every node
 #   bash launchers/start-st-qwen38.sh logs [r]   # tail rank r's container log
+#   bash launchers/start-st-qwen38.sh prebuild   # this tree's b12x MoE kernels, compiled on every node's CPU while
+#                                                # production still serves: run it BEFORE taking the window
+#                                                # (launchers/b12x-prebuild.sh), so the window does not compile them
 #
 # Before the first boot, once: the preshard on the node holding the checkpoint, then the fan-out --
 #   python3 -m engine.profiles.qwen38.preshard --ckpt /home/choiceoh/models/qwen38-flash-next-nvfp4 \
@@ -142,10 +145,13 @@ case "${1:-start}" in
       lease release --owner "$held_owner"
     fi
     exit 0 ;;
+  prebuild)
+    # the kernels this tree's boot will ask for, from the requests the last Qwen3.8 boots recorded on each node
+    exec bash "$REPO/launchers/b12x-prebuild.sh" --tree "$REPO" --profile qwen38 --cache "$CACHE_DIR" --nodes "${NODES[*]}" ;;
   logs)
     r=${2:-0}; node_sh "${NODES[$r]}" "docker logs --tail 60 $NAME"; exit 0 ;;
   start) ;;
-  *) echo "usage: $0 [start|stop|logs r]" >&2; exit 2 ;;
+  *) echo "usage: $0 [start|stop|logs r|prebuild]" >&2; exit 2 ;;
 esac
 
 for ip in "${NODES[@]}"; do

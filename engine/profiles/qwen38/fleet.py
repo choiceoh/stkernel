@@ -71,6 +71,30 @@ def door_host_half(ckpt_meta, *, renderer: bool) -> dict:
             "generation": generation_defaults(Path(ckpt_meta))}
 
 
+def timed_store(store) -> dict:
+    """The pack store's entry points timed where they stand -> {entry: [calls, seconds]}, for `prepare dense`'s gauges.
+
+    The row was one number, and the two things inside it that a boot pays every time are different levers: the weight
+    hash (a device-to-host copy on the caller's thread and sha256 on the store's worker, for every dense weight) and
+    the packs, read from /cache after the first boot. `pack` and `pack_fp8` include the hash they wait for, and a
+    `weight_digest` a lane calls itself is counted under its own name as well."""
+    spent = {}
+
+    def timed(entry, call):
+        def run(*args, **kwargs):
+            began = time.perf_counter()
+            try:
+                return call(*args, **kwargs)
+            finally:
+                calls, seconds = spent.get(entry, (0, 0.0))
+                spent[entry] = (calls + 1, seconds + time.perf_counter() - began)
+        return run
+
+    for entry in ("weight_digest", "pack", "pack_fp8"):
+        setattr(store, entry, timed(entry, getattr(store, entry)))
+    return spent
+
+
 def rank_loader(path, *, expected_layout: str):
     """The rank file, refused unless its layout marker is this profile's (a file written for another layout loads and
     computes garbage)."""
@@ -146,10 +170,16 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             net.attach_ple(PLETable.open(ranks_dir, comm.rank, F), max_rows=max_seqs * (F.spec_k + 1))
         with recorder.phase("prepare dense"):
             # the packs move into their BF16 sources' arena regions (all but the shared expert's padded down projection)
+            spent = timed_store(store)
             net.prepare_dense(store, consume_weights=True)
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             store.release_pages()
+            for name, (calls, seconds) in spent.items():
+                recorder.gauge(f"{name}_calls", calls)
+                recorder.gauge(f"{name}_s", round(seconds, 3))
+            for name, count in sorted(store.stats.items()):
+                recorder.gauge(f"packs_{name}", count)
         with recorder.phase("caches"):
             caches = Qwen38Caches(arena, F, net.layers, nb, max_seqs, snapshots, mtp=drafter)
         with recorder.phase("engine"):
@@ -174,6 +204,14 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             with recorder.phase("wait for the prelude"):
                 prelude.take()
             recorder.gauge("prelude_s", round(prelude.seconds, 3))
+        with recorder.phase("warm prefill"):
+            # the largest chunk held to the memory ceiling, and every prefill kernel family compiled, before the door:
+            # the first request used to pay both (warmup.py)
+            from engine.profiles.qwen38.warmup import warmup
+            paid = warmup(net, caches, memory=memory, chunk=sched.chunk_for(contract.chunk_align, contract.token_budget, k),
+                          max_context=model.max_context, mtp=model.drafter is not None)
+            if comm.rank == 0:
+                print("  warm prefill: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
         with recorder.phase("capture decode"):
             capture(model, max_seqs, memory=memory)
         if memory is not None:
@@ -271,6 +309,11 @@ def main(argv=None) -> int:
                 imports.take()
             rec.gauge("kernel_imports_s", round(imports.seconds, 3))
             lanes = lane_tables.served()
+            # every b12x kernel this boot builds or reads, for the next tree's prebuild (kernels/b12x_requests)
+            import os
+            from engine.kernels import b12x_requests
+            b12x_requests.record_loaded("qwen38", b12x_requests.path_under(
+                os.environ.get("FLASHINFER_WORKSPACE_BASE"), "qwen38"))
         F = facts.load(a.ckpt_meta)
         with rec.phase("qualify lanes"):
             qualified = lane_tables.qualify(torch.device("cuda"), F)

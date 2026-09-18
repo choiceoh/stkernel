@@ -132,5 +132,36 @@ class DumpTests(unittest.TestCase):
             fleet.write_dumps(Recorder("rank0", memory_sampling=False), None, blocker / "dumps", 0)   # a file, not a dir
 
 
+@unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires PyTorch")
+class PackStoreTimingTests(unittest.TestCase):
+    def test_every_entry_is_counted_and_answers_as_before(self):
+        from engine.profiles.qwen38 import fleet
+
+        class Store:
+            def weight_digest(self, weight):
+                return ("digest", weight)
+
+            def pack(self, weight, name, digest=None):
+                digest = digest or self.weight_digest(weight)      # the store's own call goes through the timer too
+                return ("pack", name, digest)
+
+            def pack_fp8(self, weight, name, digest=None):
+                return None
+
+        store = Store()
+        spent = fleet.timed_store(store)
+        self.assertEqual(store.pack("w", "L0.o"), ("pack", "L0.o", ("digest", "w")))
+        store.pack("w", "L1.o", digest="d")
+        self.assertIsNone(store.pack_fp8("w", "L0.o"))
+        self.assertEqual({k: v[0] for k, v in spent.items()}, {"weight_digest": 1, "pack": 2, "pack_fp8": 1})
+        self.assertTrue(all(seconds >= 0 for _, seconds in spent.values()))
+
+    def test_the_prepare_dense_row_carries_them(self):
+        source = FLEET.read_text(encoding="utf-8")
+        row = source[source.index('with recorder.phase("prepare dense")'):source.index('with recorder.phase("caches")')]
+        self.assertLess(row.index("spent = timed_store(store)"), row.index("net.prepare_dense("))
+        self.assertIn('recorder.gauge(f"packs_{name}", count)', row)
+
+
 if __name__ == "__main__":
     unittest.main()

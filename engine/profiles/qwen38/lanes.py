@@ -259,8 +259,9 @@ def reference() -> Lanes:
 
 KERNEL_MODULES = ("engine.kernels.gated_residual", "engine.kernels.gdn", "engine.kernels.moe_output", "engine.kernels.qsa",
                   "engine.kernels.causal_conv_ring", "engine.kernels.causal_conv_single", "engine.kernels.kda.chunk_decay",
-                  "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.modules.nvfp4_sf",
-                  "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope", "engine.kernels.common.swiglu")
+                  "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.kernels.moe_route",
+                  "engine.modules.nvfp4_sf", "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope",
+                  "engine.kernels.common.swiglu")
 """What `served` binds over, with the common lanes it starts from (engine/base/lanes). `import_kernels` exists so the
 fleet boot can pay for them where it is already waiting; a test holds this list to the `from` lines in both."""
 
