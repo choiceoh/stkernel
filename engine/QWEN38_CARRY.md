@@ -74,7 +74,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | Q8 | 점수 커널이 요청의 키 타일을 최대 4 쿼리 행에 한 번만 읽기 | #971 #1010 | `qsa.py:_qsa_mqa_paged_kernel` | kernel | 128K 에서 스텝당 −107 MB | gpu | 일 | 열림 |
 | Q9 | QSA 커널 GB10 발사 기하 스윕: norm_rope·압축·저장·확장·점수, 어텐션 split 프로필(지금은 상류 GB300 프로필로 디코드마다 64 split) | #554 #556 #641 #658 #737 | `qsa.py` | measure | split 1 이면 −13 발사 | gpu | 일 | 열림 |
 | Q10 | 덮인 앞부분(≤2,050 위치)의 dense causal 프리필 커널 | #887 #889 | `qsa.py` 새 커널 | kernel | 2K 이하 프롬프트 K/V 읽기 약 −50% | gpu | 일 | 열림 |
-| Q11 | 프리필 인덱스 쿼리 행을 랭크별로 나눠 점수(`QueryShard`) | #881 | `net.py:_qsa` | fold | 긴 프롬프트 점수 행 −75% | cpu(LocalTP) | 일 | 덮인 절반 PR #1185: 가장 긴 세그먼트가 2,051 위치 안에서 끝나는 호스트 스텝은 점수·top-k 없이 선택(`_covered_blocks`; 스텝당 QSA 층 13개의 점수·선택 발사와 [행, 열] fp32 logits 제거, 소스 계수). 랭크 분할과 부분 덮임은 열림 — `select_blocks` 가 받은 행 수로 선택기를 고르므로(64 행 초과는 radix·낮은 블록 우선, 이하는 `torch.topk`) 행을 나누면 예산 경계의 동률에서 집합이 달라질 수 있다. 행마다 선택기를 보존하는 분할 규칙이 선행 |
+| Q11 | 프리필 인덱스 쿼리 행을 랭크별로 나눠 점수(`QueryShard`) | #881 | `net.py:_qsa` | fold | 긴 프롬프트 점수 행 −75% | cpu(LocalTP) | 일 | 덮인 절반 머지 #1185(가장 긴 세그먼트가 2,051 위치 안에서 끝나는 호스트 스텝은 점수·top-k 없이 선택). 랭크 절반 PR #1188: 부팅이 선언하면(`Qwen38Net(query_shards=True)`, 기본 꺼짐) 한 세그먼트 eager 프리필의 인덱스 쿼리를 랭크가 1/4 씩 점수하고 id 를 층당 한 번 all-gather — 분할은 양쪽의 모든 점수 호출이 radix 선택기를 타는 스텝에서만(`prefill_topk.admits_calls` · `qsa.shards_select_alike` · `lanes.qsa_select_alike`), 그래서 행마다 선택이 같다. 남은 것: 부팅 플래그 배선(fleet.py 의 같은 줄을 #1182 가 고치는 중), 플릿 속도(D17 미실측), 부분 덮임(한 랭크 안에서 덮인 행만 건너뛰기는 분할 안에서 이미 됨; 분할 없이 하는 것은 열림) |
 | Q12 | QSA 어텐션을 메가커널로(`mla/glue.gqa`, FP8 KV) | 메가커널 계열 | `lanes.py`, `caches.py` | measure | KV 바이트 ½ | gpu | 일 | 열림 |
 | Q13 | K/V 를 한 영역의 레코드로 두는 캐시 배치 | #641 | `caches.py` | measure | 0 발사 | gpu | 시간 | 열림 |
 
