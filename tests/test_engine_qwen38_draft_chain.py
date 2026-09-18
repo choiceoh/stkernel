@@ -217,7 +217,7 @@ class LauncherTests(unittest.TestCase):
         text = Path(__file__).resolve().parents[1].joinpath("launchers", "start-st-qwen38.sh").read_text()
         self.assertIn('SPEC_ARG="--spec-k $ST_SPEC_K"', text)
         exec_line = next(l for l in text.splitlines() if "-m engine.profiles.qwen38.fleet " in l)
-        self.assertLess(exec_line.index("$ONESHOT_ARG $SPEC_ARG"), exec_line.index("--port"))
+        self.assertLess(exec_line.index("$HC_ARG $SPEC_ARG"), exec_line.index("--port"))
 
 
 if __name__ == "__main__":

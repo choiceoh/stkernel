@@ -111,7 +111,7 @@ def rank_loader(path, *, expected_layout: str):
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
-          prelude=None, query_shards: bool = True, spec_k: "int | None" = None):
+          spec_k: "int | None" = None, prelude=None, query_shards: bool = True):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it."""
@@ -333,8 +333,8 @@ def main(argv=None) -> int:
         prelude = Background(partial(door_host_half, a.ckpt_meta, renderer=comm.rank == 0), "boot-prelude").start()
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
-                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8, prelude=prelude,
-                                              query_shards=not a.no_query_shards, spec_k=a.spec_k)
+                                              drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
+                                              query_shards=not a.no_query_shards)
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row)", flush=True)
         with rec.phase("door"):
