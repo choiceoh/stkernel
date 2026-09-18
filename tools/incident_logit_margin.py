@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """How tight was the choice? Margin profile of the incident's own logit captures.
 
-The engine is deterministic -- a repeat of one arm is bit-identical over 90 prefill
-stages and mode 5 vs mode 0 agree to 0.0 -- so when two arms produce different text,
-the difference is caused by whatever constant or code changed between them, not by a
-race. What decides whether such a change flips the answer is the *margin* at the
-token it flips. This reads the incident's `incident-logits/*.pt` captures (one
-154,880-wide logit row per (admission, generation)) and reports the chosen token's
-probability and its margin over the runner-up, so an arm comparison can say *where*
-the generation first differs and how close that choice was.
+This reads the incident's `incident-logits/*.pt` captures and reports the top-1
+probability and margin over the runner-up. At nonzero temperature these are not
+the sampled token's probability or its inverse-CDF margin: a sampled token can
+change while top-1 stays fixed. Use the captured picks and probabilities to locate
+the first sampled divergence, and compare only rows with matching prefixes.
 
     python3 tools/incident_logit_margin.py CAPTURE_DIR [CAPTURE_DIR ...]
     python3 tools/incident_logit_margin.py --compare DIR_A DIR_B
@@ -28,7 +25,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 PREFIX_FIELDS = ("prefix_sha256", "input_prefix_sha256", "prefix_hash", "prompt_sha256", "prefix")
 UNIFORM_FIELDS = ("uniform", "uniforms", "u", "draw", "draws", "seed_uniform")
 SEED_FIELDS = ("seed", "request_seed", "underlying_seed")
-NONCE_FIELDS = ("nonce", "admission_nonce", "admission")
+# A request's admission number is not its draw nonce: seeded rows use nonce=0.
+# Prefer the actual captured row key and never infer a nonce from bookkeeping.
+NONCE_FIELDS = ("nonce", "draw_nonce", "admission_nonce")
+ROW_KEY_FIELDS = ("row_key", "draw_key")
 
 
 def _scalar(node, fields):
@@ -65,6 +65,7 @@ def read_capture(path: Path):
     uniform = _scalar(obj, UNIFORM_FIELDS) if isinstance(obj, dict) else None
     seed = _scalar(obj, SEED_FIELDS) if isinstance(obj, dict) else None
     nonce = _scalar(obj, NONCE_FIELDS) if isinstance(obj, dict) else None
+    key = _scalar(obj, ROW_KEY_FIELDS) if isinstance(obj, dict) else None
     return dict(admission=int(match.group(1)), generation=int(match.group(2)), width=int(flat.numel()),
                 top1=int(top.indices[0]), top2=int(top.indices[1]),
                 margin=float(top.values[0] - top.values[1]), chosen_probability=probability,
@@ -72,6 +73,7 @@ def read_capture(path: Path):
                 uniform=None if uniform is None else float(uniform),
                 seed=None if seed is None else int(seed),
                 nonce=None if nonce is None else int(nonce),
+                row_key=None if key is None else int(key),
                 source=path.name)
 
 
@@ -83,23 +85,20 @@ def draw_address(row, k=7):
     match proves the pipeline; no match means either the address differs or the host and device
     hashes disagree, and both are silent failures otherwise.
     """
-    if row["uniform"] is None or row["seed"] is None or row["nonce"] is None:
+    key = row.get("row_key")
+    if row["uniform"] is None or (key is None and (row["seed"] is None or row["nonce"] is None)):
         return None
-    from engine.base.draws import (DRAFT, FRESH, PICK, RICH, VERIFY, row_key, step_layout,
+    from engine.base.draws import (DRAFT, FRESH, PICK, RICH, VERIFY, row_key,
                                    uniform as draw_uniform)
 
-    key = row_key(row["seed"], row["nonce"], row["generation"])
+    if key is None:
+        key = row_key(row["seed"], row["nonce"], row["generation"])
     # The step block is DRAFT/VERIFY/FRESH, but a rich row -- thinking, a budget, penalties,
     # grammar -- draws its picks from their own words, and missing them here would read a
     # real draw as a hash disagreement. Search every purpose the engine defines.
-    words = list(step_layout(k))
-    words += [(purpose, position) for purpose in (PICK, RICH, FRESH) for position in range(k + 1)]
-    words += [(DRAFT, position) for position in range(k + 1)]
-    seen = set()
+    words = [(purpose, position) for purpose in (DRAFT, PICK, VERIFY, FRESH, RICH)
+             for position in range(k + 1)]
     for purpose, position in words:
-        if (purpose, position) in seen:
-            continue
-        seen.add((purpose, position))
         if abs(draw_uniform(key, purpose, position) - row["uniform"]) < 1e-12:
             return purpose, position
     return (None, None)
@@ -119,8 +118,8 @@ def flips(left, right, *, prefixes=True):
     A row is only compared when both sides were fed the same prefix -- the capture's
     prefix hash is the guard, because logits from different prefixes differ by
     construction and a conclusion drawn across them is not about the engine. A row
-    whose uniforms also differ has a *draw* difference on top: the choice moved
-    because the random number moved, not because the distribution did.
+    whose uniforms also differ has a draw difference as well. That does not
+    establish whether its distribution changed or which change caused the pick.
     """
     out, skipped = [], []
     for key in sorted(set(left) & set(right)):
@@ -144,7 +143,7 @@ def report(rows, label):
         return
     ordered = sorted(rows.values(), key=lambda r: (r["admission"], r["generation"]))
     probabilities = sorted(r["chosen_probability"] for r in ordered)
-    print(f"{label}: {len(ordered)} captures; chosen probability median "
+    print(f"{label}: {len(ordered)} captures; top-1 probability median "
           f"{probabilities[len(probabilities) // 2]:.3f}, under 0.5: "
           f"{sum(1 for p in probabilities if p < 0.5)}/{len(ordered)}")
     for row in ordered[:6]:
@@ -167,10 +166,11 @@ def main() -> int:
     if args.compare and len(profiles) >= 2:
         (left_path, left), (right_path, right) = profiles[0], profiles[1]
         found, skipped = flips(left, right, prefixes=not args.allow_mixed_prefixes)
-        print(f"shared rows {len(set(left) & set(right))}; compared {len(found)}; "
+        shared = len(set(left) & set(right))
+        print(f"shared rows {shared}; compared {shared - len(skipped)}; top-1 flips {len(found)}; "
               f"skipped for differing prefixes {len(skipped)}")
         print("  a flip at a tight margin is the knife edge; at a wide one a different computation;")
-        print("  same_uniform=False means the draw moved, not the distribution")
+        print("  same_uniform=False means the draw differs; the distribution may differ too")
         for row in found[:args.limit]:
             uniform = row["same_uniform"]
             print(f"   admit{row['admission']} gen{row['generation']:5d}: margins "
@@ -181,7 +181,7 @@ def main() -> int:
             addresses = [(row, draw_address(row["left"]), draw_address(row["right"])) for row in found]
             named = [(row, a, b) for row, a, b in addresses if a or b]
             if named:
-                print("  draw address, recomputed from each side's own seed/nonce/generation:")
+                print("  draw address, from each side's captured row key or explicit seed/nonce/generation:")
                 def label(address):
                     if address is None:
                         return "unverifiable"
@@ -195,7 +195,7 @@ def main() -> int:
                           f"{'  <-- ADDRESS DIFFERS' if a != b else ''}")
             unverifiable = [row for row, a, b in addresses if a is None and b is None]
             if unverifiable:
-                print(f"  rows whose draw could not be recomputed (no seed/nonce in the capture): "
+                print(f"  rows whose draw could not be recomputed (no row key or explicit seed/nonce): "
                       f"{len(unverifiable)}")
             tight = sorted(row["tightest_margin"] for row in found)
             print(f"  flip margins: min {tight[0]:.3f} median {tight[len(tight) // 2]:.3f} max {tight[-1]:.3f}")

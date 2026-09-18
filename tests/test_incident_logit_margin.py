@@ -7,9 +7,12 @@ tool's arithmetic: the margin, the chosen probability, which tensor of a capture
 the logit row, and which shared rows flipped with how much room.
 """
 import importlib.util
+from contextlib import redirect_stdout
+import io
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -87,6 +90,17 @@ class MarginTests(unittest.TestCase):
 class PrefixAndDrawTests(unittest.TestCase):
     """Logits from different prefixes differ by construction; a moved draw is not a moved distribution."""
 
+    def test_cli_counts_compared_rows_even_when_top1_does_not_flip(self):
+        with tempfile.TemporaryDirectory() as left_dir, tempfile.TemporaryDirectory() as right_dir:
+            capture(left_dir, 1, 0, logits_row(5., 4.), prefix='aa' * 32)
+            capture(right_dir, 1, 0, logits_row(5., 3.), prefix='aa' * 32)
+            capture(left_dir, 1, 1, logits_row(5., 4.), prefix='bb' * 32)
+            capture(right_dir, 1, 1, logits_row(4., 5.), prefix='cc' * 32)
+            output = io.StringIO()
+            with patch('sys.argv', ['margin', '--compare', left_dir, right_dir]), redirect_stdout(output):
+                self.assertEqual(margin.main(), 0)
+        self.assertIn('shared rows 2; compared 1; top-1 flips 0; skipped for differing prefixes 1', output.getvalue())
+
     def test_rows_whose_prefixes_differ_are_never_compared(self):
         with tempfile.TemporaryDirectory() as left_dir, tempfile.TemporaryDirectory() as right_dir:
             capture(left_dir, 1, 0, logits_row(5.0, 4.5), prefix="aa" * 32)
@@ -125,6 +139,38 @@ class PrefixAndDrawTests(unittest.TestCase):
 
 class DrawAddressTests(unittest.TestCase):
     """The draws are stateless, so the address is recoverable -- and a silent mismatch is findable."""
+
+    def test_seeded_capture_uses_actual_row_key_not_its_admission_number(self):
+        from engine.base.draws import RICH, row_key, uniform as draw_uniform
+
+        key = row_key(7, 0, 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = capture(tmp, 9, 0, logits_row(1., 0.))
+            payload = torch.load(path, weights_only=True)
+            payload.update(seed=7, admission=9, row_key=key, uniform=draw_uniform(key, RICH, 0))
+            torch.save(payload, path)
+            row = margin.read_capture(path)
+        self.assertIsNone(row['nonce'])
+        self.assertEqual(row['row_key'], key)
+        self.assertEqual(margin.draw_address(row), (RICH, 0))
+
+    def test_admission_alone_cannot_substitute_for_an_unknown_draw_nonce(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = capture(tmp, 9, 0, logits_row(1., 0.))
+            payload = torch.load(path, weights_only=True)
+            payload.update(seed=7, admission=9, uniform=.5)
+            torch.save(payload, path)
+            row = margin.read_capture(path)
+        self.assertIsNone(margin.draw_address(row))
+
+    def test_the_last_position_of_every_purpose_can_be_attributed(self):
+        from engine.base.draws import DRAFT, PICK, VERIFY, FRESH, RICH, row_key, uniform as draw_uniform
+
+        key = row_key(7, 0, 12)
+        for purpose in (DRAFT, PICK, VERIFY, FRESH, RICH):
+            row = dict(seed=None, nonce=None, row_key=key, generation=12,
+                       uniform=draw_uniform(key, purpose, 7))
+            self.assertEqual(margin.draw_address(row), (purpose, 7))
 
     def test_a_captured_uniform_is_named_by_the_address_it_was_drawn_from(self):
         from engine.base.draws import VERIFY, row_key, uniform as draw_uniform

@@ -11,7 +11,8 @@ or fused kernel) would be silent: the tokens would simply differ.
 This checks them against each other on the machine it runs on, for the qualified
 geometry, and refuses on the first bit that differs.
 
-    bash probes/run_engine_check.sh -- bash probes/engine_draw_contract.py --k 7
+    bash bench/fleet.sh run --gpu draw-contract 5 'Check draw implementations' -- \
+        bash probes/run_engine_probe.sh probes/engine_draw_contract.py --k 7
 """
 from __future__ import annotations
 
@@ -68,7 +69,10 @@ def main() -> int:
     fused = {(row, purpose, position): block[row][index]
              for row in range(args.rows)
              for index, (purpose, position) in enumerate(draws.step_layout(args.k))}
-    ok = compare("host vs step_block (fused kernel)", fused, want)
+    fused_want = {(row, purpose, position): want[(row, purpose, position)]
+                  for row in range(args.rows)
+                  for purpose, position in draws.step_layout(args.k)}
+    ok = compare("host vs step_block (fused kernel)", fused, fused_want)
 
     # the generic int64 tensor path, for every purpose and k+1 positions
     keys = draws.row_keys(args.seed, nonces, generations)
@@ -76,7 +80,8 @@ def main() -> int:
         device = draws.uniform_tensor(keys, purpose, args.k + 1).cpu().tolist()
         got = {(row, purpose, position): device[row][position]
                for row in range(args.rows) for position in range(args.k + 1)}
-        ok = compare(f"host vs uniform_tensor ({NAMES[purpose]})", got, want) and ok
+        purpose_want = {key: value for key, value in want.items() if key[1] == purpose}
+        ok = compare(f"host vs uniform_tensor ({NAMES[purpose]})", got, purpose_want) and ok
 
     # and the words themselves: a collision would make a draw unattributable
     words = {draws.word(purpose, position) for purpose in PURPOSES for position in range(args.k + 1)}
