@@ -392,6 +392,7 @@ class MTPInputTap:
 
     def _write(self) -> None:
         import numpy as np
+        import os
         import queue
         while True:
             try:
@@ -401,8 +402,14 @@ class MTPInputTap:
                     if time.monotonic() - self._last >= self.every_s:
                         self._flush()
                 continue
-            np.savez(self.directory / f"{self.prefix}-{part:05d}.npz", streams=rows.view(torch.int16).numpy(),
-                     meta=meta.numpy())
+            # Written under a name `mtp_tune.shards` cannot glob, then renamed into place. The trainer reads this
+            # directory while the fleet is still writing it, and `np.savez` straight to the final name means a
+            # reader sooner or later loads a truncated zip -- EOFError, in the middle of a data window.
+            final = self.directory / f"{self.prefix}-{part:05d}.npz"
+            partial = self.directory / f".{final.name}.part"
+            with open(partial, "wb") as handle:
+                np.savez(handle, streams=rows.view(torch.int16).numpy(), meta=meta.numpy())
+            os.replace(partial, final)
 
 
 def draft_threshold(text: "str | None") -> "float | None":
