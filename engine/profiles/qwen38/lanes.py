@@ -94,9 +94,9 @@ class Lanes:
                                     #  qsa_select over disjoint row ranges of a step (their row counts) chooses row for
                                     #  row what one call does. The selection lane's own statement -- it picks its
                                     #  selector by the rows it is handed; None: no lane has said, and no net splits
-    moe_fp8: object = None          # (x [N <= 16, H] bf16, local ids [N, k] int32, weights [N, k] f32, w13, s13, w2, s2)
-                                    #  -> routed [N, H] bf16: experts on block-scaled FP8 (the MTP head's, in the
-                                    #  checkpoint's own precision, kernels/moe_fp8_rows); None: no FP8 experts
+    moe_rows: object = None         # (x [N <= 16, H] bf16, local ids [N, k] int32, weights [N, k] f32, w13, s13, w2, s2)
+                                    #  -> routed [N, H] bf16: experts on BF16 (s13, s2 None) or block-scaled FP8
+                                    #  weights -- the MTP head's, kernels/moe_rows; None: no side-file experts
     rows_linear: object = None      # (x [N, K] bf16, w [M, K] bf16) -> x @ w.T: a decode step's handful of rows by
                                     #  a weight it reads once -- the router (engine/kernels/common/skinny_gemv,
                                     #  torch.mm past its shapes); None: torch.mm
@@ -291,16 +291,16 @@ def reference() -> Lanes:
     def moe_finish(routed, shared, gate):
         return (routed.float() + shared.float() * gate).to(routed.dtype)
 
-    from engine.kernels.moe_fp8_rows import reference as moe_fp8
+    from engine.kernels.moe_rows import reference as moe_rows
     return Lanes("reference", hc_norm, hc_leave, hc_leave_norm, hc_mix, gdn_gates, gdn_chunk, gdn_ring, gdn_ring_rows,
                  gdn_norm, conv_prefill, conv_ring, conv_ring_rows, norm_rope, unported("qsa_store"),
                  unported("qsa_compress"), unported("qsa_select"), unported("qsa_attend"), route_softmax_topk, moe,
                  swiglu=swiglu, moe_finish=moe_finish, qsa_index_keys=unported("qsa_index_keys"),
-                 qsa_inputs=unported("qsa_inputs"), moe_fp8=moe_fp8)
+                 qsa_inputs=unported("qsa_inputs"), moe_rows=moe_rows)
 
 
 KERNEL_MODULES = ("engine.kernels.gated_residual", "engine.kernels.gdn", "engine.kernels.moe_output",
-                  "engine.kernels.moe_route", "engine.kernels.moe_fp8_rows", "engine.kernels.qsa",
+                  "engine.kernels.moe_route", "engine.kernels.moe_rows", "engine.kernels.qsa",
                   "engine.kernels.causal_conv_ring", "engine.kernels.causal_conv_single", "engine.kernels.kda.chunk_decay",
                   "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.kernels.moe_route",
                   "engine.modules.nvfp4_sf", "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope",
@@ -335,7 +335,7 @@ def served(*, tp=None) -> Lanes:
     from engine.kernels.b12x import b12x_fused_moe
     from engine.kernels.b12x import moe_dispatch as md
     from engine.kernels.common.skinny_gemv import linear_rows
-    from engine.kernels import moe_fp8_rows
+    from engine.kernels import moe_rows
     from engine.modules.nvfp4_sf import mma_sf_view
 
     def gdn_chunk(q, k, v, decay, beta, state0, states_at=None):
@@ -442,7 +442,7 @@ def served(*, tp=None) -> Lanes:
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
-                 rows_linear=on_main(linear_rows), moe_fp8=on_main(moe_fp8_rows.moe))
+                 rows_linear=on_main(linear_rows), moe_rows=on_main(moe_rows.moe))
 
 
 def qualify(device, F) -> dict:

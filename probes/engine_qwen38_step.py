@@ -53,11 +53,11 @@ SPEC_K = 3                                # the operator's K (#1182: fleet --spe
 MAX_GIB = 4.0                             # this process's own device-memory ceiling: the lane's budget beside production
 FULL = {"fixed": 1, "gdn": 36, "qsa": 12, "ple": 1}
 ARMS = ("served", "mm")                   # qwen38_step_ab: the served lanes, and the lanes before the skinny GEMV
-MTP_ARMS = ("served", "mtp-w4", "mtp-fp8", "experts-fp8")   # qwen38_step_mtp: MTP dense BF16 (served), W4A8, FP8; experts FP8
+MTP_ARMS = ("served", "mtp-w4", "mtp-fp8", "experts-fp8", "experts-nvfp4")   # qwen38_step_mtp: the MTP head as served
+# (dense and experts BF16) against its dense projections at W4A8 / FP8 and its experts at the export's FP8 / the rank file's NVFP4
 # qwen38_step_overlap (carry M5): the shared expert forked beside the routed ones -- at one request's rows, at every
 # captured step. The launches and their bytes are the served arm's; what the arm moves is a replay's wall time
 OVERLAP_ARMS = ("served", "overlap-one", "overlap-all")
-MTP_FP8_DIR = Path("/home/choiceoh/models/st-qwen38-mtp-fp8")  # mtp_fp8.py's side files (srv4)
 
 FAMILIES = (
     ("moe b12x", r"[Mm]oe|[Mm]icro|[Ss]tatic|[Dd]ynamic|b12x|kernel_cutlass"),
@@ -138,7 +138,7 @@ def extrapolate(parts: dict, full=FULL) -> float:
 
 
 def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K,
-          mtp_precision: str = "bf16", mtp_experts_dir: "Path | None" = None, shared_overlap: "bool | str" = False):
+          mtp_precision: str = "bf16", mtp_experts: str = "bf16", shared_overlap: "bool | str" = False):
     """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft), at
     `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them)."""
     import dataclasses
@@ -155,7 +155,7 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     if spec_k != F.spec_k:
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True,
-                    mtp_precision=mtp_precision, mtp_experts="fp8" if mtp_experts_dir else "nvfp4",
+                    mtp_precision=mtp_precision, mtp_experts=mtp_experts,
                     shared_overlap=shared_overlap)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, 0.05, mtp=True)
@@ -166,9 +166,9 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     side = {s.name for s in net.side_specs()}
     views = loader.load([s.name for s in specs if s.name not in side], arena=arena)
     if side:
-        from engine.profiles.qwen38 import mtp_fp8
-        views.update(rank_loader(mtp_fp8.path(mtp_experts_dir, rank), expected_layout=mtp_fp8.LAYOUT)
-                     .load(sorted(side), arena=arena))
+        from engine.profiles.qwen38 import mtp_side
+        views.update(rank_loader(mtp_side.path(mtp_side.DIRS[mtp_experts], rank, mtp_experts),
+                                 expected_layout=mtp_side.LAYOUTS[mtp_experts]).load(sorted(side), arena=arena))
     net.bind(views)
     if net._ple is not None:
         net.attach_ple(ZeroPLETable(F.ple_rows_per_rank, F.ple_head_dim, float(net._ple_scale)),
@@ -389,7 +389,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     began = time.perf_counter()
     F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib,
                                           mtp_precision=arm[4:] if arm.startswith("mtp-") else "bf16",
-                                          mtp_experts_dir=MTP_FP8_DIR if arm == "experts-fp8" else None,
+                                          mtp_experts=arm[8:] if arm.startswith("experts-") else "bf16",
                                           shared_overlap={"overlap-one": True, "overlap-all": "all"}.get(arm, False))
     built = time.perf_counter() - began
     graphs = {}

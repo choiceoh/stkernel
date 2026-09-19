@@ -1,0 +1,34 @@
+{
+ "layout": "qwen38-mtp-bf16-v1",
+ "precision": "bf16",
+ "world": 4,
+ "source": "/home/choiceoh/models/qwen38-mtp-bf16-src",
+ "source_revision": null,
+ "source_config_sha256": "e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624",
+ "files": [
+  {
+   "name": "mtp-bf16-r0of4.safetensors",
+   "bytes": 1258291480,
+   "sha256": "e232e14394e4e5cf8725fa3480ff0eae1786173df424305eb90c4b8365a80652",
+   "tensors": 2
+  },
+  {
+   "name": "mtp-bf16-r1of4.safetensors",
+   "bytes": 1258291480,
+   "sha256": "e5b131188622baed56bf88e8d2fea20249941e86ef34fab70d9260ecbf5a77a0",
+   "tensors": 2
+  },
+  {
+   "name": "mtp-bf16-r2of4.safetensors",
+   "bytes": 1258291480,
+   "sha256": "9dbb45de23ea55b5b983be12c9b89459de020ae3f31605cd277427f8e76f9260",
+   "tensors": 2
+  },
+  {
+   "name": "mtp-bf16-r3of4.safetensors",
+   "bytes": 1258291480,
+   "sha256": "62ca18c0c0813e49eea14f1181bcd5b548b1041ebd8fbe3feba8adaa47bec003",
+   "tensors": 2
+  }
+ ]
+}
