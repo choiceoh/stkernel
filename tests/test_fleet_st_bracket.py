@@ -203,7 +203,7 @@ class CreateTests(unittest.TestCase):
 class PreparedSTAdmissionTests(unittest.TestCase):
     def value(self, command=None):
         return dict(session='qwen-test', cwd=str(ROOT), arms=[CAND],
-                    command=command or ['env', 'ST_BRACKET_PROFILE=qwen38',
+                    command=command or ['env', '-u', 'PYTHONPATH', 'ST_BRACKET_PROFILE=qwen38',
                                         'bash', 'bench/st_bracket.sh', 'pair', CAND])
 
     def test_boot_boundary_checks_receipt_inputs_and_canonical_policy(self):
