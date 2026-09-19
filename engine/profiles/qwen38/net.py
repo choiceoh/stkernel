@@ -753,6 +753,24 @@ class Qwen38Net:
             return False
         return max(s.ctx + s.length for s in step.segments) // F.idx_ratio <= F.index_blocks
 
+    @staticmethod
+    def _covered_rows(F, step) -> int:
+        """The leading rows of a host step the budget covers: every row where `_covers` says so; the rows before the
+        reach -- (index_blocks + 1) * ratio - 1 positions, 2,051 at the model's widths -- of one segment that crosses
+        it (a prompt's first chunk past 2,051 tokens); 0 otherwise (a captured step, several segments not all
+        covered). Host arithmetic."""
+        if Qwen38Net._covers(F, step):
+            return sum(s.length for s in step.segments)
+        if getattr(step, "captured", False) or len(step.segments) != 1:
+            return 0
+        segment = step.segments[0]
+        return max(0, min(segment.length, (F.index_blocks + 1) * F.idx_ratio - 1 - segment.ctx))
+
+    @staticmethod
+    def _one_request(step) -> bool:
+        """Whether every row of the step is one request's: a host step of one segment (a prompt's chunk)."""
+        return not getattr(step, "captured", False) and len(step.segments) == 1
+
     def _covered_blocks(self, step, meta: StepMeta):
         """Every row's chosen blocks when no score can decide them (carry Q11, the covered half; GLM's covered queries,
         engine/modules/prefill_indexer): a row that sees no more complete groups than the budget holds attends all of
@@ -864,11 +882,13 @@ class Qwen38Net:
         attend_covered = getattr(lanes, "qsa_attend_covered", None)
         # a window narrower than the budget attends less than a covered step's every group
         whole = window is None or sum(window) == F.index_blocks
-        if attend_covered is not None and whole and Qwen38Net._covers(F, step):
+        covered = Qwen38Net._covered_rows(F, step) if attend_covered is not None and whole else 0
+        runs = dict(group=self._score_runs(step), one_request=Qwen38Net._one_request(step))
+        if covered == N:
             # a step the budget covers chooses nothing: one dense causal launch, a run of rows sharing each K/V tile,
-            # the sparse launch's bytes (carry Q10)
+            # the sparse launch's bytes (carry Q10) -- a prefill segment's runs stacked into one dot
             attended = attend_covered(q, K, V, meta.positions32, meta.lengths, F.idx_ratio, F.idx_budget,
-                                      meta.page_table, meta.rows_req, gate=gate, group=self._score_runs(step))
+                                      meta.page_table, meta.rows_req, gate=gate, **runs)
         else:
             # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a lane
             # table without the covered launch attends a covered step's unscored ids
@@ -880,8 +900,17 @@ class Qwen38Net:
                                           meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio,
                                           group=self._score_runs(step))
             # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
-            attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
-                                        F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
+            if covered:
+                # a prompt's chunk across the reach: its rows before it chose every group they see, so the covered
+                # launch attends them (the same bytes) and the sparse launch the rest, into one output
+                c, attended = covered, torch.empty(q.shape, dtype=q.dtype, device=q.device)
+                attend_covered(q[:c], K, V, meta.positions32[:c], meta.lengths, F.idx_ratio, F.idx_budget,
+                               meta.page_table, meta.rows_req[:c], out=attended[:c], gate=gate[:c], **runs)
+                lanes.qsa_attend(q[c:], K, V, blocks[c:], meta.positions32[c:], meta.lengths, F.idx_ratio,
+                                 F.idx_budget, meta.page_table, meta.rows_req[c:], out=attended[c:], gate=gate[c:])
+            else:
+                attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
+                                            F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
         out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 

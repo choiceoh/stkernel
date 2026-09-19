@@ -51,6 +51,15 @@ _LOGITS_WORKSPACE_BYTES = 128 * 1024 * 1024
 _SPLIT_PROFILE_OVERRIDE = None      # (tile width, target splits, warps): the sparse and the covered attention
 _SCORE_PROFILE_OVERRIDE = None      # (tile width, tiles a program, warps): qsa_mqa_paged, the row and the run kernel
 _INPUT_WARPS_OVERRIDE = None        # warps of qsa_index_keys' and of qsa_inputs' launch
+_STACK_OVERRIDE = None              # (tile width, stacked M, warps): qsa_covered_paged_attention's stacked launch
+
+# The stacked covered launch (`_qsa_covered_stacked_kernel`): a program's M rows are STACK_M // group_size query rows'
+# every head (60 of 64 at Qwen3.8's six heads a KV head), from STACK_MIN_ROWS rows of one request -- below, the run
+# kernel's splits fill the device better than a handful of stacked programs. On a GB10 (q38qsastack-0919a, minima of an
+# eager sweep beside production) a fresh prompt's covered attention went 1,610 -> 795 us at 2,048 rows, 474 -> 222 at
+# 1,024, 171 -> 124 at 512, the sparse launch's bytes at 16-wide tiles and 4 warps; 32-wide tiles were 20% faster
+# again (637 us) but round the softmax elsewhere, and 64-wide ones or M 128 at 32 ask more than the shared memory.
+STACK_M, STACK_WARPS, STACK_MIN_ROWS = 64, 4, 256
 
 
 def _forced_geometry(name: str, value, fields: int) -> tuple:
@@ -906,6 +915,149 @@ def _qsa_covered_paged_gqa_kernel(
                                partial_output_ptr, partial_lse_ptr, output_ptr, stride_output_row, stride_output_head,
                                gate_ptr, stride_gate_row, stride_gate_head, GROUP_SIZE, HEAD_DIM, NUM_QUERY_HEADS,
                                NUM_SPLITS, GATED)
+
+
+@triton.jit
+def _qsa_covered_stacked_kernel(
+    q_ptr,
+    k_cache_ptr,
+    v_cache_ptr,
+    block_table_ptr,
+    token_to_req_ptr,
+    query_positions_ptr,
+    sequence_lengths_ptr,
+    output_ptr,
+    gate_ptr,
+    stride_q_row,
+    stride_q_head,
+    stride_k_block,
+    stride_k_token,
+    stride_k_head,
+    stride_v_block,
+    stride_v_token,
+    stride_v_head,
+    stride_table_req,
+    stride_output_row,
+    stride_output_head,
+    stride_gate_row,
+    stride_gate_head,
+    num_rows,
+    num_cache_blocks,
+    num_requests,
+    num_lengths,
+    ROWS: tl.constexpr,
+    TOPK: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
+    PAGE_TABLE_WIDTH: tl.constexpr,
+    GROUP_SIZE: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    GATED: tl.constexpr,
+) -> None:
+    """`_qsa_covered_paged_gqa_kernel` with a program's rows stacked into one dot: ROWS consecutive rows of ONE request,
+    every head of the KV head's group, as the M rows of a [BLOCK_M, HEAD_DIM] query tile (M row m: the run's row
+    m // GROUP_SIZE, its head m % GROUP_SIZE) -- the run kernel keeps a row's six heads in a 16-row MMA of its own. Each
+    M row steps the sparse kernel's softmax, operation for operation, on the sparse launch's tiles, a column past its
+    row's position masked as a missing one was, so a row's output is the sparse launch's bytes. One split: the stacked
+    launch serves a prefill segment's many rows. The programs run from the last run back: the latest rows see the most
+    columns, so they start first."""
+    first = (tl.num_programs(0) - 1 - tl.program_id(0)) * ROWS
+    kv_head = tl.program_id(1)
+    request = tl.load(token_to_req_ptr + first)
+    safe_request = tl.minimum(tl.maximum(request, 0), num_requests - 1)
+    sequence_length = tl.load(
+        sequence_lengths_ptr + tl.minimum(tl.maximum(request, 0), num_lengths - 1),
+        mask=(request >= 0) & (request < num_lengths),
+        other=0,
+    )
+    stacked = tl.arange(0, BLOCK_M)
+    member = stacked // GROUP_SIZE
+    head = kv_head * GROUP_SIZE + stacked % GROUP_SIZE
+    row = first + member
+    live = (member < ROWS) & (row < num_rows)
+    position = tl.load(query_positions_ptr + row, mask=live, other=-1)
+    dim_offsets = tl.arange(0, HEAD_DIM)
+    column_offsets = tl.arange(0, BLOCK_N)
+    query = tl.load(
+        q_ptr + row[:, None] * stride_q_row + head[:, None] * stride_q_head + dim_offsets[None, :],
+        mask=live[:, None],
+        other=0.0,
+    )
+    max_value = tl.full((BLOCK_M,), -1.0e20, dtype=tl.float32)
+    normalizer = tl.zeros((BLOCK_M,), dtype=tl.float32)
+    accumulator = tl.zeros((BLOCK_M, HEAD_DIM), dtype=tl.float32)
+    softmax_scale_log2: tl.constexpr = (HEAD_DIM**-0.5) * 1.4426950408889634
+    horizon = tl.minimum(tl.minimum(tl.max(position) + 1, sequence_length), TOPK)
+    for tile in range(0, tl.cdiv(horizon, BLOCK_N)):
+        columns = tile * BLOCK_N + column_offsets
+        logical_page = columns // PAGE_SIZE
+        page_offset = columns % PAGE_SIZE
+        tile_valid = (
+            (request >= 0)
+            & (request < num_requests)
+            & (columns < horizon)
+            & (logical_page < PAGE_TABLE_WIDTH)
+        )
+        physical_page = tl.load(
+            block_table_ptr
+            + safe_request * stride_table_req
+            + tl.minimum(logical_page, PAGE_TABLE_WIDTH - 1),
+            mask=tile_valid,
+            other=-1,
+        )
+        tile_valid &= (physical_page >= 0) & (physical_page < num_cache_blocks)
+        # physical_page * block stride can overflow int32 for large caches.
+        safe_page = tl.maximum(physical_page, 0).to(tl.int64)
+        keys = tl.load(
+            k_cache_ptr
+            + safe_page[None, :] * stride_k_block
+            + page_offset[None, :] * stride_k_token
+            + kv_head * stride_k_head
+            + dim_offsets[:, None],
+            mask=tile_valid[None, :],
+            other=0.0,
+        )
+        values = tl.load(
+            v_cache_ptr
+            + safe_page[:, None] * stride_v_block
+            + page_offset[:, None] * stride_v_token
+            + kv_head * stride_v_head
+            + dim_offsets[None, :],
+            mask=tile_valid[:, None],
+            other=0.0,
+        )
+        # `_qsa_covered_tile`'s step with each M row's own mask
+        valid = tile_valid[None, :] & (columns[None, :] <= position[:, None])
+        scores = tl.dot(query, keys)
+        scores *= softmax_scale_log2
+        scores = tl.where(valid, scores, -1.0e20)
+        next_max = tl.maximum(max_value, tl.max(scores, axis=1))
+        alpha = tl.math.exp2(max_value - next_max)
+        probabilities = tl.where(valid, tl.math.exp2(scores - next_max[:, None]), 0.0)
+        accumulator = tl.dot(probabilities.to(values.dtype), values, acc=accumulator * alpha[:, None])
+        normalizer = normalizer * alpha + tl.sum(probabilities, axis=1)
+        max_value = next_max
+
+    # `_qsa_covered_store`'s one-split store
+    normalized_output = tl.where(
+        (normalizer > 0)[:, None],
+        accumulator / tl.maximum(normalizer[:, None], 1.0e-20),
+        0.0,
+    )
+    value = normalized_output
+    if GATED:
+        gate = tl.load(
+            gate_ptr + row[:, None] * stride_gate_row + head[:, None] * stride_gate_head + dim_offsets[None, :],
+            mask=live[:, None],
+            other=0.0,
+        ).to(tl.float32)
+        value = normalized_output.to(output_ptr.dtype.element_ty).to(tl.float32) * tl.sigmoid(gate)
+    tl.store(
+        output_ptr + row[:, None] * stride_output_row + head[:, None] * stride_output_head + dim_offsets[None, :],
+        value,
+        mask=live[:, None],
+    )
 
 
 @triton.jit
@@ -1798,17 +1950,47 @@ def _split_profile(rows: int, kv_heads: int, block_m: int, width: int):
     return block_n, num_tiles, min(max_useful_splits, target_splits), partial_warps
 
 
+def _covered_stacked(q, k_cache, v_cache, query_positions, sequence_lengths, block_table, token_to_req, out, gate,
+                     width, group_size, block_n):
+    """`_qsa_covered_stacked_kernel` over the rows (checked by qsa_covered_paged_attention): STACK_M // group_size rows
+    a program, on the sparse launch's tile width (`block_n`, the split profile's) unless the probe hook forces one."""
+    stack_m, warps = STACK_M, STACK_WARPS
+    if _STACK_OVERRIDE is not None:
+        block_n, stack_m, warps = _forced_geometry("_STACK_OVERRIDE", _STACK_OVERRIDE, 3)
+    run = stack_m // group_size
+    if not run:
+        raise ValueError(f"a stacked covered program holds {stack_m} M rows; a KV head's group is {group_size}")
+    gated = gate is not None
+    gate_rows = gate if gated else out                                    # never read without GATED
+    _qsa_covered_stacked_kernel[(triton.cdiv(q.shape[0], run), k_cache.shape[2])](
+        q, k_cache, v_cache, block_table, token_to_req, query_positions, sequence_lengths, out, gate_rows,
+        q.stride(0), q.stride(1), k_cache.stride(0), k_cache.stride(1), k_cache.stride(2),
+        v_cache.stride(0), v_cache.stride(1), v_cache.stride(2), block_table.stride(0), out.stride(0), out.stride(1),
+        gate_rows.stride(0), gate_rows.stride(1), q.shape[0], k_cache.shape[0], block_table.shape[0],
+        sequence_lengths.shape[0],
+        ROWS=run, TOPK=width, PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=block_table.shape[1],
+        GROUP_SIZE=group_size, HEAD_DIM=q.shape[2], BLOCK_M=stack_m, BLOCK_N=block_n, GATED=gated,
+        num_warps=warps, num_stages=2,
+    )
+    return out
+
+
 def qsa_covered_paged_attention(q, k_cache, v_cache, query_positions, sequence_lengths, compress_ratio, token_topk,
-                                block_table, token_to_req, out=None, *, gate=None, group: int = 1):
+                                block_table, token_to_req, out=None, *, gate=None, group: int = 1,
+                                one_request: bool = False):
     """`qsa_sparse_paged_attention_blocks` for a step the budget covers -- every row sees no more complete groups than
     token_topk // compress_ratio, so it attends every position up to its own -- without any blocks (carry Q10): the
     same bytes from a dense causal launch that reads a run's K/V tiles once and stops where the run's furthest row
-    does. `group` (1..4): the rows come in runs of that many of one request (qsa_mqa_paged's). The caller answers for
-    both: a row that is not covered would attend only the first token_topk + compress_ratio - 1 positions."""
+    does. `group` (1..4): the rows come in runs of that many of one request (qsa_mqa_paged's). `one_request`: every row
+    is one request's (a prefill segment) -- from STACK_MIN_ROWS rows the stacked launch serves it, a run's rows and
+    heads the M rows of one dot (`_qsa_covered_stacked_kernel`), the same bytes. The caller answers for all three: a
+    row that is not covered would attend only the first token_topk + compress_ratio - 1 positions."""
     if token_topk <= 0 or compress_ratio <= 0 or token_topk % compress_ratio:
         raise ValueError("QSA token top-k must be divisible by compression ratio")
     if type(group) is not int or not 1 <= group <= 4:
         raise ValueError("QSA covered attention groups 1..4 rows of a request a program")
+    if type(one_request) is not bool:
+        raise ValueError("one_request is a declared boolean")
     if not q.is_cuda:
         raise RuntimeError("paged QSA covered attention runs on CUDA")
     if q.ndim != 3 or k_cache.ndim != 4 or v_cache.shape != k_cache.shape:
@@ -1845,6 +2027,9 @@ def qsa_covered_paged_attention(q, k_cache, v_cache, query_positions, sequence_l
     group_size = q.shape[1] // k_cache.shape[2]
     block_m = triton.next_power_of_2(group_size)
     block_n, num_tiles, num_splits, partial_warps = _split_profile(rows, k_cache.shape[2], block_m, width)
+    if one_request and rows >= STACK_MIN_ROWS:
+        return _covered_stacked(q, k_cache, v_cache, query_positions, sequence_lengths, block_table, token_to_req, out,
+                                gate, width, group_size, block_n)
     if num_splits == 1:
         partial_output = partial_lse = out
     else:

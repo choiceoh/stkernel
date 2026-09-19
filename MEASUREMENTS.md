@@ -5027,3 +5027,9 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 ### Qwen3.8 GLM 정밀도 이식 (2026-09-19)
 
 GLM의 IEEE FP32 라우터·W8A16 검증 헤드·타깃 GPTQ 자기 보정 배선을 Qwen으로 옮겼다. GB10 셀 검사 **83개 통과, 스킵 0**. 실제 헤드 크기의 합성 가중치에서 같은 FP8 가중치를 기준으로 입력·누적·최종 반올림 오차 RMSE가 W8A8 **0.0267** → W8A16 **0.00168**(1/4/16행). 수집 대상 193곳, **2.804 GiB/랭크**, 워밍업·가상 행 제외, 체크포인트 표식 검사·자동 저장을 연결했다. 전체 TP4 출력 품질·수용률·속도·운영 배포 판정은 아니다. [원시 로그·이식 범위·재현](measurements/qwen38_precision_port_20260919/README.md).
+### Qwen3.8 QSA covered 어텐션을 한 dot 에 쌓기 — 새 프롬프트 2,048 행 1,610 → 795 µs, 2,051 토큰을 넘는 첫 청크 8,861 → 5,365 µs, 바이트 동일 (2026-09-19, srv4 단일 GPU 레인, PR #1288)
+`qsa._qsa_covered_stacked_kernel`: 한 요청의 연속 행 10 개 × 6 헤드를 dot 하나의 M 64 로 쌓는다(run 발사는 행마다 6 헤드짜리 MMA). 16 폭 타일·4 warps,
+sparse 발사와 바이트 동일(GPU). net 은 한 세그먼트 호스트 스텝에서 쓰고(`one_request`), reach 를 넘는 청크는 앞 행을 covered, 나머지를 sparse 로 나눠 한 출력에.
+- `q38qsastack-0919a`(최솟값, 프로덕션 옆): 512 행 171 → 124, 1,024 행 474 → 222, 2,048 행 1,610 → 795 µs; 4,096 행 첫 청크 8,861 → 5,365 µs.
+- 32 폭 타일은 더 빠르지만(637 µs) 바이트가 달라 기각. **플릿 onepass 미측정**(D17).
+  [상세·원시](measurements/qwen38_qsa_stacked_20260919/README.md).

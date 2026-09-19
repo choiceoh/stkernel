@@ -910,5 +910,95 @@ def run(output=None):
     return events
 
 
+# the stacked covered launch (qsa._qsa_covered_stacked_kernel): (tile width, stacked M, warps) through _STACK_OVERRIDE,
+# the rule's first
+STACK_TRIES = ((16, 64, 4), (16, 64, 8), (32, 64, 8), (32, 64, 4), (16, 128, 8))
+STACK_ROWS = (256, 512, 1024, 2048)                # a fresh prompt the budget covers, from the launch's first row count
+SPLIT_ROWS = 4096                                  # a prompt's first chunk, across the reach
+
+
+def run_stacked(output=None):
+    """qsa_covered_paged_attention's stacked launch (a prefill segment's rows and heads stacked into one dot) against
+    the run launch it replaces, on a fresh prompt the budget covers at STACK_ROWS rows, at the rule's geometry and
+    STACK_TRIES'; then a prompt's first chunk across the reach (SPLIT_ROWS rows from position 0) as the served layer now
+    attends it -- the rows before the reach stacked and covered, the rest sparse, into one output -- against the sparse
+    launch over every row. Gates, reported and not enforced: the stacked output against the sparse launch's over the
+    covered ids (bytes; BF16 steps and drift where not), the split chunk's against the all-sparse one (bytes)."""
+    events = []
+
+    def report(event, **values):
+        row = dict(event=event, **values)
+        events.append(row)
+        print(json.dumps(row), flush=True)
+        if output:
+            Path(output).write_text("".join(json.dumps(e) + "\n" for e in events))
+
+    qsa = _qsa()
+    assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
+    props = torch.cuda.get_device_properties(0)
+    torch.cuda.set_per_process_memory_fraction(min(1.0, MEMORY_CAP_GIB * 2 ** 30 / props.total_memory))
+    device, cell = torch.device("cuda"), QWEN38
+    report("device", name=props.name, torch=torch.__version__, stack_rule=[qsa.STACK_M, qsa.STACK_WARPS],
+           stack_min_rows=qsa.STACK_MIN_ROWS)
+    with torch.inference_mode():
+        for rows in STACK_ROWS:
+            case = attention_case(cell, 1, rows, 0, device, torch.Generator().manual_seed(SEED + rows), covered=True,
+                                  sets=1)
+            m = case.step.meta
+            want = Attention(cell, case.step, case.q, case.gate, case.K, case.V,
+                             covered_ids(cell, case.step, device)).launch()
+            out = torch.empty_like(case.q)
+
+            def covered_launch(one_request):
+                return lambda: qsa.qsa_covered_paged_attention(case.q, case.K, case.V, m.positions32, m.lengths,
+                                                               cell.ratio, cell.budget, m.page_table, m.rows_req, out,
+                                                               gate=case.gate, group=4, one_request=one_request)
+
+            def stacked(tile):
+                def launch():
+                    with forced(_STACK_OVERRIDE=tile):
+                        covered_launch(True)()
+                return launch
+
+            gates, launches = {}, {"runs (before)": covered_launch(False)}
+            for name, launch in [("runs (before)", launches["runs (before)"])] + [(f"stacked {t}", stacked(t))
+                                                                                   for t in STACK_TRIES]:
+                try:
+                    launch()
+                except Exception as error:                              # a geometry past the shared memory
+                    gates[name] = dict(refused=f"{type(error).__name__}: {str(error)[:200]}")
+                    continue
+                gates[name] = dict(sparse_bytes=bool(torch.equal(out, want)), steps=bf16_steps(out, want)[0],
+                                   drift=[round(x, 6) for x in drift(out, want)])
+                launches[name] = launch
+            report("stacked", rows=rows, gates=gates, timings=eager_timings(launches))
+            del case, want, out
+            torch.cuda.empty_cache()
+
+        case = attention_case(cell, 1, SPLIT_ROWS, 0, device, torch.Generator().manual_seed(SEED + SPLIT_ROWS), sets=1)
+        m, c = case.step.meta, (cell.index_blocks + 1) * cell.ratio - 1
+        out = torch.empty_like(case.q)
+
+        def all_sparse():
+            qsa.qsa_sparse_paged_attention_blocks(case.q, case.K, case.V, case.blocks, m.positions32, m.lengths,
+                                                  cell.ratio, cell.budget, m.page_table, m.rows_req, out, gate=case.gate)
+
+        def split():
+            qsa.qsa_covered_paged_attention(case.q[:c], case.K, case.V, m.positions32[:c], m.lengths, cell.ratio,
+                                            cell.budget, m.page_table, m.rows_req[:c], out[:c], gate=case.gate[:c],
+                                            group=4, one_request=True)
+            qsa.qsa_sparse_paged_attention_blocks(case.q[c:], case.K, case.V, case.blocks[c:], m.positions32[c:],
+                                                  m.lengths, cell.ratio, cell.budget, m.page_table, m.rows_req[c:],
+                                                  out[c:], gate=case.gate[c:])
+
+        all_sparse()
+        before = out.clone()
+        split()
+        report("split", rows=SPLIT_ROWS, covered_rows=c, sparse_bytes=bool(torch.equal(out, before)),
+               steps=bf16_steps(out, before)[0], timings=eager_timings({"all sparse (before)": all_sparse,
+                                                                         "split": split}))
+    return events
+
+
 if __name__ == "__main__":
     run(sys.argv[1] if len(sys.argv) > 1 else None)
