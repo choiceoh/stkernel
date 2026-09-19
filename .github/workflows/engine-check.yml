@@ -15,7 +15,7 @@ on:
     # `probes/**` is here because a probe is found broken at GPU time otherwise: on 2026-09-19 one imported a tree the
     # single-GPU lane does not ship (#1210) and the cells lane died at its first line on a return shape two PRs had
     # changed (#1219). A PR that touched only `probes/` ran no workflow at all.
-    paths: ["engine/**", "tests/**", "tools/**", "launchers/**", "probes/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
+    paths: ["dev", "engine/**", "tests/**", "tools/**", "launchers/**", "probes/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
   workflow_dispatch:
 
 permissions:
