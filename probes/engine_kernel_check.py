@@ -310,6 +310,12 @@ def main():
         from probes.engine_qwen38_qsa_geometry import run as qwen38_qsa_geometry
         qwen38_qsa_geometry(args.output)
         return
+    if args.lanes == 'qwen38_tile_union':
+        # component timings: the QSA tile-union prefill attention (sm_121a intake U12, not served) against the split-K
+        # launch over eager prefill steps, the served band on their drift first
+        from probes.engine_qwen38_qsa_geometry import run_tile_union as qwen38_tile_union
+        qwen38_tile_union(args.output)
+        return
     if args.lanes == 'qwen38_qualify_soak' or args.lanes.startswith('qwen38_qualify_soak:'):
         # correctness only: the boot's lane qualify again and again -- how often it fails on this card, and whose
         # failure it is (gated_residual.blame); `:N` sets the repeats
