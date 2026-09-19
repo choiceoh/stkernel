@@ -304,6 +304,23 @@ class DataTests(unittest.TestCase):
                 self.assertEqual((streams.shape, tokens.shape), ((19, width), (19,)))
                 self.assertTrue(0 <= start <= 42 - 19)
 
+    def test_the_evaluation_takes_every_boot_in_turn(self):
+        """A limit on the held-out windows samples every data set: one window from each boot before a second from any."""
+        import numpy as np
+        from engine.profiles.qwen38.mtp_tune import Runs, build_runs
+        with tempfile.TemporaryDirectory() as d:
+            for boot, n in (("20260919-063523", 3), ("20260919-075000", 1)):
+                meta = [[s, p, 7, 0] for s in range(n) for p in range(40)]
+                np.savez(Path(d) / f"mtp-inputs-{boot}-00000.npz", streams=np.zeros((len(meta), 4), np.int16),
+                         meta=np.array(meta, dtype=np.int64))
+            build_runs(sorted(Path(d).glob("*.npz")), Path(d) / "data", holdout=1.0, min_length=8)
+            runs = Runs(Path(d) / "data", "eval", window=16, depth=3)
+            self.assertEqual(runs.boots(), ["20260919-063523", "20260919-075000"])
+            order = [boot[-6:] for *_rest, boot in runs.every_window()]
+            self.assertEqual(order[:4], ["063523", "075000", "063523", "075000"])
+            self.assertEqual(order.count("075000"), 3)                 # 40 positions: windows at 0, 16, 32
+            self.assertEqual(len(order), 12)
+
     def test_a_slot_id_serving_one_request_after_another_is_two_runs(self):
         """The door's sequence ids are its slots' (the 2026-09-19 window: four ids over 1,441 requests): a record that
         does not continue its id's last position starts a run -- a new request at 0, or one past a cached prefix."""
