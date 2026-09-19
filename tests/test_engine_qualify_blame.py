@@ -1,6 +1,7 @@
 """A failed hold says where its error sits and whose it is, and a NaN does not pass one.
 
     drift                 a NaN element is an infinite error (it used to pass: `nan > band` is false)
+    skinny_gemv.qualify   the same hole in its own running max -- `max(0.0, nan)` is 0.0
     blame                 the elements past the band (count, the span of each index, the worst one's two values), whether
                           each side repeats itself, and which side leaves the CPU's reference
     qsa.qualify           its error carries `blame` for every (cell, rows) that failed -- the kernel stood in for by
@@ -69,6 +70,19 @@ class DriftTests(unittest.TestCase):
         with mock.patch.object(qsa, "norm_rope_partial", kernel):
             with self.assertRaisesRegex(RuntimeError, "inf"):
                 qsa.qualify(torch.device("cpu"), **FACTS)
+
+    def test_a_skinny_gemv_that_gives_a_nan_does_not_qualify(self):
+        from engine.kernels.common import skinny_gemv
+
+        def gemv(x, w, cfg):                               # the product itself, but for one element
+            out = (x.float() @ w.float().t()).to(torch.bfloat16)
+            out[0, 0] = float("nan")
+            return out
+        with mock.patch.object(skinny_gemv, "gemv", gemv):
+            with self.assertRaisesRegex(RuntimeError, "inf"):
+                skinny_gemv.qualify(torch.device("cpu"))
+        with mock.patch.object(skinny_gemv, "gemv", lambda x, w, cfg: (x.float() @ w.float().t()).to(torch.bfloat16)):
+            skinny_gemv.qualify(torch.device("cpu"))       # and the product qualifies
 
 
 @unittest.skipUnless(RUNS, RUNS_REASON)
