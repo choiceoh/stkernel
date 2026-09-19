@@ -403,6 +403,17 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                            "index_select", "arange", "sigmoid", "bitwise_and", "__and__", "sub", "__rsub__", "__sub__"}
                 where[label + " calls"] = [c for c in calls(lambda: fn(inputs), top=200) if c["func"] in watched]
                 print(json.dumps({"arm": arm, "calls": label, "top": where[label + " calls"][:30]}), flush=True)
+        if shape in draft.graphs.inputs:
+            # net.mtp_forward `rows`: the rows past the attention alone against every row and then the same rows
+            step, given, last, _ = draft.graphs.inputs[shape]
+            seat(draft, caches, F, shape)
+            full, full_streams = net.mtp_forward(step, given, caches, last_hidden_only=False)
+            part, part_streams = net.mtp_forward(step, given, caches, last_hidden_only=False, rows=last)
+            a, b = full.index_select(0, last).float(), part.float()
+            where["mtp_rows"] = {"hidden_max_err": float((a - b).abs().max() / a.abs().max().clamp_min(1e-30)),
+                                 "hidden_equal": bool(torch.equal(a, b)),
+                                 "streams_equal": bool(torch.equal(full_streams.index_select(0, last), part_streams))}
+            print(json.dumps({"arm": arm, "mtp_rows": where["mtp_rows"]}), flush=True)
         caches.reset()
         served = served_loop(F, net, caches, target, draft)
         one = shapes[0]

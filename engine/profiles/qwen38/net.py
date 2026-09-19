@@ -858,10 +858,15 @@ class Qwen38Net:
         return gated + local.reshape(n * t, width)
 
     # -- the MTP head --------------------------------------------------------------------------------------------------
-    def mtp_forward(self, step: Step, given: torch.Tensor, caches, *, last_hidden_only: bool = True):
+    def mtp_forward(self, step: Step, given: torch.Tensor, caches, *, last_hidden_only: bool = True, rows=None):
         """The MTP head over a step whose tokens are the target's next tokens and `given` the target's streams at the
         positions before them [N, hc*H]: fuse, one QSA + MoE layer (model layer F.layers, its rows in the target's
-        blocks), the head's closing mixer -> (hidden [N or segments, H], its streams for chaining)."""
+        blocks), the head's closing mixer -> (hidden, its streams for chaining), for the rows a caller reads: `rows`
+        [R] (device int64 indices), each segment's last with `last_hidden_only`, else every row.
+
+        The attention runs over every row -- it stores their keys and values, which the next steps attend -- and all
+        that follows it is row by row, so only the rows read go on: a draft observation's MoE runs its rows' last
+        position, not the K+1 it observed, and a prompt's the segments' last rows, not the prompt."""
         F, p, lanes = self.F, self.p, self.lanes
         meta = self.step_meta(step, caches)
         e = lanes.hc_norm(self.embed(step.ids), p["mtp.pre_fc_norm_embedding"], F.rms_eps, 1)
@@ -870,14 +875,14 @@ class Qwen38Net:
         h = (self._bf16(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
         out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers)
+        if last_hidden_only and rows is None:
+            rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
+        if rows is not None:
+            h, out, inject = h.index_select(0, rows), out.index_select(0, rows), inject.index_select(0, rows)
         x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
         out = self._moe("mtp.L0.", x, compact=not getattr(step, "captured", False))
         streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc)
         hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
-        if last_hidden_only:
-            last = torch.tensor([s.start + s.length - 1 for s in step.segments], device=hidden.device)
-            return hidden.index_select(0, last), streams.index_select(0, last)
         return hidden, streams
-
 
 __all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME", "MTP_PRECISIONS"]
