@@ -1,0 +1,88 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (105 free)
+  kernel shape (record): hidden 2560 hc 4 gated_residual tp 4 | gqa 6x256 no sink | linear 4/12x128x128 conv 4 decay/head | indexer qsa 4x128 pool 4 top 2048 | moe 512(128 local) I640/640 top10 nvfp4 silu | spec 1
+[W919 02:23:05.856778883 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+NCCL version 2.29.7+cuda13.2
+[oneshot] inline proxy serving peers=3 inline_bytes=8 wr_reuse=1
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+  collectives: one-shot RDMA (NCCL where ineligible)
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988, 0.0027172171976417303)}, 'gdn': {'decay': (1.8527525469380635e-07, 1.2093259726952965e-07), 'beta': (0.0, 0.0), 'raw_beta': (0.0, 0.0), 'norm': (7.038288458716124e-05, 2.438618139422033e-06)}, 'qsa_norm_rope': {'norm_rope_6x256': (0.006172839552164078, 0.0015349400928243995), 'norm_rope_4x128': (0.006896551698446274, 0.002324720611795783)}, 'skinny_gemv': {'513x2560': 0.002813, '324x10240': 0.002272, '320x10240': 0.002349}, 'fp8_rows': {1: 0.002073, 4: 0.001935, 16: 0.002006}}
+boot rendezvous arena-admission: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+[transformers] You are using a model of type `qwen4_exp` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=67179 -> rows 83456/83456 tiles 652/652 tasks 3260/3260
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=36367 -> rows 52736/83456 tiles 412/652 tasks 2060/3260
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=76291 -> rows 92672/92672 tiles 724/724 tasks 3620/3620
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=104330 -> rows 120704/120704 tiles 943/943 tasks 4715/4715
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=74454 -> rows 90752/120704 tiles 709/943 tasks 3545/4715
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=48337 -> rows 64640/120704 tiles 505/943 tasks 2525/4715
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=81374 -> rows 97664/120704 tiles 763/943 tasks 3815/4715
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=64296 -> rows 80640/120704 tiles 630/943 tasks 3150/4715
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=41548 -> rows 57856/120704 tiles 452/943 tasks 2260/4715
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=35143 -> rows 51456/120704 tiles 402/943 tasks 2010/4715
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=105145 -> rows 121472/121472 tiles 949/949 tasks 4745/4745
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=88099 -> rows 104448/121472 tiles 816/949 tasks 4080/4745
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=87259 -> rows 103552/121472 tiles 809/949 tasks 4045/4745
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=86263 -> rows 102528/121472 tiles 801/949 tasks 4005/4745
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=112335 -> rows 128640/128640 tiles 1005/1005 tasks 5025/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=109943 -> rows 126208/128640 tiles 986/1005 tasks 4930/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=48114 -> rows 64384/128640 tiles 503/1005 tasks 2515/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=97017 -> rows 113280/128640 tiles 885/1005 tasks 4425/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=105717 -> rows 121984/128640 tiles 953/1005 tasks 4765/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=89820 -> rows 106112/128640 tiles 829/1005 tasks 4145/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=82442 -> rows 98816/128640 tiles 772/1005 tasks 3860/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=77066 -> rows 93440/128640 tiles 730/1005 tasks 3650/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=91292 -> rows 107648/128640 tiles 841/1005 tasks 4205/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=83592 -> rows 99968/128640 tiles 781/1005 tasks 3905/5025
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=103013 -> rows 119296/128640 tiles 932/1005 tasks 4660/5025
+  warm prefill: memory/32256/0 25.705s, kernels/64/0 1.311s, kernels/512/0 0.438s, kernels/4095/0 1.374s, kernels/64/8384 1.297s, kernels/64/16832 0.283s, kernels/64/32960 0.291s, kernels/64/65984 0.3s, kernels/64/131264 0.288s, kernels/64/262080 0.293s
+2026-09-19 02:23:56,156 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_2897a1e8df411b6a
+2026-09-19 02:24:00,499 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_2897a1e8df411b6a.o
+2026-09-19 02:24:38,040 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m8_k2560_n640_t10_r160_af110944efae4c3a
+2026-09-19 02:24:40,774 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m8_k2560_n640_t10_r160_af110944efae4c3a.o
+2026-09-19 02:24:42,387 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r160_800388f7994713b6
+2026-09-19 02:24:44,732 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r160_800388f7994713b6.o
+2026-09-19 02:25:05,903 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t10_r160_54f8ad7251493213
+2026-09-19 02:25:07,087 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t10_r160_54f8ad7251493213.o
+2026-09-19 02:25:09,845 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t10_r160_e8be3707daa11d16
+2026-09-19 02:25:10,992 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t10_r160_e8be3707daa11d16.o
+2026-09-19 02:25:29,538 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t10_r160_c0b5a30d06baa791
+2026-09-19 02:25:31,951 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t10_r160_c0b5a30d06baa791.o
+  drafter: MTP head, K=3 (verify step 4 tokens a row)
+phase                                      seconds   dev GiB  counters
+front                                        3.503            import_s=2.326 box_s=0.477 shape_s=0.002
+comm                                         1.830     +0.20  
+prepare one-shot                             2.406     +1.56  
+lanes                                        0.008     +0.00  kernel_imports_s=3.255
+  wait for the imports                       0.000     +0.00  
+qualify lanes                                2.300     +1.45  
+arena                                        1.546    +38.44  
+load                                         2.497     +1.05  blocks=51 bytes=2.1066e+10 direct=1 stage_s=0.619 wait_s=1.151 copy_s=0.577 views_s=0.026 tensors=1148 read_bytes=4.80171e+08
+ple table                                    0.001     +0.00  
+prepare dense                                7.585     +0.79  weight_digest_calls=196 weight_digest_s=2.85 pack_calls=196 pack_s=3.431 packs_cache=196 packs_rtn=196
+caches                                       0.003     +0.00  
+engine                                       0.029     +0.00  
+wait for weight preparation                  0.030     +0.00  
+runner                                       0.000     +0.00  
+wait for the prelude                         0.000     +0.00  
+warm prefill                                31.584     +0.98  
+capture decode                             110.740     +1.50  
+door                                         0.059     -0.00  
+total                                      164.121
+  rank 0: ready in 162.0 s, door on port 8000
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+2026-09-19 02:25:50,300 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t1_r2_f3be41487ba0a9d0
+2026-09-19 02:25:51,524 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t1_r2_f3be41487ba0a9d0.o
+2026-09-19 02:25:53,091 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r2_79110e05cf09f90a
+2026-09-19 02:25:54,245 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r2_79110e05cf09f90a.o
+2026-09-19 02:25:58,829 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m4_k2560_n640_t1_r4_238e2a852b2d5ed5
+2026-09-19 02:26:01,489 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m4_k2560_n640_t1_r4_238e2a852b2d5ed5.o
+2026-09-19 02:26:02,076 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t1_r4_3706a864d3ba6644
+2026-09-19 02:26:04,688 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t1_r4_3706a864d3ba6644.o
+2026-09-19 02:26:04,699 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r4_7cf9e67c42cb5b0e
+2026-09-19 02:26:07,183 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r4_7cf9e67c42cb5b0e.o
+2026-09-19 02:26:12,227 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t1_r4_af5a9d1fd5844b76
+2026-09-19 02:26:14,875 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t1_r4_af5a9d1fd5844b76.o
