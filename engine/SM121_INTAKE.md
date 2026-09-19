@@ -55,8 +55,8 @@
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U9 | GLM KDA chunked prefill 을 FlashKDA 로(업스트림 GB300 1.7~3.8×; sm_121a 빌드부터) | vllm#55737 | kernel | gpu→fleet | 열림 |
-| U10 | skinny FP8 GEMM(M=1 GEMV, M≥2 CUTLASS)을 `dense/fp8_rows`·W8A16 과 GB10 에서 대조 | sglang#38082 | measure | gpu | 열림 |
+| U9 | GLM KDA chunked prefill 을 FlashKDA 로(업스트림 GB300 1.7~3.8×; sm_121a 빌드부터) | vllm#55737 | kernel | gpu→fleet | **기각(하드웨어)**: FlashInfer 의 FlashKDA 는 `_FLASH_KDA_SUPPORTED_COMPUTE_CAPABILITIES = {(10, 0), (10, 3)}`(kda_prefill.py:40) — SM100 의 tcgen05/TMEM 커널이라 sm_121a 에서는 부를 수 없다. 업스트림의 1.7~3.8× 는 GB300 수치. 이식은 재설계(D8)라 다음 목록으로 |
+| U10 | skinny FP8 GEMM(M=1 GEMV, M≥2 CUTLASS)을 `dense/fp8_rows`·W8A16 과 GB10 에서 대조 | sglang#38082 | measure | gpu | **기각(측정된 상한)**: 이 엔진이 FP8 로 읽는 디코드 행은 헤드뿐이고(나머지 dense 는 W4A8), 헤드의 W8A16 은 이미 가중치를 한 번 읽는 바닥의 96% 다 — `glm53-head-0919a` 8 행 731.3 vs read-only 703.5 µs, 16 행 742.9 vs 699.6 µs([기록](../measurements/glm53_decode_rows_20260919/README.md)). 어느 skinny GEMM 도 4~6% 넘게 줄일 수 없다 |
 | U11 | FP8 prefill GEMM 의 L2 절벽(가중치 > 24 MiB, M ≥ 8k) — 우리 cuBLASLt 에도 있나, 있으면 래스터 스위즐 | vllm#55180 | measure | gpu | 열림 |
 | U12 | Qwen3.8 QSA prefill 타일 합집합(연속 행이 고른 블록의 합집합을 한 번씩) | vllm#55430 | kernel | gpu→fleet | 열림 |
 | U13 | Qwen3.8 GDN prefill 을 FlashInfer 로, GDN gate 투영 | vllm#55715, #57318 | kernel | gpu→fleet | 열림 |
@@ -77,8 +77,8 @@
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U21 | 통합 메모리 회계: NVML 이 장치 메모리를 못 읽을 때, 프로세스 자신의 사용량으로 KV 를 잰다 | vllm#57378, #49760, #55828 | audit | cpu | 열림 |
-| U22 | 가중치 스트리밍(O_DIRECT, 읽기 전용 매핑)을 `mapped_staging` 과 부팅 시간으로 대조 | sglang#37680, #38441 | measure | gpu | 열림 |
+| U21 | 통합 메모리 회계: NVML 이 장치 메모리를 못 읽을 때, 프로세스 자신의 사용량으로 KV 를 잰다 | vllm#57378, #49760, #55828 | audit | cpu | **닫음(이미 있음)**: 엔진은 NVML 을 쓰지 않는다. KV 는 부팅 전에 선언한 예산(`engine/base/budget.py` "GATE: KV … declared before load")이고, 아레나(`engine/base/arena.py`)는 `/proc/meminfo` 의 MemAvailable 과 earlyoom 하한으로 받으며, `box.check_box` 가 장치 총량 == MemTotal(통합 메모리)을 단정한다 — vllm#57378·#49760·#55828 의 세 문제가 설 자리가 없다 |
+| U22 | 가중치 스트리밍(O_DIRECT, 읽기 전용 매핑)을 `mapped_staging` 과 부팅 시간으로 대조 | sglang#37680, #38441 | measure | gpu | **닫음(이미 있음)**: `engine/base/loader.py` 가 같은 설계다 — 연속 바이트 구간을 O_DIRECT 로(페이지 캐시가 아레나와 같은 풀이라), 핀 버퍼 둘로 읽기와 업로드를 겹치고, 텐서는 장치 블록 하나의 뷰. 디스크 5.1~8.3 GB/s, 2026-09-16 부팅의 load 47.8 GB / 13.2 s([기록](../measurements/st_boot_20260916/README.md)) |
 
 ## U0 이 정한 것 — 이미지에 있는 후보
 
