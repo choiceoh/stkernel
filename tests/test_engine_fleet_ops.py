@@ -125,6 +125,12 @@ def note(what, path='events'):
         f.write(os.environ.get('FAKE_NODE', '?') + ' ' + what + '\\n')
 if a[:2] == ['rm', '-f']:
     note('rm')
+elif a[:1] == ['stop']:
+    note(' '.join(a))
+elif a[:1] == ['logs']:
+    # what a rank prints on its way out after a SIGTERM (fleet.close_on_exit), among its other lines
+    print('  rank 0: ready in 61.0 s, door on port 8000')
+    print('  SIGTERM: mtp inputs: 12 rows held at close; this boot 3 shards written, 0 still waiting, 0 failed')
 elif a[:1] == ['run']:
     note('run')
     note(' '.join(a), 'runs')
@@ -679,6 +685,38 @@ class QwenProductionLaunchTests(LaunchHarness):
         result = self.run_script("start-st-qwen38.sh", "stop")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.lock.exists(), "a production stop releases the production lease")
+
+    def stop_steps(self):
+        result = self.run_script("start-st-qwen38.sh", "stop")
+        steps = {}
+        for line in (self.events.read_text().splitlines() if self.events.exists() else []):
+            node, what = line.split(" ", 1)
+            steps.setdefault(node, []).append(what)
+        return result, steps
+
+    def test_stop_sends_rank_0_sigterm_before_it_removes_any_rank(self):
+        """Rank 0's recorders -- the MTP head's inputs, the draft ledger -- write what they hold on SIGTERM
+        (fleet.close_on_exit); `rm -f` alone was a SIGKILL, and the 2026-09-19 tuning window's data boots could lose
+        their tails to it. What they said comes back in the stop's output. The other ranks record nothing."""
+        self.env.update(ST_LEASE_KIND="production")
+        result, steps = self.stop_steps()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(steps["10.10.10.2"], ["stop -t 30 st-qwen38", "rm", "broker:stop-all:st-reclaim"])
+        for ip in ("10.10.10.1", "10.10.10.3", "10.10.10.4"):
+            self.assertEqual(steps[ip], ["rm", "broker:stop-all:st-reclaim"], ip)
+        self.assertIn("10.10.10.2: mtp inputs: 12 rows held at close; this boot 3 shards written", result.stdout)
+        self.assertEqual(result.stdout.count("mtp inputs:"), 1)
+        self.assertNotIn("door on port", result.stdout)
+
+    def test_a_zero_grace_is_the_old_stop(self):
+        self.env.update(ST_LEASE_KIND="production", ST_STOP_GRACE_S="0")
+        result, steps = self.stop_steps()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(steps, {ip: ["rm", "broker:stop-all:st-reclaim"] for ip in self.NODES})
+        self.env["ST_STOP_GRACE_S"] = "soon"
+        result, _ = self.stop_steps()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("ST_STOP_GRACE_S must be whole seconds", result.stderr)
 
     def test_a_production_stop_leaves_a_session_s_boot_alone(self):
         self.lock.write_text(json.dumps(dict(owner="session/qwen38-window", kind="session", container="st-qwen38",
