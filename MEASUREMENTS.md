@@ -4828,3 +4828,12 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **프로브가 틀렸던 것:** gated store 의 바이트 게이트가 청크(6.3M 원소)에서 오늘 규칙을 떨어뜨림 — Triton exp 와 torch exp 의 마지막 비트, 1~5 원소,
   1 BF16 스텝 → "인접 값 이내 + 개수 보고"로.
 - 기록: `measurements/qwen38_qsa_geometry_20260919/`.
+
+### Qwen3.8 MTP 드래프터 — dense BF16 기본(드래프트 그래프 +0.42 ms, FP8 +0.13), IVF 근사 헤드·FP8 전문가(기본 끔), 어텐션 뒤 행 선택(기본 켬), 수용률 미측정 (2026-09-19, srv4 단일 GPU 레인, PR #1226 · 기록 PR #1232)
+- **dense 정밀도(`q38mtp-0919a`).** K=3 드래프트 그래프, 1 행: W4A8 3.97 → FP8 4.10 → **BF16 4.39 ms**(운영자 선택, 기본). #1226 의 제목 "FP8 by
+  default" 는 첫 커밋 제목이고 머지된 기본은 BF16 이다.
+- **#1226 의 나머지.** IVF 근사 드래프트 헤드(`--draft-index`), MTP 전문가를 export 의 FP8 로(`--mtp-experts-dir`, 사이드 파일 srv4 에만), 둘 다 기본 끔.
+  `mtp_forward(rows=)` 로 어텐션 뒤는 읽는 행만(기본 켬) — GPU 동등성 판정이 머지보다 늦다(`q38mtp-0919c` 대기).
+- **이 PR.** 드래프트 쿼리 탭(`kernels/common/row_tap`, `--tap-draft-queries`): 랭크 0 이 캡처 그래프 안에서 드래프트 argmax 의 입력 행과 pick 을 디바이스
+  링에 쓰고 30 초마다 파일로 — IVF 헤드의 실제 재현율을 오프라인에서 재기 위한 것.
+- **안 잰 것.** 수용률 전부(창 필요). [상세·원시 기록](measurements/qwen38_mtp_precision_20260919/README.md).

@@ -1,0 +1,33 @@
+{
+ "layout": "qwen38-mtp-fp8-v1",
+ "world": 4,
+ "source": "/home/choiceoh/models/qwen38-flash-next-nvidia-nvfp4",
+ "source_revision": null,
+ "source_config_sha256": "deef67a61f3311faf051b23dc4192f442c7fee4f9cd2f38cbcbe4da55c763a80",
+ "files": [
+  {
+   "name": "mtp-fp8-r0of4.safetensors",
+   "bytes": 629299672,
+   "sha256": "11838b1e99349d31aaf0b1ccea28ac39d3b4f7f5c915ac44ee95cac36e6cc965",
+   "tensors": 4
+  },
+  {
+   "name": "mtp-fp8-r1of4.safetensors",
+   "bytes": 629299672,
+   "sha256": "6c9d72734185e04840dccec3c009d48e8715a20a1abeedc8de051e011fdf8314",
+   "tensors": 4
+  },
+  {
+   "name": "mtp-fp8-r2of4.safetensors",
+   "bytes": 629299672,
+   "sha256": "5eafd92dd4830db81be970c07722b6a1453248c248561460298e3f9ddda9c5ae",
+   "tensors": 4
+  },
+  {
+   "name": "mtp-fp8-r3of4.safetensors",
+   "bytes": 629299672,
+   "sha256": "2544f69a85fc9e9a001f648950bfd9e59df42b6f15e707fe5b4693bb13a28e5b",
+   "tensors": 4
+  }
+ ]
+}

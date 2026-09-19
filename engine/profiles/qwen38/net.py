@@ -228,6 +228,7 @@ class Qwen38Net:
         self.p = None
         self.dense = {}
         self.draft_index = None                         # dense/ivf_head over the head's rows (prepare_draft_head)
+        self.draft_tap = None                           # kernels/common/row_tap: what draft_tokens saw (fleet --tap-draft-queries)
         self._experts = {}
         self._ple = self._ple_hash = self._ple_scale = None
         self.ple_table = self.ple_stage = None          # attach_ple: the rank's SSD table and the staged rows
@@ -405,11 +406,16 @@ class Qwen38Net:
         (the same key, all-reduced the same way)."""
         index = self.draft_index
         if index is None or not h.is_cuda or not 1 <= h.shape[0] <= 16:
-            return self.head_tokens(h)
-        from engine.kernels.dense import ivf_head
-        key = ivf_head.argmax_key(index, h, self.rank * self.vp, self.vp)
-        key = self.comm.all_reduce_max(key)
-        return 0xffffffff - (key & 0xffffffff)
+            picks = self.head_tokens(h)
+        else:
+            from engine.kernels.dense import ivf_head
+            key = ivf_head.argmax_key(index, h, self.rank * self.vp, self.vp)
+            key = self.comm.all_reduce_max(key)
+            picks = 0xffffffff - (key & 0xffffffff)
+        tap = getattr(self, "draft_tap", None)
+        if tap is not None:                             # kernels/common/row_tap: the draft queries and their picks
+            tap(h, picks)
+        return picks
 
     # -- the step's addressing -----------------------------------------------------------------------------------------
     def step_meta(self, step, caches) -> StepMeta:
