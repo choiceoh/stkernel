@@ -122,8 +122,9 @@ case "$MTP_EXPERTS" in
   nvfp4) EXPERTS_ARG="--mtp-experts nvfp4" ;;
   *) echo "ST_MTP_EXPERTS must be bf16, fp8 or nvfp4" >&2; exit 2 ;;
 esac
-TUNED_DIR=${ST_MTP_TUNED:-}                                   # ST_MTP_TUNED=DIR: the head's fine-tuned dense weights (mtp_tune.py export)
-if [ -n "$TUNED_DIR" ]; then
+TUNED_DIR=${ST_MTP_TUNED:-/home/choiceoh/models/st-qwen38-mtp-tuned5}   # ST_MTP_TUNED=DIR|off: the head's fine-tuned dense weights
+[ "$TUNED_DIR" = off ] && TUNED_DIR=""                        # (mtp_tune.py export); the fifth head is the default (D11, operator 2026-09-20,
+if [ -n "$TUNED_DIR" ]; then                                  # window 6b: T=1 live pairs +2.6% +-2.1% tokens a step); off is the rollback
   EXPERTS_ARG="$EXPERTS_ARG --mtp-tuned $TUNED_DIR"
   EXPERTS_MOUNT="$EXPERTS_MOUNT -v $TUNED_DIR:$TUNED_DIR:ro"
 fi
