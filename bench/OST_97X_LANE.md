@@ -94,7 +94,10 @@ lane beside the single one on srv4 and the fleet -- nothing to export. `bench/fl
 the lane has its own holder (`holder-check`), and what this box owes itself and runs are facts
 in `bench/fleet_single.py` `HOSTS`: floor 4 GiB, a check's budget 4 GiB, the image
 `st-engine:glm53-sm120-x86`, and the Sparks' flashinfer under `~/st-x86-flashinfer/vendored`,
-which the runner mounts over the image's site-packages. A check goes there by saying so:
+which the runner mounts over the image's site-packages. The runner takes that image before any
+production tag it finds there, and refuses a run when the flashinfer directory is missing or
+empty -- every b12x import would fail without it. The facts are keyed by the alias `ost-97x`,
+which `tools/ost-97x-lane-setup.sh` writes whatever the tailnet name. A check goes there by saying so:
 
 ```bash
 bash bench/fleet.sh run --gpu --check <session> [est] [note] -- bash probes/run_engine_check.sh ...

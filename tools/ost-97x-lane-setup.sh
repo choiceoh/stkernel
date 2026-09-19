@@ -38,6 +38,9 @@ done
 grep -qi microsoft /proc/version || { echo "this is the WSL2 side of ost-97x; /proc/version says otherwise" >&2; exit 2; }
 
 NODE=${OST97X_NODE:-ost-97x}          # the tailnet name; the controller's ~/.ssh/config owns the alias
+# The controller's alias stays ost-97x whatever the tailnet calls this box: it is the check lane's default host
+# (FLEET_CHECK_GPU_HOST) and the key of this box's facts in bench/fleet_single.py HOSTS (floor, budget, image, flashinfer).
+ALIAS=ost-97x
 KEYS_FROM=${OST97X_KEYS_FROM:-srv4}   # the fleet box that already lists both controllers' keys
 # Which keys to take, by their comment in $KEYS_FROM's authorized_keys. Deliberately not
 # written down here: this repository is public, and which keypairs reach which box is the
@@ -177,21 +180,22 @@ cat <<CONTROLLER
 
   ~/.ssh/config:
 
-    Host $NODE
+    Host $ALIAS
         HostName ${addr:-<this node's tailnet address>}
         User $USER
         IdentityFile ~/.ssh/id_ed25519
         IdentitiesOnly yes
 
-  then, for the queue: nothing to export. This box is the check lane's default host
-  (FLEET_CHECK_GPU_HOST=ost-97x, bench/fleet.sh), and its floor, budget, image and flashinfer
-  are facts in bench/fleet_single.py HOSTS. A check goes there with
+  then, for the queue: nothing to export. The alias is $ALIAS even where the tailnet name is
+  not ($NODE here): it is the check lane's default host (FLEET_CHECK_GPU_HOST, bench/fleet.sh)
+  and the key of this box's floor, budget, image and flashinfer in bench/fleet_single.py HOSTS.
+  A check goes there with
 
     bash bench/fleet.sh run --gpu --check <session> [est] [note] -- bash probes/run_engine_check.sh ...
 
   and check it:
 
-    ssh $NODE 'hostname; nvidia-smi --query-gpu=name --format=csv,noheader'
-    python3 bench/fleet_single.py evidence --host $NODE --gib 4
+    ssh $ALIAS 'hostname; nvidia-smi --query-gpu=name --format=csv,noheader'
+    python3 bench/fleet_single.py evidence --host $ALIAS --gib 4
 
 CONTROLLER

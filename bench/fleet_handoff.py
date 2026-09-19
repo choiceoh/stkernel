@@ -106,7 +106,10 @@ def successor(directory, session):
     from experiment_metrics import estimates
     db = Path(os.environ.get('FLEET_EXPERIMENT_ROOT', directory / 'experiments')) / 'experiments.sqlite3'
     from fleet_pause import paused
+    # The lease passes within the fleet's lane: a one-GPU check ranked ahead of a waiting boot is not the fleet's next
+    # holder, and ranking it here would let the lease go and production restart under that boot.
     lines = ['|'.join(row) for row in rows(directory) if row[1] != session and not paused(directory, row[1], row)
+             and (len(row) < 6 or lane(row[5]) == 'fleet')
              and (len(row) < 7 or not row[6] or identity(int(row[6])))]
     def marker(name):
         path = directory / name

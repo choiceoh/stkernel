@@ -108,7 +108,10 @@ not a GB10: a verdict there is a compile, correctness or shape verdict, never a 
 `MEASUREMENTS.md` (CHARTER D5) -- a GB10 number stays in the single lane. The box's floor,
 budget, check image and vendored flashinfer are facts in `bench/fleet_single.py` `HOSTS`
 (`bench/OST_97X_LANE.md`), a probe that asks more than a kernel check's budget is refused
-there, and `kick [--force] check` clears its holder.
+there, and `kick [--force] check` clears its holder. A card both one-GPU lanes name (a
+`FLEET_SINGLE_GPU_HOST=ost-97x` left from before this lane) takes one check at a time: each
+lane's live holder is the other's evidence. The fleet's lease passes only to the fleet lane's
+head, never lost to a one-GPU check ranked ahead of a waiting boot.
 
 What a single-GPU check measured comes back as a report, not only as an exit
 code. The supervisor gives the ticket `ST_PROBE_REPORT` (a file under the
