@@ -19,13 +19,19 @@ The phases are GLM-5.3's fleet boot's (engine/profiles/glm53/boot.py `fleet` and
                       times inside the draft replay and widens the verify step to K+1 (the checkpoint's own is 1)
     serve             base/serve.Server on every rank (rank 0 answers HTTP; the others follow the control plane)
 
+Pictures (`--vision auto|on|off`, auto by default): the vision tower (vision.py) whole on every rank from
+vision.safetensors next to the rank files (preshard.py --vision), in the arena; rank 0's door turns a picture into its
+placeholder run and every rank encodes it at the prefill piece that reaches it. `auto` serves pictures when every rank has
+the file (and refuses to boot when only some do), `on` requires it, `off` serves text only. The net carries each row's
+mRoPE delta in its captured graphs only when it serves pictures.
+
 The boot's host work runs where it is already waiting, as GLM-5.3's does (base/background): the kernel packages import
 under the rendezvous, and the door's host half -- the tokenizer, the chat template and what the door reads off it --
 builds under the load and the packs and is joined before the capture, which is Python dispatch and needs the GIL. Every
 rank writes its phase table (boot-rank{r}.json) and memory ledger (memory-rank{r}.json) under --dump-dir, and rank 0
 prints the table: the first fleet boot's 107.4 s and 40.1 s had no rows, only container timestamps.
 
-Not here yet: the asynchronous decode pipeline, the NVMe tier, self-calibration and the vision tower. Prefill runs
+Not here yet: the asynchronous decode pipeline, the NVMe tier, self-calibration and video. Prefill runs
 eagerly.
 """
 from __future__ import annotations
@@ -129,7 +135,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
-          mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0):
+          mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
+          vision: str = "auto"):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
@@ -173,10 +180,23 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     cache_layout = layout(F, net.layers, mtp=drafter)
     snapshot_bytes = snapshot_layout(F, net.layers)[0]
     rank = rank_loader(Path(ranks_dir) / f"rank{comm.rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
+    # the vision tower (module docstring): this rank's view of whether it serves pictures; the ranks agree after admission
+    from engine.profiles.qwen38 import vision as eyes
+    vision_file = Path(ranks_dir) / eyes.FILE
+    if vision not in ("auto", "on", "off"):
+        raise ValueError(f"--vision {vision!r}: auto, on or off")
+    if vision == "on" and not vision_file.is_file():
+        raise FileNotFoundError(f"{vision_file}: --vision on serves pictures from it "
+                                f"(python3 -m engine.profiles.qwen38.preshard --vision --out {ranks_dir})")
+    VF = eyes.load(ckpt_meta) if vision != "off" and vision_file.is_file() else None
+    vspecs = eyes.specs(VF) if VF is not None else []
     store = PackStore("/cache", comm.rank)
     arena_bytes = (total_bytes(specs) + 256 * (len(specs) + 64) + cache_layout.nbytes(nb, max_seqs)
                    + snapshots * snapshot_bytes)
     files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
+    if VF is not None:
+        arena_bytes += total_bytes(vspecs) + 256 * (len(vspecs) + 64)
+        files.append(vision_file)
     side = {s.name for s in net.side_specs()}
     if side:
         # the MTP head's experts from their side file (mtp_side.py: BF16 by default), loaded into the arena beside the
@@ -215,6 +235,13 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         if memory is not None:
             memory.close()
         raise MemoryError(f"TP arena admission failed: {failure or 'a peer has insufficient free memory'}") from failure
+    seeing = int(comm.all_reduce(torch.tensor([int(VF is not None)], device="cuda")).item())
+    if 0 < seeing < facts.TP:
+        if memory is not None:
+            memory.close()
+        raise RuntimeError(f"{seeing} of {facts.TP} ranks have {eyes.FILE}: pictures are served by every rank or none "
+                           "(fan the file out, or boot with --vision off)")
+    net.serves_pictures = VF is not None                 # before any graph is captured: the rows carry their mRoPE deltas
     model = None
     try:
         with recorder.phase("arena"):
@@ -227,6 +254,10 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             if tuned:
                 views.update(tuned_rank.load(sorted(tuned), arena=arena, recorder=recorder))
             net.bind(views)
+            vviews = None
+            if VF is not None:
+                vviews = rank_loader(vision_file, expected_layout=eyes.LAYOUT).load([s.name for s in vspecs], arena=arena,
+                                                                                   recorder=recorder)
         with recorder.phase("ple table"):
             # the PLE table is not in the rank file: the rank's rows come off its SSD file beside it (ple_table.py)
             from engine.profiles.qwen38.ple_table import PLETable
@@ -272,6 +303,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
                                       decode_token_budget=F.chunk_align + k)
             model.memory, model.arena = memory, arena
+            if VF is not None:
+                model.composition.vision = eyes.Vision(VF, vviews, comm)
         with recorder.phase("wait for weight preparation"):
             comm.wait_prepared("weights-loaded", final=True)
         if memory is not None:
@@ -300,6 +333,11 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                           max_context=model.max_context, mtp=model.drafter is not None, head=k + 1)
             if comm.rank == 0:
                 print("  warm prefill: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
+        if VF is not None:
+            with recorder.phase("qualify vision"):
+                # the largest picture the processor makes, under the memory ceiling, before the door opens (D3)
+                for name, seconds in model.composition.vision.qualify().items():
+                    recorder.gauge(name.replace("/", "_") + "_s", seconds)
         with recorder.phase("capture decode"):
             capture(model, max_seqs, memory=memory, narrow_rows=narrow_rows if draft_threshold else 0)
         if memory is not None:
@@ -579,6 +617,9 @@ def main(argv=None) -> int:
                     help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' (the "
                          "default: steps of one request's rows, C=1 -5%% a step on the fleet, measurements/"
                          "qwen38_shared_overlap_20260919), 'all' (every captured step: C=4 +6%%), 'off' (the rollback)")
+    ap.add_argument("--vision", choices=("auto", "on", "off"), default="auto",
+                    help="pictures: auto serves them when every rank has vision.safetensors next to its rank file, on "
+                         "requires it, off serves text only (module docstring)")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     ap.add_argument("--spec-k", type=int, default=None,
                     help=f"drafts a step from the MTP head (this profile serves {facts.SPEC_K}; the checkpoint has one "
@@ -646,7 +687,8 @@ def main(argv=None) -> int:
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
-                                              draft_candidates=a.draft_candidates, draft_ahead=a.draft_ahead)
+                                              vision=a.vision, draft_candidates=a.draft_candidates,
+                                              draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
         if getattr(net, "draft_tap", None) is not None:
@@ -662,7 +704,11 @@ def main(argv=None) -> int:
               + ("; draft ledger" if a.draft_ledger else "")
               + ("; draft step ahead of the host's read" if model.draft_ahead else "")
               + ("; mtp inputs recorded" if a.tap_mtp_inputs else "") + ")", flush=True)
+        vision = model.composition.vision
+        print("  pictures: " + ("served, the tower on every rank (--vision " + a.vision + ")" if vision is not None
+                                else "not served (--vision " + a.vision + ")"), flush=True)
         with rec.phase("door"):
+            from engine.profiles.qwen38 import vision as eyes
             door = prelude.take()
             tok, chat, tools, efforts = door["tok"], door["chat"], door["tools"], door["efforts"]
             server = Server(model, runner, comm, port=a.port, tokenizer=tok, chat=chat, model_name=MODEL_NAME,
@@ -670,7 +716,8 @@ def main(argv=None) -> int:
                             effort_rungs=efforts, reasoning_effort_aliases=EFFORT_ALIASES if efforts is not None else None,
                             tool_parser=tools.parse if tools else None, tool_stream=tools.partial if tools else None,
                             tool_grammar=tools.grammar if tools else None,
-                            tool_call_start=tools.start_token(tok) if tools else None)
+                            tool_call_start=tools.start_token(tok) if tools else None,
+                            vision=eyes.Door(vision.V) if comm.rank == 0 and vision is not None else None)
         write_dumps(rec, model.memory, a.dump_dir, comm.rank)
         if comm.rank == 0:
             print(rec.table(), flush=True)

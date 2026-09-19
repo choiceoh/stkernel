@@ -3,7 +3,7 @@
 # tower on node r (base/comm.NODES order), along with checkpoint metadata.
 # Transfers use partial files and are SHA-256 checked before returning.
 #   RANKS_DIR=/path/to/completed bash launchers/fanout-st-ranks.sh [ranks...]
-# VISION=0 for a text-only preshard (Qwen3.8's st-qwen38-tep4): the ranks and metadata only.
+# VISION=0 for a text-only preshard: the ranks and metadata only (a Qwen3.8 fleet without the tower serves text).
 set -euo pipefail
 SRC=${RANKS_DIR:-/home/choiceoh/models/st-glm53-nvidia-tp4-9391}
 VISION=${VISION:-1}

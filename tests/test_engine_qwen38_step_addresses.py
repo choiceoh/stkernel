@@ -63,6 +63,33 @@ class CapturedAddressesTests(unittest.TestCase):
                         self.assertEqual(value.dtype, expected[name].dtype, name)
                         self.assertTrue(torch.equal(value.cpu(), expected[name]), name)
 
+    def test_a_picture_s_rows_turn_at_their_delta(self):
+        """With mRoPE deltas (a sequence whose prompt held a picture) the launch also writes each token's rotary
+        position (cache position + its row's delta) and its group-first member's, as the composition does; the ten
+        addressing tensors do not move."""
+        from engine.kernels import step_addresses
+        from engine.profiles.qwen38.caches import QSA_KEY_RING
+        from engine.profiles.qwen38.net import Qwen38Net
+        c, s, q = (torch.tensor(v, dtype=torch.int64) for v in ((766, 5, 1530), (3, 1, 7), (2, 0, 1)))
+        deltas = torch.tensor([-1180, 0, -3], dtype=torch.int64)
+        table = self.table(3, 2)
+        for tokens in (1, 4):
+            with self.subTest(tokens=tokens):
+                step = SimpleNamespace(captured=True, rows=3, tokens=tokens, blocks=2, contexts=c, slots=s, seqs=q,
+                                       deltas=deltas, ids=torch.zeros(3 * tokens, dtype=torch.int64))
+                net = SimpleNamespace(F=SimpleNamespace(block=self.BLOCK, idx_ratio=self.RATIO))
+                want = Qwen38Net.step_meta(net, step, SimpleNamespace(block_table=table))
+                got = step_addresses.captured(c.to(DEVICE), s.to(DEVICE), q.to(DEVICE), table.to(DEVICE), tokens=tokens,
+                                              blocks=2, block=self.BLOCK, ratio=self.RATIO, ring=QSA_KEY_RING,
+                                              deltas=deltas.to(DEVICE))
+                self.assertEqual(len(got), 12)
+                for name, value in zip(FIELDS, got):
+                    self.assertTrue(torch.equal(value.cpu(), getattr(want, name)), name)
+                rope, first = got[10].cpu(), got[11].cpu()
+                self.assertTrue(torch.equal(rope, want.rope) and torch.equal(first, want.rope_first))
+                self.assertTrue(torch.equal(rope, want.positions + deltas.repeat_interleave(tokens)))
+                self.assertTrue(torch.equal(first, rope - (self.RATIO - 1)))
+
     def test_the_captured_step_rows_are_views_of_one_tensor(self):
         """decode_graphs builds contexts, seqs and slots as rows of one [3, n] tensor: strided views."""
         from engine.kernels import step_addresses

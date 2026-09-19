@@ -228,7 +228,8 @@ def prefix_host_bytes(tier_enabled: bool = True) -> int:
 
 def snapshot_count(snapshot_bytes: int, gib: float = PREFIX_SNAPSHOT_GIB) -> int:
     """How many boundaries fit the declared budget. At least a chunk's worth (nine blocks)."""
-    return max(9, int(gib * GIB) // max(1, int(snapshot_bytes)))
+    from engine.base.slot_caches import snapshots_for
+    return snapshots_for(gib, snapshot_bytes)
 
 
 def tokenizer(ckpt=facts.CKPT):

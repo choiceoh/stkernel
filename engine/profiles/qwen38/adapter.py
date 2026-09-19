@@ -111,6 +111,71 @@ class ServedComposition:
     def __init__(self, net, caches):
         self.net, self.caches = net, caches
         self.graphs = None
+        self.vision = None              # vision.Vision on every rank when the boot serves pictures (fleet --vision)
+        self._encoded = {}              # seq -> {record index: rows}: a picture encoded until the prefill passes its rows
+
+    # -- pictures (engine/profiles/qwen38/vision; base/composed's media hooks) -----------------------------------------
+    @property
+    def sees_media(self) -> bool:
+        return self.vision is not None
+
+    def check_media(self, ids, records) -> None:
+        """Before a row takes pictures: each an image whose placeholder run its grid fills, the prompt's rotary layout
+        computable (vision.rope_positions refuses a run that disagrees with its grid)."""
+        from engine.profiles.qwen38 import vision as eyes
+        V = self.vision.V
+        for m in records:
+            if m["kind"] != "image":
+                raise ValueError("videos are not served by this deployment")
+            pos = m["positions"]
+            if m["grid"][0] != 1 or len(pos) != V.tokens(m["grid"]) or any(ids[p] != V.image_token for p in pos):
+                raise ValueError("a picture's placeholder run and its grid disagree")
+        eyes.rope_positions(len(ids), records, V.merge)
+
+    def bind_media(self, seq: int, ids, records) -> None:
+        """The row's rotary layout (net.pictures): its prompt's mRoPE positions, the delta past them, its last picture
+        row -- what every step of the row reads, eager or captured."""
+        from engine.profiles.qwen38 import vision as eyes
+        positions, delta = eyes.rope_positions(len(ids), records, self.vision.V.merge)
+        self.net.pictures[seq] = (positions, delta, max(m["positions"][-1] for m in records))
+
+    def forget_media(self, seq: int) -> None:
+        self.net.pictures.pop(seq, None)
+        self._encoded.pop(seq, None)
+
+    def near_picture(self, seq: int, ctx: int) -> bool:
+        """Whether a row at `ctx` must run eagerly: a captured step turns a row at ctx + its delta, exact only when the
+        group-first members of its positions (ctx - (ratio - 1) on) are text past the last picture."""
+        layout = self.net.pictures.get(seq)
+        return layout is not None and ctx - (self.net.F.idx_ratio - 1) <= layout[2]
+
+    def _patches(self, seq: int, records, lo: int, hi: int) -> tuple:
+        """The picture rows standing inside [lo, hi) of the prompt, as (rows' indices from lo, rows) pairs -- a picture
+        encoded when the first piece reaches it, its rows kept until a piece passes its last one, then its canvas let
+        go (a parked or resumed row keeps marks only)."""
+        out, done = [], []
+        encoded = self._encoded.setdefault(seq, {})
+        for i, m in enumerate(records):
+            pos = m["positions"]
+            if pos[-1] < lo or pos[0] >= hi:
+                continue
+            rows = encoded.get(i)
+            if rows is None:
+                if m["canvas"] is None:
+                    raise RuntimeError("a resumed conversation asked for picture rows it no longer carries")
+                rows = self.vision.encode(m["canvas"], m["grid"])
+                if rows.shape[0] != len(pos):
+                    raise RuntimeError(f"the vision tower produced {rows.shape[0]} rows for {len(pos)} placeholders")
+                encoded[i] = rows
+            p = torch.tensor(pos, dtype=torch.int64, device=rows.device)
+            keep = (p >= lo) & (p < hi)
+            out.append((p[keep] - lo, rows[keep]))
+            if pos[-1] < hi:
+                done.append(i)
+        for i in done:                                                # its rows are in the caches now
+            encoded.pop(i, None)
+            records[i]["canvas"] = None
+        return tuple(out)
 
     def capture(self, max_seqs: int, tokens: int, *, ceiling: int, memory=None, narrow_rows: int = 0) -> None:
         """The target's decode (tokens 1) or verify (tokens k+1) graphs, before any request is admitted; every narrower
@@ -132,21 +197,43 @@ class ServedComposition:
         chunk of whole blocks is one forward and one MTP observation, not one a block."""
         return self.net.takes_mark(position - start)
 
-    def served_step(self, step, store, marks=()) -> Step:
+    def served_step(self, step, store, marks=(), media=None, pictured: bool = False) -> Step:
         """`marks`: ((absolute position, snapshot) ...) inside the step's one prefill segment, as net.Step counts them
-        -- from the segment's start."""
+        -- from the segment's start. `pictured`: the rows' rotary positions from each sequence's layout (net.rope_rows;
+        a text-only sequence's are its cache positions) for an eager step; `media`: a prefill piece's picture records,
+        whose rows it reaches replace their placeholders' embeddings."""
         ctx = step.segments[0].ctx
-        return Step(step.ids, tuple(Segment(s.seq, store.slot_of[s.seq], s.ctx, s.start, s.length) for s in step.segments),
-                    tuple((int(p) - ctx, int(snap)) for p, snap in marks))
+        segments = tuple(Segment(s.seq, store.slot_of[s.seq], s.ctx, s.start, s.length) for s in step.segments)
+        extra = {}
+        if pictured:
+            ropes, dev, back = [], step.ids.device, self.net.F.idx_ratio - 1
+            for s in step.segments:
+                got = self.net.rope_rows(s.seq, s.ctx, s.length, dev)
+                if got is None:
+                    at = torch.arange(s.ctx, s.ctx + s.length, dtype=torch.int64, device=dev).expand(3, -1)
+                    got = (at, at - back)
+                ropes.append(got)
+            extra = dict(rope=torch.cat([r for r, _ in ropes], 1).contiguous(),
+                         rope_first=torch.cat([f for _, f in ropes], 1).contiguous())
+        if media:
+            s = step.segments[0]
+            extra["patches"] = self._patches(s.seq, media, s.ctx, s.ctx + s.length)
+        return Step(step.ids, segments, tuple((int(p) - ctx, int(snap)) for p, snap in marks), **extra)
 
-    def forward(self, step, store, *, logits: str = "last", hidden: bool = False, given=None, marks=(), host=None):
+    def forward(self, step, store, *, logits: str = "last", hidden: bool = False, given=None, marks=(), host=None,
+                media=None):
         if given is not None:
             raise ValueError("the target composition opens from its embeddings")
         if logits not in ("last", "all"):
             raise ValueError("logits are 'last' or 'all'")
         store.check(step)
-        served = self.served_step(step, store, marks)
-        if not served.marks and self.graphs is not None and self.graphs.admits(served, self.caches.pool):
+        # a step touching a picture's rows, or the few after one, runs eagerly at the rows' own rotary positions; any
+        # eager step of a sequence with pictures carries them (a captured step turns its rows by their deltas instead)
+        pictures = getattr(self.net, "pictures", None)                    # a net without them serves text only
+        pictured = bool(pictures) and any(s.seq in pictures for s in step.segments)
+        eager = pictured and (bool(media) or any(self.near_picture(s.seq, s.ctx) for s in step.segments))
+        served = self.served_step(step, store, marks, media, pictured=pictured)
+        if not served.marks and not eager and self.graphs is not None and self.graphs.admits(served, self.caches.pool):
             # rows: the graph's output row of each of the step's tokens (None: the same rows, nothing was padded)
             # host: the step's ids and carried context as the model holds them (decode_graphs.TargetGraphs.run)
             scores, streams, rows, t = self.graphs.run(served, known=host)
@@ -275,7 +362,10 @@ class ServedMTP:
 
     def _head(self, seq: int, ctx: int, ids, given):
         slot = self.store.slot_of[seq]
-        step = Step(ids, (Segment(seq, slot, ctx, 0, ids.numel()),))
+        rope_rows = getattr(self.net, "rope_rows", None)                  # a net without pictures has no layouts
+        got = None if rope_rows is None else rope_rows(seq, ctx, ids.numel(), ids.device)
+        rope = {} if got is None else dict(rope=got[0], rope_first=got[1])
+        step = Step(ids, (Segment(seq, slot, ctx, 0, ids.numel()),), **rope)
         self.caches.prepare(step)
         hidden, streams = self.net.mtp_forward(step, given, self.caches, last_hidden_only=True)
         token = int(self.net.draft_tokens(hidden)[0])
@@ -291,7 +381,9 @@ class ServedMTP:
         rows, eager = [], []
         for seq in seqs:
             slot, ctx, ids, streams = self._waiting.pop(seq)
-            if ctx + graphs.extent(len(ids)) <= pool.tokens[seq]:
+            layout = (getattr(self.net, "pictures", None) or {}).get(seq)
+            near = layout is not None and ctx - (self.net.F.idx_ratio - 1) <= layout[2]    # ServedComposition.near_picture
+            if ctx + graphs.extent(len(ids)) <= pool.tokens[seq] and not near:
                 rows.append((seq, slot, ctx, ids, streams))
             else:
                 eager.append((seq, ctx, ids, streams))
