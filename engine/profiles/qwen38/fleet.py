@@ -694,9 +694,12 @@ def main(argv=None) -> int:
                              name="draft-tap", daemon=True).start()
         print("  shared expert: " + {False: "unforked", True: "forked at one request's rows", "all": "forked at every captured step"}
               [net.shared_overlap], flush=True)
-        print("  leave: " + {"off": "launched after its sum", "pdl": "its sum's programmatic dependent",
-                             "prefetch": "its sum's programmatic dependent, the mixer's down projection prefetched"}
-              [lanes.leave], flush=True)
+        leave = {"off": "launched after its sum", "pdl": "its sum's programmatic dependent",
+                 "prefetch": "its sum's programmatic dependent, the mixer's down projection prefetched"}[lanes.leave]
+        if lanes.leave == "prefetch" and net.hc_fp8:
+            # every mixer reads its FP8 lanes (net._mixer_weight): no BF16 projection to prefetch, the dependent only
+            leave = "its sum's programmatic dependent, nothing prefetched (--hc-fp8: the mixers read FP8 weights)"
+        print("  leave: " + leave, flush=True)
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row"
               + (f"; drafts cut below p={model.drafter.threshold}, narrow widths to {a.narrow_rows} rows"

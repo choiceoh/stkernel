@@ -196,12 +196,71 @@ class NetTests(unittest.TestCase):
         self.assertIn('prefetch=self._mixer_weight("mtp.close.", "down"))', source)
 
 
+@unittest.skipUnless(READY, "torch and triton required")
+class MTPRowsTests(unittest.TestCase):
+    """The MTP head's captured observation (decode_graphs.draft_chain passes `rows`): the MLP site's leave takes the
+    attention's sum as the sum left it, over every observed row -- on the fleet the sum's programmatic dependent, with
+    no selection launched between them -- and the rows read are selected after it. The bytes are the eager path's,
+    which selects first. The reference lanes, the attention and the MoE stand-ins row by row."""
+
+    H, N, ROWS = 16, 8, (3, 7)
+
+    def run_head(self, captured: bool):
+        from engine.profiles.qwen38 import lanes as lane_tables
+        from engine.profiles.qwen38.net import Qwen38Net
+        table, H, rank, g = lane_tables.reference(), self.H, 4, torch.Generator().manual_seed(0)
+
+        def rand(*shape):
+            return (torch.randn(*shape, generator=g) * 0.3).to(torch.bfloat16)
+        p = {"mtp.pre_fc_norm_embedding": rand(H), "mtp.fc_embedding": rand(H, H), "mtp.pre_fc_norm_hidden": rand(HC * H),
+             "mtp.fc_hidden": rand(H, H), "mtp.close.norm": rand(HC * H), "mtp.close.down": rand(rank, HC * H),
+             "mtp.close.up": rand(HC * H, rank)}
+        for side in ("attn", "mlp"):
+            p.update({f"mtp.L0.hc.{side}.norm": rand(HC * H), f"mtp.L0.hc.{side}.down_inject": rand(rank + HC, HC * H),
+                      f"mtp.L0.hc.{side}.up": rand(HC * H, rank)})
+        embedded, given = rand(self.N, H), rand(self.N, HC * H)
+        seen = {"leaves": []}
+
+        def hc_leave_norm(h, out, inject, w, eps, hc, *, prefetch=None):
+            seen["leaves"].append((h.shape[0], out))
+            return table.hc_leave_norm(h, out, inject, w, eps, hc, prefetch=prefetch)
+
+        def qsa(L, x, step, meta, caches, **kwargs):
+            seen["sum"] = (x.float() * 0.5 + 1).to(x.dtype)               # the attention's output, its TP sum's
+            return seen["sum"]
+        net = Qwen38Net.__new__(Qwen38Net)
+        net.F = SimpleNamespace(rms_eps=EPS, hc=HC, hidden=H, layers=1)
+        net.p, net.mtp_window, net._hc_projections = p, None, {}
+        net.lanes = SimpleNamespace(hc_norm=table.hc_norm, hc_leave_norm=hc_leave_norm, hc_mix=table.hc_mix)
+        net.step_meta = lambda step, caches: None
+        net.embed = lambda ids: embedded
+        net._qsa = qsa
+        net._moe = lambda prefix, x, compact: (x.float() * 2).to(x.dtype)
+        step = SimpleNamespace(ids=torch.zeros(self.N, dtype=torch.int64), captured=captured)
+        hidden, streams = net.mtp_forward(step, given, None, last_hidden_only=False, rows=torch.tensor(self.ROWS))
+        return hidden, streams, seen
+
+    def test_the_captured_leave_takes_the_sum_as_it_left_it(self):
+        hidden, streams, seen = self.run_head(captured=True)
+        (rows, out), (close_rows, _) = seen["leaves"]                        # the MLP site's leave, then the close's
+        self.assertEqual(rows, self.N)
+        self.assertIs(out, seen["sum"])
+        self.assertEqual(close_rows, len(self.ROWS))
+        self.assertEqual(tuple(hidden.shape), (len(self.ROWS), self.H))
+        eager_hidden, eager_streams, eager = self.run_head(captured=False)
+        self.assertEqual(eager["leaves"][0][0], len(self.ROWS))              # the eager path selects first
+        self.assertTrue(torch.equal(hidden, eager_hidden))
+        self.assertTrue(torch.equal(streams, eager_streams))
+
+
 class KnobTests(unittest.TestCase):
     def test_the_knob_reaches_the_lanes_from_the_launcher(self):
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
         self.assertIn('ap.add_argument("--leave", choices=lane_tables.LEAVES, default=lane_tables.LEAVE,', fleet)
         self.assertIn("lanes = lane_tables.served(leave=a.leave)", fleet)
         self.assertIn('print("  leave: "', fleet)                               # a boot's log says which
+        self.assertIn('if lanes.leave == "prefetch" and net.hc_fp8:', fleet)   # and that --hc-fp8 prefetches nothing
+        self.assertIn("nothing prefetched (--hc-fp8: the mixers read FP8 weights)", fleet)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
         self.assertIn('case "${ST_LEAVE:-prefetch}" in', launcher)
         self.assertIn('off|pdl) LEAVE_ARG="--leave $ST_LEAVE" ;;', launcher)   # off: the rollback
