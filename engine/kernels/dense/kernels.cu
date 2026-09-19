@@ -3390,21 +3390,12 @@ int mk_gemm_input_mode() {
   if (g_input_reuse_mode < 0) g_input_reuse_mode = 2;
   return g_input_reuse_mode;
 }
-// Qwen3.8-Flash-Next's decode projections at TP=4 (carry S2): the GDN in_proj 4120 x 2560, the QSA
-// in_proj 4224 x 2560 and both output projections 2560 x 1536, at its verify rows (C x (K+1): 2..8).
-// They take mk_gemm_input_kernel -- the ordinary tile grid, k-slices and fixed-order split fold, the
-// input quantized once by mk_input_pack_kernel instead of by every tile -- never a specialized CTA
-// kernel (those are K=4096's): their ksr is 2 (33 tiles) and 3 (20 tiles).
-bool mk_qwen38_input_shape(int m, int n, int k) {
-  return mk_gemm_input_mode() == 2 && m >= 2 && m <= 8 &&
-      ((k == 2560 && (n == 4120 || n == 4224)) || (k == 1536 && n == 2560));
-}
 bool mk_input_shape(int m, int n, int k, bool bg, bool lr) {
   // n is the logical output width; the real KDA projection pads 6416 to 6528.
   // Mode 2 qualifies K=7's eight verification rows with the existing pack/MMA.
   // Operator 2026-09-16: mode 2 is the default, so eight rows qualify here.
-  return !bg && !lr && (((m == 6 || m == 7 || (m == 8 && mk_gemm_input_mode() == 2)) && k == 4096 &&
-      (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)))) || mk_qwen38_input_shape(m, n, k));
+  return !bg && !lr && (m == 6 || m == 7 || (m == 8 && mk_gemm_input_mode() == 2)) && k == 4096 &&
+      (n == 6416 || (mk_gemm_input_cta_mode()==4 && (n==4096 || n==6144)));
 }
 int g_probe_ksr2 = -1;  // 0 = the rule below; > 0 forces the slice count
 int g_mk2_l2_prefetch = 0;  // bench knob: v2 CTAs prefetch their k slice into L2 (0 = the served path)
@@ -4724,13 +4715,13 @@ std::vector<int64_t> mk_gemm_input_plan(int m, int n, int k, bool bg, bool lr) {
   const int split = ordinary;  // retain the existing FP32 reduction order
   const bool enabled=shape && (n==6416 || split==2 || split==3);
   const int cta = enabled && n==6416 && split == 8 ? mk_gemm_input_cta_mode() : 0;
-  const bool cta3=enabled && (n==4096 || n==6144);  // the CTA3 launches' widths; any other takes mk_gemm_input_kernel
+  const bool cta3=enabled && n!=6416;
   return {enabled, split, cta3 ? (split==2?g_input_cta2_bps:g_input_cta3_bps) : cta ? g_input_cta_bps[cta==4?1:cta-1] : g_gemm_input_bps,
           enabled ? (k / KSTEP) * 1056 : 0};
 }
 std::vector<int64_t> mk_gemm_input_cta_plan(int m,int n,int k,bool bg,bool lr) {
   const auto input=mk_gemm_input_plan(m,n,k,bg,lr);
-  const bool cta3=input[0] && (n==4096 || n==6144) && (input[1]==2 || input[1]==3);
+  const bool cta3=input[0] && n!=6416 && (input[1]==2 || input[1]==3);
   const int mode=input[0] && (input[1]==8 || cta3) ? mk_gemm_input_cta_mode() : 0;
   return {mode,cta3?input[1]:8,cta3?input[2]:mode?g_input_cta_bps[mode==4?1:mode-1]:0,
           cta3?(input[1]==2?INPUT_CTA2_SMEM:INPUT_CTA3_SMEM):mode?INPUT_CTA_SMEM:0};

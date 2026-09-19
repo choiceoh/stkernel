@@ -482,9 +482,10 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-drafter", action="store_true", help="serve without the MTP head")
     ap.add_argument("--hc-fp8", action="store_true",
-                    help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them). Off "
-                         "by default because it changes the mixer's NUMBERS and no quality bracket has judged it (D4) -- "
-                         "the one lever here that moves the output")
+                    help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them). Off: "
+                         "at decode it is slower (C=1 +9.6%% a step on the fleet, 2026-09-19, K=1), and it changes the "
+                         "mixer's NUMBERS with no quality bracket to judge them (D4) -- the one lever here that moves "
+                         "the output")
     ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",
                     help="the MTP head's dense projections: the checkpoint's BF16 (default), block-scaled FP8, or the "
                          "target layers' W4A8 at decode rows (before 2026-09-19); acceptance moves, output does not")

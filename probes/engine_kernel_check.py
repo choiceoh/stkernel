@@ -237,11 +237,6 @@ def main():
         from probes.engine_qwen38_moe import run as qwen38_moe
         qwen38_moe(args.output)
         return
-    if args.lanes == 'qwen38_input_reuse':
-        # component timings: the W4 GEMM's input reuse at Qwen3.8's decode projections, byte-exact first (S2)
-        from probes.engine_qwen38_input_reuse import run as qwen38_input_reuse
-        qwen38_input_reuse(args.output)
-        return
     if args.lanes == 'qwen38_mix_tiles':
         # component timings: the mixer mean's hidden axis in tiles, every tile the one-block launch's bytes first (H3)
         from probes.engine_qwen38_mix_tiles import run as qwen38_mix_tiles
