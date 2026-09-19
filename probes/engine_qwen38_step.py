@@ -32,6 +32,10 @@ onto a second stream beside the routed experts at one request's rows (`overlap-o
 lanes with the skinny GEMV's table emptied (`mm`: the router back on torch.mm, the mixer sites back to five launches on
 cuBLAS -- the lanes before engine/kernels/common/skinny_gemv) -- the step and its families per arm, and the served arm
 less the other.
+
+`--lanes qwen38_step_ahead` builds the second layer set once and decodes one request through the served model six
+times, synchronously and with the draft step launched behind the verify step (fleet --draft-ahead) in turn: each run's
+wall a step and the host's parts, and whether every run made the same tokens.
 """
 from __future__ import annotations
 
@@ -243,17 +247,20 @@ def replay_profile(graphs, shape, replays: int) -> dict:
                         for k, v in sorted(kernels.items(), key=lambda kv: -kv[1][1])[:40]}}
 
 
-def served_loop(F, net, caches, target, draft, *, prompt: int = 512, steps: int = 64) -> dict:
+def served_loop(F, net, caches, target, draft, *, prompt: int = 512, steps: int = 64, draft_ahead: bool = False,
+                tokens: bool = False) -> dict:
     """One request decoded at C=1 through the served model (adapter.build_model: base/composed.ComposedModel's verify
     over these graphs), the way the runner drives it -> wall a step, and what the host spent in its parts. A step's
     replays are serialized by the host's reads (the draft's `.tolist()`, the picks' `.tolist()`), so the host's own
     time is the step's wall less the two replays -- and it does not grow with the layers, so this net's is the
-    model's. The PLE table here is ZeroPLETable: the fleet's step also reads its rows off the SSD."""
+    model's. The PLE table here is ZeroPLETable: the fleet's step also reads its rows off the SSD. `draft_ahead`: the
+    draft step follows the verify step on the device (adapter.ServedModel._verify_ahead), its launch in `draft_run`;
+    `tokens`: the request's generated tokens too."""
     import torch
     from engine.profiles.qwen38.adapter import build_model
     caches.reset()
     model, _ = build_model(net, caches, F, eos_ids=[F.vocab + 7], max_new=(steps + 8) * (F.spec_k + 1) + 16, temperature=0.0,
-                           top_p=1.0, seed=0, drafter=True)
+                           top_p=1.0, seed=0, drafter=True, draft_ahead=draft_ahead)
     model.composition.graphs, model.drafter.graphs = target, draft
     spent = {"stage_ple": 0.0, "target_run": 0.0, "draft_run": 0.0, "picks": 0.0}
 
@@ -266,9 +273,11 @@ def served_loop(F, net, caches, target, draft, *, prompt: int = 512, steps: int 
                 spent[name] += time.perf_counter() - began
         return call
 
+    originals = net.stage_ple, target.replay, draft.run, draft.run_after
     net.stage_ple = timed("stage_ple", net.stage_ple)
-    target.run = timed("target_run", target.run)
+    target.replay = timed("target_run", target.replay)                  # `run` replays through it
     draft.run = timed("draft_run", draft.run)
+    draft.run_after = timed("draft_run", draft.run_after)
     model._draw_ahead = timed("picks", model._draw_ahead)
     seq, gen = 0, torch.Generator(device="cpu").manual_seed(1)
     slot = caches.slots.take(seq)
@@ -288,13 +297,74 @@ def served_loop(F, net, caches, target, draft, *, prompt: int = 512, steps: int 
         torch.cuda.synchronize()
         wall = (time.perf_counter() - began) / steps
         made = model.generated_count(seq) - made0
+        generated = model.generated(seq)
     finally:
         model.close(seq)
         caches.pool.release(seq)
         caches.slots.give(slot)
         caches.reset()
-    return {"steps": steps, "wall_us": round(wall * 1e6, 1), "tokens_a_step": round(made / steps, 3),
-            "spent_us_a_step": {k: round(v / steps * 1e6, 1) for k, v in spent.items()}}
+        net.stage_ple, target.replay, draft.run, draft.run_after = originals
+    out = {"steps": steps, "wall_us": round(wall * 1e6, 1), "tokens_a_step": round(made / steps, 3),
+           "spent_us_a_step": {k: round(v / steps * 1e6, 1) for k, v in spent.items()},
+           "ahead_steps": model.ahead_steps, "ahead_misses": model.ahead_misses}
+    if tokens:
+        out["tokens"] = generated
+    return out
+
+
+AHEAD_ORDER = (False, True, True, False, False, True)   # qwen38_step_ahead: each arm first as often as last
+
+
+def ahead(output=None, ranks=None, *, rank: "int | None" = None, layers=LAYER_SETS[1], steps: int = 64) -> dict:
+    """The lane `qwen38_step_ahead`: one layer set built once, and the same request decoded through the served model
+    six times, synchronously and with draft-ahead in turn (AHEAD_ORDER) -> each run's wall a step and host parts, the
+    median of each arm, and whether every run generated the tokens of the first. What differs is only where the host's
+    read, commit and draft launch sit against the replays: this net's target is a few layers and its draft graph the
+    whole MTP head, so the host's time beside the draft replay is the most the fleet's step can win from it, less its
+    own runner and door. Every run is greedy, so any difference in tokens is draft-ahead's -- unless the synchronous
+    runs already differ among themselves, which the report says too."""
+    import statistics
+    import torch
+    ranks = Path(ranks or "/home/choiceoh/models/st-qwen38-tep4")
+    if rank is None:
+        present = sorted(int(p.name[4]) for p in ranks.glob("rank?of4.safetensors"))
+        if not present:
+            raise SystemExit(f"no rank file under {ranks}")
+        rank = present[-1]
+    free, total = torch.cuda.mem_get_info()
+    torch.cuda.set_per_process_memory_fraction(min(1.0, MAX_GIB * (1 << 30) / total))
+    from engine.base import kernel_shape
+    from engine.profiles.qwen38 import facts
+    kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
+    F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=1, kv_gib=KV_GIB)
+    runs = []
+    try:
+        for i, on in enumerate(AHEAD_ORDER):
+            run_ = served_loop(F, net, caches, target, draft, steps=steps, draft_ahead=on, tokens=True)
+            run_["draft_ahead"] = on
+            runs.append(run_)
+            print(json.dumps({"run": i, "draft_ahead": on, "wall_us": run_["wall_us"], "spent": run_["spent_us_a_step"],
+                              "ahead_steps": run_["ahead_steps"], "misses": run_["ahead_misses"]}), flush=True)
+    finally:
+        target.close()
+        draft.close()
+    first = runs[0]["tokens"]
+    for run_ in runs:
+        run_["same_tokens"] = run_.pop("tokens") == first
+    walls = {arm: [r["wall_us"] for r in runs if r["draft_ahead"] == on] for arm, on in (("sync", False), ("ahead", True))}
+    report = {"rank": rank, "layers": list(layers), "steps": steps, "free_GiB_at_start": round(free / 2**30, 1),
+              "order": list(AHEAD_ORDER), "runs": runs,
+              "median_wall_us": {arm: statistics.median(w) for arm, w in walls.items()},
+              "sync_runs_agree": all(r["same_tokens"] for r in runs if not r["draft_ahead"]),
+              "ahead_runs_agree": all(r["same_tokens"] for r in runs if r["draft_ahead"])}
+    report["ahead_less_sync_us"] = round(report["median_wall_us"]["ahead"] - report["median_wall_us"]["sync"], 1)
+    text = json.dumps(report, indent=1)
+    if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(text + "\n")
+    print(json.dumps({k: report[k] for k in ("median_wall_us", "ahead_less_sync_us", "sync_runs_agree",
+                                             "ahead_runs_agree")}), flush=True)
+    return report
 
 
 def assemble(builds: dict, F) -> dict:
