@@ -541,7 +541,19 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     return row
 
 
-def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = None, arms=("served",), shapes=SHAPES) -> dict:
+def require_complete(report: dict) -> None:
+    """A failed child or a missing graph is a failed probe, even when a report was written."""
+    failures = dict(report["failed"])
+    for arm, builds in report["builds"].items():
+        for layers, build in builds.items():
+            if build["errors"]:
+                failures[f"{arm} {layers}"] = build["errors"]
+    if failures:
+        raise RuntimeError(f"Qwen step probe incomplete: {failures}")
+
+
+def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = None, arms=("served",), shapes=SHAPES,
+        max_gib: float = MAX_GIB) -> dict:
     """The lane (probes/engine_kernel_check.py --lanes qwen38_step): each layer set measured in a process of its own --
     a built net's weights stay referenced by the lanes' prepared views, so one process cannot hold two in 4 GiB --
     then assembled. `ranks`: the rank files' directory; `rank`: which one (default: the highest this host has);
@@ -564,7 +576,7 @@ def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = 
                 args = ["--loop"] if layers == layer_sets[0] else []
                 done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--one", name, "--arm", arm,
                                        "--ranks", str(ranks), "--rank", str(rank), "--output", str(out),
-                                       "--shapes", json.dumps(shapes), *args],
+                                       "--shapes", json.dumps(shapes), "--max-gib", str(max_gib), *args],
                                       cwd=str(ROOT))
                 if done.returncode or not out.exists():
                     report["failed"][f"{arm} {name}"] = f"rc={done.returncode}"
@@ -591,6 +603,7 @@ def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = 
                             for k, v in steps[arm].items()} for arm in arms}, indent=1), flush=True)
     if "delta" in report:
         print(json.dumps({"delta": report["delta"]}, indent=1), flush=True)
+    require_complete(report)
     return report
 
 
@@ -617,11 +630,13 @@ if __name__ == "__main__":
     ap.add_argument("--rank", type=int, default=None)
     ap.add_argument("--loop", action="store_true", help="with --one: also decode one request through the served model")
     ap.add_argument("--shapes", type=json.loads, default=SHAPES, help="JSON pairs of rows and context blocks")
+    ap.add_argument("--max-gib", type=float, default=MAX_GIB, help="this process's CUDA memory ceiling, within the lane budget")
     ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:] + OVERLAP_ARMS[1:] + GEMV_ARMS[1:] + CHUNK_ARMS[1:],
                     help="with --one: the lanes it builds under")
     a = ap.parse_args()
     if a.one is not None:
-        row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")), loop=a.loop, arm=a.arm, shapes=a.shapes)
+        row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")), loop=a.loop, arm=a.arm,
+                      shapes=a.shapes, max_gib=a.max_gib)
         Path(a.output).write_text(json.dumps(row) + "\n")
     else:
         run(a.output, a.ranks, rank=a.rank)

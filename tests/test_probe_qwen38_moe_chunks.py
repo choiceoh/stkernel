@@ -5,6 +5,15 @@ from probes.engine_qwen38_moe_chunks import chunks
 
 
 class ChunkTests(unittest.TestCase):
+    def test_step_child_failure_cannot_be_a_successful_probe(self):
+        from probes.engine_qwen38_step import require_complete
+        with self.assertRaisesRegex(RuntimeError, "rc=1"):
+            require_complete({"failed": {"served": "rc=1"}, "builds": {}})
+        with self.assertRaisesRegex(RuntimeError, "no captured graph"):
+            require_complete({"failed": {}, "builds": {"served": {"4,5": {
+                "errors": {"target rows 4": "no captured graph"}}}}})
+        require_complete({"failed": {}, "builds": {"served": {"4,5": {"errors": {}}}}})
+
     def test_serving_split_is_bounded_and_default_off(self):
         from engine.profiles.qwen38.lanes import moe_decode_ranges
         for rows in range(1, 34):
