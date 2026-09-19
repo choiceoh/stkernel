@@ -65,6 +65,8 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_qwen38_qsa_geometry.py',
              # carry H3: the mixer mean's hidden axis in tiles
              'probes/engine_qwen38_mix_tiles.py',
+             # carry S2: the W4 GEMM's input reuse at Qwen3.8's decode projections
+             'probes/engine_qwen38_input_reuse.py',
              'engine/profiles/glm53/check.py')
 ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-prefill',
             '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
