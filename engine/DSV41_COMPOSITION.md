@@ -38,7 +38,7 @@ CED — 인코더 20 층, 디코더 20 층. 경계(20)를 설정이 세 가지�
 | 8 | 출력 저랭크 (`o_lora_rank` 1024, `o_groups` 8) | 없음 — MLA 이름표는 `o` 하나다 | — | **없다** — 가족의 축이 아니다 |
 | 9 | 선택: CED 키 압축 + 후보 블록 | **참조는 있다**: `sparse_indexer.ced_compress`(그룹 풀링 + 노름) · `ced_candidate_blocks`(pad→amax→최신 블록 고정→top-k) · `indexer_logits`(공유 점수식) | 물러난 오버레이의 구현(`dsv41_compressor.py`·`dsv41_indexer.py`, git history 11c779a^)과 **바이트 동일** — `tests/test_engine_dsv41_ced.py`. 그 구현은 09-10 프로브가 벤더 클래스에 비트 동일로 붙잡아 뒀던 것이다 | **부분** — 참조는 있고 **선택 클래스와 레인은 없다**(아래 11 번이 걸린다) |
 | 10 | 라우터 점수 `sqrtsoftplus` | 없음 — `moe.route` 는 `softmax`\|`sigmoid` | — | **없다** — **수식이 이 트리에 없다.** 설정 문자열과 "MegaMoE 는 sqrtsoftplus 만"이라는 거절 메시지뿐(git history). 벤더 `model.py` 가 정한다 |
-| 11 | 층 간 KV·인덱스 소싱 | 없음 — `Layer` 는 (mixer, mlp, inject) 뿐 | — | **없다** — 계획은 `kv_source`·`indexer` 를 알지만 조합이 "이 층은 저 층의 KV 를 읽는다"를 표현하지 못한다 |
+| 11 | 층 간 KV·인덱스 소싱 | **자리는 생겼다**: 특징이 `rows_at(layer)` 로 자기 행이 사는 층을 말하면 소유자마다 레인 하나만 잡힌다(`base/composition.Feature`·`_owners`), 저장소는 `State.rows(layer, …)` 가 원래 층 id 로 주소를 잡는다 | `tests/test_engine_shared_lane.py` — 소유자당 레인 하나, `Layout.region` 이 나머지 층을 이름으로 거절, `rows_at` 없는 특징은 예전 그대로 | **부분** — 기구는 있고 **DSv4.1 의 대응(어느 소비자가 어느 소스를 읽나)은 빈칸**. `caches.py` 가 아는 것: `compress_kv` 는 소스 4 층에만, `window_kv` 는 43 블록 전부에, `compressor_state` 는 ratio>1 인 3 층에. 소비자→소스 사상은 벤더 `model.py` 가 정한다 |
 | 12 | engram 이 층 안 **어디에** 쓰나 | — | — | **빈칸** — 어느 층이 표를 갖는지는 설정이 말하지만(1·14), 층 안의 자리를 이 트리의 어떤 파일도 말하지 않는다. 계획은 조합의 유일한 주입 자리(층 앞)에 뒀다 |
 | 13 | MTP 헤드 3 의 fuse 형 | `mtp.fuse_concat` 가 DeepSeek-V3 의 형 | — | **빈칸** — `modules/mtp` 는 그 형을 쓰는 모델로 GLM-5.3·Kimi K3·Ling-3.0·MiniMax-M3 를 적고 DSv4.1 을 적지 않는다. 오라클도 없다("not held to an oracle") |
 | 14 | 비전 타워 · DSpark 드래프터 | — | — | **범위 밖(이 문서의)** — 체크포인트의 `vision_config` 와 `dspark_*` 는 텍스트 조합의 층 계획 밖이다 |
@@ -57,7 +57,10 @@ CED — 인코더 20 층, 디코더 20 층. 경계(20)를 설정이 세 가지�
    그 박자를 표현하기 전에는 `QSA`·`DSAKpool` 옆에 `CED` 를 놓을 자리가 없다.
 2. **10번(sqrtsoftplus)** — 벤더 `model.py` 한 줄을 읽어 `moe.route` 의 점수 축에 넣는다. 그 전에는 못 쓴다.
 3. **7·8번(MLA 폭·출력 저랭크)** — 같은 파일이 정한다. 8 번은 가족에 축을 하나 더 들이는 일이다.
-4. **11번(층 간 소싱)** — `base/composition` 의 계획 표현을 넓히는 일이라 가장 크다. GLM·Qwen 에는 없던 축이다.
+4. **11번(층 간 소싱)** — 기구는 섰다(`rows_at`). 남은 절반은 **사상**이다: 소스는 넷([2, 8, 14, 20])이고 각
+   층이 어느 것을 읽는지를 이 트리의 어떤 파일도 말하지 않는다. 정황은 있다 — `caches.py` 의 `compress_kv` 가
+   소스 4 층에만 있고, 비율 0 인 층 0·1(첫 소스 2 앞)이 정확히 SWA 전용이라 읽을 압축 KV 가 없다 — 그러나
+   정황은 사상이 아니다. 벤더 `model.py` 한 번이면 닫힌다.
 5. **12·13번** — 오라클을 한 번 돌리면 닫히는 확인들이다.
 
 커널 쪽 목록은 따로다 — `cells.plan()` 이 세우고 [`DSV41_CARRY_20260919.md`](DSV41_CARRY_20260919.md) §7 에 있다.
