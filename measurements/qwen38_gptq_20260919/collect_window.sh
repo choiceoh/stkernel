@@ -51,12 +51,17 @@ if queue.is_file() and queue.read_text().strip():
     raise SystemExit('canonical fleet tickets already wait; do not pass them')
 PY
 kind=$(lease kind)
+if [ "$MODE" = collect ]; then
+  estimate=50; note='Qwen real-input GPTQ collection: separate fit and held-out statistics'
+else
+  estimate=90; note='Qwen GPTQ repack and held-out error, then RTN/GPTQ/RTN canonical onepass'
+fi
 case "$kind" in
-  free) lease acquire --owner "$OWNER" --kind session --pid $$ --host "$(hostname -s)" --est-minutes 50 \
-          --note 'Qwen real-input GPTQ collection: separate fit and held-out statistics' ;;
+  free) lease acquire --owner "$OWNER" --kind session --pid $$ --host "$(hostname -s)" --est-minutes "$estimate" \
+          --note "$note" ;;
   production)
-    lease yield --requester "$OWNER" --kind session --pid $$ --host "$(hostname -s)" --est-minutes 50 \
-          --note 'Qwen real-input GPTQ collection: separate fit and held-out statistics'
+    lease yield --requester "$OWNER" --kind session --pid $$ --host "$(hostname -s)" --est-minutes "$estimate" \
+          --note "$note"
     for ((i=0; i<120; i++)); do lease verify --owner "$OWNER" >/dev/null 2>&1 && break; sleep 5; done
     lease verify --owner "$OWNER" ;;
   *) echo "fleet belongs to another session: $(lease read)" >&2; exit 3 ;;
