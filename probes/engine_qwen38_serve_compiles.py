@@ -41,7 +41,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 LAYERS = (1, 7)
-SPEC_K = 3                     # the operator's K (#1182)
+SPEC_K = 3                     # the operator's K (#1182); `--lanes qwen38_serve_compiles:1` for the checkpoint's
 MAX_SEQS = 4                   # the launcher's default rows
 BLOCKS = 24                    # KV pages of 768 tokens: every request here fits with the draft chain's reach
 REQUESTS = (("17x23", 28, 4), ("capital", 30, 21), ("sky", 27, 256), ("transformer", 25, 474),
@@ -89,7 +89,7 @@ class Census:
         return [{"kernel": name, "key": key} for name, key in added]
 
 
-def build(ranks: Path, rank: int, layers=LAYERS):
+def build(ranks: Path, rank: int, layers=LAYERS, *, spec_k: int = SPEC_K):
     """fleet.build's order on one rank: net, weights, PLE (zeros), dense packs, caches, model, contract, runner -- then
     the eager MoE warm pass, the prefill (and head) warm passes and the capture -> (F, net, caches, model, runner, boot seconds by phase)."""
     import inspect
@@ -111,8 +111,8 @@ def build(ranks: Path, rank: int, layers=LAYERS):
     phases = {}
     began = time.perf_counter()
     F = facts.load(ranks)
-    if F.spec_k != SPEC_K:
-        F = dataclasses.replace(F, spec_k=SPEC_K)
+    if F.spec_k != spec_k:
+        F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True)
     specs = net.specs()
     snapshots = 9
@@ -192,7 +192,7 @@ def serve(F, model, runner, census: Census, requests=REQUESTS, seed: int = 0) ->
     return rows
 
 
-def run(output=None, ranks=None, *, rank: "int | None" = None) -> dict:
+def run(output=None, ranks=None, *, rank: "int | None" = None, spec_k: int = SPEC_K) -> dict:
     import torch
     from engine.base import kernel_shape
     from engine.profiles.qwen38 import facts
@@ -205,7 +205,7 @@ def run(output=None, ranks=None, *, rank: "int | None" = None) -> dict:
     if rank is None:
         rank = sorted(int(p.name[4]) for p in ranks.glob("rank?of4.safetensors"))[-1]
     _, shape_source = kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
-    F, net, caches, model, runner, phases = build(ranks, rank)
+    F, net, caches, model, runner, phases = build(ranks, rank, spec_k=spec_k)
     census = Census()
     at_door = census.count()
     rows = serve(F, model, runner, census)
@@ -213,7 +213,7 @@ def run(output=None, ranks=None, *, rank: "int | None" = None) -> dict:
     by_kernel = {}
     for c in after:
         by_kernel[c["kernel"]] = by_kernel.get(c["kernel"], 0) + 1
-    record = {"lane": "qwen38_serve_compiles", "rank": rank, "layers": list(LAYERS), "spec_k": SPEC_K, "max_seqs": MAX_SEQS,
+    record = {"lane": "qwen38_serve_compiles", "rank": rank, "layers": list(LAYERS), "spec_k": spec_k, "max_seqs": MAX_SEQS,
               "kernel_shape": shape_source, "boot": phases, "kernels_at_door": at_door,
               "compiled_after_door": len(after), "compiled_by_kernel": dict(sorted(by_kernel.items(), key=lambda kv: -kv[1])),
               "requests": rows, "device": torch.cuda.get_device_name(), "torch": torch.__version__,
