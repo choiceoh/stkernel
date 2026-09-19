@@ -242,6 +242,11 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes == 'sm121_attention':
+        # the image's paged GQA with window, sinks, soft cap and FP8/NVFP4 KV against a torch reference (U7, U8)
+        from probes.engine_sm121_attention import run as sm121_attention
+        sm121_attention(args.output)
+        return
     if args.lanes == 'sm121_sparse_mla':
         # the image's SM120 sparse MLA at DeepSeek-V3.2's rank against the oracle, then under sustained load
         # (vllm#54929's livelock) -- engine/SM121_INTAKE.md U6
