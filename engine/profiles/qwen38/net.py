@@ -206,8 +206,9 @@ class Qwen38Net:
         `tile_union`: a prefill step's sparse QSA attention on the tile-union launch (engine/kernels/qsa_tile_union,
         vLLM PR 55430; engine/SM121_INTAKE.md U12) when `qsa_tile_union.admits` takes the step -- two rows of a segment
         walk the union of their chosen blocks once instead of each its own. Within the split-K launch's band, not its
-        bytes (the softmax steps through other chunks); on GB10 2.7-3x faster at 1,024 rows and 1.35x at 4,096 where a
-        prefill's neighbouring rows choose alike (sm121-u12-0919c), 11-27% slower where they do not. On by the operator's
+        bytes (the softmax steps through other chunks); on GB10 1.7-2.7x faster at 1,024 rows and 1.33-1.41x at 4,096
+        where a prefill's neighbouring rows choose alike (sm121-u12-0919c, minimum and median beside production), 14-26%
+        slower (median) where they do not. On by the operator's
         decision of 2026-09-19 with the fleet unmeasured (CHARTER D17): a boot can decline it (fleet.py
         --no-tile-union, the launcher's ST_QSA_TILE_UNION=0) and every step attends through the split-K launch.
 
