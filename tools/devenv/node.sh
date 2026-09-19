@@ -1,8 +1,10 @@
 #!/bin/bash
-# One GB10 node's development environment, to tools/devenv/versions.env -- the repo is the source: sync.sh applies this to
-# srv1..srv4 and srv4's devenv-sync timer runs main's copy every morning. Idempotent: whatever is missing or at another
-# version than the manifest is installed; a git setting or a checkout the node already has is left as it is. Run on the
-# node (`bash tools/devenv/node.sh [--verify]`) or piped after versions.env through ssh (sync.sh).
+# One node's development environment, to tools/devenv/versions.env -- the GB10 nodes srv1..srv4 (aarch64) and the RTX 5050
+# PC ost-97x (x86_64, WSL2). The repo is the source: sync.sh applies this to every node and srv4's devenv-sync timer runs
+# main's copy every morning. Idempotent: whatever is missing or at another version than the manifest is installed -- a
+# file it replaces is moved to ~/.local/bin/.pre-devenv/, never deleted -- and a git setting or a checkout the node
+# already has is left as it is. Run on the node (`bash tools/devenv/node.sh [--verify]`) or piped after versions.env
+# through ssh (sync.sh).
 #
 #   ~/.bashrc        ~/.local/bin first on PATH, for non-interactive ssh too
 #   ~/.local/bin     uv uvx gh mergiraf wt git-wt from their releases; node's commands (~/node-sdk); the agent CLIs
@@ -39,8 +41,21 @@ export PATH="$BIN:$PATH"
 hash -r
 
 # -- single binaries ----------------------------------------------------------------------------------------------------
+case "$(uname -m)" in                             # the release names: Rust target, Go arch, node's arch
+  aarch64) TRIPLE=aarch64-unknown-linux GOARCH=arm64 NODEARCH=arm64 ;;
+  x86_64) TRIPLE=x86_64-unknown-linux GOARCH=amd64 NODEARCH=x64 ;;
+  *) echo "tools/devenv: no releases named for $(uname -m)" >&2; exit 1 ;;
+esac
 version_of() {    # the first x.y.z a command prints for --version, or nothing
   "$@" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
+}
+keep() {          # a file (not a link) at a path about to be replaced goes aside with its version, never away
+  local path=$1
+  if [ -e "$path" ] && [ ! -L "$path" ]; then
+    mkdir -p "$BIN/.pre-devenv"
+    mv "$path" "$BIN/.pre-devenv/$(basename "$path")-$(version_of "$path")"
+    log "kept the previous $(basename "$path") in ~/.local/bin/.pre-devenv/"
+  fi
 }
 fetch() {         # url -> a fresh directory holding the archive's contents
   local url=$1 out
@@ -60,26 +75,30 @@ binary() {        # name version url [more names]: the archive's `name` (and the
   [ "$(version_of "$BIN/$name")" = "$want" ] && [ "$whole" = 1 ] && return 0
   dir=$(fetch "$url")
   for b in "$name" "$@"; do
+    keep "$BIN/$b"
     install -m 0755 "$(find "$dir" -type f -name "$b" | head -1)" "$BIN/$b"
   done
   log "$name: $want"
 }
-binary uv "$UV_VERSION" "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-aarch64-unknown-linux-gnu.tar.gz" uvx
-binary gh "$GH_VERSION" "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_arm64.tar.gz"
+binary uv "$UV_VERSION" "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$TRIPLE-gnu.tar.gz" uvx
+binary gh "$GH_VERSION" "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_$GOARCH.tar.gz"
 binary mergiraf "$MERGIRAF_VERSION" \
-  "https://codeberg.org/mergiraf/mergiraf/releases/download/v$MERGIRAF_VERSION/mergiraf_aarch64-unknown-linux-gnu.tar.gz"
+  "https://codeberg.org/mergiraf/mergiraf/releases/download/v$MERGIRAF_VERSION/mergiraf_$TRIPLE-gnu.tar.gz"
 binary wt "$WORKTRUNK_VERSION" \
-  "https://github.com/max-sixty/worktrunk/releases/download/v$WORKTRUNK_VERSION/worktrunk-aarch64-unknown-linux-musl.tar.xz" git-wt
+  "https://github.com/max-sixty/worktrunk/releases/download/v$WORKTRUNK_VERSION/worktrunk-$TRIPLE-musl.tar.xz" git-wt
 
 # -- node and the agent CLIs --------------------------------------------------------------------------------------------
-NODE_DIR=$HOME/node-sdk/node-v$NODE_VERSION-linux-arm64
+NODE_DIR=$HOME/node-sdk/node-v$NODE_VERSION-linux-$NODEARCH
 if [ "$(version_of "$BIN/node")" != "$NODE_VERSION" ]; then
   if [ ! -x "$NODE_DIR/bin/node" ]; then
     mkdir -p "$HOME/node-sdk"
-    mv "$(fetch "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-arm64.tar.xz")/node-v$NODE_VERSION-linux-arm64" \
+    mv "$(fetch "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$NODEARCH.tar.xz")/node-v$NODE_VERSION-linux-$NODEARCH" \
       "$NODE_DIR"
   fi
-  for b in node npm npx corepack; do ln -sfn "$NODE_DIR/bin/$b" "$BIN/$b"; done
+  for b in node npm npx corepack; do
+    keep "$BIN/$b"
+    ln -sfn "$NODE_DIR/bin/$b" "$BIN/$b"
+  done
   hash -r
   log "node: v$NODE_VERSION ($NODE_DIR)"
 fi
@@ -92,6 +111,7 @@ for pkg in $AGENT_NPM; do
   if [ ! -x "$NPM_GLOBAL/bin/$cmd" ]; then          # installed there but off PATH: only the link is missing
     npm install -g --prefix "$NPM_GLOBAL" --no-fund --no-audit --loglevel=error "$pkg" >/dev/null
   fi
+  keep "$BIN/$cmd"
   ln -sfn "$NPM_GLOBAL/bin/$cmd" "$BIN/$cmd"
   log "$cmd: $(version_of "$BIN/$cmd") ($pkg)"
 done

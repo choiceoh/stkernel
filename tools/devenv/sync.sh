@@ -1,14 +1,15 @@
 #!/bin/bash
-# srv1..srv4 brought to tools/devenv/versions.env: node.sh on every node at once, each node's log under
-# ~/.local/state/devenv-sync and its verdict printed. Run from a node that reaches the others (this one without ssh);
-# srv4's devenv-sync timer runs main's copy every morning through the devenv-sync bootstrap.
+# srv1..srv4 and ost-97x (the RTX 5050 PC, WSL2) brought to tools/devenv/versions.env: node.sh on every node at once, each
+# node's log under ~/.local/state/devenv-sync and its verdict printed. Run from a node that reaches the others (this one
+# without ssh); srv4's devenv-sync timer runs main's copy every morning through the devenv-sync bootstrap. A node that
+# does not answer -- ost-97x while its Windows host sleeps -- is reported and skipped, not failed.
 #
 #   bash tools/devenv/sync.sh             apply
 #   bash tools/devenv/sync.sh --verify    apply, then a few CPU test files on every node
 #   bash tools/devenv/sync.sh --install   on srv4: the bootstrap into ~/.local/bin and the daily user timer
 set -euo pipefail
 DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-NODES=${DEVENV_NODES:-"srv1 srv2 srv3 srv4"}
+NODES=${DEVENV_NODES:-"srv1 srv2 srv3 srv4 ost-97x"}
 LOGS=${DEVENV_LOGS:-$HOME/.local/state/devenv-sync}
 mkdir -p "$LOGS"
 
@@ -33,14 +34,23 @@ run_on() {        # host [args]: node.sh there, after the manifest -- this node 
 }
 
 stamp=$(date +%Y%m%d-%H%M%S)
-pids=()
+up=()
 for h in $NODES; do
+  if [ "$h" = "$(hostname -s)" ] || ssh -o BatchMode=yes -o ConnectTimeout=10 "choiceoh@$h" true 2>/dev/null; then
+    up+=("$h")
+  else
+    echo "== $h: unreachable -- skipped"
+  fi
+done
+[ "${#up[@]}" -gt 0 ] || exit 0
+pids=()
+for h in "${up[@]}"; do
   run_on "$h" "$@" > "$LOGS/$stamp-$h.log" 2>&1 &
   pids+=("$!")
 done
 failed=0
 i=0
-for h in $NODES; do
+for h in "${up[@]}"; do
   if wait "${pids[$i]}"; then status=ok; else status=FAILED; failed=1; fi
   echo "== $h: $status ($LOGS/$stamp-$h.log)"
   grep -E '\] (tools|tests):|^  (Ran |OK|FAILED)|^  \[(FAIL|WARN)' "$LOGS/$stamp-$h.log" | grep -v 'WARN\] cuda' || true

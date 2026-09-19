@@ -1,4 +1,4 @@
-"""tools/devenv: the development environment srv1..srv4 and the Mac hold, with versions.env as its one source.
+"""tools/devenv: the development environment srv1..srv4, ost-97x and the Mac hold, with versions.env as its one source.
 
 Held here: every version the scripts read is pinned in the manifest (and the Python ones exactly), the scripts parse,
 and srv4's timer runs main's copy through the installed bootstrap -- never a working tree. What the scripts do on a node
@@ -61,6 +61,18 @@ class ScriptTests(unittest.TestCase):
         sync = (DEVENV / "sync.sh").read_text(encoding="utf-8")
         self.assertIn('install -m 0755 "$DIR/devenv-sync" "$HOME/.local/bin/devenv-sync"', sync)
         self.assertIn('cat "$DIR/versions.env" "$DIR/node.sh"', sync)          # the manifest travels with the script
+
+    def test_each_machine_takes_its_own_releases(self):
+        """The GB10 nodes are aarch64, the RTX 5050 PC x86_64: no release URL fixes the architecture, and a file a
+        release replaces is set aside, never deleted."""
+        node = (DEVENV / "node.sh").read_text(encoding="utf-8")
+        self.assertIn("aarch64) TRIPLE=aarch64-unknown-linux GOARCH=arm64 NODEARCH=arm64", node)
+        self.assertIn("x86_64) TRIPLE=x86_64-unknown-linux GOARCH=amd64 NODEARCH=x64", node)
+        urls = re.findall(r'https://\S+', node)
+        self.assertTrue(urls)
+        self.assertFalse([u for u in urls if re.search(r'aarch64|x86_64|arm64|amd64|linux-x64', u)], urls)
+        self.assertEqual(node.count("keep \"$BIN/"), 3)                    # the binaries, node's links, the agent CLIs
+        self.assertIn("ost-97x", (DEVENV / "sync.sh").read_text(encoding="utf-8"))
 
     def test_a_node_s_own_git_settings_are_kept(self):
         """Every global git write goes through gset (set only where unset) or adds the gh credential helper."""
