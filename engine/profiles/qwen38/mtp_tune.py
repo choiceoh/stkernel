@@ -200,28 +200,29 @@ class Head(torch.nn.Module):
         return out.to(q.dtype).transpose(0, 1)
 
     def moe(self, x: torch.Tensor) -> torch.Tensor:
-        """The routed experts (softmax top-k, renormalised) in ascending id, and the sigmoid-gated shared expert
-        (modules/moe.MoE with Qwen3.8's axes)."""
+        """The routed experts (softmax top-k, renormalised) and the sigmoid-gated shared expert (modules/moe.MoE with
+        Qwen3.8's axes). Every expert at once: its rows packed into [experts, busiest count, H] and two batched
+        matmuls, where a loop ran two matmuls, an activation and an index_add per expert -- thousands of launches a
+        window, forward and backward, and a host read of the counts each time. A row's slots are summed in slot order."""
         from engine.modules.moe import gated_mlp, route
         S, linear = self.shape, torch.nn.functional.linear
         ids, weights, _ = route(x, self.w(L0 + "mlp.gate.weight"), score="softmax", topk=S.topk, normalize=S.normalize,
                                 scaling=1.0, fp32=False)
         gate_up, down = self.frozen[EXPERTS[0]], self.frozen[EXPERTS[1]]
-        out = torch.zeros_like(x)
-        n = x.shape[0]
-        flat = ids.transpose(0, 1).reshape(-1)                  # slot-major: an expert's rows by slot, then row
-        order = torch.argsort(flat, stable=True)
-        counts = torch.bincount(flat, minlength=S.experts).tolist()
-        at = 0
-        for e, count in enumerate(counts):
-            if not count:
-                continue
-            pick = order[at:at + count]
-            at += count
-            slots, rows = pick // n, pick % n
-            g, u = linear(x[rows], gate_up[e]).chunk(2, dim=-1)
-            y = linear(gated_mlp(g, u, "silu"), down[e]) * weights[rows, slots, None]
-            out = out.index_add(0, rows, y.to(out.dtype))
+        n, k = ids.shape
+        flat = ids.reshape(-1)                                  # row-major: row r's slots at r*k .. r*k+k-1
+        order = torch.argsort(flat, stable=True)                # the assignments grouped by expert
+        experts = flat[order]
+        counts = torch.bincount(flat, minlength=S.experts)
+        at = torch.arange(n * k, device=x.device) - (torch.cumsum(counts, 0) - counts)[experts]    # place in its group
+        width = int(counts.max())                               # the one host read
+        packed = x.new_zeros(S.experts, width, x.shape[-1]).index_put((experts, at), x[order // k])
+        g, u = torch.bmm(packed, gate_up.transpose(1, 2)).chunk(2, dim=-1)
+        y = torch.bmm(gated_mlp(g, u, "silu"), down.transpose(1, 2))[experts, at]                # [n*k, H], grouped
+        back = torch.empty_like(order)
+        back[order] = torch.arange(n * k, device=x.device)
+        y = y.index_select(0, back).view(n, k, -1)              # (row, slot) again
+        out = (y * weights.view(n, k, 1).to(y.dtype)).sum(1).to(x.dtype)
         sg, su, sd = (self.w(f"{L0}mlp.shared_expert.{n}.weight") for n in ("gate_proj", "up_proj", "down_proj"))
         shared = linear(gated_mlp(linear(x, sg), linear(x, su), "silu"), sd)
         return out + torch.sigmoid(linear(x, self.w(L0 + "mlp.shared_expert_gate.weight"))) * shared
@@ -261,6 +262,27 @@ def kl_chunk(hidden: torch.Tensor, target: torch.Tensor, head: torch.Tensor) -> 
     draft = torch.log_softmax(torch.matmul(hidden, head.T).float(), dim=-1)
     want = torch.log_softmax(torch.matmul(target, head.T).float(), dim=-1)
     return (want.exp() * (want - draft)).sum(-1)
+
+
+def kl_given(hidden: torch.Tensor, want: torch.Tensor, head: torch.Tensor):
+    """kl_chunk with the target's log-probabilities `want` already computed (fp32) -> (the rows' KL, the head's greedy
+    ids): under a checkpoint the recompute redoes the head's side only, and the ids come from the same logits."""
+    logits = torch.matmul(hidden, head.T).float()
+    draft = torch.log_softmax(logits, dim=-1)
+    return (want.exp() * (want - draft)).sum(-1), logits.argmax(-1)
+
+
+def target_rows(target: torch.Tensor, head: torch.Tensor, chunk: int = 256):
+    """The target's log-probabilities over the vocabulary and its greedy ids, row by row in chunks (no gradient) --
+    once a window: every depth reads the same rows, and a checkpoint's recompute no longer redoes them."""
+    with torch.no_grad():
+        want = torch.empty(target.shape[0], head.shape[0], dtype=torch.float32, device=target.device)
+        ids = torch.empty(target.shape[0], dtype=torch.int64, device=target.device)
+        for c in range(0, target.shape[0], chunk):
+            logits = torch.matmul(target[c:c + chunk], head.T).float()
+            ids[c:c + chunk] = logits.argmax(-1)
+            want[c:c + chunk] = torch.log_softmax(logits, dim=-1)
+    return want, ids
 
 
 def picks(hidden: torch.Tensor, head: torch.Tensor, chunk: int = 256) -> torch.Tensor:
@@ -303,6 +325,7 @@ def window_loss(model: Head, given: torch.Tensor, tokens: torch.Tensor, start: i
     hidden, _ = model.chain(given[:T], tokens, start, depth)
     with torch.no_grad():
         target = model.target_close(given)                                         # [T + depth, H]
+    target_logp, target_ids = target_rows(target[1:], head, chunk)                # rows 1 .. T + depth - 1
     losses, metrics, alive = [], {}, torch.ones(T, dtype=torch.bool, device=given.device)
     kept = torch.ones(T, dtype=torch.bool, device=given.device)
     run_exact = torch.ones(T, dtype=torch.float32, device=given.device)
@@ -311,11 +334,14 @@ def window_loss(model: Head, given: torch.Tensor, tokens: torch.Tensor, start: i
         th, labels = target[d:d + T], tokens[d:d + T]
         mask = (alive if auf else torch.ones_like(alive)).to(torch.float32)
         total = hidden.new_zeros((), dtype=torch.float32)
+        mine = []
         for c in range(0, T, chunk):
-            rows = checkpoint(kl_chunk, hidden[d - 1, c:c + chunk], th[c:c + chunk], head, use_reentrant=False)
+            rows, ids = checkpoint(kl_given, hidden[d - 1, c:c + chunk],
+                                   target_logp[d - 1 + c:d - 1 + min(c + chunk, T)], head, use_reentrant=False)
             total = total + (rows * mask[c:c + chunk]).sum()
+            mine.append(ids)
         losses.append(total / mask.sum().clamp_min(1.0))
-        mine, theirs = picks(hidden[d - 1].detach(), head, chunk), picks(th, head, chunk)
+        mine, theirs = torch.cat(mine), target_ids[d - 1:d - 1 + T]
         agree = mine == theirs
         alive = alive & agree
         kept = kept & (mine == labels)

@@ -108,6 +108,52 @@ class LossTests(unittest.TestCase):
         self.assertAlmostEqual(metrics["tokens_a_step"],
                                1 + metrics["chain_1"] + metrics["chain_2"] + metrics["chain_3"], places=6)
 
+    def test_the_loss_is_the_per_depth_recomputation_it_was(self):
+        """The target's rows computed once a window (target_rows, kl_given under the checkpoint) give the loss and the
+        metrics the per-depth recomputation gave (kl_chunk and picks at every depth), chunk edges included."""
+        from engine.profiles.qwen38.mtp_tune import HEAD, Head, kl_chunk, picks, window_loss
+        cfg, weights, streams, tokens = self.window(T=12)
+        model = Head(cfg, weights.__getitem__, dtype=torch.float32)
+        loss, metrics = window_loss(model, streams, tokens, 0, 3, chunk=5)
+        head, T = model.frozen[HEAD], streams.shape[0] - 3
+        with torch.no_grad():
+            hidden, _ = model.chain(streams[:T], tokens, 0, 3)
+            target = model.target_close(streams)
+            per_depth, alive = [], torch.ones(T, dtype=torch.bool)
+            for d in (1, 2, 3):
+                th = target[d:d + T]
+                per_depth.append(kl_chunk(hidden[d - 1], th, head).mean())
+                agree = picks(hidden[d - 1], head, 5) == picks(th, head, 5)
+                alive = alive & agree
+                self.assertAlmostEqual(metrics[f"agree_{d}"], float(agree.float().mean()), places=6)
+                self.assertAlmostEqual(metrics[f"chain_{d}"], float(alive.float().mean()), places=6)
+            want = sum(0.6 ** (d - 1) * value for d, value in zip((1, 2, 3), per_depth)) / sum(0.6 ** d for d in range(3))
+        self.assertTrue(torch.allclose(loss.detach(), want, rtol=1e-5, atol=1e-7), (float(loss), float(want)))
+
+    def test_the_batched_experts_are_the_loop_they_replace(self):
+        """Head.moe packs every expert's rows and runs two batched matmuls: the same rows out as one matmul pair a
+        routed expert at a time, in fp32 -- with a routing that leaves experts empty and piles rows on others."""
+        from engine.modules.moe import gated_mlp, route
+        from engine.profiles.qwen38.mtp_tune import EXPERTS, L0, Head
+        _, _, cfg, weights = tiny()
+        model = Head(cfg, weights.__getitem__, dtype=torch.float32)
+        S, linear = model.shape, torch.nn.functional.linear
+        x = torch.randn(23, S.hidden, generator=torch.Generator().manual_seed(4))
+        x[:12] = x[0]                                                        # twelve rows routed alike
+        got = model.moe(x)
+        ids, w, _ = route(x, model.w(L0 + "mlp.gate.weight"), score="softmax", topk=S.topk, normalize=S.normalize,
+                          scaling=1.0, fp32=False)
+        want = torch.zeros_like(x)
+        for r in range(x.shape[0]):
+            for s in range(S.topk):
+                e = int(ids[r, s])
+                g, u = linear(x[r:r + 1], model.frozen[EXPERTS[0]][e]).chunk(2, dim=-1)
+                want[r] += (linear(gated_mlp(g, u, "silu"), model.frozen[EXPERTS[1]][e]) * w[r, s])[0]
+        sg, su, sd = (model.w(f"{L0}mlp.shared_expert.{n}.weight") for n in ("gate_proj", "up_proj", "down_proj"))
+        want = want + torch.sigmoid(linear(x, model.w(L0 + "mlp.shared_expert_gate.weight"))) * \
+            linear(gated_mlp(linear(x, sg), linear(x, su), "silu"), sd)
+        self.assertTrue(torch.allclose(got, want, rtol=1e-5, atol=1e-6), float((got - want).abs().max()))
+
     def test_the_loss_is_zero_where_the_head_is_the_target(self):
         """KL(target || head) of a head whose hidden is the target's own: 0 -- the labels are the target's
         distribution at the position the draft predicts (depth d, row i: its streams at i + d)."""
