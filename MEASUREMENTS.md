@@ -5021,3 +5021,17 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
   안 줄고 둘 다 fp32 여야 0. 원인은 거대 활성(마지막 블록 뒤 한 채널 ±8,209, 에너지 96%). bf16 유지(서빙 vLLM 과 같음).
   [상세·원시](measurements/qwen38_vision_tower_20260919/README.md).
 
+### Qwen3.8 플릿이 문법 컴파일러를 묶는다 — `tools` 요청이 전부 400 이던 것, xgrammar 는 문의 토크나이저에서 읽는다 (2026-09-19, srv4 CPU, PR #1282)
+- **무엇.** 플릿 MTP 데이터 창(main `a8e3c4de`)에서 `tools` 가 실린 채팅 요청이 전부 400 `no grammar compiler is bound` 였다. 문은 도구 호출 문법을 싣는데
+  플릿 부팅이 서빙 모델에 컴파일러를 묶지 않았다(CPU 부팅·GLM 플릿은 묶는다). Deneb 의 에이전트 트래픽을 Qwen3.8 이 서빙하지 못했다.
+- **고침.** 프렐류드가 모든 랭크에서 컴파일러를 만들고, `build` 의 `qualify grammar` 행이 캡처 전에 마스크 커널을 증명해 묶는다. 문의 정책·서빙 검증 경로는
+  그대로다. 문법 행은 이미 rich 행이다: argmax 드래프트, 위치마다 마스크를 거친 픽, draft-ahead(#1273)도 그 행이 있는 스텝은 받지 않는다.
+- **토크나이저 경로.** 서빙 이미지(`st-engine:qwen38`)·서빙 메타에서 문의 `tokenizers.Tokenizer` 로 만든 TokenizerInfo 가 transformers 경로와
+  vocab dict 248,077 · decoded vocab 248,320 · stop/special id · `dump_metadata` 모두 같고, 도구 호출(lazy 도구 문법 25 위치)·JSON(22 위치)의 마스크도
+  위치마다 같다 → GLM 과 같은 백엔드 경로. 랭크당 CPU 약 2 s 대 6 s(프로덕션 옆, 경합 아래).
+- **검증.** CPU 테스트 12(`tests/test_engine_qwen38_fleet_grammars`): 모든 랭크의 프렐류드, 묶기와 거절, 부팅 순서, 문(묶기 전 400 · 묶은 뒤 200, lazy 도구
+  문법), 서빙 검증에서 문법 행이 rich 행(greedy · 샘플 행 옆 · 마커에서의 무장 · draft-ahead). 일부러 망가뜨린 세 곳을 모두 잡는다.
+- **미측정.** GPU 부팅(`qualify grammar`·`prelude_s`·`wait for the prelude` 행)과 `tools` 요청 끝까지 — 운영자의 다음 창. `tools` 요청은 첫 토큰부터
+  rich 행이라 tok/s 가 문법 없는 요청보다 낮을 수 있다(미측정).
+  [대조·로그](measurements/qwen38_fleet_grammars_20260919/README.md).
+

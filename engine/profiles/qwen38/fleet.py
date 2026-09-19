@@ -14,6 +14,9 @@ The phases are GLM-5.3's fleet boot's (engine/profiles/glm53/boot.py `fleet` and
     load              the rank file's views carved from the arena, bound; the PLE table opened beside the rank file
                       (ple-r{r}of4.weight on the SSD, ple_table.py -- not in the arena); the dense lanes packed (PackStore)
     engine            caches, the served composition behind base/composed.ComposedModel (adapter.py), the runner
+    grammar           structured output on every rank (base/grammar): the compiler built off the prelude, its mask
+                      kernel proven on the device (`bind_grammars`) -- what response_format and the door's tool-call
+                      grammar need, or every request with `tools` is refused
     capture           the target's verify graphs and the MTP head's draft graphs, every row count and context bucket
                       (decode_graphs.py), before the door admits work; `--spec-k K` (K > 1) chains the head K-1
                       times inside the draft replay and widens the verify step to K+1 (the checkpoint's own is 1)
@@ -26,10 +29,11 @@ the file (and refuses to boot when only some do), `on` requires it, `off` serves
 mRoPE delta in its captured graphs only when it serves pictures.
 
 The boot's host work runs where it is already waiting, as GLM-5.3's does (base/background): the kernel packages import
-under the rendezvous, and the door's host half -- the tokenizer, the chat template and what the door reads off it --
-builds under the load and the packs and is joined before the capture, which is Python dispatch and needs the GIL. Every
-rank writes its phase table (boot-rank{r}.json) and memory ledger (memory-rank{r}.json) under --dump-dir, and rank 0
-prints the table: the first fleet boot's 107.4 s and 40.1 s had no rows, only container timestamps.
+under the rendezvous, and the door's host half -- the tokenizer, the grammar compiler, the chat template and what the
+door reads off it -- builds under the load and the packs and is joined before the capture, which is Python dispatch and
+needs the GIL. Every rank writes its phase table (boot-rank{r}.json) and memory ledger (memory-rank{r}.json) under
+--dump-dir, and rank 0 prints the table: the first fleet boot's 107.4 s and 40.1 s had no rows, only container
+timestamps.
 
 Not here yet: the asynchronous decode pipeline, the NVMe tier, self-calibration and video. Prefill runs
 eagerly.
@@ -78,19 +82,52 @@ DUMP_DIR = "/home/choiceoh/glm53-logs/st-qwen38-dumps"   # the launcher mounts /
 
 
 def door_host_half(ckpt_meta, *, renderer: bool) -> dict:
-    """What the door reads off the checkpoint, on the host: the tokenizer (every rank), and on the rank that renders,
-    the chat template with the think block, tool call layout and effort rungs read off it. No CUDA and nothing the
-    engine builds, so the boot runs it on a thread beside the load (base/background)."""
-    from engine.base import tool_formats
+    """What the door reads off the checkpoint, on the host: the tokenizer and the grammar compiler over it (every rank),
+    and on the rank that renders, the chat template with the think block, tool call layout and effort rungs read off
+    it. No CUDA and nothing the engine builds, so the boot runs it on a thread beside the load (base/background).
+
+    The compiler is every rank's, not the renderer's: each rank builds its own matcher for a grammar row and advances it
+    with the same committed tokens (base/grammar), so a rank without one could not follow a request rank 0 admitted. It
+    reads the door's tokenizer (base/grammar.tokenizer_info), as GLM-5.3's prelude does, rather than parsing
+    tokenizer.json again through transformers: on this checkpoint the two give xgrammar the same inputs, in about 2 s
+    against 6 s a rank (measurements/qwen38_fleet_grammars_20260919). It is built for the vocabulary and end tokens read
+    off the checkpoint here, which `bind_grammars` holds to the engine's; the mask kernel is proven there, on the main
+    thread."""
+    from engine.base import grammar, tool_formats
     from engine.base.serve import effort_rungs_checked, reasoning_marks
-    from engine.profiles.qwen38.boot import EFFORT_RUNGS, chat_renderer, generation_defaults, tokenizer
+    from engine.profiles.qwen38.boot import EFFORT_RUNGS, chat_renderer, eos_ids, generation_defaults, tokenizer
     tok = tokenizer(Path(ckpt_meta))
+    F = facts.load(ckpt_meta)
+    stops = eos_ids(Path(ckpt_meta), F.config)
     chat = chat_renderer(Path(ckpt_meta)) if renderer else None
     end, tail = reasoning_marks(tok, chat) if chat is not None else (None, ())
     return {"tok": tok, "chat": chat, "end": end, "tail": tail,
             "tools": tool_formats.detect(chat) if chat is not None else None,
             "efforts": effort_rungs_checked(chat, EFFORT_RUNGS) if chat is not None else None,
-            "generation": generation_defaults(Path(ckpt_meta))}
+            "generation": generation_defaults(Path(ckpt_meta)),
+            # the compiler alone, None where xgrammar is not installed (the door then refuses structured output, D3)
+            "grammars": grammar.for_checkpoint(ckpt_meta, F.vocab, None, stops, tokenizer=tok),
+            "grammar_vocab": F.vocab, "grammar_stops": stops}
+
+
+def bind_grammars(model, door: dict, device) -> None:
+    """The prelude's grammar compiler onto the served model, its mask kernel proven on `device` first (Grammars.qualify:
+    the kernel and its Triton JIT here, not inside the first structured request -- GLM-5.3's `qualify grammar`).
+
+    Unbound, the model refused every grammar, and the door arms one for every request that carries `tools` (the
+    tool-call grammar, lazily at the call marker): Qwen3.8's fleet answered each of them 400, "no grammar compiler is
+    bound" (2026-09-19, main a8e3c4de). The thread read the vocabulary and the end tokens off the checkpoint again, so
+    a compiler built for any others than the engine's is refused here rather than masking against the wrong table.
+    None (no xgrammar) binds nothing and the door refuses what needs one."""
+    grammars = door.get("grammars")
+    if grammars is None:
+        return
+    vocab, stops = door["grammar_vocab"], door["grammar_stops"]
+    if vocab != model.vocab or set(stops) != set(model.eos):
+        raise RuntimeError(f"the boot prelude built a grammar compiler for vocab {vocab} and ends {sorted(stops)}; "
+                           f"this engine has {model.vocab} and {sorted(model.eos)}")
+    grammars.qualify(device)
+    model.grammars = grammars
 
 
 def timed_store(store) -> dict:
@@ -138,9 +175,10 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
           vision: str = "auto"):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
-    base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
-    thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
-    other ranks record to nothing, their draft graphs the same as its."""
+    base/background.Background of `door_host_half`) is joined in its own row before the capture: the capture is Python
+    dispatch, and a host thread still running there would take the GIL from it. Its grammar compiler is bound to the
+    model in the row after (`bind_grammars`); without a prelude the model serves no grammar. `draft_ledger`: a factory
+    of rank 0's ledger (DraftLedger); the other ranks record to nothing, their draft graphs the same as its."""
     from engine.base import scheduler as sched
     from engine.base.arena import Arena, host_reclaim, prepare_allocation
     from engine.base.params import total_bytes
@@ -315,8 +353,11 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                             keep_idle=True, prefix=prefix)
         if prelude is not None:
             with recorder.phase("wait for the prelude"):
-                prelude.take()
+                door = prelude.take()
             recorder.gauge("prelude_s", round(prelude.seconds, 3))
+            with recorder.phase("qualify grammar"):
+                # response_format and the door's tool-call grammar, every rank: the compiler came off the prelude
+                bind_grammars(model, door, caches.device)
         with recorder.phase("warm eager moe"):
             # the eager MoE's decode-sized launches at the one capacity they will keep: the 2026-09-19 K=3 window's
             # first requests compiled six of them mid-request (warmup.eager_moe). Before the prefill passes: their
@@ -718,6 +759,7 @@ def main(argv=None) -> int:
         vision = model.composition.vision
         print("  pictures: " + ("served, the tower on every rank (--vision " + a.vision + ")" if vision is not None
                                 else "not served (--vision " + a.vision + ")"), flush=True)
+        print(f"  structured output: {'on' if model.grammars is not None else 'off (no xgrammar)'}", flush=True)
         with rec.phase("door"):
             from engine.profiles.qwen38 import vision as eyes
             door = prelude.take()
