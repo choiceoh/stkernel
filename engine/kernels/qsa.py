@@ -1988,26 +1988,36 @@ def qualify(device, *, heads=((6, 256), (4, 128)), rotary_dim: int, theta: float
     `rotary_dim` channels) on `device`, at each (heads, head_dim) the model normalises and rotates (the query heads and
     the indexer's), within a few BF16 steps (engine/kernels/gated_residual.drift). The ported vLLM kernels are not
     held here: their bodies are the ones that served this model (SOURCES.json)."""
-    from engine.kernels.gated_residual import drift
+    from engine.kernels.gated_residual import blame, drift
     from engine.modules.norm import rmsnorm_unit_offset
     from engine.modules.rotary import apply_rope, rope_tables
     gen = torch.Generator(device="cpu").manual_seed(seed)
-    worst = {}
+    worst, found = {}, []
     for h, d in heads:
         w = (torch.randn(d, generator=gen) * 0.1).to(device=device, dtype=dtype)
         key, most = f"norm_rope_{h}x{d}", (0.0, 0.0)
         for n in rows:
             x = torch.randn(n, h, d, generator=gen).to(device=device, dtype=dtype)
             positions = torch.randint(0, max_position, (n,), generator=gen).to(device)
-            cos, sin = rope_tables(positions, rotary_dim, theta, dtype=dtype)
-            m, r = drift(norm_rope_partial(x, w, eps, positions, theta, rotary_dim),
-                         apply_rope(rmsnorm_unit_offset(x, w, eps), cos, sin))
+
+            def ours(x=x, w=w, positions=positions):
+                return norm_rope_partial(x, w, eps, positions, theta, rotary_dim)
+
+            def reference(x=x, w=w, positions=positions):
+                cos, sin = rope_tables(positions, rotary_dim, theta, dtype=dtype)
+                return apply_rope(rmsnorm_unit_offset(x, w, eps), cos, sin)
+
+            got, want = ours(), reference()
+            m, r = drift(got, want)
+            if m > band_max or r > band_rms:               # (rows, heads, channels): the failure says where and whose
+                found.append(f"{key} at {n} rows: " + blame(
+                    got, want, ours, reference, lambda: reference(x.cpu(), w.cpu(), positions.cpu()), band_max=band_max))
             most = (max(most[0], m), max(most[1], r))
         worst[key] = most
     bad = {k: v for k, v in worst.items() if v[0] > band_max or v[1] > band_rms}
     if bad:
         raise RuntimeError(f"QSA norm and partial rotation drift from engine/modules beyond max {band_max:g} / "
-                           f"rms {band_rms:g}: {bad}")
+                           f"rms {band_rms:g}: {bad}. " + " | ".join(found))
     return worst
 
 
