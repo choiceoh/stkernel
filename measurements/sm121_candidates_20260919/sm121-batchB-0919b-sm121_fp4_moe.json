@@ -1,0 +1,391 @@
+{
+ "lane": "sm121_fp4_moe",
+ "unavailable": {
+  "cute-dsl mxfp8 x mxfp4 wrapper E32 top8 h4096 i1536 T1": "RuntimeError: No supported CUDA architectures found for major versions [10].",
+  "cute-dsl mxfp8 x mxfp4 functional E32 top8 h4096 i1536 T1": "RuntimeError: No supported CUDA architectures found for major versions [10].",
+  "cute-dsl mxfp8 x mxfp4 wrapper E32 top8 h4096 i1536 T16": "RuntimeError: No supported CUDA architectures found for major versions [10].",
+  "cute-dsl mxfp8 x mxfp4 functional E32 top8 h4096 i1536 T16": "RuntimeError: No supported CUDA architectures found for major versions [10].",
+  "cute-dsl mxfp8 x mxfp4 wrapper E8 top2 h4096 i2048 T1": "RuntimeError: No supported CUDA architectures found for major versions [10].",
+  "cute-dsl mxfp8 x mxfp4 functional E8 top2 h4096 i2048 T1": "RuntimeError: No supported CUDA architectures found for major versions [10].",
+  "cute-dsl mxfp8 x mxfp4 wrapper E8 top2 h4096 i2048 T16": "RuntimeError: No supported CUDA architectures found for major versions [10].",
+  "cute-dsl mxfp8 x mxfp4 functional E8 top2 h4096 i2048 T16": "RuntimeError: No supported CUDA architectures found for major versions [10]."
+ },
+ "arms": {
+  "cute-dsl mxfp8 x mxfp4 wrapper": {
+   "ran": 0,
+   "failed": 4,
+   "first_error": "RuntimeError: No supported CUDA architectures found for major versions [10]."
+  },
+  "cute-dsl mxfp8 x mxfp4 functional": {
+   "ran": 0,
+   "failed": 4,
+   "first_error": "RuntimeError: No supported CUDA architectures found for major versions [10]."
+  },
+  "b12x mxfp4 wrapper": {
+   "ran": 8,
+   "failed": 0
+  },
+  "b12x mxfp4 functional": {
+   "ran": 8,
+   "failed": 0
+  }
+ },
+ "entries": {
+  "mxfp4_quantize": {
+   "at": "quantization/fp4_quantization.py:1545",
+   "declared_ccs": null,
+   "missing_args": []
+  },
+  "mxfp4_dequantize": {
+   "at": "quantization/fp4_quantization.py:1627",
+   "declared_ccs": null,
+   "missing_args": []
+  },
+  "mxfp8_quantize": {
+   "at": "quantization/fp8_quantization.py:171",
+   "declared_ccs": null,
+   "missing_args": []
+  },
+  "cute_dsl_fused_moe_mxfp8_mxfp4": {
+   "at": "fused_moe/cute_dsl/fused_moe_mxfp8_mxfp4.py:723",
+   "declared_ccs": [
+    100,
+    103
+   ],
+   "missing_args": []
+  },
+  "b12x_fused_moe": {
+   "at": "fused_moe/cute_dsl/b12x_moe.py:56",
+   "declared_ccs": [
+    120,
+    121
+   ],
+   "missing_args": []
+  },
+  "convert_sf_to_mma_layout": {
+   "at": "cute_dsl/utils.py:466",
+   "declared_ccs": null,
+   "missing_args": []
+  },
+  "select_sm120_moe_backend": {
+   "at": "fused_moe/cute_dsl/blackwell_sm12x/moe_dispatch.py:1763",
+   "declared_ccs": null,
+   "missing_args": []
+  },
+  "block_scale_interleave": {
+   "at": "quantization/fp4_quantization.py:1154",
+   "declared_ccs": null,
+   "missing_args": []
+  },
+  "CuteDslMxfp8Mxfp4MoEWrapper.__init__": {
+   "at": "fused_moe/cute_dsl/fused_moe_mxfp8_mxfp4.py:500",
+   "declared_ccs": [
+    100,
+    103
+   ],
+   "missing_args": []
+  },
+  "CuteDslMxfp8Mxfp4MoEWrapper.run": {
+   "at": "fused_moe/cute_dsl/fused_moe_mxfp8_mxfp4.py:629",
+   "declared_ccs": null,
+   "missing_args": []
+  },
+  "B12xMoEWrapper.__init__": {
+   "at": "fused_moe/cute_dsl/b12x_moe.py:265",
+   "declared_ccs": [
+    120,
+    121
+   ],
+   "missing_args": []
+  },
+  "B12xMoEWrapper.run": {
+   "at": "fused_moe/cute_dsl/b12x_moe.py:484",
+   "declared_ccs": null,
+   "missing_args": []
+  }
+ },
+ "layout_checks": {
+  "mxfp4: quant_mxfp4 vs mxfp4_quantize, equal bytes (packed, scales)": [
+   1.0,
+   1.0
+  ],
+  "mxfp4: dequant_mxfp4 vs mxfp4_dequantize, of mxfp4_quantize's bytes": 0.0,
+  "mxfp4: mxfp4_quantize 128x4 read back == its layout_linear": true,
+  "E32 top8 h4096 i1536 b12x w1: block_scale_interleave == swizzle_128x4": true,
+  "E32 top8 h4096 i1536 cute-dsl w1: block_scale_interleave == swizzle_128x4": true,
+  "E32 top8 h4096 i1536 w2: block_scale_interleave == swizzle_128x4": true,
+  "E32 top8 h4096 i1536 b12x w1 scales read back == the checkpoint's": true,
+  "E32 top8 h4096 i1536 w2 scales read back == the checkpoint's": true,
+  "E32 top8 h4096 i1536 cute-dsl w1 (bytes, scales read back) de-interleaved == b12x's": true,
+  "E32 top8 h4096 i1536 expert 0 dequantised exactly in bf16": true,
+  "E8 top2 h4096 i2048 b12x w1: block_scale_interleave == swizzle_128x4": true,
+  "E8 top2 h4096 i2048 cute-dsl w1: block_scale_interleave == swizzle_128x4": true,
+  "E8 top2 h4096 i2048 w2: block_scale_interleave == swizzle_128x4": true,
+  "E8 top2 h4096 i2048 b12x w1 scales read back == the checkpoint's": true,
+  "E8 top2 h4096 i2048 w2 scales read back == the checkpoint's": true,
+  "E8 top2 h4096 i2048 cute-dsl w1 (bytes, scales read back) de-interleaved == b12x's": true,
+  "E8 top2 h4096 i2048 expert 0 dequantised exactly in bf16": true
+ },
+ "cases": {
+  "E32 top8 h4096 i1536": {
+   "experts": 32,
+   "top_k": 8,
+   "hidden": 4096,
+   "intermediate": 1536,
+   "tokens": {
+    "1": {
+     "routed_rows": 8,
+     "b12x_backend": "static",
+     "mxfp8_quantize (activation)": {
+      "median_us": 13.8,
+      "best_us": 13.3
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 2.98,
+      "finite": true,
+      "vs_x_bf16": 0.240317,
+      "vs_halves_swapped": 0.7765,
+      "vs_x_mxfp4_snap": 0.15985,
+      "median_us": 625.8,
+      "best_us": 614.8,
+      "TFLOPS": 0.48
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.0,
+      "finite": true,
+      "vs_x_bf16": 0.240774,
+      "vs_halves_swapped": 0.78185,
+      "vs_x_mxfp4_snap": 0.15985,
+      "median_us": 640.2,
+      "best_us": 634.2,
+      "TFLOPS": 0.47
+     }
+    },
+    "16": {
+     "routed_rows": 128,
+     "b12x_backend": "static",
+     "mxfp8_quantize (activation)": {
+      "median_us": 72.8,
+      "best_us": 45.7
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 2.77,
+      "finite": true,
+      "vs_x_bf16": 0.243811,
+      "vs_halves_swapped": 0.719426,
+      "vs_x_mxfp4_snap": 0.158313,
+      "median_us": 1558.8,
+      "best_us": 1497.2,
+      "TFLOPS": 3.1
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.0,
+      "finite": true,
+      "vs_x_bf16": 0.245,
+      "vs_halves_swapped": 0.721571,
+      "vs_x_mxfp4_snap": 0.160951,
+      "median_us": 1481.8,
+      "best_us": 1470.8,
+      "TFLOPS": 3.26
+     }
+    },
+    "256": {
+     "routed_rows": 2048,
+     "b12x_backend": "dynamic",
+     "mxfp8_quantize (activation)": {
+      "median_us": 14.1,
+      "best_us": 14.0
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 1.7,
+      "finite": true,
+      "vs_x_bf16": 0.224239,
+      "vs_halves_swapped": 0.791903,
+      "vs_x_mxfp4_snap": 0.157572,
+      "median_us": 2204.2,
+      "best_us": 2143.9,
+      "TFLOPS": 35.07
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.0,
+      "finite": true,
+      "vs_x_bf16": 0.222337,
+      "vs_halves_swapped": 0.791903,
+      "vs_x_mxfp4_snap": 0.155646,
+      "median_us": 2198.7,
+      "best_us": 2166.0,
+      "TFLOPS": 35.16
+     }
+    },
+    "4096": {
+     "routed_rows": 32768,
+     "b12x_backend": "dynamic",
+     "mxfp8_quantize (activation)": {
+      "median_us": 284.8,
+      "best_us": 280.4
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 6.45,
+      "finite": true,
+      "vs_x_bf16": 0.235899,
+      "vs_halves_swapped": 0.893065,
+      "vs_x_mxfp4_snap": 0.14593,
+      "median_us": 13731.4,
+      "best_us": 13673.5,
+      "TFLOPS": 90.08
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.01,
+      "finite": true,
+      "vs_x_bf16": 0.235899,
+      "vs_halves_swapped": 0.889818,
+      "vs_x_mxfp4_snap": 0.144284,
+      "median_us": 13730.8,
+      "best_us": 13697.8,
+      "TFLOPS": 90.09
+     }
+    }
+   },
+   "gave_up_after_two_identical_failures": [
+    "cute-dsl mxfp8 x mxfp4 functional",
+    "cute-dsl mxfp8 x mxfp4 wrapper"
+   ]
+  },
+  "E8 top2 h4096 i2048": {
+   "experts": 8,
+   "top_k": 2,
+   "hidden": 4096,
+   "intermediate": 2048,
+   "tokens": {
+    "1": {
+     "routed_rows": 2,
+     "b12x_backend": "static",
+     "mxfp8_quantize (activation)": {
+      "median_us": 70.9,
+      "best_us": 67.8
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 2.39,
+      "finite": true,
+      "vs_x_bf16": 0.20809,
+      "vs_halves_swapped": 0.740661,
+      "vs_x_mxfp4_snap": 0.153628,
+      "median_us": 355.5,
+      "best_us": 351.1,
+      "TFLOPS": 0.28
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.0,
+      "finite": true,
+      "vs_x_bf16": 0.210952,
+      "vs_halves_swapped": 0.740661,
+      "vs_x_mxfp4_snap": 0.153628,
+      "median_us": 375.4,
+      "best_us": 368.9,
+      "TFLOPS": 0.27
+     }
+    },
+    "16": {
+     "routed_rows": 32,
+     "b12x_backend": "static",
+     "mxfp8_quantize (activation)": {
+      "median_us": 80.8,
+      "best_us": 78.9
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 2.68,
+      "finite": true,
+      "vs_x_bf16": 0.221564,
+      "vs_halves_swapped": 0.789329,
+      "vs_x_mxfp4_snap": 0.166393,
+      "median_us": 647.5,
+      "best_us": 641.1,
+      "TFLOPS": 2.49
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.0,
+      "finite": true,
+      "vs_x_bf16": 0.222374,
+      "vs_halves_swapped": 0.789329,
+      "vs_x_mxfp4_snap": 0.164107,
+      "median_us": 668.9,
+      "best_us": 662.1,
+      "TFLOPS": 2.41
+     }
+    },
+    "256": {
+     "routed_rows": 512,
+     "b12x_backend": "static",
+     "mxfp8_quantize (activation)": {
+      "median_us": 81.8,
+      "best_us": 79.3
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 4.1,
+      "finite": true,
+      "vs_x_bf16": 0.217967,
+      "vs_halves_swapped": 0.886567,
+      "vs_x_mxfp4_snap": 0.140422,
+      "median_us": 906.8,
+      "best_us": 896.9,
+      "TFLOPS": 28.42
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.0,
+      "finite": true,
+      "vs_x_bf16": 0.217967,
+      "vs_halves_swapped": 0.887621,
+      "vs_x_mxfp4_snap": 0.139408,
+      "median_us": 945.0,
+      "best_us": 926.2,
+      "TFLOPS": 27.27
+     }
+    },
+    "4096": {
+     "routed_rows": 8192,
+     "b12x_backend": "dynamic",
+     "mxfp8_quantize (activation)": {
+      "median_us": 285.0,
+      "best_us": 280.0
+     },
+     "b12x mxfp4 wrapper": {
+      "first_call_s": 6.09,
+      "finite": true,
+      "vs_x_bf16": 0.225915,
+      "vs_halves_swapped": 0.869282,
+      "vs_x_mxfp4_snap": 0.160936,
+      "median_us": 5054.4,
+      "best_us": 4926.4,
+      "TFLOPS": 81.58
+     },
+     "b12x mxfp4 functional": {
+      "first_call_s": 0.01,
+      "finite": true,
+      "vs_x_bf16": 0.233452,
+      "vs_halves_swapped": 0.871011,
+      "vs_x_mxfp4_snap": 0.16046,
+      "median_us": 4949.9,
+      "best_us": 4930.2,
+      "TFLOPS": 83.3
+     }
+    }
+   },
+   "gave_up_after_two_identical_failures": [
+    "cute-dsl mxfp8 x mxfp4 functional",
+    "cute-dsl mxfp8 x mxfp4 wrapper"
+   ]
+  }
+ },
+ "device": {
+  "name": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "memory_cap_gib": 8
+ },
+ "helpers_selfcheck": "ok",
+ "flashinfer": "0.6.18.dev20260819"
+}

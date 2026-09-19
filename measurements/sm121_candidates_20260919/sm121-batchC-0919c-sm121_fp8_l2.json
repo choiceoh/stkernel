@@ -1,0 +1,371 @@
+{
+ "lane": "sm121_fp8_l2",
+ "unavailable": {},
+ "shapes": {
+  "vllm#55180 16384x2560 (42 MB)": {
+   "n": 16384,
+   "k": 2560,
+   "weight_MB": 41.9,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 786.3,
+      "best_us": 779.2,
+      "spread": 1.01,
+      "TFLOPS": 109.2,
+      "best_TFLOPS": 110.2
+     },
+     "cublaslt (served)": {
+      "median_us": 738.5,
+      "best_us": 730.5,
+      "spread": 1.05,
+      "TFLOPS": 116.3,
+      "best_TFLOPS": 117.6
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 5396.2,
+      "best_us": 3199.7,
+      "spread": 1.91,
+      "TFLOPS": 63.7,
+      "best_TFLOPS": 107.4
+     },
+     "cublaslt (served)": {
+      "median_us": 5677.7,
+      "best_us": 5585.9,
+      "spread": 1.12,
+      "TFLOPS": 60.5,
+      "best_TFLOPS": 61.5
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 10782.9,
+      "best_us": 8833.1,
+      "spread": 1.35,
+      "TFLOPS": 63.7,
+      "best_TFLOPS": 77.8
+     },
+     "cublaslt (served)": {
+      "median_us": 10797.8,
+      "best_us": 10743.8,
+      "spread": 1.05,
+      "TFLOPS": 63.6,
+      "best_TFLOPS": 64.0
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 23695.6,
+      "best_us": 21927.7,
+      "spread": 1.09,
+      "TFLOPS": 58.0,
+      "best_TFLOPS": 62.7
+     },
+     "cublaslt (served)": {
+      "median_us": 24100.4,
+      "best_us": 21800.5,
+      "spread": 1.19,
+      "TFLOPS": 57.0,
+      "best_TFLOPS": 63.0
+     }
+    }
+   }
+  },
+  "vllm#55180 5120x5120 (26 MB)": {
+   "n": 5120,
+   "k": 5120,
+   "weight_MB": 26.2,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 533.9,
+      "best_us": 524.3,
+      "spread": 1.03,
+      "TFLOPS": 100.6,
+      "best_TFLOPS": 102.4
+     },
+     "cublaslt (served)": {
+      "median_us": 513.6,
+      "best_us": 490.9,
+      "spread": 1.13,
+      "TFLOPS": 104.5,
+      "best_TFLOPS": 109.4
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 1909.6,
+      "best_us": 1896.0,
+      "spread": 2.77,
+      "TFLOPS": 112.5,
+      "best_TFLOPS": 113.3
+     },
+     "cublaslt (served)": {
+      "median_us": 1925.6,
+      "best_us": 1917.4,
+      "spread": 1.02,
+      "TFLOPS": 111.5,
+      "best_TFLOPS": 112.0
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 6355.2,
+      "best_us": 6265.5,
+      "spread": 1.61,
+      "TFLOPS": 67.6,
+      "best_TFLOPS": 68.5
+     },
+     "cublaslt (served)": {
+      "median_us": 6306.3,
+      "best_us": 4785.8,
+      "spread": 2.01,
+      "TFLOPS": 68.1,
+      "best_TFLOPS": 89.7
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 15316.4,
+      "best_us": 13824.9,
+      "spread": 1.34,
+      "TFLOPS": 56.1,
+      "best_TFLOPS": 62.1
+     },
+     "cublaslt (served)": {
+      "median_us": 15339.6,
+      "best_us": 15177.0,
+      "spread": 1.23,
+      "TFLOPS": 56.0,
+      "best_TFLOPS": 56.6
+     }
+    }
+   }
+  },
+  "glm53 dense gate_up 24576x4096 (101 MB)": {
+   "n": 24576,
+   "k": 4096,
+   "weight_MB": 100.7,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 1625.6,
+      "best_us": 1617.6,
+      "spread": 1.01,
+      "TFLOPS": 126.8,
+      "best_TFLOPS": 127.4
+     },
+     "cublaslt (served)": {
+      "median_us": 1619.1,
+      "best_us": 1612.3,
+      "spread": 1.14,
+      "TFLOPS": 127.3,
+      "best_TFLOPS": 127.9
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 13986.1,
+      "best_us": 6857.9,
+      "spread": 2.13,
+      "TFLOPS": 59.0,
+      "best_TFLOPS": 120.2
+     },
+     "cublaslt (served)": {
+      "median_us": 14568.8,
+      "best_us": 10214.9,
+      "spread": 1.44,
+      "TFLOPS": 56.6,
+      "best_TFLOPS": 80.7
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 27195.8,
+      "best_us": 24743.0,
+      "spread": 1.14,
+      "TFLOPS": 60.6,
+      "best_TFLOPS": 66.7
+     },
+     "cublaslt (served)": {
+      "median_us": 28192.9,
+      "best_us": 27822.6,
+      "spread": 1.03,
+      "TFLOPS": 58.5,
+      "best_TFLOPS": 59.3
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 54010.9,
+      "best_us": 40868.6,
+      "spread": 1.42,
+      "TFLOPS": 61.1,
+      "best_TFLOPS": 80.7
+     },
+     "cublaslt (served)": {
+      "median_us": 57372.2,
+      "best_us": 39901.0,
+      "spread": 1.48,
+      "TFLOPS": 57.5,
+      "best_TFLOPS": 82.7
+     }
+    }
+   }
+  },
+  "glm53 dense down 4096x12288 (50 MB)": {
+   "n": 4096,
+   "k": 12288,
+   "weight_MB": 50.3,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 1119.5,
+      "best_us": 1102.1,
+      "spread": 1.03,
+      "TFLOPS": 92.1,
+      "best_TFLOPS": 93.5
+     },
+     "cublaslt (served)": {
+      "median_us": 1085.9,
+      "best_us": 1074.1,
+      "spread": 1.02,
+      "TFLOPS": 94.9,
+      "best_TFLOPS": 96.0
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 6484.7,
+      "best_us": 6454.2,
+      "spread": 1.42,
+      "TFLOPS": 63.6,
+      "best_TFLOPS": 63.9
+     },
+     "cublaslt (served)": {
+      "median_us": 6645.2,
+      "best_us": 6570.6,
+      "spread": 1.36,
+      "TFLOPS": 62.0,
+      "best_TFLOPS": 62.8
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 9437.6,
+      "best_us": 7589.8,
+      "spread": 2.43,
+      "TFLOPS": 87.4,
+      "best_TFLOPS": 108.7
+     },
+     "cublaslt (served)": {
+      "median_us": 12457.0,
+      "best_us": 7752.2,
+      "spread": 2.49,
+      "TFLOPS": 66.2,
+      "best_TFLOPS": 106.4
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 31496.3,
+      "best_us": 23008.9,
+      "spread": 1.52,
+      "TFLOPS": 52.4,
+      "best_TFLOPS": 71.7
+     },
+     "cublaslt (served)": {
+      "median_us": 35153.2,
+      "best_us": 17242.4,
+      "spread": 2.27,
+      "TFLOPS": 46.9,
+      "best_TFLOPS": 95.7
+     }
+    }
+   }
+  },
+  "inside the L2 4096x4096 (17 MB)": {
+   "n": 4096,
+   "k": 4096,
+   "weight_MB": 16.8,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 388.3,
+      "best_us": 380.0,
+      "spread": 1.23,
+      "TFLOPS": 88.5,
+      "best_TFLOPS": 90.4
+     },
+     "cublaslt (served)": {
+      "median_us": 358.9,
+      "best_us": 350.2,
+      "spread": 1.57,
+      "TFLOPS": 95.7,
+      "best_TFLOPS": 98.1
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 1317.1,
+      "best_us": 1310.2,
+      "spread": 1.02,
+      "TFLOPS": 104.4,
+      "best_TFLOPS": 104.9
+     },
+     "cublaslt (served)": {
+      "median_us": 1299.8,
+      "best_us": 1291.6,
+      "spread": 1.16,
+      "TFLOPS": 105.7,
+      "best_TFLOPS": 106.4
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 5145.6,
+      "best_us": 4349.6,
+      "spread": 1.27,
+      "TFLOPS": 53.4,
+      "best_TFLOPS": 63.2
+     },
+     "cublaslt (served)": {
+      "median_us": 5189.7,
+      "best_us": 5130.9,
+      "spread": 1.13,
+      "TFLOPS": 53.0,
+      "best_TFLOPS": 53.6
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 9575.4,
+      "best_us": 9275.1,
+      "spread": 1.09,
+      "TFLOPS": 57.4,
+      "best_TFLOPS": 59.3
+     },
+     "cublaslt (served)": {
+      "median_us": 10676.5,
+      "best_us": 10514.4,
+      "spread": 1.08,
+      "TFLOPS": 51.5,
+      "best_TFLOPS": 52.3
+     }
+    }
+   }
+  }
+ },
+ "device": {
+  "name": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "memory_cap_gib": 6
+ }
+}

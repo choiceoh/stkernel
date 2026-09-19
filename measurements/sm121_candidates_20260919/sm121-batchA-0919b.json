@@ -1,0 +1,23 @@
+{
+ "lane": "sm121_batch",
+ "lanes": {
+  "sm121_gdn": {
+   "returncode": 0,
+   "seconds": 16.4,
+   "output": "/cache/sm121-batchA-0919b-sm121_gdn.json",
+   "log": "/cache/sm121-batchA-0919b-sm121_gdn.log"
+  },
+  "sm121_fp8_l2": {
+   "returncode": 0,
+   "seconds": 23.5,
+   "output": "/cache/sm121-batchA-0919b-sm121_fp8_l2.json",
+   "log": "/cache/sm121-batchA-0919b-sm121_fp8_l2.log"
+  },
+  "sm121_sanitizer": {
+   "returncode": 0,
+   "seconds": 1.2,
+   "output": "/cache/sm121-batchA-0919b-sm121_sanitizer.json",
+   "log": "/cache/sm121-batchA-0919b-sm121_sanitizer.log"
+  }
+ }
+}

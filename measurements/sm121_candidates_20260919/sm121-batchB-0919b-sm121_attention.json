@@ -1,0 +1,2380 @@
+{
+ "lane": "sm121_attention",
+ "geometries": {
+  "8q/2kv d128": {
+   "q_heads": 8,
+   "kv_heads": 2,
+   "head_dim": 128
+  },
+  "gpt-oss 16q/2kv d64": {
+   "q_heads": 16,
+   "kv_heads": 2,
+   "head_dim": 64
+  }
+ },
+ "settings": {
+  "page": 16,
+  "layout": "NHD",
+  "spare_pages": 16,
+  "garbage": 4.0,
+  "sinks": "linspace(-2.0, 8.0) over the query heads, fp32",
+  "softcap_q_gain": 40.0,
+  "seed": 0,
+  "warmup": 3,
+  "repeats": 9
+ },
+ "not_tried": {
+  "trtllm-gen": "jit/attention/modules.py gen_trtllm_gen_fmha_module fetches its cubins and header with get_artifact, a download when they are not cached -- not beside production"
+ },
+ "unavailable": {
+  "decode 8q/2kv d128 b1 kv1000 causal cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum",
+  "decode 8q/2kv d128 b1 kv1000 window127+sinks cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum",
+  "prefill 8q/2kv d128 causal cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum",
+  "prefill 8q/2kv d128 window127 cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum",
+  "decode gpt-oss 16q/2kv d64 b1 kv1000 causal cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum",
+  "decode gpt-oss 16q/2kv d64 b1 kv1000 window127+sinks cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum",
+  "prefill gpt-oss 16q/2kv d64 causal cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum",
+  "prefill gpt-oss 16q/2kv d64 window127 cute-dsl": "OpError: \n\u001b[91m\u001b[1merror:\u001b[0m expects arch to be one of [Arch.sm_100a, Arch.sm_100f, Arch.sm_110a, Arch.sm_110f, Arch.sm_103a, Arch.sm_103f], but got sm_121a\n  \u001b[94m= note:\u001b[0m error code MmaF16BF16Op error\n  \u001b[92msuggestion:\u001b[0m tcgen05 MMA requires datacenter Blackwell (sm_100 / sm_103). On consum"
+ },
+ "unsupported": {
+  "decode 8q/2kv d128 b1 kv1000 softcap50 xqa": "xqa has no keyword logits_soft_cap",
+  "decode 8q/2kv d128 b1 kv33000 softcap50 xqa": "xqa has no keyword logits_soft_cap",
+  "decode 8q/2kv d128 b4 kv1000/33000 softcap50 xqa": "xqa has no keyword logits_soft_cap",
+  "decode gpt-oss 16q/2kv d64 b1 kv1000 softcap50 xqa": "xqa has no keyword logits_soft_cap",
+  "decode gpt-oss 16q/2kv d64 b1 kv33000 softcap50 xqa": "xqa has no keyword logits_soft_cap",
+  "decode gpt-oss 16q/2kv d64 b4 kv1000/33000 softcap50 xqa": "xqa has no keyword logits_soft_cap"
+ },
+ "decode": {
+  "8q/2kv d128": {
+   "b1 kv1000": {
+    "kv_lens": [
+     1000
+    ],
+    "pages": 63,
+    "pool_pages": 79,
+    "effects": {
+     "causal": {},
+     "window127": {
+      "ref_without_window": 1.082474
+     },
+     "sinks": {
+      "ref_without_sinks": 0.583878
+     },
+     "window127+sinks": {
+      "ref_without_window": 0.968295,
+      "ref_without_sinks": 1.036378
+     },
+     "softcap50": {
+      "ref_without_softcap": 2.433604
+     },
+     "fp8_kv": {
+      "bf16_kv_ref": 0.045888
+     },
+     "nvfp4_kv": {
+      "bf16_kv_ref": 0.128153
+     }
+    },
+    "rows": {
+     "causal": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 16.18,
+       "vs_ref": 0.003202,
+       "finite": true,
+       "median_us": 88.3,
+       "best_us": 81.1
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 72.44,
+       "vs_ref": 0.002514,
+       "finite": true,
+       "median_us": 91.3,
+       "best_us": 86.3
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 7.16,
+       "vs_ref": 0.004617,
+       "finite": true,
+       "median_us": 26.0,
+       "best_us": 24.8
+      }
+     },
+     "window127": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 18.0,
+       "vs_ref": 0.004148,
+       "finite": true,
+       "vs_ref_without_window": 3.06685,
+       "median_us": 79.6,
+       "best_us": 76.7
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 54.25,
+       "vs_ref": 0.003346,
+       "finite": true,
+       "vs_ref_without_window": 3.0457,
+       "median_us": 85.2,
+       "best_us": 81.2
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 11.89,
+       "vs_ref": 0.003574,
+       "finite": true,
+       "vs_ref_without_window": 3.0457,
+       "median_us": 26.0,
+       "best_us": 25.6
+      }
+     },
+     "sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.582533,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003202,
+       "median_us": 24.5,
+       "best_us": 23.7
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.582533,
+       "finite": true,
+       "vs_ref_without_sinks": 0.002514,
+       "median_us": 22.8,
+       "best_us": 22.7
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_False_fa2"
+       },
+       "first_call_s": 51.72,
+       "vs_ref": 0.002938,
+       "finite": true,
+       "vs_ref_without_sinks": 0.582964,
+       "median_us": 106.1,
+       "best_us": 95.6
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00593,
+       "finite": true,
+       "vs_ref_without_sinks": 0.582964,
+       "median_us": 93.8,
+       "best_us": 86.1
+      }
+     },
+     "window127+sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 1.042,
+       "finite": true,
+       "vs_ref_without_window": 2.998828,
+       "vs_ref_without_sinks": 0.004148,
+       "median_us": 82.5,
+       "best_us": 78.8
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 1.032404,
+       "finite": true,
+       "vs_ref_without_window": 2.97765,
+       "vs_ref_without_sinks": 0.003346,
+       "median_us": 84.6,
+       "best_us": 82.6
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_True_fa2"
+       },
+       "first_call_s": 56.81,
+       "vs_ref": 0.00266,
+       "finite": true,
+       "vs_ref_without_window": 2.023661,
+       "vs_ref_without_sinks": 0.764887,
+       "median_us": 25.0,
+       "best_us": 24.8
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005652,
+       "finite": true,
+       "vs_ref_without_window": 2.013072,
+       "vs_ref_without_sinks": 0.765824,
+       "median_us": 26.7,
+       "best_us": 25.8
+      }
+     },
+     "softcap50": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 17.23,
+       "vs_ref": 0.002656,
+       "finite": true,
+       "vs_ref_without_softcap": 0.906823,
+       "median_us": 24.7,
+       "best_us": 23.9
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 73.99,
+       "vs_ref": 0.002656,
+       "finite": true,
+       "vs_ref_without_softcap": 0.906823,
+       "median_us": 22.7,
+       "best_us": 21.9
+      }
+     },
+     "fp8_kv": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 17.27,
+       "vs_ref": 0.003299,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.044656,
+       "median_us": 106.2,
+       "best_us": 102.0
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 77.88,
+       "vs_ref": 0.004061,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.0473,
+       "median_us": 27.8,
+       "best_us": 27.3
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 12.94,
+       "vs_ref": 0.004168,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.0473,
+       "median_us": 15.1,
+       "best_us": 14.6
+      }
+     },
+     "nvfp4_kv": {
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 89.08,
+       "vs_ref": 0.004299,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.128098,
+       "median_us": 18.6,
+       "best_us": 17.9
+      },
+      "tensor-core no-split": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004299,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.128428,
+       "median_us": 40.0,
+       "best_us": 34.6
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 15.25,
+       "vs_ref": 0.005029,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.128098,
+       "median_us": 21.9,
+       "best_us": 19.8
+      }
+     }
+    },
+    "fp8": {
+     "k_scale": 0.011439732142857142,
+     "v_scale": 0.009416852678571428
+    },
+    "nvfp4": {
+     "k": {
+      "global_scale": 0.0019066220238095238,
+      "roundtrip": {
+       "low_first": 0.109175,
+       "high_first": 1.191638
+      },
+      "nibble_order": "low_first"
+     },
+     "v": {
+      "global_scale": 0.0015694754464285715,
+      "roundtrip": {
+       "low_first": 0.139683,
+       "high_first": 1.69418
+      },
+      "nibble_order": "low_first"
+     }
+    }
+   },
+   "b1 kv33000": {
+    "kv_lens": [
+     33000
+    ],
+    "pages": 2063,
+    "pool_pages": 2079,
+    "effects": {
+     "causal": {},
+     "window127": {
+      "ref_without_window": 0.998598
+     },
+     "sinks": {
+      "ref_without_sinks": 0.040822
+     },
+     "window127+sinks": {
+      "ref_without_window": 0.998542,
+      "ref_without_sinks": 0.666158
+     },
+     "softcap50": {
+      "ref_without_softcap": 17.90675
+     },
+     "fp8_kv": {
+      "bf16_kv_ref": 0.036798
+     },
+     "nvfp4_kv": {
+      "bf16_kv_ref": 0.154992
+     }
+    },
+    "rows": {
+     "causal": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.002973,
+       "finite": true,
+       "median_us": 210.3,
+       "best_us": 203.6
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003386,
+       "finite": true,
+       "median_us": 208.1,
+       "best_us": 203.5
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.0046,
+       "finite": true,
+       "median_us": 213.8,
+       "best_us": 203.3
+      }
+     },
+     "window127": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003482,
+       "finite": true,
+       "vs_ref_without_window": 16.456627,
+       "median_us": 205.8,
+       "best_us": 199.2
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002227,
+       "finite": true,
+       "vs_ref_without_window": 16.522547,
+       "median_us": 15.5,
+       "best_us": 12.1
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004353,
+       "finite": true,
+       "vs_ref_without_window": 16.456627,
+       "median_us": 25.6,
+       "best_us": 24.1
+      }
+     },
+     "sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.041572,
+       "finite": true,
+       "vs_ref_without_sinks": 0.002973,
+       "median_us": 207.4,
+       "best_us": 195.2
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.041572,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003386,
+       "median_us": 206.5,
+       "best_us": 180.4
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_False_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003287,
+       "finite": true,
+       "vs_ref_without_sinks": 0.040451,
+       "median_us": 210.5,
+       "best_us": 197.8
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004347,
+       "finite": true,
+       "vs_ref_without_sinks": 0.040451,
+       "median_us": 214.0,
+       "best_us": 207.7
+      }
+     },
+     "window127+sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.66694,
+       "finite": true,
+       "vs_ref_without_window": 16.508038,
+       "vs_ref_without_sinks": 0.003482,
+       "median_us": 209.1,
+       "best_us": 195.7
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.66694,
+       "finite": true,
+       "vs_ref_without_window": 16.574162,
+       "vs_ref_without_sinks": 0.002227,
+       "median_us": 15.6,
+       "best_us": 13.3
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_True_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002178,
+       "finite": true,
+       "vs_ref_without_window": 15.912912,
+       "vs_ref_without_sinks": 0.640412,
+       "median_us": 16.5,
+       "best_us": 16.2
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005054,
+       "finite": true,
+       "vs_ref_without_window": 15.846787,
+       "vs_ref_without_sinks": 0.640412,
+       "median_us": 25.9,
+       "best_us": 19.4
+      }
+     },
+     "softcap50": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003199,
+       "finite": true,
+       "vs_ref_without_softcap": 0.975709,
+       "median_us": 206.9,
+       "best_us": 202.6
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003656,
+       "finite": true,
+       "vs_ref_without_softcap": 0.975709,
+       "median_us": 210.5,
+       "best_us": 200.1
+      }
+     },
+     "fp8_kv": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00477,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.036957,
+       "median_us": 129.7,
+       "best_us": 116.3
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004497,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.036957,
+       "median_us": 129.0,
+       "best_us": 114.2
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00423,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.036957,
+       "median_us": 132.0,
+       "best_us": 110.5
+      }
+     },
+     "nvfp4_kv": {
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003455,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.156464,
+       "median_us": 79.7,
+       "best_us": 71.4
+      },
+      "tensor-core no-split": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00389,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.156464,
+       "median_us": 857.3,
+       "best_us": 845.6
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004152,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.156464,
+       "median_us": 87.5,
+       "best_us": 66.2
+      }
+     }
+    },
+    "fp8": {
+     "k_scale": 0.011858258928571428,
+     "v_scale": 0.012067522321428572
+    },
+    "nvfp4": {
+     "k": {
+      "global_scale": 0.001976376488095238,
+      "roundtrip": {
+       "low_first": 0.123249,
+       "high_first": 1.447899
+      },
+      "nibble_order": "low_first"
+     },
+     "v": {
+      "global_scale": 0.002011253720238095,
+      "roundtrip": {
+       "low_first": 0.11891,
+       "high_first": 1.400702
+      },
+      "nibble_order": "low_first"
+     }
+    }
+   },
+   "b4 kv1000/33000": {
+    "kv_lens": [
+     1000,
+     33000,
+     1000,
+     33000
+    ],
+    "pages": 4252,
+    "pool_pages": 4268,
+    "effects": {
+     "causal": {},
+     "window127": {
+      "ref_without_window": 1.011218
+     },
+     "sinks": {
+      "ref_without_sinks": 0.649724
+     },
+     "window127+sinks": {
+      "ref_without_window": 1.011717,
+      "ref_without_sinks": 0.764965
+     },
+     "softcap50": {
+      "ref_without_softcap": 3.440745
+     },
+     "fp8_kv": {
+      "bf16_kv_ref": 0.07066
+     },
+     "nvfp4_kv": {
+      "bf16_kv_ref": 0.151866
+     }
+    },
+    "rows": {
+     "causal": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.03,
+       "vs_ref": 0.002788,
+       "finite": true,
+       "median_us": 350.9,
+       "best_us": 347.9
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002764,
+       "finite": true,
+       "median_us": 349.8,
+       "best_us": 346.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004462,
+       "finite": true,
+       "median_us": 360.3,
+       "best_us": 357.1
+      }
+     },
+     "window127": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.001719,
+       "finite": true,
+       "vs_ref_without_window": 2.913576,
+       "median_us": 348.3,
+       "best_us": 345.3
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002205,
+       "finite": true,
+       "vs_ref_without_window": 2.913576,
+       "median_us": 13.4,
+       "best_us": 12.1
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005217,
+       "finite": true,
+       "vs_ref_without_window": 2.913576,
+       "median_us": 16.1,
+       "best_us": 15.6
+      }
+     },
+     "sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.648212,
+       "finite": true,
+       "vs_ref_without_sinks": 0.002788,
+       "median_us": 362.6,
+       "best_us": 323.8
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.648212,
+       "finite": true,
+       "vs_ref_without_sinks": 0.002764,
+       "median_us": 373.7,
+       "best_us": 368.8
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_False_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002598,
+       "finite": true,
+       "vs_ref_without_sinks": 0.644813,
+       "median_us": 385.2,
+       "best_us": 381.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003948,
+       "finite": true,
+       "vs_ref_without_sinks": 0.644813,
+       "median_us": 401.1,
+       "best_us": 396.7
+      }
+     },
+     "window127+sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.763255,
+       "finite": true,
+       "vs_ref_without_window": 2.933145,
+       "vs_ref_without_sinks": 0.001719,
+       "median_us": 333.0,
+       "best_us": 317.6
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.766856,
+       "finite": true,
+       "vs_ref_without_window": 2.933145,
+       "vs_ref_without_sinks": 0.002205,
+       "median_us": 90.1,
+       "best_us": 82.6
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_True_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002419,
+       "finite": true,
+       "vs_ref_without_window": 2.81312,
+       "vs_ref_without_sinks": 0.732281,
+       "median_us": 95.5,
+       "best_us": 93.1
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004782,
+       "finite": true,
+       "vs_ref_without_window": 2.81312,
+       "vs_ref_without_sinks": 0.732066,
+       "median_us": 99.6,
+       "best_us": 93.7
+      }
+     },
+     "softcap50": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002855,
+       "finite": true,
+       "vs_ref_without_softcap": 0.972328,
+       "median_us": 354.1,
+       "best_us": 316.9
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002855,
+       "finite": true,
+       "vs_ref_without_softcap": 0.972328,
+       "median_us": 358.3,
+       "best_us": 355.2
+      }
+     },
+     "fp8_kv": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005029,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.071574,
+       "median_us": 216.7,
+       "best_us": 185.2
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004566,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.071574,
+       "median_us": 214.1,
+       "best_us": 180.0
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005708,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.067351,
+       "median_us": 211.4,
+       "best_us": 181.3
+      }
+     },
+     "nvfp4_kv": {
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004559,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.158137,
+       "median_us": 133.9,
+       "best_us": 108.8
+      },
+      "tensor-core no-split": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004559,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.158137,
+       "median_us": 857.6,
+       "best_us": 853.5
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004714,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.159378,
+       "median_us": 181.3,
+       "best_us": 171.0
+      }
+     }
+    },
+    "fp8": {
+     "k_scale": 0.012137276785714286,
+     "v_scale": 0.01220703125
+    },
+    "nvfp4": {
+     "k": {
+      "global_scale": 0.0020228794642857145,
+      "roundtrip": {
+       "low_first": 0.122742,
+       "high_first": 1.444992
+      },
+      "nibble_order": "low_first"
+     },
+     "v": {
+      "global_scale": 0.0020345052083333335,
+      "roundtrip": {
+       "low_first": 0.130476,
+       "high_first": 1.434286
+      },
+      "nibble_order": "low_first"
+     }
+    }
+   }
+  },
+  "gpt-oss 16q/2kv d64": {
+   "b1 kv1000": {
+    "kv_lens": [
+     1000
+    ],
+    "pages": 63,
+    "pool_pages": 79,
+    "effects": {
+     "causal": {},
+     "window127": {
+      "ref_without_window": 1.049328
+     },
+     "sinks": {
+      "ref_without_sinks": 0.482051
+     },
+     "window127+sinks": {
+      "ref_without_window": 0.945554,
+      "ref_without_sinks": 0.849935
+     },
+     "softcap50": {
+      "ref_without_softcap": 2.264513
+     },
+     "fp8_kv": {
+      "bf16_kv_ref": 0.04521
+     },
+     "nvfp4_kv": {
+      "bf16_kv_ref": 0.15997
+     }
+    },
+    "rows": {
+     "causal": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 16.85,
+       "vs_ref": 0.003016,
+       "finite": true,
+       "median_us": 21.5,
+       "best_us": 13.3
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 66.58,
+       "vs_ref": 0.003326,
+       "finite": true,
+       "median_us": 16.5,
+       "best_us": 15.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 8.89,
+       "vs_ref": 0.005667,
+       "finite": true,
+       "median_us": 21.9,
+       "best_us": 21.0
+      }
+     },
+     "window127": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 17.2,
+       "vs_ref": 0.003701,
+       "finite": true,
+       "vs_ref_without_window": 2.595905,
+       "median_us": 23.1,
+       "best_us": 21.9
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 82.28,
+       "vs_ref": 0.002377,
+       "finite": true,
+       "vs_ref_without_window": 2.595905,
+       "median_us": 11.5,
+       "best_us": 11.2
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 14.23,
+       "vs_ref": 0.005658,
+       "finite": true,
+       "vs_ref_without_window": 2.606927,
+       "median_us": 13.2,
+       "best_us": 12.9
+      }
+     },
+     "sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.483435,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003016,
+       "median_us": 16.1,
+       "best_us": 15.4
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.483435,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003326,
+       "median_us": 16.0,
+       "best_us": 13.9
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_False_fa2"
+       },
+       "first_call_s": 61.02,
+       "vs_ref": 0.003742,
+       "finite": true,
+       "vs_ref_without_sinks": 0.478079,
+       "median_us": 15.8,
+       "best_us": 13.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004781,
+       "finite": true,
+       "vs_ref_without_sinks": 0.478079,
+       "median_us": 15.1,
+       "best_us": 11.5
+      }
+     },
+     "window127+sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.8538,
+       "finite": true,
+       "vs_ref_without_window": 2.590973,
+       "vs_ref_without_sinks": 0.003701,
+       "median_us": 17.4,
+       "best_us": 15.9
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.848876,
+       "finite": true,
+       "vs_ref_without_window": 2.590973,
+       "vs_ref_without_sinks": 0.002377,
+       "median_us": 14.2,
+       "best_us": 11.7
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_True_fa2"
+       },
+       "first_call_s": 57.08,
+       "vs_ref": 0.003145,
+       "finite": true,
+       "vs_ref_without_window": 2.134243,
+       "vs_ref_without_sinks": 0.768738,
+       "median_us": 11.8,
+       "best_us": 11.6
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005934,
+       "finite": true,
+       "vs_ref_without_window": 2.12313,
+       "vs_ref_without_sinks": 0.769295,
+       "median_us": 11.5,
+       "best_us": 11.5
+      }
+     },
+     "softcap50": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 21.2,
+       "vs_ref": 0.002721,
+       "finite": true,
+       "vs_ref_without_softcap": 0.818679,
+       "median_us": 16.0,
+       "best_us": 15.6
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 65.2,
+       "vs_ref": 0.002721,
+       "finite": true,
+       "vs_ref_without_softcap": 0.818679,
+       "median_us": 11.9,
+       "best_us": 11.2
+      }
+     },
+     "fp8_kv": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 20.99,
+       "vs_ref": 0.004425,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.045489,
+       "median_us": 20.6,
+       "best_us": 20.2
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 90.93,
+       "vs_ref": 0.004425,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.045489,
+       "median_us": 16.4,
+       "best_us": 15.9
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 12.13,
+       "vs_ref": 0.00916,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.045489,
+       "median_us": 14.8,
+       "best_us": 13.4
+      }
+     },
+     "nvfp4_kv": {
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 90.35,
+       "vs_ref": 0.004448,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.170155,
+       "median_us": 19.8,
+       "best_us": 18.5
+      },
+      "tensor-core no-split": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004448,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.175666,
+       "median_us": 28.0,
+       "best_us": 23.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 13.77,
+       "vs_ref": 0.010033,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.170155,
+       "median_us": 13.6,
+       "best_us": 13.1
+      }
+     }
+    },
+    "fp8": {
+     "k_scale": 0.011439732142857142,
+     "v_scale": 0.009137834821428572
+    },
+    "nvfp4": {
+     "k": {
+      "global_scale": 0.0019066220238095238,
+      "roundtrip": {
+       "low_first": 0.109175,
+       "high_first": 1.191638
+      },
+      "nibble_order": "low_first"
+     },
+     "v": {
+      "global_scale": 0.0015229724702380952,
+      "roundtrip": {
+       "low_first": 0.136678,
+       "high_first": 1.719738
+      },
+      "nibble_order": "low_first"
+     }
+    }
+   },
+   "b1 kv33000": {
+    "kv_lens": [
+     33000
+    ],
+    "pages": 2063,
+    "pool_pages": 2079,
+    "effects": {
+     "causal": {},
+     "window127": {
+      "ref_without_window": 0.993261
+     },
+     "sinks": {
+      "ref_without_sinks": 0.041166
+     },
+     "window127+sinks": {
+      "ref_without_window": 0.993253,
+      "ref_without_sinks": 0.708386
+     },
+     "softcap50": {
+      "ref_without_softcap": 15.363882
+     },
+     "fp8_kv": {
+      "bf16_kv_ref": 0.03648
+     },
+     "nvfp4_kv": {
+      "bf16_kv_ref": 0.146729
+     }
+    },
+    "rows": {
+     "causal": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.003201,
+       "finite": true,
+       "median_us": 53.1,
+       "best_us": 51.8
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003201,
+       "finite": true,
+       "median_us": 50.3,
+       "best_us": 48.9
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005303,
+       "finite": true,
+       "median_us": 54.5,
+       "best_us": 53.4
+      }
+     },
+     "window127": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003757,
+       "finite": true,
+       "vs_ref_without_window": 14.903665,
+       "median_us": 60.7,
+       "best_us": 52.4
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004024,
+       "finite": true,
+       "vs_ref_without_window": 14.787352,
+       "median_us": 20.6,
+       "best_us": 20.4
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004696,
+       "finite": true,
+       "vs_ref_without_window": 14.787352,
+       "median_us": 24.6,
+       "best_us": 23.2
+      }
+     },
+     "sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.042856,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003201,
+       "median_us": 58.5,
+       "best_us": 57.6
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.042856,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003201,
+       "median_us": 43.7,
+       "best_us": 41.6
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_False_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003468,
+       "finite": true,
+       "vs_ref_without_sinks": 0.041928,
+       "median_us": 45.4,
+       "best_us": 43.8
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00449,
+       "finite": true,
+       "vs_ref_without_sinks": 0.041928,
+       "median_us": 44.4,
+       "best_us": 43.3
+      }
+     },
+     "window127+sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.706564,
+       "finite": true,
+       "vs_ref_without_window": 14.907304,
+       "vs_ref_without_sinks": 0.003757,
+       "median_us": 60.8,
+       "best_us": 60.5
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.710459,
+       "finite": true,
+       "vs_ref_without_window": 14.790962,
+       "vs_ref_without_sinks": 0.004024,
+       "median_us": 20.8,
+       "best_us": 20.6
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_True_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002896,
+       "finite": true,
+       "vs_ref_without_window": 14.790962,
+       "vs_ref_without_sinks": 0.707465,
+       "median_us": 22.8,
+       "best_us": 22.2
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004395,
+       "finite": true,
+       "vs_ref_without_window": 14.790962,
+       "vs_ref_without_sinks": 0.707708,
+       "median_us": 25.7,
+       "best_us": 24.6
+      }
+     },
+     "softcap50": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002955,
+       "finite": true,
+       "vs_ref_without_softcap": 0.985995,
+       "median_us": 118.2,
+       "best_us": 52.8
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002541,
+       "finite": true,
+       "vs_ref_without_softcap": 0.985916,
+       "median_us": 126.0,
+       "best_us": 39.8
+      }
+     },
+     "fp8_kv": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00452,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.037666,
+       "median_us": 79.5,
+       "best_us": 77.9
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004078,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.036482,
+       "median_us": 42.2,
+       "best_us": 41.1
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.006112,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.036787,
+       "median_us": 40.5,
+       "best_us": 40.1
+      }
+     },
+     "nvfp4_kv": {
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.006141,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.148468,
+       "median_us": 43.3,
+       "best_us": 42.9
+      },
+      "tensor-core no-split": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003438,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.150286,
+       "median_us": 410.6,
+       "best_us": 407.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005974,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.148468,
+       "median_us": 48.4,
+       "best_us": 48.3
+      }
+     }
+    },
+    "fp8": {
+     "k_scale": 0.011439732142857142,
+     "v_scale": 0.011858258928571428
+    },
+    "nvfp4": {
+     "k": {
+      "global_scale": 0.0019066220238095238,
+      "roundtrip": {
+       "low_first": 0.125581,
+       "high_first": 1.430749
+      },
+      "nibble_order": "low_first"
+     },
+     "v": {
+      "global_scale": 0.001976376488095238,
+      "roundtrip": {
+       "low_first": 0.123249,
+       "high_first": 1.447899
+      },
+      "nibble_order": "low_first"
+     }
+    }
+   },
+   "b4 kv1000/33000": {
+    "kv_lens": [
+     1000,
+     33000,
+     1000,
+     33000
+    ],
+    "pages": 4252,
+    "pool_pages": 4268,
+    "effects": {
+     "causal": {},
+     "window127": {
+      "ref_without_window": 0.969649
+     },
+     "sinks": {
+      "ref_without_sinks": 0.573208
+     },
+     "window127+sinks": {
+      "ref_without_window": 0.969408,
+      "ref_without_sinks": 0.87485
+     },
+     "softcap50": {
+      "ref_without_softcap": 2.495531
+     },
+     "fp8_kv": {
+      "bf16_kv_ref": 0.050539
+     },
+     "nvfp4_kv": {
+      "bf16_kv_ref": 0.188152
+     }
+    },
+    "rows": {
+     "causal": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.003536,
+       "finite": true,
+       "median_us": 169.2,
+       "best_us": 167.2
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003174,
+       "finite": true,
+       "median_us": 162.0,
+       "best_us": 156.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.006366,
+       "finite": true,
+       "median_us": 173.4,
+       "best_us": 171.4
+      }
+     },
+     "window127": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002183,
+       "finite": true,
+       "vs_ref_without_window": 3.046281,
+       "median_us": 169.5,
+       "best_us": 167.3
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002331,
+       "finite": true,
+       "vs_ref_without_window": 3.046281,
+       "median_us": 20.9,
+       "best_us": 20.7
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005284,
+       "finite": true,
+       "vs_ref_without_window": 3.046281,
+       "median_us": 23.0,
+       "best_us": 21.7
+      }
+     },
+     "sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.57447,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003536,
+       "median_us": 199.6,
+       "best_us": 197.5
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.57447,
+       "finite": true,
+       "vs_ref_without_sinks": 0.003174,
+       "median_us": 196.7,
+       "best_us": 192.6
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_False_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00291,
+       "finite": true,
+       "vs_ref_without_sinks": 0.569438,
+       "median_us": 197.8,
+       "best_us": 196.3
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005762,
+       "finite": true,
+       "vs_ref_without_sinks": 0.569438,
+       "median_us": 203.2,
+       "best_us": 200.3
+      }
+     },
+     "window127+sinks": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.873397,
+       "finite": true,
+       "vs_ref_without_window": 3.060155,
+       "vs_ref_without_sinks": 0.002183,
+       "median_us": 218.1,
+       "best_us": 216.2
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.873397,
+       "finite": true,
+       "vs_ref_without_window": 3.060155,
+       "vs_ref_without_sinks": 0.002331,
+       "median_us": 15.6,
+       "best_us": 14.1
+      },
+      "sink-jit": {
+       "picked": {
+        "backend": "fa2",
+        "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_True_fa2"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.003282,
+       "finite": true,
+       "vs_ref_without_window": 3.039117,
+       "vs_ref_without_sinks": 0.868206,
+       "median_us": 16.0,
+       "best_us": 15.8
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.00573,
+       "finite": true,
+       "vs_ref_without_window": 3.039117,
+       "vs_ref_without_sinks": 0.868206,
+       "median_us": 17.0,
+       "best_us": 15.7
+      }
+     },
+     "softcap50": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004705,
+       "finite": true,
+       "vs_ref_without_softcap": 0.94555,
+       "median_us": 220.0,
+       "best_us": 210.9
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.002003,
+       "finite": true,
+       "vs_ref_without_softcap": 0.94555,
+       "median_us": 216.8,
+       "best_us": 183.5
+      }
+     },
+     "fp8_kv": {
+      "cuda-core": {
+       "picked": {
+        "backend": "auto",
+        "use_tensor_cores": false
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.005438,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.049375,
+       "median_us": 149.9,
+       "best_us": 145.1
+      },
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004052,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.049375,
+       "median_us": 135.9,
+       "best_us": 104.8
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.006389,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.050684,
+       "median_us": 136.7,
+       "best_us": 118.6
+      }
+     },
+     "nvfp4_kv": {
+      "tensor-core": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.004477,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.195493,
+       "median_us": 119.9,
+       "best_us": 108.0
+      },
+      "tensor-core no-split": {
+       "picked": {
+        "backend": "fa2",
+        "use_tensor_cores": true
+       },
+       "first_call_s": 0.01,
+       "vs_ref": 0.004477,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.195493,
+       "median_us": 527.9,
+       "best_us": 522.2
+      },
+      "xqa": {
+       "picked": {
+        "backend": "xqa"
+       },
+       "first_call_s": 0.0,
+       "vs_ref": 0.007198,
+       "finite": true,
+       "vs_bf16_kv_ref": 0.19811,
+       "median_us": 113.2,
+       "best_us": 100.4
+      }
+     }
+    },
+    "fp8": {
+     "k_scale": 0.012067522321428572,
+     "v_scale": 0.011858258928571428
+    },
+    "nvfp4": {
+     "k": {
+      "global_scale": 0.002011253720238095,
+      "roundtrip": {
+       "low_first": 0.11891,
+       "high_first": 1.400702
+      },
+      "nibble_order": "low_first"
+     },
+     "v": {
+      "global_scale": 0.001976376488095238,
+      "roundtrip": {
+       "low_first": 0.123249,
+       "high_first": 1.455462
+      },
+      "nibble_order": "low_first"
+     }
+    }
+   }
+  }
+ },
+ "prefill": {
+  "8q/2kv d128": {
+   "new": 2048,
+   "prefix": 2048,
+   "pages": 256,
+   "effects": {
+    "causal": {},
+    "window127": {
+     "ref_without_window": 0.920014
+    },
+    "sinks": {
+     "ref_without_sinks": 0.410773
+    },
+    "window127+sinks": {
+     "ref_without_window": 0.919924,
+     "ref_without_sinks": 0.473531
+    }
+   },
+   "rows": {
+    "causal": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.04,
+      "vs_ref": 0.002885,
+      "finite": true,
+      "median_us": 559.6,
+      "best_us": 558.5
+     }
+    },
+    "window127": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.01,
+      "vs_ref": 0.002297,
+      "finite": true,
+      "vs_ref_without_window": 7.789995,
+      "median_us": 117.9,
+      "best_us": 66.2
+     }
+    },
+    "sinks": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.0,
+      "vs_ref": 0.411957,
+      "finite": true,
+      "vs_ref_without_sinks": 0.002885,
+      "median_us": 531.4,
+      "best_us": 529.8
+     },
+     "sink-jit": {
+      "picked": {
+       "backend": "fa2",
+       "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_False_fa2"
+      },
+      "first_call_s": 0.0,
+      "vs_ref": 0.003001,
+      "finite": true,
+      "vs_ref_without_sinks": 0.409653,
+      "median_us": 743.4,
+      "best_us": 737.1
+     }
+    },
+    "window127+sinks": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.01,
+      "vs_ref": 0.473322,
+      "finite": true,
+      "vs_ref_without_window": 7.79435,
+      "vs_ref_without_sinks": 0.002297,
+      "median_us": 75.0,
+      "best_us": 62.0
+     },
+     "sink-jit": {
+      "picked": {
+       "backend": "fa2",
+       "jit_module": "batch_prefill_attention_sink_bf16_hd128_swa_True_fa2"
+      },
+      "first_call_s": 0.0,
+      "vs_ref": 0.002307,
+      "finite": true,
+      "vs_ref_without_window": 7.79435,
+      "vs_ref_without_sinks": 0.473051,
+      "median_us": 84.5,
+      "best_us": 62.5
+     }
+    }
+   }
+  },
+  "gpt-oss 16q/2kv d64": {
+   "new": 2048,
+   "prefix": 2048,
+   "pages": 256,
+   "effects": {
+    "causal": {},
+    "window127": {
+     "ref_without_window": 0.909445
+    },
+    "sinks": {
+     "ref_without_sinks": 0.255098
+    },
+    "window127+sinks": {
+     "ref_without_window": 0.909213,
+     "ref_without_sinks": 0.553445
+    }
+   },
+   "rows": {
+    "causal": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.06,
+      "vs_ref": 0.002268,
+      "finite": true,
+      "median_us": 589.5,
+      "best_us": 576.8
+     }
+    },
+    "window127": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.01,
+      "vs_ref": 0.002418,
+      "finite": true,
+      "vs_ref_without_window": 5.728866,
+      "median_us": 88.2,
+      "best_us": 87.3
+     }
+    },
+    "sinks": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.01,
+      "vs_ref": 0.256971,
+      "finite": true,
+      "vs_ref_without_sinks": 0.002268,
+      "median_us": 583.6,
+      "best_us": 576.9
+     },
+     "sink-jit": {
+      "picked": {
+       "backend": "fa2",
+       "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_False_fa2"
+      },
+      "first_call_s": 0.0,
+      "vs_ref": 0.002311,
+      "finite": true,
+      "vs_ref_without_sinks": 0.25533,
+      "median_us": 602.2,
+      "best_us": 597.3
+     }
+    },
+    "window127+sinks": {
+     "auto": {
+      "picked": {
+       "backend": "fa2"
+      },
+      "first_call_s": 0.0,
+      "vs_ref": 0.553556,
+      "finite": true,
+      "vs_ref_without_window": 5.729814,
+      "vs_ref_without_sinks": 0.002418,
+      "median_us": 90.0,
+      "best_us": 82.8
+     },
+     "sink-jit": {
+      "picked": {
+       "backend": "fa2",
+       "jit_module": "batch_prefill_attention_sink_bf16_hd64_swa_True_fa2"
+      },
+      "first_call_s": 0.0,
+      "vs_ref": 0.002578,
+      "finite": true,
+      "vs_ref_without_window": 5.698153,
+      "vs_ref_without_sinks": 0.551852,
+      "median_us": 93.2,
+      "best_us": 87.2
+     }
+    }
+   }
+  }
+ },
+ "device": {
+  "name": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "memory_cap_gib": 6
+ },
+ "flashinfer": {
+  "version": "0.6.18.dev20260819",
+  "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/__init__.py",
+  "FLASHINFER_CUDA_ARCH_LIST": null,
+  "TORCH_CUDA_ARCH_LIST": "12.1a",
+  "jit_target_archs": [
+   "12.1a"
+  ],
+  "jit_dir": "/cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops",
+  "aot_jit_cache": false
+ },
+ "api": {
+  "decode.__init__": [
+   "backend",
+   "float_workspace_buffer",
+   "jit_args",
+   "kv_layout",
+   "paged_kv_indices_buffer",
+   "paged_kv_indptr_buffer",
+   "paged_kv_last_page_len_buffer",
+   "self",
+   "use_cuda_graph",
+   "use_tensor_cores"
+  ],
+  "decode.plan": [
+   "block_tables",
+   "data_type",
+   "disable_split_kv",
+   "fixed_split_size",
+   "head_dim",
+   "indices",
+   "indptr",
+   "kv_data_type",
+   "last_page_len",
+   "logits_soft_cap",
+   "non_blocking",
+   "num_kv_heads",
+   "num_qo_heads",
+   "o_data_type",
+   "page_size",
+   "pos_encoding_mode",
+   "q_data_type",
+   "q_len_per_req",
+   "rope_scale",
+   "rope_theta",
+   "self",
+   "seq_lens",
+   "sm_scale",
+   "window_left",
+   "window_right"
+  ],
+  "decode.run": [
+   "enable_pdl",
+   "k_scale",
+   "kv_cache_sf",
+   "lse",
+   "out",
+   "paged_kv_cache",
+   "q",
+   "q_len_per_req",
+   "q_scale",
+   "return_lse",
+   "self",
+   "sinks",
+   "skip_softmax_threshold_scale_factor",
+   "v_scale",
+   "window_left"
+  ],
+  "prefill.__init__": [
+   "backend",
+   "custom_mask_buf",
+   "float_workspace_buffer",
+   "jit_args",
+   "jit_kwargs",
+   "kv_layout",
+   "mask_indptr_buf",
+   "paged_kv_indices_buf",
+   "paged_kv_indptr_buf",
+   "paged_kv_last_page_len_buf",
+   "qo_indptr_buf",
+   "self",
+   "use_cuda_graph"
+  ],
+  "prefill.plan": [
+   "block_tables",
+   "causal",
+   "custom_mask",
+   "disable_split_kv",
+   "fixed_split_size",
+   "head_dim_qk",
+   "head_dim_vo",
+   "kv_data_type",
+   "logits_soft_cap",
+   "max_item_len_ptr",
+   "max_sequence_kv",
+   "max_token_per_sequence",
+   "non_blocking",
+   "num_kv_heads",
+   "num_qo_heads",
+   "o_data_type",
+   "packed_custom_mask",
+   "page_size",
+   "paged_kv_indices",
+   "paged_kv_indptr",
+   "paged_kv_last_page_len",
+   "pos_encoding_mode",
+   "prefix_len_ptr",
+   "q_data_type",
+   "qo_indptr",
+   "rope_scale",
+   "rope_theta",
+   "self",
+   "seq_lens",
+   "seq_lens_q",
+   "sm_scale",
+   "token_pos_in_items_len",
+   "token_pos_in_items_ptr",
+   "use_fp16_qk_reduction",
+   "window_left"
+  ],
+  "prefill.run": [
+   "enable_pdl",
+   "k_scale",
+   "kv_cache_sf",
+   "lse",
+   "out",
+   "paged_kv_cache",
+   "q",
+   "q_scale",
+   "return_lse",
+   "self",
+   "sinks",
+   "skip_softmax_threshold_scale_factor",
+   "v_scale",
+   "window_left"
+  ],
+  "xqa": [
+   "block_tables",
+   "bmm1_scale",
+   "bmm2_scale",
+   "enable_pdl",
+   "kv_cache",
+   "kv_cache_sf",
+   "kv_layout",
+   "mask",
+   "max_seq_len",
+   "o_scale",
+   "out",
+   "q_cu_seq_lens",
+   "q_len_per_req",
+   "query",
+   "seq_lens",
+   "sinks",
+   "window_left",
+   "workspace_buffer"
+  ]
+ },
+ "peak_allocated_gib": 1.23,
+ "seconds": 1237.5
+}

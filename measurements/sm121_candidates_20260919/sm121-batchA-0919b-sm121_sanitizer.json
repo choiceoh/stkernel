@@ -1,0 +1,36 @@
+{
+ "lane": "sm121_sanitizer",
+ "tool": "memcheck",
+ "sanitizer": "/usr/local/cuda-13.2/bin/compute-sanitizer",
+ "cases": [
+  "tests.test_engine_kernel_glue.KdaDecayKernelTests",
+  "tests.test_engine_qwen38_moe_finish.GatedSumTests",
+  "tests.test_engine_swiglu_pad.SwigluPadTests",
+  "tests.test_engine_gdn_ring_gate.GdnRingGateTests",
+  "tests.test_engine_qk_norm_strided_heads.OnTheGpuTests",
+  "tests.test_engine_qwen38_qsa_inputs.QsaInputsTests",
+  "tests.test_engine_qwen38_attention_gate.AttentionGateTests",
+  "tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests",
+  "tests.test_engine_qwen38_kernels.SparseAttentionTests",
+  "tests.test_engine_qwen38_moe_route.SoftmaxTopkTests",
+  "tests.test_engine_qwen38_moe_route.LayerTests",
+  "tests.test_engine_gdn_chunk_native.NativeChunkTests",
+  "tests.test_engine_qwen38_qsa_group_scores.GroupScoreTests",
+  "tests.test_engine_qwen38_covered_blocks.ServedSelectionTests",
+  "tests.test_engine_qwen38_covered_attention.CoveredAttentionTests",
+  "tests.test_engine_qwen38_query_shards.ServedSelectionTests",
+  "tests.test_engine_qwen38_qsa_select.SelectTests",
+  "tests.test_engine_qwen38_moe_pairs.PairSumTests",
+  "tests.test_engine_causal_conv.SingleConvTests",
+  "tests.test_engine_conv_ring.ConvRingTests"
+ ],
+ "left_out": [
+  "tests.test_engine_kernel_glue.GlueOnTheGpuTests"
+ ],
+ "returncode": 255,
+ "stdout_tail": "",
+ "stderr_tail": "",
+ "seconds": 1.1,
+ "errors": null,
+ "first_errors": []
+}

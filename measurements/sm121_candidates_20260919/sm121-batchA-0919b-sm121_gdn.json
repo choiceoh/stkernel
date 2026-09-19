@@ -1,0 +1,51 @@
+{
+ "lane": "sm121_gdn",
+ "cell": [
+  4,
+  12,
+  128
+ ],
+ "unavailable": {
+  "flashinfer 128": "RuntimeError: cu_seqlens must have dtype torch.int64, got torch.int32",
+  "flashinfer 1024": "RuntimeError: cu_seqlens must have dtype torch.int64, got torch.int32",
+  "flashinfer 8192": "RuntimeError: cu_seqlens must have dtype torch.int64, got torch.int32"
+ },
+ "rows": {
+  "128": {
+   "served": {
+    "median_us": 877.9,
+    "best_us": 848.0
+   },
+   "served_vs_oracle": {
+    "o": 0.007407,
+    "state": 0.002929
+   }
+  },
+  "1024": {
+   "served": {
+    "median_us": 893.3,
+    "best_us": 886.4
+   },
+   "served_vs_oracle": {
+    "o": 0.003639,
+    "state": 0.003914
+   }
+  },
+  "8192": {
+   "served": {
+    "median_us": 3999.5,
+    "best_us": 3970.0
+   }
+  }
+ },
+ "device": {
+  "name": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "memory_cap_gib": 6
+ }
+}

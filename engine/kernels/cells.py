@@ -583,6 +583,9 @@ def _v41_measured(shape) -> bool:
 DSV4_SINK_HEAD, DSV4_SINK_MAX_HEADS = 512, 128
 
 
+REC = "measurements/sm121_candidates_20260919"   # the image's attention kernels judged on GB10 (sm121 intake U6-U8)
+
+
 def _serve_attention(a, i):
     """The fastest kernel for a full attention the MLA lane refuses. An attention whose sink is not established has
     nothing fast: the adapters refuse it (mla_glue_refusal), so the note names the candidate and the establish recipe
@@ -598,7 +601,9 @@ def _serve_attention(a, i):
         return _serve(GENERIC, "flashinfer BatchDecodeWithPagedKVCacheWrapper and BatchPrefillWithPagedKVCacheWrapper (in "
                       "the image, engine/INVENTORY.md) with " + " and ".join(
                           t for t in (a.window and f"window_left={a.window - 1}", a.softcap and
-                                      f"logits_soft_cap={a.softcap:g}") if t), False, "never judged in this engine")
+                                      f"logits_soft_cap={a.softcap:g}") if t), False,
+                      f"the kernels judged on GB10 against an fp32 reference, window and soft cap within 0.2-0.5% ({REC}); "
+                      "no engine adapter yet")
     if a.kind != "mla":
         packed = 2 * a.head_dim <= MLA_LATENT
         if a.sink is None:
@@ -606,8 +611,14 @@ def _serve_attention(a, i):
                          "flashinfer's paged decode and prefill (engine/INVENTORY.md)")
             return _nothing(f"the sink decides which kernel computes this attention; establish it first -- with no sink, "
                             f"{candidate} serves it")
+        if a.sink and i is not None:
+            return _nothing("no GQA kernel that takes sinks over an indexer's selection is named in the repo or the image "
+                            "(xqa and the AttentionSink variant read the whole paged context)")
         if a.sink:
-            return _nothing("no GQA kernel that takes sinks is named in the repo or in engine/INVENTORY.md")
+            return _serve(GENERIC, "flashinfer xqa_batch_decode_with_kv_cache or the AttentionSink JIT variant "
+                          "(BatchAttentionWithAttentionSinkWrapper), in the image", False,
+                          f"both compute sinks on GB10 within 0.2-0.6% of an fp32 reference, windows too ({REC}); the "
+                          "fa2 and CUDA-core wrappers accept sinks= and IGNORE it -- never bind those for a sink model")
         if qsa:
             return _serve(GENERIC, qsa_op, False,
                           "judge it against modules/sparse_attention.gqa_sparse over the indexer's selected positions"
@@ -621,7 +632,8 @@ def _serve_attention(a, i):
             return _serve(GENERIC, qsa_op, False,
                           "judge it against modules/sparse_attention.gqa_sparse over the indexer's selected positions")
         return _serve(GENERIC, "flashinfer BatchDecodeWithPagedKVCacheWrapper and BatchPrefillWithPagedKVCacheWrapper (in "
-                      "the image, engine/INVENTORY.md)", False, "never judged in this engine")
+                      "the image, engine/INVENTORY.md)", False,
+                      f"the kernels judged on GB10 against an fp32 reference within 0.2-0.5% ({REC}); no engine adapter yet")
     if a.sink is None:
         return _nothing("the sink decides which kernel computes this attention; establish it first")
     if a.sink:
