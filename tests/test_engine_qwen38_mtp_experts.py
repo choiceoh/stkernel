@@ -46,8 +46,21 @@ class SpecTests(unittest.TestCase):
                 "mtp.layers.0.mlp.experts.down_proj": torch.arange(4 * E, dtype=torch.float32).view(4 * E, 1, 1)}
         lo, hi = F.expert_range(2)
         self.assertEqual(side[0].build(full, 2, 4).flatten().tolist(), list(range(lo, hi)))   # rank 2's experts, in order
+        from engine.profiles.qwen38 import mtp_side
         with self.assertRaises(ValueError):
-            specs.mtp_bf16_specs(self.facts())                      # the FP8 export keeps no BF16 experts
+            mtp_side.check_source(self.facts(), "bf16")             # the FP8 export keeps no BF16 experts to write from
+        mtp_side.check_source(F, "bf16")
+
+    def test_the_served_facts_bind_either_side_file(self):
+        """The rank files' facts are the NVIDIA export's ("fp8_block"); a boot binds the BF16 side file all the same --
+        the check is the writer's (the first fleet default of #1235 raised here)."""
+        from engine.profiles.qwen38 import specs
+        from engine.profiles.qwen38.net import Qwen38Net
+        for precision, names in (("bf16", specs.MTP_BF16), ("fp8", specs.MTP_FP8)):
+            net = object.__new__(Qwen38Net)
+            net.F, net.layers, net.mtp, net.mtp_experts = self.facts(), [0], True, precision
+            self.assertEqual({s.name for s in net.side_specs()}, set(names), precision)
+            self.assertTrue(set(names) <= {s.name for s in net.specs()}, precision)
 
     def test_the_fleet_and_the_launcher_serve_bf16_by_default(self):
         from pathlib import Path
@@ -62,11 +75,11 @@ class SpecTests(unittest.TestCase):
         self.assertEqual(mtp_side.DIRS["bf16"], "/home/choiceoh/models/st-qwen38-mtp-bf16")
         self.assertEqual(mtp_side.path("/d", 3, "bf16").name, "mtp-bf16-r3of4.safetensors")
 
-    def test_a_bf16_export_has_no_fp8_to_serve(self):
+    def test_a_bf16_copy_has_no_fp8_to_write(self):
         import dataclasses
-        from engine.profiles.qwen38 import specs
+        from engine.profiles.qwen38 import mtp_side
         with self.assertRaises(ValueError):
-            specs.mtp_fp8_specs(dataclasses.replace(self.facts(), mtp_experts="bf16", mtp_block=0))
+            mtp_side.check_source(dataclasses.replace(self.facts(), mtp_experts="bf16", mtp_block=0), "fp8")
 
     def test_the_net_binds_the_side_file_in_place_of_the_nvfp4_experts(self):
         from engine.profiles.qwen38 import specs

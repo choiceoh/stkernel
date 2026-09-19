@@ -39,12 +39,26 @@ LAYOUTS = {"fp8": "qwen38-mtp-fp8-v1", "bf16": "qwen38-mtp-bf16-v1"}
 DIRS = {precision: f"/home/choiceoh/models/st-qwen38-mtp-{precision}" for precision in LAYOUTS}   # fleet --mtp-experts
 
 
+SOURCES = {"bf16": ("bf16", 0), "fp8": ("fp8_block", 128)}   # what a checkpoint must keep to write a side file
+
+
 def side_specs(F, precision: str):
+    """The side file's tensors -- their names and shapes, what a boot binds whatever checkpoint its facts come from
+    (the served rank files' facts are the NVIDIA export's, "fp8_block", whichever side file serves the experts)."""
     if precision == "fp8":
         return layout.mtp_fp8_specs(F)
     if precision == "bf16":
         return layout.mtp_bf16_specs(F)
     raise ValueError(f"MTP side files are bf16 or fp8, not {precision!r}")
+
+
+def check_source(F, precision: str) -> None:
+    """Writing a side file reads the checkpoint's own encoding: the fused BF16 experts for bf16, NVIDIA's per-expert
+    FP8 (block 128) for fp8."""
+    want = SOURCES[precision]
+    if (F.mtp_experts, F.mtp_block if want[0] == "fp8_block" else 0) != want:
+        raise ValueError(f"a {precision} side file is written from a checkpoint that keeps the MTP experts as "
+                         f"{want[0]!r}; this one keeps {F.mtp_experts!r} (block {F.mtp_block})")
 
 
 def path(directory, rank: int, precision: str) -> Path:
@@ -57,6 +71,7 @@ def write(ckpt, out, *, precision: str, source_revision: "str | None" = None) ->
     if out.exists():
         raise FileExistsError(f"{out} exists: the side files are immutable, write a new directory")
     F = facts.load(ckpt)
+    check_source(F, precision)
     specs = side_specs(F, precision)
     ck = Checkpoint(str(ckpt))
     partial = out.with_name(out.name + ".incomplete")
