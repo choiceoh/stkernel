@@ -12,7 +12,10 @@ on:
     # run their snippets. On 2026-09-16 a one-line `[ -n "$X" ] && ...` went into `start-st-glm53.sh`
     # under `set -euo pipefail` -- false when the variable is unset, which is every production launch,
     # and a false last command ends the script. No workflow ran on that PR. It was caught by hand.
-    paths: ["engine/**", "tests/**", "tools/**", "launchers/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
+    # `probes/**` is here because a probe is found broken at GPU time otherwise: on 2026-09-19 one imported a tree the
+    # single-GPU lane does not ship (#1210) and the cells lane died at its first line on a return shape two PRs had
+    # changed (#1219). A PR that touched only `probes/` ran no workflow at all.
+    paths: ["engine/**", "tests/**", "tools/**", "launchers/**", "probes/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
   workflow_dispatch:
 
 jobs:
@@ -44,6 +47,10 @@ jobs:
           pip install triton || echo "no triton here: the graph-contract tests will report FAILED, not CANNOT RUN"
       - name: the verdict
         run: python3 tools/check.py --list
+      - name: the probes' own tests
+        # `test_probe_*` is outside the verdict's default pattern (test_engine_*), so the CPU tests the probes do have
+        # -- what they import, what their report lines take, their lanes in the kernel check -- never ran here.
+        run: python3 tools/check.py --pattern 'test_probe_*' --list
       - name: onepass recording and consumer measurement contracts
         run: python3 -m unittest discover -s tests -p 'test_onepass*.py'
       - name: CPU oracle replay and held-out validation contracts
