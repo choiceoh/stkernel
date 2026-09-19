@@ -5064,3 +5064,8 @@ sparse 발사와 바이트 동일(GPU). net 은 한 세그먼트 호스트 스�
 `ngram_gate.conv_add`: PLE 주입의 dilated causal conv(K 4, dilation 3, fp32 가중치), silu, gated 행 더하기를 torch 형태 대신 한 발사로(프리필; 캡처 디코드는 그대로).
 - `q38pleconv-0919a`(번갈아 21 라운드 최솟값, 프로덕션 옆): 16 행 54 → 23 µs, 512 행 3,624 → 303, 4,096 행 39,532 → 3,073. 최대 오차 0.002, 다른 원소 3e-6.
 - 센서스 두 판은 경합으로 무효. **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_ple_conv_20260919/README.md).
+
+### Qwen3.8 라우터를 텐서 코어로 — 4,096 행 1,414 → 229 µs, FP32 정밀도(float64 대비 1.8e-6), 행 수와 무관한 비트 (2026-09-19, srv4 단일 GPU 레인, PR #1300)
+`router_fp32.router_logits_mma`: BF16 게이트 그대로 BF16 MMA, K 타일 합은 IEEE `add.rn.f32`, FP32 출력. Qwen 서빙 레인이 쓰고(`router_bf16`) FP32 라우터 아레나(랭크당 ≈ 257 MB)를 잡지 않는다.
+- `q38router-0919c`(21 라운드 최솟값): 16 행 40.7 → 17.9 µs, 512 행 227.0 → 82.5, 4,096 행 1,413.8 → 228.8. float64 대비 최대 오차 1.2~1.8e-6(FP32 라우터 0.6~7.8e-6).
+- 같은 행의 비트가 행 수와 무관(MMA 참, cuBLAS FP32 거짓), 상위 8 선택 같음. **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_router_mma_20260919/README.md).

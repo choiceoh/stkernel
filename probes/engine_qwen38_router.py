@@ -4,7 +4,9 @@ engine/kernels/router_fp32 (#1286) projects the router in IEEE FP32 at every row
 and multiplied by the FP32 router with TF32 off, so prefill and decode score alike. A decode step's handful of rows is
 cheap either way; a prefill chunk's 4,096 rows are 10.7 GFLOP a layer on the SIMT FP32 units, 48 layers and the MTP
 head's a chunk. This times that projection against the BF16 one it replaced (the router and the shared gate as one
-[513, 2560] weight, cuBLAS's) at a decode step's rows and a prefill chunk's, interleaved over many rounds.
+[513, 2560] weight, cuBLAS's) and the tensor-core one (router_logits_mma over the BF16 gates) at a decode step's rows and
+a prefill chunk's, interleaved over many rounds; and holds the MMA router to the IEEE one and to itself across row
+counts (a row's bits in a decode launch and a prefill launch).
 
     python3 probes/engine_kernel_check.py --lanes qwen38_router --output /cache/qwen38-router.json
 """
@@ -36,9 +38,24 @@ def run(output=None) -> dict:
     report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "calls_a_graph": CALLS, "rows": {}}
     for m in ROWS:
         x = torch.randn(m, HIDDEN, device="cuda", dtype=torch.bfloat16)
+        bf16_router = gates[:EXPERTS]
         arms = {"bf16 mm [513] (before #1286)": lambda: torch.mm(x, gates.t()),
+                "bf16 mm [512] fp32 out": lambda: torch.mm(x, bf16_router.t(), out_dtype=torch.float32),
                 "fp32 router (router_fp32)": lambda: router_fp32.router_logits(x, router),
+                "mma router (router_logits_mma, bf16 gates)": lambda: router_fp32.router_logits_mma(x, bf16_router),
                 "widen only (x.float())": lambda: x.float()}
+        ieee = router_fp32.router_logits(x, router)
+        mma = router_fp32.router_logits_mma(x, bf16_router)
+        exact = (x.double() @ router.double().t())
+        checks = {"mma_vs_ieee_max": float((mma - ieee).abs().max()),
+                  "mma_vs_fp64_max": float((mma.double() - exact).abs().max()),
+                  "ieee_vs_fp64_max": float((ieee.double() - exact).abs().max()),
+                  "mma_rows_alike": all(bool(torch.equal(router_fp32.router_logits_mma(x[:r].contiguous(), bf16_router),
+                                                         mma[:r])) for r in (1, 4, 16) if r <= m),
+                  "ieee_rows_alike": all(bool(torch.equal(router_fp32.router_logits(x[:r].contiguous(), router),
+                                                          ieee[:r])) for r in (1, 4, 16) if r <= m),
+                  "mma_top8_is_ieee_top8": bool(torch.equal(mma.topk(8).indices.sort(1).values,
+                                                            ieee.topk(8).indices.sort(1).values))}
         graphs = {}
         for name, fn in arms.items():
             fn()
@@ -59,8 +76,8 @@ def run(output=None) -> dict:
                 torch.cuda.synchronize()
                 times[name].append((time.perf_counter() - began) / CALLS * 1e6)
         row = {name: {"median": round(statistics.median(v), 1), "min": round(min(v), 1)} for name, v in times.items()}
-        report["rows"][m] = {"us_a_call": row}
-        print(json.dumps({f"router rows {m}": {k: v["min"] for k, v in row.items()}}), flush=True)
+        report["rows"][m] = {"us_a_call": row, "checks": checks}
+        print(json.dumps({f"router rows {m}": {k: v["min"] for k, v in row.items()}, "checks": checks}), flush=True)
         del graphs
         torch.cuda.empty_cache()
     if output:
