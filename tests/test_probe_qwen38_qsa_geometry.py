@@ -193,7 +193,7 @@ class HookTests(unittest.TestCase):
     def test_the_hooks_start_unset_and_the_rules_stand(self):
         self.assertEqual(self.unset(), [None] * 5)
         self.assertEqual([self.qsa._score_profile(rows) for rows in (1, 32, 33, 4096)],
-                         [(64, 1, 2), (64, 1, 2), (64, 8, 2), (64, 8, 2)])
+                         [(64, 1, 2), (64, 1, 2), (128, 32, 4), (128, 32, 4)])       # the record's prefill geometry
         self.assertEqual(self.qsa._input_warps(), 4)
         self.assertEqual(self.qsa._split_profile(2, 1, 8, 2051), (16, 129, 64, 4))
 

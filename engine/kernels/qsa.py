@@ -1456,11 +1456,15 @@ def _input_warps() -> int:
 
 
 def _score_profile(rows: int):
-    """(tile width, tiles a program, warps) of a scoring launch over `rows` rows: upstream's -- a tile a program for
-    a decode step's few rows, eight for prefill's many."""
+    """(tile width, tiles a program, warps) of a scoring launch over `rows` rows. A decode step's few rows keep
+    upstream's 64-wide tile a program at 2 warps: on a GB10 nothing in the grid beat it by more than the noise beside
+    production (carry Q9, measurements/qwen38_qsa_geometry_20260919). Prefill's many take 32 tiles of 128 columns a
+    program at 4 warps in place of upstream's eight of 64 at 2: 6%, 12% and 16% less time at the 4K, 32K and 256K
+    buckets. The scores are the same bytes at every geometry of that record -- a tile is a loop bound, a column's
+    dot and its sum over the heads are its own."""
     if _SCORE_PROFILE_OVERRIDE is not None:
         return _forced_geometry("_SCORE_PROFILE_OVERRIDE", _SCORE_PROFILE_OVERRIDE, 3)
-    return 64, 1 if rows <= 32 else 8, 2
+    return (64, 1, 2) if rows <= 32 else (128, 32, 4)
 
 
 def _validate_mqa(q: torch.Tensor) -> None:
