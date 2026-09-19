@@ -57,3 +57,11 @@
 | 6 | 다름 | 6.1e-05 |
 | 7 | 다름 | 0.000122 |
 | 8 | 다름 | 6.1e-05 |
+
+## 3. conv 고침(#1238)의 GB10 판정 — 첫 실행
+
+티켓 `qwen38-cells-conv-0919`(브랜치 `conv-length-runtime` @ `b8737ced`, `--lanes qwen38_cells`): qualify 통과, GPU 케이스 72 건 중 70 통과,
+**conv 산술은 전부 통과** — 레거시 어댑터와 바이트 동일(프리필 · 링 · 행 접기 · 두 스트림), 새 케이스 `test_a_new_prompt_length_reads_a_kernel_it_already_has`
+(1 · 16 · 17 토큰 뒤 열 길이가 컴파일 0) 포함. 오류 둘은 conv 가 아니다: GLM-5.3 의 서빙 레인 표(`glm53.lanes.served`)를 짓는 두 케이스가, 같은 프로세스에서
+앞서 돈 MLA 글루 케이스가 MLA 레인의 프리필 모드를 이미 걸어 둔 탓에 `configure_prefill` 에서 거부됐다. 그 둘(GLM 배선의 판정)은 이 레인에서 뺐다
+(`GLUE_LEFT_OUT`). 원시: [cells-conv-b8737ced-2-errors.log](cells-conv-b8737ced-2-errors.log).

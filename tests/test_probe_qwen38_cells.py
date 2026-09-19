@@ -63,6 +63,20 @@ class Facts(unittest.TestCase):
                 self.assertTrue(issubclass(case, ut.TestCase))
                 self.assertTrue(ut.defaultTestLoader.getTestCaseNames(case))
 
+    def test_the_cases_left_out_exist_in_the_classes_it_runs(self):
+        import importlib
+        import unittest as ut
+        from probes.engine_qwen38_cells import GLUE_CASES, GLUE_LEFT_OUT, _cases
+        for name in GLUE_LEFT_OUT:
+            cls, method = name.rsplit('.', 1)
+            with self.subTest(case=name):
+                self.assertIn(cls, GLUE_CASES)
+                module, klass = cls.rsplit('.', 1)
+                self.assertIn(method, ut.defaultTestLoader.getTestCaseNames(getattr(importlib.import_module(module), klass)))
+        suite = ut.defaultTestLoader.loadTestsFromNames([n.rsplit('.', 1)[0] for n in GLUE_LEFT_OUT])
+        ids = {case.id() for case in _cases(suite)}
+        self.assertTrue(set(GLUE_LEFT_OUT) <= ids and len(ids) > len(GLUE_LEFT_OUT))   # the rest of their classes run
+
 
 if __name__ == '__main__':
     unittest.main()
