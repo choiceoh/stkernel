@@ -1016,6 +1016,19 @@ class Qwen38Net:
         local, mine = local_rows(rows, self.rank, F.ple_rows_per_rank)
         self.ple_stage.fill(self.ple_table, local, mine)
 
+    def _ple_gated(self, L: int, h: torch.Tensor, embeddings: torch.Tensor) -> "tuple[torch.Tensor, torch.Tensor]":
+        """(gated, normed) [N, hc*H]: the feature's gate and conv norm -- the lanes' one launch (engine/kernels/
+        ngram_gate) where they have it, else NGramInjection's torch form. The kv projection is the form's own call."""
+        F, feature = self.F, self._ple
+        w = lambda name: feature.weights(L, name)                        # noqa: E731
+        kernel = getattr(self.lanes, "ple_gate", None)
+        if kernel is None or not h.is_cuda:
+            gated = feature._gated(h, embeddings, w).flatten(-2)
+            return gated, feature._norm(gated, w("conv_norm"))
+        key, value = torch.nn.functional.linear(embeddings, w("kv")).split([F.hc * F.hidden, F.hidden], dim=-1)
+        return kernel(h, key, value, w("q_norm").reshape(-1), w("k_norm").reshape(-1), w("conv_norm").reshape(-1),
+                      F.rms_eps, F.hc)
+
     def _ple_inject(self, L: int, h: torch.Tensor, step: Step, meta: StepMeta, caches) -> torch.Tensor:
         from engine.modules.causal_conv import causal_conv1d
         from engine.modules.ngram_embedding import DEAD
@@ -1035,8 +1048,7 @@ class Qwen38Net:
             history = torch.cat([carried, ids])
             rows = made.rows(history.cpu(), ids.numel())                 # hashed on the host: the table is read there
             embeddings = self.comm.all_reduce(self._ple_embed(rows))
-            gated = feature._gated(h[sl], embeddings, w).flatten(-2)
-            normed = feature._norm(gated, w("conv_norm"))
+            gated, normed = self._ple_gated(L, h[sl], embeddings)
             taps = torch.arange(s.ctx - span, s.ctx, device=ids.device)
             held = torch.where((taps < 0)[None, :], torch.zeros((), dtype=conv_ring.dtype, device=ids.device),
                                conv_ring[:, taps.clamp_min(0) % r_conv])
@@ -1076,8 +1088,7 @@ class Qwen38Net:
         # the rows were gathered off the SSD table before the replay (stage_ple) into the graph's static staging rows
         embeddings = self.comm.all_reduce(self._ple_values(self.ple_stage.device[:n * t]))
         w = lambda name: feature.weights(L, name)
-        gated = feature._gated(h, embeddings, w).flatten(-2)             # [n*t, hc*H]
-        normed = feature._norm(gated, w("conv_norm"))
+        gated, normed = self._ple_gated(L, h, embeddings)                # [n*t, hc*H] each
         taps = ctx - span + iota(span, dev)                              # [n, span]
         held = conv_ring[slot, :, taps.clamp_min(0) % r_conv]            # [n, span, C]
         held = torch.where((taps < 0)[:, :, None], torch.zeros((), dtype=held.dtype, device=dev), held)
