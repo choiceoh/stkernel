@@ -29,7 +29,7 @@ if [[ "$MODE" = expanded || "$MODE" = collect330 || "$MODE" = serve330 || "$MODE
   export ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-330k-4436
   export ST_IMAGE=st-engine:qwen38-gptq-330k-4436
 fi
-if [ "$MODE" = fleet330 ]; then OUT=$OUT/fleet-20260920; fi
+if [ "$MODE" = fleet330 ]; then OUT=$OUT/fleet-20260920b; fi
 export ST_SPEC_K=3 ST_HC_FP8=0 ST_MTP_PRECISION=bf16 ST_MTP_EXPERTS=bf16
 export ST_SHARED_OVERLAP=one ST_DRAFT_CANDIDATES=0 ST_DRAFT_THRESHOLD=0.1
 unset ST_MTP_TUNED ST_DRAFT_INDEX
@@ -197,12 +197,17 @@ receipts() {
     ip=${NODES[$r]}
     node "$ip" "mkdir -p '$OUT'; cp /home/choiceoh/glm53-logs/st-qwen38-dumps/boot-rank$r.json '$OUT/$label-boot-rank$r.json'"
     node "$ip" "docker inspect --format '{{.Image}}' st-qwen38" > "$OUT/$label-image-rank$r.txt"
+    node "$ip" "docker exec st-qwen38 cat /opt/st/runtime-manifest.json" > "$OUT/$label-runtime-rank$r.json"
     if [ "$EXPANDED" = 1 ] && [ "$label" = "$FIRST_COLLECTION" ]; then
       node "$ip" "python3 -c 'import json,sys,runpy; counters=runpy.run_path(\"$OUT/audit-$MODE.py\")[\"counters\"]; old=json.load(open(sys.argv[1]))[\"weights_id\"]; new=counters(json.load(open(sys.argv[2]))[\"root\"])[\"calibration_weights_id\"]; assert old == new, \"checkpoint changed since the first calibration campaign\"' '/home/choiceoh/glm53-logs/qwen38-gptq-20260919/fit-audit-rank$r.json' '$OUT/$label-boot-rank$r.json'"
-      cmp "$OUT/$FIRST_COLLECTION-image-rank0.txt" "$OUT/$FIRST_COLLECTION-image-rank$r.txt"
+      # Each node builds locally. Image IDs include build metadata; compare
+      # source/package/seed manifests across ranks, and retain each rank's exact
+      # image ID across subsequent boots below.
+      cmp "$OUT/$FIRST_COLLECTION-runtime-rank0.json" "$OUT/$FIRST_COLLECTION-runtime-rank$r.json"
     fi
     if [ "$EXPANDED" = 1 ] && [ "$label" != "$FIRST_COLLECTION" ]; then
       cmp "$OUT/$FIRST_COLLECTION-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
+      cmp "$OUT/$FIRST_COLLECTION-runtime-rank$r.json" "$OUT/$label-runtime-rank$r.json"
       node "$ip" "python3 -c 'import json,sys,runpy; counters=runpy.run_path(\"$OUT/audit-$MODE.py\")[\"counters\"]; a,b=[counters(json.load(open(p))[\"root\"])[\"calibration_weights_id\"] for p in sys.argv[1:]]; assert a == b, \"weight identity changed within size comparison\"' '$OUT/$FIRST_COLLECTION-boot-rank$r.json' '$OUT/$label-boot-rank$r.json'"
     fi
   done

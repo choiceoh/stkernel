@@ -95,7 +95,7 @@ def main():
         if not owned():
             raise RuntimeError('reservation lost while switching the owned model')
         observer = subprocess.Popen(['bash', str(driver.with_name('observe_fleet.sh')), str(args.tree),
-            str(logs / 'qwen38-gptq-330k-20260919/fleet-20260920/occupancy')],
+            str(logs / 'qwen38-gptq-330k-20260919/fleet-20260920b/occupancy')],
             cwd=args.tree, env=window_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with (args.out / 'experiment.log').open('x') as log:
             experiment = subprocess.Popen(['bash', str(driver), 'fleet330'], cwd=args.tree,
