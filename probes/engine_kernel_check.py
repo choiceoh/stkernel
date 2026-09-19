@@ -174,6 +174,12 @@ def main():
         from probes.engine_qwen38_step import LAYER_SETS, run as qwen38_step
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[:1])
         return
+    if args.lanes == 'qwen38_mtp_experts':
+        # the MTP head's FP8 experts (kernels/moe_fp8_rows) against their torch form on the rank's real side-file
+        # weights, and the served NVFP4 re-encoding against the same reference
+        from probes.engine_qwen38_mtp_experts import run as qwen38_mtp_experts
+        qwen38_mtp_experts(args.output, args.ranks)
+        return
     if args.lanes == 'qwen38_draft_head':
         # the draft argmax from an inverted-file index over the rank's real head: agreement with the full head on three
         # stand-in query sets at each (clusters, probes), the index's build time, and its cost against the full head's
