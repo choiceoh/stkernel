@@ -10,24 +10,58 @@
 # is a window this loop waits out without consuming a launch attempt. The queue asks this holder to
 # hand over only through the quiet gate, and hands the fleet back by releasing when no ticket waits.
 #
+#
+# Which MODEL production serves is launchers/st_production.py's selection (glm53 while nothing chose):
+# the loop reads it every cycle, and when it moves -- the Deneb app, `st_production.py select` -- it
+# lets the door go quiet (at most ST_SWITCH_QUIET_S), stops the fleet it runs and boots the chosen
+# profile under the same production lease, publishing each step to st-production-state.json. A chosen
+# model that cannot boot LAUNCH_HOLD_AFTER times in a row hands production back to glm53 rather than
+# holding the fleet down: a model production cannot serve is not production.
+#
 #   systemctl --user enable --now st-glm53      # launchers/st-glm53.service (this script)
 #   ST_SUPERVISOR_ONCE=1 bash st-glm53-supervisor.sh   # one probe cycle, no launching: what would it do?
 set -u
 REPO=${ST_REPO:-/home/choiceoh/st-engine}                  # the rsynced tree on the head (start-st-glm53.sh's ENGINE_DIR)
-LAUNCHER=${ST_LAUNCHER:-$REPO/launchers/start-st-glm53.sh}
 BASE=${ST_BASE:-http://127.0.0.1:8000}
-MODEL=${ST_MODEL:-glm-5.3-flash}
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
-NAME=st-glm53
+production(){ python3 "$REPO/launchers/st_production.py" "$@"; }
+# use_profile sets the three names the whole loop reads: the container its census and forensics look for,
+# the model its door and its chat must answer to, and the launcher it boots. ST_LAUNCHER and ST_MODEL keep
+# meaning glm53's (hand runs, the tests); ST_LAUNCHER_<PROFILE> overrides another profile's launcher. A
+# profile st_production.py cannot describe is glm53: the default is what every box served before a choice.
+use_profile(){
+  local p=$1 name model launcher var
+  if ! { name=$(production field "$p" container 2>/dev/null) && model=$(production field "$p" model 2>/dev/null) \
+         && launcher=$(production field "$p" launcher 2>/dev/null); }; then
+    p=glm53; name=st-glm53; model=glm-5.3-flash; launcher=start-st-glm53.sh
+  fi
+  PROFILE=$p; NAME=$name; MODEL=$model; LAUNCHER=$REPO/launchers/$launcher
+  if [ "$p" = glm53 ]; then
+    MODEL=${ST_MODEL:-$MODEL}; LAUNCHER=${ST_LAUNCHER:-$LAUNCHER}
+  else
+    var=ST_LAUNCHER_${p^^}; LAUNCHER=${!var:-$LAUNCHER}
+  fi
+}
+wanted_profile(){ production selected 2>/dev/null || echo glm53; }
+use_profile "$(wanted_profile)"
+SERVING=                 # the profile this loop last saw answer a chat; empty while nothing of ours serves
+PUBLISHED=
+publish(){  # <phase> [detail]: st-production-state.json, written when it changes -- not every 30 s
+  local key="$SERVING|$PROFILE|$*"
+  [ "$key" = "$PUBLISHED" ] && return 0
+  PUBLISHED=$key
+  production state "${SERVING:-none}" "$PROFILE" "$@" >/dev/null 2>&1 || true
+}
+SWITCH_QUIET_S=${ST_SWITCH_QUIET_S:-120}   # a switch lets the rows being served finish, for this long at most
 LOCK=${FLEET_LEASE_PATH:-/home/choiceoh/glm53-logs/st-fleet.lock}   # the one lease file (launchers/lib/fleet-lease.sh)
 LEGACY_LOCK=/home/choiceoh/st-fleet.lock                            # older launchers wrote here
 PROD_OWNER=production/$(hostname -s)/$$                             # this loop's own boots; production by KIND across restarts
 CHAT_TIMEOUT=${CHAT_TIMEOUT:-300}       # a long ingest blocks new requests until its prefill ends: outlast it
 FAILS_NEEDED=${FAILS_NEEDED:-3}
 BOOT_GRACE=${BOOT_GRACE:-1800}          # cold JIT (triton/tilelang/DeepGEMM/MLA/CuTe-DSL) on four nodes
-LAUNCH_BACKOFF_BASE=60
+LAUNCH_BACKOFF_BASE=${ST_LAUNCH_BACKOFF_BASE:-60}
 LAUNCH_BACKOFF_MAX=1800
-LAUNCH_HOLD_AFTER=5
+LAUNCH_HOLD_AFTER=${ST_LAUNCH_HOLD_AFTER:-5}
 FORENSICS=${ST_FORENSICS:-/home/choiceoh/glm53-logs/st-forensics}
 FLEET_DIR=${FLEET_DIR:-/home/choiceoh/glm53-logs/fleet}   # the queue's files; its activity clock lives here (bench/fleet_idle.py)
 RESTORE_GRACE=${ST_RESTORE_GRACE_S:-}      # set: a constant grace. Unset: the queue's own pace (restore-grace.json + window.json), floor 300
@@ -55,7 +89,7 @@ door_up(){ curl -fsS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q "\"$MO
 handing_over(){ curl -sS --max-time 5 "$BASE/v1/models" 2>/dev/null | grep -q '"status": *"draining"'; }
 chat_ok(){
   curl -fsS --max-time "$CHAT_TIMEOUT" "$BASE/v1/chat/completions" -H 'Content-Type: application/json' \
-    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4,\"retain\":false,\"chat_template_kwargs\":{\"thinking\":false}}" \
+    -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":4,\"retain\":false,\"chat_template_kwargs\":{\"thinking\":false,\"enable_thinking\":false}}" \
     2>/dev/null | grep -q '"choices"'
 }
 containers_up(){
@@ -137,7 +171,10 @@ wait_for_health(){  # <what>: the door, then a real chat -- a listening door is 
   while [ "$waited" -lt "$BOOT_GRACE" ]; do
     if door_up; then
       [ "$door_seen" = 1 ] || { door_seen=1; log "$what: door up after ${waited}s"; }
-      if chat_ok; then log "$what: healthy after ${waited}s (a chat answered)"; fails=0; warm_cache "$what"; return 0; fi
+      if chat_ok; then
+        log "$what: healthy after ${waited}s (a chat answered)"; fails=0; SERVING=$PROFILE; publish serving
+        warm_cache "$what"; return 0
+      fi
     fi
     containers_up || { log "$what: a rank died during boot"; forensics; return 1; }
     sleep "$BOOT_POLL"; waited=$((waited+BOOT_POLL))
@@ -202,27 +239,38 @@ forensics(){
   ls -dt "$FORENSICS"/*/ 2>/dev/null | tail -n +11 | xargs -r rm -rf
   log "forensics: $d"
 }
+# The profile's launcher, under the production lease and the profile's own environment: systemd hands this
+# loop st-glm53.env, and its RANKS_DIR must not reach another model's launch (st_production.py env).
+run_launcher(){
+  ( eval "$(production env "$PROFILE" 2>/dev/null)"
+    ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER exec bash "$LAUNCHER" "$@" )
+}
 launch(){
   local taken
   if taken=$(fleet_taken); then log "fleet taken ($taken): not launching"; return 1; fi
-  log "launching the ST fleet (production lease as $PROD_OWNER)"
-  ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER bash "$LAUNCHER" stop >>"$FORENSICS/launch.log" 2>&1 \
+  log "launching the ST fleet (production lease as $PROD_OWNER): $PROFILE, $MODEL"
+  publish launching
+  run_launcher stop >>"$FORENSICS/launch.log" 2>&1 \
     || { log "stop refused; preserving fleet owner"; return 1; }
-  ST_LEASE_KIND=production LEASE_OWNER_PRODUCTION=$PROD_OWNER bash "$LAUNCHER" >>"$FORENSICS/launch.log" 2>&1 \
+  run_launcher >>"$FORENSICS/launch.log" 2>&1 \
     || { log "launcher returned nonzero (see $FORENSICS/launch.log)"; return 1; }
   wait_for_health launch
 }
 launch_fails=0; next_launch_at=0; held_logged=0; fails=0; wait_logged=
 attempt_launch(){
-  local reason key text taken
+  local reason key text
   if reason=$(wait_reason); then
     IFS=$'\t' read -r key text <<< "$reason"
     case "$key" in
       booting) adopt_boot ;;
-      *) log "$text: waiting without consuming a launch attempt" ;;
+      *) log "$text: waiting without consuming a launch attempt"; publish waiting "$text" ;;
     esac
     return
   fi
+  launch_counted
+}
+launch_counted(){  # launch, and count a failure that was ours
+  local taken
   if launch; then launch_fails=0; next_launch_at=0; held_logged=0; return; fi
   if taken=$(fleet_taken); then
     # The launcher was refused because the fleet changed hands while we were launching -- a ticket
@@ -237,6 +285,49 @@ attempt_launch(){
   log "launch attempt $launch_fails/$LAUNCH_HOLD_AFTER failed; none before ${backoff}s unless it goes healthy"
 }
 
+# ---- which model production serves (launchers/st_production.py) ----
+running_profile(){  # the profile whose container runs on the head: the fleet a restart of this loop inherits
+  local p c
+  for p in $(production profiles 2>/dev/null); do
+    c=$(production field "$p" container 2>/dev/null) || continue
+    [ -n "$(docker ps -q --filter "name=^$c\$" 2>/dev/null)" ] && { echo "$p"; return 0; }
+  done
+  return 1
+}
+wait_quiet(){  # a switch lets the rows being served finish -- the operator asked for it, so not forever
+  local waited=0 load
+  while [ "$waited" -lt "$SWITCH_QUIET_S" ]; do
+    load=$(python3 "$REPO/engine/base/fleet_lease.py" load --metrics-url "$BASE/metrics" 2>/dev/null || echo unknown)
+    case "$load" in 0|unknown) return 0 ;; esac   # quiet, or a door that cannot say: nothing to wait for
+    sleep 5; waited=$((waited+5))
+  done
+  log "switch: the door did not go quiet in ${SWITCH_QUIET_S}s; what it serves now is cut"
+}
+switch_to(){  # <profile>: production moves to another model
+  local want=$1 from=$PROFILE taken
+  log "production model: $from -> $want (chosen: $(production show 2>/dev/null | python3 -c 'import json,sys
+s = json.load(sys.stdin).get("selection") or {}
+print((s.get("by") or "?") + (" -- " + s["note"] if s.get("note") else ""))' 2>/dev/null || echo '?'))"
+  if taken=$(fleet_taken); then
+    # Someone else's window: nothing of ours runs to stop. Production's next boot is simply the new model.
+    use_profile "$want"; SERVING=; launch_fails=0; next_launch_at=0; held_logged=0; fails=0
+    log "the fleet is taken ($taken): production boots $PROFILE when it comes back"
+    publish waiting "fleet taken (${taken%% since *})"
+    return 0
+  fi
+  publish switching "$from -> $want"
+  if containers_up || door_up; then
+    wait_quiet
+    if ! run_launcher stop >>"$FORENSICS/launch.log" 2>&1; then
+      log "switch: $from's stop was refused; production stays on $from and the next cycle asks again"
+      publish switching "$from's stop was refused"
+      return 1
+    fi
+  fi
+  use_profile "$want"; SERVING=; launch_fails=0; next_launch_at=0; held_logged=0; fails=0; wait_logged=
+  launch_counted     # now: the queue's restore grace is for a fleet a window let go, and this one was ours
+}
+
 mkdir -p "$FORENSICS"
 if [ "${ST_SUPERVISOR_ONCE:-0}" = 1 ]; then
   if taken=$(fleet_taken); then echo "fleet taken: $taken"
@@ -247,7 +338,12 @@ if [ "${ST_SUPERVISOR_ONCE:-0}" = 1 ]; then
   else echo "would launch (containers_up=$(containers_up && echo yes || echo no) door_up=$(door_up && echo yes || echo no))"; fi
   exit 0
 fi
-log "=== st-glm53 supervisor start ==="
+log "=== st-glm53 supervisor start (production model: $PROFILE) ==="
+if running=$(running_profile) && [ "$running" != "$PROFILE" ]; then
+  # Inherit what runs; the loop's first cycle then switches to the selection the proper way.
+  log "the head runs $running while $PROFILE is selected: adopting $running first"
+  use_profile "$running"
+fi
 if health; then
   log "existing ST fleet healthy -- adopting"
   # An adopted fleet's prefix cache is as empty as a freshly booted one's -- nothing has
@@ -263,9 +359,11 @@ loops=0
 while :; do
   sleep "$LOOP_SLEEP"
   if [ "$MAX_LOOPS" -gt 0 ]; then loops=$((loops+1)); [ "$loops" -le "$MAX_LOOPS" ] || { log "loop bound reached ($MAX_LOOPS)"; exit 0; }; fi
+  want=$(wanted_profile)
+  if [ "$want" != "$PROFILE" ]; then switch_to "$want"; continue; fi
   if health; then
     [ "$fails" -gt 0 ] && log "recovered (fails reset)"
-    fails=0; wait_logged=
+    fails=0; wait_logged=; SERVING=$PROFILE; publish serving
     if [ "$launch_fails" -gt 0 ]; then log "healthy again -- clearing $launch_fails launch attempt(s)"; launch_fails=0; next_launch_at=0; held_logged=0; fi
     continue
   fi
@@ -277,7 +375,8 @@ while :; do
     IFS=$'\t' read -r key text <<< "$reason"
     case "$key" in
       booting) adopt_boot ;;
-      *) [ "$key" = "$wait_logged" ] || { log "$text: waiting -- no forensics, no launch attempt"; wait_logged=$key; } ;;
+      *) [ "$key" = "$wait_logged" ] || { log "$text: waiting -- no forensics, no launch attempt"; wait_logged=$key; }
+         SERVING=; publish waiting "$text" ;;
     esac
     case "$key" in
       taken:*) # Someone else's window: the boots that failed before it are not this window's. The
@@ -290,8 +389,19 @@ while :; do
   fails=$((fails+1))
   log "health check failed ($fails/$FAILS_NEEDED): $HEALTH_DETAIL"
   [ "$fails" -ge "$FAILS_NEEDED" ] || continue
+  SERVING=
   if [ "$launch_fails" -ge "$LAUNCH_HOLD_AFTER" ]; then
+    if [ "$PROFILE" != glm53 ]; then
+      # A chosen model that cannot boot hands production back rather than holding the fleet down; the
+      # next cycle reads the selection and switches. The chooser reads why in the state file.
+      why="$PROFILE did not boot in $launch_fails attempts in a row"
+      log "$why: production returns to glm53"
+      production select glm53 --by supervisor --note "$why" >/dev/null 2>&1 || true
+      publish reverted "$why"
+      continue
+    fi
     [ "$held_logged" = 1 ] || { log "HELD after $launch_fails relaunches with no healthy fleet -- a person is needed; still probing, will adopt a healthy fleet"; held_logged=1; }
+    publish held "$launch_fails relaunches with no healthy fleet"
     continue
   fi
   [ "$(date +%s)" -lt "$next_launch_at" ] && continue

@@ -60,12 +60,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from engine.base import fleet_lease                                                  # noqa: E402
 from engine.base.fleet_lease import LeaseHeld, door_load as busy, door_unsupported as unsupported   # noqa: E402
 import st_release                                                                    # noqa: E402  the one shape of release
+import st_production                                                                 # noqa: E402  the model production serves
 
 
-def run(cmd, cwd=None, timeout=1800, env=None):
+def run(cmd, cwd=None, timeout=1800, env=None, base=None):
+    """`env` on top of `base` (this process's environment when None): a launch of another model's
+    profile passes a base without st-glm53.env's model keys (st_production.launch_env)."""
     out = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout,
-                         env={**os.environ, **(env or {})})
+                         env={**(os.environ if base is None else base), **(env or {})})
     return out.returncode, out.stdout, out.stderr
+
+
+def production_switching() -> "str | None":
+    """Why production is between models right now, or None when it serves the selected one.
+
+    A deploy boots the SELECTED model's launcher. While the supervisor is still moving the fleet to
+    it, the other model's containers are up, that boot refuses on them, and the deploy would be
+    recorded as a launch that failed -- which drops the gate's baseline and needs a person to --seed.
+    No state file is a supervisor from before the selection: glm53, exactly as before.
+    """
+    view = st_production.show()
+    selected, state = view["selected"], view["state"]
+    if not state:
+        return None if selected == st_production.DEFAULT else f"{selected} is selected and no supervisor says it serves it"
+    if state.get("serving") != selected:
+        return f"{selected} is selected, {state.get('serving') or 'nothing'} serves ({state.get('phase') or '?'})"
+    return None
 
 
 # -- the three conditions, as answers rather than actions -----------------------------------------
@@ -323,7 +343,7 @@ def cut(sha: str, log) -> "Path | None":
 PREBUILD_TIMEOUT = 1800
 
 
-def prebuild(release: Path, log) -> None:
+def prebuild(release: Path, log, profile: str = st_production.DEFAULT) -> None:
     """The release's b12x MoE kernels, compiled on every node's CPU while the deployed tree still serves.
 
     A release that changes any of the dispatcher's key files used to compile its kernels inside the deploy's boot,
@@ -338,7 +358,7 @@ def prebuild(release: Path, log) -> None:
         return
     started = time.time()
     try:
-        code, out, err = run(["bash", str(script), "--tree", str(release), "--profile", "glm53"], timeout=PREBUILD_TIMEOUT)
+        code, out, err = run(["bash", str(script), "--tree", str(release), "--profile", profile], timeout=PREBUILD_TIMEOUT)
     except (OSError, subprocess.TimeoutExpired) as exc:
         log(f"  prebuild: {type(exc).__name__}; the boot compiles what it needs")
         return
@@ -347,13 +367,13 @@ def prebuild(release: Path, log) -> None:
     log(f"  prebuild: rc={code} in {time.time() - started:.0f}s")
 
 
-def deploy(release: Path, log) -> bool:
-    """Stop the supervisor, relaunch from `release`, start the supervisor again.
+def deploy(release: Path, log, profile: str = st_production.DEFAULT) -> bool:
+    """Stop the supervisor, relaunch from `release` as the model production serves, start the supervisor again.
 
     The supervisor owns the fleet lock while it runs, so it has to be out of the way before the
     launcher touches the nodes -- otherwise its health loop relaunches the old tree underneath this.
     """
-    launcher = release / "launchers" / "start-st-glm53.sh"
+    launcher = release / "launchers" / st_production.PROFILES[profile].launcher
     if not launcher.exists():
         log(f"  ABORT: {launcher} is missing")
         return False
@@ -361,10 +381,11 @@ def deploy(release: Path, log) -> bool:
     # by that kind too (the supervisor's pid, or this one's, does not matter across restarts).
     env = {"REPO": str(release), "ST_LEASE_KIND": "production",
            "LEASE_OWNER_PRODUCTION": f"production/deploy/{os.getpid()}"}
+    base = st_production.launch_env(profile)     # st-glm53.env's model keys never reach another model's boot
     run(["systemctl", "--user", "stop", SERVICE], timeout=300)
-    code, out, err = run(["bash", str(launcher), "stop"], timeout=600, env=env)
+    code, out, err = run(["bash", str(launcher), "stop"], timeout=600, env=env, base=base)
     log(f"  stop: rc={code} {out.strip().splitlines()[-1] if out.strip() else ''}")
-    code, out, err = run(["bash", str(launcher), "start"], timeout=3600, env=env)
+    code, out, err = run(["bash", str(launcher), "start"], timeout=3600, env=env, base=base)
     for line in (out + err).strip().splitlines()[-6:]:
         log(f"  {line}")
     if code:
@@ -376,7 +397,11 @@ def deploy(release: Path, log) -> bool:
 # -- one cycle ------------------------------------------------------------------------------------
 def cycle(a, log) -> int:
     held = state_of(STATE)
-    ensure_probe(held.get("deployed") or "", held, a, log)      # the deployed commit keeps its warm sample, candidate or not
+    # Which model a deploy boots (launchers/st_production.py). The D17 samples are GLM-5.3's series:
+    # a commit sampled while production serves another model would file that model's speed under it.
+    profile = st_production.selected()
+    if profile == st_production.DEFAULT:
+        ensure_probe(held.get("deployed") or "", held, a, log)  # the deployed commit keeps its warm sample, candidate or not
     run(["git", "-C", str(SOURCE), "fetch", "origin", "--quiet"], timeout=300)
     _, head, _ = run(["git", "-C", str(SOURCE), "rev-parse", "origin/main"], timeout=60)
     head = head.strip()
@@ -502,10 +527,14 @@ def cycle(a, log) -> int:
     if waiting:
         log(f"  a boot ticket waits ({waiting}): the queue goes first, the deploy comes when none waits")
         return 0
+    switching = production_switching()
+    if switching:
+        log(f"  production is between models ({switching}): the deploy waits for the supervisor")
+        return 0                                       # deferred, not rejected
     if getattr(a, "prebuild", True):
-        prebuild(release, log)                         # while the deployed tree still serves: no downtime spent
-    log(f"  deploying {head[:12]}")
-    ok = deploy(release, log)
+        prebuild(release, log, profile)                # while the deployed tree still serves: no downtime spent
+    log(f"  deploying {head[:12]} as {profile}")
+    ok = deploy(release, log, profile)
     if not ok:
         # Not recorded as deployed: what is serving now is whatever the supervisor recovered, which
         # is not this release, and the next gate must not take it as the baseline. Recorded as
@@ -532,7 +561,7 @@ def cycle(a, log) -> int:
             log(f"  the gate's verdicts were not recorded for the next cycle ({type(exc).__name__})")
     STATE.write_text(json.dumps(state, indent=1))
     log(f"  deployed {head[:12]} from {release}")
-    after_deploy(head, a, log)
+    after_deploy(head, a, log, profile)
     return 0
 
 
@@ -784,12 +813,15 @@ def ensure_probe(sha: str, held: dict, a, log, *, controller: Path = None, fleet
     return queued
 
 
-def after_deploy(head: str, a, log) -> None:
+def after_deploy(head: str, a, log, profile: str = st_production.DEFAULT) -> None:
     if getattr(a, "dry_run", False):
         return
     controller = Path(getattr(a, "controller", CONTROLLER))
     if getattr(a, "follow", True):
         follow_controller(head, log, controller)
+    if profile != st_production.DEFAULT:
+        log(f"  no D17 probe: production serves {profile}, and the samples are {st_production.DEFAULT}'s series")
+        return
     if getattr(a, "probe", True) and probe_wanted(head, log):
         remember_probe(head, queue_probe(head, log, controller))
 
