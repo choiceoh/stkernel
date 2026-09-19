@@ -79,9 +79,11 @@ def run(output=None):
                 # Two independent oracle inputs catch chunk output aliasing and row reordering.
                 oracles = [p.oracle(*source, probe.layers[0], c, probe.quant) for source in patterns[:2]]
                 arms = []
-                variants = [("served", None, None), ("chunks8", 8, None),
-                            ("chunks4", 4, None), ("chunks8_m32", 8, 32)]
-                for name, limit, tile in variants:
+                variants = [("served", None, None, None), ("chunks8", 8, None, None),
+                            ("chunks4", 4, None, None), ("chunks8_m32", 8, 32, None)]
+                if rows > 8:
+                    variants += [("static_m64", None, None, 64), ("static_m32", None, None, 32)]
+                for name, limit, tile, static_tile in variants:
                     if limit is not None and rows <= limit and tile is None:
                         continue
                     ranges = ((0, rows),) if limit is None else chunks(rows, limit)
@@ -104,7 +106,10 @@ def run(output=None):
                                  for begin, end in ranges]
                         return parts[0] if len(parts) == 1 else torch.cat(parts)
 
-                    with p.pinned(md, _MICRO_TILE_M_OVERRIDE=tile), p.Launches(md) as launches:
+                    selector = md._select_moe_mma_tiler_mn
+                    if static_tile is not None:
+                        selector = lambda *args, **kwargs: (static_tile, 128)
+                    with p.pinned(md, _MICRO_TILE_M_OVERRIDE=tile, _select_moe_mma_tiler_mn=selector), p.Launches(md) as launches:
                         graph, out = _capture(call)
                         probe.owners.append(probe.lane.graph_resources())
                         launch_rows = launches.log[-len(ranges):]
@@ -128,7 +133,8 @@ def run(output=None):
                     expected = "micro" if sentinel is not None else "static"
                     valid = valid and len(launch_rows) == len(ranges) and all(
                         row["kernel"] == expected and (sentinel is None or row.get("skip") == c.local)
-                        and (tile is None or row.get("tile") == [tile, 128]) for row in launch_rows)
+                        and (tile is None or row.get("tile") == [tile, 128])
+                        and (static_tile is None or row.get("tile") == [static_tile, 128]) for row in launch_rows)
                     report("chunk_check", tokens=rows, arm=name, ranges=ranges, launched=launch_rows,
                            oracle_relative=relative, zero_nonzero=nonzero,
                            replay_stable=p.stable(replay, eager), new_replay_stable=p.stable(replay_new, eager_new),
