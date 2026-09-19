@@ -363,9 +363,10 @@ def main(argv=None) -> int:
     ap.add_argument("--no-query-shards", action="store_true",
                     help="every rank scores every index query of a prefill step, as before carry Q11: the rollback of the "
                          "quarter-a-rank scoring, on by the operator's decision of 2026-09-18 with the fleet unmeasured")
-    ap.add_argument("--shared-overlap", choices=("off", "one", "all"), default="off",
-                    help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' for "
-                         "steps of one request's rows, 'all' for every captured step; off until a GB10's step says it pays")
+    ap.add_argument("--shared-overlap", choices=("off", "one", "all"), default="one",
+                    help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' (the "
+                         "default: steps of one request's rows, C=1 -5%% a step on the fleet, measurements/"
+                         "qwen38_shared_overlap_20260919), 'all' (every captured step: C=4 +6%%), 'off' (the rollback)")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     ap.add_argument("--spec-k", type=int, default=None,
                     help="drafts a step from the MTP head (the checkpoint's 1): K > 1 chains the head K-1 times inside "
@@ -423,6 +424,8 @@ def main(argv=None) -> int:
             import threading
             threading.Thread(target=drain_draft_tap, args=(net.draft_tap, Path(a.dump_dir) / "draft-queries"),
                              name="draft-tap", daemon=True).start()
+        print("  shared expert: " + {False: "unforked", True: "forked at one request's rows", "all": "forked at every captured step"}
+              [net.shared_overlap], flush=True)
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row)", flush=True)
         with rec.phase("door"):

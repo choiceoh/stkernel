@@ -91,12 +91,13 @@ class RuleTests(unittest.TestCase):
 
     def test_the_knob_reaches_the_net_from_the_launcher(self):
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
-        self.assertIn('ap.add_argument("--shared-overlap", choices=("off", "one", "all"), default="off",', fleet)
+        self.assertIn('ap.add_argument("--shared-overlap", choices=("off", "one", "all"), default="one",', fleet)
+        self.assertIn('"  shared expert: "', fleet)                          # a boot's log says which
         self.assertIn('shared_overlap={"off": False, "one": True, "all": "all"}[a.shared_overlap],', fleet)
         self.assertIn("shared_overlap=shared_overlap)", fleet)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
-        self.assertIn('case "${ST_SHARED_OVERLAP:-off}" in', launcher)
-        self.assertIn('one|all) OVERLAP_ARG="--shared-overlap $ST_SHARED_OVERLAP" ;;', launcher)
+        self.assertIn('case "${ST_SHARED_OVERLAP:-one}" in', launcher)
+        self.assertIn('off|all) OVERLAP_ARG="--shared-overlap $ST_SHARED_OVERLAP" ;;', launcher)     # off: the rollback
         self.assertIn("$EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG", launcher)
 
     def test_the_step_probe_builds_the_arms(self):
