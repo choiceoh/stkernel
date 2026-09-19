@@ -138,6 +138,10 @@ case "${ST_TAP_MTP_INPUTS:-1}" in                            # ST_TAP_MTP_INPUTS
   0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;
   *) echo "ST_TAP_MTP_INPUTS must be 0 or 1" >&2; exit 2 ;;
 esac
+if [ -n "${ST_TAP_MTP_CAP_GIB:-}" ]; then                     # ST_TAP_MTP_CAP_GIB=G: the tap directory's cap (default 64)
+  [[ "$ST_TAP_MTP_CAP_GIB" =~ ^[0-9]+$ ]] || { echo "ST_TAP_MTP_CAP_GIB must be whole GiB" >&2; exit 2; }
+  ADAPT_ARG="$ADAPT_ARG --tap-mtp-inputs-cap-gib $ST_TAP_MTP_CAP_GIB"
+fi
 case "${ST_DRAFT_LEDGER:-1}" in                               # ST_DRAFT_LEDGER=0: no per-row draft ledger (on by default)
   1) ;;
   0) ADAPT_ARG="$ADAPT_ARG --no-draft-ledger" ;;
