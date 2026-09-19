@@ -128,6 +128,83 @@ class LossTests(unittest.TestCase):
             self.assertNotEqual(m["loss_2"], m_cut["loss_2"])
 
 
+def _ddp_rank(rank, world, port, data_dir, out_dir, results):
+    """One rank of a two-process gloo run of `train` on the tiny head: its final weights, for the test to compare."""
+    import os
+    os.environ.update(RANK=str(rank), WORLD_SIZE=str(world), MASTER_ADDR="127.0.0.1", MASTER_PORT=str(port))
+    from unittest import mock
+    from types import SimpleNamespace
+    from engine.profiles.qwen38 import mtp_tune as mt
+    _, _, cfg, weights = tiny()
+    args = SimpleNamespace(ckpt=Path(data_dir), data=data_dir, out=out_dir, depth=3, window=12, eval_windows=4, seed=0,
+                           steps=3, accumulate=2, lr=1e-3, warmup=1, beta=0.6, auf=False, clip=1.0, log_every=1,
+                           eval_every=3)
+    with mock.patch.object(mt, "config", lambda ckpt: (cfg, "model.")), \
+            mock.patch.object(mt, "checkpoint_tensors", lambda ckpt, prefix, tuned=None: weights.__getitem__), \
+            mock.patch.object(mt.Head, "__init__", _float32_head_init(mt.Head.__init__)):
+        mt.train(args)
+    results[rank] = {k: v.detach().clone() for k, v in _last_model[0].weights.items()}
+
+
+_last_model = [None]
+
+
+def _float32_head_init(init):
+    def wrapped(self, cfg, tensors, **kw):
+        kw["dtype"] = torch.float32
+        init(self, cfg, tensors, **kw)
+        _last_model[0] = self
+    return wrapped
+
+
+@unittest.skipUnless(torch is not None, "requires torch")
+class DistributedTests(unittest.TestCase):
+    """`train` data parallel: each rank its own windows, the gradients averaged, the ranks' weights the same bits and
+    moved; the evaluation split across ranks and summed back."""
+
+    def data(self, d):
+        import numpy as np
+        from engine.base.composition import State, Step
+        from engine.profiles.qwen38.mtp_tune import build_runs
+        from tests.test_engine_composed import prompt
+        comp, _, cfg, _ = tiny()
+        for seq in range(6):
+            tokens = prompt(40 + seq, 40)
+            with torch.no_grad():
+                _, streams = comp.forward(Step.of([(0, 0, torch.tensor(tokens[:39]))]), State(), logits="all", hidden=True)
+            meta = np.array([[seq, p, tokens[p + 1], 0] for p in range(39)], dtype=np.int64)
+            np.savez(Path(d) / f"mtp-inputs-20260919-150000-{seq:05d}.npz",
+                     streams=streams.to(torch.bfloat16).view(torch.int16).numpy(), meta=meta)
+        return build_runs(sorted(Path(d).glob("mtp-inputs-*.npz")), Path(d) / "data", holdout=0.34, min_length=16, seed=1)
+
+    def test_two_ranks_end_on_the_same_weights(self):
+        import socket
+        import torch.multiprocessing as mp
+        with tempfile.TemporaryDirectory() as d:
+            index = self.data(d)
+            self.assertTrue(index["train"] and index["eval"])
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+            manager = mp.Manager()
+            results = manager.dict()
+            procs = [mp.get_context("spawn").Process(target=_ddp_rank, args=(r, 2, port, str(Path(d) / "data"),
+                                                                            str(Path(d) / "run"), results))
+                     for r in range(2)]
+            for p in procs:
+                p.start()
+            for p in procs:
+                p.join(300)
+            self.assertEqual([p.exitcode for p in procs], [0, 0])
+            a, b = results[0], results[1]
+            self.assertEqual(set(a), set(b))
+            for key in a:
+                self.assertTrue(torch.equal(a[key], b[key]), key)
+            log = [json.loads(l) for l in (Path(d) / "run" / "log.jsonl").read_text().splitlines()]
+            self.assertEqual(log[0]["world"], 2)
+            self.assertTrue(any(r["event"] == "eval" and r["step"] == 3 for r in log))
+
+
 @unittest.skipUnless(torch is not None, "requires torch")
 class DataTests(unittest.TestCase):
     def test_tapped_shards_become_runs_a_sequence(self):
