@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "scope": "Prepare private real-input Qwen GPTQ splits, preserving the source conversation/workload groups.\n\nCPU only. Inputs are the existing sanitized Deneb snapshots and their provenance,\nnot production state. No source text or generation belongs in Git or stdout.\nThe snapshots reconstruct user inputs; they are not full captured provider requests\nand their old responses are not ground-truth labels for model quality.\n",
+  "source_sha256": {
+    "conversations": "962b245efd178ff250b2bf69dff76d33e45e8041c8d076d03b415dcf0cc26af6",
+    "workloads": "c62a1f19ffb8a677585886f1234446f19731361f48f243644e41b5d7589de264"
+  },
+  "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+  "tokenizer_sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3",
+  "script_sha256": "771ab48b0e1d32230c2db8f5ec226e1a5f3038b2f7d547476082c1c788e083bc",
+  "chat_template_kwargs": {
+    "enable_thinking": true
+  },
+  "max_prompt_tokens": 8192,
+  "counts": {
+    "validation/conversation": 40,
+    "test/conversation": 37,
+    "train/conversation": 160,
+    "train/background": 6,
+    "train/mail": 64,
+    "validation/mail": 16,
+    "test/mail": 16,
+    "train/notification": 64,
+    "validation/notification": 16,
+    "test/notification": 16
+  },
+  "prompt_tokens": {
+    "train": 240490,
+    "validation": 55441,
+    "test": 50512
+  },
+  "excluded": {},
+  "splits_sha256": {
+    "train": "133f0ac06ce1b5e8e3afaee3631c697429cdcf4a5c8302a3cda1fc123b47030b",
+    "validation": "8151d8f4229a865751386d5db8c0e79d5598bf7a6449629919d74a3656a134fb",
+    "test": "b713ced48029ce19040b97c85abda23220d26015d0c1821f856e9dcb84fab000"
+  },
+  "source_groups_disjoint": true,
+  "exact_messages_disjoint": true,
+  "exact_tokens_disjoint": true,
+  "generated_labels": false
+}

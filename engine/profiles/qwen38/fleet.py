@@ -174,7 +174,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
           mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
-          vision: str = "auto", self_calibrate: bool = True):
+          vision: str = "auto", self_calibrate: bool = True, pack_root: str = "/cache"):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background of `door_host_half`) is joined in its own row before the capture: the capture is Python
     dispatch, and a host thread still running there would take the GIL from it. Its grammar compiler is bound to the
@@ -258,7 +258,9 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         files.append(tuned_path)
     calib_files = [*files, Path(ranks_dir) / facts.ple_file(comm.rank, facts.TP)]
     weights_id = calibrate.identity(rank.metadata, calib_files, F.config, hc_fp8=hc_fp8)
-    store = PackStore("/cache", comm.rank, weights_id=weights_id, require_identity=True)
+    store = PackStore(pack_root, comm.rank, weights_id=weights_id, require_identity=True)
+    recorder.gauge("dense_pack_root", str(store.root))
+    recorder.gauge("calibration_weights_id", weights_id)
     calib_plan, calib_bytes, deferred = calibrate.plan(net, specs, store) if self_calibrate else ([], 0, [])
     arena_bytes += calib_bytes
     store.release_pages()
@@ -797,6 +799,8 @@ def main(argv=None) -> int:
                          "rollback). The same bytes every way")
     ap.add_argument("--no-self-calibrate", action="store_true",
                     help="skip collecting missing target GPTQ Hessians (up to 8 GiB); existing matching blobs still pack")
+    ap.add_argument("--pack-root", default="/cache",
+                    help="Qwen calibration and dense packs; use a separate directory for a calibration comparison")
     ap.add_argument("--vision", choices=("auto", "on", "off"), default="auto",
                     help="pictures: auto serves them when every rank has vision.safetensors next to its rank file, on "
                          "requires it, off serves text only (module docstring)")
@@ -871,7 +875,7 @@ def main(argv=None) -> int:
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
-                                              vision=a.vision, self_calibrate=not a.no_self_calibrate,
+                                              vision=a.vision, self_calibrate=not a.no_self_calibrate, pack_root=a.pack_root,
                                               draft_candidates=a.draft_candidates,
                                               draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
