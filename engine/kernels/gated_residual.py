@@ -37,10 +37,15 @@ instead of the skinny GEMV's padded 16 rows --
     up_mean_rows      up for a block of rows and a block of hidden channels in each stream, sigmoid, times the
                       streams, the mean -- the [N, hc*H] up product (84 MB at 4,096 rows) never written      one launch
 
+`site` serves a prefill step's site whole and never writes the normalised streams [N, hc*H] (84 MB at 4,096 rows, a
+third of the leave's bytes): the leave stores each stream's scale [N, hc] FP32 instead (`stream_scales`), and both
+launches normalise each tile of the streams as they read it -- the stream norm's own arithmetic on the same scale, so
+the operand is the normalised streams' bytes and the outputs are leave_norm-then-mix_block's byte for byte.
+
 On a GB10 (q38sitecmp-0919a, eight sites a graph, interleaved): up and the mean 1,703 -> 815 us a site at 4,096 rows
 (x2.09), x1.66 at 2,048, x1.65 at 1,024, x1.39 at 512 -- and the output byte for byte cuBLAS's up with `_mix_mean`.
-The down projection and the gates: 590 -> 557 us at 4,096 rows at 128 x 128 x 32 tiles (-5.7%); level with cuBLAS at
-1,024 and 2,048 rows (+1%) and behind it at 512 (+24%), so the fold takes it from DOWN_FOLD_ROWS rows.
+The down projection and the gates, before the column blocks were adjacent programs: 590 -> 557 us at 4,096 rows at
+128 x 128 x 32 tiles (-5.7%), level with cuBLAS at 1,024 and 2,048 rows, behind it at 512 (+24%).
 
 The arithmetic after each product is `_gates`' and `_mix_mean`'s, on the same BF16 product, so the site's outputs are
 byte for byte the five-launch site's with the same products (probes/engine_qwen38_gemv, q38site-0919a). On a GB10 at
@@ -83,13 +88,14 @@ PREFILL_ROWS = 512                          # rows from this take `mix_block` (a
 # mix_block's down tile (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages, split) by the rows it serves from, the last entry the
 # rows reach; rows short of every entry take cuBLAS and `_gates`. Its up tile (BLOCK_M, BLOCK_D, BLOCK_K, warps, stages)
 # at every row.
-DOWN_TILES = ((4096, (128, 128, 32, 8, 3, 1)),)
+DOWN_TILES = ((512, (128, 64, 64, 4, 3, 1)), (4096, (128, 128, 32, 8, 3, 1)))
 UP_BLOCK_TILE = (64, 64, 32, 4, 4)
 UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
 
 @triton.jit
-def _norm_streams(X, W, OUT, sX, sO, EPS, HID: tl.constexpr, BD: tl.constexpr):
+def _norm_streams(X, W, OUT, sX, sO, EPS, HID: tl.constexpr, BD: tl.constexpr, SCALE_ONLY: tl.constexpr):
+    # SCALE_ONLY: OUT is [N, hc] FP32, the stream's scale and not the normalised stream (`stream_scales`)
     r = tl.program_id(0)
     s = tl.program_id(1)
     d = tl.arange(0, BD)
@@ -97,8 +103,11 @@ def _norm_streams(X, W, OUT, sX, sO, EPS, HID: tl.constexpr, BD: tl.constexpr):
     off = s * HID + d
     x = tl.load(X + r * sX + off, mask=m, other=0.0).to(tl.float32)
     scale = tl.rsqrt(tl.sum(x * x) / HID + EPS)
-    w = tl.load(W + off, mask=m, other=0.0).to(tl.float32)
-    tl.store(OUT + r * sO + off, ((x * scale) * (1.0 + w)).to(OUT.dtype.element_ty), mask=m)
+    if SCALE_ONLY:
+        tl.store(OUT + r * sO + s, scale)
+    else:
+        w = tl.load(W + off, mask=m, other=0.0).to(tl.float32)
+        tl.store(OUT + r * sO + off, ((x * scale) * (1.0 + w)).to(OUT.dtype.element_ty), mask=m)
 
 
 @triton.jit
@@ -116,13 +125,14 @@ def _prefetch_l2(NEXT, SECTORS, p, P, BLOCK: tl.constexpr):
 
 @triton.jit
 def _leave_norm(H, OUT, INJ, W, NORMED, NEXT, sH, sO, sI, sN, EPS, SECTORS, HID: tl.constexpr, BD: tl.constexpr,
-                NORM: tl.constexpr, PDL: tl.constexpr, PREFETCH: tl.constexpr):
+                NORM: tl.constexpr, PDL: tl.constexpr, PREFETCH: tl.constexpr, SCALE_ONLY: tl.constexpr):
+    # SCALE_ONLY: NORMED is [N, hc] FP32, the stream's scale and not the normalised stream (`stream_scales`)
     r = tl.program_id(0)
     s = tl.program_id(1)
     d = tl.arange(0, BD)
     m = d < HID
     off = s * HID + d
-    if NORM:
+    if NORM and not SCALE_ONLY:
         w = tl.load(W + off, mask=m, other=0.0).to(tl.float32)   # immutable: read while the sum is still in flight
     if PREFETCH:
         _prefetch_l2(NEXT, SECTORS, r * tl.num_programs(1) + s, tl.num_programs(0) * tl.num_programs(1), BD)
@@ -139,7 +149,10 @@ def _leave_norm(H, OUT, INJ, W, NORMED, NEXT, sH, sO, sI, sN, EPS, SECTORS, HID:
     if NORM:
         x = new.to(tl.float32)
         scale = tl.rsqrt(tl.sum(x * x) / HID + EPS)
-        tl.store(NORMED + r * sN + off, ((x * scale) * (1.0 + w)).to(NORMED.dtype.element_ty), mask=m)
+        if SCALE_ONLY:
+            tl.store(NORMED + r * sN + s, scale)
+        else:
+            tl.store(NORMED + r * sN + off, ((x * scale) * (1.0 + w)).to(NORMED.dtype.element_ty), mask=m)
 
 
 @triton.jit
@@ -280,7 +293,7 @@ def norm_streams(h: torch.Tensor, w: torch.Tensor, eps: float, hc: int) -> torch
     out = torch.empty_like(h)
     if h.shape[0]:
         _norm_streams[(h.shape[0], hc)](h, w, out, h.stride(0), out.stride(0), eps,
-                                        HID=hid, BD=triton.next_power_of_2(hid), num_warps=_warps(hid))
+                                        HID=hid, BD=triton.next_power_of_2(hid), SCALE_ONLY=False, num_warps=_warps(hid))
     return out
 
 
@@ -308,6 +321,22 @@ def leave_norm(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, w: torc
     return _leave(h, out, inject, w, eps, hc, norm=True, pdl=pdl, prefetch=prefetch)
 
 
+def stream_scales(h: torch.Tensor, out: "torch.Tensor | None", injection: "torch.Tensor | None", eps: float, hc: int, *,
+                  pdl: bool = False) -> torch.Tensor:
+    """Each stream's norm scale rsqrt(mean(x^2) + eps), [N, hc] FP32 -- after `out` leaves into the streams in place
+    with `injection` (leave_norm's leave), or of the streams as they are when `out` is None (norm_streams'). The scale
+    leave_norm and norm_streams multiply by, bit for bit; the normalised streams are not written (mix_block's `norm`
+    normalises what it reads). CUDA, or the Triton interpreter. `pdl`: as leave_norm's."""
+    hid = _check_streams(h, hc, least=1)
+    if out is not None:
+        return _leave(h, out, injection, h, eps, hc, norm=True, pdl=pdl, scale_only=True)[1]
+    scale = torch.empty(h.shape[0], hc, device=h.device, dtype=torch.float32)
+    if h.shape[0]:
+        _norm_streams[(h.shape[0], hc)](h, h, scale, h.stride(0), scale.stride(0), eps, HID=hid,
+                                        BD=triton.next_power_of_2(hid), SCALE_ONLY=True, num_warps=_warps(hid))
+    return scale
+
+
 # The bytes of the next weight a prefetching leave pulls into L2 (carry H4): None, all of it. The mixer's down projection
 # is 6.6 MB; a sum's wait on the fleet is about 20 us, about 4 MB at the memory's bandwidth.
 PREFETCH_BYTES = None
@@ -328,7 +357,7 @@ def _prefetch_sectors(weight, rows: int) -> int:
     return (size if budget is None else min(size, budget)) // 32
 
 
-def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None):
+def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None, scale_only=False):
     hid = _check_streams(h, hc)
     if out.shape != (h.shape[0], hid) or inject.shape != (h.shape[0], hc):
         raise ValueError(f"a leave takes the output [N, {hid}] and the injection [N, {hc}] for {h.shape[0]} rows")
@@ -336,13 +365,16 @@ def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None):
         raise ValueError("the output and the injection are packed rows in the streams' dtype")
     if type(pdl) is not bool:
         raise ValueError("pdl is a declared boolean")
-    if not h.is_cuda:
+    if not h.is_cuda and not scale_only:
         h.add_((out.unsqueeze(-2) * inject.unsqueeze(-1)).flatten(-2))
         if not norm:
             return h, None
         from engine.modules.norm import rmsnorm_unit_offset
         return h, rmsnorm_unit_offset(h, w, eps, group=hid)
-    normed = torch.empty_like(h) if norm else h
+    if scale_only:
+        normed = torch.empty(h.shape[0], hc, device=h.device, dtype=torch.float32)
+    else:
+        normed = torch.empty_like(h) if norm else h
     # the interpreter (tests' is_cuda stand-in) has neither griddepcontrol nor a prefetch: the ordinary launch there
     pdl = pdl and h.device.type == "cuda"
     sectors = _prefetch_sectors(prefetch, h.shape[0]) if pdl else 0
@@ -350,7 +382,8 @@ def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None):
         _leave_norm[(h.shape[0], hc)](h, out, inject, w if norm else h, normed, prefetch if sectors else h,
                                       h.stride(0), out.stride(0), inject.stride(0), normed.stride(0), eps, sectors,
                                       HID=hid, BD=triton.next_power_of_2(hid), NORM=norm, PDL=pdl,
-                                      PREFETCH=sectors > 0, num_warps=_warps(hid), launch_pdl=pdl)
+                                      PREFETCH=sectors > 0, SCALE_ONLY=scale_only, num_warps=_warps(hid),
+                                      launch_pdl=pdl)
     return h, (normed if norm else None)
 
 
@@ -400,6 +433,29 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
     return mixed, injection
 
 
+def site(h: torch.Tensor, out: "torch.Tensor | None", injection: "torch.Tensor | None", w: torch.Tensor, eps: float,
+         hc: int, down_inject: torch.Tensor, up: torch.Tensor, *, inject: bool = True, pdl: bool = False,
+         prefetch: "torch.Tensor | None" = None) -> "tuple[torch.Tensor, torch.Tensor | None]":
+    """A site whole: `out` (the previous sublayer's, with its `injection`; None at the first site) left into the streams
+    h in place, the streams normalised with `w`, and the mixer -- (mixed [N, H], injection [N, hc] or None). A prefill
+    step's rows (mix_block's, with a down tile) never write the normalised streams: the leave keeps each stream's scale
+    (`stream_scales`) and mix_block's two launches normalise what they read -- leave_norm's and mix's bytes, and at
+    4,096 rows 84 MB less written. Other rows: leave_norm (or norm_streams) and mix, `pdl` and `prefetch` as
+    leave_norm's."""
+    if w.shape != (h.shape[1],):
+        raise ValueError("the stream norm's weight covers every stream's channels")
+    tiles = block_tiles(h.shape[0])
+    if (h.is_cuda and blocks_fold(h, down_inject, up) and tiles["down"] is not None
+            and (h.shape[1] // hc) % tiles["down"][2] == 0):
+        scale = stream_scales(h, out, injection, eps, hc, pdl=pdl)
+        return mix_block(h, down_inject, up, hc, inject=inject, tiles=tiles, norm=(scale, w))
+    if out is None:
+        normed = norm_streams(h, w, eps, hc)
+    else:
+        h, normed = leave_norm(h, out, injection, w, eps, hc, pdl=pdl, prefetch=prefetch)
+    return mix(normed, down_inject, up, hc, inject=inject)
+
+
 def folds(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> bool:
     """Whether `mix_rows` serves this site: 1..DECODE_ROWS rows in BF16, a down projection the skinny GEMV has a
     tile for, each operand packed along its last dimension."""
@@ -426,12 +482,39 @@ def _tile_dot(X, W, sX, sW, rows, cols, M, N, k0, k1, BLOCK_M: tl.constexpr, BLO
 
 
 @triton.jit
-def _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, cols, pid_k, M, N, K, sX, sW, sM, sI, HC_F,
+def _tile_dot_normed(X, W, SC, NW, sX, sW, sS, rows, cols, M, N, k0, k1, HID: tl.constexpr, BLOCK_M: tl.constexpr,
+                     BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, FP32_DOT: tl.constexpr):
+    """`_tile_dot` over the streams X normalised as each tile is read: row r's stream s times its scale SC[r, s], times
+    1 + NW -- the stream norm's arithmetic (`_leave_norm`), so the operand is the normalised streams' bytes. A K tile
+    lies in one stream (HID a multiple of BLOCK_K)."""
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    live = rows < M
+    for k in range(k0, k1, BLOCK_K):
+        ks = k + tl.arange(0, BLOCK_K)
+        km = ks < k1
+        x = tl.load(X + rows[:, None] * sX + ks[None, :], mask=live[:, None] & km[None, :], other=0.0)
+        sc = tl.load(SC + rows * sS + k // HID, mask=live, other=0.0)
+        nw = tl.load(NW + ks, mask=km, other=0.0).to(tl.float32)
+        x = ((x.to(tl.float32) * sc[:, None]) * (1.0 + nw[None, :])).to(X.dtype.element_ty)
+        w = tl.load(W + cols[:, None] * sW + ks[None, :], mask=(cols[:, None] < N) & km[None, :], other=0.0)
+        if FP32_DOT:
+            x, w = x.to(tl.float32), w.to(tl.float32)
+        acc += tl.dot(x, tl.trans(w))
+    return acc
+
+
+@triton.jit
+def _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, SC, NW, tile, rows, cols, pid_k, M, N, K, sX, sW, sM, sI, sS, HC_F,
                      R: tl.constexpr, HC: tl.constexpr, WITH_INJECT: tl.constexpr, BLOCK_M: tl.constexpr,
-                     WIDTH: tl.constexpr, BLOCK_K: tl.constexpr, SPLIT: tl.constexpr, FP32_DOT: tl.constexpr):
+                     WIDTH: tl.constexpr, BLOCK_K: tl.constexpr, SPLIT: tl.constexpr, NORM_IN: tl.constexpr,
+                     HID: tl.constexpr, FP32_DOT: tl.constexpr):
     # one [BLOCK_M, WIDTH] tile's share of K, and the gates from the whole product where this program has it
     k0, k1 = split_span(K, pid_k, SPLIT, BLOCK_K)
-    acc = _tile_dot(X, W, sX, sW, rows, cols, M, N, k0, k1, BLOCK_M, WIDTH, BLOCK_K, FP32_DOT)
+    if NORM_IN:
+        acc = _tile_dot_normed(X, W, SC, NW, sX, sW, sS, rows, cols, M, N, k0, k1, HID, BLOCK_M, WIDTH, BLOCK_K,
+                               FP32_DOT)
+    else:
+        acc = _tile_dot(X, W, sX, sW, rows, cols, M, N, k0, k1, BLOCK_M, WIDTH, BLOCK_K, FP32_DOT)
     if SPLIT == 1:
         _gate_store(acc, rows, cols, M, MIX, INJ, sM, sI, HC_F, R, HC, WITH_INJECT)
     else:
@@ -441,9 +524,10 @@ def _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, cols, pid_k, M, N,
 
 
 @triton.jit
-def _down_gates_rows(X, W, MIX, INJ, PART, LOCKS, M, N, K, sX, sW, sM, sI, HC_F, R: tl.constexpr, HC: tl.constexpr,
-                     WITH_INJECT: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-                     TAIL: tl.constexpr, SPLIT: tl.constexpr, FP32_DOT: tl.constexpr):
+def _down_gates_rows(X, W, MIX, INJ, PART, LOCKS, SC, NW, M, N, K, sX, sW, sM, sI, sS, HC_F, R: tl.constexpr,
+                     HC: tl.constexpr, WITH_INJECT: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+                     BLOCK_K: tl.constexpr, TAIL: tl.constexpr, SPLIT: tl.constexpr, NORM_IN: tl.constexpr,
+                     HID: tl.constexpr, FP32_DOT: tl.constexpr):
     # `_down_gates` over a block of rows. The column block is the fastest grid index, so the blocks of one row block run
     # side by side and share its rows through L2; TAIL > 0 is the last column block's narrower width (its live columns
     # rounded up to a dot's 16)
@@ -452,21 +536,26 @@ def _down_gates_rows(X, W, MIX, INJ, PART, LOCKS, M, N, K, sX, sW, sM, sI, HC_F,
     rows = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
     if TAIL > 0:
         if pid_n == tl.num_programs(0) - 1:
-            _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, pid_n * BLOCK_N + tl.arange(0, TAIL), pid_k, M, N,
-                             K, sX, sW, sM, sI, HC_F, R, HC, WITH_INJECT, BLOCK_M, TAIL, BLOCK_K, SPLIT, FP32_DOT)
+            _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, SC, NW, tile, rows, pid_n * BLOCK_N + tl.arange(0, TAIL),
+                             pid_k, M, N, K, sX, sW, sM, sI, sS, HC_F, R, HC, WITH_INJECT, BLOCK_M, TAIL, BLOCK_K, SPLIT,
+                             NORM_IN, HID, FP32_DOT)
         else:
-            _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, pid_n * BLOCK_N + tl.arange(0, BLOCK_N), pid_k, M,
-                             N, K, sX, sW, sM, sI, HC_F, R, HC, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K, SPLIT, FP32_DOT)
+            _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, SC, NW, tile, rows, pid_n * BLOCK_N + tl.arange(0, BLOCK_N),
+                             pid_k, M, N, K, sX, sW, sM, sI, sS, HC_F, R, HC, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K,
+                             SPLIT, NORM_IN, HID, FP32_DOT)
     else:
-        _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, pid_n * BLOCK_N + tl.arange(0, BLOCK_N), pid_k, M, N,
-                         K, sX, sW, sM, sI, HC_F, R, HC, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K, SPLIT, FP32_DOT)
+        _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, SC, NW, tile, rows, pid_n * BLOCK_N + tl.arange(0, BLOCK_N),
+                         pid_k, M, N, K, sX, sW, sM, sI, sS, HC_F, R, HC, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K, SPLIT,
+                         NORM_IN, HID, FP32_DOT)
 
 
 @triton.jit
-def _up_mean_rows(G, W, NORMED, OUT, M, sG, sW, sN, sO, HC_F, HID: tl.constexpr, R: tl.constexpr, HC: tl.constexpr,
-                  BLOCK_M: tl.constexpr, BLOCK_D: tl.constexpr, BLOCK_K: tl.constexpr, FP32_DOT: tl.constexpr):
+def _up_mean_rows(G, W, NORMED, OUT, SC, NW, M, sG, sW, sN, sO, sS, HC_F, HID: tl.constexpr, R: tl.constexpr,
+                  HC: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_D: tl.constexpr, BLOCK_K: tl.constexpr,
+                  NORM_IN: tl.constexpr, FP32_DOT: tl.constexpr):
     # `_up_mean` over a block of rows: each stream's up product for this block of channels, rounded to BF16 where the
-    # GEMM's output was, then `_mix_mean`'s arithmetic -- the product never leaves the program
+    # GEMM's output was, then `_mix_mean`'s arithmetic -- the product never leaves the program. NORM_IN: NORMED is the
+    # streams, normalised here as `_tile_dot_normed` does
     rows = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
     d = tl.program_id(1) * BLOCK_D + tl.arange(0, BLOCK_D)
     live = (rows[:, None] < M) & (d[None, :] < HID)
@@ -475,6 +564,10 @@ def _up_mean_rows(G, W, NORMED, OUT, M, sG, sW, sN, sO, HC_F, HID: tl.constexpr,
         u = _tile_dot(G, W, sG, sW, rows, s * HID + d, M, s * HID + HID, 0, R, BLOCK_M, BLOCK_D, BLOCK_K, FP32_DOT)
         g = tl.sigmoid(u.to(OUT.dtype.element_ty).to(tl.float32)).to(OUT.dtype.element_ty).to(tl.float32)
         n = tl.load(NORMED + rows[:, None] * sN + (s * HID + d)[None, :], mask=live, other=0.0).to(tl.float32)
+        if NORM_IN:
+            sc = tl.load(SC + rows * sS + s, mask=rows < M, other=0.0)
+            nw = tl.load(NW + s * HID + d, mask=d < HID, other=0.0).to(tl.float32)
+            n = ((n * sc[:, None]) * (1.0 + nw[None, :])).to(OUT.dtype.element_ty).to(tl.float32)
         acc += (g * n).to(OUT.dtype.element_ty).to(tl.float32)
     tl.store(OUT + rows[:, None] * sO + d[None, :], (acc / HC_F).to(OUT.dtype.element_ty), mask=live)
 
@@ -502,9 +595,10 @@ def narrow_tail(n: int, block_n: int) -> int:
     return tail if tail < block_n else 0
 
 
-def down_gates_block(normed, down_inject, gates, inj, hc: int, *, inject: bool, tile) -> None:
+def down_gates_block(normed, down_inject, gates, inj, hc: int, *, inject: bool, tile, norm=None) -> None:
     """`_down_gates_rows` at `tile` (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages, split): the gates [N, r] and, with
-    `inject`, the injection [N, hc] (`inj`; `gates` again without one) stored from down(+inject) of the rows."""
+    `inject`, the injection [N, hc] (`inj`; `gates` again without one) stored from down(+inject) of the rows. `norm`:
+    (scale [N, hc] FP32, w [hc*H]) -- `normed` is then the streams, normalised as the tiles are read (mix_block)."""
     rows, width = normed.shape
     n = down_inject.shape[0]
     bm, bn, bk, warps, stages, split = tile
@@ -517,16 +611,23 @@ def down_gates_block(normed, down_inject, gates, inj, hc: int, *, inject: bool, 
         locks = skinny_gemv.prepare(normed.device)
     else:
         part = locks = gates
-    _down_gates_rows[grid](normed, down_inject, gates, inj, part, locks, rows, n, width, normed.stride(0),
-                           down_inject.stride(0), gates.stride(0), inj.stride(0), float(hc), R=gates.shape[1], HC=hc,
-                           WITH_INJECT=inject, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk, TAIL=narrow_tail(n, bn), SPLIT=split,
+    scale, w = (gates, gates) if norm is None else norm
+    hid = width // hc
+    if norm is not None and hid % bk:
+        raise ValueError(f"a down tile that normalises the streams reads K tiles inside one stream: {bk} into {hid}")
+    _down_gates_rows[grid](normed, down_inject, gates, inj, part, locks, scale, w, rows, n, width, normed.stride(0),
+                           down_inject.stride(0), gates.stride(0), inj.stride(0), scale.stride(0), float(hc),
+                           R=gates.shape[1], HC=hc, WITH_INJECT=inject, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
+                           TAIL=narrow_tail(n, bn), SPLIT=split, NORM_IN=norm is not None, HID=hid,
                            FP32_DOT=not normed.is_cuda, num_warps=warps, num_stages=stages)
 
 
 def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
-              inject: bool = True, tiles=None) -> "tuple[torch.Tensor, torch.Tensor | None]":
+              inject: bool = True, tiles=None, norm=None) -> "tuple[torch.Tensor, torch.Tensor | None]":
     """`mix` for a prefill step's rows (the module docstring): (mixed [N, H], injection [N, hc] or None). `tiles`:
-    `block_tiles`' form, for a probe or a test; the table's for the rows otherwise."""
+    `block_tiles`' form, for a probe or a test; the table's for the rows otherwise. `norm`: (scale [N, hc] FP32 from
+    `stream_scales`, the norm's weight [hc*H]) -- `normed` is then the streams themselves, and both launches normalise
+    what they read with the stream norm's arithmetic: the same bytes, and the normalised streams never written."""
     hid = _check_streams(normed, hc)
     rank = up.shape[1]
     if up.shape != (normed.shape[1], rank) or down_inject.shape != (rank + (hc if inject else 0), normed.shape[1]):
@@ -543,18 +644,26 @@ def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor,
         return mixed, injection
     inj = gates if injection is None else injection
     interpreted = not normed.is_cuda
+    if norm is not None:
+        scale, w = norm
+        if (scale.shape != (rows, hc) or scale.dtype != torch.float32 or scale.stride(1) != 1
+                or w.shape != (normed.shape[1],)):
+            raise ValueError("mix_block normalises through scale [N, hc] FP32 and the norm's weight [hc*H]")
+        if tiles["down"] is None:
+            raise ValueError("the streams normalise inside the down fold: a down tile, not cuBLAS's product")
     if tiles["down"] is None:
         di = torch.mm(normed, down_inject.t())
         _gates[(rows,)](di, gates, inj, di.stride(0), gates.stride(0), inj.stride(0), float(hc), R=rank,
                         BR=triton.next_power_of_2(rank), HC=hc, BH=triton.next_power_of_2(hc), WITH_INJECT=inject,
                         num_warps=4)
     else:
-        down_gates_block(normed, down_inject, gates, inj, hc, inject=inject, tile=tiles["down"])
+        down_gates_block(normed, down_inject, gates, inj, hc, inject=inject, tile=tiles["down"], norm=norm)
+    scale, w = (gates, gates) if norm is None else norm
     bm, bd, bk, warps, stages = tiles["up"]
     _up_mean_rows[(triton.cdiv(rows, bm), triton.cdiv(hid, bd))](
-        gates, up, normed, mixed, rows, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0), float(hc),
-        HID=hid, R=rank, HC=hc, BLOCK_M=bm, BLOCK_D=bd, BLOCK_K=bk, FP32_DOT=interpreted, num_warps=warps,
-        num_stages=stages)
+        gates, up, normed, mixed, scale, w, rows, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0),
+        scale.stride(0), float(hc), HID=hid, R=rank, HC=hc, BLOCK_M=bm, BLOCK_D=bd, BLOCK_K=bk,
+        NORM_IN=norm is not None, FP32_DOT=interpreted, num_warps=warps, num_stages=stages)
     return mixed, injection
 
 
@@ -641,10 +750,11 @@ def blame(ours: torch.Tensor, ref: torch.Tensor, ours_fn, ref_fn, host_fn=None, 
     return "; ".join(said)
 
 
-def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.bfloat16, rows=(1, 5, 64),
-            band_max: float = 5e-2, band_rms: float = 2e-2, seed: int = 0) -> dict:
+def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.bfloat16,
+            rows=(1, 5, 64, PREFILL_ROWS), band_max: float = 5e-2, band_rms: float = 2e-2, seed: int = 0) -> dict:
     """Hold the lane to engine/modules/hyper_connection.gated_residual on `device`, with random weights at the model's
-    widths: two sites joined by a leave with its norm, a leave without one, and a closing mixer. Raises when an output
+    widths: two sites joined by a leave with its norm, a leave without one, and a closing mixer -- and the same two
+    sites whole through `site` (at PREFILL_ROWS the streams normalised inside mix_block's launches). Raises when an output
     drifts past `band_max` (largest error / largest magnitude) or `band_rms` (`drift`): bounds a few BF16 steps wide,
     so rounding order passes and arithmetic does not; returns the worst (max, rms) seen per output."""
     from engine.modules.hyper_connection import gated_residual
@@ -654,7 +764,8 @@ def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.
     def rand(*shape, scale=1.0):
         return (torch.randn(*shape, generator=gen) * scale).to(device=device, dtype=dtype)
 
-    worst = {k: (0.0, 0.0) for k in ("enter", "inject", "leave_norm", "leave", "close")}
+    worst = {k: (0.0, 0.0) for k in ("enter", "inject", "leave_norm", "leave", "close", "site", "site_inject",
+                                     "site_close")}
     norm_w, down, up, inj = rand(width, scale=0.1), rand(rank, width, scale=0.02), rand(width, rank, scale=0.02), \
         rand(hc, width, scale=0.02)
     norm_c, down_c, up_c = rand(width, scale=0.1), rand(rank, width, scale=0.02), rand(width, rank, scale=0.02)
@@ -675,8 +786,13 @@ def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.
         ours, normed = leave_norm(h.clone(), out, ref_inj, norm_c, eps, hc)
         note("leave_norm", ours, ref_h)
         note("leave", leave(h.clone(), out, ref_inj, hc), ref_h)
+        ref_close = gated_residual(ref_h, norm_c, down_c, up_c, None, hc, eps)
         closed, _ = mix(normed, dc, up_c, hc, inject=False)
-        note("close", closed, gated_residual(ref_h, norm_c, down_c, up_c, None, hc, eps))
+        note("close", closed, ref_close)
+        mixed, injection = site(h.clone(), None, None, norm_w, eps, hc, di, up)
+        note("site", mixed, ref_mixed)
+        note("site_inject", injection, ref_inj)
+        note("site_close", site(h.clone(), out, ref_inj, norm_c, eps, hc, dc, up_c, inject=False)[0], ref_close)
     bad = {k: v for k, v in worst.items() if v[0] > band_max or v[1] > band_rms}
     if bad:
         raise RuntimeError(f"gated residual lane drifts from engine/modules/hyper_connection.gated_residual beyond "
@@ -684,5 +800,5 @@ def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.
     return worst
 
 
-__all__ = ["DECODE_ROWS", "pack_down_inject", "norm_streams", "leave", "leave_norm", "mix", "folds", "mix_rows", "drift",
-           "blame", "qualify"]
+__all__ = ["DECODE_ROWS", "pack_down_inject", "norm_streams", "leave", "leave_norm", "stream_scales", "site", "mix",
+           "folds", "mix_rows", "mix_block", "block_tiles", "drift", "blame", "qualify"]

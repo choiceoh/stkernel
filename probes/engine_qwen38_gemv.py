@@ -384,5 +384,106 @@ def run_site_components(output=None) -> dict:
     return report
 
 
+# down tiles a whole site tries with the streams normalised inside the fold, besides the table's
+WHOLE_TRIES = ((128, 64, 64, 4, 3, 1), (256, 64, 64, 8, 3, 1), (128, 128, 32, 8, 3, 1), (64, 128, 64, 4, 3, 2))
+
+
+def run_site_whole(output=None) -> dict:
+    """A whole site at a prefill step's rows -- the leave into the streams, the stream norm, the mixer -- `PREFILL_SITES`
+    a graph, interleaved: as main served it (leave_norm, then five launches on cuBLAS); leave_norm then mix_block (the
+    normalised streams written and read back); and gated_residual.site's way (the leave keeps each stream's scale,
+    mix_block normalises what it reads, the [N, hc*H] write gone) at the table's down tile and WHOLE_TRIES'. Also the
+    leave alone both ways. Each arm held to main's within two BF16 steps, and the scale way byte for byte the written
+    way at the same tile (the streams reset before each check)."""
+    import torch
+    from engine.kernels import gated_residual as hcr
+    torch.manual_seed(0)
+    width, eps = HC * HIDDEN, 1e-6
+    down = torch.randn(RANK + HC, width, device="cuda", dtype=torch.bfloat16) * 0.02
+    up = torch.randn(width, RANK, device="cuda", dtype=torch.bfloat16) * 0.02
+    w = torch.randn(width, device="cuda", dtype=torch.bfloat16) * 0.1
+    report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "sites_a_graph": PREFILL_SITES,
+              "table": {"down": [[r, list(t)] for r, t in hcr.DOWN_TILES], "up": list(hcr.UP_BLOCK_TILE)}, "rows": {}}
+    for m in COMPONENT_ROWS:
+        h0 = torch.randn(m, width, device="cuda", dtype=torch.bfloat16)
+        h = h0.clone()
+        out = torch.randn(m, HIDDEN, device="cuda", dtype=torch.bfloat16)
+        inj = torch.rand(m, HC, device="cuda", dtype=torch.bfloat16) * 0.01   # small: the streams stay put over replays
+        keep = []
+
+        def graph_of(fn):
+            keep.append(fn())
+            torch.cuda.synchronize()
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                for _ in range(PREFILL_SITES):
+                    keep.append(fn())
+            return g
+
+        def main_served():
+            _, normed = hcr.leave_norm(h, out, inj, w, eps, HC)
+            return hcr.mix(normed, down, up, HC, project_down=lambda t: torch.mm(t, down.t()),
+                           project_up=lambda t: torch.mm(t, up.t()))
+
+        def written(tile):
+            tiles = dict(hcr.block_tiles(m), down=tile)
+
+            def fn():
+                _, normed = hcr.leave_norm(h, out, inj, w, eps, HC)
+                return hcr.mix_block(normed, down, up, HC, tiles=tiles)
+            return fn
+
+        def scaled(tile):
+            tiles = dict(hcr.block_tiles(m), down=tile)
+
+            def fn():
+                scale = hcr.stream_scales(h, out, inj, eps, HC)
+                return hcr.mix_block(h, down, up, HC, tiles=tiles, norm=(scale, w))
+            return fn
+
+        tries = ([hcr.block_tiles(m)["down"]] if hcr.block_tiles(m)["down"] is not None else []) + [
+            t for t in WHOLE_TRIES if t != hcr.block_tiles(m)["down"]]
+        h.copy_(h0)
+        ref = main_served()
+        checks = {}
+        for tile in tries:
+            h.copy_(h0)
+            a = written(tile)()
+            h.copy_(h0)
+            b = scaled(tile)()
+            checks[f"{tile}"] = {"scaled_is_written_bytes": bool(torch.equal(a[0], b[0]) and torch.equal(a[1], b[1])),
+                                 "vs_main_mixed": round(hcr.drift(b[0], ref[0])[0], 6),
+                                 "vs_main_inject": round(hcr.drift(b[1], ref[1])[0], 6)}
+        h.copy_(h0)
+        arms = {"main: leave_norm + five launches": graph_of(main_served),
+                "leave_norm alone": graph_of(lambda: hcr.leave_norm(h, out, inj, w, eps, HC)[1]),
+                "stream_scales alone": graph_of(lambda: hcr.stream_scales(h, out, inj, eps, HC))}
+        if hcr.block_tiles(m)["down"] is not None:
+            arms["site (table)"] = graph_of(lambda: hcr.site(h, out, inj, w, eps, HC, down, up))
+        for tile in tries:
+            arms[f"written {tile}"] = graph_of(written(tile))
+            arms[f"scaled {tile}"] = graph_of(scaled(tile))
+        times = {name: [] for name in arms}
+        for _ in range(ROUNDS):
+            for name, g in arms.items():
+                g.replay()
+                torch.cuda.synchronize()
+                began = time.perf_counter()
+                g.replay()
+                torch.cuda.synchronize()
+                times[name].append((time.perf_counter() - began) / PREFILL_SITES * 1e6)
+        del arms, keep
+        row = {name: {"median": round(statistics.median(v), 1), "min": round(min(v), 1)} for name, v in times.items()}
+        report["rows"][m] = {"us_a_site": row, "checks": checks}
+        print(json.dumps({f"whole site rows {m}": {k: v["median"] for k, v in row.items()}, "checks": checks}),
+              flush=True)
+        del h, h0, out, inj
+        torch.cuda.empty_cache()
+    if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps(report, indent=1) + "\n")
+    return report
+
+
 if __name__ == "__main__":
     run(sys.argv[1] if len(sys.argv) > 1 else None)

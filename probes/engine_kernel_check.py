@@ -254,6 +254,12 @@ def main():
         from probes.engine_qwen38_gemv import run_site_components
         run_site_components(args.output)
         return
+    if args.lanes == 'qwen38_site_whole':
+        # a whole site at a prefill step's rows -- leave, norm, mixer -- as main served it, with the normalised streams
+        # written for mix_block, and as gated_residual.site serves it (stream scales kept, the tiles normalised as read)
+        from probes.engine_qwen38_gemv import run_site_whole
+        run_site_whole(args.output)
+        return
     if args.lanes == 'qwen38_site_prefill':
         # the mixer at a prefill step's rows: the five launches it served before against gated_residual.mix_block's two
         # (the up product never written), with a tile sweep -- what the fold is worth where the chunk spends 43%

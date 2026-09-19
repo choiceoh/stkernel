@@ -108,6 +108,10 @@ class Lanes:
     ple_gate: object = None         # (h [N, hc*H], key [N, hc*H], value [N, H], q_norm, k_norm, conv_norm, eps, hc)
                                     #  -> (gated, normed) [N, hc*H]: the PLE injection's gate and conv norm in one launch
                                     #  (engine/kernels/ngram_gate); None: the module's torch form
+    hc_site: object = None          # (h, out | None, inject | None, w, eps, hc, down_inject, up, *, inject, prefetch=None)
+                                    #  -> (mixed [N, H], inject [N, hc] | None), h left into in place: hc_leave_norm (or
+                                    #  hc_norm) and hc_mix in one call, so a prefill step's rows need not write the
+                                    #  normalised streams (gated_residual.site); None: the two calls
 
 
 # How a served leave meets the TP sum before it (carry H4, engine/kernels/gated_residual.leave_norm): "off", launched
@@ -444,6 +448,10 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
     def hc_leave_norm(h, out, inject, w, eps, hc, *, prefetch=None):
         return hcr.leave_norm(h, out, inject, w, eps, hc, pdl=pdl, prefetch=prefetch if leave == "prefetch" else None)
 
+    def hc_site(h, out, injection, w, eps, hc, down_inject, up, *, inject=True, prefetch=None):
+        return hcr.site(h, out, injection, w, eps, hc, down_inject, up, inject=inject, pdl=pdl,
+                        prefetch=prefetch if leave == "prefetch" else None)
+
     # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
     md.configure_ep_zero_weight_micro(True)
     common = common_lanes()
@@ -458,7 +466,8 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
                  rows_linear=on_main(linear_rows), router_logits=on_main(router_fp32.router_logits),
-                 moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate), leave=leave)
+                 moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate), hc_site=on_main(hc_site),
+                 leave=leave)
 
 
 def qualify(device, F) -> dict:
