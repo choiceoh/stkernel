@@ -130,7 +130,8 @@ def prompt_passes(model, caches, F, *, chunk: int, chunks: int, seed: int) -> "l
                     if run == "wall":
                         row["wall_ms"] = round((time.perf_counter() - began) * 1e3, 2)
         finally:
-            model.close(seq)
+            model.close(seq)                                 # the store lets the slot go ...
+            model.forget(seq)                                # ... and the model its tokens: the next pass adds seq again
             caches.pool.release(seq)
             caches.slots.give(slot)
             caches.reset()

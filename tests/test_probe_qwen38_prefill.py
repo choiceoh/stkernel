@@ -91,6 +91,54 @@ class LaneTests(unittest.TestCase):
         self.assertIn("total = chunk * chunks + F.block", source)          # the prompt outlasts what is prefilled
         self.assertEqual(probe.LAYER_SETS, ((4, 5, 6, 7), (4, 5), (7,), (1,)))
 
+    def test_three_passes_over_one_sequence_close_and_forget_it_each_time(self):
+        # the first GB10 run (qwen38-prefill-census-0919b) died at the second pass's add: close() lets the store's slot
+        # go, and the model still held seq 0's tokens ("live or has an uncollected result")
+        import torch
+        seen, tokens = [], {}
+
+        class Model:
+            def add(self, seq, ids, temperature=None):
+                if seq in tokens:
+                    raise ValueError(f"seq {seq} is live or has an uncollected result")
+                tokens[seq] = ids
+            def open(self, seq, slot):
+                seen.append("open")
+            def prefill(self, seq, start, n, blocks, slot):
+                seen.append(("prefill", start, n))
+            def close(self, seq):
+                seen.append("close")
+            def forget(self, seq):
+                tokens.pop(seq, None)
+                seen.append("forget")
+
+        pool = SimpleNamespace(reserve=lambda seq, n: None, release=lambda seq: None)
+        slots = SimpleNamespace(take=lambda seq: 1, give=lambda slot: None)
+        caches = SimpleNamespace(pool=pool, slots=slots, reset=lambda: None)
+        F = SimpleNamespace(block=64, vocab=1000)
+        import torch.profiler as tp
+        synchronize, real = torch.cuda.synchronize, tp.profile
+        torch.cuda.synchronize = lambda: None
+        try:
+
+            class Quiet:
+                def __init__(self, **kwargs):
+                    pass
+                def __enter__(self):
+                    return self
+                def __exit__(self, *exc):
+                    return False
+                def key_averages(self):
+                    return [SimpleNamespace(key="_qsa_x", count=1, self_device_time_total=1000.0)]
+            tp.profile = Quiet
+            rows = probe.prompt_passes(Model(), caches, F, chunk=128, chunks=2, seed=0)
+        finally:
+            torch.cuda.synchronize = synchronize
+            tp.profile = real
+        self.assertEqual(seen.count("forget"), 3)
+        self.assertEqual([s for s in seen if isinstance(s, tuple)], [("prefill", 0, 128), ("prefill", 128, 128)] * 3)
+        self.assertEqual([r["context"] for r in rows], [0, 128])
+
     def test_the_memory_ceiling_is_the_tickets_budget(self):
         self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": "8"}), 7.0)      # less the context the allocator does not see
         self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": "1.5"}), 1.0)
