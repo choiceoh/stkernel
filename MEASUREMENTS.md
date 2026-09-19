@@ -4911,6 +4911,14 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **곁가지 하나.** 09-19 의 W8A16 항목(#1246)이 제목 줄을 두 번 들고 있었다(`PR #TBD` 와 `PR #1246`, 본문은 하나).
   `#TBD` 줄을 지웠다 — 본문은 손대지 않았다.
 
+### Qwen3.8 MTP BF16 투영 — skinny GEMV 표에 다섯 모양, 넷은 1 행도: 1 행 ×1.31~1.49, 4~16 행 ×1.03~1.31 (2026-09-19, srv4 단일 GPU 레인, PR #1258)
+MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS` 에 그 모양이 없어 전부 `torch.mm` 이었다. 목표 층의 같은 투영은 W4A8 레인 — 새 모양은 드래프터만 탄다.
+**발사 시간이다 — 드래프트 그래프 판정은 `q38mtpgemv-0919a`(대기).**
+- **스윕(`q38gemv-0919e`, µs, cuBLAS → 고른 타일):** 1 행 in_proj 132.0 → 97.1, fc 81.5 → 58.2, o_proj 48.1 → 36.8, 공유 down 4.8 → 3.2(cuBLAS gemv 161~172 GB/s 대
+  213~257); 4~16 행은 ×1.03~1.07(공유 down ×1.26~1.31, 공유 gate_up ×1.16~1.19). 공유 gate_up 의 1 행은 cuBLAS 가 이김(8.7 대 9.6) → `ONE_ROW` 에서 뺌.
+  상대 오차 ≤ 0.0036, 반복 바이트 동일. 라우터의 `MIN_ROWS = 2`(1 행 비김, `q38gemv-0919c`)는 그대로.
+- **추정:** C=1 K=3 드래프트 그래프 체인 스텝마다 −74 µs, 관측 −13 µs → 스텝당 −0.15~−0.17 ms(창 K=3 스텝 35.5 ms 의 ~0.5%).
+- 프로브: `qwen38_step_mtp_gemv` 레인(`mtp-mm` 팔 = MTP 모양만 표에서 빼 `torch.mm`). [상세·원시](measurements/qwen38_mtp_gemv_20260919/README.md).
 ### Qwen3.8 — dynamic MoE 타일 밴드를 eager 워밍업에 넣은 뒤 문 뒤에서 처음 쓰는 커널: K=1 8 · K=3 7, dynamic MoE 0 (2026-09-19, srv4 단일 GPU 레인 2회)
 - `--lanes qwen38_serve_compiles:K`(브랜치 `eager-moe-dynamic-bands` = main `b5613857` + 밴드 넷): b12x dynamic 커널이 요청 중 0(main 에서 3). 남은 것은 conv 5(#1238), `_mix_mean` 타일 1, QSA split-K merge 1(K=1), 점수 커널 G 1 변형 1 — 넷 모두 한 번 컴파일되면 디스크에 남는 유한 집합. 다른 세션 창의 `micro_m1/m3_…_t10_r80` 은 C=1 K=1 에서 재현되지 않음. 속도 주장 없음. [기록](measurements/qwen38_serve_compiles_20260919c/README.md).
 ### Qwen3.8 두 번째 운영자 창 — S2 입력 재사용 기각(o_proj +4.5~+13.6%, in_proj ±2%), H6 `--hc-fp8` 디코드 C=1 +9.6% 기각, M5 확인 쌍 무효 (2026-09-19 14:29~14:43, 네 Spark + srv4 단일 레인)

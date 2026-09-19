@@ -26,7 +26,8 @@ class TableTests(unittest.TestCase):
                 self.assertEqual(block & (block - 1), 0, (n, k))
                 self.assertGreaterEqual(block, 16, (n, k))
             self.assertLessEqual(-(-n // block_n), sg.MAX_BLOCKS)
-            self.assertLessEqual(split * block_k, k, "a split past K launches programs with nothing to read")
+            if split > 1:                               # one program's K tile may pass K: masked (the MTP shared down's 160)
+                self.assertLessEqual(split * block_k, k, "a split past K launches programs with nothing to read")
             self.assertIn(warps, (1, 2, 4, 8))
             self.assertGreaterEqual(stages, 1)
 
@@ -47,6 +48,23 @@ class TableTests(unittest.TestCase):
             other = torch.randn(n + 1, k).bfloat16()
             x = cases["cpu"]
             self.assertTrue(torch.equal(sg.linear_rows(x, other), torch.mm(x, other.t())))
+
+    def test_one_row_goes_to_the_kernel_only_for_a_one_row_shape(self):
+        from unittest.mock import Mock, patch
+        from engine.kernels.common import skinny_gemv as sg
+        self.assertTrue(sg.ONE_ROW <= set(sg.CONFIGS), "a one-row shape with no tile")
+        self.assertNotIn((513, 2560), sg.ONE_ROW, "the router's one row ties cuBLAS's gemv (q38gemv-0919c)")
+        self.assertNotIn((320, 2560), sg.ONE_ROW, "the shared gate_up's one row is cuBLAS's (q38gemv-0919e)")
+
+        def operand(shape):                             # CUDA-shaped operands, so the dispatch runs on the CPU
+            return Mock(is_cuda=True, shape=shape, dtype=torch.bfloat16, stride=lambda d: 1, t=lambda: "w.T")
+
+        with patch.object(sg, "gemv", return_value="kernel") as kernel, patch.object(torch, "mm", return_value="mm"):
+            for n, k in sorted(sg.CONFIGS):
+                for rows in (1, 2, sg.MAX_ROWS, sg.MAX_ROWS + 1):
+                    want = "kernel" if (rows >= 2 or (n, k) in sg.ONE_ROW) and rows <= sg.MAX_ROWS else "mm"
+                    self.assertEqual(sg.linear_rows(operand((rows, k)), operand((n, k))), want, (n, k, rows))
+            self.assertTrue(all(call.args[2] == sg.CONFIGS[tuple(call.args[1].shape)] for call in kernel.call_args_list))
 
 
 @unittest.skipUnless(READY and (INTERPRET or (torch is not None and torch.cuda.is_available())),
@@ -71,6 +89,9 @@ class ProductTests(unittest.TestCase):
 
     def test_one_program_a_column_block(self):
         self.check(40, 320, (16, 64, 1, 4, 2))          # a ragged last column block, K in five tiles
+
+    def test_one_k_tile_past_k(self):
+        self.check(40, 160, (64, 256, 1, 4, 1))         # the MTP shared down's K: one tile, masked past 160
 
     def test_a_split_sums_its_partials_in_split_order(self):
         self.check(40, 1280, (16, 128, 4, 4, 2))        # 40 columns: three blocks, the last ragged
