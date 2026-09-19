@@ -45,12 +45,10 @@ import triton.language as tl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from engine.kernels import gated_residual as hcr  # noqa: E402
-
-try:                                                # the single-GPU lane ships engine/ and probes/ to its box, not bench/
-    from bench.probe_report import write_report     # noqa: E402
-except ModuleNotFoundError:
-    def write_report(metrics, proof, samples, device):
-        """No queue contract to report through here: the printed table and the JSON line are the record."""
+# The report's writer lives under probes/ because that is what the single-GPU lane ships to its box (engine/, probes/,
+# tests/ -- not bench/). Imported from bench/ this probe died there on this line (2026-09-19), and behind a guard its
+# report was silently dropped on the one lane it is for.
+from probes.probe_report import write_report  # noqa: E402
 
 HC, HIDDEN, RANK = 4, 2560, 320                     # Qwen3.8's streams, hidden width and mixer rank (hc_lowrank)
 ROWS = (1, 2, 4, 6, 8)                              # a captured step's token rows: max_seqs 4 x (SPEC_K + 1)

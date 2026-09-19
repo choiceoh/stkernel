@@ -12,6 +12,7 @@ boot. This names them, per file:
     python3 bench/feedback.py engine/kernels/mhc_contract.py
     python3 bench/feedback.py --base origin/main          # what this branch changed
     python3 bench/feedback.py --index > feedback.json     # the whole graph, for a code-graph consumer
+    python3 bench/feedback.py --lane-audit                # would the queue take what the probes tell you to run?
 
 Nothing here is declared by hand, so nothing here can go stale on its own. A rung's LANE is
 what the queue already admits, read from the module that decides it:
@@ -23,7 +24,7 @@ what the queue already admits, read from the module that decides it:
 and its DISTANCE is the import path from the check to the file (0 = the file is the check,
 1 = the check imports it, or names its repo path in a string). Everything is read with
 ast: no module is imported, so this answers on a laptop with no torch exactly as it does
-on a Spark.
+on a Spark. (--lane-audit is the exception, and the point: it asks the queue's own validator.)
 
 A probe that reaches the file but that ST_PROBES does not name is listed as `unadmitted`:
 the queue refuses it (standalone GPU scripts are rejected), so it is a check nobody can run
@@ -36,6 +37,8 @@ import argparse
 import ast
 import json
 from pathlib import Path
+import re
+import shlex
 import subprocess
 import sys
 
@@ -100,6 +103,26 @@ class Graph:
         path = self.root / text
         return path if path.is_file() else None
 
+    def resolved(self, node, path):
+        """The repo files one import statement loads: the module, and every parent package's __init__."""
+        if isinstance(node, ast.Import):
+            modules = [alias.name for alias in node.names]
+        else:
+            base = node.module or ''
+            if node.level:
+                package = path.parent
+                for _ in range(node.level - 1):
+                    package = package.parent
+                prefix = '' if package == self.root else package.relative_to(self.root).as_posix().replace('/', '.')
+                base = '.'.join(part for part in (prefix, base) if part)
+            modules = [base, *(base + '.' + alias.name for alias in node.names)]
+        for name in modules:
+            bits = name.split('.')
+            for end in range(1, len(bits) + 1):
+                target = self.module('.'.join(bits[:end]))
+                if target is not None and target != path:
+                    yield target
+
     def direct(self, path):
         """(what this file imports, what it names by path); a named file is a leaf, never followed."""
         if path in self._direct:
@@ -107,30 +130,37 @@ class Graph:
         imports, names = set(), set()
         tree = self.tree(path)
         for node in ast.walk(tree) if tree else ():
-            modules = []
-            if isinstance(node, ast.Import):
-                modules = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom):
-                base = node.module or ''
-                if node.level:
-                    package = path.parent
-                    for _ in range(node.level - 1):
-                        package = package.parent
-                    prefix = '' if package == self.root else package.relative_to(self.root).as_posix().replace('/', '.')
-                    base = '.'.join(part for part in (prefix, base) if part)
-                modules = [base, *(base + '.' + alias.name for alias in node.names)]
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                imports.update(self.resolved(node, path))
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
                 target = self.named(node.value)
                 if target is not None and target != path:
                     names.add(target)
-            for name in modules:
-                bits = name.split('.')
-                for end in range(1, len(bits) + 1):   # every parent package's __init__ runs too
-                    target = self.module('.'.join(bits[:end]))
-                    if target is not None and target != path:
-                        imports.add(target)
         self._direct[path] = (imports, names)
         return self._direct[path]
+
+    def eager(self, source):
+        """Every repo file that IMPORTING `source` executes: imports at module level, not inside a def.
+
+        `reach` asks what a check is about, so a lazy import counts. This asks what must exist for the
+        check to start at all -- the single-GPU lane's host gets engine/, probes/ and tests/ and nothing
+        else, so a module-level `from bench...` in a check it admits dies there on its import line.
+        """
+        seen, frontier = set(), [source]
+        while frontier:
+            path = frontier.pop()
+            tree = self.tree(path)
+            stack = list(tree.body) if tree else []
+            while stack:
+                node = stack.pop()
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    for target in self.resolved(node, path):
+                        if target not in seen:
+                            seen.add(target)
+                            frontier.append(target)
+                elif not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+                    stack.extend(ast.iter_child_nodes(node))
+        return seen
 
     def reach(self, source):
         """{file: distance} from one check, breadth first over imports; names only from the check itself."""
@@ -206,6 +236,49 @@ class Graph:
                     scope='rungs narrow a hypothesis; only the verdict lane is a speed verdict')
 
 
+RUNNER = re.compile(r'(?:bash\s+)?probes/(run_engine_probe\.sh|run_engine_check\.sh)\b(.*)')
+CONTINUED = re.compile(r'\\s*\n\s*')                      # a trailing backslash and the next line's indent
+
+
+def instructed(doc):
+    """Every ST runner command a docstring spells out, as argv: continuation lines joined, [optional] parts and
+    <placeholders> (with the flag they stand for) dropped, so what is left is what a reader would paste."""
+    for line in CONTINUED.sub(' ', doc or '').splitlines():
+        found = RUNNER.search(line)
+        if not found:
+            continue
+        tail = re.split(r'\s(?:#|\||&&|2?>)', ' ' + re.sub(r'\[[^\]]*\]', ' ', found.group(2)))[0]
+        tail = re.sub(r'(?:--[A-Za-z][\w-]*\s+)?\S*<[^>]*>\S*', ' ', tail)
+        try:
+            words = [word.rstrip('.,;:)`\'"') for word in shlex.split(tail)]
+        except ValueError:
+            continue
+        yield ['bash', 'probes/' + found.group(1), *[word for word in words if word]]
+
+
+def lane_audit(graph):
+    """(probe, argv, refusal or None) for every runner command a probe's own docstring tells a reader to run.
+
+    On 2026-09-18 a ticket was refused on srv4 because the probe it named was not in ST_PROBES, and the fix
+    was a pull request (#1192); the probe's docstring had named the lane all along. This finds that on a CPU.
+    """
+    sys.path.insert(0, str(graph.root / 'bench'))
+    import fleet_onepass
+    rows = []
+    for source in graph.sources():
+        if source['lane'] == 'cpu':
+            continue
+        path = graph.root / source['path']
+        tree = graph.tree(path)
+        for argv in instructed(ast.get_docstring(tree) if tree else ''):
+            try:
+                fleet_onepass.validate(argv, graph.root, graph.root, {}, kind=fleet_onepass.SINGLE)
+                rows.append((source['path'], argv, None))
+            except ValueError as exc:
+                rows.append((source['path'], argv, str(exc).split('; ', 1)[-1]))
+    return rows
+
+
 def changed(root, base):
     out = subprocess.check_output(['git', '-C', str(root), 'diff', '--name-only', '--diff-filter=d', base, 'HEAD'], text=True)
     return [line for line in out.splitlines() if line.strip()]
@@ -240,11 +313,19 @@ def main(argv=None):
     parser.add_argument('--base', help='instead of files: what HEAD changed since this revision')
     parser.add_argument('--all', action='store_true', help='every check of each lane, not the nearest three')
     parser.add_argument('--index', action='store_true', help='the whole graph as JSON')
+    parser.add_argument('--lane-audit', action='store_true', help='every runner command a probe documents, and whether the queue takes it')
     parser.add_argument('--depth', type=int, default=2, help='--index: how many imports away a file still counts (2)')
     parser.add_argument('--json', action='store_true', help='the ladders as JSON')
     parser.add_argument('--root', type=Path, default=ROOT)
     args = parser.parse_args(argv)
     graph = Graph(args.root)
+    if args.lane_audit:
+        rows = lane_audit(graph)
+        refused = [row for row in rows if row[2]]
+        for probe, argv, why in refused:
+            print(probe, '  $ ' + ' '.join(argv), '  refused: ' + why, sep='\n')
+        print(f'{len(rows)} documented runner command(s): {len(rows) - len(refused)} the single-GPU lane takes, {len(refused)} it refuses')
+        return 1 if refused else 0
     if args.index:
         print(json.dumps(graph.index(args.depth), indent=1, ensure_ascii=False))
         return 0
