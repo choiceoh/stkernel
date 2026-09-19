@@ -62,9 +62,11 @@ class ConsumeDenseTests(unittest.TestCase):
         self.assertTrue(kept)
         self.assertEqual(sorted(kept), sorted(net.retained_sources))
         # the target's shared-expert down projection: its W4 packs at 256 columns outgrow the 160-column source; the
-        # MTP head's is FP8 only (mtp_precision "fp8", the default) and fits
+        # MTP head's projections have no lane at all (mtp_precision "bf16", the default: torch's matmul over the source)
         self.assertEqual({key.split(".", 1)[1] for key in kept}, {"moe.sh_down"})
         self.assertTrue(all(key.startswith("L") for key in kept))
+        self.assertFalse(any(key.startswith("mtp.") for key in net.dense))
+        self.assertTrue(all(net.p[key] is not None for key in net.dense_names(net.p) if key.startswith("mtp.")))
         self.assertEqual(len(consumed), len(lanes) - len(kept))
         for key, lane in lanes.items():
             with self.subTest(key=key):

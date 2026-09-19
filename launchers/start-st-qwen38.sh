@@ -57,11 +57,11 @@ case "${ST_HC_FP8:-0}" in
   1) HC_ARG="--hc-fp8" ;;
   *) echo "ST_HC_FP8 must be 0 or 1" >&2; exit 2 ;;
 esac
-MTP_ARG=""                                                    # ST_MTP_PRECISION=fp8|bf16|w4: the MTP head's dense projections (fleet default fp8)
+MTP_ARG=""                                                    # ST_MTP_PRECISION=bf16|fp8|w4: the MTP head's dense projections (fleet default bf16)
 if [ -n "${ST_MTP_PRECISION:-}" ]; then
   case "$ST_MTP_PRECISION" in
-    fp8|bf16|w4) MTP_ARG="--mtp-precision $ST_MTP_PRECISION" ;;
-    *) echo "ST_MTP_PRECISION must be fp8, bf16 or w4" >&2; exit 2 ;;
+    bf16|fp8|w4) MTP_ARG="--mtp-precision $ST_MTP_PRECISION" ;;
+    *) echo "ST_MTP_PRECISION must be bf16, fp8 or w4" >&2; exit 2 ;;
   esac
 fi
 ONESHOT_ARG=""                                                # ST_ONESHOT=0: every collective on NCCL (the one-shot cell at hidden 2560 is unmeasured)

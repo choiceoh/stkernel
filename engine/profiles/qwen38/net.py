@@ -59,7 +59,7 @@ from engine.profiles.qwen38.ple_table import PLEStaging, local_rows
 BF16, F32 = torch.bfloat16, torch.float32
 HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
 HC_NAME = "Qwen4ExpForCausalLM/hyper_connection"    # the FP8 mixer lanes' names (hc_fp8; no calibration yet)
-MTP_PRECISIONS = ("fp8", "bf16", "w4")                 # the MTP head's dense projections (Qwen38Net mtp_precision)
+MTP_PRECISIONS = ("bf16", "fp8", "w4")                 # the MTP head's dense projections (Qwen38Net mtp_precision)
 FIRST_BUCKET = 4096                                # tokens of the smallest context bucket; each next one doubles
 
 
@@ -170,7 +170,7 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = True, mtp_precision: str = "fp8"):
+                 query_shards: bool = True, mtp_precision: str = "bf16"):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
@@ -184,9 +184,9 @@ class Qwen38Net:
         scores every row as before.
 
         `mtp_precision`: the MTP head's dense projections (its attention's two, its shared expert's two), which the
-        checkpoint keeps in BF16. "fp8" (the default since the operator's 2026-09-19 "bf16이나 fp8로"): block-scaled
-        FP8 at every row count, decode rows on dense/fp8_rows -- about the bytes W4 read, at FP8's error. "bf16": the
-        checkpoint's weights through torch's matmul, no quantisation. "w4": the target layers' W4A8 at decode rows, as
+        checkpoint keeps in BF16. "bf16" (the default, the operator's decision of 2026-09-19): the checkpoint's weights
+        through torch's matmul, no quantisation -- a K=3 draft graph 4.39 ms against W4A8's 3.97 (q38mtp-0919a). "fp8":
+        block-scaled FP8, decode rows on dense/fp8_rows, 4.10 ms. "w4": the target layers' W4A8 at decode rows, as
         before. A drafter's numbers change how many tokens a step yields, never which (verification picks them)."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
@@ -208,6 +208,7 @@ class Qwen38Net:
         self.rec_ring = F.spec_k + 1                   # GDN states kept per slot: one per verify position
         self.p = None
         self.dense = {}
+        self.draft_index = None                         # dense/ivf_head over the head's rows (prepare_draft_head)
         self._experts = {}
         self._ple = self._ple_hash = self._ple_scale = None
         self.ple_table = self.ple_stage = None          # attach_ple: the rank's SSD table and the staged rows
@@ -274,9 +275,9 @@ class Qwen38Net:
             weight = self.p[key]
             aligned = weight.shape[1] % 128 == 0
             mtp = key.startswith("mtp.")
-            if mtp and getattr(self, "mtp_precision", "fp8") == "bf16":
+            if mtp and getattr(self, "mtp_precision", "bf16") == "bf16":
                 continue                                             # self.linear: torch's BF16 matmul over p[key]
-            precision = "fp8" if mtp and getattr(self, "mtp_precision", "fp8") == "fp8" else "w4"
+            precision = "fp8" if mtp and getattr(self, "mtp_precision", "bf16") == "fp8" else "w4"
             options = dict(decode_precision="fp8", fp8_decode_rows=True) if precision == "fp8" else {}
             lane = DenseLinear(weight, store=store, name=name, **options) if aligned else \
                 PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None, **options)
@@ -346,6 +347,26 @@ class Qwen38Net:
     def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:
         from engine.modules.vocab import argmax
         return argmax(self.head_local(h)[:, :self.vp], self.comm, self.rank * self.vp, decodable)
+
+    def prepare_draft_head(self, clusters: int, probes: int) -> dict:
+        """After prepare_dense: the MTP head's argmax from an inverted-file index over this rank's head rows
+        (dense/ivf_head) instead of the whole head -- a few MB a draft instead of 159. The verify step's head is
+        untouched: a draft the index gets wrong is rejected, never emitted. -> the index's shape, for the boot's gauges."""
+        from engine.kernels.dense import ivf_head
+        self.draft_index = ivf_head.build(self.dense["head"].weight, clusters=clusters, probes=probes, rows=self.vp)
+        return {"clusters": clusters, "probes": probes, "cap": self.draft_index.cap,
+                "read_MB": round(self.draft_index.read_bytes() / 1e6, 2)}
+
+    def draft_tokens(self, h: torch.Tensor) -> torch.Tensor:
+        """The drafter's greedy picks: `head_tokens` over the whole head, or the index's argmax where one is prepared
+        (the same key, all-reduced the same way)."""
+        index = self.draft_index
+        if index is None or not h.is_cuda or not 1 <= h.shape[0] <= 16:
+            return self.head_tokens(h)
+        from engine.kernels.dense import ivf_head
+        key = ivf_head.argmax_key(index, h, self.rank * self.vp, self.vp)
+        key = self.comm.all_reduce_max(key)
+        return 0xffffffff - (key & 0xffffffff)
 
     # -- the step's addressing -----------------------------------------------------------------------------------------
     def step_meta(self, step, caches) -> StepMeta:

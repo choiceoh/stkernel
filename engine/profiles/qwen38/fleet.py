@@ -111,7 +111,7 @@ def rank_loader(path, *, expected_layout: str):
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
-          spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "fp8"):
+          spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16"):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it."""
@@ -279,8 +279,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-drafter", action="store_true", help="serve without the MTP head")
     ap.add_argument("--hc-fp8", action="store_true",
                     help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them; the mixer's numbers change, so a quality bracket judges it)")
-    ap.add_argument("--mtp-precision", choices=("fp8", "bf16", "w4"), default="fp8",
-                    help="the MTP head's dense projections: block-scaled FP8 (default), the checkpoint's BF16, or the "
+    ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",
+                    help="the MTP head's dense projections: the checkpoint's BF16 (default), block-scaled FP8, or the "
                          "target layers' W4A8 at decode rows (before 2026-09-19); acceptance moves, output does not")
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "

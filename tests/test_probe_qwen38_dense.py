@@ -63,8 +63,8 @@ class Cases(unittest.TestCase):
         cases = self.probe.qwen38_cases(self.F)
         self.assertEqual({(c.lane, c.rows, c.cols): list(c.keys) for c in cases}, expected)
         self.assertEqual(len(cases), len(expected))
-        # every layer's mixer in/out and shared expert gate_up/down, the MTP head's layer included
-        self.assertEqual(sum(len(c.keys) for c in cases), 4 * (self.F.layers + self.F.mtp_layers))
+        # every layer's mixer in/out and shared expert gate_up/down; the MTP head's are BF16 (no lane) by default
+        self.assertEqual(sum(len(c.keys) for c in cases), 4 * self.F.layers)
         self.assertTrue(all(c.model == "qwen38" for c in cases))
 
     def test_the_probe_builds_each_lane_with_prepare_dense_s_arguments(self):

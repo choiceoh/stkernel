@@ -205,7 +205,7 @@ class ServedMTP:
         step = Step(ids, (Segment(seq, slot, ctx, 0, ids.numel()),))
         self.caches.prepare(step)
         hidden, streams = self.net.mtp_forward(step, given, self.caches, last_hidden_only=True)
-        token = int(self.net.head_tokens(hidden)[0])
+        token = int(self.net.draft_tokens(hidden)[0])
         return token, streams
 
     def _run_waiting(self, seqs) -> None:

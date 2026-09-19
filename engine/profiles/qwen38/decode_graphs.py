@@ -170,12 +170,12 @@ def draft_chain(net, caches, step, given, last, counts, k: int) -> torch.Tensor:
     run over every row at once) -- each step's pick: [rows, k] int64. The chain's rows sit in the target's blocks at
     their positions like a padded row's: provisional, overwritten by the row's next step."""
     hidden, streams = net.mtp_forward(step, given, caches, last_hidden_only=False)
-    picks = [net.head_tokens(hidden.index_select(0, last))]
+    picks = [net.draft_tokens(hidden.index_select(0, last))]
     given, contexts = streams.index_select(0, last), step.contexts + counts
     for _ in range(1, k):
         chain = DeviceStep(picks[-1], contexts, step.slots, step.seqs, 1, step.blocks)
         hidden, streams = net.mtp_forward(chain, given, caches, last_hidden_only=False)
-        picks.append(net.head_tokens(hidden))
+        picks.append(net.draft_tokens(hidden))
         given, contexts = streams, contexts + 1
     return torch.stack(picks, dim=1)
 

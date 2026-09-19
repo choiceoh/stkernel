@@ -49,7 +49,7 @@ SPEC_K = 3                                # the operator's K (#1182: fleet --spe
 MAX_GIB = 4.0                             # this process's own device-memory ceiling: the lane's budget beside production
 FULL = {"fixed": 1, "gdn": 36, "qsa": 12, "ple": 1}
 ARMS = ("served", "mm")                   # qwen38_step_ab: the served lanes, and the lanes before the skinny GEMV
-MTP_ARMS = ("served", "mtp-w4", "mtp-bf16")   # qwen38_step_mtp: the MTP head's dense projections FP8 (served), W4A8, BF16
+MTP_ARMS = ("served", "mtp-w4", "mtp-fp8")    # qwen38_step_mtp: the MTP head's dense projections BF16 (served), W4A8, FP8
 
 FAMILIES = (
     ("moe b12x", r"[Mm]oe|[Mm]icro|[Ss]tatic|[Dd]ynamic|b12x|kernel_cutlass"),
@@ -130,7 +130,7 @@ def extrapolate(parts: dict, full=FULL) -> float:
 
 
 def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K,
-          mtp_precision: str = "fp8"):
+          mtp_precision: str = "bf16"):
     """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft), at
     `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them)."""
     import dataclasses
@@ -357,7 +357,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
             max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False, arm: str = "served") -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row.
     `arm` "mm": the skinny GEMV's table emptied first -- the router on torch.mm, the mixers in five launches on cuBLAS;
-    "mtp-w4" / "mtp-bf16": the MTP head's dense projections at that precision instead of the served FP8."""
+    "mtp-w4" / "mtp-fp8": the MTP head's dense projections at that precision instead of the served BF16."""
     import torch
     if arm not in ARMS + MTP_ARMS:
         raise ValueError(f"arm {arm!r}: one of {ARMS + MTP_ARMS}")
@@ -373,7 +373,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     _, shape_source = kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
     began = time.perf_counter()
     F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib,
-                                          mtp_precision=arm[4:] if arm.startswith("mtp-") else "fp8")
+                                          mtp_precision=arm[4:] if arm.startswith("mtp-") else "bf16")
     built = time.perf_counter() - began
     graphs = {}
     for n, blocks in shapes:

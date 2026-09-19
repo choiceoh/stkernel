@@ -45,6 +45,9 @@ class RecordingNet:
     def head_tokens(self, hidden):
         return torch.ones(hidden.shape[0], dtype=torch.int64)
 
+    def draft_tokens(self, hidden):
+        return self.head_tokens(hidden)
+
 
 class RecordingCaches:
     def __init__(self, spec_k: int = 1):
