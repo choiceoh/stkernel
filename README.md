@@ -54,7 +54,7 @@ python3 tools/dev_doctor.py --json
 
 | 디렉터리 | 내용 |
 |---|---|
-| `engine/` | **ST 엔진** — `base/`(아레나·로더·KV·스케줄러·리스·설정), `modules/`(특징 모듈 가족), `kernels/`(NVFP4·b12x·MLA·KDA·MHC·oneshot AR), `profiles/`(glm53·qwen38 모델 형상과 부팅), `runtime/`(독립 이미지 빌드·검증) |
+| `engine/` | **ST 엔진** — `base/`(아레나·로더·KV·스케줄러·리스·설정), `modules/`(특징 모듈 가족), `kernels/`(NVFP4·b12x·MLA·KDA·MHC·oneshot AR), `profiles/`(glm53·qwen38 모델 형상과 부팅, dsv41 계획 계층 — 범위 복귀 2026-09-19), `runtime/`(독립 이미지 빌드·검증) |
 | `launchers/` | ST 런처·슈퍼바이저·systemd 유닛(`st-glm53.service`, `st-deploy-watch`), 플릿 리스·가드(`docker-fleet-guard.sh`, `lib/fleet-lease.sh`), 4노드 RoCE GID 사전(`lib/common-tp4.sh`) |
 | `bench/` | 플릿 큐(`fleet.sh` 와 `fleet_*.py`), 측정 하네스(`onepass.py`, `st_bracket.sh`, `step_*`/`storacle`), CPU 게이트(`cpu_checks.py`) |
 | `probes/` | 엔진 커널·그래프·드래프터 오프라인 프로브(`engine_*.py`, `run_engine_probe.sh`)와 GB10 하드웨어 상한 마이크로벤치 |

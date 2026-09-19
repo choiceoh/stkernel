@@ -68,8 +68,8 @@ def kernel_shape(cfg: dict, tp: int = 4, spec_k: "int | None" = None) -> "Kernel
     (engine/modules/quant.fp4_gemm), so quant "mxfp4-a8", not the b12x lane's NVFP4 group-16: the
     admission table refuses that lane for this model, by name. The model has no dense layers (`intermediate_size` null):
     its dense MLP is the shared expert every token passes, `n_shared_experts` x `moe_intermediate_size` wide and TP-sharded
-    (budget.py), so that is `dense_inter_local`. DSv4.1 is outside the engine's scope (CHARTER D5); this derivation
-    exists so the wizard can judge a second real checkpoint.
+    (budget.py), so that is `dense_inter_local`. DSv4.1 is in the engine's scope again (CHARTER D5, 2026-09-19);
+    this derivation is what the wizard judges it by, and `cells.admission` on it is the work table.
     """
     from engine.base.kernel_shape import Attention, Comm, Indexer, KernelShape, MoE
     hidden = cfg["hidden_size"]
