@@ -176,6 +176,23 @@ def mla_glue_refusal(a) -> "str | None":
     return None
 
 
+def attention_terms_refusal(a, indexed: bool) -> "str | None":
+    """Every attention lane here computes softmax(q.k) -- with or without a sink -- over the positions it is handed. An
+    attention whose logits carry more (a learned relative-position bias, a soft cap) is other math; a sliding window is
+    a set of positions, which only an indexer's selection hands a sparse lane. None when the lanes compute this one."""
+    terms = []
+    if a.relative:
+        terms.append(f"a relative-position bias ({a.relative})")
+    if a.softcap:
+        terms.append(f"a {a.softcap:g} logit soft cap")
+    if a.window and not indexed:
+        terms.append(f"a {a.window}-position sliding window and no indexer to select it")
+    if not terms:
+        return None
+    return "the attention lanes compute softmax(q.k) over the positions they are handed; this one also has " + \
+        ", ".join(terms)
+
+
 def mhc_v41_refusal(shape) -> "str | None":
     """engine/kernels/dense/mhc.MHCV41 mixes the split-sinkhorn form through the megakernel's V4.1 seam (run_mhc_v41),
     compiled at the mHC segment's widths and hc; its prefill runs the seam in MHC_MAX_TOK-token pieces."""
@@ -277,6 +294,30 @@ def _recipe_mla(a):
                   "MLA_D+16) whose shared-memory occupancy was measured at 512, so a new latent is a re-derived, re-measured "
                   "instance; the head count can still be grouped by engine/kernels/mla/glue.grouped",
                   _MLA_JUDGE, "the self-test passes on the new cell and cells.py names it", "days")
+
+
+def _recipe_attention_terms(a):
+    """The work for an attention whose logits or positions no lane computes (attention_terms_refusal)."""
+    return Recipe("kernel", "a GQA lane with paged KV, window and sink beside engine/kernels/mla (engine/SM121_INTAKE.md "
+                  "U7; flashinfer's paged decode takes window_left and logits_soft_cap, not a learned bias)",
+                  "engine/modules/attention.feature is the reference for these terms (select=Window, relative=, "
+                  "log_scaling=, kv_conv=) and is held to the model's transformers attention in "
+                  "tests/test_engine_attention_family.py: judge a lane against it at the model's widths"
+                  + ("; a learned relative bias is added per (row, head, distance) inside the softmax -- clamp the row "
+                     "and the distance of that gather, a read past the table on GB10's unified memory returns another "
+                     "allocation's bytes instead of faulting (vllm#49049)" if a.relative else ""),
+                  "the family test's form of this model on the CPU, then the lane against it on a GPU "
+                  f"({_GPU}), then the profile's quality gate (D4)",
+                  "cells.py names the lane that computes these terms", "days")
+
+
+def _recipe_kv_conv(a):
+    return Recipe("wire", "engine/profiles/<profile>/lanes.py (engine/kernels/causal_conv over the keys and values, the "
+                  "per-sequence taps in modules/state_rings)",
+                  f"a {a.kv_conv}-tap causal conv on k and v before they are cached, with per-sequence state like the "
+                  "linear attention's q/k/v conv; engine/modules/attention's kv_conv is the reference",
+                  f"the conv against modules/attention.feature(kv_conv={a.kv_conv}) on the CPU and {_GPU}",
+                  "the profile's lanes bind the conv and the family test holds it", "hours")
 
 
 def _recipe_establish(fact, where, judge):
@@ -550,6 +591,14 @@ def _serve_attention(a, i):
     qsa_op = ("qsa_sparse_paged_attention in engine/kernels/qsa.py (vLLM's Triton QSA sparse paged GQA attention, the "
               "kernel that served Qwen3.8 in the vLLM stack, ported: BF16 KV; its blocks entry expands the chosen blocks "
               "inside its tiles)")
+    if a.relative:
+        return _nothing(f"no kernel in the repo or the image adds a learned relative-position bias ({a.relative}) to the "
+                        "logits; vLLM's Triton relative attention (vllm#55078, SM8x) is the nearest source")
+    if a.kind != "mla" and i is None and (a.window or a.softcap) and a.sink is False:
+        return _serve(GENERIC, "flashinfer BatchDecodeWithPagedKVCacheWrapper and BatchPrefillWithPagedKVCacheWrapper (in "
+                      "the image, engine/INVENTORY.md) with " + " and ".join(
+                          t for t in (a.window and f"window_left={a.window - 1}", a.softcap and
+                                      f"logits_soft_cap={a.softcap:g}") if t), False, "never judged in this engine")
     if a.kind != "mla":
         packed = 2 * a.head_dim <= MLA_LATENT
         if a.sink is None:
@@ -662,7 +711,11 @@ def admission(shape) -> "list[Verdict]":
         refuse("device", f"every lane is built for GB10 sm_121a with {MEASURED.device.sms} SMs; asked "
                          f"SM{d.capability[0]}{d.capability[1]}/{d.sms}", _recipe_device(d), None)
 
-    if a.kind != "mla" or (a.heads, a.head_dim) != (MLA_HEADS, MLA_LATENT):
+    terms = attention_terms_refusal(a, indexed=i is not None)
+    if terms is not None:
+        # before the geometry: an attention whose math no lane computes is refused for that, whatever its cell
+        refuse("mla", terms, _recipe_attention_terms(a), _serve_attention(a, i))
+    elif a.kind != "mla" or (a.heads, a.head_dim) != (MLA_HEADS, MLA_LATENT):
         refuse("mla", f"compiled for the {MLA_HEADS} heads x {MLA_LATENT} latent MLA cell; asked {a.kind} {a.heads}x{a.head_dim}"
                       + (" -- a GQA attention has no ST lane yet" if a.kind != "mla" else ""), _recipe_mla(a),
                _serve_attention(a, i))
@@ -679,8 +732,22 @@ def admission(shape) -> "list[Verdict]":
               _serve(SPECIALIZED, "engine/kernels/mla (the megakernel's sparse MLA)", True,
                      "the arm-time self-test against modules/sparse_attention.mla_sparse_mqa (rel <= 2e-2)"))
 
+    if a.kv_conv:                                      # like the indexer: a model without the conv has no lane for it
+        unmeasured("kv_conv", f"a {a.kv_conv}-tap causal conv on the keys and values before the cache, per sequence",
+                   _recipe_kv_conv(a),
+                   _serve(GENERIC, "engine/kernels/causal_conv.py (the short causal conv the linear attention runs on "
+                          "its q/k/v)", False, "never run on attention keys and values"))
+
     if i is not None:                                  # a model without a sparse indexer has no indexer lane to judge
-        if i.compress != INDEXER_KEY_COMPRESS:
+        if i.compress == INDEXER_KEY_COMPRESS and a.window:
+            refuse("indexer", f"the {INDEXER_KEY_COMPRESS} selection takes the top {i.topk} by score; this model's layers "
+                              f"also read a {a.window}-position window the selection does not add",
+                   Recipe("kernel", "engine/kernels/indexer.py (_pool_slots) and the selection it feeds",
+                          "append each row's last window positions to its selected ids before the attention reads them, "
+                          "deduplicated against the top-k", "modules/sparse_attention with the window's ids, on "
+                          f"{_GPU}", "the selection carries the window and the glue test holds it", "hours"),
+                   _serve_indexer(i))
+        elif i.compress != INDEXER_KEY_COMPRESS:
             refuse("indexer", f"the indexer lane compresses keys by {INDEXER_KEY_COMPRESS}; this model compresses by "
                               f"{i.compress} (only the MQA scoring formula is shared)", _recipe_indexer_compress(i),
                    _serve_indexer(i))

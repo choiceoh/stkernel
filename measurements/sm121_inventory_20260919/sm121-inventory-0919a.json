@@ -1,0 +1,431 @@
+{
+ "lane": "sm121_inventory",
+ "toolchain": {
+  "python": "3.12.3",
+  "nvcc": "/usr/local/cuda-13.2/bin/nvcc",
+  "cuda_home": "/usr/local/cuda-13.2",
+  "torch": "2.13.0+cu132",
+  "triton": "3.7.1",
+  "flashinfer-python": "0.6.18.dev20260819",
+  "nvidia-cutlass-dsl": "4.6.2",
+  "deep_gemm": "absent (PackageNotFoundError)",
+  "tilelang": "0.1.12",
+  "device": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "arch_list": [
+   "sm_80",
+   "sm_90",
+   "sm_100",
+   "sm_110",
+   "sm_120"
+  ]
+ },
+ "flashinfer_dir": "/usr/local/lib/python3.12/dist-packages/flashinfer",
+ "files": {
+  "U3 b12x mxfp4 w4a8": {
+   "count": 6,
+   "files": [
+    "fused_moe/cute_dsl/__pycache__/b12x_moe.cpython-312.pyc",
+    "fused_moe/cute_dsl/__pycache__/fused_moe_mxfp8_mxfp4.cpython-312.pyc",
+    "fused_moe/cute_dsl/b12x_moe.py",
+    "fused_moe/cute_dsl/fused_moe_mxfp8_mxfp4.py",
+    "gemm/kernels/__pycache__/dense_blockscaled_gemm_sm120_b12x.cpython-312.pyc",
+    "gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py"
+   ]
+  },
+  "U5 dense nvfp4 gemm": {
+   "count": 35,
+   "files": [
+    "cute_dsl/__pycache__/blockscaled_gemm.cpython-312.pyc",
+    "cute_dsl/blockscaled_gemm.py",
+    "cute_dsl/gemm_allreduce_two_shot.py",
+    "data/cutlass/examples/40_cutlass_py/customizable/gemm.py",
+    "data/cutlass/examples/40_cutlass_py/customizable/gemm_grouped.py",
+    "data/cutlass/examples/40_cutlass_py/gemm.py",
+    "data/cutlass/examples/40_cutlass_py/gemm_grouped.py",
+    "data/cutlass/python/cutlass_cppgen/backend/gemm_operation.py",
+    "data/cutlass/python/cutlass_cppgen/op/gemm.py",
+    "data/cutlass/python/cutlass_cppgen/op/gemm_grouped.py",
+    "data/cutlass/python/cutlass_library/gemm_operation.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_batched.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_f16_sm80.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_f16_sm90.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_f32_sm80.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_f64_sm80.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_f64_sm90.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_f8_sm90.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_mixed_sm80.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_s8_sm80.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_s8_sm90.py",
+    "data/cutlass/test/python/cutlass/gemm/gemm_testbed.py",
+    "data/cutlass/test/python/cutlass/interface/gemm_interface.py",
+    "gemm/__pycache__/gemm_mm_fp4_cute_dsl.cpython-312.pyc",
+    "gemm/gemm_base.py",
+    "gemm/gemm_bf16_fp4.py",
+    "gemm/gemm_bf16_fp4_cudnn.py",
+    "gemm/gemm_bf16_fp4_cute_dsl.py",
+    "gemm/gemm_mm_fp4_cute_dsl.py",
+    "gemm/gemm_mm_mxfp8_cute_dsl.py",
+    "gemm/gemm_svdquant.py",
+    "gemm/kernels/cutile/gemm_fp8_nt_groupwise_cutile.py",
+    "moe_ep/kernel_src/sm90/push_style_megamoe/shim/gemm.py",
+    "trace/templates/gemm.py",
+    "triton/gemm.py"
+   ]
+  },
+  "U6 sparse mla sm120": {
+   "count": 11,
+   "files": [
+    "cute_dsl/sparse/__pycache__/bsa_attn_sm120.cpython-312.pyc",
+    "cute_dsl/sparse/bsa_attn_sm120.py",
+    "cute_dsl/sparse/sm120_blk64/__pycache__/flash_fwd_sm120.cpython-312.pyc",
+    "cute_dsl/sparse/sm120_blk64/flash_fwd_sm120.py",
+    "data/csrc/sparse_mla_sm120.cu",
+    "data/csrc/sparse_mla_sm120_decode_dsv3_2.cu",
+    "data/csrc/sparse_mla_sm120_decode_dsv4.cu",
+    "data/csrc/sparse_mla_sm120_jit_binding.cu",
+    "data/csrc/sparse_mla_sm120_prefill.cu",
+    "mla/__pycache__/_sparse_mla_sm120.cpython-312.pyc",
+    "mla/_sparse_mla_sm120.py"
+   ]
+  },
+  "U7 gqa paged decode": {
+   "count": 18,
+   "files": [
+    "attention/prims_ts/decode.py",
+    "cudnn/decode.py",
+    "cute_dsl/attention/__pycache__/gqa_decode.cpython-312.pyc",
+    "cute_dsl/attention/__pycache__/gqa_decode_paged.cpython-312.pyc",
+    "cute_dsl/attention/gqa_decode.py",
+    "cute_dsl/attention/gqa_decode_paged.py",
+    "cute_dsl/attention/wrappers/__pycache__/batch_decode.cpython-312.pyc",
+    "cute_dsl/attention/wrappers/batch_decode.py",
+    "data/csrc/batch_decode.cu",
+    "data/csrc/batch_decode_customize_config.jinja",
+    "data/csrc/batch_decode_jit_binding.cu",
+    "data/csrc/batch_decode_kernel_inst.jinja",
+    "data/csrc/batch_decode_mla_binding.cu",
+    "data/csrc/batch_decode_mla_config.jinja",
+    "data/csrc/batch_decode_mla_cute_sm80.cu",
+    "data/csrc/batch_decode_mla_plan.cu",
+    "data/csrc/batch_decode_mla_run.cu",
+    "decode.py"
+   ]
+  },
+  "U9 flashkda": {
+   "count": 79,
+   "files": [
+    "__pycache__/kda.cpython-312.pyc",
+    "__pycache__/kda_decode.cpython-312.pyc",
+    "__pycache__/kda_prefill.cpython-312.pyc",
+    "data/cccl/libcudacxx/include/cuda/std/__chrono/month_weekday.h",
+    "data/cccl/libcudacxx/include/cuda/std/__chrono/weekday.h",
+    "data/cccl/libcudacxx/include/cuda/std/__chrono/year_month_weekday.h",
+    "data/csrc/kda/cake_flashkda_bf16_fused_m128_n16.cu",
+    "data/csrc/kda/cake_flashkda_bf16_fused_m128_n16_binding.cu",
+    "data/csrc/kda/cake_flashkda_bf16_persistent_m128.cu",
+    "data/csrc/kda/cake_flashkda_bf16_persistent_m128_binding.cu",
+    "data/csrc/kda/cake_flashkda_packed_t1_binding.cuh",
+    "data/csrc/kda/cake_flashkda_packed_t1_tile16.cu",
+    "data/csrc/kda/cake_flashkda_packed_t1_tile8.cu",
+    "data/csrc/kda/cake_kda_packed_t1_binding.cuh",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile128_ilp2.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile128_ilp4.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile128_packed_state_v_private_prefetch.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile128_paired_row_pipeline.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile128_register_pipeline.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile128_v_private_prefetch.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile64.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile64_ilp4.cu",
+    "data/csrc/kda/cake_kda_packed_t1_cpasync_tile64_register_pipeline.cu",
+    "data/csrc/kda/cake_kda_packed_t1_register_tile16.cu",
+    "data/csrc/kda/cake_kda_packed_t1_register_tile16_warp.cu",
+    "data/csrc/kda/cake_kda_packed_t1_register_tile8_interleaved.cu",
+    "data/csrc/kda/flashkda_bf16_fused_m128.cu",
+    "data/csrc/kda/flashkda_bf16_fused_m128_binding.cu",
+    "data/csrc/kda/flashkda_bf16_fused_m64.cu",
+    "data/csrc/kda/flashkda_bf16_fused_m64_binding.cu",
+    "data/csrc/kda/flashkda_binding_common.cuh",
+    "data/csrc/kda/flashkda_decode_binding.cuh",
+    "data/csrc/kda/flashkda_decode_binding_common.cuh",
+    "data/csrc/kda/flashkda_decode_binding_direct_impl.cuh",
+    "data/csrc/kda/flashkda_decode_binding_impl.cuh",
+    "data/csrc/kda/flashkda_decode_d128_t1_precomputed_direct_split16.cu",
+    "data/csrc/kda/flashkda_decode_d128_t1_precomputed_direct_split8.cu",
+    "data/csrc/kda/flashkda_decode_d128_t1_precomputed_split1.cu",
+    "data/csrc/kda/flashkda_decode_d128_t1_precomputed_split2.cu",
+    "data/csrc/kda/flashkda_decode_d128_t1_precomputed_split4.cu",
+    "data/csrc/kda/flashkda_decode_d128_t1_precomputed_split8.cu",
+    "data/csrc/kda/flashkda_decode_d128_t2_precomputed_split1.cu",
+    "data/csrc/kda/flashkda_decode_d128_t2_precomputed_split2.cu",
+    "data/csrc/kda/flashkda_decode_d128_t2_precomputed_split4.cu",
+    "data/csrc/kda/flashkda_decode_d128_t2_precomputed_split8.cu",
+    "data/csrc/kda/flashkda_decode_d128_t3_lower_bound_split4.cu",
+    "data/csrc/kda/flashkda_decode_d128_t4_precomputed_split1.cu",
+    "data/csrc/kda/flashkda_decode_d128_t4_precomputed_split2.cu",
+    "data/csrc/kda/flashkda_decode_d128_t4_precomputed_split4.cu",
+    "data/csrc/kda/flashkda_decode_d128_t4_precomputed_split8.cu",
+    "data/csrc/kda/flashkda_decode_d128_t5_precomputed_gram_split1.cu",
+    "data/csrc/kda/flashkda_decode_d128_t5_precomputed_gram_split2.cu",
+    "data/csrc/kda/flashkda_decode_d128_t5_precomputed_gram_split4.cu",
+    "data/csrc/kda/flashkda_decode_d128_t5_precomputed_gram_split8.cu",
+    "data/csrc/kda/flashkda_decode_d128_t6_precomputed_gram_split1.cu",
+    "data/csrc/kda/flashkda_decode_d128_t6_precomputed_gram_split2.cu",
+    "data/csrc/kda/flashkda_decode_d128_t6_precomputed_gram_split4.cu",
+    "data/csrc/kda/flashkda_decode_d128_t6_precomputed_gram_split8.cu",
+    "jit/__pycache__/cake_flash_kda_packed_t1.cpython-312.pyc",
+    "jit/__pycache__/cake_kda_packed_t1.cpython-312.pyc",
+    "jit/__pycache__/flash_kda.cpython-312.pyc",
+    "jit/__pycache__/flash_kda_decode.cpython-312.pyc",
+    "jit/cake_flash_kda_packed_t1.py",
+    "jit/cake_kda_packed_t1.py",
+    "jit/flash_kda.py",
+    "jit/flash_kda_decode.py",
+    "kda.py",
+    "kda_decode.py",
+    "kda_kernels/__pycache__/cake_packed_kda_decode.cpython-312.pyc",
+    "kda_kernels/__pycache__/fused_kda_decode.cpython-312.pyc",
+    "kda_kernels/__pycache__/packed_kda_decode_cute.cpython-312.pyc",
+    "kda_kernels/__pycache__/recurrent_kda.cpython-312.pyc",
+    "kda_kernels/cake_packed_kda_decode.py",
+    "kda_kernels/fused_kda_decode.py",
+    "kda_kernels/packed_kda_decode_cute.py",
+    "kda_kernels/recurrent_kda.py",
+    "kda_prefill.py",
+    "trace/templates/__pycache__/kda.cpython-312.pyc",
+    "trace/templates/kda.py"
+   ]
+  },
+  "U13 gdn prefill": {
+   "count": 22,
+   "files": [
+    "__pycache__/gdn_decode.cpython-312.pyc",
+    "__pycache__/gdn_prefill.cpython-312.pyc",
+    "gdn_decode.py",
+    "gdn_kernels/__pycache__/gdn_decode_bf16_state.cpython-312.pyc",
+    "gdn_kernels/__pycache__/gdn_decode_bf16_wy_output_only.cpython-312.pyc",
+    "gdn_kernels/__pycache__/gdn_decode_bf16_wy_ucache.cpython-312.pyc",
+    "gdn_kernels/__pycache__/gdn_decode_bf16_wy_ucache_flush.cpython-312.pyc",
+    "gdn_kernels/__pycache__/gdn_decode_mtp.cpython-312.pyc",
+    "gdn_kernels/__pycache__/gdn_decode_nontranspose.cpython-312.pyc",
+    "gdn_kernels/__pycache__/gdn_decode_pretranspose.cpython-312.pyc",
+    "gdn_kernels/blackwell/__pycache__/gdn_prefill.cpython-312.pyc",
+    "gdn_kernels/blackwell/gdn_prefill.py",
+    "gdn_kernels/delta_rule_dsl/__pycache__/delta_rule_sm120.cpython-312.pyc",
+    "gdn_kernels/delta_rule_dsl/delta_rule_sm120.py",
+    "gdn_kernels/gdn_decode_bf16_state.py",
+    "gdn_kernels/gdn_decode_bf16_wy_output_only.py",
+    "gdn_kernels/gdn_decode_bf16_wy_ucache.py",
+    "gdn_kernels/gdn_decode_bf16_wy_ucache_flush.py",
+    "gdn_kernels/gdn_decode_mtp.py",
+    "gdn_kernels/gdn_decode_nontranspose.py",
+    "gdn_kernels/gdn_decode_pretranspose.py",
+    "gdn_prefill.py"
+   ]
+  }
+ },
+ "words": {
+  "U3 b12x mxfp4 w4a8": {
+   "fused_moe/cute_dsl/b12x_moe.py": {
+    "mxfp4": 5,
+    "mxfp8": 0,
+    "w4a8": 0,
+    "fp8": 0,
+    "activation": 49
+   }
+  },
+  "U5 dense nvfp4 gemm": {
+   "gemm/__init__.py": {
+    "b12x": 4,
+    "mm_fp4": 3,
+    "cutlass": 0,
+    "cute_dsl": 12
+   },
+   "gemm.py": "absent"
+  },
+  "U7 gqa paged decode": {
+   "decode.py": {
+    "window_left": 89,
+    "sinks": 28,
+    "sink": 29,
+    "kv_data_type": 45,
+    "logits_soft_cap": 82
+   }
+  },
+  "U8 kv quant": {
+   "decode.py": {
+    "float8_e4m3fn": 13,
+    "fp8": 55,
+    "nvfp4": 34,
+    "kv_cache_sf": 31
+   }
+  }
+ },
+ "b12x": {
+  "same": [
+   "_moe_dynamic/__init__.py",
+   "moe_activation.py",
+   "moe_w4a16_activations.py",
+   "moe_w4a16_compiler.py",
+   "moe_w4a16_host.py",
+   "moe_w4a16_kernel.py",
+   "moe_w4a16_prepare.py",
+   "moe_w4a16_route_pack.py",
+   "triton_compact.py"
+  ],
+  "differs": [
+   "__init__.py",
+   "_moe_dynamic/gated.py",
+   "_moe_dynamic/generic.py",
+   "moe_direct_micro_kernel.py",
+   "moe_dispatch.py",
+   "moe_dynamic_kernel.py",
+   "moe_micro_kernel.py",
+   "moe_static_kernel.py",
+   "moe_w4a16_fp4_helpers.py"
+  ],
+  "engine_only": [
+   "_prefill_m64_bodies.py",
+   "_prefill_q0_batch8.py",
+   "b12x_moe.py",
+   "fp4_quant.py",
+   "fp4_scale_search.py",
+   "moe_dynamic_ep_local.py",
+   "moe_dynamic_gated_raw_q0.py",
+   "moe_dynamic_gated_sf6.py",
+   "moe_dynamic_gated_sf6_prefill.py",
+   "moe_dynamic_gated_sf6_q0.py",
+   "moe_dynamic_gated_sf6_q0_words.py",
+   "moe_dynamic_gated_sf6_words.py",
+   "moe_dynamic_gated_tiled.py",
+   "moe_dynamic_prefill.py",
+   "moe_dynamic_prefill_m64.py",
+   "moe_dynamic_prefill_n128.py",
+   "moe_dynamic_prefill_n128_tiled.py",
+   "moe_dynamic_prefill_packets.py",
+   "moe_dynamic_prefill_raw_route.py",
+   "moe_packet_input.py",
+   "moe_prefill_q0_batch8.py",
+   "moe_reform_sf_pack.py",
+   "moe_sf6_prefill_scales.py",
+   "moe_sf6_prefill_scales_kernel.py",
+   "moe_sf_pack.py",
+   "moe_static_common.py",
+   "moe_static_kernel_v4.py",
+   "moe_static_kernel_v5.py"
+  ],
+  "image_only": []
+ },
+ "modules": {
+  "U3 b12x mxfp4 w4a8": {
+   "flashinfer.fused_moe.cute_dsl.b12x_moe": {
+    "imported": true,
+    "seconds": 1.03,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/b12x_moe.py",
+    "callables": {
+     "B12xMoEWrapper": "(num_experts: int, top_k: int, hidden_size: int, intermediate_size: int, *, use_cuda_graph: bool = False, max_num_tokens: int = 4096, num_local_experts: Optional[int] = None, output_dtype: torch.dtype = torch.bfloat16, device: str = 'cuda', activation: str = 'silu', swiglu_alpha: float = 1.702, swiglu_beta: float = 1.0, swiglu_limit: Optional[float] = None, activation_precision: str = 'fp4', quant",
+     "b12x_fused_moe": "(x: torch.Tensor, w1_weight: torch.Tensor, w1_weight_sf: torch.Tensor, w2_weight: torch.Tensor, w2_weight_sf: torch.Tensor, token_selected_experts: torch.Tensor, token_final_scales: torch.Tensor, num_experts: int, top_k: int, *, w1_alpha: torch.Tensor, w2_alpha: torch.Tensor, fc2_input_scale: Optional[torch.Tensor] = None, input_global_scale: Optional[torch.Tensor] = None, num_local_experts: Optio"
+    }
+   },
+   "flashinfer.fused_moe.cute_dsl.fused_moe_mxfp8_mxfp4": {
+    "imported": true,
+    "seconds": 0.0,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/fused_moe/cute_dsl/fused_moe_mxfp8_mxfp4.py",
+    "callables": {
+     "CuteDslMxfp8Mxfp4MoEWrapper": "(num_experts: 'int', top_k: 'int', hidden_size: 'int', intermediate_size: 'int', max_num_tokens: 'Optional[int]' = None, num_local_experts: 'Optional[int]' = None, local_expert_offset: 'int' = 0, use_cuda_graph: 'bool' = False, device: 'str' = 'cuda', enable_pdl: 'bool' = True, activation_type: 'int' = 3, swiglu_alpha: 'float' = 1.0, swiglu_beta: 'float' = 0.0, swiglu_limit: 'float' = 3.4028234663",
+     "cute_dsl_fused_moe_mxfp8_mxfp4": "(x: 'torch.Tensor', x_sf: 'torch.Tensor', token_selected_experts: 'torch.Tensor', token_final_scales: 'torch.Tensor', w1_weight: 'torch.Tensor', w1_weight_sf: 'torch.Tensor', w1_alpha: 'torch.Tensor', w2_weight: 'torch.Tensor', w2_weight_sf: 'torch.Tensor', w2_alpha: 'torch.Tensor', num_experts: 'int', top_k: 'int', num_local_experts: 'Optional[int]' = None, local_expert_offset: 'int' = 0, moe_out"
+    }
+   }
+  },
+  "U5 dense nvfp4 gemm": {
+   "flashinfer.gemm": {
+    "imported": true,
+    "seconds": 0.0,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/gemm/__init__.py",
+    "callables": {}
+   },
+   "flashinfer.cute_dsl.blockscaled_gemm": {
+    "imported": true,
+    "seconds": 0.0,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/blockscaled_gemm.py",
+    "callables": {}
+   }
+  },
+  "U6 sparse mla sm120": {
+   "flashinfer.cute_dsl.sparse.bsa_attn_sm120": {
+    "imported": true,
+    "seconds": 0.07,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/sparse/bsa_attn_sm120.py",
+    "callables": {
+     "bsa_attn_sm120_blk64_fwd": "(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, q2k_block_index: torch.Tensor, block_sparse_num: int, block_sizes: Optional[torch.Tensor] = None, q2k_block_nums: Optional[torch.Tensor] = None, softmax_scale: Optional[float] = None, return_lse: bool = False, out: Optional[torch.Tensor] = None, lse: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]"
+    }
+   }
+  },
+  "U7 gqa paged decode": {
+   "flashinfer.decode": {
+    "imported": true,
+    "seconds": 0.0,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/decode.py",
+    "callables": {
+     "BatchDecodeMlaWithPagedKVCacheWrapper": "(float_workspace_buffer: torch.Tensor, use_cuda_graph: bool = False, use_tensor_cores: bool = False, paged_kv_indptr_buffer: Optional[torch.Tensor] = None, paged_kv_indices_buffer: Optional[torch.Tensor] = None, paged_kv_last_page_len_buffer: Optional[torch.Tensor] = None) -> None",
+     "BatchDecodeWithPagedKVCacheWrapper": "(float_workspace_buffer: torch.Tensor, kv_layout: str = 'NHD', use_cuda_graph: bool = False, use_tensor_cores: bool = False, paged_kv_indptr_buffer: Optional[torch.Tensor] = None, paged_kv_indices_buffer: Optional[torch.Tensor] = None, paged_kv_last_page_len_buffer: Optional[torch.Tensor] = None, backend: str = 'auto', jit_args: Optional[List[Any]] = None) -> None",
+     "CUDAGraphBatchDecodeWithPagedKVCacheWrapper": "(workspace_buffer: torch.Tensor, indptr_buffer: torch.Tensor, indices_buffer: torch.Tensor, last_page_len_buffer: torch.Tensor, kv_layout: str = 'NHD', use_tensor_cores: bool = False) -> None",
+     "TrtllmGenDecodeModule": "() -> None",
+     "fast_decode_plan": "(self, indptr: torch.Tensor, indices: torch.Tensor, last_page_len: torch.Tensor, num_qo_heads: int, num_kv_heads: int, head_dim: int, page_size: int, pos_encoding_mode: str = 'NONE', window_left: int = -1, logits_soft_cap: Optional[float] = None, q_data_type: Union[str, torch.dtype, NoneType] = None, kv_data_type: Union[str, torch.dtype, NoneType] = None, data_type: Union[str, torch.dtype, NoneTyp",
+     "get_batch_decode_jit_module": "(module_name: str, jit_module: Any)",
+     "get_batch_decode_mla_module": "(*args)",
+     "get_batch_decode_module": "(*args)",
+     "get_single_decode_module": "(*args)",
+     "get_trtllm_gen_decode_module": "(*args)",
+     "get_trtllm_gen_fmha_module": "()",
+     "single_decode_with_kv_cache": "(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, kv_layout: str = 'NHD', pos_encoding_mode: str = 'NONE', use_tensor_cores: bool = False, q_scale: Optional[float] = None, k_scale: Optional[float] = None, v_scale: Optional[float] = None, window_left: int = -1, logits_soft_cap: Optional[float] = None, sm_scale: Optional[float] = None, rope_scale: Optional[float] = None, rope_theta: Optional[float",
+     "single_decode_with_kv_cache_with_jit_module": "(jit_module: Any, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, *args, kv_layout: str = 'NHD', window_left: int = -1, return_lse: bool = False)",
+     "trtllm_batch_decode_with_kv_cache": "(query: torch.Tensor, kv_cache: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], workspace_buffer: torch.Tensor, block_tables: torch.Tensor, seq_lens: torch.Tensor, max_seq_len: int, bmm1_scale: Union[float, torch.Tensor] = 1.0, bmm2_scale: Union[float, torch.Tensor] = 1.0, window_left: int = -1, out: Union[torch.Tensor, flashinfer.utils.FP4Tensor, NoneType] = None, out_dtype: Union[str, to",
+     "xqa_batch_decode_with_kv_cache": "(query: torch.Tensor, kv_cache: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], workspace_buffer: torch.Tensor, block_tables: torch.Tensor, seq_lens: torch.Tensor, max_seq_len: int, bmm1_scale: Union[float, torch.Tensor] = 1.0, bmm2_scale: Union[float, torch.Tensor] = 1.0, window_left: int = -1, out: Optional[torch.Tensor] = None, sinks: Optional[torch.Tensor] = None, kv_layout: str = 'NHD"
+    }
+   },
+   "flashinfer.cute_dsl.attention.gqa_decode": {
+    "imported": true,
+    "seconds": 0.04,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/cute_dsl/attention/gqa_decode.py",
+    "callables": {
+     "GroupedQueryAttentionDecode": "(headdim, grouped_head_tile, prediction_tile=1, sequence_tile=256, reduction_mode: Literal['kernel', 'atomic', 'none'] = 'kernel')",
+     "run": "(batches: int, prediction: int, seqlen: int, heads_q: int, heads_k: int, headdim: int, kv_splits: int, reduction: str, qkv_dtype: Type[cutlass.base_dsl.typing.Numeric], o_dtype: Type[cutlass.base_dsl.typing.Numeric], tolerance: float, scale_s: float, warmup_iterations: int = 0, iterations: int = 0, skip_ref_check: bool = False, use_warm_l2: bool = False, quiet: bool = False, window_left=None, wind"
+    }
+   }
+  },
+  "U13 gdn prefill": {
+   "flashinfer.gdn_prefill": {
+    "imported": true,
+    "seconds": 0.0,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/gdn_prefill.py",
+    "callables": {
+     "chunk_gated_delta_rule": "(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, g: Optional[torch.Tensor] = None, beta: Optional[torch.Tensor] = None, scale: Optional[float] = None, initial_state: Optional[torch.Tensor] = None, output_final_state: bool = False, cu_seqlens: Optional[torch.Tensor] = None, use_qk_l2norm_in_kernel: bool = False, output: Optional[torch.Tensor] = None, output_state: Optional[torch.Tensor] = None, "
+    }
+   },
+   "flashinfer.gdn_kernels.delta_rule_dsl.delta_rule_sm120": {
+    "imported": true,
+    "seconds": 0.0,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/delta_rule_dsl/delta_rule_sm120.py",
+    "callables": {
+     "LoadStoreWarpRole": "(*values)",
+     "MathWarpGroupRole": "(*values)",
+     "NamedBarrier": "(*values)",
+     "WarpGroupRole": "(*values)",
+     "delta_rule_prefill_dsl": "(o: torch.Tensor, state: torch.Tensor, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, init_state: torch.Tensor | None, alpha: torch.Tensor | None, beta: torch.Tensor | None, cu_seqlens: torch.Tensor, scale: float, state_checkpoints: torch.Tensor | None = None, checkpoint_cu_starts: torch.Tensor | None = None, checkpoint_every_n_tokens: int = 0)"
+    }
+   },
+   "flashinfer.gdn_kernels.blackwell.gdn_prefill": {
+    "imported": true,
+    "seconds": 0.0,
+    "file": "/usr/local/lib/python3.12/dist-packages/flashinfer/gdn_kernels/blackwell/gdn_prefill.py",
+    "callables": {
+     "chunk_gated_delta_rule_sm100": "(q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, gate: torch.Tensor, beta: torch.Tensor, output: torch.Tensor, cu_seqlens: torch.Tensor, initial_state: Optional[torch.Tensor], output_state: Optional[torch.Tensor], scale: float, checkpoint_every_n_tokens: int = 0, cu_checkpoints: Optional[torch.Tensor] = None, output_checkpoints: Optional[torch.Tensor] = None, state_indices: Optional[torch.Tenso"
+    }
+   }
+  }
+ }
+}
