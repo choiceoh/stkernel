@@ -209,6 +209,12 @@ def main():
         from probes.engine_qwen38_qsa_geometry import run as qwen38_qsa_geometry
         qwen38_qsa_geometry(args.output)
         return
+    if args.lanes == 'qwen38_qualify_soak' or args.lanes.startswith('qwen38_qualify_soak:'):
+        # correctness only: the boot's lane qualify again and again -- how often it fails on this card, and whose
+        # failure it is (gated_residual.blame); `:N` sets the repeats
+        from probes.engine_qwen38_qualify_soak import REPEATS, run as qwen38_qualify_soak
+        qwen38_qualify_soak(args.output, repeats=int((args.lanes.split(':')[1:] or [REPEATS])[0]))
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check

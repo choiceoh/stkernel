@@ -162,7 +162,8 @@ def qualify(device, rows=(1, 4, 16)) -> dict:
             ref = x.float() @ w.float().t()
             for _ in range(2):
                 got = gemv(x, w, cfg).float()
-                worst = max(worst, float((got - ref).abs().max() / ref.abs().max().clamp_min(1e-30)))
+                err = float((got - ref).abs().max() / ref.abs().max().clamp_min(1e-30))
+                worst = max(worst, err) if err == err else float("inf")     # max(0.0, nan) is 0.0: a NaN would pass
         if not worst <= 2.0 ** -6:
             raise RuntimeError(f"skinny_gemv [{n}, {k}] {cfg}: error {worst:.2e} of the largest magnitude")
         out[f"{n}x{k}"] = round(worst, 6)
