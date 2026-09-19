@@ -242,6 +242,11 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes == 'sm121_sanitizer':
+        # correctness only: the served kernels' GPU cases under compute-sanitizer memcheck (engine/SM121_INTAKE.md U15)
+        from probes.engine_sm121_sanitizer import run as sm121_sanitizer
+        sm121_sanitizer(args.output)
+        return
     if args.lanes in ('sm121_gdn', 'sm121_fp8_l2'):
         # component numbers for engine/SM121_INTAKE.md U13 (FlashInfer's GDN prefill against the served chunk kernel)
         # and U11 (the FP8 prefill GEMM's throughput as M grows past the L2)
