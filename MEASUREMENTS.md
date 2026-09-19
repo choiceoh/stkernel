@@ -5120,3 +5120,12 @@ split-K 와 바이트 동일이 아니라 대역 안(최대 0.0066, rms 0.0011).
 - 운영자 "빠른건 기본에 켜"(09-19) → 기본 켬, `--no-tile-union`/`ST_QSA_TILE_UNION=0` 롤백. **플릿 onepass 미측정**(D17).
   [상세·원시](measurements/qwen38_tile_union_20260919/README.md).
 
+### Qwen3.8 긴 프리필 GDN 을 FlashInfer SM120 커널로 — 1,024 토큰 1.37배, 8,192 토큰 2.50배(레인 전체), 기본 켬 (2026-09-19, srv4 단일 GPU 레인, sm121 intake U13)
+이미지의 `chunk_gated_delta_rule` 은 우리 호출대로면 출력 전부 NaN 이었다(`sm121-gdndiag-0919d`, 열두 변형). flashinfer#5255(열림): 네이티브 프리필이
+`use_qk_l2norm_in_kernel` 을 무시한다 → q/k 를 먼저 정규화(`gdn_prefill_sm120`, 서빙 커널과 같은 정규화 코드). 경계 상태는 N 토큰마다 체크포인트.
+- `sm121-u13time-0919g`(중앙값/최솟값, 번갈아 9 라운드, 프로덕션 옆): 1,024 토큰 935.2/910.4 → 683.4/667.1 µs, 4,096 1,857.2 → 913.7, 8,192 3,591.8 → 1,438.1.
+  서빙 커널과 0.3~0.56%. 128 토큰은 커널만으로도 느려서(322 vs 122) 1,024 토큰 미만은 서빙 커널 그대로.
+- `sm121-u13cells-0919g`: 부팅 자격 검사 o 0.0037, 상태 0.0068, 경계 상태 0.0059(대역 0.0156); GPU 글루 93 통과.
+- 운영자 "빠른건 기본에 켜"(09-19) → 기본 켬, `--no-gdn-flashinfer`/`ST_GDN_FLASHINFER=0` 롤백. **플릿 onepass 미측정**(D17).
+  [상세·원시](measurements/qwen38_gdn_flashinfer_20260919/README.md).
+

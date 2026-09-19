@@ -163,6 +163,12 @@ def main():
         from probes.engine_qwen38_kda import run as qwen38_kda
         qwen38_kda(args.output)
         return
+    if args.lanes == 'qwen38_gdn_flashinfer':
+        # component timings (U13): the long prefill's GDN lane on FlashInfer's SM120 kernel, whole, against the served
+        # chunk kernel, alternating inside each round
+        from probes.engine_qwen38_kda import run_flashinfer_prefill
+        run_flashinfer_prefill(args.output)
+        return
     if args.lanes == 'qwen38_step':
         # component timings: a captured Qwen3.8 decode step's kernels on one rank's own weights, solved from small nets
         # (fixed, GDN, QSA, PLE) and summed to 48 layers -- the decode levers ranked by the step, not by guesses
