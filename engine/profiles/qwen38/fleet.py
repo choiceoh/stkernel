@@ -112,7 +112,8 @@ def rank_loader(path, *, expected_layout: str):
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
-          draft_index: "tuple[int, int] | None" = None, mtp_experts_dir: "str | None" = None):
+          draft_index: "tuple[int, int] | None" = None, mtp_experts_dir: "str | None" = None,
+          shared_overlap: "bool | str" = False):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it."""
@@ -137,7 +138,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, mtp_precision=mtp_precision,
-                    mtp_experts="fp8" if mtp_experts_dir else "nvfp4")
+                    mtp_experts="fp8" if mtp_experts_dir else "nvfp4", shared_overlap=shared_overlap)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, SNAPSHOT_GIB, mtp=drafter)
     if nb < 2:
@@ -330,6 +331,9 @@ def main(argv=None) -> int:
     ap.add_argument("--no-query-shards", action="store_true",
                     help="every rank scores every index query of a prefill step, as before carry Q11: the rollback of the "
                          "quarter-a-rank scoring, on by the operator's decision of 2026-09-18 with the fleet unmeasured")
+    ap.add_argument("--shared-overlap", choices=("off", "one", "all"), default="off",
+                    help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' for "
+                         "steps of one request's rows, 'all' for every captured step; off until a GB10's step says it pays")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     ap.add_argument("--spec-k", type=int, default=None,
                     help="drafts a step from the MTP head (the checkpoint's 1): K > 1 chains the head K-1 times inside "
@@ -380,6 +384,7 @@ def main(argv=None) -> int:
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                               drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
                                               query_shards=not a.no_query_shards, mtp_precision=a.mtp_precision,
+                                              shared_overlap={"off": False, "one": True, "all": "all"}[a.shared_overlap],
                                               draft_index=draft_index(a.draft_index), mtp_experts_dir=a.mtp_experts_dir)
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row)", flush=True)

@@ -170,7 +170,8 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = True, mtp_precision: str = "bf16", mtp_experts: str = "nvfp4"):
+                 query_shards: bool = True, mtp_precision: str = "bf16", mtp_experts: str = "nvfp4",
+                 shared_overlap: "bool | str" = False):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
@@ -191,7 +192,14 @@ class Qwen38Net:
 
         `mtp_experts`: the MTP head's routed experts as the rank file keeps them ("nvfp4": re-encoded from the export's
         FP8, on b12x) or in the export's own FP8 ("fp8": the side file mtp_fp8.py writes, on kernels/moe_fp8_rows --
-        `side_specs` names what a boot loads from it)."""
+        `side_specs` names what a boot loads from it).
+
+        `shared_overlap` (carry M5, GLM-5.3's #789): a captured step's shared expert -- two dense launches and the
+        activation between them -- forked onto a second stream beside the router and the routed experts, joined before
+        the gated sum reads both (engine/kernels/dense/shared_mlp.SharedOverlap). The same launches on the same
+        inputs, so the same bytes; what moves is when they run. False (the default: a GB10's step decides it, and GLM's
+        gave 1% at one request and lost at more), True (steps of one request, spec_k + 1 rows, as GLM serves it) or
+        "all" (every captured step). An eager step never forks: its launches fill the device by themselves."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
@@ -204,6 +212,10 @@ class Qwen38Net:
         if mtp_experts not in ("nvfp4", "fp8"):
             raise ValueError(f"mtp_experts {mtp_experts!r}: nvfp4 or fp8")
         self.mtp_experts = mtp_experts if mtp else "nvfp4"
+        if shared_overlap not in (False, True, "all") or type(shared_overlap) not in (bool, str):
+            raise ValueError("shared_overlap is False, True (one request's rows) or 'all'")
+        self.shared_overlap = shared_overlap
+        self._overlap = None                                     # the fork's stream, made at the first captured step
         self._hc_projections = {}
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
@@ -699,13 +711,15 @@ class Qwen38Net:
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 
     # -- MoE ----------------------------------------------------------------------------------------------------------
-    def _moe(self, prefix: str, x: torch.Tensor, *, compact: bool) -> torch.Tensor:
-        """`compact`: an eager step, whose experts see only this rank's routed pairs (the lane reads their count on the
-        host); a captured step keeps every route, another rank's on local expert 0 at weight 0 (lanes.local_routes)."""
+    def _routed(self, prefix: str, x: torch.Tensor, *, compact: bool):
+        """(the routed experts' rows, the shared gate [N, 1] fp32). `compact`: an eager step, whose experts see only
+        this rank's routed pairs (the lane reads their count on the host); a captured step keeps every route, another
+        rank's on local expert 0 at weight 0 (lanes.local_routes)."""
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix + "moe."
         gates = p[n + "gates"]                                       # [experts + 1, H]: the router, then the shared gate
-        scores = lanes.rows_linear(x, gates) if lanes.rows_linear is not None else torch.mm(x, gates.t())
+        rows_linear = getattr(lanes, "rows_linear", None)             # a lane table from before the skinny GEMV has none
+        scores = rows_linear(x, gates) if rows_linear is not None else torch.mm(x, gates.t())
         if compact or lanes.route_local is None:
             ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
             routed = self._experts[prefix](x, ids, weights, compact=compact)
@@ -715,13 +729,42 @@ class Qwen38Net:
             ids, weights = lanes.route_local(scores, F.topk_experts, experts=F.experts, first_expert=self.first_expert,
                                              w13=w13, hidden=x.shape[1])
             routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
+        # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
+        gate = torch.sigmoid(scores[:, F.experts:].float())
+        return routed, gate
+
+    def _shared(self, prefix: str, x: torch.Tensor) -> torch.Tensor:
+        """The shared expert: two dense launches and the activation between them."""
+        n = prefix + "moe."
         # the down projection's 160 columns pad to 256 (PaddedDenseLinear): the activation's launch writes the zeros
         down = getattr(self, "dense", {}).get(n + "sh_down")
         pad_to = down.input_cols + down.pad if getattr(down, "pad", 0) else None
-        shared = self.linear(lanes.swiglu(self.linear(x, n + "sh_gate_up"), pad_to=pad_to), n + "sh_down")
-        # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
-        gate = torch.sigmoid(scores[:, F.experts:].float())
-        return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
+        return self.linear(self.lanes.swiglu(self.linear(x, n + "sh_gate_up"), pad_to=pad_to), n + "sh_down")
+
+    def _forks(self, x: torch.Tensor, compact: bool) -> bool:
+        """Whether this step's shared expert runs beside its routed experts (`shared_overlap`): a captured step on a
+        device, of one request's rows unless every step was asked for."""
+        wanted = getattr(self, "shared_overlap", False)
+        if not wanted or compact or not x.is_cuda:
+            return False
+        return wanted == "all" or x.shape[0] <= self.F.spec_k + 1
+
+    def _moe(self, prefix: str, x: torch.Tensor, *, compact: bool) -> torch.Tensor:
+        """A layer's experts: the routed ones and the shared one, summed under the shared gate and reduced over the
+        ranks. With `shared_overlap` a captured step's shared expert is forked around the router and the routed experts
+        -- which launch no dense GEMM, whose scratch the fork owns until the join (SharedOverlap's rule)."""
+        lanes = self.lanes
+        if not Qwen38Net._forks(self, x, compact):
+            routed, gate = Qwen38Net._routed(self, prefix, x, compact=compact)
+            shared = Qwen38Net._shared(self, prefix, x)
+            return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
+        if getattr(self, "_overlap", None) is None:
+            from engine.kernels.dense.shared_mlp import SharedOverlap
+            self._overlap = SharedOverlap(x.device)
+        out = self._overlap(lambda rows: Qwen38Net._shared(self, prefix, rows), x,
+                            lambda join: join(Qwen38Net._routed(self, prefix, x, compact=compact)),
+                            finish=lambda parts, shared: lanes.moe_finish(parts[0], shared, parts[1]))
+        return self.comm.all_reduce(out)
 
     def _moe_fp8(self, x, ids, weights, *, w13, s13, w2, s2, compact=False, local=False):
         """The MTP head's experts on their FP8 side-file weights (lanes.moe_fp8): global routes (an eager step) are

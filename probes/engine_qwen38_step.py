@@ -24,6 +24,10 @@ and the PLE injection are four unknowns from four layer sets, per graph and per 
     python3 probes/engine_kernel_check.py --lanes qwen38_step --ranks /home/choiceoh/models/st-qwen38-tep4 \\
         --output /cache/qwen38-step.json                                          (the queue's single-GPU lane)
 
+`--lanes qwen38_step_overlap` (carry M5) builds the first layer set three times: served, and the shared expert forked
+onto a second stream beside the routed experts at one request's rows (`overlap-one`) and at every captured step
+(`overlap-all`). The fork launches what the served arm launches, so the arm shows in a replay's wall time alone.
+
 `--lanes qwen38_step_ab` builds every layer set twice, one after the other: the served lanes (`served`) and the same
 lanes with the skinny GEMV's table emptied (`mm`: the router back on torch.mm, the mixer sites back to five launches on
 cuBLAS -- the lanes before engine/kernels/common/skinny_gemv) -- the step and its families per arm, and the served arm
@@ -50,6 +54,9 @@ MAX_GIB = 4.0                             # this process's own device-memory cei
 FULL = {"fixed": 1, "gdn": 36, "qsa": 12, "ple": 1}
 ARMS = ("served", "mm")                   # qwen38_step_ab: the served lanes, and the lanes before the skinny GEMV
 MTP_ARMS = ("served", "mtp-w4", "mtp-fp8", "experts-fp8")   # qwen38_step_mtp: MTP dense BF16 (served), W4A8, FP8; experts FP8
+# qwen38_step_overlap (carry M5): the shared expert forked beside the routed ones -- at one request's rows, at every
+# captured step. The launches and their bytes are the served arm's; what the arm moves is a replay's wall time
+OVERLAP_ARMS = ("served", "overlap-one", "overlap-all")
 MTP_FP8_DIR = Path("/home/choiceoh/models/st-qwen38-mtp-fp8")  # mtp_fp8.py's side files (srv4)
 
 FAMILIES = (
@@ -131,7 +138,7 @@ def extrapolate(parts: dict, full=FULL) -> float:
 
 
 def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K,
-          mtp_precision: str = "bf16", mtp_experts_dir: "Path | None" = None):
+          mtp_precision: str = "bf16", mtp_experts_dir: "Path | None" = None, shared_overlap: "bool | str" = False):
     """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft), at
     `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them)."""
     import dataclasses
@@ -148,7 +155,8 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     if spec_k != F.spec_k:
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True,
-                    mtp_precision=mtp_precision, mtp_experts="fp8" if mtp_experts_dir else "nvfp4")
+                    mtp_precision=mtp_precision, mtp_experts="fp8" if mtp_experts_dir else "nvfp4",
+                    shared_overlap=shared_overlap)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, 0.05, mtp=True)
     snapshots = min(snapshots, 9)           # a net with no GDN layer has empty snapshots, and the count would run away
@@ -366,8 +374,8 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     `arm` "mm": the skinny GEMV's table emptied first -- the router on torch.mm, the mixers in five launches on cuBLAS;
     "mtp-w4" / "mtp-fp8": the MTP head's dense projections at that precision instead of the served BF16."""
     import torch
-    if arm not in ARMS + MTP_ARMS:
-        raise ValueError(f"arm {arm!r}: one of {ARMS + MTP_ARMS}")
+    if arm not in ARMS + MTP_ARMS + OVERLAP_ARMS:
+        raise ValueError(f"arm {arm!r}: one of {ARMS + MTP_ARMS + OVERLAP_ARMS}")
     if arm == "mm":
         from engine.kernels.common import skinny_gemv
         skinny_gemv.CONFIGS.clear()
@@ -381,7 +389,8 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     began = time.perf_counter()
     F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib,
                                           mtp_precision=arm[4:] if arm.startswith("mtp-") else "bf16",
-                                          mtp_experts_dir=MTP_FP8_DIR if arm == "experts-fp8" else None)
+                                          mtp_experts_dir=MTP_FP8_DIR if arm == "experts-fp8" else None,
+                                          shared_overlap={"overlap-one": True, "overlap-all": "all"}.get(arm, False))
     built = time.perf_counter() - began
     graphs = {}
     for n, blocks in shapes:
@@ -480,6 +489,9 @@ def run(output=None, ranks=None, *, layer_sets=LAYER_SETS, rank: "int | None" = 
         report["served_loop_by_arm"] = {arm: next((b["served_loop"] for b in report["builds"][arm].values()
                                                    if "served_loop" in b), None) for arm in arms}
         report["delta"] = difference(*(steps[arm] for arm in arms))
+    elif len(arms) > 2:                                   # every later arm less the first (qwen38_step_overlap)
+        report["step_by_arm"] = steps
+        report["delta_from_first"] = {arm: difference(steps[arm], steps[arms[0]]) for arm in arms[1:]}
     text = json.dumps(report, indent=1)
     if output:
         Path(output).parent.mkdir(parents=True, exist_ok=True)
@@ -513,7 +525,8 @@ if __name__ == "__main__":
     ap.add_argument("--one", default=None, help="one layer set (comma separated), measured in this process")
     ap.add_argument("--rank", type=int, default=None)
     ap.add_argument("--loop", action="store_true", help="with --one: also decode one request through the served model")
-    ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:], help="with --one: the lanes it builds under")
+    ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:] + OVERLAP_ARMS[1:],
+                    help="with --one: the lanes it builds under")
     a = ap.parse_args()
     if a.one is not None:
         row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")), loop=a.loop, arm=a.arm)
