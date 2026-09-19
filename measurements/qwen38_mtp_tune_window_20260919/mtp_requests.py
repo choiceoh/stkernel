@@ -94,7 +94,10 @@ elif MODE == "prefill":
     # PROMPTS is openrouter_gen.py's samples: each conversation prefilled whole (the answer continued, one token
     # drawn), so the tap records the target's streams at every position of the text
     concurrency = int(sys.argv[5]) if len(sys.argv) > 5 else 4
-    samples = [s for s in prompts if s.get("content")]
+    # a thinking answer cut by max_tokens has reasoning and no content: keep it, its answer is " " (the v2 driver's
+    # rule). Window 3 ran `if s.get("content")` and so skipped 29 of 1,470 samples (6.9% of the text), all long
+    # thinking -- fixed on review (PR #1275), the record says what ran
+    samples = [s for s in prompts if s.get("content") or s.get("reasoning")]
     lock, state = threading.Lock(), {"next": 0, "done": 0, "prompt_tokens": 0, "errors": 0}
 
     def feed():
@@ -105,7 +108,7 @@ elif MODE == "prefill":
             if i >= len(samples):
                 return
             s = samples[i]
-            answer = (f"<think>\n{s['reasoning'].strip()}\n</think>\n\n" if s.get("reasoning") else "") + s["content"]
+            answer = (f"<think>\n{s['reasoning'].strip()}\n</think>\n\n" if s.get("reasoning") else "") + (s.get("content") or " ")
             body = {"model": model, "messages": [{"role": "user", "content": s["prompt"]}, {"role": "assistant", "content": answer}],
                     "max_tokens": 1, "temperature": 0, "add_generation_prompt": False, "continue_final_message": True,
                     "chat_template_kwargs": {"enable_thinking": bool(s.get("thinking"))}}
