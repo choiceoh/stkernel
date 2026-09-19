@@ -97,7 +97,8 @@ class Cases(unittest.TestCase):
     def test_the_captured_rows_are_the_decode_graphs(self):
         from engine.profiles.qwen38.fleet import MAX_SEQS
         self.assertEqual(self.probe.captured_rows(self.F), MAX_SEQS * (self.F.spec_k + 1))
-        self.assertEqual([m for m in self.probe.ROWS if m <= self.probe.captured_rows(self.F)], [1, 2, 4, 8])
+        # four rows of K + 1 tokens: the ladder the fleet captures at the served K (facts.SPEC_K 3)
+        self.assertEqual([m for m in self.probe.ROWS if m <= self.probe.captured_rows(self.F)], [1, 2, 4, 8, 16])
 
     def test_every_case_has_a_distinct_label(self):
         cases = self.probe.qwen38_cases(self.F) + self.probe.dsv41_cases()

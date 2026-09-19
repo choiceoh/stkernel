@@ -24,8 +24,12 @@ TP = 4                                                             # four Sparks
 CHUNK_ALIGN = 2304                                                 # the prefill chunk's alignment: whole blocks (D9's 2,304)
 BLOCK = 768                                                        # paged KV / prefix block: 64-aligned for the GDN kernel's
                                                                    # chunks, whole QSA compression groups of 4
-SPEC_K = 1                                                         # the checkpoint's one MTP layer drafts one token a step
-                                                                   # (fleet --spec-k K chains it: decode_graphs.draft_chain)
+SPEC_K = 3                                                         # drafts a step. The checkpoint has ONE MTP layer; the head
+                                                                   # is chained K-1 times inside one replay
+                                                                   # (decode_graphs.draft_chain). Operator "k=3 정도 하지"
+                                                                   # and the 09-18 fleet pair: tokens a step +44/+36%,
+                                                                   # decode tok/s +12.5/+9.6% over K=1 (PR #1182); four rows
+                                                                   # boot since #1192. `--spec-k 1` / ST_SPEC_K=1 rolls back
 KV_DTYPE = "bf16"                                                  # QSA K/V rows as the checkpoint computes them (no latent fp8)
 GDN_STATE_DTYPE = "fp32"                                           # the delta rule's state, as the reference keeps it
 EXPERTS = "ep"                                                     # 128 whole experts a rank (profiles/qwen38.env)

@@ -120,7 +120,7 @@ case "${ST_ONESHOT:-1}" in
   0) ONESHOT_ARG="--no-oneshot" ;;
   *) echo "ST_ONESHOT must be 0 or 1" >&2; exit 2 ;;
 esac
-SPEC_ARG=""                                                   # ST_SPEC_K=K: K drafts a step from the MTP head (the checkpoint's 1; K > 1 chains it)
+SPEC_ARG=""                                                   # ST_SPEC_K=K: K drafts a step from the MTP head (this profile serves 3, facts.SPEC_K; ST_SPEC_K=1 rolls back)
 if [ -n "${ST_SPEC_K:-}" ]; then
   [[ "$ST_SPEC_K" =~ ^[1-9][0-9]*$ ]] || { echo "ST_SPEC_K must be a positive draft count" >&2; exit 2; }
   SPEC_ARG="--spec-k $ST_SPEC_K"

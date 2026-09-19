@@ -97,7 +97,7 @@ class ProbeModuleTests(unittest.TestCase):
         self.assertEqual(p.kernel_shape(), qwen_shape())
         c = p.cell_of(p.kernel_shape())
         self.assertEqual((c.experts, c.local, c.hidden, c.inter, c.topk, c.first_expert, c.spec_k),
-                         (512, 128, 2560, 640, 10, 0, 1))
+                         (512, 128, 2560, 640, 10, 0, 3))      # the served draft count, from the wizard's shape
         self.assertEqual(p.cell_of(p.kernel_shape(), rank=3).first_expert, 384)
 
     @needs_torch

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from engine.base.shapes import Constraint, chunk_for as base_chunk_for
+from engine.profiles.qwen38.facts import SPEC_K
 from engine.profiles.qwen38.plan import text_config
 
 
@@ -39,14 +40,15 @@ def chunk_for(token_budget: int, draft_slots: int = 0) -> int:
     return base_chunk_for(align, token_budget, draft_slots)
 
 
-def kernel_shape(c: "dict | None" = None, tp: int = 4, spec_k: int = 1) -> "KernelShape":
+def kernel_shape(c: "dict | None" = None, tp: int = 4, spec_k: int = SPEC_K) -> "KernelShape":
     """Qwen3.8-Flash-Next's kernel shape (engine/base/kernel_shape) from its text config.
 
     Per rank at TP=4 the way plan.py places it: query heads and GDN heads split by heads, KV heads
     replicated when fewer than tp, routed experts EXPERT-parallel (a rank holds `experts // tp`
     whole experts, so `inter_local` is the model's `inter`), the shared expert TP-sharded. GDN's
     decay is per head; the checkpoint is NVFP4 (D5) with a plain gated SiLU, so the MoE lane is
-    admitted for `silu` without a clamp. `spec_k` is the MTP head's one draft. A width the config
+    admitted for `silu` without a clamp. `spec_k` is what the served path drafts a step -- the profile's `SPEC_K`,
+    not the config's MTP layer count, because the one head is chained (facts.SPEC_K). A width the config
     lacks (the shared expert's) counts as 0: the dense lane is then judged on the projections' width alone.
     """
     from engine.base.kernel_shape import Attention, Comm, Indexer, KernelShape, LinearAttention, MoE
