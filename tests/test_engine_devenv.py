@@ -101,6 +101,9 @@ class ScriptTests(unittest.TestCase):
         node = (DEVENV / "node.sh").read_text(encoding="utf-8")
         self.assertIn("TORCH_BUILD=${TORCH_INDEX##*/}", node)
         self.assertIn("torch.__version__ != '$TORCH_VERSION+$TORCH_BUILD'", node)
+        # and the install asks for that build: a bare `torch==2.12.1` is satisfied by 2.12.1+cpu (PEP 440)
+        self.assertIn('"torch==$TORCH_VERSION+$TORCH_BUILD"', node)
+        self.assertNotIn('"torch==$TORCH_VERSION"', node)
         self.assertTrue(manifest()["TORCH_INDEX"].endswith("/cu130"))
 
     def test_a_linked_worktree_is_a_checkout(self):
@@ -219,6 +222,27 @@ class ReleaseTests(unittest.TestCase):
                                 "node_linked && echo another-version"])
             out = subprocess.run(["bash", "-c", script], capture_output=True, text=True).stdout.split()
         self.assertEqual(out, ["four"])
+
+    def test_an_sdk_missing_a_command_is_fetched_again_not_linked(self):
+        """An SDK directory with node but not npm, npx or corepack (a copy that stopped half way) is not whole: it is
+        set aside and fetched again, and the fresh one lands by a rename, never by a copy that can stop."""
+        with tempfile.TemporaryDirectory() as tmp:
+            node_dir = Path(tmp) / "node-v24.18.0-linux-x64"
+            (node_dir / "bin").mkdir(parents=True)
+            fake(node_dir / "bin", "node", "echo v24.18.0\n")
+            script = "\n".join([functions("node_sdk_whole"), f"NODE_DIR={node_dir}",
+                                "node_sdk_whole && echo whole || echo partial",
+                                'for b in npm npx corepack; do printf "#!/bin/sh\\n" > "$NODE_DIR/bin/$b"; '
+                                'chmod +x "$NODE_DIR/bin/$b"; done',
+                                "node_sdk_whole && echo whole || echo partial"])
+            out = subprocess.run(["bash", "-c", script], capture_output=True, text=True).stdout.split()
+        self.assertEqual(out, ["partial", "whole"])
+        node = (DEVENV / "node.sh").read_text(encoding="utf-8")
+        repair = node[node.index("if ! node_linked; then"):node.index("NPM_GLOBAL=")]
+        self.assertIn("if ! node_sdk_whole; then", repair)
+        self.assertIn('mv "$NODE_DIR" "$NODE_DIR.incomplete-', repair)
+        self.assertIn('mv "$NODE_DIR.partial" "$NODE_DIR"', repair)
+        self.assertNotIn('[ ! -x "$NODE_DIR/bin/node" ]', repair)
 
 
 class SyncTests(unittest.TestCase):

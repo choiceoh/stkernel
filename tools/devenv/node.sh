@@ -139,11 +139,23 @@ node_linked() {   # node and its three companions are links into NODE_DIR, and n
   done
   [ "$(version_of "$BIN/node")" = "$NODE_VERSION" ]
 }
+node_sdk_whole() {   # NODE_DIR holds all four commands the links point at
+  local b
+  for b in node npm npx corepack; do [ -x "$NODE_DIR/bin/$b" ] || return 1; done
+}
 if ! node_linked; then
-  if [ ! -x "$NODE_DIR/bin/node" ]; then
+  if ! node_sdk_whole; then
     mkdir -p "$HOME/node-sdk"
+    if [ -e "$NODE_DIR" ]; then                     # an SDK missing a command is set aside, not linked
+      mv "$NODE_DIR" "$NODE_DIR.incomplete-$(date +%Y%m%d-%H%M%S)"
+      log "node: $NODE_DIR lacked a command -- set aside"
+    fi
     unpacked=$(fetch NODE)
-    mv "$unpacked/node-v$NODE_VERSION-linux-$NODEARCH" "$NODE_DIR"
+    # the copy across file systems can stop half way; the rename that follows cannot. The staging directory is this
+    # script's own, left only by a run that stopped in that copy.
+    rm -rf "$NODE_DIR.partial"
+    mv "$unpacked/node-v$NODE_VERSION-linux-$NODEARCH" "$NODE_DIR.partial"
+    mv "$NODE_DIR.partial" "$NODE_DIR"
   fi
   for b in node npm npx corepack; do
     keep "$BIN/$b"
@@ -171,8 +183,10 @@ hash -r
 PIP=(python3 -m pip install --user --break-system-packages --disable-pip-version-check --no-warn-script-location -q)
 TORCH_BUILD=${TORCH_INDEX##*/}                    # cu130: the local label the index's wheels carry (a CPU wheel's is +cpu)
 if ! python3 -c "import sys, torch, triton; sys.exit(torch.__version__ != '$TORCH_VERSION+$TORCH_BUILD' or triton.__version__ != '$TRITON_VERSION')" 2>/dev/null; then
-  "${PIP[@]}" --index-url "$TORCH_INDEX" --extra-index-url https://pypi.org/simple "torch==$TORCH_VERSION" "triton==$TRITON_VERSION"
-  log "python: torch $TORCH_VERSION ($TORCH_INDEX), triton $TRITON_VERSION"
+  # the local label in the request too: `torch==2.12.1` is satisfied by 2.12.1+cpu (PEP 440), and pip would keep it
+  "${PIP[@]}" --index-url "$TORCH_INDEX" --extra-index-url https://pypi.org/simple "torch==$TORCH_VERSION+$TORCH_BUILD" \
+    "triton==$TRITON_VERSION"
+  log "python: torch $TORCH_VERSION+$TORCH_BUILD ($TORCH_INDEX), triton $TRITON_VERSION"
 fi
 # shellcheck disable=SC2086
 "${PIP[@]}" $PY_PACKAGES
