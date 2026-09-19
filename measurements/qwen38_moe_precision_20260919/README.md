@@ -18,9 +18,11 @@ is revised because downstream real-prefill activations change.
 
 ## Validation
 
-CPU policy, buffer ownership and neighboring contract checks pass; native GPU
-validation is pending. No real-checkpoint TP4 output quality, acceptance or
-throughput result is claimed. The probe is
+CPU policy, buffer ownership and neighboring contract checks pass. Native GPU
+validation passed twice on GB10; final ticket `q38moeprecision-0919b`
+(`17898179582898539`), source `71b1e973`, PyTorch `2.13.0+cu132`, CUDA 13.2.
+Peak tensor allocation was **1,246,733,824 bytes**. No real-checkpoint TP4 output
+quality, acceptance or throughput result is claimed. The probe is
 `engine_kernel_check --lanes qwen38_moe_precision`, submitted through the
 single-GB10 fleet queue with its 8 GiB budget.
 
@@ -30,6 +32,29 @@ identical activation packing. A separate FP64 quantizer check measures search
 SSE and exceptional-input parity. Projection oracles, all generic tile sizes,
 poisoned-accumulator graph replay, zero routes and served compact prefill are
 checked separately. Weights and inputs are synthetic at the actual Qwen cell.
+
+| Check | Final result |
+|---|---|
+| FC2 accumulation, identical five native BF16 contributions | SSE **0.0161063 → 0.00519431 (−67.75%)**; FP32 output byte-equal to rounded independent FP64 sum |
+| FP64 quantizer reconstruction | **151,322** finite blocks; no worsened block SSE beyond 2e-5 relative tolerance; radius-0/exception fallback byte parity and graph replay pass |
+| FC1/FC2 `as2`, same dequantized weights vs no activation quantization | Full MLP SSE **−21.35%, −13.16%, −20.03%** across three synthetic input batches; both comparison arms use FP32 accumulation |
+| Native projection vs independently decoded packing / torch matmuls | **12** cases, compact top-1 and full top-10, micro/static/dynamic; max relative error **0.00625**, below declared 0.02 gate |
+| Changed-input graph replay with poisoned FP32 workspace | Tiles **32/64/128**, byte equality; entire workspace zero-fill and zero route weights pass |
+| Served compact prefill | **4,096** rows, finite output; all foreign routes give exact zeros |
+
+The SSE changes are local numerical evidence, not model accuracy percentages.
+The first ticket passed too (`gpu-initial.log`); it preceded full-route dynamic
+and activation-projection ablations. BF16 atomic scheduling changes the old
+sum slightly between runs (initial reduction 68.11%, final 67.75%); the new
+rounded FP32 result was identical. `gpu.json`, `gpu.log` and
+`gpu-source.sha256` retain final records and tested source identity.
+
+The final CPU regression run covers **664 tests in 78 modules: 546 passed,
+118 CUDA-only skips**, no failures (`cpu.log`, 110.165 seconds). It includes
+Qwen engine/probe tests, MoE dispatch, source contracts, calibration identity,
+graph owners and default declarations. An earlier stdin-based invocation
+could not spawn the MTP distributed-test children; rerunning the complete
+suite through `python -m unittest` passes. No kernel change was needed for it.
 
 ## Channel smoothing: reviewed, not enabled
 
