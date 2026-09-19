@@ -15,6 +15,13 @@ capture, every rank runs the same passes:
     kernels  a prefill of each of WIDTHS at context 0, and EDGE tokens ending on each context bucket's last position
              (net.bucket_blocks: the paged QSA kernels compile their table width in, one compile a rung), each through
              the target and the MTP head.
+    eager    the eager MoE's decode-sized launches (`eager_moe`): an uncaptured step -- the MTP head observing a parked
+             row's positions, a step no graph admits -- dispatches only this rank's (token, route) pairs, one route a
+             pair, and up to EAGER_PAIRS of them run the micro kernel, keyed by the pair count AND the capacity of the
+             workspace the dispatcher has grown so far. Nothing above reaches that path, so the first requests of the
+             2026-09-19 K=3 window compiled six of them mid-request (the first step 6.8 s), their capacities (r2, r4)
+             set by the order the pair counts arrived in. `eager_moe` grows the workspace to its ceiling first and then
+             runs every count: eight kernels, one capacity, whatever order the requests bring.
 
 The inputs are zeros. This compiles kernels and qualifies memory; it does not judge output. The slot, its blocks and
 every cache are released and reset afterwards, on failure too.
@@ -25,8 +32,11 @@ import time
 
 WIDTHS = (64, 512, 4095)
 """GLM-5.3's prompt widths above a decode step (its 1 and 8 are decode-sized, and an eager step of that size keys its
-static MoE kernel by the routes the tokens take, which zeros cannot stand in for)."""
+static MoE kernel by the routes the tokens take, which zeros cannot stand in for -- `eager_moe` writes the routes)."""
 EDGE = 64
+EAGER_PAIRS = 8
+"""= engine/kernels/b12x/moe_dispatch._MICRO_MAX_TOKENS: an eager launch of more one-route pairs than this over every
+local expert runs the dynamic kernel, whose artifact is free of the count (select_sm120_moe_backend)."""
 
 
 def rungs(block: int, capacity: int, top: int) -> "list[int]":
@@ -108,4 +118,59 @@ def warmup(net, caches, *, memory, chunk: int, max_context: int, mtp: bool, seq:
     return paid
 
 
-__all__ = ["WIDTHS", "EDGE", "rungs", "plan", "warmup"]
+def eager_counts(pairs: int = EAGER_PAIRS) -> "list[int]":
+    """The pair counts `eager_moe` launches, in order: the ceiling first -- the workspace grows to it and never again,
+    so every count after it (and every request's) is keyed by that one capacity -- then each count below it."""
+    return [pairs] + list(range(1, pairs))
+
+
+def eager_routes(pairs: int, *, first_expert: int, local: int, experts: int, topk: int):
+    """ids [pairs, topk] int32 and weights [pairs, topk] fp32, the router's types, where each row's first route is one
+    of this rank's experts (a different one a row) and the others are another rank's: the compact path keeps exactly
+    `pairs` pairs."""
+    import torch
+    rows = torch.arange(pairs, dtype=torch.int64)
+    ids = torch.empty(pairs, topk, dtype=torch.int64)
+    ids[:, 0] = first_expert + rows % local
+    for r in range(1, topk):                       # outside [first_expert, first_expert + local), distinct in a row
+        ids[:, r] = (first_expert + local + (rows + r - 1) % (experts - local)) % experts
+    return ids.to(torch.int32), torch.full((pairs, topk), 1.0 / topk, dtype=torch.float32)
+
+
+def eager_moe(net, *, pairs: int = EAGER_PAIRS) -> dict:
+    """Every decode-sized eager MoE launch this rank can make, once, before the door (the module docstring's `eager`):
+    through one target layer's experts -- they share the MTP head's workspace and kernels (same experts, hidden and
+    width) -- or the MTP head's when the net has no target layer. Zeros for x: the kernel is keyed by shapes. The MTP
+    head on FP8 experts takes another path and is not this one's. -> {"eager/<pairs>": seconds}. A rank that raised
+    stops its peers at the vote, as the prefill passes do."""
+    import torch
+    F = net.F
+    prefix = next((p for p in net._experts if not p.startswith("mtp.")), None)
+    if prefix is None and getattr(net, "mtp_experts", "nvfp4") == "nvfp4" and "mtp.L0." in net._experts:
+        prefix = "mtp.L0."
+    if prefix is None:
+        return {}
+    w13 = net.p[prefix + "moe.w13"]
+    local, device = w13.shape[0], w13.device               # this rank's experts, as lanes.moe counts them
+    paid, error = {}, None
+    try:
+        for m in eager_counts(pairs):
+            began = time.perf_counter()
+            ids, weights = eager_routes(m, first_expert=net.first_expert, local=local, experts=F.experts,
+                                        topk=F.topk_experts)
+            x = torch.zeros(m, F.hidden, dtype=torch.bfloat16, device=device)
+            net._experts[prefix](x, ids.to(device), weights.to(device), compact=True)
+            if device.type == "cuda":
+                torch.cuda.synchronize()
+            paid[f"eager/{m}"] = round(time.perf_counter() - began, 3)
+        bad = torch.zeros(1, dtype=torch.int32, device=device)
+    except Exception as exc:                           # noqa: BLE001 -- cast into the vote, re-raised below
+        error, bad = exc, torch.ones(1, dtype=torch.int32, device=device)
+    if int(net.comm.all_reduce_max(bad).item()):
+        if error is not None:
+            raise error
+        raise RuntimeError("the eager MoE warmup failed on a peer")
+    return paid
+
+
+__all__ = ["WIDTHS", "EDGE", "EAGER_PAIRS", "rungs", "plan", "warmup", "eager_counts", "eager_routes", "eager_moe"]

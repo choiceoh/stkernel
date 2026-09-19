@@ -242,6 +242,18 @@ def main():
         from probes.engine_qwen38_prefill import CHUNK, run as qwen38_prefill
         qwen38_prefill(args.output, args.ranks, chunk=int((args.lanes.split(':')[1:] or [CHUNK])[0]))
         return
+    if args.lanes == 'qwen38_serve_compiles':
+        # compile census: the served model built in the fleet boot's order on one rank (--ranks), the serving window's
+        # requests through the runner, and every kernel a step added after the door
+        from probes.engine_qwen38_serve_compiles import run as qwen38_serve_compiles
+        qwen38_serve_compiles(args.output, args.ranks)
+        return
+    if args.lanes == 'qwen38_eager_moe':
+        # compile counts: the eager MoE's decode-sized launches after the boot's warm pass (warmup.eager_moe) --
+        # no request may add a micro kernel -- and whether the workspace's capacity changes a launch's bytes (--ranks)
+        from probes.engine_qwen38_eager_moe import run as qwen38_eager_moe
+        qwen38_eager_moe(args.output, args.ranks)
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check
