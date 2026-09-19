@@ -326,6 +326,11 @@ def main():
         from probes.engine_qwen38_router import run as qwen38_router
         qwen38_router(args.output)
         return
+    if args.lanes == 'qwen38_moe_glue':
+        # the prefill MoE layer's glue step by step: route, shared gate, this rank's pairs, gathers, pair sum
+        from probes.engine_qwen38_moe_glue import run as qwen38_moe_glue
+        qwen38_moe_glue(args.output)
+        return
     if args.lanes == 'qwen38_prefill' or args.lanes.startswith('qwen38_prefill:'):
         # component census: a prefill chunk's wall, device and host time by kernel family, solved from four small
         # nets of the rank file's own weights (--ranks); `:N` sets the chunk's tokens

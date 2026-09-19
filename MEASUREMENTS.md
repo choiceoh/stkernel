@@ -5084,3 +5084,8 @@ sparse 발사와 바이트 동일(GPU). net 은 한 세그먼트 호스트 스�
 - **미측정.** GPU·플릿 — GLM 은 `probes/engine_full_check.py`(플릿)나 `boot.py --local --layers 0-4 --park`(실캐시 파킹·재개·4토큰 이어 쓰기
   = 한 번에 돌린 것), Qwen 은 플릿 파킹 자체가 아직 GPU 미검증(#1298). 실제 시간·대화 수.
   [상세·원시](measurements/park_live_state_20260919/README.md).
+
+### Qwen3.8 프리필 MoE 의 쌍 고르기와 모으기를 한 발사씩 — 재매핑·마스크 414 → 170 µs(4,096 행), 모으기 121 → 74 µs(512 행), 바이트 동일 (2026-09-19, srv4 단일 GPU 레인, PR #1307)
+`moe_route.compact_routes`(local_routes + 이 랭크 마스크, torch 발사 아홉 개 → 하나)와 `moe_route.pair_rows`(x.index_select + 두 인덱스 모으기 → 하나): eager 프리필의 compact MoE.
+- `q38moeglue-0919c`(21 라운드 최솟값, 호스트 발사 포함): 재매핑+마스크+nonzero 512 행 418 → 161 µs, 4,096 행 414 → 170; 모으기 512 행 121 → 74, 4,096 행 345 → 350(대역폭).
+- 같은 판에서 단계별 비용 목록(라우터·라우팅·공유 게이트·pair_sum). **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_moe_glue_20260919/README.md).
