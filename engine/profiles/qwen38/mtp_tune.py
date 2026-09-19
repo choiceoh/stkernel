@@ -490,6 +490,13 @@ def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0, rank: int =
     return {key: round(value / max(weight, 1), 5) for key, value in zip(keys, total)} | {"positions": int(weight)}
 
 
+def learning_rate(step: int, *, total: int, peak: float, warmup: int) -> float:
+    """Linear warmup, then a cosine to zero at `total`. The warmup is at most a tenth of the run: the 2026-09-19
+    window trained 91 steps under the default warmup of 100, and its rate never came within a quarter of `peak`."""
+    warmup = max(1, min(warmup, total // 10))
+    return peak * min(1.0, step / warmup) * 0.5 * (1 + math.cos(math.pi * min(1.0, step / total)))
+
+
 def train(args) -> None:
     cfg, prefix = config(args.ckpt)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -518,7 +525,7 @@ def train(args) -> None:
     total = args.steps
     best = base["tokens_a_step"]
     for step in range(1, total + 1):
-        lr = args.lr * min(1.0, step / max(1, args.warmup)) * 0.5 * (1 + math.cos(math.pi * min(1.0, step / total)))
+        lr = learning_rate(step, total=total, peak=args.lr, warmup=args.warmup)
         for group in optimizer.param_groups:
             group["lr"] = lr
         optimizer.zero_grad(set_to_none=True)
