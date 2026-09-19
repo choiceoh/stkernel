@@ -112,8 +112,10 @@ def _gates(DI, MIX, INJ, sD, sM, sI, HC_F, R: tl.constexpr, BR: tl.constexpr, HC
 
 @triton.jit
 def _mix_mean(UP, NORMED, OUT, sU, sN, sO, HC_F, HID: tl.constexpr, BD: tl.constexpr, HC: tl.constexpr):
+    # a program is one BD-wide tile of a row's channels (carry H3): nothing here reduces along them, so the tiles are
+    # the one-block launch's bytes whatever their width
     r = tl.program_id(0)
-    d = tl.arange(0, BD)
+    d = tl.program_id(1) * BD + tl.arange(0, BD)
     m = d < HID
     acc = tl.zeros([BD], dtype=tl.float32)
     for s in tl.static_range(HC):
@@ -174,6 +176,22 @@ def _up_mean(G, W, NORMED, OUT, M, sG, sW, sN, sO, HC_F, HID: tl.constexpr, R: t
 
 def _warps(width: int) -> int:
     return 4 if width <= 1024 else 8
+
+
+# Probe hook (probes/engine_qwen38_mix_tiles.py, carry H3): mix_mean's (tile width, warps) forced when set, the rule when
+# None. Read when `mix` launches, so a captured graph keeps the tile it was captured with. Nothing served sets it.
+_MIX_TILE_OVERRIDE = None
+
+
+def _mix_tile(hid: int) -> "tuple[int, int]":
+    """(tile width, warps) of mix_mean's launch over `hid` channels: one block over the whole row, as it always was."""
+    if _MIX_TILE_OVERRIDE is None:
+        return triton.next_power_of_2(hid), _warps(hid)
+    forced = _MIX_TILE_OVERRIDE
+    if (type(forced) is not tuple or len(forced) != 2 or not all(type(n) is int and n > 0 and not n & (n - 1)
+                                                                  for n in forced) or forced[0] < 16):
+        raise ValueError("_MIX_TILE_OVERRIDE is (tile width of 16 or more, warps), powers of two")
+    return forced
 
 
 def _check_streams(h: torch.Tensor, hc: int, *, least: int = 2) -> int:
@@ -283,8 +301,9 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
     if weights.shape != (rows, normed.shape[1]) or weights.dtype != normed.dtype or weights.stride(1) != 1:
         raise ValueError("the up projection returns packed [N, hc*H] rows in the streams' dtype")
     if rows:
-        _mix_mean[(rows,)](weights, normed, mixed, weights.stride(0), normed.stride(0), mixed.stride(0), float(hc),
-                           HID=hid, BD=triton.next_power_of_2(hid), HC=hc, num_warps=_warps(hid))
+        tile, warps = _mix_tile(hid)
+        _mix_mean[(rows, triton.cdiv(hid, tile))](weights, normed, mixed, weights.stride(0), normed.stride(0),
+                                                  mixed.stride(0), float(hc), HID=hid, BD=tile, HC=hc, num_warps=warps)
     return mixed, injection
 
 
