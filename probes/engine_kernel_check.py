@@ -158,6 +158,41 @@ def main():
         from probes.engine_qwen38_kda import run as qwen38_kda
         qwen38_kda(args.output)
         return
+    if args.lanes == 'qwen38_step':
+        # component timings: a captured Qwen3.8 decode step's kernels on one rank's own weights, solved from small nets
+        # (fixed, GDN, QSA, PLE) and summed to 48 layers -- the decode levers ranked by the step, not by guesses
+        from probes.engine_qwen38_step import run as qwen38_step
+        qwen38_step(args.output, args.ranks)
+        return
+    if args.lanes == 'qwen38_step_where':
+        # one layer set's build only: its graphs, the served loop, and the Python stack each eager kernel came from
+        from probes.engine_qwen38_step import LAYER_SETS, run as qwen38_step
+        qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[:1])
+        return
+    if args.lanes == 'qwen38_step_ab':
+        # the same step, each layer set built under the served lanes and again with the skinny GEMV's shapes on
+        # torch.mm -- what the router's and the mixers' down projections on it change in a replayed step
+        from probes.engine_qwen38_step import ARMS, run as qwen38_step
+        qwen38_step(args.output, args.ranks, arms=ARMS)
+        return
+    if args.lanes == 'qwen38_gemv':
+        # component timings: a skinny BF16 GEMV (one weight read for all rows) against cuBLAS at the decode step's mixer
+        # and router shapes, interleaved in CUDA graphs -- whether the 11.2 ms of BF16 GEMM a step has a faster kernel
+        from probes.engine_qwen38_gemv import run as qwen38_gemv
+        qwen38_gemv(args.output)
+        return
+    if args.lanes == 'qwen38_head':
+        # component timings: the vocabulary head at decode rows -- deep_gemm (Qwen3.8's lane) against GLM-5.3's
+        # cuBLASLt reader (direct MX, five-way split, block-128 inputs), with each one's error and argmax agreement
+        from probes.engine_qwen38_head import run as qwen38_head
+        qwen38_head(args.output)
+        return
+    if args.lanes == 'qwen38_site':
+        # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
+        # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10
+        from probes.engine_qwen38_gemv import run_site as qwen38_site
+        qwen38_site(args.output)
+        return
     if args.lanes == 'qwen38_moe':
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe

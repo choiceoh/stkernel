@@ -1,0 +1,95 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 9,
+ "sites_a_graph": 16,
+ "pair_MB": 13.19,
+ "up_tile": [
+  32,
+  64,
+  4,
+  3
+ ],
+ "rows": {
+  "1": {
+   "us_a_site": {
+    "cublas five launches": 218.16,
+    "served (two launches)": 213.18
+   },
+   "checks": {
+    "folds": true,
+    "byte_equal_mixed": true,
+    "byte_equal_inject": true,
+    "vs_cublas_mixed": 0.00211,
+    "vs_cublas_inject": 0.0
+   }
+  },
+  "4": {
+   "us_a_site": {
+    "cublas five launches": 221.11,
+    "served (two launches)": 214.26
+   },
+   "checks": {
+    "folds": true,
+    "byte_equal_mixed": true,
+    "byte_equal_inject": true,
+    "vs_cublas_mixed": 0.004098,
+    "vs_cublas_inject": 0.005495
+   }
+  },
+  "8": {
+   "us_a_site": {
+    "cublas five launches": 221.35,
+    "served (two launches)": 213.56
+   },
+   "checks": {
+    "folds": true,
+    "byte_equal_mixed": true,
+    "byte_equal_inject": true,
+    "vs_cublas_mixed": 0.003876,
+    "vs_cublas_inject": 0.005348
+   }
+  },
+  "16": {
+   "us_a_site": {
+    "cublas five launches": 215.08,
+    "served (two launches)": 210.67
+   },
+   "checks": {
+    "folds": true,
+    "byte_equal_mixed": true,
+    "byte_equal_inject": true,
+    "vs_cublas_mixed": 0.003623,
+    "vs_cublas_inject": 0.005
+   }
+  }
+ },
+ "qualify": {
+  "gated_residual": {
+   "enter": [
+    0.00625,
+    0.001094
+   ],
+   "inject": [
+    0.004854,
+    0.001396
+   ],
+   "leave_norm": [
+    0.004975,
+    0.002485
+   ],
+   "leave": [
+    0.004975,
+    0.002485
+   ],
+   "close": [
+    0.005587,
+    0.002717
+   ]
+  },
+  "skinny_gemv": {
+   "513x2560": 0.002813,
+   "324x10240": 0.002272,
+   "320x10240": 0.002349
+  }
+ }
+}
