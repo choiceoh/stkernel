@@ -195,6 +195,73 @@ class ReadingTests(unittest.TestCase):
         self.assertEqual((out["admission"], out["plan"]), ([], []))
 
 
+class DenseModelTests(unittest.TestCase):
+    """A checkpoint with no routed experts -- the commonest kind of LLM there is.
+
+    The descriptor has no "no MoE" (`KernelShape.moe` is not optional), and for a while that meant the door answered
+    "no shape" for a model it can describe perfectly well. It does not need to: the one MLP every token passes is
+    what this engine serves through the **E=1 cell**, which b12x's own gate admits beside the routed tuple
+    (`engine/kernels/b12x/moe_dispatch._glm_tp_scatter_shape`). So that is what the door reads it as -- and since
+    that MLP is TP-sharded like every dense and shared MLP here, there is no expert placement to ask for.
+
+    The other half is the one that matters more: a config that DOES name experts, in a spelling this door cannot
+    read, must come back as a blank. Reading it as dense would serve every token through a single MLP.
+    """
+    LLAMA = {"model_type": "dense_text", "hidden_size": 8192, "num_hidden_layers": 80, "num_attention_heads": 64,
+             "num_key_value_heads": 8, "head_dim": 128, "intermediate_size": 28672, "hidden_act": "silu"}
+
+    def read(self, cfg, **kw):
+        from engine.base.onboard import read_config
+        return read_config(cfg, **kw)
+
+    def test_a_model_without_routed_experts_gets_a_shape_and_asks_for_no_placement(self):
+        r = self.read(self.LLAMA)                                              # no placement, and none is wanted
+        self.assertEqual((r.blanks, r.complete), ((), True))
+        m = r.shape.moe
+        self.assertEqual((m.experts, m.experts_local, m.topk), (1, 1, 1))
+        self.assertEqual((m.inter, m.inter_local, m.dense_inter_local), (28672, 7168, 7168))
+        self.assertEqual((m.quant, m.activation), ("bf16", "silu"))
+        self.assertIn("E=1", r.sources["moe"])
+        self.assertNotIn("moe.placement", r.sources)                           # nothing to place
+
+    def test_the_cell_it_reads_is_the_one_the_dispatcher_admits(self):
+        """Not an assertion about what the E=1 cell ought to be: the gate that decides it is compiled out of
+        b12x's source and asked."""
+        from tests.test_engine_kernel_shape import load_dispatch
+        cell = self.read(self.LLAMA).shape.moe
+        gate = load_dispatch({"_glm_tp_scatter_shape"}, cell)["_glm_tp_scatter_shape"]
+        self.assertTrue(gate(1, 1, cell.hidden, cell.dense_inter_local, 1))    # the MLP, as this engine serves it
+        self.assertFalse(gate(1, 1, cell.hidden, cell.dense_inter_local * 2, 1))
+
+    def test_the_lane_table_answers_for_it(self):
+        """What the door is for: the work a dense checkpoint would take, and no lane that does not apply."""
+        from engine.kernels import cells
+        lanes = {v.lane: v.status for v in cells.admission(self.read(self.LLAMA).shape)}
+        self.assertEqual(lanes["dense"], "unmeasured")                         # judged at hidden 8192 / I 7168
+        self.assertEqual(lanes["universal"], "admitted")
+        self.assertEqual(lanes["moe"], "refused")                              # bf16 weights against the b12x cell
+        for absent in ("kda_ring", "kda_chunk", "indexer", "mhc_decode", "mhc_prefill"):
+            self.assertNotIn(absent, lanes)
+
+    def test_a_spelling_this_door_cannot_read_is_a_blank_not_a_dense_model(self):
+        mixture = dict(self.LLAMA, num_local_experts=8, num_experts_per_tok=2)  # Mixtral counts experts this way
+        blanks = {b.field: b.why for b in self.read(mixture).blanks}
+        self.assertEqual(list(blanks), ["moe"])
+        self.assertIn("num_local_experts", blanks["moe"])                      # the key it saw
+        self.assertIn("`moe_intermediate_size`", blanks["moe"])                # the one it wanted
+        self.assertIn("never a dense model", blanks["moe"])
+
+    def test_a_config_with_no_mlp_at_all_says_that(self):
+        r = self.read({k: v for k, v in self.LLAMA.items() if k != "intermediate_size"})
+        self.assertEqual([b.field for b in r.blanks], ["moe"])
+        self.assertIn("no MLP", r.blanks[0].why)
+
+    def test_a_width_the_four_ranks_cannot_split_is_a_blank(self):
+        r = self.read(dict(self.LLAMA, intermediate_size=28673))
+        self.assertEqual([b.field for b in r.blanks], ["shape"])
+        self.assertIn("inter_local", r.blanks[0].why)
+
+
 class ServedModelsTests(unittest.TestCase):
     """The three checkpoints this repo serves today all have profiles -- so the generic door must READ what their
     configs name and must NOT pretend to settle the rest. Each blank names exactly what its profile supplies."""

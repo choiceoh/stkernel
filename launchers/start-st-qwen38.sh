@@ -84,6 +84,11 @@ case "$MTP_EXPERTS" in
   nvfp4) EXPERTS_ARG="--mtp-experts nvfp4" ;;
   *) echo "ST_MTP_EXPERTS must be bf16, fp8 or nvfp4" >&2; exit 2 ;;
 esac
+TUNED_DIR=${ST_MTP_TUNED:-}                                   # ST_MTP_TUNED=DIR: the head's fine-tuned dense weights (mtp_tune.py export)
+if [ -n "$TUNED_DIR" ]; then
+  EXPERTS_ARG="$EXPERTS_ARG --mtp-tuned $TUNED_DIR"
+  EXPERTS_MOUNT="$EXPERTS_MOUNT -v $TUNED_DIR:$TUNED_DIR:ro"
+fi
 TAP_ARG=""                                                    # ST_TAP_DRAFT_QUERIES=ROWS: rank 0 records the draft queries (the IVF head's recall)
 if [ -n "${ST_TAP_DRAFT_QUERIES:-}" ]; then
   [[ "$ST_TAP_DRAFT_QUERIES" =~ ^[1-9][0-9]*$ ]] || { echo "ST_TAP_DRAFT_QUERIES must be a row count" >&2; exit 2; }
@@ -94,6 +99,11 @@ if [ -n "${ST_DRAFT_THRESHOLD:-}" ]; then                     # ST_NARROW_ROWS=N
   [[ "$ST_DRAFT_THRESHOLD" =~ ^0?\.[0-9]+$|^0$ ]] || { echo "ST_DRAFT_THRESHOLD must be a probability in [0, 1)" >&2; exit 2; }
   ADAPT_ARG="--draft-threshold $ST_DRAFT_THRESHOLD --narrow-rows ${ST_NARROW_ROWS:-2}"
 fi
+case "${ST_TAP_MTP_INPUTS:-0}" in                            # ST_TAP_MTP_INPUTS=1: rank 0 records the head's inputs (fine-tuning data)
+  0) ;;
+  1) ADAPT_ARG="$ADAPT_ARG --tap-mtp-inputs" ;;
+  *) echo "ST_TAP_MTP_INPUTS must be 0 or 1" >&2; exit 2 ;;
+esac
 case "${ST_DRAFT_LEDGER:-0}" in                               # ST_DRAFT_LEDGER=1: rank 0's per-row draft ledger under the dump dir
   0) ;;
   1) ADAPT_ARG="$ADAPT_ARG --draft-ledger" ;;
@@ -268,6 +278,11 @@ start_rank() {
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors && test -s $RANKS_DIR/config.json && test -s $RANKS_DIR/tokenizer.json" \
     || { echo "ABORT: $ip lacks rank${r}of4.safetensors or its metadata in $RANKS_DIR (VISION=0 fanout-st-ranks.sh)" >&2; return 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true"
+  if [ -n "$TUNED_DIR" ] && ! node_sh "$ip" "test -f $TUNED_DIR/mtp-tuned-r${r}of4.safetensors"; then
+    echo "$ip: $TUNED_DIR/mtp-tuned-r${r}of4.safetensors is missing (python3 -m engine.profiles.qwen38.mtp_tune export," \
+         "then copy rank $r's file here)" >&2
+    return 1
+  fi
   if [ -n "$EXPERTS_DIR" ] && ! node_sh "$ip" "test -f $EXPERTS_DIR/mtp-$MTP_EXPERTS-r${r}of4.safetensors"; then
     # docker would mount a missing directory as an empty one: say what is missing instead
     echo "$ip: $EXPERTS_DIR/mtp-$MTP_EXPERTS-r${r}of4.safetensors is missing (python3 -m engine.profiles.qwen38.mtp_side" \
