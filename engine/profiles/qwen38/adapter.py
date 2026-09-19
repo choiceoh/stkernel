@@ -20,8 +20,14 @@ for proposals (decode_graphs.DraftGraphs) -- one replay a step, not one eager he
 K picks inside that replay (decode_graphs.draft_chain). The ranks agree on every pick because the logits a pick reads
 are gathered (identical on every rank) and the draws are keyed (base/draws), as in GLM-5.3's engine.
 
-What this is not yet: the asynchronous pipeline (engine/profiles/glm53/pipeline.py is GLM's): the host reads each
-step's picks before the next step is built.
+Draft-ahead (fleet --draft-ahead; ServedModel._verify_ahead): behind a step whose rows are all greedy and plain, the
+draft step is launched on the device before the host reads anything -- the picks are the gathered logits' argmax, the
+kept drafts counted there (decode_graphs.greedy_verdict), the head's inputs gathered from the verify graph's outputs
+(DraftGraphs.run_after) -- so the host's read, commit and scheduling run beside the draft replay rather than between
+the two replays. What this is not: GLM-5.3's whole asynchronous pipeline (engine/profiles/glm53/pipeline.py), where
+the device builds the next step's ids too and the host reads outcomes steps later. Here the host still reads the drafts
+before each verify step, because the step's PLE rows are read off the SSD by id on the host (net.stage_ple; the
+operator's decision of 2026-09-18 keeps the table out of memory).
 """
 from __future__ import annotations
 
@@ -253,6 +259,38 @@ class ServedComposition:
         scores = self.net.head(out)
         return (scores, streams) if hidden else scores
 
+    def replay(self, step, store, *, host=None):
+        """A verify step through its captured graph with nothing read, gathered or copied after it (ServedModel's
+        draft-ahead verify) -> (logits [rows*t, vocab] gathered, streams [rows*t, hc*H], t, the ids fed [rows*t]): the
+        graph's own tensors, a padded row's tail included, valid until the shape replays again. None when the graphs do
+        not take the step -- a row near its picture runs eagerly (`forward`), and so does the draft step behind it
+        (ServedMTP's) -- nothing has run then, and the caller runs `forward`."""
+        store.check(step)
+        if getattr(self.net, "pictures", None) and any(self.near_picture(s.seq, s.ctx) for s in step.segments):
+            return None
+        served = self.served_step(step, store)
+        if self.graphs is None or not self.graphs.admits(served, self.caches.pool):
+            return None
+        scores, streams, _rows, t, ids = self.graphs.replay(served, known=host)
+        store.commit(step)
+        return scores, streams, t, ids
+
+
+class _Ahead:
+    """One verify step's drafts, launched behind it on the device (ServedMTP.chain): the pinned rows they land in and
+    the event after their copy; `read` waits for it once and keeps the lists -- at the next step's `propose`, or before
+    `chain` copies another step's drafts into the same rows."""
+
+    def __init__(self, rows: int, picks, probs, event):
+        self.n, self.picks, self.probs, self.event, self.rows = rows, picks, probs, event, None
+
+    def read(self):
+        if self.rows is None:
+            if self.event is not None:
+                self.event.synchronize()
+            self.rows = (self.picks[:self.n].tolist(), None if self.probs is None else self.probs[:self.n].tolist())
+        return self.rows
+
 
 class ServedMTP:
     """base/composed.Drafter over the net's MTP head (engine/modules/mtp.MTPDrafter's rule): observing the positions the
@@ -267,7 +305,11 @@ class ServedMTP:
     runs it while the row still holds its slot and blocks (a park: the head's rows belong in blocks the tier keeps) and
     drops it once they are released. A waiting row whose reservation does not hold the replay's positions (a parked
     row holds its kept positions, not the horizon the next step reserves) runs the head eagerly over its observed
-    positions alone, as longer observations (a prompt) do at once; the chain then runs eagerly at `propose`."""
+    positions alone, as longer observations (a prompt) do at once; the chain then runs eagerly at `propose`.
+
+    Behind a greedy verify step the draft step needs no observation from the host: ServedModel's draft-ahead verify
+    launches it on the device (`chain`, DraftGraphs.run_after) before it reads the picks, and hands each row its drafts
+    once its own count of kept positions agrees (`adopt`); `propose` reads them then, the draft step long done."""
 
     def __init__(self, net, caches, store, k: int, *, threshold: "float | None" = None, ledger=None,
                  candidates: int = 0):
@@ -296,6 +338,8 @@ class ServedMTP:
         self._waiting: dict = {}                  # seq -> (slot, ctx, next ids, the target's streams rows [m, hc*H])
         self._probs: dict = {}                    # seq -> the head's probability of each of its picks (graph rows)
         self._proposed: dict = {}                 # seq -> (every pick, their probabilities) of its last proposal
+        self._ahead: dict = {}                    # seq -> (_Ahead, its row there, the chain's position): `adopt`
+        self._lanes, self._users, self._turn = None, [None, None], 0     # `chain`'s two pinned row sets, alternating
         self._dist: dict = {}                     # seq -> (candidates [k, C], the distribution over them [k, C]) of
         #                                           drafts drawn from the head (sampled rows only)
         # what the head observes, recorded where a boot asks (fleet --tap-mtp-inputs, rank 0): at every kept position
@@ -366,6 +410,41 @@ class ServedMTP:
             self._next[seq] = ([token], head, ctx + len(ids))
             self._probs[seq] = None
 
+    def chain(self, rows, ids, given, kept, width: int) -> _Ahead:
+        """The draft step behind a greedy verify step, fed from the device (DraftGraphs.run_after: `rows` (seq, slot,
+        ctx) a row, `ids` [n, width] the target's picks, `given` its streams, `kept` [n] each row's kept positions), its
+        picks copied into a pinned row set behind an event. Nothing here waits for the device."""
+        graphs = self.graphs
+        out = graphs.run_after(rows, ids, given, kept, width=width)
+        picks, probs = out if getattr(graphs, "probability", False) else (out, None)
+        if self._lanes is None:
+            pin, size = picks.is_cuda, graphs.max_seqs
+            self._lanes = [(torch.empty(size, self.k, dtype=torch.int64, pin_memory=pin),
+                            None if probs is None else torch.empty(size, self.k, dtype=torch.float32, pin_memory=pin))
+                           for _ in range(2)]
+        lane, self._turn = self._turn, self._turn ^ 1
+        if self._users[lane] is not None:
+            self._users[lane].read()              # rows no step has proposed yet: kept before their lane is written
+        host_picks, host_probs = self._lanes[lane]
+        n = len(rows)
+        host_picks[:n].copy_(picks, non_blocking=True)
+        if probs is not None:
+            host_probs[:n].copy_(probs, non_blocking=True)
+        event = None
+        if picks.is_cuda:
+            event = torch.cuda.Event()
+            event.record()
+        handle = self._users[lane] = _Ahead(n, host_picks, host_probs, event)
+        return handle
+
+    def adopt(self, seq: int, handle: _Ahead, row: int, position: int) -> None:
+        """`seq`'s next proposal is row `row` of the drafts `chain` launched: its verify step kept the positions the
+        device's verdict counted, up to `position` (the chain's)."""
+        self._waiting.pop(seq, None)
+        self._next.pop(seq, None)
+        self._probs.pop(seq, None)
+        self._ahead[seq] = (handle, row, position)
+
     def observe(self, seq: int, ctx: int, next_ids, hidden, *, decoded: bool = False) -> None:
         """`decoded`: the positions a verify step kept (ServedModel._verify), not a prompt's -- the tap's record."""
         n = min(len(next_ids), hidden.shape[0])
@@ -373,6 +452,7 @@ class ServedMTP:
             return
         if self.inputs_tap is not None:
             self.inputs_tap(seq, ctx, next_ids[:n], hidden[:n], decoded)
+        self._ahead.pop(seq, None)                # drafts launched ahead of an older observation
         if seq in self._waiting:
             self._run_waiting([seq])              # its rows are positions before these
         self._next.pop(seq, None)
@@ -386,9 +466,16 @@ class ServedMTP:
 
     def propose(self, seqs, sampling=None) -> "list[list[int]]":
         """Each row's drafts. `sampling` (seq -> the row's sampler settings and k DRAFT uniforms, `_run_waiting`): the
-        rows whose drafts are drawn this step; `distribution` then hands out what each was drawn from."""
+        rows whose drafts are drawn this step; `distribution` then hands out what each was drawn from. A row whose
+        drafts a greedy verify step launched ahead (`adopt`) reads them here."""
         for seq in seqs:
             self._dist.pop(seq, None)
+            got = self._ahead.pop(seq, None)
+            if got is not None:
+                handle, row, position = got
+                picks, probs = handle.read()
+                self._next[seq] = (picks[row], None, position)
+                self._probs[seq] = None if probs is None else probs[row]
         waiting = [seq for seq in seqs if seq in self._waiting]
         if waiting:
             self._run_waiting(waiting, sampling)
@@ -434,6 +521,8 @@ class ServedMTP:
                      "sampled": seq in self._dist})
 
     def forget(self, seq: int) -> None:
+        # drafts launched ahead: their head's rows went into the row's blocks with the replay, before any park or release
+        self._ahead.pop(seq, None)
         self._next.pop(seq, None)
         self._probs.pop(seq, None)
         self._dist.pop(seq, None)
@@ -467,7 +556,121 @@ def _served_model_class():
         them in its own order -- the same tokens, commits, accepts and observations; a position after the first
         rejection is drawn and never read (a draw is a pure function of its key). A row that is rich at its first
         position (options, a grammar, logprobs, min_tokens still holding its end) keeps the base's per-position pick.
-        The step's ids go up in one upload rather than one a row."""
+        The step's ids go up in one upload rather than one a row.
+
+        With `draft_ahead` (fleet --draft-ahead) a step whose rows are all greedy and plain also puts the next draft
+        step behind the verify step on the device (`_verify_ahead`): the GPU goes from one replay to the other while
+        the host reads the picks, commits them and schedules, instead of idling through both. The drafts are still
+        read before the next verify step -- its PLE rows come off the SSD by id on the host (net.stage_ple) -- so this
+        is the half of GLM-5.3's asynchronous pipeline (engine/profiles/glm53/pipeline.py) that needs no id the host
+        has not read."""
+
+        draft_ahead = False
+        ahead_steps = 0                             # verify steps that launched their draft step ahead
+        ahead_misses = 0                            # rows whose kept count differed from the device's (never expected)
+        _host_rows = None
+
+        def horizon(self, seq):
+            """The next step's writes, and with draft-ahead those of the draft step behind it: the chain after the
+            widest observation reaches ctx + 2k (DraftGraphs.extent(k + 1)), past the verify step's k + 1."""
+            end = super().horizon(seq)
+            return max(end, self.context(seq) + 2 * self.k) if self.draft_ahead and self.k else end
+
+        def _ahead_ready(self, seqs, step) -> bool:
+            """Whether the draft step can follow this verify step on the device: draft-ahead on, both graphs captured,
+            every row greedy and plain -- its pick is its argmax, so the device's verdict is the host's -- and every row
+            reserved for the widest draft step (`horizon`). What it reads every rank holds alike, so every rank answers
+            the same and launches the same collectives."""
+            graphs = self.drafter.graphs
+            if not self.draft_ahead or self.composition.graphs is None or graphs is None:
+                return False
+            if any(self.limits[seq][1] > 0 or self._rich(seq) for seq in seqs):
+                return False
+            reach, reserved = graphs.extent(graphs.tokens), self.store.pool.tokens
+            return all(s.ctx + reach <= reserved[s.seq] for s in step.segments)
+
+        def _host_row(self, name, shape, dtype, device):
+            """A kept host buffer for the draft-ahead step's uploads and reads: pinned beside a GPU (a copy that does
+            not wait needs it), plain on the CPU."""
+            if self._host_rows is None:
+                self._host_rows = {}
+            held = self._host_rows.get(name)
+            if held is None:
+                held = self._host_rows[name] = torch.empty(shape, dtype=dtype, pin_memory=device.type == "cuda")
+            return held
+
+        def _verify_ahead(self, seqs, drafts, step, flat, carried):
+            """The verify step with its draft step behind it (`draft_ahead`), for greedy plain rows: the picks are the
+            argmax of the gathered logits, the kept drafts are counted on the device (decode_graphs.greedy_verdict), and
+            the MTP head observes those positions and chains its next drafts (ServedMTP.chain) -- all launched before
+            the host reads a thing. The host then reads the picks and the counts, and commits, accepts and records as
+            `_verify` does while the draft step runs; a row whose count agrees takes those drafts (ServedMTP.adopt),
+            read at the next `propose`. -> the finished flags, or None when the graphs do not take the step (nothing has
+            run)."""
+            from engine.profiles.qwen38.decode_graphs import greedy_verdict
+            dev, n = torch.device(self.store.device), len(seqs)
+            rows = self.composition.graphs.max_seqs
+            width = rows * (self.k + 1)
+            lengths = self._host_row("lengths", (rows,), torch.int64, dev)
+            lengths[:n] = torch.tensor([len(d) for d in drafts], dtype=torch.int64)
+            lengths = lengths[:n].to(dev, non_blocking=True)
+            out = self.composition.replay(step, self.store, host=(flat, carried))
+            if out is None:
+                return None
+            scores, streams, t, ids = out
+            picks = scores[:, :self.vocab].argmax(dim=-1).view(n, t)
+            kept = greedy_verdict(picks, ids.view(n, t)[:, 1:], lengths) + 1
+            host_picks = self._host_row("picks", (width,), torch.int64, dev)
+            host_kept = self._host_row("kept", (rows,), torch.int64, dev)
+            host_picks[:n * t].copy_(picks.view(-1), non_blocking=True)
+            host_kept[:n].copy_(kept, non_blocking=True)
+            tap = self.drafter.inputs_tap
+            if tap is not None:                     # rank 0's record of the head's inputs: its rows before the chain
+                host_streams = self._host_row("streams", (width, streams.shape[1]), streams.dtype, dev)
+                host_streams[:n * t].copy_(streams, non_blocking=True)
+            read = None
+            if picks.is_cuda:
+                read = torch.cuda.Event()
+                read.record()
+            handle = self.drafter.chain([(seq, self.store.slot_of[seq], s.ctx) for seq, s in zip(seqs, step.segments)],
+                                        picks, streams, kept, t)
+            if read is not None:
+                read.synchronize()                  # the verify step's outcome only: the draft step runs on
+            picked, counted = host_picks[:n * t].tolist(), host_kept[:n].tolist()
+            self.steps += 1
+            self.ahead_steps += 1
+            finished = []
+            for i, (seq, d, segment) in enumerate(zip(seqs, drafts, step.segments)):
+                fed, done, matched = 0, False, 0
+                for j in range(segment.length):
+                    pick = picked[i * t + j]
+                    done = self._commit(seq, pick)
+                    fed = j + 1
+                    if j < len(d) and pick == d[j]:
+                        matched += 1
+                    if done or j == len(d) or pick != d[j]:
+                        break
+                self.store.accept(seq, fed)
+                if d:
+                    self.drafts_total += 1
+                    self.drafted_total += len(d)
+                    self.accepted_total += matched
+                if getattr(self.drafter, "ledger", None) is not None:
+                    self.drafter.record(seq, segment.ctx, len(d), matched, fed)
+                next_ids = self.tokens[seq][segment.ctx + 1:segment.ctx + fed + 1]
+                if fed == counted[i] or done:
+                    # the head's rows at the kept positions are the draft step's: the same tokens and streams there
+                    if tap is not None:
+                        tap(seq, segment.ctx, next_ids, host_streams[i * t:i * t + fed].clone(), True)
+                    if fed == counted[i]:
+                        self.drafter.adopt(seq, handle, i, segment.ctx + fed)
+                else:
+                    # the device kept another count than the host: never expected (the pick is the argmax), and the row
+                    # observes as `_verify`'s does, from the graph's streams (no replay has run since)
+                    self.ahead_misses += 1
+                    self.drafter.observe(seq, segment.ctx, next_ids, streams[i * t:i * t + fed].clone(), decoded=True)
+                finished.append(done)
+            return finished
 
         def _draw_ahead(self, seqs, segments, logits, skip=()):
             ahead = [None] * len(seqs)
@@ -590,6 +793,10 @@ def _served_model_class():
             # the PLE staging hashes the step's ids and each row's tokens before its context: this model holds both, so
             # the replay's host half reads neither back off the device (two reads and a launch sequence a step)
             carried = [self._carried(seq, segment.ctx) for seq, segment in zip(seqs, segments)]
+            if self._ahead_ready(seqs, step):
+                finished = self._verify_ahead(seqs, drafts, step, flat, carried)
+                if finished is not None:
+                    return finished
             logits, hidden = self.composition.forward(step, self.store, logits="all", hidden=True, host=(flat, carried))
             self.steps += 1
             blocked = self._block_verify(seqs, drafts, step.segments, logits) if sampling else [None] * len(seqs)
@@ -633,9 +840,10 @@ def _served_model_class():
 
 def build_model(net, caches, F, *, eos_ids, max_new: int, temperature: float, top_p: float, seed: int = 0,
                 drafter: bool = True, grammars=None, draft_threshold: "float | None" = None, draft_ledger=None,
-                draft_candidates: int = 0):
+                draft_ahead: bool = False, draft_candidates: int = 0):
     """The served model (ServedModel: base/composed.ComposedModel with the one-read verify) over the served net and
-    caches, and the MTP drafter when `drafter` (ServedMTP's `threshold`, `ledger` and `candidates`)."""
+    caches, and the MTP drafter when `drafter` (ServedMTP's `threshold`, `ledger` and `candidates`); `draft_ahead`: a
+    greedy step's draft step follows its verify step on the device (ServedModel._verify_ahead)."""
     store = ServedStore(caches)
     composition = ServedComposition(net, caches)
     mtp = (ServedMTP(net, caches, store, F.spec_k, threshold=draft_threshold, ledger=draft_ledger,
@@ -644,6 +852,7 @@ def build_model(net, caches, F, *, eos_ids, max_new: int, temperature: float, to
     model = _served_model_class()(composition, store, vocab=F.vocab, eos_ids=eos_ids, max_new=max_new,
                                   temperature=temperature, top_p=top_p, seed=seed, max_context=F.max_position,
                                   drafter=mtp, grammars=grammars)
+    model.draft_ahead = bool(draft_ahead and mtp is not None)
     return model, store
 
 

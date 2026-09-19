@@ -93,6 +93,24 @@ class LaneTests(unittest.TestCase):
         self.assertIn('"--one", name', run)
         self.assertNotIn("build(", run.split("def ")[1] if False else run[:run.index("return report")])
 
+    def test_the_ahead_lane_alternates_its_arms_on_one_build(self):
+        """qwen38_step_ahead (fleet --draft-ahead): each arm first as often as last, one layer set built once (the arms
+        differ in the host's order of work, not in what is built), the kernel shape bound first, the tokens compared."""
+        from probes.engine_qwen38_step import AHEAD_ORDER
+        self.assertEqual(AHEAD_ORDER.count(True), AHEAD_ORDER.count(False))
+        pairs = list(zip(AHEAD_ORDER[::2], AHEAD_ORDER[1::2]))              # in turn: each pair runs both arms
+        self.assertTrue(all(a != b for a, b in pairs))
+        self.assertIn((False, True), pairs)
+        self.assertIn((True, False), pairs)                                  # and either arm leads a pair
+        source = (ROOT / "probes/engine_qwen38_step.py").read_text(encoding="utf-8")
+        body = source[source.index("def ahead("):source.index("def assemble(")]
+        self.assertEqual(body.count("build(ranks, ranks, rank"), 1)
+        self.assertLess(body.index("kernel_shape.bind_recorded("), body.index("build(ranks, ranks, rank"))
+        self.assertIn("draft_ahead=on, tokens=True)", body)
+        check = (ROOT / "probes/engine_kernel_check.py").read_text(encoding="utf-8")
+        self.assertIn("if args.lanes == 'qwen38_step_ahead':", check)
+        self.assertIn("qwen38_step_ahead(args.output, args.ranks)", check)
+
     def test_the_budget_fits_beside_production(self):
         from probes import engine_qwen38_step as step
         self.assertLessEqual(step.MAX_GIB, 4.0)

@@ -246,7 +246,7 @@ class FleetTests(unittest.TestCase):
         self.assertEqual(DRAFT_CANDIDATES, 20)
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text()
         self.assertIn('ap.add_argument("--draft-candidates", type=int, default=DRAFT_CANDIDATES, metavar="C",', fleet)
-        self.assertIn("draft_candidates=a.draft_candidates)", fleet)
+        self.assertIn("draft_candidates=a.draft_candidates,", fleet)       # beside --draft-ahead's (#1273)
         self.assertIn("--no-draft-ledger --draft-candidates 0 with it", fleet)
         adapter = (ROOT / "engine/profiles/qwen38/adapter.py").read_text()
         self.assertIn("candidates=draft_candidates)", adapter)
