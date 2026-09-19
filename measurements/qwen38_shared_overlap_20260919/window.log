@@ -1,0 +1,45 @@
+[13:45:00] tree 048270ef diag(qwen38): the draft queries and their picks recorded inside the cap
+[13:45:00] lane queue: 0 ticket(s) waiting
+[13:45:00] lease before: production production/srv2/1368796 on srv2 since 2026-09-19 11:28:25 (production st-glm53 on four Sparks): running=0, served=301, steps=7793, waiting=0
+[13:45:00] prebuild (production still serves)
+[13:45:06] prebuild rc=0 (10.10.10.4: {"summary": {"built": 0, "cached": 5, "failed": 0, "hit": 19, "into": "/cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops", "requests)
+[13:45:06] yield asked
+[13:45:06] handed over: production production/srv2/1368796 on srv2 since 2026-09-19 11:28:25 (production st-glm53 on four Sparks): running=0, served=301, steps=7793, waiting=0 -- asked to yield to session/qwen38-overlap-0919
+[13:45:16] == boot off ()
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 406160)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[13:48:02] boot off: launcher to last answer 166 s, requests rc=0
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+qualify lanes                                4.623     +1.30  
+  rank 0: ready in 95.3 s, door on port 8000
+10.10.10.3: stopped
+10.10.10.4: stopped
+[13:48:09] == boot all (ST_SHARED_OVERLAP=all)
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 414285)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[13:50:19] boot all: launcher to last answer 130 s, requests rc=0
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+qualify lanes                                2.458     +1.39  
+  rank 0: ready in 63.4 s, door on port 8000
+10.10.10.3: stopped
+10.10.10.4: stopped
+[13:50:24] Qwen3.8 stopped; production down 318 s so far
+[13:50:24] == H3 lane ticket
+[13:50:25] H3 submitted: log /home/choiceoh/glm53-logs/fleet/run-logs/3e25f2cb129f7afb19310c0175b5acd5e8085dbe2927adfb124affd560bb5d85.log
+[13:50:30] H3 went
+[13:50:55] H3 done
+[13:50:56] probe containers on srv4: 0
+[13:50:56] stop + release
+10.10.10.2: stopped
+10.10.10.1: stopped
+10.10.10.3: stopped
+10.10.10.4: stopped
+released
+[13:50:58] lease: free
+[13:50:58] production down since handover: 352 s so far; waiting for its door
+[13:54:38] production door answers: {"object": "list", "data": [{"id": "glm-5.3-flash", "object": "model", "owned_by": "st", "root": "glm-5.3-flash", "created": 1789793675, "max_model_len": 104857
+[13:54:38] lease after: production production/srv2/1368796 on srv2 since 2026-09-19 13:52:38 (production st-glm53 on four Sparks): running=0, served=0, steps=0, waiting=0
+[13:54:38] production downtime: 572 s
+[13:54:38] WINDOW CLOSED

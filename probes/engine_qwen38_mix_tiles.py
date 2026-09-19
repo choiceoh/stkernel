@@ -11,6 +11,9 @@ Since #1207 a decode step of 1..16 rows folds the mean into the up product (`_up
 step runs -- a prompt, a chunk, its tail -- and a captured step of more than 16 rows, or any step under --hc-fp8 (whose
 projections are the dense lane's).
 
+The first GB10 run (measurements/qwen38_mix_tiles_20260919) set the rule: up to 32 rows 256-wide tiles at 4 warps, above
+that one block a row as before -- so "today's rule" below is that one, per row count.
+
 Arms, forced through gated_residual._MIX_TILE_OVERRIDE (the rule when None): tile width 256 / 512 / 1,024 / 2,048 /
 4,096 x warps 1 / 2 / 4 / 8, at rows 4, 17, 32 (captured) and 64, 256, 1,024, 4,096 (eager). The inputs are what the
 site's two launches before it just wrote, so they are warm in the step too: no cold arm. A chain of SITES launches over
@@ -64,16 +67,16 @@ def forced(tile):
         hcr._MIX_TILE_OVERRIDE = saved
 
 
-def arms(hidden: int = HIDDEN) -> list:
-    rule = rule_tile(hidden)
+def arms(hidden: int = HIDDEN, rows: int = 1) -> list:
+    rule = rule_tile(hidden, rows)
     grid = [(tile, warps) for tile in TILES for warps in WARPS]
     return grid + ([rule] if rule not in grid else [])
 
 
-def rule_tile(hidden: int = HIDDEN) -> tuple:
+def rule_tile(hidden: int = HIDDEN, rows: int = 1) -> tuple:
     hcr = _hcr()
     with forced(None):
-        return hcr._mix_tile(hidden)
+        return hcr._mix_tile(hidden, rows)
 
 
 def site_count(rows: int, hidden: int = HIDDEN, hc: int = HC) -> int:
@@ -92,7 +95,7 @@ def launch(inputs, hidden: int, hc: int):
     """mix_mean over every site's buffers, as gated_residual.mix launches it (the hook read here)."""
     import triton
     hcr = _hcr()
-    tile, warps = hcr._mix_tile(hidden)
+    tile, warps = hcr._mix_tile(hidden, inputs[0][0].shape[0])
     for up_rows, normed, out in inputs:
         rows = up_rows.shape[0]
         hcr._mix_mean[(rows, triton.cdiv(hidden, tile))](up_rows, normed, out, up_rows.stride(0), normed.stride(0),
@@ -123,7 +126,7 @@ def gate(inputs, hidden: int, hc: int, grid) -> dict:
             rows[arm] = dict(exact=all(torch.equal(a.view(torch.int16), b.view(torch.int16)) for a, b in zip(got, want)))
         except Exception as error:                                          # a tile the compiler refuses
             rows[arm] = dict(exact=False, refused=f"{type(error).__name__}: {str(error)[:160]}")
-    rule = rule_tile(hidden)
+    rule = rule_tile(hidden, inputs[0][0].shape[0])
     if not rows[rule]["exact"]:
         raise RuntimeError(f"today's tile {rule} forced does not hold its own bytes")
     return rows
@@ -169,8 +172,8 @@ def case(report, rows: int, captured: bool, hidden: int = HIDDEN, hc: int = HC, 
     device = torch.device("cuda")
     generator = torch.Generator().manual_seed(SEED + rows)
     inputs = site_inputs(rows, hidden, hc, device, generator)
-    grid = arms(hidden) if grid is None else list(grid)
-    rule = rule_tile(hidden)
+    grid = arms(hidden, rows) if grid is None else list(grid)
+    rule = rule_tile(hidden, rows)
     gates = gate(inputs, hidden, hc, grid)
     stream = torch.cuda.Stream()
     units = {}
@@ -215,7 +218,8 @@ def run(output=None):
     props = torch.cuda.get_device_properties(0)
     torch.cuda.set_per_process_memory_fraction(min(1.0, MEMORY_CAP_GIB * 2 ** 30 / props.total_memory))
     report("device", name=props.name, torch=torch.__version__, cuda=torch.version.cuda, triton=triton.__version__,
-           hidden=HIDDEN, hc=HC, rule=list(rule_tile()), sites=SITES)
+           hidden=HIDDEN, hc=HC, rule={str(rows): list(rule_tile(HIDDEN, rows)) for rows in CAPTURED_ROWS + EAGER_ROWS},
+           sites=SITES)
     verdicts = {}
     with torch.inference_mode():
         for rows in CAPTURED_ROWS:
