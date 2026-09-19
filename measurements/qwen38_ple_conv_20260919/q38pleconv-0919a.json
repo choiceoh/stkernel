@@ -1,0 +1,49 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 21,
+ "calls_a_graph": 8,
+ "rows": {
+  "16": {
+   "us_a_call": {
+    "torch conv + add": {
+     "median": 54.6,
+     "min": 54.1
+    },
+    "conv_add": {
+     "median": 23.6,
+     "min": 22.9
+    }
+   },
+   "max_err": 0.0,
+   "differ": 0.0
+  },
+  "512": {
+   "us_a_call": {
+    "torch conv + add": {
+     "median": 5464.1,
+     "min": 3623.8
+    },
+    "conv_add": {
+     "median": 609.6,
+     "min": 303.3
+    }
+   },
+   "max_err": 0.001179,
+   "differ": 5e-06
+  },
+  "4096": {
+   "us_a_call": {
+    "torch conv + add": {
+     "median": 45309.1,
+     "min": 39531.5
+    },
+    "conv_add": {
+     "median": 4295.5,
+     "min": 3072.9
+    }
+   },
+   "max_err": 0.002008,
+   "differ": 3e-06
+  }
+ }
+}

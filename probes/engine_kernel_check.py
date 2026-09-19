@@ -312,6 +312,11 @@ def main():
         from probes.engine_qwen38_qualify_soak import REPEATS, run as qwen38_qualify_soak
         qwen38_qualify_soak(args.output, repeats=int((args.lanes.split(':')[1:] or [REPEATS])[0]))
         return
+    if args.lanes == 'qwen38_ple_conv':
+        # the PLE conv, its silu and the gated add: the torch form against ngram_gate.conv_add, many rounds
+        from probes.engine_qwen38_ple import run as qwen38_ple_conv
+        qwen38_ple_conv(args.output)
+        return
     if args.lanes == 'qwen38_prefill' or args.lanes.startswith('qwen38_prefill:'):
         # component census: a prefill chunk's wall, device and host time by kernel family, solved from four small
         # nets of the rank file's own weights (--ranks); `:N` sets the chunk's tokens

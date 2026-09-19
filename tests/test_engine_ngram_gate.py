@@ -60,6 +60,25 @@ class GateTests(unittest.TestCase):
                     self.assertLess(float((a - b).abs().max() / b.abs().max()), 2.0 ** -6)
                     self.assertLess(float((a != b).float().mean()), 0.02)      # the reductions' last bit, rarely carried
 
+    def test_conv_add_is_the_torch_conv_and_the_add(self):
+        from engine.kernels import ngram_gate
+        from engine.modules.causal_conv import causal_conv1d
+        gen = torch.Generator().manual_seed(11)
+        c, k, dil = HC * HID, 4, 3
+        weight = torch.randn(c, k, generator=gen) * 0.3               # the served conv weight is fp32 (specs.py)
+        for rows, history in ((5, False), (5, True), (20, True)):
+            normed = torch.randn(rows, c, generator=gen).bfloat16()
+            gated = torch.randn(rows, c, generator=gen).bfloat16()
+            held = (torch.randn(c, (k - 1) * dil, generator=gen) if history else torch.zeros(c, (k - 1) * dil)).bfloat16()
+            local, _ = causal_conv1d(normed, weight, None, held if history else None, "silu", dilation=dil)
+            want = gated + local
+            d = lambda t: t.to(DEVICE)                                 # noqa: E731
+            with served_kernels():
+                got = ngram_gate.conv_add(d(normed), d(gated), d(weight), d(held), dil).cpu()
+            with self.subTest(rows=rows, history=history):
+                self.assertLess(float((got.float() - want.float()).abs().max() / want.float().abs().max()), 2.0 ** -6)
+                self.assertLess(float((got != want).float().mean()), 0.02)
+
     def test_it_refuses_rows_it_does_not_take(self):
         from engine.kernels import ngram_gate
         h, embeddings, kv, norms = case(3)

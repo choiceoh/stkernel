@@ -1125,8 +1125,12 @@ class Qwen38Net:
             taps = torch.arange(s.ctx - span, s.ctx, device=ids.device)
             held = torch.where((taps < 0)[None, :], torch.zeros((), dtype=conv_ring.dtype, device=ids.device),
                                conv_ring[:, taps.clamp_min(0) % r_conv])
-            local, _ = causal_conv1d(normed, w("conv"), None, held if s.ctx else None, "silu", dilation=F.ngram_size)
-            out[sl] = gated + local
+            conv = getattr(self.lanes, "ple_conv", None)
+            if conv is not None and normed.is_cuda:              # the conv, its silu and the add in one launch
+                conv(normed, gated, w("conv"), held, F.ngram_size, out=out[sl])
+            else:
+                local, _ = causal_conv1d(normed, w("conv"), None, held if s.ctx else None, "silu", dilation=F.ngram_size)
+                out[sl] = gated + local
             keep = min(s.length, r_conv)
             written = s.ctx + torch.arange(s.length - keep, s.length, device=ids.device)
             conv_ring[:, written % r_conv] = normed[-keep:].T.to(conv_ring.dtype)

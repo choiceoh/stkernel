@@ -112,6 +112,9 @@ class Lanes:
                                     #  -> (mixed [N, H], inject [N, hc] | None), h left into in place: hc_leave_norm (or
                                     #  hc_norm) and hc_mix in one call, so a prefill step's rows need not write the
                                     #  normalised streams (gated_residual.site); None: the two calls
+    ple_conv: object = None         # (normed [T, C], gated [T, C], weight [C, K], held [C, (K-1)*dil], dil, *, out)
+                                    #  -> gated + the dilated causal conv's silu, one launch (ngram_gate.conv_add);
+                                    #  None: engine/modules/causal_conv's torch form and an add
 
 
 # How a served leave meets the TP sum before it (carry H4, engine/kernels/gated_residual.leave_norm): "off", launched
@@ -467,7 +470,7 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
                  rows_linear=on_main(linear_rows), router_logits=on_main(router_fp32.router_logits),
                  moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate), hc_site=on_main(hc_site),
-                 leave=leave)
+                 ple_conv=on_main(ngram_gate.conv_add), leave=leave)
 
 
 def qualify(device, F) -> dict:
