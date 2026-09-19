@@ -686,6 +686,36 @@ class QwenProductionLaunchTests(LaunchHarness):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertFalse(self.lock.exists(), "a production stop releases the production lease")
 
+    def test_every_rank_parks_under_the_tier_root_glm_uses_and_off_is_none(self):
+        """Qwen3.8's NVMe tier is GLM-5.3's directory under the same caps (base/tiered_kv.TIER_ROOT): the two never
+        serve at once. ST_TIER_DIR=off boots with none."""
+        from engine.base.tiered_kv import TIER_ROOT
+        self.env.update(ST_LEASE_KIND="production", LEASE_OWNER_PRODUCTION="production/srv2/4242")
+        self.env.pop("ST_TIER_DIR", None)
+        result = self.run_script("start-st-qwen38.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        runs = self.boot_commands()
+        self.assertEqual(len(runs), 4, runs)
+        self.assertTrue(all(run.endswith(f" --tier-dir {TIER_ROOT}") for run in runs), runs)
+        (self.home / "runs").unlink()
+        self.assertEqual(self.run_script("start-st-qwen38.sh", "stop").returncode, 0)
+        self.env["ST_TIER_DIR"] = "off"
+        result = self.run_script("start-st-qwen38.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        runs = self.boot_commands()
+        self.assertEqual(len(runs), 4, runs)
+        self.assertTrue(all(run.endswith(" --tier-dir=") for run in runs), runs)
+
+    def test_a_tier_off_the_mounted_directory_is_refused_before_any_node_boots(self):
+        """A tier the containers cannot see boots fine and throws everything away with the container
+        (start-st-glm53.sh, 2026-09-16): refused here as there."""
+        self.env.update(ST_LEASE_KIND="production", LEASE_OWNER_PRODUCTION="production/srv2/4242",
+                        ST_TIER_DIR="/home/choiceoh/st-tier")
+        result = self.run_script("start-st-qwen38.sh")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("ST_TIER_DIR must be 'off' or a path under /home/choiceoh/glm53-logs", result.stderr)
+        self.assertEqual(self.boot_commands(), [])
+
     def stop_steps(self):
         result = self.run_script("start-st-qwen38.sh", "stop")
         steps = {}

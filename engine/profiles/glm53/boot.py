@@ -37,7 +37,6 @@ import torch                                                     # noqa: E402
 from engine.base import scheduler as sched                       # noqa: E402
 from engine.base.arena import Arena, host_reclaim, prepare_allocation  # noqa: E402
 from engine.base.runtime_memory import RuntimeMemory, reclaim_preparation_pages  # noqa: E402
-from engine.base import tenancy                                   # noqa: E402
 from engine.base import kernel_shape                              # noqa: E402
 from engine.base.comm import Comm, LocalTP                       # noqa: E402
 from engine.base.config import Config, Fact, Knob                # noqa: E402
@@ -49,10 +48,11 @@ from engine.base.params import total_bytes                       # noqa: E402
 from engine.base.record import DeathDump, Ring                   # noqa: E402
 from engine.base.runner import STEP_RECORD, Runner               # noqa: E402
 from engine.base.serve import Server                             # noqa: E402
-from engine.base.kv_tier import NvmeTier                         # noqa: E402
 from engine.base.prefix import PrefixCache                       # noqa: E402
 from engine.base.shapes import chunk_for                         # noqa: E402
-from engine.base.tiered_kv import TieredKV                       # noqa: E402
+# the fleet's tiers, shared with every profile that serves on it (base/tiered_kv): their caps, the boot line
+from engine.base.tiered_kv import (PREFIX_TIER_GIB, PREFIX_TIER_STAGE, TIER_GIB, TIER_RESERVE_GIB,  # noqa: E402,F401
+                                   TIER_ROOT, open_tiers, tier_line)
 from engine.profiles.glm53 import facts, lanes as lane_tables    # noqa: E402
 from engine.profiles.glm53.caches import (Glm53Caches, layout, snapshot_layout, stage_bytes,
                                         cache_capacity, state_dtype)   # noqa: E402
@@ -85,23 +85,8 @@ Every boot mode, scheduler admission, state allocation, drafter preparation
 and graph capture uses this number. Fewer widths reduce preparation and
 resident state, but this change alone is not a measured decode-speed gain.
 """
-PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
-TIER_GIB = 64.0
-"""What a rank's parked conversations may occupy on NVMe, and its evicted prefix boundaries below.
-
-Declared, because "the filesystem decides" is not a decision (D1). Until 45차 §53 neither tier
-had a capacity at all, so the only brake was `reserve_bytes` -- one gigabyte of free space --
-on a root that also carries the checkpoints, the images and the logs. It had eaten 75 GiB of a
-disk that was 99% full, and nothing in the engine had ever deleted a byte of it.
-
-A parked conversation is ~260 MiB here (one block plus its 247 MiB state slot, the size 45차
-§49 left open), so 64 GiB is about 250 of them and 16 GiB is about 30 prefix boundaries. The
-prefix tier gets the smaller share on purpose: a boundary is a cache that recomputes, a
-conversation is a turn the user may come back to (D16). Past the cap the LRU forgets, foreign
-layouts first (`NvmeTier.oldest`).
-"""
-PREFIX_TIER_GIB = 16.0
-TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem whatever its own cap allows
+# TIER_GIB, PREFIX_TIER_GIB, TIER_RESERVE_GIB and PREFIX_TIER_STAGE are the fleet's, imported above from
+# base/tiered_kv: Qwen3.8 parks in the same directory under the same caps.
 # A measurement arm's switch, never production's (profiles/glm53/capture.py): the served boot scores the vocabulary
 # head on the rows it is already prefilling and writes them position by position, so two boots fed the same corpus can
 # be compared where it matters -- the NLL of the true next token, not a throughput number. That is the channel the
@@ -901,29 +886,22 @@ def build(comm, layers, lanes, ranks_dir, kv_gib: float, max_seqs: int, use_draf
         with recorder.phase("runner"):
             tiered = prefix_tier = None
             if tier_dir:                                                                # D16: idle conversations park on NVMe, per rank
-                if lease_owner:
-                    # A restart keeps its conversations (D16). A HANDOVER does not: the previous holder's
-                    # clients are gone and its prefix tier is warm with boundaries this one never computed,
-                    # which is poison for anything anybody measures next (base/tenancy).
-                    left = tenancy.claim(Path(tier_dir) / f"rank{comm.rank}", lease_owner)
-                    if left:
-                        print(f"  rank{comm.rank}: tenant state cleared -- the fleet changed hands from {left}")
                 # Historical states contain old route sums or attention selected
                 # with uncorrected indexer head gates. Neither conversations nor
                 # prefix snapshots may restore them after these math repairs.
                 state_format = f"glm53-kda-{F.kda_state_dtype}-moe-fp32-shared-smooth-v4"
-                tier = NvmeTier(Path(tier_dir) / f"rank{comm.rank}", block_bytes=cache_layout.block_bytes,  # a block is one NVMe unit (block-major)
-                                capacity_bytes=int(TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
-                                state_format=state_format, mapped_staging=nvme_mapped_staging)
-                tiered = TieredKV(caches.pool, tier)
-                # the prefix tier (45차 §23 A): evicted leaf boundaries -- their blocks and snapshot -- live on beside the parked
-                # conversations, in their own directory and keyspace (a boundary's key is 56 bits of its hash)
-                prefix_tier = TieredKV(caches.pool, NvmeTier(Path(tier_dir) / f"rank{comm.rank}" / "prefix",
-                                                             block_bytes=cache_layout.block_bytes, stage_bytes=PREFIX_TIER_STAGE,
-                                                             capacity_bytes=int(PREFIX_TIER_GIB * GIB),
-                                                             reserve_bytes=int(TIER_RESERVE_GIB * GIB),
-                                                             snapshot_cache_bytes=PREFIX_COMPRESSED_BYTES,
-                                                             state_format=state_format, mapped_staging=nvme_mapped_staging))
+                # A restart keeps its conversations (D16). A HANDOVER does not: the previous holder's clients are gone
+                # and its prefix tier is warm with boundaries this one never computed, which is poison for anything
+                # anybody measures next (base/tenancy). A block is one NVMe unit (block-major); the prefix tier (45차
+                # §23 A) keeps evicted leaf boundaries -- their blocks and snapshot -- beside the parked conversations,
+                # in its own directory and keyspace (a boundary's key is 56 bits of its hash).
+                tiered, prefix_tier, left = open_tiers(caches.pool, cache_layout.block_bytes, tier_dir, comm.rank,
+                                                       state_format=state_format, owner=lease_owner,
+                                                       mapped_staging=nvme_mapped_staging,
+                                                       prefix_cache_bytes=PREFIX_COMPRESSED_BYTES)
+                if left:
+                    print(f"  rank{comm.rank}: tenant state cleared -- the fleet changed hands from {left}")
+                tier = tiered.tier
                 recorder.gauge("nvme_mapped_staging", int(nvme_mapped_staging))
                 recorder.gauge("nvme_staging_saved_bytes", (tier.stage_bytes + prefix_tier.tier.stage_bytes
                                - tier.staging_padding_bytes - prefix_tier.tier.staging_padding_bytes)
@@ -990,18 +968,6 @@ def release_line(report: dict, rank: int = 0) -> str:
         line += (f"\n  released: rank {rank} did NOT come back clean -- "
                  f"{report['allocated_after'] / 2**20:.0f} MiB is still held by live tensors"
                  + (f", largest blocks {held}" if held else ""))
-    return line
-
-
-def tier_line(tier, cap_gib: float, what: str) -> str:
-    """What is on the disk, in bytes -- the boot used to print counts and leave the size a mystery."""
-    live = sum(1 for k in tier.index if tier.has(int(k)))
-    stale, stale_bytes = len(tier.stale()), tier.stale_bytes()
-    line = (f"  NVMe tier: {live} {what} parked from before, {tier.used_bytes() / GIB:.1f} GiB of "
-            f"{cap_gib:.0f} GiB")
-    if stale:
-        line += (f"; {stale} under another layout holding {stale_bytes / GIB:.1f} GiB -- not resumable, "
-                 f"and the first thing forgotten when the cap bites")
     return line
 
 
@@ -1957,7 +1923,7 @@ def main(argv=None) -> int:
     ap.add_argument("--serve", action="store_true", help="with --local: through the HTTP door and the lockstep loop")
     ap.add_argument("--drafter", action="store_true", help="with --local: DFlash2 drafts (aux layers clipped to the chain: plumbing, not quality)")
     ap.add_argument("--park", action="store_true", help="with --local: park a finished conversation on NVMe, resume, continue (D16)")
-    ap.add_argument("--tier-dir", default="/home/choiceoh/glm53-logs/st-tier")
+    ap.add_argument("--tier-dir", default=TIER_ROOT)
     ap.add_argument("--ckpt-meta", default=str(facts.CKPT), help="dir with config.json, tokenizer.json, generation_config.json")
     ap.add_argument("--drafter-dir", default=str(drafter_mod.DRAFTER), help="DFlash2 config and model.safetensors directory")
     ap.add_argument("--port", type=int, default=8000)

@@ -12,7 +12,8 @@ What a sequence carries, from the reference features (engine/modules; engine/pro
         PLE: the token-id ring [8] int64 and the conv-input ring [10240, 9+K+1] bf16, both by position
 
 Every value is addressed BY POSITION (GLM-5.3's caches' rule): a rejected draft is overwritten by the next step's writes
-at the same positions, and a step reads the state after position ctx-1. Each block is one NVMe transfer unit.
+at the same positions, and a step reads the state after position ctx-1. Each block is one NVMe transfer unit, and a
+slot's and a snapshot's bytes are one contiguous run each: what the tiers park and restore (`state_format` names them).
 
 The paged regions are presented to the kernels in the layout they take (engine/kernels/qsa: [pages, page_size, heads,
 dim] with a page table of physical pages per request): typed strided views of the block storage, one per layer, so the
@@ -121,6 +122,23 @@ def snapshot_layout(F, layers):
         field("ple_ids", -1, (F.ngram_size - 1,), "i64")
         field("ple_conv", -1, (F.hc * F.hidden, (F.ple_conv - 1) * F.ngram_size), "bf16")
     return aligned(max(at, 1), ALIGN), tuple(fields)
+
+
+STATE_FORMAT_VERSION = 1
+
+
+def state_format(F, layout: CacheLayout, snapshot_bytes: int, *, mtp: bool) -> str:
+    """What a parked conversation's and a prefix boundary's bytes are, as the NVMe tier's `state_format`: files written
+    under any other string are foreign to this boot (base/kv_tier `stale`) -- never promoted, the first forgotten, and
+    replaced by a write under the same key. GLM-5.3 parks in the same directory (base/tiered_kv.TIER_ROOT).
+
+    The rank files' layout (the weights a state was computed with), spec_k (the rings it sizes: K+1 GDN states, K more
+    conv inputs), whether the MTP head's rows are in the blocks, the GDN state's dtype, and the block's, slot's and
+    snapshot's byte counts themselves -- a layout change that moved none of the others still moves one of those. The
+    version is the math's: bump it when a state this layout computed is no longer what a boot would compute (GLM-5.3's
+    stands at v4, profiles/glm53/boot.py)."""
+    return (f"qwen38-{F.weight_layout}-k{F.spec_k}-mtp{int(mtp)}-{F.gdn_state_dtype}"
+            f"-b{layout.block_bytes}-s{layout.slot_bytes}-n{snapshot_bytes}-v{STATE_FORMAT_VERSION}")
 
 
 def cache_capacity(F, layers, kv_gib: float, max_seqs: int, snapshot_gib: float, *, mtp: bool = True):

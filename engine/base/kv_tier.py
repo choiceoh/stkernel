@@ -137,7 +137,8 @@ class NvmeTier:
         return sorted(int(k) for k in self.index if self.has(int(k)))
 
     def stale(self) -> "list[str]":
-        """Foreign block or state layouts stay on disk and cannot be promoted."""
+        """Foreign block or state layouts stay on disk and cannot be promoted. They go first when the cap bites
+        (`oldest`), and a write of this layout under the same key replaces one (`_demote`)."""
         return [k for k, meta in self.index.items()
                 if not self._compatible(meta)]
 
@@ -176,12 +177,15 @@ class NvmeTier:
         return json.loads(path.read_text()) if path is not None and path.exists() else None
 
     def _room(self, nbytes: int, replacing: int) -> None:
-        """Refuse before writing: a declared capacity, else the filesystem's free space minus a reserve."""
-        if self.capacity_bytes is not None:
-            if self.used_bytes() - replacing + nbytes > self.capacity_bytes:
-                raise TierFull(f"tier: {nbytes / 2**20:.0f} MiB would exceed the declared {self.capacity_bytes / 2**30:.2f} GiB "
-                               f"({self.used_bytes() / 2**30:.2f} used)")
-            return
+        """Refuse before writing: past a declared capacity, and past the filesystem's free space minus the reserve.
+
+        Both, not one or the other. The reserve used to be checked only when no capacity was declared, so from 45차
+        §53, which gave both tiers a cap, it was not checked at all: a tier under its cap went on writing into a disk
+        that the checkpoints, the images, the dumps and the logs were filling too. A replaced generation's bytes count
+        against the cap but not against the free space -- its files go only after the new one is published."""
+        if self.capacity_bytes is not None and self.used_bytes() - replacing + nbytes > self.capacity_bytes:
+            raise TierFull(f"tier: {nbytes / 2**20:.0f} MiB would exceed the declared {self.capacity_bytes / 2**30:.2f} GiB "
+                           f"({self.used_bytes() / 2**30:.2f} used)")
         free = shutil.disk_usage(self.dir).free
         if nbytes + self.reserve_bytes > free:
             raise TierFull(f"tier: {nbytes / 2**20:.0f} MiB would leave {(free - nbytes) / 2**30:.2f} GiB on {self.dir}, "
@@ -237,15 +241,19 @@ class NvmeTier:
 
     def _demote(self, seq: int, storage, block_ids: "list[int]", tokens: int, extra=None, record=None) -> int:
         if str(seq) in self.stale():
-            raise ValueError(f"seq {seq} belongs to a different block layout or state format")
-        import torch
-
+            # Another layout's conversation under this key: no boot of this layout can promote it, and this one is
+            # being written now. The fleet's engines share one tier directory (tiered_kv.TIER_ROOT) and each numbers
+            # its conversations from its own parked set, so a key both used is expected. Refusing it dropped the live
+            # conversation to keep one that nothing here can read.
+            self._forget(seq)
         extra_bytes = int(extra.numel()) if extra is not None else 0
         cache = getattr(self, "snapshot_cache", None)
         builder = cache.begin(extra_bytes) if cache is not None and extra_bytes else None
         old_file = self._path(seq).name
         total = len(block_ids) * self.block_bytes + _sectors(extra_bytes)
         self._room(total, int(self.index.get(str(seq), {}).get("bytes", 0)))
+        import torch
+
         table = storage.view(-1, self.block_bytes) if block_ids else None
         ids = torch.as_tensor(block_ids, dtype=torch.long, device=table.device) if block_ids else None
         device = table.device if table is not None else extra.device
