@@ -1,0 +1,16 @@
+#!/bin/bash
+# devenv-sync: main's tools/devenv applied to srv1..srv4 -- the repo is the source of the development environment, so the
+# scripts that run are always main's, read from origin/main and never from a working tree. Installed into ~/.local/bin on
+# srv4 by `tools/devenv/sync.sh --install`; the devenv-sync.timer user unit runs it every morning. Arguments go to sync.sh.
+set -euo pipefail
+REPO=${DEVENV_REPO:-$HOME/stkernel}
+git -C "$REPO" fetch -q origin main
+if ! git -C "$REPO" cat-file -e origin/main:tools/devenv/sync.sh 2>/dev/null; then
+  echo "devenv-sync $(date '+%F %T'): origin/main has no tools/devenv -- nothing to apply"
+  exit 0
+fi
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+git -C "$REPO" archive origin/main tools/devenv | tar -x -C "$tmp"
+echo "devenv-sync $(date '+%F %T'): main $(git -C "$REPO" rev-parse --short origin/main)"
+bash "$tmp/tools/devenv/sync.sh" "$@"

@@ -93,6 +93,48 @@ class CoveredAttentionTests(unittest.TestCase):
         # one-split launches are the 12-position budget's, in the other cases)
         self.assertTrue(max(splits) > 1 and (INTERPRET or 1 in splits), splits)
 
+    def assertStackedBytes(self, gen, requests, budget, kv_heads, tiles=(None,)):
+        """The stacked launch (one request's rows, forced from any row count) against the sparse launch over the
+        covered ids, byte for byte; `tiles`: _STACK_OVERRIDE's geometries besides the rule's (None)."""
+        from engine.kernels import qsa
+        meta, q, k_cache, v_cache, gate = case(gen, requests, kv_heads)
+        ids = covered_ids(meta, budget)
+        for gated in (None, gate):
+            with served_kernels():
+                want = qsa.qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, ids, meta.positions32, meta.lengths,
+                                                             W.ratio, budget, meta.page_table, meta.rows_req, gate=gated)
+            for tile in tiles:
+                stacked = Launches(qsa._qsa_covered_stacked_kernel)
+                with served_kernels(), mock.patch.object(qsa, "_qsa_covered_stacked_kernel", stacked), \
+                        mock.patch.object(qsa, "STACK_MIN_ROWS", 1), mock.patch.object(qsa, "_STACK_OVERRIDE", tile):
+                    got = qsa.qsa_covered_paged_attention(q, k_cache, v_cache, meta.positions32, meta.lengths, W.ratio,
+                                                          budget, meta.page_table, meta.rows_req, gate=gated,
+                                                          one_request=True)
+                run = (qsa.STACK_M if tile is None else tile[1]) // (W.heads // kv_heads)
+                with self.subTest(rows=q.shape[0], kv_heads=kv_heads, tile=tile, gate=gated is not None):
+                    self.assertEqual(stacked.grids[0], (-(-q.shape[0] // run), kv_heads))
+                    # the sparse launch's tiles on the MMA: its bytes (a GB10 sums an element's K in the same order at
+                    # any M). The interpreter's numpy matmul does not -- a stacked M of 64 against a row's 8 moves an
+                    # element by a step -- and wider tiles round the softmax elsewhere: the oracle's band there
+                    if not INTERPRET and (tile is None or tile[0] == 16):
+                        self.assertTrue(torch.equal(bits(got), bits(want)))
+                    else:
+                        err = float((got.float() - want.float()).abs().max() / want.float().abs().max())
+                        self.assertLess(err, 2.0 ** -6)
+                    self.assertTrue(bool(got.float().abs().sum() > 0))
+
+    def test_a_prefill_segment_stacked(self):
+        """A prefill segment's rows stacked a run a program: from position 0 (most columns past every row of the early
+        runs), one that ends at the reach, a short last run; one and two KV heads (runs of 10 and of 21 rows), and the
+        probe hook's wider tiles and narrower stack."""
+        gen = generator(1013)
+        budget = 64 if INTERPRET else W.budget
+        edge = reach(budget)
+        for kv_heads in (W.kv_heads, 2):
+            for rows in ((23, edge) if INTERPRET else (257, edge)):
+                self.assertStackedBytes(gen, ((0, 1, edge - rows, rows),), budget, kv_heads)
+        self.assertStackedBytes(gen, ((0, 1, 0, 37),), budget, W.kv_heads, tiles=(None, (32, 64, 8), (16, 32, 4)))
+
     def test_a_short_prompt_stops_at_its_own_end(self):
         """The whole prompt from position 0: most of the budget's columns are past every row."""
         gen = generator(1012)
@@ -121,6 +163,8 @@ class WrapperTests(unittest.TestCase):
         for group in (0, 5, True):
             with self.assertRaisesRegex(ValueError, "groups 1..4 rows"):
                 run(group=group)
+        with self.assertRaisesRegex(ValueError, "one_request is a declared boolean"):
+            run(one_request=1)
         with self.assertRaisesRegex(ValueError, "divisible by compression ratio"):
             run(token_topk=10)
         with self.assertRaisesRegex(ValueError, "metadata is int32"):

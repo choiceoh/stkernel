@@ -146,9 +146,9 @@ class LayerTests(unittest.TestCase):
             calls.append(("select", args, group))
             return scored
 
-        def attend(q, K, V, blocks, *args, gate):
+        def attend(q, K, V, blocks, *args, gate, out=None):
             calls.append(("attend", blocks, args))
-            return torch.zeros(rows, heads, D)
+            return torch.zeros(q.shape[0], heads, D) if out is None else out
 
         lanes = SimpleNamespace(qsa_index_keys=lambda *a: None, qsa_select=select, qsa_attend=attend,
                                 qsa_inputs=lambda *a: (torch.zeros(rows, heads, D), "iq"))
@@ -170,21 +170,42 @@ class LayerTests(unittest.TestCase):
         from engine.profiles.qwen38.net import Qwen38Net
         seen = []
 
-        def attend_covered(q, K, V, *args, gate, group):
-            seen.append((args, group))
-            return torch.zeros(q.shape[0], 2, 8)
+        def attend_covered(q, K, V, *args, gate, group, one_request, out=None):
+            seen.append((q.shape[0], args, group, one_request))
+            return torch.zeros(q.shape[0], 2, 8) if out is None else out
 
         F = facts(ratio=4, budget=12)
         meta, calls, _ = self.layer([(0, 9)], F, attend_covered)
         self.assertEqual(calls, [])
         self.assertIsNone(meta.covered_blocks)
-        self.assertEqual(seen, [((meta.positions32, "lengths", 4, 12, "page_table", "rows_req"), 4)])
-        _, calls, _ = self.layer([(0, 16)], F, attend_covered)             # one position past the reach
+        self.assertEqual(seen, [(9, (meta.positions32, "lengths", 4, 12, "page_table", "rows_req"), 4, True)])
+        seen.clear()
+        _, calls, _ = self.layer([(1, 3), (4, 5)], F, attend_covered)     # several segments, all covered: runs of one
+        self.assertEqual([entry[2:] for entry in seen], [(1, False)])
+        seen.clear()
+        meta, calls, scored = self.layer([(0, 16)], F, attend_covered)    # one position past the reach
+        # the 15 rows before the reach take the covered launch, the one past it the sparse launch over its ids
+        self.assertEqual([entry[0] for entry in seen], [15])
+        self.assertTrue(torch.equal(seen[0][1][0], meta.positions32[:15]))
         self.assertEqual([c[0] for c in calls], ["select", "attend"])
-        self.assertEqual(len(seen), 1)
+        self.assertTrue(torch.equal(calls[1][1], scored[15:]))
+        self.assertTrue(torch.equal(calls[1][2][0], meta.positions32[15:]))
         self.assertTrue(Qwen38Net._covers(F, host_step((0, 15))[0]))
         self.assertFalse(Qwen38Net._covers(F, host_step((0, 16))[0]))
         self.assertFalse(Qwen38Net._covers(F, SimpleNamespace(captured=True)))
+
+    def test_the_covered_rows_of_a_step(self):
+        """`_covered_rows`: all of a covered step; a segment across the reach (15 positions at budget 12, ratio 4) up to
+        it, from wherever it starts; nothing past it, of several uncovered segments, or of a captured step."""
+        from engine.profiles.qwen38.net import Qwen38Net
+        F = facts(ratio=4, budget=12)
+        for segments, rows in ((((0, 9),), 9), (((1, 3), (4, 5)), 8), (((0, 16),), 15), (((10, 30),), 5),
+                               (((15, 4),), 0), (((0, 3), (0, 20)), 0)):
+            self.assertEqual(Qwen38Net._covered_rows(F, host_step(*segments)[0]), rows, segments)
+        self.assertEqual(Qwen38Net._covered_rows(F, SimpleNamespace(captured=True)), 0)
+        self.assertTrue(Qwen38Net._one_request(host_step((0, 16))[0]))
+        self.assertFalse(Qwen38Net._one_request(host_step((1, 3), (4, 5))[0]))
+        self.assertFalse(Qwen38Net._one_request(SimpleNamespace(captured=True)))
 
     def test_a_covered_step_never_reaches_the_selection(self):
         meta, calls, _ = self.layer([(0, 9)], facts(ratio=4, budget=12))

@@ -274,6 +274,12 @@ def main():
         from probes.engine_qwen38_mix_tiles import run as qwen38_mix_tiles
         qwen38_mix_tiles(args.output)
         return
+    if args.lanes == 'qwen38_qsa_stacked':
+        # the covered attention's stacked launch against the run launch, and a first chunk across the reach split
+        # between the covered and the sparse launch (probes/engine_qwen38_qsa_geometry.run_stacked)
+        from probes.engine_qwen38_qsa_geometry import run_stacked
+        run_stacked(args.output)
+        return
     if args.lanes == 'qwen38_qsa_geometry':
         # component timings: the QSA launches' geometry at Qwen3.8's cell -- the attention's split profile, the scorer's
         # tiles, the decode selection against its torch form, the input launches' warps -- each gated first (Q9)
