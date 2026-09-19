@@ -191,6 +191,12 @@ def main():
         from probes.engine_qwen38_step import LAYER_SETS, MTP_ARMS, run as qwen38_step
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=MTP_ARMS)
         return
+    if args.lanes == 'qwen38_mtp_window':
+        # the MTP head's draft graph at every context bucket, its QSA selection scored against a sink-and-recent window
+        # of groups (fleet --mtp-window): what the draft's index scoring costs as the context grows
+        from probes.engine_qwen38_mtp_window import run as qwen38_mtp_window
+        qwen38_mtp_window(args.output, args.ranks)
+        return
     if args.lanes == 'qwen38_step_overlap':
         # one rank's captured step with the shared expert forked beside the routed experts, against the served step (M5)
         from probes.engine_qwen38_step import LAYER_SETS, OVERLAP_ARMS, run as qwen38_step
@@ -224,6 +230,11 @@ def main():
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe
         qwen38_moe(args.output)
+        return
+    if args.lanes == 'qwen38_input_reuse':
+        # component timings: the W4 GEMM's input reuse at Qwen3.8's decode projections, byte-exact first (S2)
+        from probes.engine_qwen38_input_reuse import run as qwen38_input_reuse
+        qwen38_input_reuse(args.output)
         return
     if args.lanes == 'qwen38_mix_tiles':
         # component timings: the mixer mean's hidden axis in tiles, every tile the one-block launch's bytes first (H3)

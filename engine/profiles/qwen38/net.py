@@ -231,6 +231,8 @@ class Qwen38Net:
         self.dense = {}
         self.draft_index = None                         # dense/ivf_head over the head's rows (prepare_draft_head)
         self.draft_tap = None                           # kernels/common/row_tap: what draft_tokens saw (fleet --tap-draft-queries)
+        self.mtp_window = None                          # (sink, recent) groups the head attends instead of its scored
+                                                        # selection (Windowed-MTP; fleet --mtp-window; `_qsa`)
         self._experts = {}
         self._ple = self._ple_hash = self._ple_scale = None
         self.ple_table = self.ple_stage = None          # attach_ple: the rank's SSD table and the staged rows
@@ -683,7 +685,20 @@ class Qwen38Net:
                                       meta.lengths, F.idx_budget, F.idx_ratio, group=runs)
         return mine.collect(scored, meta.groups_seen, self.comm)
 
-    def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None):
+    def _window_blocks(self, meta: StepMeta, window) -> torch.Tensor:
+        """The groups a windowed head attends (`mtp_window`): the first `sink` and the last `recent` complete groups
+        each row sees, or all of them while they fit -- modules/prefill_indexer.window_pool_ids, no score read."""
+        F = self.F
+        if meta.groups_seen is None:
+            meta.groups_seen = (meta.positions32 + 1) // F.idx_ratio
+        from engine.modules.prefill_indexer import window_pool_ids
+        return window_pool_ids(meta.groups_seen, F.index_blocks, *window)
+
+    def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None,
+             window=None):
+        """`window` (sink, recent): the layer attends those groups (`_window_blocks`) instead of scoring its index
+        queries -- its index keys are neither written nor read, so a layer is windowed for the life of its caches (the
+        MTP head's, `mtp_window`), never step by step."""
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix or f"L{L}.attn."
         cache_layer = L if cache_layer is None else cache_layer
@@ -699,12 +714,13 @@ class Qwen38Net:
         K, V = caches.kv(cache_layer)
         ring = caches.key_ring(cache_layer)
         ik = idx[:, idx_q:]
-        # the indexer's keys first: each group this step closes pooled from the raw-key ring (members before the step)
-        # and this step's rows, normalised and rotated at its first position and stored -- one launch, which must read
-        # the ring before this step's raw keys overwrite it
-        lanes.qsa_index_keys(ik, ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions, meta.key_slots,
-                             F.idx_ratio, p[n + "idx_k_norm"], F.rms_eps, F.rope_theta, F.rotary_dim,
-                             caches.index_keys(cache_layer))
+        if window is None:
+            # the indexer's keys first: each group this step closes pooled from the raw-key ring (members before the
+            # step) and this step's rows, normalised and rotated at its first position and stored -- one launch, which
+            # must read the ring before this step's raw keys overwrite it
+            lanes.qsa_index_keys(ik, ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions, meta.key_slots,
+                                 F.idx_ratio, p[n + "idx_k_norm"], F.rms_eps, F.rope_theta, F.rotary_dim,
+                                 caches.index_keys(cache_layer))
         # then one launch for the rest, all read through their strides: the query and index query heads normalised and
         # rotated at their positions, the key head the same straight into K, the value rows into V and the raw keys
         # into the ring by position
@@ -713,7 +729,9 @@ class Qwen38Net:
                                  p[n + "k_norm"], p[n + "idx_q_norm"], F.rms_eps, F.rope_theta, F.rotary_dim, K, V,
                                  meta.kv_slots, ring, meta.ring_slots)
         attend_covered = getattr(lanes, "qsa_attend_covered", None)
-        if attend_covered is not None and Qwen38Net._covers(F, step):
+        # a window narrower than the budget attends less than a covered step's every group
+        whole = window is None or sum(window) == F.index_blocks
+        if attend_covered is not None and whole and Qwen38Net._covers(F, step):
             # a step the budget covers chooses nothing: one dense causal launch, a run of rows sharing each K/V tile,
             # the sparse launch's bytes (carry Q10)
             attended = attend_covered(q, K, V, meta.positions32, meta.lengths, F.idx_ratio, F.idx_budget,
@@ -721,7 +739,7 @@ class Qwen38Net:
         else:
             # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a lane
             # table without the covered launch attends a covered step's unscored ids
-            blocks = self._covered_blocks(step, meta)
+            blocks = self._window_blocks(meta, window) if window is not None else self._covered_blocks(step, meta)
             if blocks is None:
                 blocks = self._sharded_blocks(iq, step, meta, caches.index_keys(cache_layer))
             if blocks is None:
@@ -975,7 +993,8 @@ class Qwen38Net:
         g = lanes.hc_norm(given, p["mtp.pre_fc_norm_hidden"], F.rms_eps, 1).view(-1, F.hc, F.hidden)
         h = (self._bf16(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
-        out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers)
+        out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers,
+                        window=self.mtp_window)
         if last_hidden_only and rows is None:
             rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
         if rows is not None:

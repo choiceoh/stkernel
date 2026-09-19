@@ -114,7 +114,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
           draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
-          draft_ledger=None, narrow_rows: int = 0):
+          draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
@@ -141,6 +141,12 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, mtp_precision=mtp_precision,
                     mtp_experts=mtp_experts, shared_overlap=shared_overlap)
+    if mtp_window is not None:
+        # the head attends a sink and a recent window of groups instead of scoring (Windowed-MTP; its index keys are
+        # never written) -- acceptance moves, output does not
+        if not (mtp_window[0] >= 0 and mtp_window[1] > 0 and sum(mtp_window) <= F.index_blocks):
+            raise ValueError(f"--mtp-window {mtp_window}: SINK >= 0 and RECENT > 0 groups, {F.index_blocks} at most")
+        net.mtp_window = tuple(mtp_window)
     specs = net.specs()
     if tap_rows and drafter and comm.rank == 0:
         # the draft queries the head's argmax reads, and its picks, recorded inside the captured draft graphs
@@ -343,6 +349,17 @@ def draft_threshold(text: "str | None") -> "float | None":
     if not 0.0 <= value < 1.0:
         raise SystemExit(f"--draft-threshold {text!r}: 0 <= P < 1")
     return value
+def mtp_window(text: "str | None") -> "tuple[int, int] | None":
+    """`--mtp-window SINK,RECENT` -> (sink, recent) groups of idx_ratio positions, or None for the scored selection."""
+    if text is None:
+        return None
+    try:
+        sink, recent = (int(v) for v in text.split(","))
+    except ValueError:
+        raise SystemExit(f"--mtp-window {text!r}: SINK,RECENT groups, e.g. 1,511") from None
+    if sink < 0 or recent <= 0:
+        raise SystemExit(f"--mtp-window {text!r}: SINK >= 0, RECENT > 0")
+    return sink, recent
 
 
 def draft_index(text: "str | None") -> "tuple[int, int] | None":
@@ -416,6 +433,10 @@ def main(argv=None) -> int:
     ap.add_argument("--draft-ledger", action="store_true",
                     help="rank 0 writes one JSON line a verified row under --dump-dir/draft-ledger: the head's picks, "
                          "their probabilities, how many were proposed and kept (the threshold's curve)")
+    ap.add_argument("--mtp-window", default=None, metavar="SINK,RECENT",
+                    help="the MTP head attends its first SINK and last RECENT groups (4 positions each) instead of its "
+                         "scored selection -- Windowed-MTP: no index scoring in the draft; acceptance moves, output does "
+                         "not. SINK + RECENT <= 512 (e.g. 1,511)")
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
                          "the first fleet boot, 2026-09-18, stalled in it at every sum)")
@@ -486,7 +507,8 @@ def main(argv=None) -> int:
                                               draft_threshold=draft_threshold(a.draft_threshold),
                                               draft_ledger=partial(DraftLedger, Path(a.dump_dir) / "draft-ledger")
                                               if a.draft_ledger else None,
-                                              narrow_rows=a.narrow_rows)
+                                              narrow_rows=a.narrow_rows,
+                                              mtp_window=mtp_window(a.mtp_window))
         if getattr(net, "draft_tap", None) is not None:
             import threading
             threading.Thread(target=drain_draft_tap, args=(net.draft_tap, Path(a.dump_dir) / "draft-queries"),
