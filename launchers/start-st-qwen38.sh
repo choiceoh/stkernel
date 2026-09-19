@@ -130,6 +130,11 @@ case "${ST_DRAFT_LEDGER:-1}" in                               # ST_DRAFT_LEDGER=
   0) ADAPT_ARG="$ADAPT_ARG --no-draft-ledger" ;;
   *) echo "ST_DRAFT_LEDGER must be 0 or 1" >&2; exit 2 ;;
 esac
+case "${ST_DRAFT_AHEAD:-1}" in                                # ST_DRAFT_AHEAD=0: the draft step waits for the host's read again (on by default)
+  1) ;;
+  0) ADAPT_ARG="$ADAPT_ARG --no-draft-ahead" ;;
+  *) echo "ST_DRAFT_AHEAD must be 0 or 1" >&2; exit 2 ;;
+esac
 WINDOW_ARG=""                                                 # ST_MTP_WINDOW=SINK,RECENT|off: the MTP head's window (fleet default 1,511)
 if [ -n "${ST_MTP_WINDOW:-}" ]; then
   [[ "$ST_MTP_WINDOW" =~ ^[0-9]+,[1-9][0-9]*$|^off$ ]] || { echo "ST_MTP_WINDOW must be SINK,RECENT groups or off" >&2; exit 2; }
