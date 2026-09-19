@@ -79,6 +79,24 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(reached, {6, 11, 22, 43, 86, 171, 342})
         self.assertTrue(all(context + tokens <= 262144 for _, tokens, context in passes))
 
+    def test_the_head_passes_cover_every_eager_observation_at_every_rung(self):
+        from engine.profiles.qwen38 import warmup
+        passes = warmup.plan(NS(block=768), chunk=32256, capacity=262144, top=1400, head=4)
+        heads = [p for p in passes if p[0] == "head"]
+        edges = warmup.rungs(768, 262144, 1400)
+        self.assertEqual(len(heads), 4 * (1 + len(edges)))
+        self.assertEqual({t for _, t, _ in heads}, {1, 2, 3, 4})       # K+1 observed positions down to a chain step
+        for t in (1, 2, 3, 4):
+            self.assertEqual([c for _, n, c in heads if n == t], [0] + [end - t for end in edges])
+        self.assertEqual(passes[:len(passes) - len(heads)], warmup.plan(NS(block=768), chunk=32256, capacity=262144,
+                                                                        top=1400))   # after the prefill passes, which stay
+        self.assertEqual(warmup.plan(NS(block=768), chunk=32256, capacity=262144, top=1400, head=0),
+                         [p for p in passes if p[0] != "head"])
+
+    def test_the_decode_sized_widths_are_back(self):
+        from engine.profiles.qwen38 import warmup
+        self.assertEqual(warmup.WIDTHS[:2], (1, 8))
+
     def test_a_small_pool_caps_the_passes(self):
         from engine.profiles.qwen38 import warmup
         passes = warmup.plan(NS(block=768), chunk=32256, capacity=10 * 768, top=10)
@@ -135,6 +153,44 @@ class WarmupTests(unittest.TestCase):
             self.run_warmup(net, caches)
         self.assertEqual(caches.resets, 1)
 
+    def test_a_head_pass_runs_the_head_alone_and_picks_as_the_drafter_does(self):
+        from engine.profiles.qwen38 import warmup
+        net, caches = FakeNet(), FakeCaches()
+        net.F = NS(block=768, hc=4, hidden=2)
+        picked = []
+        net.draft_tokens = lambda h: picked.append(h.shape[0]) or torch.zeros(h.shape[0], dtype=torch.int64)
+        paid = self.run_warmup_head(net, caches, head=4)
+        passes = warmup.plan(net.F, chunk=32256, capacity=262144, top=1400, head=4)
+        prefill = [p for p in passes if p[0] != "head"]
+        heads = [p for p in passes if p[0] == "head"]
+        self.assertEqual(len(net.steps), len(prefill))                  # the target runs the prefill passes only
+        head_steps = net.mtp_steps[len(prefill):]
+        self.assertEqual([(s.ids.numel(), s.segments[0].ctx, given) for s, given in head_steps],
+                         [(t, c, t) for _, t, c in heads])              # given: the zeros it is handed, one row a token
+        self.assertEqual(len(picked), len(heads))
+        self.assertEqual(net.votes, [0] * len(passes))
+        self.assertIn("head/4/0", paid)
+
+    def test_without_a_drafter_there_are_no_head_passes(self):
+        net, caches = FakeNet(), FakeCaches()
+        net.F = NS(block=768, hc=4, hidden=2)
+        self.run_warmup_head(net, caches, head=4, mtp=False)
+        self.assertEqual(net.mtp_steps, [])
+
+    def test_a_non_finite_head_stops_the_boot(self):
+        net, caches = FakeNet(), FakeCaches()
+        net.F = NS(block=768, hc=4, hidden=2)
+        net.draft_tokens = lambda h: None
+        forward = net.mtp_forward
+        net.mtp_forward = lambda step, given, caches, last_hidden_only=True: (
+            (torch.full((1, 4), float("nan")), None) if step.ids.numel() == 3 else forward(step, given, caches))
+        with self.assertRaisesRegex(FloatingPointError, "head/3/0"):
+            self.run_warmup_head(net, caches, head=4)
+
+    def run_warmup_head(self, net, caches, head, mtp=True):
+        from engine.profiles.qwen38 import warmup
+        return warmup.warmup(net, caches, memory=None, chunk=32256, max_context=262144, mtp=mtp, head=head)
+
     def test_a_live_request_refuses_the_warmup(self):
         caches = FakeCaches()
         caches.pool.rows_in_use = 1
@@ -149,14 +205,17 @@ class BootOrderTests(unittest.TestCase):
         warm = build.index('with recorder.phase("warm prefill")')
         self.assertLess(build.index("prelude.take()"), warm)
         self.assertLess(warm, build.index('with recorder.phase("capture decode")'))
-        self.assertIn("mtp=model.drafter is not None", build[warm:])
+        self.assertIn("mtp=model.drafter is not None, head=k + 1", build[warm:])
 
-    def test_the_boot_warms_the_eager_moe_after_the_prefill_and_before_the_capture(self):
+    def test_the_boot_warms_the_eager_moe_first_and_everything_before_the_capture(self):
+        # before the prefill passes: their 1- and 8-token widths route a few pairs to a rank, and a first call below
+        # the ceiling would build the workspace -- and kernels -- at its own smaller capacity
         source = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
         build = source[source.index("def build("):source.index("def write_dumps(")]
         eager = build.index('with recorder.phase("warm eager moe")')
-        self.assertLess(build.index('with recorder.phase("warm prefill")'), eager)
-        self.assertLess(eager, build.index('with recorder.phase("capture decode")'))
+        self.assertLess(build.index("prelude.take()"), eager)
+        self.assertLess(eager, build.index('with recorder.phase("warm prefill")'))
+        self.assertLess(build.index('with recorder.phase("warm prefill")'), build.index('with recorder.phase("capture decode")'))
         self.assertIn("eager_moe(net)", build[eager:])
 
 

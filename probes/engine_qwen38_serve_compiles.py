@@ -10,7 +10,7 @@ row's 1..K+1 positions -- and a Triton kernel is compiled per specialization of 
 
 This builds the served model for ONE rank of TP=4 from the rank file's own weights -- layers 1 (the PLE injection and a
 GDN layer) and 7 (a QSA layer), the MTP head, K=3, four rows -- in the fleet boot's order (engine/profiles/qwen38/fleet
-.build): the prefill warm passes, the eager MoE warm pass, the decode graphs captured; then drives base/runner.Runner
+.build): the eager MoE warm pass, the prefill warm passes, the decode graphs captured; then drives base/runner.Runner
 with the window's seven requests (random ids of the same prompt lengths, the same generated lengths, greedy, C=1, a
 prefix cache), and around every runner step counts every Triton JIT function's compiled kernels and the b12x
 dispatcher's kernel caches. A step that added a kernel is reported with the kernel's function and specialization.
@@ -86,7 +86,8 @@ class Census:
 
 def build(ranks: Path, rank: int, layers=LAYERS):
     """fleet.build's order on one rank: net, weights, PLE (zeros), dense packs, caches, model, contract, runner -- then
-    the warm passes and the capture -> (F, net, caches, model, runner, boot seconds by phase)."""
+    the eager MoE warm pass, the prefill (and head) warm passes and the capture -> (F, net, caches, model, runner, boot seconds by phase)."""
+    import inspect
     import torch
     from engine.base import scheduler as sched
     from engine.base.arena import Arena
@@ -129,14 +130,15 @@ def build(ranks: Path, rank: int, layers=LAYERS):
                     prefix=PrefixCache(F.block, chunk, snapshots))
     torch.cuda.synchronize()
     phases["build"] = round(time.perf_counter() - began, 2)
-    began = time.perf_counter()
-    phases["warm_prefill_passes"] = warm.warmup(net, caches, memory=None, chunk=chunk, max_context=model.max_context,
-                                                mtp=True)
-    phases["warm_prefill"] = round(time.perf_counter() - began, 2)
     if hasattr(warm, "eager_moe"):
         began = time.perf_counter()
         phases["warm_eager_moe_passes"] = warm.eager_moe(net)
         phases["warm_eager_moe"] = round(time.perf_counter() - began, 2)
+    began = time.perf_counter()
+    head = {"head": k + 1} if "head" in inspect.signature(warm.warmup).parameters else {}   # a tree before the head passes
+    phases["warm_prefill_passes"] = warm.warmup(net, caches, memory=None, chunk=chunk, max_context=model.max_context,
+                                                mtp=True, **head)
+    phases["warm_prefill"] = round(time.perf_counter() - began, 2)
     began = time.perf_counter()
     capture(model, MAX_SEQS)
     torch.cuda.synchronize()
