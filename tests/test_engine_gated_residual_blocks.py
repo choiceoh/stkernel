@@ -218,6 +218,7 @@ class MixBlockTests(unittest.TestCase):
             got = hcr.site(h, out, injection, w, 1e-6, HC, down, up, inject=inject)
             with self.subTest(leave=leave):
                 self.assertTrue(torch.equal(h, h_ref))
+                self.assertIs(got[2], h)                                     # left into in place
                 self.assertTrue(torch.equal(got[0], want[0]))
                 self.assertTrue(got[1] is None if not inject else torch.equal(got[1], want[1]))
 
@@ -231,10 +232,10 @@ class MixBlockTests(unittest.TestCase):
         h_ref, normed = hcr.leave_norm(h_ref, out, injection, w, 1e-6, HC)
         want = hcr.mix_block(normed, down, up, HC)
         got = hcr.site(h, out, injection, w, 1e-6, HC, down, up)
-        # the fused leave (leave_mix_block) leaves the same bytes; its gates associate the sums differently, so the
-        # mixer's outputs are within a few BF16 steps of the two launches', not the same bytes
-        self.assertTrue(torch.equal(h, h_ref))
-        for mine, theirs in zip(got, want):
+        # the fused leave (leave_mix_block) writes the same left-into bytes to a new buffer (the third value); its gates
+        # round elsewhere, so the mixer's outputs are within a few BF16 steps of the two launches', not the same bytes
+        self.assertTrue(torch.equal(got[2], h_ref))
+        for mine, theirs in zip(got[:2], want):
             err = float((mine.float() - theirs.float()).abs().max() / theirs.float().abs().max())
             self.assertLess(err, 2.0 ** -6)
 

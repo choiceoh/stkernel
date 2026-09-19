@@ -139,8 +139,8 @@ class BytesTests(unittest.TestCase):
         for _, order in p.ORDERS:
             mine = h.clone()
             with p.forced(order):
-                mixed, injection = hcr.site(mine, out, inject, w, 1e-6, HC, down, up, inject=True)
-            results.append((mine, mixed, injection))
+                mixed, injection, streams = hcr.site(mine, out, inject, w, 1e-6, HC, down, up, inject=True)
+            results.append((streams, mixed, injection))
         (h_a, m_a, i_a), (h_b, m_b, i_b) = results
         self.assertTrue(torch.equal(h_a, h_b))
         self.assertTrue(torch.equal(m_a, m_b))

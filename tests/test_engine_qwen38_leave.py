@@ -175,7 +175,7 @@ class NetTests(unittest.TestCase):
         p = {"L0.hc.mlp.norm": "norm", "L0.hc.mlp.down_inject": "down_inject", "L0.hc.mlp.up": "up"}
         lanes = SimpleNamespace(hc_leave_norm=lambda *a, **k: calls.append(k) or ("h", "normed"))
         if whole:
-            lanes.hc_site = lambda *a, **k: calls.append(("site", a, k)) or ("x whole", "injection whole")
+            lanes.hc_site = lambda *a, **k: calls.append(("site", a, k)) or ("x whole", "injection whole", "h whole")
         net = SimpleNamespace(F=SimpleNamespace(rms_eps=EPS, hc=HC), p=p, lanes=lanes,
                               _hc_projections={"L0.hc.mlp.": object()} if hc_fp8 else {},
                               _mix=lambda prefix, normed, down, inject: ("x", "injection"))
@@ -197,7 +197,7 @@ class NetTests(unittest.TestCase):
         """Lanes.hc_site: the leave, the norm and the mixer in one call (gated_residual.site) with the site's weights and
         its prefetch; the FP8 mixer lanes read the normalised streams, so their sites keep the two calls."""
         net, calls, Qwen38Net = self.net(whole=True)
-        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject"), ("x whole", "injection whole", "h"))
+        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject"), ("x whole", "injection whole", "h whole"))
         self.assertEqual(calls, [("site", ("h", "out", "inject", "norm", EPS, HC, "down_inject", "up"),
                                   {"inject": True, "prefetch": "down_inject"})])
         net, calls, Qwen38Net = self.net(hc_fp8=True, whole=True)

@@ -57,19 +57,27 @@ class LeaveDownTests(unittest.TestCase):
         h_two = o["h"].clone()
         scale_two = hcr.stream_scales(h_two, out, injection, EPS, HC)
         two = hcr.mix_block(h_two, di, o["up"], HC, inject=inject, tiles=tiles, norm=(scale_two, o["w"]))
-        h_one = o["h"].clone()
+        h_in = o["h"].clone()
         gates = torch.empty(rows, rank, dtype=torch.bfloat16, device=DEVICE)
         ij = torch.empty(rows, HC, dtype=torch.bfloat16, device=DEVICE) if inject else gates
-        scale_one = hcr.leave_down_block(h_one, out, injection, o["w"], EPS, HC, di, gates, ij, inject=inject, tile=tile)
-        one = hcr.leave_mix_block(o["h"].clone(), out, injection, o["w"], EPS, HC, di, o["up"], inject=inject, tiles=tiles)
+        h_one, scale_one = hcr.leave_down_block(h_in, out, injection, o["w"], EPS, HC, di, gates, ij, inject=inject,
+                                                tile=tile)
+        if leave:
+            self.assertTrue(torch.equal(h_in, o["h"]), "the streams as they were are never overwritten")
+        else:
+            self.assertIs(h_one, h_in)
+        mixed, injection_out, streams = hcr.leave_mix_block(o["h"].clone(), out, injection, o["w"], EPS, HC, di,
+                                                            o["up"], inject=inject, tiles=tiles)
+        self.assertTrue(torch.equal(streams, h_one))
         ref = gated_residual(h_two, o["w"], o["down"], o["up"], o["inj_w"] if inject else None, HC, EPS)
-        return (h_two, scale_two, *two), (h_one, scale_one, *one), (ref if inject else (ref, None))
+        return (h_two, scale_two, *two), (h_one, scale_one, mixed, injection_out), (ref if inject else (ref, None))
 
     def test_the_fused_launch_is_the_two_launches_within_the_band_and_the_leave_byte_for_byte(self):
-        """One column block (rank 16 + 4 in 32s), two (in 16s), one and a 16-wide tail (rank 32 + 4 in 32s), and a
-        block wider than the columns (in 64s): the same leave, the scale to FP32 ulps, the outputs in band."""
+        """One column block (rank 16 + 4 in 32s), two (in 16s), one and a 16-wide tail (rank 32 + 4 in 32s), a block
+        wider than the columns (in 64s), and two row blocks: the same leave, the scale to FP32 ulps, the outputs in
+        band."""
         for rank, tile in ((16, (16, 32, 16, 4, 1)), (16, (16, 16, 16, 4, 1)), (32, (16, 32, 16, 4, 1)),
-                           (32, (16, 64, 16, 4, 1))):
+                           (32, (16, 64, 16, 4, 1)), (16, (32, 16, 16, 4, 1))):
             two, one, ref = self.two_and_one(37, rank, tile)
             with self.subTest(rank=rank, tile=tile):
                 self.assertTrue(torch.equal(one[0], two[0]), "the leave")
@@ -105,11 +113,9 @@ class LeaveDownTests(unittest.TestCase):
                                                  inject=True, tile=kw.pop("tile", (16, 16, 16, 4, 1)), **kw)
         with self.assertRaisesRegex(ValueError, "inside one stream"):
             call(tile=(16, 16, 32, 4, 1))                                    # 32 does not divide 80
-        with self.assertRaisesRegex(ValueError, "column blocks"):
-            wide = torch.zeros(16 * 16 + 4, HC * HIDDEN, dtype=torch.bfloat16, device=DEVICE)
-            hcr.leave_down_block(o["h"].clone(), o["out"], o["injection"], o["w"], EPS, HC, wide,
-                                 torch.empty(20, 16 * 16, dtype=torch.bfloat16, device=DEVICE), ij, inject=True,
-                                 tile=(16, 16, 16, 4, 1))                    # 260 columns in 16s: 17 blocks
+        with self.assertRaisesRegex(ValueError, "arrival words"):
+            with patch.object(hcr.skinny_gemv, "MAX_BLOCKS", 1):
+                call()                                                       # 2 row blocks x 2 column blocks
         with self.assertRaisesRegex(ValueError, "the output"):
             call(out=o["out"][:, :HIDDEN // 2])
         with self.assertRaisesRegex(ValueError, "norm's weight"):
@@ -124,9 +130,9 @@ class LeaveDownTests(unittest.TestCase):
         from engine.kernels import gated_residual as hcr
         o = operands(0, 16, DEVICE)
         gates = torch.empty(0, 16, dtype=torch.bfloat16, device=DEVICE)
-        scale = hcr.leave_down_block(o["h"], o["out"], o["injection"], o["w"], EPS, HC, o["di"], gates, gates[:, :HC],
-                                     inject=True, tile=(16, 16, 16, 4, 1))
-        self.assertEqual(tuple(scale.shape), (0, HC))
+        streams, scale = hcr.leave_down_block(o["h"], o["out"], o["injection"], o["w"], EPS, HC, o["di"], gates,
+                                              gates[:, :HC], inject=True, tile=(16, 16, 16, 4, 1))
+        self.assertEqual((tuple(scale.shape), tuple(streams.shape)), ((0, HC), (0, HC * HIDDEN)))
 
 
 @unittest.skipUnless(READY, "torch and triton required")
@@ -140,9 +146,7 @@ class TableTests(unittest.TestCase):
             bm, bn, bk, warps, stages = tile
             self.assertEqual(hcr.block_tiles(rows)["leave_down"], tile)
             self.assertEqual(2560 % bk, 0)                                   # a K tile inside one stream
-            full = -(-324 // bn) - (1 if hcr.narrow_tail(324, bn) else 0)
-            self.assertLessEqual(full, hcr.LEAVE_DOWN_BLOCKS)                # the mixer's 320 + 4 columns unroll
-            self.assertLessEqual(-(-32768 // bm), 4096)                      # the longest prefill's arrival words
+            self.assertLessEqual(-(-32768 // bm) * -(-324 // bn), 4096)      # the longest prefill's arrival words
 
     def test_site_takes_the_fused_leave_at_prefill_rows(self):
         """On a device `site` hands a prefill step's rows to leave_mix_block (its leave-and-down launch and the up
@@ -152,7 +156,8 @@ class TableTests(unittest.TestCase):
 
         def fused(h, out, injection, w, eps, hc, di, up, *, inject, tiles, pdl):
             calls.append((h.shape[0], tiles["leave_down"], pdl))
-            return torch.empty(h.shape[0], h.shape[1] // hc, dtype=h.dtype), torch.empty(h.shape[0], hc, dtype=h.dtype)
+            return (torch.empty(h.shape[0], h.shape[1] // hc, dtype=h.dtype), torch.empty(h.shape[0], hc, dtype=h.dtype),
+                    h)
 
         o = operands(hcr.PREFILL_ROWS, 16, "cpu", hidden=2560)              # the model's width: the table's K tile divides it
         with patch.object(hcr, "leave_mix_block", fused), \

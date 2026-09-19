@@ -42,18 +42,20 @@ third of the leave's bytes): the leave stores each stream's scale [N, hc] FP32 i
 launches normalise each tile of the streams as they read it -- the stream norm's own arithmetic on the same scale, so
 the operand is the normalised streams' bytes and the outputs are leave_norm-then-mix_block's byte for byte.
 
-From LEAVE_DOWN_TILES' rows the leave and the down fold are ONE launch (`leave_down_block`, `_leave_down_rows`): a
-program is a block of rows of one stream, a row block's hc programs adjacent, and ONE pass over the channels: it leaves
-the output into its rows, keeps their squares elementwise (reduced once after the loop), and multiplies the rows times
-1 + w, in BF16, into every column block of its stream's K slice of down(+inject) at the same time (three 128-wide
-blocks, or five 64-wide and a 16-wide tail, for the mixer's 324 columns) -- the GEMM's loads and its MMA in one
-pipelined loop, as a GEMM's are. The stream's scale is a constant of each row, so it multiplies the FP32 accumulators
-after the dot (the operand rounds to BF16 at h x (1 + w), the two launches' at h x scale x (1 + w): the oracle's band,
-not their bytes -- the leave's rows are the leave's bytes). The stream's FP32 partial goes to a scratch, and the last of
-the row block's hc programs to arrive sums the four in stream order and stores the gates. Against `stream_scales` and
-then the down fold: the streams read from DRAM once instead of twice (84 MB at 4,096 rows), the A tile transformed once
-instead of once a column block, and the MMA under the leave's memory traffic. `site` then finishes with `up_mean_block`
-over the streams and the scales.
+From LEAVE_DOWN_TILES' rows the leave and the down fold are ONE launch (`leave_down_block`, `_leave_down_cols`), shaped
+as the down fold is -- a program is a block of rows, one stream and one column block of down(+inject), one accumulator,
+so the row block can be 256 deep -- with the leave inside its K loop: every program recomputes the new rows from the
+streams as they were (an elementwise product and sum a channel; the column blocks of a row block are adjacent programs,
+so the rows and the sum come from DRAM once and L2 after), the first column block's program stores them into a NEW
+stream buffer (the site returns it; the streams as they were are never overwritten, so no program can read a row
+another has already left into) and the stream's scale, and every program keeps the squares elementwise (reduced once
+after the loop) and multiplies the rows times 1 + w, in BF16, into its tile of the dot. The stream's scale is a constant
+of each row, so it multiplies the FP32 accumulator after the dot (the operand rounds to BF16 at h x (1 + w), the two
+launches' at h x scale x (1 + w): the oracle's band, not their bytes -- the left-into rows are the leave's bytes). The
+stream's FP32 partial goes to a scratch, and the last of the (row block, column block)'s hc programs to arrive sums the
+four in stream order and stores the gates. The down fold is the MMA's at these rows and its memory sits idle, so the
+leave's 105 MB (the sum read, the new streams written, at 4,096 rows) ride under it, and `stream_scales`' launch and
+its second read of the streams are gone. `site` then finishes with `up_mean_block` over the new streams and the scales.
 
 The stream launches (`_leave_norm`, `_norm_streams`) run one program a (row, stream) over the grid (hc, rows): a row's
 hc programs back to back, so the output row they all add (21 MB at 4,096 rows) is read from DRAM once and the row's
@@ -124,8 +126,7 @@ UP_BLOCK_TILE = (64, 64, 32, 4, 4)
 # The fused leave + down fold's tile (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) by the rows it serves from, as DOWN_TILES
 # (`leave_down_block`; probes/engine_qwen38_leave_down). Rows short of every entry leave with `stream_scales` and fold
 # with mix_block's two launches.
-LEAVE_DOWN_TILES = ((512, (64, 128, 64, 16, 2)),)   # a stage in flight holds the A tile and every W tile: 56 KB of the GB10's 99
-LEAVE_DOWN_BLOCKS = 5                       # full column blocks the fused kernel unrolls at most (the mixer's 320 in 64s), plus a tail
+LEAVE_DOWN_TILES = ((512, (256, 64, 64, 8, 3)),)     # the down fold's tile at these rows (DOWN_TILES), the leave inside it
 UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
 
@@ -511,13 +512,14 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
 
 def site(h: torch.Tensor, out: "torch.Tensor | None", injection: "torch.Tensor | None", w: torch.Tensor, eps: float,
          hc: int, down_inject: torch.Tensor, up: torch.Tensor, *, inject: bool = True, pdl: bool = False,
-         prefetch: "torch.Tensor | None" = None) -> "tuple[torch.Tensor, torch.Tensor | None]":
+         prefetch: "torch.Tensor | None" = None) -> "tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]":
     """A site whole: `out` (the previous sublayer's, with its `injection`; None at the first site) left into the streams
-    h in place, the streams normalised with `w`, and the mixer -- (mixed [N, H], injection [N, hc] or None). A prefill
-    step's rows (mix_block's, with a down tile) never write the normalised streams: the leave keeps each stream's scale
-    (`stream_scales`) and mix_block's two launches normalise what they read -- leave_norm's and mix's bytes, and at
-    4,096 rows 84 MB less written. Other rows: leave_norm (or norm_streams) and mix, `pdl` and `prefetch` as
-    leave_norm's."""
+    h, the streams normalised with `w`, and the mixer -- (mixed [N, H], injection [N, hc] or None, the streams the next
+    site reads). From LEAVE_DOWN_TILES' rows the leave and the down fold are one launch that writes the left-into
+    streams to a NEW buffer (the third value; `leave_mix_block`); every other path leaves into h in place and returns
+    h. A prefill step's rows never write the normalised streams: the leave keeps each stream's scale and the folds
+    normalise what they read (mix_block: leave_norm's and mix's bytes; leave_mix_block: the oracle's band). Other rows:
+    leave_norm (or norm_streams) and mix, `pdl` and `prefetch` as leave_norm's."""
     if w.shape != (h.shape[1],):
         raise ValueError("the stream norm's weight covers every stream's channels")
     tiles = block_tiles(h.shape[0])
@@ -528,12 +530,12 @@ def site(h: torch.Tensor, out: "torch.Tensor | None", injection: "torch.Tensor |
             return leave_mix_block(h, out, injection, w, eps, hc, down_inject, up, inject=inject, tiles=tiles, pdl=pdl)
         if tiles["down"] is not None and hid % tiles["down"][2] == 0:
             scale = stream_scales(h, out, injection, eps, hc, pdl=pdl)
-            return mix_block(h, down_inject, up, hc, inject=inject, tiles=tiles, norm=(scale, w))
+            return (*mix_block(h, down_inject, up, hc, inject=inject, tiles=tiles, norm=(scale, w)), h)
     if out is None:
         normed = norm_streams(h, w, eps, hc)
     else:
         h, normed = leave_norm(h, out, injection, w, eps, hc, pdl=pdl, prefetch=prefetch)
-    return mix(normed, down_inject, up, hc, inject=inject)
+    return (*mix(normed, down_inject, up, hc, inject=inject), h)
 
 
 def folds(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> bool:
@@ -788,116 +790,87 @@ def _partials_sum(PART, MN, rows, cols, live, N, HC: tl.constexpr, BLOCK_M: tl.c
 
 
 @triton.jit
-def _leave_down_rows(H, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, M, N, sH, sO, sI, sS, sM, sIJ, sW, EPS, HC_F,
-                     HID: tl.constexpr, HC: tl.constexpr, R: tl.constexpr, WITH_INJECT: tl.constexpr,
-                     BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, FULL: tl.constexpr,
-                     TAIL: tl.constexpr, TAIL_W: tl.constexpr, LEAVE: tl.constexpr, PDL: tl.constexpr,
-                     FP32_DOT: tl.constexpr):
-    # One program: BLOCK_M rows of stream s, a row block's HC programs adjacent (the sum's rows shared through L2), one
-    # pass over the stream's channels BLOCK_K at a time: the leave (OUT x INJ[:, s] into the channels in place,
-    # `_leave_norm`'s rounding), the squares kept elementwise (reduced once after the loop -- nothing crosses threads in
-    # the loop), and the rows times 1 + W, rounded to BF16, into every column block of this stream's K slice of DW at
-    # the same time: FULL blocks of BLOCK_N and a TAIL-wide last one. The stream's scale is a constant of each row, so it
-    # multiplies the FP32 accumulators after the dot instead of the operand before it (the product rounds to BF16 at
-    # h x (1 + w) rather than at h x scale x (1 + w): the oracle's band, not the two launches' bytes). The stream's
-    # partial [BLOCK_M, N] goes to PART[s]; the last of a row block's HC programs to arrive sums the partials in stream
-    # order and stores the gates (`_gate_store`).
-    s = tl.program_id(0)
-    pid_m = tl.program_id(1)
-    rows = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+def _leave_down_tile(HI, HO, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, tile, first, s, rows, cols, M, N, sH, sHO, sO,
+                     sI, sS, sM, sIJ, sW, EPS, HC_F, HID: tl.constexpr, HC: tl.constexpr, R: tl.constexpr,
+                     WITH_INJECT: tl.constexpr, BLOCK_M: tl.constexpr, WIDTH: tl.constexpr, BLOCK_K: tl.constexpr,
+                     LEAVE: tl.constexpr, FP32_DOT: tl.constexpr):
+    # one [BLOCK_M, WIDTH] tile of stream s's share of down(+inject), over the stream's channels BLOCK_K at a time: the
+    # leave recomputed here from the streams as they were (HI) -- every column block of a row block computes the same
+    # new rows; the first (`first`) stores them into HO and the scale into SC -- the squares kept elementwise, and the
+    # rows times 1 + W, in BF16, into the dot. The stream's scale multiplies the FP32 sum after the dot
     live = rows < M
-    if PDL:
-        # the sum (OUT) is the primary's; the streams and the injection are read after the wait as well
-        tl.extra.cuda.gdc_wait()
     if LEAVE:
         g = tl.load(INJ + rows * sI + s, mask=live, other=0.0).to(tl.float32)
-    c0 = tl.arange(0, BLOCK_N)
-    c1 = BLOCK_N + c0
-    c2 = 2 * BLOCK_N + c0
-    c3 = 3 * BLOCK_N + c0
-    c4 = 4 * BLOCK_N + c0
-    ct = FULL * BLOCK_N + tl.arange(0, TAIL_W)
-    acc0 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    acc1 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    acc2 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    acc3 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    acc4 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    acct = tl.zeros((BLOCK_M, TAIL_W), dtype=tl.float32)
+    acc = tl.zeros((BLOCK_M, WIDTH), dtype=tl.float32)
     sq = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
     for k in range(0, HID, BLOCK_K):
         ks = k + tl.arange(0, BLOCK_K)
         kk = s * HID + ks
-        at = rows[:, None] * sH + kk[None, :]
-        h = tl.load(H + at, mask=live[:, None], other=0.0)
+        h = tl.load(HI + rows[:, None] * sH + kk[None, :], mask=live[:, None], other=0.0)
         if LEAVE:
             o = tl.load(OUT + rows[:, None] * sO + ks[None, :], mask=live[:, None], other=0.0).to(tl.float32)
             delta = (o * g[:, None]).to(h.dtype)                  # the product rounds, then the sum does
             h = (h.to(tl.float32) + delta.to(tl.float32)).to(h.dtype)
-            tl.store(H + at, h, mask=live[:, None])
+            tl.store(HO + rows[:, None] * sHO + kk[None, :], h, mask=live[:, None] & first)
         x = h.to(tl.float32)
         sq += x * x
         nw = tl.load(W + kk).to(tl.float32)
-        a = (x * (1.0 + nw[None, :])).to(H.dtype.element_ty)
+        a = (x * (1.0 + nw[None, :])).to(HI.dtype.element_ty)
         if FP32_DOT:                                              # the interpreter reads a BF16 dot's bits as integers
             a = a.to(tl.float32)
-        acc0 += tl.dot(a, _w_tile(DW, sW, c0, kk, N, FP32_DOT))
-        if FULL > 1:
-            acc1 += tl.dot(a, _w_tile(DW, sW, c1, kk, N, FP32_DOT))
-        if FULL > 2:
-            acc2 += tl.dot(a, _w_tile(DW, sW, c2, kk, N, FP32_DOT))
-        if FULL > 3:
-            acc3 += tl.dot(a, _w_tile(DW, sW, c3, kk, N, FP32_DOT))
-        if FULL > 4:
-            acc4 += tl.dot(a, _w_tile(DW, sW, c4, kk, N, FP32_DOT))
-        if TAIL > 0:
-            acct += tl.dot(a, _w_tile(DW, sW, ct, kk, N, FP32_DOT))
+        acc += tl.dot(a, _w_tile(DW, sW, cols, kk, N, FP32_DOT))
     scale = tl.rsqrt(tl.sum(sq, axis=1) / HID + EPS)
-    tl.store(SC + rows * sS + s, scale, mask=live)
+    tl.store(SC + rows * sS + s, scale, mask=live & first)
     MN = M * N
-    mine = PART + s * MN
-    _partial_store(mine, acc0 * scale[:, None], rows, c0, live, N)
-    if FULL > 1:
-        _partial_store(mine, acc1 * scale[:, None], rows, c1, live, N)
-    if FULL > 2:
-        _partial_store(mine, acc2 * scale[:, None], rows, c2, live, N)
-    if FULL > 3:
-        _partial_store(mine, acc3 * scale[:, None], rows, c3, live, N)
-    if FULL > 4:
-        _partial_store(mine, acc4 * scale[:, None], rows, c4, live, N)
-    if TAIL > 0:
-        _partial_store(mine, acct * scale[:, None], rows, ct, live, N)
+    _partial_store(PART + s * MN, acc * scale[:, None], rows, cols, live, N)
     tl.debug_barrier()                                            # every thread's partial is stored before one arrives
-    arrived = tl.atomic_add(LOCKS + pid_m, 1, sem="acq_rel")
+    arrived = tl.atomic_add(LOCKS + tile, 1, sem="acq_rel")
     if arrived == HC - 1:
-        _gate_store(_partials_sum(PART, MN, rows, c0, live, N, HC, BLOCK_M, BLOCK_N), rows, c0, M, MIX, IJ, sM, sIJ,
+        _gate_store(_partials_sum(PART, MN, rows, cols, live, N, HC, BLOCK_M, WIDTH), rows, cols, M, MIX, IJ, sM, sIJ,
                     HC_F, R, HC, WITH_INJECT)
-        if FULL > 1:
-            _gate_store(_partials_sum(PART, MN, rows, c1, live, N, HC, BLOCK_M, BLOCK_N), rows, c1, M, MIX, IJ, sM,
-                        sIJ, HC_F, R, HC, WITH_INJECT)
-        if FULL > 2:
-            _gate_store(_partials_sum(PART, MN, rows, c2, live, N, HC, BLOCK_M, BLOCK_N), rows, c2, M, MIX, IJ, sM,
-                        sIJ, HC_F, R, HC, WITH_INJECT)
-        if FULL > 3:
-            _gate_store(_partials_sum(PART, MN, rows, c3, live, N, HC, BLOCK_M, BLOCK_N), rows, c3, M, MIX, IJ, sM,
-                        sIJ, HC_F, R, HC, WITH_INJECT)
-        if FULL > 4:
-            _gate_store(_partials_sum(PART, MN, rows, c4, live, N, HC, BLOCK_M, BLOCK_N), rows, c4, M, MIX, IJ, sM,
-                        sIJ, HC_F, R, HC, WITH_INJECT)
-        if TAIL > 0:
-            _gate_store(_partials_sum(PART, MN, rows, ct, live, N, HC, BLOCK_M, TAIL_W), rows, ct, M, MIX, IJ, sM,
-                        sIJ, HC_F, R, HC, WITH_INJECT)
-        tl.atomic_xchg(LOCKS + pid_m, 0)
+        tl.atomic_xchg(LOCKS + tile, 0)
+
+
+@triton.jit
+def _leave_down_cols(HI, HO, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, M, N, sH, sHO, sO, sI, sS, sM, sIJ, sW, EPS,
+                     HC_F, HID: tl.constexpr, HC: tl.constexpr, R: tl.constexpr, WITH_INJECT: tl.constexpr,
+                     BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, TAIL: tl.constexpr,
+                     LEAVE: tl.constexpr, PDL: tl.constexpr, FP32_DOT: tl.constexpr):
+    # A program: a block of rows, one stream, one column block of down(+inject) -- the column blocks of a (row block,
+    # stream) adjacent (they read the same rows of the streams and the sum: DRAM once, L2 after), then the streams of
+    # a row block (they read the same rows of the sum). TAIL > 0: the last column block's narrower width. The last of a
+    # (row block, column block)'s HC stream programs to arrive sums the stream partials and stores the gates.
+    pid_n, s, pid_m = tl.program_id(0), tl.program_id(1), tl.program_id(2)
+    tile = pid_m * tl.num_programs(0) + pid_n
+    first = pid_n == 0
+    rows = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    if PDL:
+        # the sum (OUT) is the primary's; the streams and the injection are read after the wait as well
+        tl.extra.cuda.gdc_wait()
+    if TAIL > 0:
+        if pid_n == tl.num_programs(0) - 1:
+            _leave_down_tile(HI, HO, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, tile, first, s, rows,
+                             pid_n * BLOCK_N + tl.arange(0, TAIL), M, N, sH, sHO, sO, sI, sS, sM, sIJ, sW, EPS, HC_F,
+                             HID, HC, R, WITH_INJECT, BLOCK_M, TAIL, BLOCK_K, LEAVE, FP32_DOT)
+        else:
+            _leave_down_tile(HI, HO, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, tile, first, s, rows,
+                             pid_n * BLOCK_N + tl.arange(0, BLOCK_N), M, N, sH, sHO, sO, sI, sS, sM, sIJ, sW, EPS,
+                             HC_F, HID, HC, R, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K, LEAVE, FP32_DOT)
+    else:
+        _leave_down_tile(HI, HO, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, tile, first, s, rows,
+                         pid_n * BLOCK_N + tl.arange(0, BLOCK_N), M, N, sH, sHO, sO, sI, sS, sM, sIJ, sW, EPS, HC_F,
+                         HID, HC, R, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K, LEAVE, FP32_DOT)
 
 
 def leave_down_block(h, out, injection, w, eps: float, hc: int, down_inject, gates, inj, *, inject: bool, tile,
-                     pdl: bool = False) -> torch.Tensor:
-    """`_leave_down_rows` at `tile` (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages): `out` (with `injection`, leave_norm's)
-    left into the streams h in place -- or, `out` None, the streams as they are -- and the gates [N, r] and, with
-    `inject`, the injection [N, hc] (`inj`; `gates` again without one) stored from down(+inject) of the streams
-    normalised with `w`; returns each stream's scale [N, hc] FP32 (`stream_scales`' value to a few FP32 ulps: the sum of
-    squares is BLOCK_K channels at a time), which the up fold normalises with. The dot takes the rows times 1 + w in
-    BF16 and the scale multiplies its FP32 sum: the gates are within the oracle's band of the two launches', not their
-    bytes. `pdl`: as leave_norm's."""
+                     pdl: bool = False) -> "tuple[torch.Tensor, torch.Tensor]":
+    """`_leave_down_cols` at `tile` (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages): `out` (with `injection`, leave_norm's)
+    left into the streams h -- into a NEW buffer, the streams returned; `out` None, the streams as they are, h itself
+    returned -- and the gates [N, r] and, with `inject`, the injection [N, hc] (`inj`; `gates` again without one)
+    stored from down(+inject) of the streams normalised with `w`. Returns (streams, each stream's scale [N, hc] FP32:
+    `stream_scales`' value to a few FP32 ulps, the sum of squares BLOCK_K channels at a time), which the up fold
+    normalises with. The dot takes the rows times 1 + w in BF16 and the scale multiplies its FP32 sum: the gates are
+    within the oracle's band of the two launches', not their bytes. `pdl`: as leave_norm's."""
     hid = _check_streams(h, hc)
     rows, width = h.shape
     n = down_inject.shape[0]
@@ -915,48 +888,46 @@ def leave_down_block(h, out, injection, w, eps: float, hc: int, down_inject, gat
             raise ValueError("the output and the injection are packed rows in the streams' dtype")
     if type(pdl) is not bool:
         raise ValueError("pdl is a declared boolean")
-    tail = narrow_tail(n, bn)
-    full = triton.cdiv(n, bn) - (1 if tail else 0)
-    if not 1 <= full <= LEAVE_DOWN_BLOCKS:
-        raise ValueError(f"the fused leave unrolls up to {LEAVE_DOWN_BLOCKS} column blocks of {bn} and a tail; "
-                         f"{n} columns need {full}")
-    blocks = triton.cdiv(rows, bm)
-    if blocks > skinny_gemv.MAX_BLOCKS:
-        raise ValueError(f"a fused leave over {rows} rows needs {blocks} arrival words; a device has "
-                         f"{skinny_gemv.MAX_BLOCKS}")
+    blocks, cols = triton.cdiv(rows, bm), triton.cdiv(n, bn)
+    if blocks * cols > skinny_gemv.MAX_BLOCKS:
+        raise ValueError(f"a fused leave over {rows} rows in {cols} column blocks needs {blocks * cols} arrival words; a "
+                         f"device has {skinny_gemv.MAX_BLOCKS}")
     scale = torch.empty(rows, hc, device=h.device, dtype=torch.float32)
+    leave = out is not None
+    streams = torch.empty_like(h) if leave else h
     if not rows:
-        return scale
+        return streams, scale
     part = torch.empty(hc, rows, n, device=h.device, dtype=torch.float32)
     locks = skinny_gemv.prepare(h.device)
-    leave = out is not None
     pdl = pdl and h.device.type == "cuda"
-    _leave_down_rows[(hc, blocks)](h, out if leave else h, injection if leave else h, w, scale, down_inject, gates,
-                                   inj, part, locks, rows, n, h.stride(0), out.stride(0) if leave else 0,
-                                   injection.stride(0) if leave else 0, scale.stride(0), gates.stride(0),
-                                   inj.stride(0), down_inject.stride(0), eps, float(hc), HID=hid, HC=hc,
-                                   R=gates.shape[1], WITH_INJECT=inject, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk, FULL=full,
-                                   TAIL=tail, TAIL_W=tail or bn, LEAVE=leave, PDL=pdl, FP32_DOT=not h.is_cuda,
-                                   num_warps=warps, num_stages=stages, launch_pdl=pdl)
-    return scale
+    _leave_down_cols[(cols, hc, blocks)](h, streams, out if leave else h, injection if leave else h, w, scale,
+                                         down_inject, gates, inj, part, locks, rows, n, h.stride(0),
+                                         streams.stride(0), out.stride(0) if leave else 0,
+                                         injection.stride(0) if leave else 0, scale.stride(0), gates.stride(0),
+                                         inj.stride(0), down_inject.stride(0), eps, float(hc), HID=hid, HC=hc,
+                                         R=gates.shape[1], WITH_INJECT=inject, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
+                                         TAIL=narrow_tail(n, bn), LEAVE=leave, PDL=pdl, FP32_DOT=not h.is_cuda,
+                                         num_warps=warps, num_stages=stages, launch_pdl=pdl)
+    return streams, scale
 
 
 def leave_mix_block(h: torch.Tensor, out: "torch.Tensor | None", injection: "torch.Tensor | None", w: torch.Tensor,
                     eps: float, hc: int, down_inject: torch.Tensor, up: torch.Tensor, *, inject: bool = True,
                     tiles=None, pdl: bool = False) -> "tuple[torch.Tensor, torch.Tensor | None]":
-    """A prefill step's site in two launches (the module docstring): `leave_down_block` -- the leave, the scales, the
-    gates -- then `up_mean_block` over the streams and those scales. (mixed [N, H], injection [N, hc] or None); h left
-    into in place. `tiles`: `block_tiles`' form with a "leave_down" entry."""
+    """A prefill step's site in two launches (the module docstring): `leave_down_block` -- the leave into new streams,
+    the scales, the gates -- then `up_mean_block` over those streams and scales. (mixed [N, H], injection [N, hc] or
+    None, the streams the next site reads: a new buffer after a leave, h itself without one). `tiles`: `block_tiles`'
+    form with a "leave_down" entry."""
     tiles = block_tiles(h.shape[0]) if tiles is None else tiles
     if tiles.get("leave_down") is None:
         raise ValueError("leave_mix_block needs a fused leave tile for its rows (LEAVE_DOWN_TILES)")
     gates, injection_out, inj, mixed = _mix_block_buffers(h, down_inject, up, hc, inject)
     if not h.shape[0]:
-        return mixed, injection_out
-    scale = leave_down_block(h, out, injection, w, eps, hc, down_inject, gates, inj, inject=inject,
-                             tile=tiles["leave_down"], pdl=pdl)
-    up_mean_block(gates, up, h, mixed, hc, tile=tiles["up"], norm=(scale, w))
-    return mixed, injection_out
+        return mixed, injection_out, h
+    streams, scale = leave_down_block(h, out, injection, w, eps, hc, down_inject, gates, inj, inject=inject,
+                                      tile=tiles["leave_down"], pdl=pdl)
+    up_mean_block(gates, up, streams, mixed, hc, tile=tiles["up"], norm=(scale, w))
+    return mixed, injection_out, streams
 
 
 def mix_rows(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
@@ -1081,7 +1052,7 @@ def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.
         ref_close = gated_residual(ref_h, norm_c, down_c, up_c, None, hc, eps)
         closed, _ = mix(normed, dc, up_c, hc, inject=False)
         note("close", closed, ref_close)
-        mixed, injection = site(h.clone(), None, None, norm_w, eps, hc, di, up)
+        mixed, injection, _ = site(h.clone(), None, None, norm_w, eps, hc, di, up)
         note("site", mixed, ref_mixed)
         note("site_inject", injection, ref_inj)
         note("site_close", site(h.clone(), out, ref_inj, norm_c, eps, hc, dc, up_c, inject=False)[0], ref_close)

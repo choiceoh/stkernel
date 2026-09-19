@@ -123,9 +123,11 @@ class Lanes:
                                     #  -> (gated, normed) [N, hc*H]: the PLE injection's gate and conv norm in one launch
                                     #  (engine/kernels/ngram_gate); None: the module's torch form
     hc_site: object = None          # (h, out | None, inject | None, w, eps, hc, down_inject, up, *, inject, prefetch=None)
-                                    #  -> (mixed [N, H], inject [N, hc] | None), h left into in place: hc_leave_norm (or
-                                    #  hc_norm) and hc_mix in one call, so a prefill step's rows need not write the
-                                    #  normalised streams (gated_residual.site); None: the two calls
+                                    #  -> (mixed [N, H], inject [N, hc] | None, streams): hc_leave_norm (or hc_norm) and
+                                    #  hc_mix in one call, so a prefill step's rows need not write the normalised
+                                    #  streams (gated_residual.site); `streams` is what the next site reads -- a new
+                                    #  buffer where the fused leave + down launch wrote one, else h left into in place.
+                                    #  None: the two calls
     ple_conv: object = None         # (normed [T, C], gated [T, C], weight [C, K], held [C, (K-1)*dil], dil, *, out)
                                     #  -> gated + the dilated causal conv's silu, one launch (ngram_gate.conv_add);
                                     #  None: engine/modules/causal_conv's torch form and an add

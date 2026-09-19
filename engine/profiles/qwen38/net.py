@@ -692,7 +692,7 @@ class Qwen38Net:
         F, p, lanes = self.F, self.p, self.lanes
         whole = None if rows is not None else self._whole_site(prefix, h, out, inject, "down_inject", injects=True)
         if whole is not None:
-            return whole[0], whole[1], h
+            return whole[0], whole[1], whole[2]             # the streams the site left into (a new buffer, or h)
         if out is None:
             normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
         else:
@@ -704,9 +704,10 @@ class Qwen38Net:
         return x, injection, h
 
     def _whole_site(self, prefix: str, h, out, inject, down_name: str, *, injects: bool):
-        """(x, injection) from Lanes.hc_site -- the leave, the norm and the mixer in one call, so that a prefill step's
-        rows never write the normalised streams (h is left into in place) -- or None where it does not serve: a lane
-        without it, or a mixer on the FP8 lanes (hc_fp8), whose projections read the normalised streams."""
+        """(x, injection, streams) from Lanes.hc_site -- the leave, the norm and the mixer in one call, so that a prefill
+        step's rows never write the normalised streams; `streams` is what the next site reads (a new buffer where the
+        fused leave wrote one, else h left into in place) -- or None where it does not serve: a lane without it, or a
+        mixer on the FP8 lanes (hc_fp8), whose projections read the normalised streams."""
         lanes, F, p = self.lanes, self.F, self.p
         if getattr(lanes, "hc_site", None) is None or prefix in self._hc_projections:
             return None

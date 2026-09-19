@@ -34,11 +34,10 @@ HC, HIDDEN, RANK, EPS = 4, 2560, 320, 1e-6       # Qwen3.8's site at TP=4: 324 d
 ROWS = (512, 1024, 2048, 4096)
 CALLS = 8                                        # sites a graph
 ROUNDS = 21
-TILES = ((64, 128, 64, 16, 2), (64, 128, 64, 8, 2), (64, 64, 64, 16, 2), (64, 64, 64, 8, 2), (64, 128, 32, 16, 3),
-         (64, 128, 32, 8, 3), (64, 64, 32, 16, 3), (128, 128, 32, 16, 2), (32, 128, 64, 8, 2), (32, 128, 64, 4, 2))
-                                                 # (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) of leave_down_block: a
-                                                 # stage in flight holds the A tile and every W tile (64 x 64 x 64: 56 KB),
-                                                 # and the GB10 has 99 KB, so 64-deep K pipelines two stages, 32-deep three
+TILES = ((256, 64, 64, 8, 3), (256, 128, 32, 8, 3), (256, 64, 32, 8, 3), (128, 128, 64, 8, 3), (128, 128, 32, 8, 4),
+         (128, 64, 64, 4, 3), (128, 256, 32, 8, 3), (64, 128, 64, 4, 3))
+                                                 # (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) of leave_down_block: the down
+                                                 # fold's shapes (DOWN_TILES' 256 x 64 x 64 first), one accumulator a program
 BAND = 2.0 ** -6                                 # a few BF16 steps: rounding order, not a wrong formula
 
 
@@ -72,11 +71,10 @@ def check(rows: int, device, gen, tile, *, hidden: int = HIDDEN, rank: int = RAN
     h_two = h.clone()
     scale_two = hcr.stream_scales(h_two, out, injection, EPS, hc)
     mixed_two, inj_two = hcr.mix_block(h_two, di, up, hc, inject=True, tiles=tiles, norm=(scale_two, w))
-    h_one = h.clone()
     gates = torch.empty(rows, rank, dtype=h.dtype, device=h.device)
     ij = torch.empty(rows, hc, dtype=h.dtype, device=h.device)
-    scale_one = hcr.leave_down_block(h_one, out, injection, w, EPS, hc, di, gates, ij, inject=True, tile=tile)
-    mixed_one, inj_one = hcr.leave_mix_block(h.clone(), out, injection, w, EPS, hc, di, up, inject=True, tiles=tiles)
+    h_one, scale_one = hcr.leave_down_block(h, out, injection, w, EPS, hc, di, gates, ij, inject=True, tile=tile)
+    mixed_one, inj_one, _ = hcr.leave_mix_block(h, out, injection, w, EPS, hc, di, up, inject=True, tiles=tiles)
     ref_mixed, ref_inj = gated_residual(h_two, w, down, up, inj_w, hc, EPS)
     return {"h_bytes_alike": bool(torch.equal(h_one, h_two)),
             "scale_max_rel": float(((scale_one - scale_two).abs() / scale_two.abs()).max()),
@@ -123,10 +121,10 @@ def run(output=None) -> dict:
         tiles = hcr.block_tiles(t)
         checks, fits = {}, []
         for tile in TILES:
-            before = set(compiled(hcr._leave_down_rows))
+            before = set(compiled(hcr._leave_down_cols))
             try:
                 checks[str(tile)] = record = check(t, device, gen, tile)
-                fresh = [k for key, k in compiled(hcr._leave_down_rows).items() if key not in before]
+                fresh = [k for key, k in compiled(hcr._leave_down_cols).items() if key not in before]
                 record["resources"] = [resources(k) for k in fresh]   # the tile's kernel, compiled by this check
             except Exception as e:                       # a tile the card cannot hold (shared memory) is recorded, not run
                 checks[str(tile)] = record = {"error": f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"}
