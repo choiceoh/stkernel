@@ -391,7 +391,7 @@ class ServedTests(unittest.TestCase):
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
         self.assertIn('ap.add_argument("--no-tile-union", action="store_true",', fleet)
         self.assertIn("tile_union=not a.no_tile_union", fleet)
-        self.assertIn("qualify(torch.device(\"cuda\"), F, tile_union=not a.no_tile_union)", fleet)
+        self.assertIn("qualify(torch.device(\"cuda\"), F, tile_union=not a.no_tile_union", fleet)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
         self.assertIn('case "${ST_QSA_TILE_UNION:-1}" in', launcher)
         self.assertIn('0) UNION_ARG="--no-tile-union" ;;', launcher)

@@ -1,0 +1,67 @@
+{
+ "lane": "qwen38_gdn_flashinfer",
+ "device": "NVIDIA GB10",
+ "rounds": 9,
+ "rows": {
+  "1024": {
+   "errors": {
+    "o": 0.003597,
+    "state": 0.005591
+   },
+   "served": {
+    "median_us": 935.2,
+    "min_us": 910.4
+   },
+   "flashinfer lane": {
+    "median_us": 683.4,
+    "min_us": 667.1
+   },
+   "speedup_median": 1.368
+  },
+  "2048": {
+   "errors": {
+    "o": 0.005,
+    "state": 0.005345
+   },
+   "served": {
+    "median_us": 1087.8,
+    "min_us": 1063.7
+   },
+   "flashinfer lane": {
+    "median_us": 755.0,
+    "min_us": 746.4
+   },
+   "speedup_median": 1.441
+  },
+  "4096": {
+   "errors": {
+    "o": 0.003145,
+    "state": 0.005531
+   },
+   "served": {
+    "median_us": 1857.2,
+    "min_us": 1844.5
+   },
+   "flashinfer lane": {
+    "median_us": 913.7,
+    "min_us": 890.2
+   },
+   "speedup_median": 2.033
+  },
+  "8192": {
+   "errors": {
+    "o": 0.005282,
+    "state": 0.003814
+   },
+   "served": {
+    "median_us": 3591.8,
+    "min_us": 3579.3
+   },
+   "flashinfer lane": {
+    "median_us": 1438.1,
+    "min_us": 1420.6
+   },
+   "speedup_median": 2.498
+  }
+ }
+}

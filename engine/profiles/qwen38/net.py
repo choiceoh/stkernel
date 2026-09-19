@@ -215,8 +215,8 @@ class Qwen38Net:
 
         `gdn_flashinfer`: a prefill segment's GDN chunk (1,024+ tokens, `gdn_prefill_sm120.admits`) on the image's
         FlashInfer SM120 kernel with q/k normalised first (flashinfer#5255; engine/SM121_INTAKE.md U13) instead of the
-        served KDA chunk kernel -- within its band, not its bytes. On GB10 1.7x at 1,024 tokens and 4.3x at 8,192
-        (sm121-gdnnorm-0919f, kernel only, median). On by the operator's decision of 2026-09-19 with the fleet
+        served KDA chunk kernel -- within its band, not its bytes. On GB10 the whole lane 1.37x at 1,024 tokens, 2.03x at
+        4,096 and 2.50x at 8,192 (sm121-u13time-0919g, median beside production). On by the operator's decision of 2026-09-19 with the fleet
         unmeasured (CHARTER D17): a boot can decline it (fleet.py --no-gdn-flashinfer, the launcher's
         ST_GDN_FLASHINFER=0).
 
