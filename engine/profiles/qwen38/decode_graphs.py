@@ -404,7 +404,7 @@ class DraftGraphs(_Rows):
         landed = {}
 
         def fill(inputs):
-            step, given_in, last, counts = inputs
+            step, given_in, last, counts, sampler = inputs
             self.metadata[shape][:3].copy_(host_meta, non_blocking=True)
             if dev.type == "cuda":
                 landed["event"] = torch.cuda.Event()
@@ -413,10 +413,18 @@ class DraftGraphs(_Rows):
             torch.index_select(given, 0, flat, out=given_in)
             torch.add(fed, iota(n, dev) * t - 1, out=last)
             counts.copy_(fed)
+            if sampler is not None:
+                # the sampled chain (`candidates`) behind a greedy step: every row at temperature 0 draws its argmax --
+                # a sampled step's `run` may have left its own settings in these inputs
+                temperature, top_k, top_p, uniforms = sampler
+                temperature.zero_()
+                top_k.zero_()
+                top_p.fill_(1.0)
+                uniforms.zero_()
 
         out = self.graphs.run(shape, fill)
         self._landed = landed.get("event")
-        return out
+        return out[:2] if self.candidates else out
 
 
 __all__ = ["bucket_ladder", "draft_chain", "greedy_verdict", "TargetGraphs", "DraftGraphs"]

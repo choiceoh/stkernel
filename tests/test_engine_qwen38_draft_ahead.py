@@ -187,11 +187,16 @@ class Snapshots:
 
     def run(self, shape, fill):
         fill(self.inputs[shape])
-        step, given, last, counts = self.inputs[shape]
+        step, given, last, counts, sampler = self.inputs[shape]
         self.seen.append((shape, step.ids.tolist(), step.contexts.tolist(), step.seqs.tolist(), step.slots.tolist(),
-                          given.float().tolist(), last.tolist(), counts.tolist()))
+                          given.float().tolist(), last.tolist(), counts.tolist(),
+                          None if sampler is None else [s.tolist() for s in sampler]))
         n = shape[0]
-        return torch.arange(n * 3).view(n, 3)
+        picks = torch.arange(n * 3).view(n, 3)
+        if sampler is None:
+            return picks
+        # the sampled chain's answer (#1266): picks, their probabilities, the candidates and the distributions over them
+        return picks, picks.float() / 8, torch.zeros(n, 3, 2, dtype=torch.int64), torch.zeros(n, 3, 2)
 
     def close(self):
         pass
@@ -199,7 +204,7 @@ class Snapshots:
 
 @unittest.skipUnless(torch is not None, "requires torch")
 class RunAfterTests(unittest.TestCase):
-    def draft_graphs(self):
+    def draft_graphs(self, **kwargs):
         from engine.profiles.qwen38 import decode_graphs
         net = SimpleNamespace(F=SimpleNamespace(block=16, spec_k=3, hc=1, hidden=2),
                               comm=SimpleNamespace(graph_capture_safe=True), lanes=SimpleNamespace(graph_resources=None))
@@ -209,7 +214,7 @@ class RunAfterTests(unittest.TestCase):
         empty = torch.empty
         unpinned = lambda *a, pin_memory=False, **kw: empty(*a, **kw)
         with mock.patch.object(decode_graphs, "DecodeGraphs", Snapshots), mock.patch.object(torch, "empty", unpinned):
-            return decode_graphs.DraftGraphs(net, caches, 2, 4, k=3, ceiling=100)
+            return decode_graphs.DraftGraphs(net, caches, 2, 4, k=3, ceiling=100, **kwargs)
 
     def test_the_draft_graph_is_fed_what_the_host_would_feed_it(self):
         g = self.draft_graphs()
@@ -222,7 +227,7 @@ class RunAfterTests(unittest.TestCase):
         ahead, host = g.graphs.seen
         self.assertEqual(ahead[1:], host[1:])
         self.assertEqual(ahead[1], [11, 12, 13, 14, 21, 22, 22, 22])       # the kept ids, the last repeated
-        self.assertEqual(ahead[6:], ([3, 5], [4, 2]))                       # each row's last kept row, its count
+        self.assertEqual(ahead[6:8], ([3, 5], [4, 2]))                      # each row's last kept row, its count
         self.assertEqual(ahead[0], (2, 4, g.buckets[0]))
 
     def test_a_narrow_verify_width_reads_its_own_rows(self):
@@ -233,6 +238,22 @@ class RunAfterTests(unittest.TestCase):
         g.run([(0, 1, 10, [11, 12], streams[0:2]), (1, 2, 20, [21], streams[2:3])])
         ahead, host = g.graphs.seen
         self.assertEqual(ahead[1:], host[1:])
+
+    def test_a_sampled_chain_behind_a_greedy_step_draws_the_argmax(self):
+        """The sampled draft graph (#1266, `candidates`) behind a greedy verify step: run_after hands the chain
+        temperature 0 whatever a sampled step's `run` left in its inputs, and answers (picks, probabilities) as
+        ServedMTP.chain reads them."""
+        g = self.draft_graphs(candidates=2)
+        streams = torch.arange(16, dtype=torch.float32).view(8, 2).to(torch.bfloat16)
+        drawn = (0.5, 5, 0.75, [0.25, 0.5, 0.75])
+        g.run([(0, 1, 10, [11, 12, 13, 14], streams[0:4]), (1, 2, 20, [21, 22], streams[4:6])], [drawn, drawn])
+        out = g.run_after([(0, 1, 10), (1, 2, 20)], torch.tensor([[11, 12, 13, 14], [21, 22, 23, 24]]), streams,
+                          torch.tensor([4, 2]), width=4)
+        self.assertEqual(len(out), 2)
+        host, ahead = g.graphs.seen
+        self.assertEqual(host[8], [[0.5, 0.5], [5, 5], [0.75, 0.75], [[0.25, 0.5, 0.75]] * 2])
+        self.assertEqual(ahead[8], [[0.0, 0.0], [0, 0], [1.0, 1.0], [[0.0, 0.0, 0.0]] * 2])
+        self.assertEqual(ahead[1:8], host[1:8])
 
     def test_every_row_holds_the_widest_observation(self):
         g = self.draft_graphs()
