@@ -7,6 +7,22 @@
 # from its system gitconfig and does exactly that.
 * text=auto eol=lf
 
+# The ledger is appended to by several sessions at once, all at the same place: its end. Two
+# branches that each add an entry there conflict on every rebase, and the resolution is always the
+# same one -- keep both. On 2026-09-19 one pull request (#1213) met that conflict three times in
+# forty minutes while main moved under it. `union` is that resolution: both sides' lines, no
+# markers. Entries are named by their PR, not by a number read off the end of the file (규칙 9,
+# tests/test_ledger_numbering.py), so neither their order nor their neighbour matters;
+# tools/ledger_rebase.py is for the numbered sections of before and finds nothing to move now.
+#
+# Two things to know. It is right for an append-only file and wrong for any other: two edits to
+# the SAME existing line are both kept, silently, so correct an old entry in a commit of its own
+# and read the diff. And git folds the blank line both sides put before their heading into one, so
+# the second entry's `###` lands directly under the first entry's last line -- it still renders
+# and still parses; give it its blank line back when you see it. Git applies all this to a local
+# merge or rebase; whether the pull request page still shows a conflict is the host's decision.
+MEASUREMENTS.md merge=union
+
 # Captured evidence and build outputs keep the bytes they were captured with.
 measurements/** -text
 *.log -text
