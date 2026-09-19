@@ -2,6 +2,7 @@
 where a profile opted in (`decode_rows`). The arithmetic is held on a GPU (the recipe's exact FP32 value, and
 deep_gemm's output); the routing on the CPU with both kernels stood in for."""
 import importlib.util
+import os
 import sys
 import types
 import unittest
@@ -54,6 +55,65 @@ class RoutingTests(unittest.TestCase):
     def test_one_tile_for_every_decode_row_count(self):
         from engine.kernels.dense.fp8_rows import MAX_ROWS, tile
         self.assertEqual({tile(r) for r in range(1, MAX_ROWS + 1)}, {(32, 4, 4)})
+
+
+@unittest.skipUnless(torch is not None and importlib.util.find_spec("triton") is not None
+                     and (os.environ.get("TRITON_INTERPRET") == "1" or torch.cuda.is_available()),
+                     "CUDA or Triton interpreter required")
+class DraftHeadTests(unittest.TestCase):
+    def weight(self, n=256, k=512, device="cpu"):
+        gen = torch.Generator().manual_seed(1)
+        w = torch.randn(n, k, generator=gen) * 0.05
+        blocks = w.view(n // 128, 128, k // 128, 128).abs().amax((1, 3)).clamp_min(1e-4)
+        ws = torch.exp2(torch.ceil(torch.log2(blocks / 448.0)))
+        wq = (w / ws.repeat_interleave(128, 0).repeat_interleave(128, 1)).to(torch.float8_e4m3fn)
+        return wq.to(device), ws.to(device)
+
+    def test_the_rows_stay_bf16_against_the_fp8_weight(self):
+        from engine.kernels.dense import fp8_rows
+        device = "cpu" if os.environ.get("TRITON_INTERPRET") == "1" else "cuda"
+        wq, ws = self.weight(device=device)
+        exact = wq.float() * ws.repeat_interleave(128, 0).repeat_interleave(128, 1)
+        for m in (1, 5, 16):
+            x = torch.randn(m, 512, generator=torch.Generator().manual_seed(m)).bfloat16().to(device)
+            got = fp8_rows.project_bf16(x, (wq, ws)).float()
+            ref = x.float() @ exact.t()
+            self.assertLessEqual(float((got - ref).abs().max() / ref.abs().max()), 2.0 ** -7, m)
+            self.assertTrue(torch.equal(got.argmax(1), ref.argmax(1)), m)
+
+    def test_the_drafter_reads_the_head_through_it(self):
+        from unittest import mock
+        from engine.kernels.dense import FP8Linear, fp8_rows
+        from engine.profiles.qwen38.net import Qwen38Net
+        head = object.__new__(FP8Linear)
+        head.cublas, head.weight = None, self.weight()
+        net = object.__new__(Qwen38Net)
+        net.dense, net.vp = {"head": head}, 200
+        h = mock.Mock(is_cuda=True, shape=(3, 512), dtype=torch.bfloat16)
+        h.contiguous.return_value = h
+        with mock.patch.object(fp8_rows, "project_bf16", return_value=torch.zeros(3, 256)) as rows:
+            self.assertEqual(tuple(net.draft_logits(h).shape), (3, 200))
+            rows.assert_called_once()
+        with mock.patch.object(Qwen38Net, "head_local", return_value=torch.zeros(20, 256)) as verify:
+            h.shape = (20, 512)                                   # past 16 rows: the verify step's head
+            self.assertEqual(tuple(net.draft_logits(h).shape), (20, 200))
+            verify.assert_called_once()
+
+    def test_a_pick_is_the_same_with_its_probability(self):
+        from unittest import mock
+        from engine.profiles.qwen38.net import Qwen38Net
+        net = object.__new__(Qwen38Net)
+        net.draft_index, net.draft_tap, net.rank, net.vp = None, None, 0, 10
+        net.comm = mock.Mock(all_reduce_max=lambda t: t, all_gather=lambda t, dim: t)
+        logits = torch.zeros(2, 10)
+        logits[0, 7], logits[1, 2] = 3.0, 3.0
+        with mock.patch.object(Qwen38Net, "draft_logits", return_value=logits) as draft:
+            picks = net.draft_tokens(torch.zeros(2, 4))
+            same, probs = net.draft_tokens(torch.zeros(2, 4), probability=True)
+        self.assertEqual(picks.tolist(), [7, 2])
+        self.assertEqual(same.tolist(), [7, 2])
+        self.assertEqual(draft.call_count, 2)                     # both paths read the drafter's head, not the verify step's
+        self.assertTrue(torch.all(probs > 0.5))
 
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available() and importlib.util.find_spec("deep_gemm")

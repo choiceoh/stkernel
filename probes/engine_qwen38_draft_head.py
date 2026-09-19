@@ -30,7 +30,7 @@ if str(ROOT) not in sys.path:
 
 GRID = ((512, 8), (512, 16), (512, 32), (1024, 16), (1024, 32), (1024, 64), (2048, 32), (2048, 64))
 TIMED = ((1024, 32), (2048, 64))
-QUERIES = 2048
+QUERIES = 4096
 CALLS, ROUNDS = 8, 9
 
 
@@ -74,6 +74,19 @@ def run(output=None, ranks=None, rank: "int | None" = None) -> dict:
 
     gen = torch.Generator().manual_seed(0)
     sets = {kind: queries(head, kind, QUERIES, gen) for kind in ("token", "mixture", "gaussian")}
+    # the head's precision as a drafter sees it: how often the verify step's FP8 head (rows quantised too) and the
+    # draft's W8A16 head (rows BF16, fp8_rows.project_bf16) name the argmax the checkpoint's BF16 head names
+    from engine.kernels.dense import fp8_rows
+    report["head_precision"] = {}
+    for kind, q in sets.items():
+        agree = {"fp8": 0, "w8a16": 0}
+        for a in range(0, QUERIES, 16):
+            h = q[a:a + 16].contiguous()
+            want = (h.float() @ head.float().t()).argmax(1)
+            agree["fp8"] += int((lane(h).float().argmax(1) == want).sum())
+            agree["w8a16"] += int((fp8_rows.project_bf16(h, lane.weight)[:, :valid].float().argmax(1) == want).sum())
+        report["head_precision"][kind] = {name: round(v / QUERIES, 4) for name, v in agree.items()}
+    print(json.dumps({"head_precision": report["head_precision"]}), flush=True)
     exact = {kind: torch.cat([full_key(q[a:a + 16]) for a in range(0, QUERIES, 16)]) for kind, q in sets.items()}
     built = {}
     for clusters, probes in GRID:
