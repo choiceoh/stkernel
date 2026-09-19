@@ -220,6 +220,12 @@ def main():
         from probes.engine_qwen38_head import run as qwen38_head
         qwen38_head(args.output)
         return
+    if args.lanes in ('glm53_head', 'glm53_gemv'):
+        # component timings at GLM-5.3's shapes and rows: whether Qwen3.8's decode-row kernels (dense/fp8_rows,
+        # common/skinny_gemv) beat what GLM serves -- its cuBLASLt head reader, torch.mm on the indexer pair
+        from probes.engine_glm53_decode_rows import run_gemv, run_head
+        (run_head if args.lanes == 'glm53_head' else run_gemv)(args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10
@@ -230,11 +236,6 @@ def main():
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe
         qwen38_moe(args.output)
-        return
-    if args.lanes == 'qwen38_input_reuse':
-        # component timings: the W4 GEMM's input reuse at Qwen3.8's decode projections, byte-exact first (S2)
-        from probes.engine_qwen38_input_reuse import run as qwen38_input_reuse
-        qwen38_input_reuse(args.output)
         return
     if args.lanes == 'qwen38_mix_tiles':
         # component timings: the mixer mean's hidden axis in tiles, every tile the one-block launch's bytes first (H3)

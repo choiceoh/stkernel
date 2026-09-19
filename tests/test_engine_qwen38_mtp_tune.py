@@ -128,6 +128,83 @@ class LossTests(unittest.TestCase):
             self.assertNotEqual(m["loss_2"], m_cut["loss_2"])
 
 
+def _ddp_rank(rank, world, port, data_dir, out_dir, results):
+    """One rank of a two-process gloo run of `train` on the tiny head: its final weights, for the test to compare."""
+    import os
+    os.environ.update(RANK=str(rank), WORLD_SIZE=str(world), MASTER_ADDR="127.0.0.1", MASTER_PORT=str(port))
+    from unittest import mock
+    from types import SimpleNamespace
+    from engine.profiles.qwen38 import mtp_tune as mt
+    _, _, cfg, weights = tiny()
+    args = SimpleNamespace(ckpt=Path(data_dir), data=data_dir, out=out_dir, depth=3, window=12, eval_windows=4, seed=0,
+                           steps=3, accumulate=2, lr=1e-3, warmup=1, beta=0.6, auf=False, clip=1.0, log_every=1,
+                           eval_every=3)
+    with mock.patch.object(mt, "config", lambda ckpt: (cfg, "model.")), \
+            mock.patch.object(mt, "checkpoint_tensors", lambda ckpt, prefix, tuned=None: weights.__getitem__), \
+            mock.patch.object(mt.Head, "__init__", _float32_head_init(mt.Head.__init__)):
+        mt.train(args)
+    results[rank] = {k: v.detach().clone() for k, v in _last_model[0].weights.items()}
+
+
+_last_model = [None]
+
+
+def _float32_head_init(init):
+    def wrapped(self, cfg, tensors, **kw):
+        kw["dtype"] = torch.float32
+        init(self, cfg, tensors, **kw)
+        _last_model[0] = self
+    return wrapped
+
+
+@unittest.skipUnless(torch is not None, "requires torch")
+class DistributedTests(unittest.TestCase):
+    """`train` data parallel: each rank its own windows, the gradients averaged, the ranks' weights the same bits and
+    moved; the evaluation split across ranks and summed back."""
+
+    def data(self, d):
+        import numpy as np
+        from engine.base.composition import State, Step
+        from engine.profiles.qwen38.mtp_tune import build_runs
+        from tests.test_engine_composed import prompt
+        comp, _, cfg, _ = tiny()
+        for seq in range(6):
+            tokens = prompt(40 + seq, 40)
+            with torch.no_grad():
+                _, streams = comp.forward(Step.of([(0, 0, torch.tensor(tokens[:39]))]), State(), logits="all", hidden=True)
+            meta = np.array([[seq, p, tokens[p + 1], 0] for p in range(39)], dtype=np.int64)
+            np.savez(Path(d) / f"mtp-inputs-20260919-150000-{seq:05d}.npz",
+                     streams=streams.to(torch.bfloat16).view(torch.int16).numpy(), meta=meta)
+        return build_runs(sorted(Path(d).glob("mtp-inputs-*.npz")), Path(d) / "data", holdout=0.34, min_length=16, seed=1)
+
+    def test_two_ranks_end_on_the_same_weights(self):
+        import socket
+        import torch.multiprocessing as mp
+        with tempfile.TemporaryDirectory() as d:
+            index = self.data(d)
+            self.assertTrue(index["train"] and index["eval"])
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1", 0))
+                port = sock.getsockname()[1]
+            manager = mp.Manager()
+            results = manager.dict()
+            procs = [mp.get_context("spawn").Process(target=_ddp_rank, args=(r, 2, port, str(Path(d) / "data"),
+                                                                            str(Path(d) / "run"), results))
+                     for r in range(2)]
+            for p in procs:
+                p.start()
+            for p in procs:
+                p.join(300)
+            self.assertEqual([p.exitcode for p in procs], [0, 0])
+            a, b = results[0], results[1]
+            self.assertEqual(set(a), set(b))
+            for key in a:
+                self.assertTrue(torch.equal(a[key], b[key]), key)
+            log = [json.loads(l) for l in (Path(d) / "run" / "log.jsonl").read_text().splitlines()]
+            self.assertEqual(log[0]["world"], 2)
+            self.assertTrue(any(r["event"] == "eval" and r["step"] == 3 for r in log))
+
+
 @unittest.skipUnless(torch is not None, "requires torch")
 class DataTests(unittest.TestCase):
     def test_tapped_shards_become_runs_a_sequence(self):
@@ -145,8 +222,8 @@ class DataTests(unittest.TestCase):
             tap(1, 42, [142], rows(1, 5), True)
             import numpy as np
             written = lambda: sum(np.load(f)["meta"].shape[0] for f in shards([taps]))
-            deadline = time.time() + 5
-            while time.time() < deadline and written() < 49:                  # the last rows: the writer's timer
+            deadline = time.time() + 30          # the timer is 0.2 s; the budget is for a loaded box (check.py
+            while time.time() < deadline and written() < 49:   # runs four of these at once, and a daemon thread waits)
                 time.sleep(0.1)
             files = shards([taps])
             self.assertEqual(written(), 49)
@@ -174,6 +251,71 @@ class DataTests(unittest.TestCase):
             self.assertEqual({r["boot"] for r in index["runs"]}, {"20260919-100000", "20260919-110000"})
             self.assertEqual(index["train"] + index["eval"], 80)
 
+    def test_a_reader_never_sees_a_half_written_shard(self):
+        """The trainer reads the tap's directory WHILE the fleet writes it (`shards()` globs it, `data` loads what it
+        returns). A `np.savez` straight to the final name is a zip a reader can catch half-written -- an EOFError in
+        the middle of a data window. Here the shard's bytes are handed over in two halves with the writer stopped in
+        between: what the glob returns while it is stopped must be nothing, and what it returns after must load."""
+        import io
+        import threading
+        from unittest.mock import patch
+        import numpy as np
+        from engine.profiles.qwen38.fleet import MTPInputTap
+        from engine.profiles.qwen38.mtp_tune import shards
+
+        inside, release, real = threading.Event(), threading.Event(), np.savez
+
+        def halfway(file, **arrays):
+            """The real bytes, written half now and half after the test looks -- a write caught in the middle."""
+            buffer = io.BytesIO()
+            real(buffer, **arrays)
+            data = buffer.getvalue()
+            handle = file if hasattr(file, "write") else open(file, "wb")
+            handle.write(data[:len(data) // 2]); handle.flush()
+            inside.set()
+            release.wait(10)
+            handle.write(data[len(data) // 2:]); handle.flush()
+            if handle is not file:
+                handle.close()
+
+        with tempfile.TemporaryDirectory() as d, patch("numpy.savez", halfway):
+            taps = Path(d) / "taps"
+            tap = MTPInputTap(taps, rows=2, every_s=0.2)
+            tap(7, 0, [11, 12], torch.zeros(2, 8, dtype=torch.bfloat16), True)
+            self.assertTrue(inside.wait(10), "the writer never reached the shard")
+            self.assertEqual([f.name for f in shards([taps])], [])        # half of a zip is not a shard
+            self.assertTrue([f for f in taps.iterdir() if f.name.endswith(".part")])
+            release.set()
+            deadline = time.time() + 30
+            while time.time() < deadline and not shards([taps]):
+                time.sleep(0.05)
+            files = shards([taps])
+            self.assertEqual(len(files), 1)
+            self.assertEqual(np.load(files[0])["meta"].shape[0], 2)       # complete the moment it is visible
+            self.assertEqual([f for f in taps.iterdir() if f.name.endswith(".part")], [])
+
+
+@unittest.skipUnless(torch is not None, "requires torch")
+class ExtractTests(unittest.TestCase):
+    def test_the_extract_is_the_tensors_the_tuning_reads_byte_for_byte(self):
+        from types import SimpleNamespace
+        from safetensors.torch import save_file
+        from engine.profiles.qwen38 import mtp_tune as mt
+        _, _, cfg, weights = tiny()
+        with tempfile.TemporaryDirectory() as d:
+            ckpt = Path(d) / "ckpt"
+            ckpt.mkdir()
+            bf16 = {k: v.to(torch.bfloat16).contiguous() for k, v in weights.items()}
+            save_file(bf16, str(ckpt / "model-00001.safetensors"))
+            (ckpt / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {k: "model-00001.safetensors" for k in bf16}}))
+            (ckpt / "config.json").write_text(json.dumps(cfg))
+            mt.extract(SimpleNamespace(ckpt=ckpt, out=str(Path(d) / "base")))
+            names = [*mt.TRAINED, *mt.EXPERTS, mt.HEAD, *mt.target_names("model.").values()]
+            got = mt.checkpoint_tensors(Path(d) / "base", "model.")
+            for name in names:
+                self.assertTrue(torch.equal(got(name), bf16[name]), name)
+            self.assertEqual(mt.config(Path(d) / "base"), (cfg, "model."))
+
 
 @unittest.skipUnless(torch is not None, "requires torch")
 class ServedTests(unittest.TestCase):
@@ -196,14 +338,41 @@ class ServedTests(unittest.TestCase):
         self.assertIn('EXPERTS_ARG="$EXPERTS_ARG --mtp-tuned $TUNED_DIR"', launcher)
         self.assertIn("test -f $TUNED_DIR/mtp-tuned-r${r}of4.safetensors", launcher)
 
-    def test_the_tap_is_rank_zeros_and_off_by_default(self):
+    def test_the_tap_is_rank_zeros_and_on_by_default_under_a_cap(self):
+        """The operator's decision of 2026-09-19 ("전부 켜"): every Qwen boot records the head's inputs on rank 0, the
+        directory capped; --no-tap-mtp-inputs (ST_TAP_MTP_INPUTS=0) stops it."""
+        from engine.profiles.qwen38.fleet import TAP_CAP_GIB
+        self.assertEqual(TAP_CAP_GIB, 64.0)
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text()
         self.assertIn("if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:", fleet)
+        self.assertIn('ap.add_argument("--tap-mtp-inputs", action=argparse.BooleanOptionalAction, default=True,', fleet)
+        self.assertIn("cap_bytes=int(TAP_CAP_GIB * 2**30)", fleet)
         adapter = (ROOT / "engine/profiles/qwen38/adapter.py").read_text()
         self.assertIn("self.inputs_tap = None", adapter)
         self.assertIn("hidden[segment.start:segment.start + fed], decoded=True)", adapter)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text()
-        self.assertIn('1) ADAPT_ARG="$ADAPT_ARG --tap-mtp-inputs" ;;', launcher)
+        self.assertIn('0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;', launcher)
+
+    def test_the_tap_stops_at_its_cap(self):
+        import numpy as np
+        from engine.profiles.qwen38.fleet import MTPInputTap
+        with tempfile.TemporaryDirectory() as d:
+            taps = Path(d)
+            np.savez(taps / "mtp-inputs-20260919-000000-00000.npz", streams=np.zeros((64, 8), np.int16),
+                     meta=np.zeros((64, 4), np.int64))                          # an earlier boot's shard
+            held = (taps / "mtp-inputs-20260919-000000-00000.npz").stat().st_size
+            self.assertTrue(MTPInputTap(taps, cap_bytes=held).full)             # counted: already at the cap
+            tap = MTPInputTap(taps, rows=4, every_s=0.2, cap_bytes=held + 1)
+            self.assertFalse(tap.full)
+            tap(1, 0, [5, 6, 7, 8], torch.zeros(4, 8, dtype=torch.bfloat16), False)
+            deadline = time.time() + 5
+            while time.time() < deadline and not tap.full:
+                time.sleep(0.05)
+            self.assertTrue(tap.full)
+            shards = len(list(taps.glob("mtp-inputs-*.npz")))
+            tap(1, 4, [9, 10, 11, 12], torch.zeros(4, 8, dtype=torch.bfloat16), False)   # past the cap: nothing kept
+            time.sleep(0.5)
+            self.assertEqual(len(list(taps.glob("mtp-inputs-*.npz"))), shards)
 
 
 if __name__ == "__main__":

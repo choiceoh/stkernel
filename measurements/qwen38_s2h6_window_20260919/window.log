@@ -1,0 +1,66 @@
+[14:28:53] tree 4148c35f perf(qwen38): the decode projections take the W4 GEMM's input reuse -- 
+[14:28:54] lane queue: 0 ticket(s) waiting
+[14:28:54] lease before: production production/srv2/1368796 on srv2 since 2026-09-19 13:52:38 (production st-glm53 on four Sparks): running=0, served=71, steps=1866, waiting=0
+[14:28:54] prebuild (production still serves)
+[14:29:00] prebuild rc=0 (10.10.10.4: {"summary": {"built": 0, "cached": 9, "failed": 0, "hit": 31, "into": "/cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops", "requests)
+[14:29:00] yield asked
+[14:29:00] handed over: production production/srv2/1368796 on srv2 since 2026-09-19 13:52:38 (production st-glm53 on four Sparks): running=0, served=71, steps=1866, waiting=0 -- asked to yield to session/qwen38-s2h6-0919
+[14:29:10] == boot one ()
+ABORT: 10.10.10.4 runs st-probe-srv2-398630 -- the fleet is taken (production is st-glm53: hand off, do not squat)
+[14:29:11] launcher rc=1
+[14:29:11] the default boot did not serve
+10.10.10.3: stopped
+10.10.10.4: stopped
+[14:29:14] == boot off (ST_SHARED_OVERLAP=off)
+[14:29:14] a probe container is up on srv4 (1) before boot off; waiting (max 5 min)
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 815986)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[14:30:56] == second script: the lease is still ours (session session/qwen38-s2h6-0919 on srv2 since 2026-09-19 14:29:02 (operator window: M5 confirm (one then off), H6 (--hc-fp8), S2 lane probe): phase=stopped)
+[14:33:22] the off boot's requests: 10 lines
+  shared expert: unforked
+  rank 0: ready in 154.7 s, door on port 8000
+10.10.10.3: stopped
+10.10.10.4: stopped
+[14:33:29] == boot one ()
+[14:33:30] a probe container is up on srv4 (1) before boot one; waiting (max 5 min)
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 850031)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[14:35:45] boot one: launcher to last answer 136 s, requests rc=0
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  shared expert: forked at one request's rows
+qualify lanes                                2.521     +1.42  
+mtp experts                                  0.028     -0.00  mtp_experts_qualify=0
+  rank 0: ready in 61.2 s, door on port 8000
+10.10.10.3: stopped
+10.10.10.4: stopped
+[14:35:52] == boot fp8 (ST_HC_FP8=1)
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 946885)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[14:38:41] boot fp8: launcher to last answer 169 s, requests rc=0
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  shared expert: forked at one request's rows
+qualify lanes                                2.546     +1.36  
+mtp experts                                  0.044     +0.00  mtp_experts_qualify=0
+  rank 0: ready in 98.0 s, door on port 8000
+10.10.10.3: stopped
+10.10.10.4: stopped
+[14:38:49] Qwen3.8 stopped
+[14:38:49] == S2 lane ticket
+[14:38:49] S2 submitted: log /home/choiceoh/glm53-logs/fleet/run-logs/f64474a1a67c072886fb3920b36b90a7586ccb176f6fb62e483a6155e50dd263.log
+[14:38:54] S2 went
+[14:39:14] S2 done
+[14:39:15] probe containers on srv4: 0
+[14:39:15] stop + release
+10.10.10.2: stopped
+10.10.10.1: stopped
+10.10.10.3: stopped
+10.10.10.4: stopped
+released
+[14:39:17] lease: free
+[14:39:17] waiting for production's door
+[14:42:47] production door answers: {"object": "list", "data": [{"id": "glm-5.3-flash", "object": "model", "owned_by": "st", "root": "glm-5.3-flash", "created": 1789796564, "max_model_len": 104857
+[14:42:47] lease after: production production/srv2/1368796 on srv2 since 2026-09-19 14:40:48 (production st-glm53 on four Sparks): running=0, served=0, steps=0, waiting=0
+[14:42:48] WINDOW CLOSED

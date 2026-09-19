@@ -156,7 +156,7 @@ def swiglu_clamped(g: torch.Tensor, u: torch.Tensor, limit: float) -> torch.Tens
 def reference() -> Lanes:
     from engine.modules.causal_conv import causal_conv1d
     from engine.modules.hyper_connection import mhc_pre, mhc_post
-    from engine.modules.linear_attention import gated_delta_rule, kda_gate, kda_output_norm
+    from engine.modules.linear_attention import gated_delta_rule, gated_delta_rule_marked, kda_gate, kda_output_norm
     from engine.modules.moe import expert_gemm
     from engine.modules.sparse_attention import mla_sparse_mqa
     from engine.modules.sparse_indexer import fwht128_quant, indexer_logits, kpool_compress, pool_slots
@@ -167,20 +167,8 @@ def reference() -> Lanes:
     def kda_chunk(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound, states_at=None):
         g = kda_gate(g_raw, A_log, dt_bias, lower_bound, safe_gate=True)
         beta = torch.sigmoid(beta_raw.float())
-        if not states_at:
-            return gated_delta_rule(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5, qk_l2norm=True, decay_per_channel=True)
-        # the reference is a token-by-token recurrence: the state at a chunk's start is exactly the state after the
-        # piece before it, so the pieces are run one after another and each piece's final state is that mark
-        outs, states, state, lo = [], [], state0, 0
-        for hi in [c * 64 for c in states_at] + [q.shape[1]]:
-            if hi > lo:
-                o, state = gated_delta_rule(q[:, lo:hi], k[:, lo:hi], v[:, lo:hi], g[:, lo:hi], beta[:, lo:hi], state,
-                                            scale=q.shape[-1] ** -0.5, qk_l2norm=True, decay_per_channel=True)
-                outs.append(o)
-            if len(states) < len(states_at):
-                states.append(state[0] if state is not None else torch.zeros(q.shape[2], q.shape[-1], v.shape[-1], device=q.device))
-            lo = hi
-        return torch.cat(outs, dim=1), state, torch.stack(states)
+        return gated_delta_rule_marked(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5, qk_l2norm=True,
+                                       decay_per_channel=True, marks=states_at)
 
     def kda_recurrent(q, k, v, g_raw, beta_raw, A_log, dt_bias, state0, lower_bound):
         """The recurrence one token at a time, keeping every state: what a

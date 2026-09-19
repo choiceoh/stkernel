@@ -186,6 +186,40 @@ SCHEMES = {
 }
 
 
+MARK_CHUNK = 64                 # a mark is a chunk index; the served chunk kernels cut the sequence 64 tokens a chunk
+
+
+def gated_delta_rule_marked(query: torch.Tensor, key: torch.Tensor, value: torch.Tensor,
+                            g: torch.Tensor, beta: torch.Tensor, initial_state=None, *,
+                            scale: "float | None" = None, qk_l2norm: bool = True,
+                            decay_per_channel: bool = False, marks=None):
+    """`gated_delta_rule`, and the state at each of `marks` (chunk indices, MARK_CHUNK tokens a chunk): what a prefill
+    step that saves block boundaries asks of the reference.
+
+    The recurrence is token by token, so the state at a chunk's start is exactly the state after the piece before
+    it: the pieces run one after another and each piece's final state is that mark's. A mark at or before the first
+    token (no piece yet) is the initial state, or zeros [H, Dk, Dv] fp32 without one.
+
+    Without marks this is `gated_delta_rule`: (o, final state). With them: (o, final state, [len(marks), H, Dk, Dv]).
+    Every profile with a delta-rule layer asks the same (KDA's per-channel decay, GDN's per-head one).
+    """
+    if not marks:
+        return gated_delta_rule(query, key, value, g, beta, initial_state, scale=scale, qk_l2norm=qk_l2norm,
+                                decay_per_channel=decay_per_channel)
+    outs, states, state, lo = [], [], initial_state, 0
+    for hi in [c * MARK_CHUNK for c in marks] + [query.shape[1]]:
+        if hi > lo:
+            o, state = gated_delta_rule(query[:, lo:hi], key[:, lo:hi], value[:, lo:hi], g[:, lo:hi], beta[:, lo:hi],
+                                        state, scale=scale, qk_l2norm=qk_l2norm, decay_per_channel=decay_per_channel)
+            outs.append(o)
+        if len(states) < len(marks):
+            states.append(state[0] if state is not None else
+                          torch.zeros(value.shape[2], key.shape[-1], value.shape[-1], device=query.device,
+                                      dtype=torch.float32))
+        lo = hi
+    return torch.cat(outs, dim=1), state, torch.stack(states)
+
+
 def named(scheme: str, source):
     """canonical name -> tensor over `source(checkpoint name)` (a module's matrix by its module name, a bare parameter
     by its own); KeyError for a name the scheme or the checkpoint lacks."""
