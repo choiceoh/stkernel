@@ -271,5 +271,112 @@ def run_site_prefill(output=None) -> dict:
     return report
 
 
+COMPONENT_ROWS = (512, 1024, 2048, 4096)
+COMPONENT_TRIES = {"down": ((64, 64, 64, 4, 3), (128, 64, 64, 4, 3), (128, 64, 64, 8, 3), (128, 64, 32, 4, 4),
+                            (128, 32, 64, 4, 3), (256, 64, 64, 8, 3), (128, 128, 32, 8, 3)),
+                   "up": ((64, 64, 64, 4, 3), (64, 64, 32, 4, 3), (64, 64, 32, 4, 4), (64, 64, 32, 8, 3),
+                          (64, 32, 32, 4, 3), (32, 64, 32, 4, 3), (128, 64, 32, 8, 3), (64, 128, 32, 8, 3))}
+
+
+def run_site_components(output=None) -> dict:
+    """mix_block's two launches one at a time against what each replaces, `PREFILL_SITES` a graph, interleaved: the
+    down projection and the gates (cuBLAS down + `_gates` / `_down_gates_rows` at every tile in COMPONENT_TRIES) and
+    the up projection and the mean (cuBLAS up + `_mix_mean` / `_up_mean_rows` at every tile). Each tile's output held to
+    the first tile's (the same products up to the dot's order) within two BF16 steps."""
+    import torch
+    import triton
+    from engine.kernels import gated_residual as hcr
+    torch.manual_seed(0)
+    width = HC * HIDDEN
+    down = torch.randn(RANK + HC, width, device="cuda", dtype=torch.bfloat16) * 0.02
+    up = torch.randn(width, RANK, device="cuda", dtype=torch.bfloat16) * 0.02
+    report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "sites_a_graph": PREFILL_SITES, "rows": {}}
+    for m in COMPONENT_ROWS:
+        normed = torch.randn(m, width, device="cuda", dtype=torch.bfloat16)
+        gates = torch.nn.functional.silu(torch.randn(m, RANK, device="cuda", dtype=torch.bfloat16))
+        keep = []
+
+        def graph_of(fn):
+            keep.append(fn())
+            torch.cuda.synchronize()
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                for _ in range(PREFILL_SITES):
+                    keep.append(fn())
+            return g
+
+        def cublas_down():
+            di = torch.mm(normed, down.t())
+            g = torch.empty(m, RANK, device="cuda", dtype=torch.bfloat16)
+            inj = torch.empty(m, HC, device="cuda", dtype=torch.bfloat16)
+            hcr._gates[(m,)](di, g, inj, di.stride(0), g.stride(0), inj.stride(0), float(HC), R=RANK,
+                             BR=triton.next_power_of_2(RANK), HC=HC, BH=triton.next_power_of_2(HC), WITH_INJECT=True,
+                             num_warps=4)
+            return g, inj
+
+        def block_down(tile):
+            def fn():
+                g = torch.empty(m, RANK, device="cuda", dtype=torch.bfloat16)
+                inj = torch.empty(m, HC, device="cuda", dtype=torch.bfloat16)
+                bm, bn, bk, warps, stages = tile
+                hcr._down_gates_rows[(triton.cdiv(m, bm), triton.cdiv(RANK + HC, bn))](
+                    normed, down, g, inj, m, RANK + HC, width, normed.stride(0), down.stride(0), g.stride(0),
+                    inj.stride(0), float(HC), R=RANK, HC=HC, WITH_INJECT=True, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
+                    FP32_DOT=False, num_warps=warps, num_stages=stages)
+                return g, inj
+            return fn
+
+        def cublas_up():
+            weights = torch.mm(gates, up.t())
+            mixed = torch.empty(m, HIDDEN, device="cuda", dtype=torch.bfloat16)
+            tile, warps = hcr._mix_tile(HIDDEN, m)
+            hcr._mix_mean[(m, triton.cdiv(HIDDEN, tile))](weights, normed, mixed, weights.stride(0), normed.stride(0),
+                                                          mixed.stride(0), float(HC), HID=HIDDEN, BD=tile, HC=HC,
+                                                          num_warps=warps)
+            return mixed
+
+        def block_up(tile):
+            def fn():
+                mixed = torch.empty(m, HIDDEN, device="cuda", dtype=torch.bfloat16)
+                bm, bd, bk, warps, stages = tile
+                hcr._up_mean_rows[(triton.cdiv(m, bm), triton.cdiv(HIDDEN, bd))](
+                    gates, up, normed, mixed, m, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0),
+                    float(HC), HID=HIDDEN, R=RANK, HC=HC, BLOCK_M=bm, BLOCK_D=bd, BLOCK_K=bk, FP32_DOT=False,
+                    num_warps=warps, num_stages=stages)
+                return mixed
+            return fn
+
+        checks = {}
+        ref_g, ref_up = cublas_down()[0], cublas_up()
+        for tile in COMPONENT_TRIES["down"]:
+            checks[f"down {tile}"] = round(hcr.drift(block_down(tile)()[0], ref_g)[0], 6)
+        for tile in COMPONENT_TRIES["up"]:
+            checks[f"up {tile}"] = round(hcr.drift(block_up(tile)(), ref_up)[0], 6)
+        arms = {"down: cublas + gates": graph_of(cublas_down), "up: cublas + mix_mean": graph_of(cublas_up)}
+        for tile in COMPONENT_TRIES["down"]:
+            arms[f"down {tile}"] = graph_of(block_down(tile))
+        for tile in COMPONENT_TRIES["up"]:
+            arms[f"up {tile}"] = graph_of(block_up(tile))
+        times = {name: [] for name in arms}
+        for _ in range(ROUNDS):
+            for name, g in arms.items():
+                g.replay()
+                torch.cuda.synchronize()
+                began = time.perf_counter()
+                g.replay()
+                torch.cuda.synchronize()
+                times[name].append((time.perf_counter() - began) / PREFILL_SITES * 1e6)
+        del arms, keep
+        row = {name: {"median": round(statistics.median(v), 1), "min": round(min(v), 1)} for name, v in times.items()}
+        report["rows"][m] = {"us_a_site": row, "drift_vs_cublas": checks}
+        print(json.dumps({f"components rows {m}": {k: v["median"] for k, v in row.items()}}), flush=True)
+        del normed, gates
+        torch.cuda.empty_cache()
+    if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps(report, indent=1) + "\n")
+    return report
+
+
 if __name__ == "__main__":
     run(sys.argv[1] if len(sys.argv) > 1 else None)
