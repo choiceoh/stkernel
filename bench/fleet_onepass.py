@@ -284,6 +284,8 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     else:
         if effective.get('ST_BRACKET_VALIDATION', 'screen') not in ('screen', 'full'):
             raise ValueError('ST_BRACKET_VALIDATION must be screen or full')
+        if effective.get('ST_BRACKET_PROFILE', 'glm53') not in ('glm53', 'qwen38'):
+            raise ValueError('ST_BRACKET_PROFILE must be glm53 or qwen38')
         _st_bracket_args(args)
     if rehearsal_only and relative != ST_BRACKET:
         raise ValueError('CPU rehearsal supports only the ST bracket')

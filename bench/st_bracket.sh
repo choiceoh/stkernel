@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # st_bracket.sh -- the ST engine's bracket on the four Sparks: one COMMITTED sha per arm, in
 # production shape. Screening is short; ST_BRACKET_VALIDATION=full selects D17 adoption proof.
+# ST_BRACKET_PROFILE=qwen38 selects Qwen's launcher/container and isolated release root.
 #
 #   bash bench/st_bracket.sh pair  <sha> [--base <sha>]          fleet.sh st-pair  s <sha> [--base <sha>] [est] [note]
 #   bash bench/st_bracket.sh chain A=<sha> B=<sha> [A B ...]     fleet.sh st-chain s [est] [note] -- A=<sha> B=<sha> A B
@@ -35,9 +36,18 @@ REPO=${REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 LOGD=${LOGD:-/home/choiceoh/glm53-logs}
 S=${FLEET_SESSION:-st-bracket}
 SOURCE=${ST_SOURCE:-/home/choiceoh/stkernel}
-RELEASES=${ST_RELEASES:-/home/choiceoh/st-releases}
+BRACKET_PROFILE=${ST_BRACKET_PROFILE:-glm53}
+case "$BRACKET_PROFILE" in
+  glm53) LAUNCHER=start-st-glm53.sh; CONTAINER=st-glm53; DEFAULT_MODEL=glm-5.3-flash
+         DEFAULT_RELEASES=/home/choiceoh/st-releases ;;
+  qwen38) LAUNCHER=start-st-qwen38.sh; CONTAINER=st-qwen38; DEFAULT_MODEL=qwen3.8-flash-next
+          DEFAULT_RELEASES=/home/choiceoh/st-qwen-bracket-releases
+          export SPEC_K=${SPEC_K:-${ST_SPEC_K:-3}} ;;
+  *) echo 'ST_BRACKET_PROFILE must be glm53 or qwen38' >&2; exit 2 ;;
+esac
+RELEASES=${ST_RELEASES:-$DEFAULT_RELEASES}
 STATE=${ST_DEPLOY_STATE:-$RELEASES/deploy-state.json}
-PROD_ENV=${ST_PRODUCTION_ENV:-/home/choiceoh/.config/st-glm53.env}
+PROD_ENV=${ST_PRODUCTION_ENV:-/home/choiceoh/.config/st-$BRACKET_PROFILE.env}
 PORT=${ST_BRACKET_PORT:-8001}
 VALIDATION=${ST_BRACKET_VALIDATION:-screen}
 case "$VALIDATION" in
@@ -48,7 +58,7 @@ esac
 BOOT_WAIT=${ST_BRACKET_BOOT_WAIT:-1800}
 JSONL=${ONEPASS_JSONL:-$LOGD/bracket-onepass.jsonl}
 FLOOR_N=${ST_PAIR_FLOOR_N:-1}
-MODEL=${BENCH_MODEL:-glm-5.3-flash}
+MODEL=${BENCH_MODEL:-$DEFAULT_MODEL}
 REHEARSE=${FLEET_REHEARSE:-0}
 OUT=$LOGD/st-bracket/$S; mkdir -p "$OUT"
 export ONEPASS_JSONL=$JSONL LEGS=onepass
@@ -88,10 +98,10 @@ SELF_IPS=" $(hostname -I 2>/dev/null) "
 node_sh() { local ip=$1; shift
   case "$SELF_IPS" in *" $ip "*) bash -c "$*" </dev/null; return ;; esac
   ssh -n -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new "choiceoh@$ip" "$@"; }
-dead_ranks() {  # one line per rank whose st-glm53 container is not running: "r ip exit=N oom=B" (or gone / unreachable)
+dead_ranks() {  # one line per rank whose profile container is not running: "r ip exit=N oom=B" (or gone / unreachable)
   local r ip state
   for r in "${!NODES[@]}"; do ip=${NODES[$r]}
-    state=$(node_sh "$ip" "docker inspect --format '{{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' st-glm53 2>/dev/null" 2>/dev/null) || state=unreachable
+    state=$(node_sh "$ip" "docker inspect --format '{{.State.Running}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' $CONTAINER 2>/dev/null" 2>/dev/null) || state=unreachable
     case "$state" in true*) ;; "") echo "$r $ip gone" ;; *) echo "$r $ip ${state#false }" ;; esac
   done
 }
@@ -102,8 +112,8 @@ first_error() {  # a rank's own last word: its last exception line, else its las
 forensics() {  # <dir>: the four ranks' last 400 lines, pulled before a stop erases them (the supervisor keeps the same)
   local d=$1 r ip; mkdir -p "$d" 2>/dev/null || return 0
   for r in "${!NODES[@]}"; do ip=${NODES[$r]}
-    node_sh "$ip" "docker inspect --format '{{json .State}}' st-glm53" > "$d/rank$r-$ip.state.json" 2>&1 || true
-    node_sh "$ip" "docker logs --tail=400 st-glm53" > "$d/rank$r-$ip.log" 2>&1 || true
+    node_sh "$ip" "docker inspect --format '{{json .State}}' $CONTAINER" > "$d/rank$r-$ip.state.json" 2>&1 || true
+    node_sh "$ip" "docker logs --tail=400 $CONTAINER" > "$d/rank$r-$ip.log" 2>&1 || true
   done
   say "forensics: $d"
 }
@@ -135,7 +145,7 @@ boot_arm() {  # name sha
     export ST_ENGINE_DIR=$RELEASE ST_IMAGE="st-engine:bracket-${ARM_SHA:0:12}" REPO=$RELEASE
     export ST_TIER_DIR=$LOGD/st-bracket-tier/$S-$ARM ST_DUMP_DIR=$DUMPS
     mkdir -p "$ST_TIER_DIR" "$ST_DUMP_DIR"
-    bash "$RELEASE/launchers/start-st-glm53.sh" start ) > "$OUT/boot-$ARM.log" 2>&1 \
+    bash "$RELEASE/launchers/$LAUNCHER" start ) > "$OUT/boot-$ARM.log" 2>&1 \
     || { tail -5 "$OUT/boot-$ARM.log"; say "ABORT: the launcher refused or failed (see $OUT/boot-$ARM.log)"; return 1; }
   wait_door || { stop_arm; return 1; }
   say "door up: $(door)"
@@ -143,7 +153,7 @@ boot_arm() {  # name sha
 stop_arm() {  # the release's own stop: ST_LEASE_OWNER is the ticket's, so it stops this boot and no other
   [ "$REHEARSE" != 1 ] || return 0
   [ -n "$RELEASE" ] || return 0
-  if ( shape; export REPO=$RELEASE; bash "$RELEASE/launchers/start-st-glm53.sh" stop ) >> "$OUT/boot-$ARM.log" 2>&1; then
+  if ( shape; export REPO=$RELEASE ST_ENGINE_DIR=$RELEASE; bash "$RELEASE/launchers/$LAUNCHER" stop ) >> "$OUT/boot-$ARM.log" 2>&1; then
     drop_tier "$LOGD/st-bracket-tier/$S-$ARM" "st-engine:bracket-${ARM_SHA:0:12}"
   else
     say "stop returned nonzero (see $OUT/boot-$ARM.log); the tier stays until a stop succeeds"
@@ -375,7 +385,7 @@ probe() {  # [sha]: one full onepass on the LIVE production door -- no boot, no 
   if [ "$REHEARSE" != 1 ]; then
     # A probe's record says arm_sha=<what it was queued for>; the door must be serving exactly
     # that, or the sample is mislabelled (a ticket queued before a deploy and run after it).
-    local served; served=$(docker exec st-glm53 printenv ST_RELEASE 2>/dev/null | tr -d '\r' || true)
+    local served; served=$(docker exec "$CONTAINER" printenv ST_RELEASE 2>/dev/null | tr -d '\r' || true)
     if [[ "$served" =~ ^[0-9a-f]{7,40}$ ]] && [ "${served:0:12}" != "${ARM_SHA:0:12}" ]; then
       say "ABORT: the door serves release $served, not ${ARM_SHA:0:12} -- queue the probe for what runs (fleet.sh st-probe s $served)"; return 2
     fi

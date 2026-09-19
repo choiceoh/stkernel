@@ -92,8 +92,10 @@ class AdmissionTests(unittest.TestCase):
         """The launcher under test comes from the arm's release, like the engine it boots."""
         self.assertNotIn('launchers/start-st-glm53.sh', policy.ST_BRACKET_DEPENDENCIES)
         runner = (ROOT / 'bench/st_bracket.sh').read_text()
-        self.assertIn('bash "$RELEASE/launchers/start-st-glm53.sh" start', runner)
-        self.assertIn('bash "$RELEASE/launchers/start-st-glm53.sh" stop', runner)
+        self.assertIn('LAUNCHER=start-st-glm53.sh; CONTAINER=st-glm53', runner)
+        self.assertIn('LAUNCHER=start-st-qwen38.sh; CONTAINER=st-qwen38', runner)
+        self.assertIn('bash "$RELEASE/launchers/$LAUNCHER" start', runner)
+        self.assertIn('bash "$RELEASE/launchers/$LAUNCHER" stop', runner)
 
     def test_a_rehearsal_is_allowed_and_a_rehearsal_takes_no_gpu(self):
         contract = self.validate(['env', 'FLEET_REHEARSE=1', 'bash', 'bench/st_bracket.sh', 'pair', CAND], rehearsal_only=True)
@@ -120,7 +122,7 @@ class AdmissionTests(unittest.TestCase):
         numbers with the old commit: the probe reads the door's ST_RELEASE and refuses a mismatch."""
         text = (ROOT / 'bench/st_bracket.sh').read_text()
         body = text[text.index('probe() {'):]
-        self.assertIn('docker exec st-glm53 printenv ST_RELEASE', body)
+        self.assertIn('docker exec "$CONTAINER" printenv ST_RELEASE', body)
         self.assertIn('ABORT: the door serves release $served, not ${ARM_SHA:0:12}', body)
         self.assertLess(body.index('printenv ST_RELEASE'), body.index('for run in $(seq 1 "$runs")'), 'before any run')
         self.assertIn('[ "$REHEARSE" != 1 ]', body[:body.index('printenv ST_RELEASE')], 'a rehearsal has no door to ask')
@@ -136,6 +138,13 @@ class AdmissionTests(unittest.TestCase):
             self.validate(['env', 'ST_BRACKET_VALIDATION=' + mode, *command])
         with self.assertRaisesRegex(ValueError, 'screen or full'):
             self.validate(['env', 'ST_BRACKET_VALIDATION=typo', *command])
+
+    def test_profile_is_checked_before_queueing(self):
+        command = ['bash', 'bench/st_bracket.sh', 'pair', CAND]
+        for model in ('glm53', 'qwen38'):
+            self.validate(['env', 'ST_BRACKET_PROFILE=' + model, *command])
+        with self.assertRaisesRegex(ValueError, 'ST_BRACKET_PROFILE'):
+            self.validate(['env', 'ST_BRACKET_PROFILE=typo', *command])
 
     def test_fleet_sh_dispatches_the_three_verbs_as_boot_tickets(self):
         fleet = (ROOT / 'bench/fleet.sh').read_text()

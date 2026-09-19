@@ -34,6 +34,26 @@ sys.exit(case.get('rc', 0))
 
 
 class CompletionTests(unittest.TestCase):
+    def test_profile_selects_the_matching_launcher_container_and_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = (ROOT / 'bench/st_bracket.sh').read_text().rsplit('\ncase "${1:-}" in', 1)[0]
+            source += '\nprintf "%s\\n" "$LAUNCHER" "$CONTAINER" "$MODEL" "$RELEASES" "${SPEC_K:-}"\n'
+            script = root / 'runner.sh'
+            script.write_text(source)
+            for profile, model, releases, k in (
+                    ('glm53', 'glm-5.3-flash', '/home/choiceoh/st-releases', ''),
+                    ('qwen38', 'qwen3.8-flash-next', '/home/choiceoh/st-qwen-bracket-releases', '3')):
+                with self.subTest(profile=profile):
+                    env = {key: value for key, value in os.environ.items()
+                           if key not in ('ST_RELEASES', 'BENCH_MODEL', 'SPEC_K', 'ST_SPEC_K')}
+                    env.update(REPO=str(root), LOGD=str(root / 'logs'), ST_BRACKET_PROFILE=profile)
+                    result = subprocess.run(['bash', str(script)], text=True, capture_output=True,
+                                            timeout=20, env=env)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(result.stdout.splitlines(),
+                                     [f'start-st-{profile}.sh', f'st-{profile}', model, releases, k])
+
     def test_production_shape_keeps_the_selected_bracket_port(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
