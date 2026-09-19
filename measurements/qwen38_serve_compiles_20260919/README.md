@@ -65,3 +65,7 @@
 (1 · 16 · 17 토큰 뒤 열 길이가 컴파일 0) 포함. 오류 둘은 conv 가 아니다: GLM-5.3 의 서빙 레인 표(`glm53.lanes.served`)를 짓는 두 케이스가, 같은 프로세스에서
 앞서 돈 MLA 글루 케이스가 MLA 레인의 프리필 모드를 이미 걸어 둔 탓에 `configure_prefill` 에서 거부됐다. 그 둘(GLM 배선의 판정)은 이 레인에서 뺐다
 (`GLUE_LEFT_OUT`). 원시: [cells-conv-b8737ced-2-errors.log](cells-conv-b8737ced-2-errors.log).
+
+**재실행 — 통과.** 티켓 `qwen38-cells-conv-0919b`(`615e075b` = 위 + `GLUE_LEFT_OUT`): qualify 통과, GPU 케이스 **73 건 전부 통과**(45 s) — conv 스위트의
+나머지 전부와 S2 입력 재사용 케이스 포함. 원시: [cells-conv-615e075b.log](cells-conv-615e075b.log). GLM-5.3 도 같은 커널이다: 판정은 레거시 어댑터와의
+바이트 동일이고, 플릿은 재지 않았다(운영자 결정 2026-09-17: 플릿 미실측).
