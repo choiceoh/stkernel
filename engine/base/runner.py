@@ -26,6 +26,7 @@ with `transfer_done(row)` in between. A row in flight is `retiring` or
 from __future__ import annotations
 
 import struct
+import threading
 import time
 from collections import OrderedDict
 from typing import Protocol
@@ -87,6 +88,11 @@ class Runner:
         self.idle = {}                                      # seq -> True: finished, not released, parkable
         self.parked = OrderedDict()                         # key -> record, MRU last and bounded (PARKED_RECORDS_KEPT)
         self.digests = {}                                   # key -> the three numbers a continuation scan actually needs
+        # The two above are also filled from requests' threads (serve.py `_continuation`, off the server's lock) while
+        # the loop parks, resumes and forgets: `_book` guards them, and a record read that the loop overtook is not
+        # kept (`_reads`, see `_parked`).
+        self._book = threading.Lock()
+        self._reads = {}                                    # key -> the record reads of it now out on the tier
         self.retiring = {}                                  # row -> (key, record, slot): its park is on the tier's thread
         self.resuming = {}                                  # row -> (key, record, slot): its resume is on the tier's thread
         self.state = sched.State()
@@ -505,7 +511,7 @@ class Runner:
             raise
         self.slots.give(self.slot_of.pop(seq))
         self.transient.discard(seq)                          # the row is free: its next turn is somebody else's
-        self.parked[key] = record
+        self._moved(key, record)
         return wrote
 
     def park(self, seq: int, key: "int | None" = None) -> int:
@@ -526,7 +532,8 @@ class Runner:
         self.kv.row(seq)
         if self.kv.tokens[seq] or seq in self.slot_of or seq in self.state.prompt_len:
             raise ValueError(f"row {seq} is not free")
-        record = self.parked.get(key)
+        with self._book:
+            record = self.parked.get(key)
         if record is None:
             record = self.tiered.record(key)
         if record is None:
@@ -551,8 +558,7 @@ class Runner:
             raise
         self.model.resume(seq, slot, record)
         self.idle[seq] = True
-        self.parked.pop(key, None)
-        self.digests.pop(key, None)
+        self._moved(key)
         return got
 
     def resume(self, seq: int, key: "int | None" = None) -> int:
@@ -661,7 +667,11 @@ class Runner:
                 and bool(ready(step.seqs)))
 
     def is_parked(self, key: int) -> bool:
-        return self.tiered is not None and (key in self.parked or self.tiered.is_parked(key))
+        """The tier's word alone. The records held here are a cache that only rank 0's continuation scan fills, and
+        this answer decides admission and the park/resume guards on every rank: a record left here after the tier let
+        its conversation go made rank 0 alone refuse that conversation's next park ("already parked"), and the vote
+        then dropped it everywhere."""
+        return self.tiered is not None and self.tiered.is_parked(key)
 
     PARKED_RECORDS_KEPT = 8
     """How many whole records stay in memory.
@@ -678,43 +688,91 @@ class Runner:
     """
 
     def parked_record(self, key: int) -> "dict | None":
-        """The whole record, read from the tier when it is not one of the few held."""
-        if not self.is_parked(key):
-            return None
-        record = self.parked.get(key)
-        if record is not None:
-            self.parked.move_to_end(key)
-            return record
-        record = self.tiered.record(key)
-        if record is not None:
-            self._hold_record(key, record)
-        return record
-
-    def _hold_record(self, key: int, record: dict) -> None:
-        self.parked[key] = record
-        self.parked.move_to_end(key)
-        while len(self.parked) > self.PARKED_RECORDS_KEPT:
-            self.parked.popitem(last=False)
+        """The whole record, read from the tier when it is not one of the few held; None when it is not parked."""
+        return self._parked(key, digest=False)
 
     def parked_digest(self, key: int) -> "dict | None":
         """What a continuation scan needs to reject a candidate: its length, its last two ids, its pictures.
 
         Kept for every parked conversation because it is a handful of bytes; the token list behind
         it is read only when these three say the candidate could match.
+
+        A held digest is answered off `_book`: the scan asks for every parked conversation on every
+        request, and taking the lock for each tripled that loop (280 digests, 47 us -> 147 us on a Mac).
+        A digest is kept only for a parked conversation and dropped when it moves, so one read here is
+        at worst a moment stale -- and the record read it can lead to is `_book`'s, and says so.
         """
         digest = self.digests.get(key)
         if digest is not None:
             return digest
-        record = self.parked_record(key)
-        if record is None or "tokens" not in record:
-            return None
-        tokens = record["tokens"]
-        if len(tokens) < 2:
+        return self._parked(key, digest=True)
+
+    def _parked(self, key: int, digest: bool) -> "dict | None":
+        """`parked_record` / `parked_digest`, for the loop and for the continuation scan on requests' threads alike.
+
+        The tier is read outside `_book` -- the loop parks and resumes under it and must not wait on a disk (D10) --
+        so the loop can resume, forget or re-park the conversation while the read is out. What such a read brings back
+        is not the conversation's record any more, and is not kept: kept, it answered for a conversation that was
+        resident or gone, or stood in for the newer record its next park left. The read returns None then."""
+        with self._book:
+            if not self.is_parked(key):
+                return None
+            if digest and key in self.digests:
+                return self.digests[key]
+            record = self.parked.get(key)
+            if record is not None:
+                self.parked.move_to_end(key)
+                return self._digest(key, record) if digest else record
+            read = object()
+            self._reads.setdefault(key, set()).add(read)
+        record = error = None
+        try:
+            record = self.tiered.record(key)
+        except Exception as exc:                            # noqa: BLE001 -- judged below: a file gone with its conversation is a miss
+            error = exc
+        with self._book:
+            reads = self._reads.get(key, set())
+            current = read in reads
+            reads.discard(read)
+            if not reads:
+                self._reads.pop(key, None)
+            if not current or not self.is_parked(key):
+                return None                                 # the loop moved the conversation while this read was out
+            if error is not None:
+                raise error
+            if record is None:
+                return None
+            self._hold_record(key, record)
+            return self._digest(key, record) if digest else record
+
+    def _hold_record(self, key: int, record: dict) -> None:
+        """Under `_book`."""
+        self.parked[key] = record
+        self.parked.move_to_end(key)
+        while len(self.parked) > self.PARKED_RECORDS_KEPT:
+            self.parked.popitem(last=False)
+
+    def _digest(self, key: int, record: dict) -> "dict | None":
+        """The record's digest, kept (under `_book`). None for a record without a history of two tokens."""
+        tokens = record.get("tokens")
+        if tokens is None or len(tokens) < 2:
             return None
         digest = {"tokens": len(tokens), "last": tokens[-1], "prev": tokens[-2],
                   "media": [(r[2], r[1]) for r in record.get("media", [])]}
         self.digests[key] = digest
         return digest
+
+    def _moved(self, key: int, record: "dict | None" = None) -> None:
+        """The loop parked conversation `key` with `record`, or resumed or forgot it (None) -- after the tier did, so a
+        read that starts from here on finds the tier's new answer. A digest from before is not this record's, and a
+        read of it still out brought back what the conversation no longer is: neither is kept."""
+        with self._book:
+            self._reads.pop(key, None)
+            self.digests.pop(key, None)
+            if record is None:
+                self.parked.pop(key, None)
+            else:
+                self.parked[key] = record
 
     def parked_blocks(self, key: int) -> int:
         return self.tiered.blocks(key)
@@ -726,8 +784,7 @@ class Runner:
         """A parked conversation is over: its disk copy and record go."""
         if self.tiered is not None:
             self.tiered.forget(key)
-        self.parked.pop(key, None)
-        self.digests.pop(key, None)
+        self._moved(key)
 
     def forget_oldest_parked(self) -> "int | None":
         """Make room on the tier: forget the least recently parked conversation. Returns its key."""

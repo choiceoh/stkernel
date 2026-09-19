@@ -1,7 +1,9 @@
 """Tier ownership and asynchronous error handling, without CUDA or real KV."""
 from __future__ import annotations
 
+import importlib.util
 import json
+import sys
 import tempfile
 import threading
 import time
@@ -590,6 +592,248 @@ class TierBudgetTests(unittest.TestCase):
         from engine.profiles.glm53 import boot
         tier = Index({"1": {"at": 1.0, "bytes": 2 * GIB, "block_bytes": SECTOR}})
         self.assertNotIn("another layout", boot.tier_line(tier, boot.PREFIX_TIER_GIB, "prefix boundaries"))
+
+
+def _serve():
+    """test_engine_serve's fake engine and `server()`: the real scheduler, runner and door over this file's tier."""
+    here = str(Path(__file__).resolve().parent)
+    if here not in sys.path:
+        sys.path.insert(0, here)
+    import test_engine_serve
+    return test_engine_serve
+
+
+class HeldRecords(MemoryTier):
+    """A tier whose next record read can be held once it has its bytes: the continuation scan's read on a request's
+    thread (serve.py `_continuation`, off the server's lock), overtaken by the loop before it keeps what it read."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.hold = None                            # an Event the next read waits on, its record in hand
+        self.reading = threading.Event()            # that read has its record and is waiting
+        self.files_go = False                       # ... or has only seen that the file exists, as NvmeTier.record does first
+
+    def record(self, seq):
+        record = super().record(seq)
+        hold, self.hold = self.hold, None
+        if hold is not None:
+            self.reading.set()
+            if not hold.wait(5):
+                raise TimeoutError("the test never let the read go")
+            if self.files_go and seq not in self.records:
+                raise FileNotFoundError(f"seq-{seq}.json went before it was read")
+        return record
+
+
+class Scan:
+    """`fn(*args)` on a thread of its own, as a request runs it, stopped inside its record read until `finish`."""
+
+    def __init__(self, tier, fn, *args):
+        self.result = self.error = None
+        self.hold = threading.Event()
+        tier.reading.clear()
+        tier.hold = self.hold
+
+        def run():
+            try:
+                self.result = fn(*args)
+            except BaseException as exc:            # noqa: BLE001 -- `finish` raises it in the test
+                self.error = exc
+        self.thread = threading.Thread(target=run, daemon=True, name="scan")
+        self.thread.start()
+        if not tier.reading.wait(5):
+            raise AssertionError("the scan never reached the tier's record")
+
+    def finish(self):
+        """Let the read land now; what the scan made of it."""
+        self.hold.set()
+        self.thread.join(5)
+        if self.thread.is_alive():
+            raise AssertionError("the scan did not finish")
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+
+def quiet(s, steps=300):
+    """The loop until nothing waits, runs or is on the tier's thread."""
+    for _ in range(steps):
+        ran = s.once()
+        if not ran and not s._waiting and not s._retiring and not s._resuming and not s._restoring:
+            return
+    raise AssertionError("the server did not go quiet")
+
+
+def until(s, done, steps=100):
+    """The loop, a step at a time, until `done()`."""
+    for _ in range(steps):
+        if done():
+            return
+        s.once()
+    raise AssertionError("the loop never got there")
+
+
+class ParkedRecordRaceTests(unittest.TestCase):
+    """The continuation scan reads parked conversations' records on the request's thread, off the server's lock, while
+    the loop resumes, parks and forgets those same conversations. The runner keeps what a read brings back -- a few
+    whole records and a digest for everybody -- so admission does not read the disk on the loop (D10). A read that
+    lands after the loop moved its conversation brings back something that is no longer that conversation's record,
+    and keeping it made rank 0 alone believe the conversation was still parked (2026-09-19, found reading the code)."""
+
+    def served(self):
+        tier = HeldRecords()
+        return _serve().server(rows=2, keep_idle=True, tier=tier), tier
+
+    def parked(self, s):
+        """A conversation that finished its turn and parked, its record no longer one of the few held (this fleet parks
+        about 280 and keeps 8): a scan reads it from the tier."""
+        first, _ = s.submit([3, 4, 5], 2, 0)
+        quiet(s)
+        self.assertEqual(s.take_result(first), [5, 5])
+        self.assertTrue(s.runner.is_parked(first))
+        s.runner.parked.pop(first)
+        return first
+
+    def test_a_record_that_lands_after_its_conversation_resumed_is_not_kept(self):
+        s, tier = self.served()
+        first = self.parked(s)
+        scan = Scan(tier, s.runner.parked_digest, first)          # the scan has the record in hand ...
+        turn, _ = s.submit([6], 2, 0, conversation=first)
+        until(s, lambda: first in s._conversations)                # ... when the loop resumes the conversation
+        self.assertIsNone(scan.finish(), "a conversation that went while it was read has no digest")
+        self.assertFalse(s.runner.is_parked(first))
+        self.assertNotIn(first, s.runner.parked)
+        self.assertNotIn(first, s.runner.digests)
+        quiet(s)                                                   # the turn ends and the conversation parks again
+        self.assertEqual(s.take_result(turn), [6, 6])
+        self.assertEqual(s.runner.parked_keys(), [first], "not refused as 'already parked' and dropped")
+        self.assertEqual(s.runner.parked_record(first)["tokens"], [3, 4, 5, 5, 5, 6])
+
+    def test_a_record_that_lands_after_its_conversation_was_forgotten_is_not_kept(self):
+        s, tier = self.served()
+        first = self.parked(s)
+        scan = Scan(tier, s.runner.parked_record, first)
+        self.assertEqual(s.runner.forget_oldest_parked(), first)   # the tier needed room
+        self.assertIsNone(scan.finish())
+        self.assertFalse(s.runner.is_parked(first))
+        self.assertNotIn(first, s.runner.parked)
+        again, _ = s.submit([6], 1, 0, conversation=first)         # a turn naming it is refused, as every rank refuses it
+        quiet(s)
+        with self.assertRaises(_serve().RequestError) as refused:
+            s.take_result(again)
+        self.assertEqual(refused.exception.status, 409)
+
+    def test_a_stale_record_does_not_replace_the_one_its_next_park_kept(self):
+        """The widest window: a whole turn resumes, runs and parks again while one read of the old record is still out.
+        Kept, the old record is what the next resume hands the model -- a history a turn shorter than the KV it comes
+        back with -- on rank 0 alone, the only rank that scans."""
+        s, tier = self.served()
+        first = self.parked(s)
+        scan = Scan(tier, s.runner.parked_digest, first)
+        turn, _ = s.submit([6], 2, 0, conversation=first)
+        quiet(s)
+        self.assertEqual(s.take_result(turn), [6, 6])
+        self.assertIsNone(scan.finish())
+        self.assertEqual(s.runner.parked_record(first)["tokens"], [3, 4, 5, 5, 5, 6])
+        self.assertEqual(s.runner.parked_digest(first)["tokens"], 6)
+        third, _ = s.submit([7], 1, 0, conversation=first)
+        quiet(s)
+        self.assertEqual(s.take_result(third), [7])
+        self.assertEqual(s.runner.parked_record(first)["tokens"], [3, 4, 5, 5, 5, 6, 6, 6, 7], "the second turn is in it")
+
+    def test_a_park_does_not_keep_a_digest_from_before_it(self):
+        s, tier = self.served()
+        first = self.parked(s)
+        before = s.runner.parked_digest(first)
+        self.assertEqual(before["tokens"], 3)
+        turn, _ = s.submit([6], 2, 0, conversation=first)
+        until(s, lambda: first in s._conversations)
+        s.runner.digests[first] = before                           # what a scan landing after the resume used to leave
+        quiet(s)
+        self.assertEqual(s.take_result(turn), [6, 6])
+        self.assertEqual(s.runner.parked_digest(first)["tokens"], 6)
+
+    def test_what_is_parked_is_the_tiers_word_not_the_record_cache(self):
+        """Only rank 0 scans, so only rank 0's cache can hold a record the tier no longer has. Whether a conversation
+        is parked decides admission and the park/resume guards on every rank, so it is what every rank knows alike."""
+        s, tier = self.served()
+        first = self.parked(s)
+        self.assertIsNotNone(s.runner.parked_record(first))
+        self.assertIn(first, s.runner.parked)
+        s.runner.tiered.forget(first)                              # gone from the tier, still in this rank's cache
+        self.assertFalse(s.runner.is_parked(first))
+        self.assertIsNone(s.runner.parked_record(first))
+        self.assertIsNone(s.runner.parked_digest(first))
+
+    def test_a_read_is_not_kept_when_the_tier_let_its_conversation_go_meanwhile(self):
+        s, tier = self.served()
+        first = self.parked(s)
+        scan = Scan(tier, s.runner.parked_record, first)
+        s.runner.tiered.forget(first)                              # the tier's half of a resume, before the runner's
+        self.assertIsNone(scan.finish())
+        self.assertNotIn(first, s.runner.parked)
+
+    def test_a_read_that_fails_because_its_conversation_went_is_a_miss_not_an_error(self):
+        """NvmeTier.record sees the file, then reads it; the loop can forget the conversation, file and all, in
+        between. The scan asked about a conversation that is gone, which is a miss. A read that fails while the
+        conversation is still parked is still an error."""
+        s, tier = self.served()
+        tier.files_go = True
+        first = self.parked(s)
+        scan = Scan(tier, s.runner.parked_digest, first)
+        s.runner.forget_parked(first)
+        self.assertIsNone(scan.finish())
+        second = self.parked(s)
+        scan = Scan(tier, s.runner.parked_record, second)
+        tier.records.pop(second)                                   # the file went, the conversation did not
+        with self.assertRaises(FileNotFoundError):
+            scan.finish()
+        self.assertTrue(s.runner.is_parked(second))
+        self.assertNotIn(second, s.runner.parked)
+
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires PyTorch for LocalTP")
+    def test_four_ranks_keep_the_conversation_rank_0_was_reading_when_it_resumed(self):
+        """Before: the read landed on rank 0 after the resume, rank 0 alone refused the next park ('already parked'),
+        the vote dropped the conversation on every rank, and the turn after it went down the parked path on rank 0 and
+        the 409 path on the other three -- rank 0 then died on the tier entry it did not have."""
+        from engine.base.comm import LocalTP
+        T = _serve()
+        seen = {}
+
+        def rank_main(comm, _):
+            tier = HeldRecords()
+            s = T.server(comm=comm, rows=2, keep_idle=True, tier=tier)
+            first = turn = third = scan = None
+            if comm.rank == 0:
+                first, _ = s.submit([3, 4, 5], 2, 0)
+            for _ in range(20):
+                s.once()
+            if comm.rank == 0:
+                seen["first"] = s.take_result(first)
+                s.runner.parked.pop(first)                         # no longer one of the few records held
+                scan = Scan(tier, s._continuation, [3, 4, 5, 5, 5, 6], ())
+                turn, _ = s.submit([6], 2, 0, conversation=first)
+            for _ in range(30):
+                s.once()
+                if scan is not None and first in s._conversations:
+                    seen["scan"] = scan.finish()                   # after the resume, before the turn parks again
+                    scan = None
+            if comm.rank == 0:
+                seen["turn"] = s.take_result(turn)
+                third, _ = s.submit([7], 1, 0, conversation=first)
+            for _ in range(30):
+                s.once()
+            if comm.rank == 0:
+                seen["third"] = s.take_result(third)
+                s.alive = False
+            s.once()
+            return s.runner.parked_keys(), s.runner.parked_record(0)["tokens"], s.served
+
+        out = LocalTP(4, timeout_s=30).run(rank_main, None)
+        self.assertTrue(all(row == out[0] for row in out), out)
+        self.assertEqual(out[0], ([0], [3, 4, 5, 5, 5, 6, 6, 6, 7], 3))
+        self.assertEqual((seen["first"], seen["turn"], seen["third"]), ([5, 5], [6, 6], [7]))
+        self.assertIsNone(seen["scan"])
 
 
 if __name__ == "__main__":
