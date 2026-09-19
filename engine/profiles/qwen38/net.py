@@ -945,7 +945,7 @@ class Qwen38Net:
                                meta.page_table, meta.rows_req[:c], out=attended[:c], gate=gate[:c], **runs)
                 lanes.qsa_attend(q[c:], K, V, blocks[c:], meta.positions32[c:], meta.lengths, F.idx_ratio,
                                  F.idx_budget, meta.page_table, meta.rows_req[c:], out=attended[c:], gate=gate[c:])
-            elif self._tile_union(step, meta, K, N):
+            elif Qwen38Net._tile_union(self, step, meta, K, N):
                 # a prefill step whose neighbouring rows choose alike: two rows walk their blocks' union once
                 attended = lanes.qsa_attend_union(q, K, V, blocks, meta.positions32, meta.starts, F.idx_ratio,
                                                   F.idx_budget, meta.page_table, meta.rows_req, gate=gate)

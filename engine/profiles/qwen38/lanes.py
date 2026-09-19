@@ -321,7 +321,7 @@ def reference() -> Lanes:
 
 KERNEL_MODULES = ("engine.kernels.gated_residual", "engine.kernels.gdn", "engine.kernels.moe_output",
                   "engine.kernels.moe_route", "engine.kernels.moe_rows", "engine.kernels.ngram_gate",
-                  "engine.kernels.qsa", "engine.kernels.router_fp32",
+                  "engine.kernels.qsa", "engine.kernels.qsa_tile_union", "engine.kernels.router_fp32",
                   "engine.kernels.causal_conv_ring", "engine.kernels.causal_conv_single", "engine.kernels.kda.chunk_decay",
                   "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.kernels.moe_route",
                   "engine.modules.nvfp4_sf", "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope",
