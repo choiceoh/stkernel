@@ -186,7 +186,7 @@ class DescriptorTests(unittest.TestCase):
         from engine.kernels import cells
         s = dsv41_shape()
         self.assertEqual((s.hidden, s.hc, s.tp, s.spec_k, s.linear, s.drafter), (5120, 4, 4, 3, None, None))
-        self.assertEqual(s.attention, Attention("mla", heads=16, head_dim=512, kv_heads=1, sink=True))
+        self.assertEqual(s.attention, Attention("mla", heads=16, head_dim=512, kv_heads=1, sink=True, window=128))
         self.assertEqual(s.indexer, Indexer(heads=32, head_dim=128, pool=2, topk=512, compress="ced"))
         self.assertEqual(s.hc_variant, "split_sinkhorn")
         self.assertEqual(s.moe, MoE(experts=384, experts_local=96, hidden=5120, inter=2304, inter_local=2304, topk=6,

@@ -270,11 +270,31 @@ def picks(hidden: torch.Tensor, head: torch.Tensor, chunk: int = 256) -> torch.T
                           for c in range(0, hidden.shape[0], chunk)])
 
 
+def sampled_rows(logits: torch.Tensor, sampler) -> torch.Tensor:
+    """Each row's sampling distribution under `sampler` = (temperature, top_k, top_p) -- base/sampler.rows, the one
+    definition the served picks use -- fp32, zero outside the nucleus."""
+    from engine.base.sampler import rows
+    temperature, top_k, top_p = sampler
+    n, dev = logits.shape[0], logits.device
+    probs = torch.empty(logits.shape, dtype=torch.float32, device=dev)
+    rows(logits.contiguous(), torch.full((n,), float(temperature), device=dev),
+         torch.full((n,), int(top_k), dtype=torch.int32, device=dev), torch.full((n,), float(top_p), device=dev),
+         None, None, probs)
+    return probs
+
+
 def window_loss(model: Head, given: torch.Tensor, tokens: torch.Tensor, start: int, depth: int, *, beta: float = 0.6,
-                auf: bool = False, chunk: int = 256):
+                auf: bool = False, chunk: int = 256, sampler=None, candidates: int = 20):
     """(loss, metrics) of one window: `given` [T + depth, hc*H] the target's streams from `start` and `tokens`
     [T + depth] the token after each -- chain starts 0..T-1, depth d's label at row i the target's distribution at
-    position start + i + d (its streams there, through its closing mixer and the head) and the text's token there."""
+    position start + i + d (its streams there, through its closing mixer and the head) and the text's token there.
+
+    `sampler` (temperature, top_k, top_p): also what a served row at that sampler would keep, from the same hidden
+    rows -- `exact_d` the target's probability of the head's argmax (the exact match of a draw), `spec_d` the mass the
+    two distributions share, sum min(p, q), with q the head's sampler over its `candidates` largest logits (a draft
+    drawn from q, kept by token-level rejection; block verification keeps at least as much), their products along the
+    chain (`*_chain_d`, `*_tokens_a_step`), and `top2_1` whether the target's argmax is among the head's two largest
+    at depth 1 (a greedy tree two wide there). At temperature 0 `exact_d` and `spec_d` are `agree_d`."""
     from torch.utils.checkpoint import checkpoint
     T = given.shape[0] - depth
     if T <= 0:
@@ -285,6 +305,8 @@ def window_loss(model: Head, given: torch.Tensor, tokens: torch.Tensor, start: i
         target = model.target_close(given)                                         # [T + depth, H]
     losses, metrics, alive = [], {}, torch.ones(T, dtype=torch.bool, device=given.device)
     kept = torch.ones(T, dtype=torch.bool, device=given.device)
+    run_exact = torch.ones(T, dtype=torch.float32, device=given.device)
+    run_spec = torch.ones(T, dtype=torch.float32, device=given.device)
     for d in range(1, depth + 1):
         th, labels = target[d:d + T], tokens[d:d + T]
         mask = (alive if auf else torch.ones_like(alive)).to(torch.float32)
@@ -301,9 +323,31 @@ def window_loss(model: Head, given: torch.Tensor, tokens: torch.Tensor, start: i
         metrics[f"agree_{d}"] = float(agree.float().mean())
         metrics[f"chain_{d}"] = float(alive.float().mean())                      # every depth to here the target's pick
         metrics[f"text_chain_{d}"] = float(kept.float().mean())                  # ... the text's token (sampled data)
+        if sampler is not None:
+            with torch.no_grad():
+                exact, spec, two = [], [], []
+                for c in range(0, T, chunk):
+                    mine = torch.matmul(hidden[d - 1, c:c + chunk].detach(), head.T).float()
+                    want = torch.matmul(th[c:c + chunk], head.T).float()
+                    p = sampled_rows(want, sampler)
+                    top = mine.topk(max(2, candidates), dim=-1)
+                    exact.append(p.gather(1, top.indices[:, :1]).squeeze(1))
+                    q = sampled_rows(top.values[:, :candidates], sampler)
+                    spec.append(torch.minimum(p.gather(1, top.indices[:, :candidates]), q).sum(1))
+                    if d == 1:
+                        two.append((want.argmax(-1, keepdim=True) == top.indices[:, :2]).any(1).float())
+                exact, spec = torch.cat(exact), torch.cat(spec)
+                run_exact, run_spec = run_exact * exact, run_spec * spec
+                metrics[f"exact_{d}"], metrics[f"spec_{d}"] = float(exact.mean()), float(spec.mean())
+                metrics[f"exact_chain_{d}"], metrics[f"spec_chain_{d}"] = float(run_exact.mean()), float(run_spec.mean())
+                if d == 1:
+                    metrics["top2_1"] = float(torch.cat(two).mean())
     weights = [beta ** (d - 1) for d in range(1, depth + 1)]
     loss = sum(w * l for w, l in zip(weights, losses)) / sum(weights)
     metrics["tokens_a_step"] = 1.0 + sum(metrics[f"chain_{d}"] for d in range(1, depth + 1))
+    if sampler is not None:
+        for rule in ("exact", "spec"):
+            metrics[f"{rule}_tokens_a_step"] = 1.0 + sum(metrics[f"{rule}_chain_{d}"] for d in range(1, depth + 1))
     return loss, metrics
 
 
@@ -398,15 +442,34 @@ class Runs:
             at = rng.randrange(0, run["length"] - span + 1)
             yield streams[at:at + span], tokens[at:at + span], run["start"] + at
 
+    def boots(self) -> "list[str]":
+        """The boots the runs came from, in the order their first run appears -- every rank the same list."""
+        return list(dict.fromkeys(run["boot"] for run in self.runs))
+
     def every_window(self):
-        """Each run cut into consecutive windows (evaluation)."""
-        for run in self.runs:
-            streams, tokens = self._load(run)
-            span = self.window + self.depth
-            for at in range(0, max(1, run["length"] - self.depth), self.window):
-                piece = slice(at, min(at + span, run["length"]))
-                if piece.stop - piece.start > self.depth + 1:
-                    yield streams[piece], tokens[piece], run["start"] + at
+        """Each run cut into consecutive windows (evaluation), the boots taken in turn -- one window from each before a
+        second from any -> (streams, tokens, start, boot). A limit on the windows then samples every data set the runs
+        hold, not the first one's (the 2026-09-19 third training's 64 windows were all the prefilled text's)."""
+        span = self.window + self.depth
+
+        def windows(boot):
+            for run in self.runs:
+                if run["boot"] != boot:
+                    continue
+                streams, tokens = self._load(run)
+                for at in range(0, max(1, run["length"] - self.depth), self.window):
+                    piece = slice(at, min(at + span, run["length"]))
+                    if piece.stop - piece.start > self.depth + 1:
+                        yield streams[piece], tokens[piece], run["start"] + at, boot
+
+        going = [windows(boot) for boot in self.boots()]
+        while going:
+            for source in list(going):
+                got = next(source, None)
+                if got is None:
+                    going.remove(source)
+                else:
+                    yield got
 
 
 # -- the checkpoint --------------------------------------------------------------------------------------------------
@@ -467,27 +530,39 @@ def average_gradients(params, world: int) -> None:
         at += g.numel()
 
 
-def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0, rank: int = 0, world: int = 1) -> dict:
+def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0, rank: int = 0, world: int = 1, sampler=None,
+             candidates: int = 20) -> dict:
     """The held-out windows' metrics, position-weighted -- window n on rank n % world, the sums gathered, so every
-    rank holds the same answer."""
+    rank holds the same answer -- and `by_boot`, each data set's tokens/step alone: a head that gains on the newest set
+    while it loses on the others is fitting the one it was fed, not the target (the operator, 2026-09-19: "무조건
+    서빙환경으로만 학습하면 일반 상황에서 과적합될수 있어서")."""
     sums, weight = {}, 0
+    boots = runs.boots()
+    per = [0.0] * (2 * len(boots))                                # tokens/step x positions, then positions, a boot
     device = next(iter(model.frozen.values())).device
     with torch.no_grad():
-        for n, (streams, tokens, start) in enumerate(runs.every_window()):
+        for n, (streams, tokens, start, boot) in enumerate(runs.every_window()):
             if limit and n >= limit:
                 break
             if n % world != rank:
                 continue
-            loss, metrics = window_loss(model, streams.to(device), tokens.to(device), start, depth)
+            loss, metrics = window_loss(model, streams.to(device), tokens.to(device), start, depth, sampler=sampler,
+                                        candidates=candidates)
             rows = streams.shape[0] - depth
             weight += rows
             for key, value in metrics.items():
                 sums[key] = sums.get(key, 0.0) + value * rows
+            b = boots.index(boot)
+            per[b] += metrics["tokens_a_step"] * rows
+            per[len(boots) + b] += rows
     keys = sorted(set(sums) | {f"{m}_{d}" for m in ("loss", "agree", "chain", "text_chain") for d in range(1, depth + 1)}
                   | {"tokens_a_step"})
-    total = all_sum([sums.get(k, 0.0) for k in keys] + [float(weight)], world, device)
+    total = all_sum([sums.get(k, 0.0) for k in keys] + per + [float(weight)], world, device)
     weight = total[-1]
-    return {key: round(value / max(weight, 1), 5) for key, value in zip(keys, total)} | {"positions": int(weight)}
+    out = {key: round(value / max(weight, 1), 5) for key, value in zip(keys, total)}
+    per = total[len(keys):len(keys) + len(per)]
+    by_boot = {boot: round(per[b] / per[len(boots) + b], 5) for b, boot in enumerate(boots) if per[len(boots) + b]}
+    return out | {"positions": int(weight), "by_boot": by_boot}
 
 
 def learning_rate(step: int, *, total: int, peak: float, warmup: int) -> float:
@@ -671,6 +746,10 @@ def main(argv=None) -> int:
             p.add_argument("--eval-every", type=int, default=200)
         else:
             p.add_argument("--tuned", type=Path, default=None)
+            p.add_argument("--sampler", default=None, metavar="T,K,P",
+                           help="also what a served row at temperature T, top-k K, top-p P keeps: the exact match of the "
+                                "head's argmax against a draft drawn from its top --candidates (e.g. 1.0,20,0.95)")
+            p.add_argument("--candidates", type=int, default=20)
     x = sub.add_parser("extract")
     x.add_argument("--ckpt", required=True, type=Path)
     x.add_argument("--out", required=True)
@@ -693,7 +772,12 @@ def main(argv=None) -> int:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = Head(cfg, checkpoint_tensors(a.ckpt, prefix, tuned=a.tuned), prefix=prefix, device=device)
         runs = Runs(a.data, "eval", window=a.window, depth=a.depth)
-        print(json.dumps(evaluate(model, runs, depth=a.depth, limit=a.eval_windows)), flush=True)
+        sampler = None
+        if a.sampler:
+            t, k, p = a.sampler.split(",")
+            sampler = (float(t), int(k), float(p))
+        print(json.dumps(evaluate(model, runs, depth=a.depth, limit=a.eval_windows, sampler=sampler,
+                                  candidates=a.candidates)), flush=True)
     else:
         export(a)
     return 0
