@@ -1,0 +1,14 @@
+[Unit]
+Description=stkernel development environment: main's tools/devenv applied to srv1..srv4
+Documentation=file:/home/choiceoh/stkernel/tools/devenv/versions.env
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+Environment=PATH=/home/choiceoh/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/choiceoh/.local/bin/devenv-sync
+Nice=10
+IOSchedulingClass=idle
+StandardOutput=append:/home/choiceoh/.local/state/devenv-sync/timer.log
+StandardError=append:/home/choiceoh/.local/state/devenv-sync/timer.log
