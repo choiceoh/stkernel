@@ -114,7 +114,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
           draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
-          draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None):
+          draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
+          mtp_tuned_dir: "str | None" = None):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
@@ -174,6 +175,14 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                                     "--mtp-experts nvfp4 serves the rank file's")
         side_rank = rank_loader(side_file, expected_layout=mtp_side.LAYOUTS[net.mtp_experts])
         files.append(side_file)
+    tuned = set()
+    if mtp_tuned_dir is not None and drafter:
+        # the head's dense weights fine-tuned on the target's own streams (mtp_tune.py export), in the rank file's place
+        from engine.profiles.qwen38 import mtp_tune
+        tuned_path = Path(mtp_tuned_dir) / mtp_tune.tuned_file(comm.rank)
+        tuned_rank = rank_loader(tuned_path, expected_layout=mtp_tune.LAYOUT)
+        tuned = set(mtp_tune.served_names(F)) & {s.name for s in specs}
+        files.append(tuned_path)
     failure = memory = None
     try:
         report = prepare_allocation(arena_bytes, files, int((workspace_gib + OS_RESERVE_GIB) * GIB),
@@ -197,9 +206,12 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         with recorder.phase("arena"):
             arena = Arena(arena_bytes)
         with recorder.phase("load"):
-            views = rank.load([s.name for s in specs if s.name not in side], arena=arena, recorder=recorder)
+            views = rank.load([s.name for s in specs if s.name not in side and s.name not in tuned], arena=arena,
+                              recorder=recorder)
             if side:
                 views.update(side_rank.load(sorted(side), arena=arena, recorder=recorder))
+            if tuned:
+                views.update(tuned_rank.load(sorted(tuned), arena=arena, recorder=recorder))
             net.bind(views)
         with recorder.phase("ple table"):
             # the PLE table is not in the rank file: the rank's rows come off its SSD file beside it (ple_table.py)
@@ -339,6 +351,60 @@ class DraftLedger:
             self.flushed = now
 
 
+class MTPInputTap:
+    """Rank 0's record of what the MTP head observes (adapter.ServedMTP.observe): at every kept position the target's
+    streams before its closing mixer and the token after it -- the head's fine-tuning data (mtp_tune.py). Shards of up
+    to `rows` rows under `directory`, handed to a thread of their own and written there: `streams` [R, hc*H] BF16 as
+    int16 bits, `meta` [R, 4] int64 (sequence, position, next token, 1 where a verify step kept it). The copy to the
+    host waits for the device -- a data window's cost, not a measured one's. What is held is written at least every
+    `every_s` seconds (a stopped container runs no `finally`)."""
+
+    def __init__(self, directory, rows: int = 4096, every_s: float = 30.0):
+        import queue
+        import threading
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.rows, self.every_s = rows, every_s
+        self.prefix = f"mtp-inputs-{time.strftime('%Y%m%d-%H%M%S')}"
+        self._held, self._count, self._part = [], 0, 0
+        self._lock = threading.Lock()
+        self._queue = queue.Queue()
+        self._last = time.monotonic()
+        threading.Thread(target=self._write, name="mtp-inputs", daemon=True).start()
+
+    def __call__(self, seq: int, ctx: int, next_ids, hidden, decoded: bool) -> None:
+        rows = hidden.detach().to("cpu")
+        n = rows.shape[0]
+        meta = torch.tensor([[seq, ctx + j, int(next_ids[j]), int(decoded)] for j in range(n)], dtype=torch.int64)
+        with self._lock:
+            self._held.append((rows, meta))
+            self._count += n
+            if self._count >= self.rows:
+                self._flush()
+
+    def _flush(self) -> None:
+        if self._count:
+            rows = torch.cat([r for r, _ in self._held])
+            meta = torch.cat([m for _, m in self._held])
+            self._queue.put((self._part, rows, meta))
+            self._held, self._count, self._part = [], 0, self._part + 1
+        self._last = time.monotonic()
+
+    def _write(self) -> None:
+        import numpy as np
+        import queue
+        while True:
+            try:
+                part, rows, meta = self._queue.get(timeout=self.every_s / 4)
+            except queue.Empty:
+                with self._lock:
+                    if time.monotonic() - self._last >= self.every_s:
+                        self._flush()
+                continue
+            np.savez(self.directory / f"{self.prefix}-{part:05d}.npz", streams=rows.view(torch.int16).numpy(),
+                     meta=meta.numpy())
+
+
 def draft_threshold(text: "str | None") -> "float | None":
     """`--draft-threshold P` -> P in [0, 1), or None for every draft."""
     if text is None:
@@ -431,6 +497,14 @@ def main(argv=None) -> int:
                          "narrower graphs, captured at boot. Unset, every draft is verified")
     ap.add_argument("--narrow-rows", type=int, default=2,
                     help="with --draft-threshold: the row counts whose narrower verify widths are captured (1..N)")
+    ap.add_argument("--mtp-tuned", default=None, metavar="DIR",
+                    help="the MTP head's dense weights from mtp_tune.py's export (mtp-tuned-r{r}of4.safetensors) instead "
+                         "of the rank file's: the head fine-tuned on the target's own streams; acceptance moves, output "
+                         "does not")
+    ap.add_argument("--tap-mtp-inputs", action="store_true",
+                    help="rank 0 records what the MTP head observes -- the target's streams and the next token at every "
+                         "kept position -- under --dump-dir/mtp-inputs (the head's fine-tuning data, mtp_tune.py); "
+                         "20 KB a position, the host waiting for each copy")
     ap.add_argument("--draft-ledger", action="store_true",
                     help="rank 0 writes one JSON line a verified row under --dump-dir/draft-ledger: the head's picks, "
                          "their probabilities, how many were proposed and kept (the threshold's curve)")
@@ -509,7 +583,9 @@ def main(argv=None) -> int:
                                               draft_ledger=partial(DraftLedger, Path(a.dump_dir) / "draft-ledger")
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
-                                              mtp_window=mtp_window(a.mtp_window))
+                                              mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned)
+        if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
+            model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs")
         if getattr(net, "draft_tap", None) is not None:
             import threading
             threading.Thread(target=drain_draft_tap, args=(net.draft_tap, Path(a.dump_dir) / "draft-queries"),
