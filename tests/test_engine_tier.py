@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from engine.base.kv import BlockPool
@@ -321,7 +322,7 @@ class NvmeControlTests(unittest.TestCase):
             self.assertTrue(unrelated.exists())
             self.assertEqual(tier._path(0).read_bytes(), b'original')
 
-    def test_foreign_layout_cannot_be_replaced_and_cleanup_preserves_its_files(self):
+    def test_cleanup_preserves_a_foreign_layouts_files(self):
         with tempfile.TemporaryDirectory() as d:
             tier = self.tier(d)
             active = tier.dir / ('seq-0-' + 'a' * 32 + '.kv')
@@ -330,11 +331,43 @@ class NvmeControlTests(unittest.TestCase):
             tier._save_manifest({'0': {'file': active.name, 'retired': [retired.name], 'block_bytes': 2 * SECTOR}})
             self.assertFalse(tier.has(0))
             self.assertEqual(tier.stale(), ['0'])
-            with self.assertRaisesRegex(ValueError, 'different block layout'):
-                tier.demote(0, None, [], 1)
             tier.cleanup()
             self.assertEqual(active.read_bytes(), b'active')
             self.assertEqual(retired.read_bytes(), b'retired')
+
+    def test_a_write_under_a_foreign_layouts_key_replaces_it(self):
+        """GLM-5.3 and Qwen3.8 park in one directory (tiered_kv.TIER_ROOT), each numbering its conversations from its
+        own parked set, so a key both used is expected. This write used to be refused -- dropping the live
+        conversation to keep one no boot of this layout can read."""
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier.capacity_bytes, tier.reserve_bytes = None, 0
+            theirs = tier.dir / ('seq-0-' + 'a' * 32 + '.kv')
+            record = tier.dir / ('seq-0-' + 'a' * 32 + '.json')
+            theirs.write_bytes(b'theirs'); record.write_text('{}')
+            tier._save_manifest({'0': {'file': theirs.name, 'record': record.name, 'bytes': 6,
+                                       'block_bytes': 2 * SECTOR}})
+            with patch.object(tier, '_room', side_effect=TierFull('stopped before the device')):
+                with self.assertRaises(TierFull):             # the room check is where this CPU test stops the write
+                    tier.demote(0, None, [], 1)
+            self.assertNotIn('0', tier.index, "the foreign conversation is forgotten before this one is written")
+            self.assertFalse(theirs.exists() or record.exists())
+            self.assertEqual(json.loads(tier.manifest.read_text()), {})
+
+    def test_the_reserve_holds_under_a_declared_cap(self):
+        """45차 §53 gave both tiers a cap, and from then on the reserve was not checked at all: a tier under its cap
+        wrote on into a disk the checkpoints, images, dumps and logs were filling too. Both hold now."""
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier.capacity_bytes, tier.reserve_bytes = 64 << 30, 16 << 30
+            with patch('engine.base.kv_tier.shutil.disk_usage', return_value=SimpleNamespace(free=20 << 30)):
+                tier._room(3 << 30, 0)                             # leaves 17 GiB free: under the cap and the reserve
+                with self.assertRaisesRegex(TierFull, 'reserve'):
+                    tier._room(5 << 30, 0)                         # would leave 15 GiB, under the 16 kept free
+            tier.capacity_bytes = 1 << 30
+            with patch('engine.base.kv_tier.shutil.disk_usage', return_value=SimpleNamespace(free=1 << 40)):
+                with self.assertRaisesRegex(TierFull, 'declared'):
+                    tier._room(2 << 30, 0)                         # a roomy disk does not lift the cap
 
     def test_a_foreign_layout_is_forgotten_before_a_conversation_that_can_still_be_promoted(self):
         # It occupies the disk and counts against the cap, and no boot of this layout can ever
@@ -607,6 +640,92 @@ class TierBudgetTests(unittest.TestCase):
         from engine.profiles.glm53 import boot
         tier = Index({"1": {"at": 1.0, "bytes": 2 * GIB, "block_bytes": SECTOR}})
         self.assertNotIn("another layout", boot.tier_line(tier, boot.PREFIX_TIER_GIB, "prefix boundaries"))
+
+
+class FakeNvme:
+    """What `open_tiers` hands a tier class, kept: an NvmeTier allocates CUDA staging."""
+
+    def __init__(self, directory, **kwargs):
+        self.dir, self.kwargs, self.swept = Path(directory), kwargs, 0
+        self.block_bytes = kwargs["block_bytes"]
+        self.fail = None
+
+    def cleanup(self):
+        self.swept += 1
+        if self.fail is not None:
+            raise self.fail
+
+
+class FleetTierTests(unittest.TestCase):
+    """base/tiered_kv.open_tiers: a rank's two tiers in the directory every profile on the fleet shares."""
+
+    def pool(self):
+        pool = BlockPool(4, 16, 4, 4)
+        pool.attach_storage(Storage(range(16)), 4)
+        return pool
+
+    def test_a_rank_gets_its_conversations_and_its_prefix_boundaries_under_the_fleets_caps(self):
+        from engine.base import tenancy
+        from engine.base.tiered_kv import open_tiers
+        with tempfile.TemporaryDirectory() as d:
+            conversations, prefix, left = open_tiers(self.pool(), 4, d, 2, state_format="fmt", mapped_staging=True,
+                                                     prefix_cache_bytes=7, background=False, make=FakeNvme)
+            self.assertIsNone(left)
+            self.assertFalse((Path(d) / "rank2" / tenancy.MARKER).exists(), "no owner claims nothing")
+            c, p = conversations.tier, prefix.tier
+            self.assertEqual((c.dir, p.dir), (Path(d) / "rank2", Path(d) / "rank2" / "prefix"))
+            self.assertEqual((c.kwargs["capacity_bytes"], c.kwargs["reserve_bytes"]), (64 << 30, 16 << 30))
+            self.assertEqual((p.kwargs["capacity_bytes"], p.kwargs["reserve_bytes"], p.kwargs["stage_bytes"],
+                              p.kwargs["snapshot_cache_bytes"]), (16 << 30, 16 << 30, 32 << 20, 7))
+            self.assertTrue(all(t.kwargs["state_format"] == "fmt" and t.kwargs["mapped_staging"] and t.kwargs["block_bytes"] == 4
+                                for t in (c, p)))
+            self.assertEqual((c.swept, p.swept), (1, 1), "each swept of what a killed write left, once a boot")
+
+    def test_an_owner_keeps_its_own_directory_and_a_change_of_hands_empties_it(self):
+        from engine.base import tenancy
+        from engine.base.tiered_kv import open_tiers
+        with tempfile.TemporaryDirectory() as d:
+            rank = Path(d) / "rank0"
+            (rank / "prefix").mkdir(parents=True)
+            (rank / "manifest.json").write_text("{}")
+            tenancy.claim(rank, "production/srv2/4242")                   # what production parked here
+            _, _, left = open_tiers(self.pool(), 4, d, 0, state_format="qwen38", owner="production/srv2/4242",
+                                    background=False, make=FakeNvme)
+            self.assertIsNone(left)
+            self.assertTrue((rank / "manifest.json").exists(), "the same owner switching models keeps the directory")
+            _, _, left = open_tiers(self.pool(), 4, d, 0, state_format="qwen38", owner="session/qwen38-window",
+                                    background=False, make=FakeNvme)
+            self.assertEqual(left, "production/srv2/4242")
+            self.assertEqual(tenancy.held_by(rank), "session/qwen38-window")
+            self.assertFalse((rank / "manifest.json").exists(), "a window does not inherit what production parked")
+
+    def test_a_sweep_that_fails_does_not_fail_the_boot(self):
+        from engine.base.tiered_kv import open_tiers
+
+        class Refusing(FakeNvme):
+            def cleanup(self):
+                super().cleanup()
+                raise OSError("read-only file system")
+
+        with tempfile.TemporaryDirectory() as d:
+            conversations, prefix, _ = open_tiers(self.pool(), 4, d, 1, state_format="fmt", background=False,
+                                                  make=Refusing)
+            self.assertEqual((conversations.tier.swept, prefix.tier.swept), (1, 1))
+
+    def test_every_profile_parks_under_the_same_root_and_caps(self):
+        """GLM-5.3 and Qwen3.8 share one tier root: the one root both launchers default to, which is the one under
+        the directory their rank containers bind."""
+        from engine.base import tiered_kv
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(tiered_kv.TIER_ROOT, "/home/choiceoh/glm53-logs/st-tier")
+        self.assertEqual((tiered_kv.TIER_GIB, tiered_kv.PREFIX_TIER_GIB, tiered_kv.TIER_RESERVE_GIB), (64.0, 16.0, 16.0))
+        for launcher in ("start-st-glm53.sh", "start-st-qwen38.sh"):
+            text = (root / "launchers" / launcher).read_text()
+            self.assertIn("MOUNTED_ROOT=/home/choiceoh/glm53-logs\n", text, launcher)
+            self.assertIn("TIER_DIR=${ST_TIER_DIR:-$MOUNTED_ROOT/st-tier}", text, launcher)
+            self.assertIn("-v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs ", text, launcher)
+        for boot in ("engine/profiles/glm53/boot.py", "engine/profiles/qwen38/fleet.py"):
+            self.assertIn('"--tier-dir", default=TIER_ROOT', (root / boot).read_text(), boot)
 
 
 def _serve():

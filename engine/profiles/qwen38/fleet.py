@@ -14,7 +14,10 @@ The phases are GLM-5.3's fleet boot's (engine/profiles/glm53/boot.py `fleet` and
     load              the rank file's views carved from the arena, bound; the PLE table opened beside the rank file
                       (ple-r{r}of4.weight on the SSD, ple_table.py -- not in the arena); the dense lanes packed (PackStore)
     engine            caches, the served composition behind base/composed.ComposedModel (adapter.py), the runner
-    grammar           structured output on every rank (base/grammar): the compiler built off the prelude, its mask
+    tiers             the NVMe tiers (D16, base/tiered_kv.open_tiers): a finished turn parks its blocks and state slot
+                      under its conversation, an evicted prefix boundary its blocks and snapshot -- in the directory
+                      GLM-5.3's boot uses, under the same caps (the two never serve at once); `--tier-dir ''` is none
+    grammar          structured output on every rank (base/grammar): the compiler built off the prelude, its mask
                       kernel proven on the device (`bind_grammars`) -- what response_format and the door's tool-call
                       grammar need, or every request with `tools` is refused
     capture           the target's verify graphs and the MTP head's draft graphs, every row count and context bucket
@@ -35,7 +38,7 @@ needs the GIL. Every rank writes its phase table (boot-rank{r}.json) and memory 
 --dump-dir, and rank 0 prints the table: the first fleet boot's 107.4 s and 40.1 s had no rows, only container
 timestamps.
 
-Not here yet: the asynchronous decode pipeline, the NVMe tier and video. Target GPTQ self-calibration uses the shared
+Not here yet: the asynchronous decode pipeline and video. Target GPTQ self-calibration uses the shared
 collector, disarmed through warmup/capture; the next boot reads its stamped Hessians. Prefill runs
 eagerly.
 """
@@ -43,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 import sys
 import time
 from functools import partial
@@ -52,6 +56,7 @@ _IMPORTS_BEGAN = time.perf_counter()
 
 import torch                                                    # noqa: E402
 
+from engine.base.tiered_kv import PREFIX_TIER_GIB, TIER_GIB, TIER_ROOT, tier_line   # noqa: E402
 from engine.profiles.qwen38 import facts                        # noqa: E402
 
 _IMPORT_SECONDS = time.perf_counter() - _IMPORTS_BEGAN
@@ -80,6 +85,10 @@ DRAFT_CANDIDATES = 20       # the served default top_k (generation_config.json):
 TAP_CAP_GIB = 64.0
 MODEL_NAME = "qwen3.8-flash-next"
 DUMP_DIR = "/home/choiceoh/glm53-logs/st-qwen38-dumps"   # the launcher mounts /home/choiceoh/glm53-logs on every node
+# A finished turn shorter than this is released, not parked: parking writes the whole 109 MiB state slot a rank (K=3)
+# whatever the turn's length, and prefilling 128 tokens again costs less than reading that back -- GLM-5.3's floor
+# (profiles/glm53/boot.py PARK_MIN_TOKENS, set against health pings that pushed real conversations out of the tier)
+PARK_MIN_TOKENS = 128
 
 
 def door_host_half(ckpt_meta, *, renderer: bool) -> dict:
@@ -174,12 +183,15 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
           mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
-          vision: str = "auto", self_calibrate: bool = True):
+          vision: str = "auto", self_calibrate: bool = True, tier_dir: "str | None" = None,
+          lease_owner: "str | None" = None, mapped_staging: bool = True):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background of `door_host_half`) is joined in its own row before the capture: the capture is Python
     dispatch, and a host thread still running there would take the GIL from it. Its grammar compiler is bound to the
     model in the row after (`bind_grammars`); without a prelude the model serves no grammar. `draft_ledger`: a factory
-    of rank 0's ledger (DraftLedger); the other ranks record to nothing, their draft graphs the same as its."""
+    of rank 0's ledger (DraftLedger); the other ranks record to nothing, their draft graphs the same as its.
+    `tier_dir`: the NVMe tiers' root (module docstring), None for none; `lease_owner` claims this rank's directory
+    under it (base/tenancy); `mapped_staging` stages through one GB10 host mapping instead of pinned + device copies."""
     from engine.base import scheduler as sched
     from engine.base.arena import Arena, host_reclaim, prepare_allocation
     from engine.base.params import total_bytes
@@ -366,9 +378,24 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         if memory is not None:
             memory.checkpoint("loaded")
         with recorder.phase("runner"):
+            tiered = prefix_tier = None
+            if tier_dir:
+                # D16: a finished turn parks on NVMe and its row, blocks and slot go back; an evicted leaf boundary
+                # parks its blocks and snapshot. The directory and the caps are GLM-5.3's (base/tiered_kv): a layout's
+                # files are foreign to the other, counted against the cap and the first forgotten.
+                from engine.base.tiered_kv import open_tiers
+                from engine.profiles.qwen38.caches import state_format
+                tiered, prefix_tier, left = open_tiers(
+                    caches.pool, caches.layout.block_bytes, tier_dir, comm.rank,
+                    state_format=state_format(F, caches.layout, caches.snapshot_bytes_n, mtp=drafter),
+                    owner=lease_owner, mapped_staging=mapped_staging)
+                if left:
+                    print(f"  rank{comm.rank}: tenant state cleared -- the fleet changed hands from {left}", flush=True)
+                recorder.gauge("nvme_mapped_staging", int(mapped_staging))
             prefix = PrefixCache(F.block, sched.chunk_for(contract.chunk_align, contract.token_budget, k), snapshots)
             runner = Runner(model, contract, caches.pool, caches.slots, Ring(4096, STEP_RECORD.size), recorder,
-                            keep_idle=True, prefix=prefix)
+                            tiered=tiered, keep_idle=True, prefix=prefix)
+            runner.prefix_tier = prefix_tier
         if prelude is not None:
             with recorder.phase("wait for the prelude"):
                 door = prelude.take()
@@ -801,6 +828,12 @@ def main(argv=None) -> int:
                     help="pictures: auto serves them when every rank has vision.safetensors next to its rank file, on "
                          "requires it, off serves text only (module docstring)")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
+    ap.add_argument("--tier-dir", default=TIER_ROOT,
+                    help="the NVMe tiers' root, one rank<N> directory a rank under it -- GLM-5.3's, shared; '' is none "
+                         "(finished turns then stay in their rows until evicted)")
+    ap.add_argument("--nvme-mapped-staging", action=argparse.BooleanOptionalAction, default=True,
+                    help="stage tier transfers through one GB10 host mapping (GLM-5.3's default) instead of pinned "
+                         "and device copies")
     ap.add_argument("--spec-k", type=int, default=None,
                     help=f"drafts a step from the MTP head (this profile serves {facts.SPEC_K}; the checkpoint has one "
                          "MTP layer and K > 1 chains it K-1 times inside the draft replay, the verify step K+1 tokens "
@@ -836,7 +869,7 @@ def main(argv=None) -> int:
     with rec.phase("comm"):
         comm = Comm.init()
     rec.root.name = f"rank{comm.rank}"
-    model = None
+    model = runner = None
     try:
         with rec.phase("prepare one-shot"):
             if not a.no_oneshot:
@@ -848,7 +881,6 @@ def main(argv=None) -> int:
             rec.gauge("kernel_imports_s", round(imports.seconds, 3))
             lanes = lane_tables.served(leave=a.leave)
             # every b12x kernel this boot builds or reads, for the next tree's prebuild (kernels/b12x_requests)
-            import os
             from engine.kernels import b12x_requests
             b12x_requests.record_loaded("qwen38", b12x_requests.path_under(
                 os.environ.get("FLASHINFER_WORKSPACE_BASE"), "qwen38"))
@@ -873,7 +905,9 @@ def main(argv=None) -> int:
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
                                               vision=a.vision, self_calibrate=not a.no_self_calibrate,
                                               draft_candidates=a.draft_candidates,
-                                              draft_ahead=a.draft_ahead)
+                                              draft_ahead=a.draft_ahead, tier_dir=a.tier_dir or None,
+                                              lease_owner=os.environ.get("ST_LEASE_OWNER") or None,
+                                              mapped_staging=a.nvme_mapped_staging)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
             closers.append(model.drafter.inputs_tap.close)
@@ -910,10 +944,16 @@ def main(argv=None) -> int:
                             tool_parser=tools.parse if tools else None, tool_stream=tools.partial if tools else None,
                             tool_grammar=tools.grammar if tools else None,
                             tool_call_start=tools.start_token(tok) if tools else None,
-                            vision=eyes.Door(vision.V) if comm.rank == 0 and vision is not None else None)
+                            vision=eyes.Door(vision.V) if comm.rank == 0 and vision is not None else None,
+                            park_min_tokens=PARK_MIN_TOKENS)
         write_dumps(rec, model.memory, a.dump_dir, comm.rank)
         if comm.rank == 0:
             print(rec.table(), flush=True)
+            if runner.tiered is not None:     # after the door's reconciliation: what every rank holds alike
+                print(tier_line(runner.tiered.tier, TIER_GIB, "conversations"), flush=True)
+                print(tier_line(runner.prefix_tier.tier, PREFIX_TIER_GIB, "prefix boundaries"), flush=True)
+            else:
+                print("  NVMe tier: none (--tier-dir '') -- a finished turn stays in its row until evicted", flush=True)
         print(f"  rank {comm.rank}: ready in {time.perf_counter() - started:.1f} s, door on port {a.port}", flush=True)
         server.loop()
         return 0
@@ -926,6 +966,13 @@ def main(argv=None) -> int:
                 finally:
                     close(model)                # the graphs' NCCL references go before the process group
         finally:
+            for tier in (getattr(runner, "tiered", None), getattr(runner, "prefix_tier", None)):
+                if tier is None:
+                    continue
+                try:
+                    tier.close()                # a park still writing lands before the staging goes
+                except Exception as exc:        # noqa: BLE001 -- a shutdown does not fail a shutdown
+                    print(f"  rank {comm.rank}: a tier did not close: {type(exc).__name__}: {exc}", flush=True)
             comm.close()
 
 

@@ -164,6 +164,21 @@ if [ -n "${ST_SPEC_K:-}" ]; then
   [[ "$ST_SPEC_K" =~ ^[1-9][0-9]*$ ]] || { echo "ST_SPEC_K must be a positive draft count" >&2; exit 2; }
   SPEC_ARG="--spec-k $ST_SPEC_K"
 fi
+# The NVMe tier (fleet.py, base/tiered_kv): a finished turn parks under its conversation and an evicted prefix boundary
+# under its hash, one rank<N> directory a rank. The SAME root start-st-glm53.sh gives GLM-5.3, under the same caps: the
+# two never serve at once, and a root each kept a second budget of disk for the engine not running. A layout's files are
+# foreign to the other -- counted against the cap, the first forgotten, replaced under the same key (base/kv_tier). A
+# change of hands still empties a rank's directory (base/tenancy): a window's boot clears what production parked, and
+# production's next boot clears the window's. ST_TIER_DIR=off turns it off for a boot; any other value is the tier root
+# and must be under MOUNTED_ROOT, the one host directory the rank containers bind -- a tier anywhere else lands in the
+# container's writable layer and goes with it (start-st-glm53.sh, 2026-09-16).
+MOUNTED_ROOT=/home/choiceoh/glm53-logs
+TIER_DIR=${ST_TIER_DIR:-$MOUNTED_ROOT/st-tier}
+case $TIER_DIR in
+  off) TIER_ARG="--tier-dir=" ;;              # fleet.py builds no tier from an empty directory
+  "$MOUNTED_ROOT"/?*) TIER_ARG="--tier-dir $TIER_DIR" ;;
+  *) echo "ST_TIER_DIR must be 'off' or a path under $MOUNTED_ROOT (the only host directory the rank containers mount); got: $TIER_DIR" >&2; exit 2 ;;
+esac
 RECLAIM_FILE_CACHE=${ST_RECLAIM_FILE_CACHE:-1}
 RECLAIM_ROOT=/home/choiceoh/glm53-logs/st-reclaim           # one broker directory per rank, on that rank's node
 case "$RECLAIM_FILE_CACHE" in
@@ -374,7 +389,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro $EXPERTS_MOUNT -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $LEAVE_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR $CALIB_ARG' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $LEAVE_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG $TIER_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR $CALIB_ARG' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

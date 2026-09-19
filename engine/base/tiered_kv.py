@@ -22,14 +22,48 @@ The tier proved it never blocks a running decoder (p50 ratio 1.000/1.001);
 this file's job is the bookkeeping that keeps three things consistent: the
 block table, the token count, and the manifest. Parking is per conversation
 and the scheduler decides when (an idle turn, never a live one).
+
+A fleet boot opens two of them per rank -- parked conversations and evicted
+prefix boundaries -- in one directory every profile shares, under the fleet's
+caps (`open_tiers`, TIER_ROOT).
 """
 from __future__ import annotations
 
 import functools
+import threading
 from concurrent.futures import Future
+from pathlib import Path
 
 from engine.base.kv import BlockPool, EMPTY
 from engine.base.kv_tier import NvmeTier
+
+GIB = 1 << 30
+TIER_ROOT = "/home/choiceoh/glm53-logs/st-tier"
+"""Where a fleet boot keeps its tiers, one `rank<N>` directory per rank: under the one host directory the rank
+containers bind (the launchers' MOUNTED_ROOT). Every profile that serves on the fleet uses the same one -- GLM-5.3 and
+Qwen3.8 never serve at once, and a directory each would hold a second budget of bytes for an engine that is not
+running. A layout's files are foreign to the other (`NvmeTier.stale`): never promoted, counted against the cap, the
+first forgotten when it bites, replaced when the other writes the same key. A change of hands still empties it
+(base/tenancy); one owner switching models does not."""
+TIER_GIB = 64.0
+"""What a rank's parked conversations may occupy on NVMe, and its evicted prefix boundaries below.
+
+Declared, because "the filesystem decides" is not a decision (D1). Until 45차 §53 neither tier
+had a capacity at all, so the only brake was `reserve_bytes` -- one gigabyte of free space --
+on a root that also carries the checkpoints, the images and the logs. It had eaten 75 GiB of a
+disk that was 99% full, and nothing in the engine had ever deleted a byte of it.
+
+A GLM-5.3 conversation is ~260 MiB here (one block plus its 247 MiB state slot, the size 45차
+§49 left open), so 64 GiB is about 250 of them and 16 GiB is about 30 prefix boundaries; a
+Qwen3.8 one is its 109 MiB state slot plus 10.4 MiB a 768-token block (~254 MiB at 10K tokens).
+The prefix tier gets the smaller share on purpose: a boundary is a cache that recomputes, a
+conversation is a turn the user may come back to (D16). Past the cap the LRU forgets, foreign
+layouts first (`NvmeTier.oldest`). The caps are the fleet's, not a profile's: whichever engine
+serves, the directory holds at most this much.
+"""
+PREFIX_TIER_GIB = 16.0
+TIER_RESERVE_GIB = 16.0             # free space a tier leaves on the filesystem whatever its own cap allows
+PREFIX_TIER_STAGE = 32 << 20        # the prefix tier's pinned staging + device scratch
 
 
 class TieredKV:
@@ -206,6 +240,61 @@ class TieredKV:
         """The parked conversation is over: its disk copy goes."""
         self.parked.pop(key, None)
         self.tier.forget(key)
+
+
+def open_tiers(pool: BlockPool, block_bytes: int, root, rank: int, *, state_format: str, owner: "str | None" = None,
+               mapped_staging: bool = False, prefix_cache_bytes: int = 0, background: bool = True,
+               make=NvmeTier) -> "tuple[TieredKV, TieredKV, str | None]":
+    """One rank's two tiers under `root`/rank<N> (D16) -> (conversations, prefix boundaries, the owner the directory was
+    taken from or None). What every fleet boot does the same way, so it is written once:
+
+        claim       `owner` takes the rank's directory (base/tenancy): a restart keeps its conversations, a handover
+                    does not. No owner (a bare boot) claims nothing.
+        the tiers   the conversations at the directory's top, the prefix boundaries in `prefix/` below it, both in
+                    `block_bytes` NVMe units under the fleet's caps and reserve (TIER_GIB, PREFIX_TIER_GIB,
+                    TIER_RESERVE_GIB). `state_format` names the layout: another's files are foreign here.
+        sweep       `NvmeTier.cleanup` on each: a generation a killed write left unpublished, and a forget a killed boot
+                    left half done, are bytes on the disk no cap counts -- and nothing called it, so no boot ever took
+                    them back. On a thread of its own (`background`): what it deletes differs by rank, and ranks that
+                    finish their own work at different moments meet the next collective apart (tenancy.claim's lesson).
+
+    `make`: the tier class (a test hands a fake -- an NvmeTier allocates CUDA staging)."""
+    from engine.base import tenancy
+    directory = Path(root) / f"rank{rank}"
+    left = tenancy.claim(directory, owner) if owner else None
+    conversations = make(directory, block_bytes=block_bytes, capacity_bytes=int(TIER_GIB * GIB),
+                         reserve_bytes=int(TIER_RESERVE_GIB * GIB), state_format=state_format,
+                         mapped_staging=mapped_staging)
+    prefix = make(directory / "prefix", block_bytes=block_bytes, stage_bytes=PREFIX_TIER_STAGE,
+                  capacity_bytes=int(PREFIX_TIER_GIB * GIB), reserve_bytes=int(TIER_RESERVE_GIB * GIB),
+                  snapshot_cache_bytes=prefix_cache_bytes, state_format=state_format, mapped_staging=mapped_staging)
+    for tier in (conversations, prefix):
+        if background:
+            threading.Thread(target=sweep, args=(tier,), daemon=True, name="tier-sweep").start()
+        else:
+            sweep(tier)
+    return TieredKV(pool, conversations), TieredKV(pool, prefix), left
+
+
+def sweep(tier) -> None:
+    """`tier.cleanup()`, a failure printed rather than raised: the tier works without it, and the next boot's sweep
+    takes what this one could not."""
+    try:
+        tier.cleanup()
+    except Exception as exc:                                # noqa: BLE001 -- see above
+        print(f"  tier sweep of {getattr(tier, 'dir', '?')} stopped: {type(exc).__name__}: {exc}", flush=True)
+
+
+def tier_line(tier, cap_gib: float, what: str) -> str:
+    """What is on the disk, in bytes -- the boot used to print counts and leave the size a mystery."""
+    live = sum(1 for k in tier.index if tier.has(int(k)))
+    stale, stale_bytes = len(tier.stale()), tier.stale_bytes()
+    line = (f"  NVMe tier: {live} {what} parked from before, {tier.used_bytes() / GIB:.1f} GiB of "
+            f"{cap_gib:.0f} GiB")
+    if stale:
+        line += (f"; {stale} under another layout holding {stale_bytes / GIB:.1f} GiB -- not resumable, "
+                 f"and the first thing forgotten when the cap bites")
+    return line
 
 
 def _selfcheck() -> None:
