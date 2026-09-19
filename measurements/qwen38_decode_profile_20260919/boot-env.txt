@@ -1,0 +1,2 @@
+ST_ONESHOT_BUILD_ROOT=/cache/cu132/st-oneshot
+ST_LEASE_OWNER=session/q38mtp-tune-0919
