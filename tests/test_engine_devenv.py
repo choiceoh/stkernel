@@ -110,7 +110,11 @@ class ScriptTests(unittest.TestCase):
         mac = (DEVENV / "mac.sh").read_text(encoding="utf-8")
         self.assertIn('if [ "$have" != "$PYTHON_VERSION" ]; then', mac)
         self.assertIn('--python "$PYTHON_VERSION"', mac)
-        self.assertIn('ln -sfn "$TOOLBIN/graphify" "$VENV/bin/graphify"', mac)
+        # graphify follows its pin on the Mac too (reinstalled when GRAPHIFY_VERSION moves), from a venv of its own
+        self.assertIn('if [ "$had" != "$GRAPHIFY_VERSION" ]; then', mac)
+        self.assertIn('"graphifyy==$GRAPHIFY_VERSION"', mac)
+        self.assertIn('ln -sfn "$GVENV/bin/graphify" "$VENV/bin/graphify"', mac)
+        self.assertNotIn('command -v graphify >/dev/null; then', mac)          # "already on PATH" is not "at the pin"
 
     def test_a_node_s_own_git_settings_are_kept(self):
         """Every global git write goes through gset (set only where unset) or adds the gh credential helper."""
