@@ -188,7 +188,8 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = True, mtp_precision: str = "bf16", mtp_experts: str = "nvfp4",
+                 query_shards: bool = True, tile_union: bool = True, mtp_precision: str = "bf16",
+                 mtp_experts: str = "nvfp4",
                  shared_overlap: "bool | str" = False):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
@@ -201,6 +202,15 @@ class Qwen38Net:
         with the fleet unmeasured (CHARTER D17): until an onepass record says which side of that trade a fleet lands
         on, a boot can decline it (fleet.py --no-query-shards, the launcher's ST_QUERY_SHARDS=0) and every rank
         scores every row as before.
+
+        `tile_union`: a prefill step's sparse QSA attention on the tile-union launch (engine/kernels/qsa_tile_union,
+        vLLM PR 55430; engine/SM121_INTAKE.md U12) when `qsa_tile_union.admits` takes the step -- two rows of a segment
+        walk the union of their chosen blocks once instead of each its own. Within the split-K launch's band, not its
+        bytes (the softmax steps through other chunks); on GB10 1.7-2.7x faster at 1,024 rows and 1.33-1.41x at 4,096
+        where a prefill's neighbouring rows choose alike (sm121-u12-0919c, minimum and median beside production), 14-26%
+        slower (median) where they do not. On by the operator's
+        decision of 2026-09-19 with the fleet unmeasured (CHARTER D17): a boot can decline it (fleet.py
+        --no-tile-union, the launcher's ST_QSA_TILE_UNION=0) and every step attends through the split-K launch.
 
         `mtp_precision`: the MTP head's dense projections (its attention's two, its shared expert's two), which the
         checkpoint keeps in BF16. "bf16" (the default, the operator's decision of 2026-09-19): the checkpoint's weights
@@ -223,6 +233,9 @@ class Qwen38Net:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
             raise ValueError("query_shards is a declared boolean")
+        if type(tile_union) is not bool:
+            raise ValueError("tile_union is a declared boolean")
+        self.tile_union = tile_union
         self.F, self.comm, self.lanes, self.mtp, self.hc_fp8 = F, comm, lanes, mtp, hc_fp8
         self.query_shards = query_shards
         if mtp_precision not in MTP_PRECISIONS:
@@ -932,11 +945,27 @@ class Qwen38Net:
                                meta.page_table, meta.rows_req[:c], out=attended[:c], gate=gate[:c], **runs)
                 lanes.qsa_attend(q[c:], K, V, blocks[c:], meta.positions32[c:], meta.lengths, F.idx_ratio,
                                  F.idx_budget, meta.page_table, meta.rows_req[c:], out=attended[c:], gate=gate[c:])
+            elif Qwen38Net._tile_union(self, step, meta, K, N):
+                # a prefill step whose neighbouring rows choose alike: two rows walk their blocks' union once
+                attended = lanes.qsa_attend_union(q, K, V, blocks, meta.positions32, meta.starts, F.idx_ratio,
+                                                  F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
             else:
                 attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
                                             F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
         out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
+
+    def _tile_union(self, step, meta, K, rows: int) -> bool:
+        """Whether a step's sparse QSA attention takes the tile-union launch: the lane is bound, the boot did not
+        decline it, the step is eager (a captured step's few rows never pass), and `qsa_tile_union.admits` takes its
+        shape -- host integers only, so every rank chooses alike without a device read (D3: the caller chooses)."""
+        if getattr(self.lanes, "qsa_attend_union", None) is None or not getattr(self, "tile_union", False)                 or getattr(step, "captured", False):
+            return False
+        from engine.kernels import qsa_tile_union
+        F = self.F
+        return qsa_tile_union.admits(rows, meta.page_table.shape[0], compress_ratio=F.idx_ratio,
+                                     token_topk=F.idx_budget, page_size=K.shape[1],
+                                     table_width=meta.page_table.shape[1], cache_pages=K.shape[0])
 
     # -- MoE ----------------------------------------------------------------------------------------------------------
     def _routed(self, prefix: str, x: torch.Tensor, *, compact: bool):
