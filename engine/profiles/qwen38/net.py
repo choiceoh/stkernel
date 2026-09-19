@@ -856,10 +856,10 @@ class Qwen38Net:
         """A sublayer's TP sum for the leave after it: reduced, or -- while `_direct` (a captured step of a net with
         `rank_packets`, carry H5) -- the one-shot exchange's RankPackets, which that leave consumes and folds. A sum the
         exchange cannot carry (past its rows, off its width) is reduced as before."""
-        if getattr(self, "_direct", False):
+        transport = getattr(self.comm, "transport", None) if getattr(self, "_direct", False) else None
+        if transport is not None and hasattr(transport, "exchange"):
             from engine.kernels.oneshot import PACKET_ROWS
             t = self.comm._settled(t)
-            transport = self.comm.transport
             if transport.eligible(t) and t.ndim == 2 and t.shape[0] <= PACKET_ROWS and t.shape[1] == self.F.hidden:
                 return transport.exchange(t)
         return self.comm.all_reduce(t)

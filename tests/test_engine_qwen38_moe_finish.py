@@ -121,7 +121,7 @@ class LaneTests(unittest.TestCase):
 
     def test_the_layer_finishes_through_the_lane_and_the_served_table_binds_the_kernel(self):
         net = (ROOT / "engine/profiles/qwen38/net.py").read_text()
-        self.assertIn("self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))", net)
+        self.assertIn("Qwen38Net._sum(self, lanes.moe_finish(routed, shared, gate))", net)   # reduced or packets (H5)
         self.assertNotIn("routed.float() + shared.float() * gate", net)
         self.assertIn("moe_finish=on_main(moe_output.gated_sum)", (ROOT / "engine/profiles/qwen38/lanes.py").read_text())
 

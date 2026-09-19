@@ -154,7 +154,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, mtp_precision=mtp_precision,
-                    mtp_experts=mtp_experts, shared_overlap=shared_overlap, rank_packets=rank_packets)
+                    mtp_experts=mtp_experts, rank_packets=rank_packets, shared_overlap=shared_overlap)
     if mtp_window is not None:
         # the head attends a sink and a recent window of groups instead of scoring (Windowed-MTP; its index keys are
         # never written) -- acceptance moves, output does not

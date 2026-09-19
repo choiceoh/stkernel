@@ -223,7 +223,7 @@ class KnobTests(unittest.TestCase):
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
         self.assertIn('ap.add_argument("--no-rank-packets", action="store_true",', fleet)
         self.assertIn("rank_packets=not a.no_rank_packets)", fleet)
-        self.assertIn("shared_overlap=shared_overlap, rank_packets=rank_packets)", fleet)
+        self.assertIn("rank_packets=rank_packets, shared_overlap=shared_overlap)", fleet)
         self.assertIn('print("  sums: "', fleet)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
         self.assertIn('case "${ST_RANK_PACKETS:-1}" in', launcher)
