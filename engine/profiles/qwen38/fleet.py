@@ -111,7 +111,8 @@ def rank_loader(path, *, expected_layout: str):
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
-          spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16"):
+          spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
+          draft_index: "tuple[int, int] | None" = None):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it."""
@@ -188,6 +189,13 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                 recorder.gauge(f"{name}_s", round(seconds, 3))
             for name, count in sorted(store.stats.items()):
                 recorder.gauge(f"packs_{name}", count)
+        if drafter and draft_index is not None:
+            with recorder.phase("draft index"):
+                # the drafter's argmax from an inverted-file index over the head's rows (dense/ivf_head)
+                for name, value in net.prepare_draft_head(*draft_index).items():
+                    recorder.gauge(f"draft_index_{name}", value)
+                torch.cuda.synchronize()
+                torch.cuda.empty_cache()
         with recorder.phase("caches"):
             caches = Qwen38Caches(arena, F, net.layers, nb, max_seqs, snapshots, mtp=drafter)
         with recorder.phase("engine"):
@@ -245,6 +253,19 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         raise
 
 
+def draft_index(text: "str | None") -> "tuple[int, int] | None":
+    """`--draft-index CLUSTERS/PROBES` -> (clusters, probes), or None for the whole head."""
+    if text is None:
+        return None
+    try:
+        clusters, probes = (int(v) for v in text.split("/"))
+    except ValueError:
+        raise SystemExit(f"--draft-index {text!r}: CLUSTERS/PROBES, e.g. 1024/32") from None
+    if not 1 <= probes <= clusters:
+        raise SystemExit(f"--draft-index {text!r}: 1 <= PROBES <= CLUSTERS")
+    return clusters, probes
+
+
 def write_dumps(rec, memory, dump_dir, rank: int) -> None:
     """This rank's phase table and memory ledger under `dump_dir`. A dump that cannot be written is said and skipped:
     the boot serves either way."""
@@ -282,6 +303,9 @@ def main(argv=None) -> int:
     ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",
                     help="the MTP head's dense projections: the checkpoint's BF16 (default), block-scaled FP8, or the "
                          "target layers' W4A8 at decode rows (before 2026-09-19); acceptance moves, output does not")
+    ap.add_argument("--draft-index", default=None, metavar="CLUSTERS/PROBES",
+                    help="the drafter's argmax from an inverted-file index over the head's rows (e.g. 1024/32): a few MB "
+                         "a draft instead of the head's 159; unset, the whole head. Acceptance moves, output does not")
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
                          "the first fleet boot, 2026-09-18, stalled in it at every sum)")
@@ -337,7 +361,8 @@ def main(argv=None) -> int:
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                               drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
-                                              query_shards=not a.no_query_shards, mtp_precision=a.mtp_precision)
+                                              query_shards=not a.no_query_shards, mtp_precision=a.mtp_precision,
+                                              draft_index=draft_index(a.draft_index))
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row)", flush=True)
         with rec.phase("door"):

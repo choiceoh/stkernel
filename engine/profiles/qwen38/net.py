@@ -330,8 +330,19 @@ class Qwen38Net:
                             project_down=proj[0], project_up=proj[1])
 
     def linear(self, x, name):
+        """x @ W.T through the weight's dense lane, or -- a BF16 weight with no lane (the MTP head's at its default
+        precision) -- the lanes' rows_linear: the skinny GEMV for a decode step's rows where it has a tile, else
+        torch's matmul."""
         lane = self.dense.get(name)
-        return lane(x) if lane is not None else torch.nn.functional.linear(x, self.p[name])
+        if lane is not None:
+            return lane(x)
+        return self._bf16(x, self.p[name])
+
+    def _bf16(self, x, w):
+        rows_linear = getattr(self.lanes, "rows_linear", None)
+        if rows_linear is None:
+            return torch.nn.functional.linear(x, w)
+        return rows_linear(x.reshape(-1, x.shape[-1]), w).reshape(*x.shape[:-1], w.shape[0])
 
     # -- embed / head -----------------------------------------------------------------------------------------------
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
@@ -854,9 +865,9 @@ class Qwen38Net:
         F, p, lanes = self.F, self.p, self.lanes
         meta = self.step_meta(step, caches)
         e = lanes.hc_norm(self.embed(step.ids), p["mtp.pre_fc_norm_embedding"], F.rms_eps, 1)
-        e = torch.nn.functional.linear(e, p["mtp.fc_embedding"])
+        e = self._bf16(e, p["mtp.fc_embedding"])
         g = lanes.hc_norm(given, p["mtp.pre_fc_norm_hidden"], F.rms_eps, 1).view(-1, F.hc, F.hidden)
-        h = (torch.nn.functional.linear(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
+        h = (self._bf16(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
         out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers)
         x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)

@@ -64,6 +64,11 @@ if [ -n "${ST_MTP_PRECISION:-}" ]; then
     *) echo "ST_MTP_PRECISION must be bf16, fp8 or w4" >&2; exit 2 ;;
   esac
 fi
+INDEX_ARG=""                                                  # ST_DRAFT_INDEX=CLUSTERS/PROBES: the drafter's argmax from an index over the head
+if [ -n "${ST_DRAFT_INDEX:-}" ]; then
+  [[ "$ST_DRAFT_INDEX" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]] || { echo "ST_DRAFT_INDEX must be CLUSTERS/PROBES" >&2; exit 2; }
+  INDEX_ARG="--draft-index $ST_DRAFT_INDEX"
+fi
 ONESHOT_ARG=""                                                # ST_ONESHOT=0: every collective on NCCL (the one-shot cell at hidden 2560 is unmeasured)
 case "${ST_ONESHOT:-1}" in
   1) ;;
@@ -249,7 +254,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $MTP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()
