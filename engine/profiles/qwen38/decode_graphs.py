@@ -121,9 +121,11 @@ class TargetGraphs(_Rows):
         return (len(step.segments) <= self.max_seqs
                 and all(1 <= s.length <= self.tokens and s.ctx + self.tokens <= pool.tokens[s.seq] for s in step.segments))
 
-    def run(self, step) -> "tuple[torch.Tensor, torch.Tensor, list | None]":
+    def run(self, step, known=None) -> "tuple[torch.Tensor, torch.Tensor, list | None]":
         """Replay for a served step (net.Step with state slots): (logits, streams, rows) -- the graph's own outputs,
-        [rows*t, ...], and `rows` the flat output row of each of the step's tokens, or None when they are the same."""
+        [rows*t, ...], and `rows` the flat output row of each of the step's tokens, or None when they are the same.
+        `known`: (the step's ids as the host holds them, each row's ngram_size - 1 tokens before its context, DEAD before
+        the sequence) -- what the PLE staging hashes; without it both are read back off the device."""
         segments, t = step.segments, self.tokens
         n = len(segments)
         shape = self.shape(n, max(s.ctx + t for s in segments))
@@ -142,7 +144,12 @@ class TargetGraphs(_Rows):
         if net.ple_stage is not None:
             # the PLE rows of the step's n x t tokens, read off the SSD table on the host before the replay (a replay
             # reads no host value): a one-row read of the step's ids, the carried ids from the rings, the hash
-            net.stage_ple([s.slot for s in segments], [s.ctx for s in segments], ids.tolist(), t, self.caches)
+            if known is None:
+                staged, carried = ids.tolist(), None
+            else:
+                flat, carried = known
+                staged = [flat[i] for i in index] if padded else list(flat)
+            net.stage_ple([s.slot for s in segments], [s.ctx for s in segments], staged, t, self.caches, carried=carried)
 
         def fill(inputs):
             inputs.ids.copy_(ids)

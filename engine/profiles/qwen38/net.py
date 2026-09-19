@@ -710,20 +710,26 @@ class Qwen38Net:
             raw[mine] = self.ple_table.gather(local[mine])
         return self._ple_values(torch.from_numpy(raw).to(self._ple_scale.device))
 
-    def stage_ple(self, slots, contexts, ids, t: int, caches) -> None:
+    def stage_ple(self, slots, contexts, ids, t: int, caches, carried=None) -> None:
         """Before a captured step replays: the PLE rows its n x t tokens read, gathered into the staging buffer --
-        each row's carried ids from its slot's ring (DEAD before the sequence), the hash on the host, this rank's rows
-        read by id, other ranks' rows zero (the graph's all-reduce sums them). `ids` are the step's n * t tokens."""
+        each row's carried ids (DEAD before the sequence), the hash on the host, this rank's rows read by id, other
+        ranks' rows zero (the graph's all-reduce sums them). `ids` are the step's n * t tokens. `carried` [n][ngram_size
+        - 1]: each row's tokens before its context, from a host that holds them (adapter.ServedModel: the ids ring
+        holds what was fed at those positions, which is the row's own history); without it they are read off the
+        slots' rings, a launch sequence and a device read a step."""
         from engine.modules.ngram_embedding import DEAD
         F = self.F
         n = len(slots)
         context = F.ngram_size - 1
-        ids_ring, _ = caches.ple_fields()
-        r_ids, dev = ids_ring.shape[1], ids_ring.device
-        slot = torch.tensor(list(slots), dtype=torch.int64, device=dev)[:, None]
-        ctx = torch.tensor(list(contexts), dtype=torch.int64, device=dev)[:, None]
-        prev = ctx - context + iota(context, dev)                        # [n, context]
-        carried = torch.where(prev < 0, torch.full_like(prev, DEAD), ids_ring[slot, prev.clamp_min(0) % r_ids]).cpu()
+        if carried is None:
+            ids_ring, _ = caches.ple_fields()
+            r_ids, dev = ids_ring.shape[1], ids_ring.device
+            slot = torch.tensor(list(slots), dtype=torch.int64, device=dev)[:, None]
+            ctx = torch.tensor(list(contexts), dtype=torch.int64, device=dev)[:, None]
+            prev = ctx - context + iota(context, dev)                    # [n, context]
+            carried = torch.where(prev < 0, torch.full_like(prev, DEAD), ids_ring[slot, prev.clamp_min(0) % r_ids]).cpu()
+        else:
+            carried = torch.tensor(carried, dtype=torch.int64).view(n, context)
         history = torch.cat([carried, torch.tensor(list(ids), dtype=torch.int64).view(n, t)], dim=1)
         rows = self._ple_hash.rows_batched(history, t).reshape(n * t, -1).numpy()
         local, mine = local_rows(rows, self.rank, F.ple_rows_per_rank)

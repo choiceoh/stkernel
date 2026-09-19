@@ -131,7 +131,7 @@ class ServedComposition:
         return Step(step.ids, tuple(Segment(s.seq, store.slot_of[s.seq], s.ctx, s.start, s.length) for s in step.segments),
                     tuple((int(p) - ctx, int(snap)) for p, snap in marks))
 
-    def forward(self, step, store, *, logits: str = "last", hidden: bool = False, given=None, marks=()):
+    def forward(self, step, store, *, logits: str = "last", hidden: bool = False, given=None, marks=(), host=None):
         if given is not None:
             raise ValueError("the target composition opens from its embeddings")
         if logits not in ("last", "all"):
@@ -140,7 +140,8 @@ class ServedComposition:
         served = self.served_step(step, store, marks)
         if not served.marks and self.graphs is not None and self.graphs.admits(served, self.caches.pool):
             # rows: the graph's output row of each of the step's tokens (None: the same rows, nothing was padded)
-            scores, streams, rows = self.graphs.run(served)
+            # host: the step's ids and carried context as the model holds them (decode_graphs.TargetGraphs.run)
+            scores, streams, rows = self.graphs.run(served, known=host)
             t, device = self.graphs.tokens, scores.device
             if logits == "last":
                 if t != 1:                        # one token a row: every row is its segment's last already
@@ -328,6 +329,14 @@ def _served_model_class():
                 at += n
             return ahead
 
+        def _carried(self, seq, ctx):
+            """The ngram_size - 1 tokens before position `ctx` of a row, DEAD before the sequence: what its slot's PLE
+            ids ring holds there -- the tokens fed at those positions, which are the row's history."""
+            from engine.modules.ngram_embedding import DEAD
+            width = self.composition.net.F.ngram_size - 1
+            tokens = self.tokens[seq]
+            return [tokens[p] if p >= 0 else DEAD for p in range(ctx - width, ctx)]
+
         def _verify(self, seqs):
             proposals = self.drafter.propose(seqs)
             drafts = []                             # no more drafts than the row can still take after its next token
@@ -339,7 +348,10 @@ def _served_model_class():
                 segments.append(BaseSegment(seq, self.context(seq), len(flat), 1 + len(d), True))
                 flat += [self.tokens[seq][-1]] + d
             step = BaseStep(torch.tensor(flat, dtype=torch.int64, device=self.store.device), tuple(segments))
-            logits, hidden = self.composition.forward(step, self.store, logits="all", hidden=True)
+            # the PLE staging hashes the step's ids and each row's tokens before its context: this model holds both, so
+            # the replay's host half reads neither back off the device (two reads and a launch sequence a step)
+            carried = [self._carried(seq, segment.ctx) for seq, segment in zip(seqs, segments)]
+            logits, hidden = self.composition.forward(step, self.store, logits="all", hidden=True, host=(flat, carried))
             self.steps += 1
             ahead = self._draw_ahead(seqs, step.segments, logits)
             finished = []

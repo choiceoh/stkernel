@@ -223,6 +223,12 @@ class NetPathTests(unittest.TestCase):
         rows = torch.cat([net._ple_hash.rows(torch.tensor(h, dtype=torch.int64), t) for h in histories])
         self.assertTrue(torch.equal(got, self.expected(rows)))
         self.assertEqual(net._ple_embed(rows).tolist(), got.tolist())
+        # the same rows when a host that holds the carried tokens hands them over: the rings are not read at all
+        staged = net.ple_stage.host[:n * t].clone()
+        net.ple_stage.host.zero_()
+        unread = SimpleNamespace(ple_fields=lambda: self.fail("the carried ids were handed over: no ring read"))
+        net.stage_ple(slots, contexts, ids, t, unread, carried=[[101, 102], [DEAD, DEAD], [DEAD, 301]])
+        self.assertTrue(torch.equal(net.ple_stage.host[:n * t], staged))
 
 
 if __name__ == "__main__":
