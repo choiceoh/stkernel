@@ -601,8 +601,8 @@ class Qwen38Net:
         meta = self.step_meta(step, caches)
         rows = getattr(step, "captured", False)
         x = self.embed(step.ids)
-        for rows_at, rows in getattr(step, "patches", ()):          # a picture's rows over its placeholders' embeddings
-            x.index_copy_(0, rows_at, rows.to(x.dtype))
+        for rows_at, patch_rows in getattr(step, "patches", ()):    # a picture's rows over its placeholders' embeddings
+            x.index_copy_(0, rows_at, patch_rows.to(x.dtype))
         h = x.repeat(1, F.hc)
         out = inject = None
         for L in self.layers:

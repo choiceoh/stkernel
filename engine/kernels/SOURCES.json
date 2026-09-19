@@ -40,7 +40,7 @@
       "source": "vllm/third_party/flash_linear_attention/ops/fused_recurrent.py",
       "sha256": "371e7d733e90a7147fbca8dbfe67e62503ba663bd1570424bc0efa22c54f3e2b",
       "origin": "image",
-      "local_sha256": "b9024d27a2cc4850a259f44e51a49a0e62287ebecceacdb4061d30e491e9547d",
+      "local_sha256": "998e34b831b57fcd13d29fabb4582e650dce52f718eaf7b81536cbb3b6b9e504",
       "local_modifications": [
         "2026-09-11 GB10 recurrent: direct canonical K,V state addressing and masked gate loads at padded K boundaries",
         "2026-09-12 GB10 recurrent: constexpr token/head/channel strides for canonical KDA inputs; preserve legacy dense addressing and recurrence arithmetic.",
@@ -48,7 +48,8 @@
         "2026-09-12 GB10 recurrent: experimental deferred state writes record FP32 key, decay and value-update factors; the default ring and recurrence arithmetic are unchanged.",
         "2026-09-13 (C=4 row fold): a row axis for the captured decode step -- RING_INDEX_STRIDE selects each row's slot/context entry; the row's token span follows from its program id; the arithmetic per program is unchanged",
         "2026-09-13 deferred update factors address each sequence separately for batched verification.",
-        "2026-09-17 HEAD_GATE (Qwen3.8 carry K1, engine/kernels/kda/ring.recurrent_gdn_ring): g holds GatedDeltaNet's raw decay projection per value head and the kernel computes engine/kernels/gdn.gates' decay, -exp(A_log) * softplus(a + dt_bias) in FP32, before the recurrence; a constexpr off by default, so every existing specialization compiles the same kernel."
+        "2026-09-17 HEAD_GATE (Qwen3.8 carry K1, engine/kernels/kda/ring.recurrent_gdn_ring): g holds GatedDeltaNet's raw decay projection per value head and the kernel computes engine/kernels/gdn.gates' decay, -exp(A_log) * softplus(a + dt_bias) in FP32, before the recurrence; a constexpr off by default, so every existing specialization compiles the same kernel.",
+        "2026-09-19 ROUND_BETA: GDN ring entries round sigmoid to the projection dtype before the FP32 recurrence, matching the model and prefill; per-channel KDA and generic functional entries retain their FP32 sigmoid."
       ]
     },
     "kda/index.py": {

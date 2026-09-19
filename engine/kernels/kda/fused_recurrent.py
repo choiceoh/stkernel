@@ -81,6 +81,7 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
     # ST (engine/kernels/kda/ring.recurrent_gdn_ring): g holds GatedDeltaNet's raw decay projection, one value per
     # value head [.., T, HV]; a_log and g_bias are its A_log and dt_bias [HV]; the decay is engine/kernels/gdn.gates'
     HEAD_GATE: tl.constexpr = False,
+    ROUND_BETA: tl.constexpr = False,  # GDN: sigmoid in the projection's dtype, as in prefill and the model
 ):
     i_k, i_v, i_nh = tl.program_id(0), tl.program_id(1), tl.program_id(2)
     i_n, i_hv = i_nh // HV, i_nh % HV
@@ -224,6 +225,8 @@ def fused_recurrent_gated_delta_rule_fwd_kernel(
         # can differ by <=1 ULP.
         if SIGMOID_BETA:
             b_beta = tl.sigmoid(b_beta)
+            if ROUND_BETA:
+                b_beta = b_beta.to(beta.dtype.element_ty).to(tl.float32)
         b_v *= b_beta
         if DEFERRED_STATE:
             # Store the exact FP32 operands of the state update, not its
