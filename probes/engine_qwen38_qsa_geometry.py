@@ -96,7 +96,6 @@ BF16_STEP = 2 ** -7
 ORACLE_BAND = (2 * BF16_STEP, BF16_STEP)           # SparseAttentionTests' band: (largest / largest, rms / rms)
 
 DECODE_STEPS = ((1, 2), (2, 2), (4, 2), (8, 2), (8, 4))     # (requests, tokens a request): N = 2, 4, 8, 16, 32
-LADDER_TOP = 5                                     # geometries carried from the N <= 8 sweep to N = 16 and 32
 ATTEND_CONTEXT = 12000                             # past the budget: every row chooses 512 of ~3,000 blocks
 ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS = (16, 32, 64), (1, 4, 16, 64), (1, 2, 4, 8)
 WIDE_TILE = (128, 1, 4)                            # one arm past the widest tile tl.dot compiles (see the docstring)
@@ -412,11 +411,6 @@ def verdict(rule, passing: dict, timings: dict, metric: str) -> dict:
     return result
 
 
-def ranked(passing: dict, timings: dict, metric: str, top: int) -> list:
-    timed = sorted((timings[arm][metric], arm) for arm in passing if passing[arm] and arm in timings)
-    return [arm for _, arm in timed[:top]]
-
-
 # -- attention arms --------------------------------------------------------------------------------------------------------
 @dataclass
 class Attention:
@@ -493,21 +487,19 @@ def attention_gate(case: Attention, arms, rule, sample=None) -> dict:
 
 
 def attend_arm(report, cell: Cell = QWEN38, steps=DECODE_STEPS, grid=None, iterations: int = ITERATIONS,
-               context: int = ATTEND_CONTEXT, top: int = LADDER_TOP) -> dict:
-    """The captured sparse attention over the decode ladder: the whole grid while N <= 8, then the `top` fastest
-    geometries of the widest of those steps (and the rule) at the steps above."""
+               context: int = ATTEND_CONTEXT) -> dict:
+    """The captured sparse attention over the decode ladder, the whole grid at every step: the first GB10 run carried
+    only the N = 8 step's five fastest `cold` geometries up to N = 16 and 32, and they were not the `warm` ones."""
     device = torch.device("cuda")
     generator = torch.Generator().manual_seed(SEED)
     stream = torch.cuda.Stream()
     trash = torch.empty(TRASH_MIB * 2 ** 20, dtype=torch.uint8, device=device)
-    verdicts, carried = {}, None
+    verdicts = {}
     for requests, tokens in steps:
         rows = requests * tokens
         rule = rule_profile(cell, rows)
         arms = (split_grid(cell, ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS, [rule, WIDE_TILE]) if grid is None
                 else list(grid))
-        if rows > 8 and carried is not None:
-            arms = carried
         arms = arms + [rule] if rule not in arms else arms
         case = attention_case(cell, requests, tokens, context, device, generator)
         gates = attention_gate(case, arms, rule)
@@ -523,8 +515,6 @@ def attend_arm(report, cell: Cell = QWEN38, steps=DECODE_STEPS, grid=None, itera
         verdicts[rows] = dict(cold=verdict(rule, passing, timings, "cold_us"),
                               warm=verdict(rule, passing, timings, "warm_us"))
         report("attend_verdict", rows=rows, **verdicts[rows])
-        if rows <= 8:
-            carried = ranked(passing, timings, "cold_us", top)
         del graphs, case
         torch.cuda.empty_cache()
     return verdicts
