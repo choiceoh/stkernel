@@ -1,9 +1,10 @@
 # Qwen3.8 real-input GPTQ calibration — 2026-09-19
 
-Status: TP4 real-input collection, all-rank filing/reboot audits and held-out
-projection scoring passed. Every tested W4/FP8 pack reduces projection error.
-The consumer comparison is waiting for the next available fleet window; this
-is not yet a serving-quality or adoption verdict.
+Status: the first 131,184-row TP4 real-input collection, all-rank filing/reboot
+audits and held-out projection scoring passed. Every tested W4/FP8 pack reduces
+projection error. Calibration-size convergence has not been measured on Qwen.
+The consumer waiter was cancelled while that coverage question is reviewed;
+this is not yet a completed-calibration, serving-quality or adoption verdict.
 
 The target is the 193 projection sites already admitted by #1286, with #1294's
 FP32 MoE accumulation and `as2` domain. The experiment uses one frozen source
@@ -61,6 +62,33 @@ shape, model identity and coverage checks. Fit and held-out roots are separate.
 The eight `*-audit-rank*.json` files retain per-site Hessian/amax digests.
 The earlier HTTP filing receipt says validation is pending because filing is
 asynchronous; the subsequent all-rank audits are the completion proof.
+
+### Calibration amount remains an open question
+
+The earlier GLM experiment fitted 329,580 token rows and evaluated on 86,620
+separate rows (`../st_kda_pack_error_20260916/README.md`). This Qwen run inherited
+the shared collector's 131,072-row cap; its 131,184 saved rows are about 40% of
+that earlier fit count. A row here is a token activation, not a conversation.
+
+The shared cap came from GLM's 17K/87K/330K comparison over 30 sites
+(`../st_site_lane_table_20260916/thickness_curve.log`). On the 24 sites starting
+near 17K, the 87K arm captured a median 89% of the measured 17K-to-330K gain.
+However, every arm was scored on the same 330K statistics that fitted the largest
+arm. That experiment neither establishes independent generalization at 330K nor
+proves 131K sufficient for Qwen. Model tokenizers and input distributions also
+differ, so matching a token count alone is not a convergence test.
+
+Retain this first fit and its results as a control. A larger Qwen fit needs a
+separate store and a higher collection cap, with the same source/input arithmetic
+and validation statistics across sizes. The current distinct prepared training
+inputs total 240,490 Qwen tokens; reaching roughly 330K requires additional real
+training inputs as well as raising the cap. Replaying the same inputs merely to
+inflate row counts, or moving validation/test groups into training, would not
+establish broader coverage. Use the reserved validation split for size selection;
+the test split has already been inspected and is not a new blind final test.
+No larger fit or size-comparison result exists yet. The background waiter was
+confirmed cancelled before it had launched a consumer run; all first-fit packs
+and numerical evidence remain available.
 
 The first candidate boot consumed 192 W4 and 193 FP8 GPTQ packs on each rank,
 with no live collectors. Its first scoring attempt completed rank 0 but refused
