@@ -30,7 +30,7 @@
 | 독립 런타임 이미지를 어떻게 짓나 | [`engine/runtime/README.md`](engine/runtime/README.md) — CUDA 13.2 시드·빌드·검증 (vLLM 없음을 verify가 강제한다) |
 | 이 수치가 실측인가 | [`MEASUREMENTS.md`](MEASUREMENTS.md) — **여기 없으면 미실측**. 맨 앞에 판정 규율과 찾아보기 |
 | 플릿 큐에 GPU 실험을 어떻게 건나 | [`bench/EXPERIMENTS.md`](bench/EXPERIMENTS.md) — 제출·브래킷·증거 계약 |
-| 새 체크포인트를 붙이려면 무엇이 필요한가 | `python3 tools/onboard.py --ckpt <경로>` — 형상·레인 표·작업 목록, 설정이 못 정한 것은 빈칸으로 |
+| 새 체크포인트를 붙이려면 무엇이 필요한가 | `python3 tools/onboard.py --ckpt <경로>` — 읽은 것(필드·값·키)·형상·레인 표·작업 목록, 설정이 못 정한 것은 빈칸으로(레퍼런스가 말하는 사실은 `--state <필드>=<값>`) |
 | 최신 논문 중 무엇이 이 스택에 붙나 | [`docs/PAPER_MAP_20260917.html`](docs/PAPER_MAP_20260917.html) — 그날의 조사 |
 | 무엇으로 재나, 어디에 함정이 있나 | 이 문서의 `bench/` · `probes/` · `tools/` 절 |
 

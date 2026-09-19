@@ -9,30 +9,52 @@ model that boots and is wrong, which is the failure this repository spends its t
     from engine.base import onboard
     reading = onboard.read_config(cfg, placement="ep")   # cfg: the checkpoint's `text_config`
     reading.shape                                        # a KernelShape, or None when a blank blocks it
+    reading.values / reading.sources                     # every field it DID read, and the key each came from
     reading.blanks                                       # every field the config did not settle, with why
     onboard.judge(reading)                               # + the lane table and the work it asks for (cells)
 
-Three kinds of field, and the difference matters:
+Four kinds of field, and the difference matters:
 
   hardware       tp, the device, the collectives' world. Not read from the model at all -- D5's forms.
-  read           taken from a config key, and the key is kept beside the value (`Reading.sources`).
-  not settled    either the config is silent or two different models write the same keys. Two of these the shape
-                 itself can carry as "not established" (`Attention.sink`, `KernelShape.hc_variant`): the shape
-                 builds and `cells.admission` refuses the lane by name, which is the outcome we want. The rest
-                 (the attention kind, an indexer's compression, the expert placement, a quantisation the lane
-                 must match) cannot be expressed as unknown, so they block the shape and appear as blanks.
+  read           taken from a config key, and the key is kept beside the value (`Reading.sources`). This includes
+                 the axes a config NAMES: `index_kpool_compress` names the indexer's compression, a `kda_layers`
+                 key names the linear attention's per-channel decay, `mhc: true` names the mixer.
+  stated         the operator's answer for a field no config settles, passed as `states={field: value}` and marked
+                 "operator" in the sources. D11 allows exactly this shape of input -- a FACT about the model, not a
+                 performance axis -- and it may only fill a blank: stating a field the config settles raises.
+  not settled    neither given nor stated. Two of these the shape itself can carry as "not established"
+                 (`Attention.sink`, `KernelShape.hc_variant`): the shape builds and `cells.admission` refuses the
+                 lane by name, which is the outcome we want. The rest (the attention kind, an indexer's
+                 compression, the expert placement, a quantisation or a gate the lane must match) cannot be
+                 expressed as unknown, so they block the shape and appear as blanks.
 
 What fills a blank is always the same short list: the checkpoint's own reference implementation, a profile written
-for it under engine/profiles/, or an argument the operator passes (placement). `tools/onboard.py` prints this.
+for it under engine/profiles/, or an argument the operator passes (`placement`, `states`). `tools/onboard.py`
+prints this. `tests/test_engine_onboard.py` holds the door to the three profiles the repo serves: their own
+derivations and this one agree field for field once the operator states what their references told them -- and the
+list of what that is, per model, is exactly the door's blanks.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from engine.base.kernel_shape import Attention, Comm, Device, Indexer, KernelShape, LinearAttention, MoE
+from engine.base.kernel_shape import (HC_VARIANTS, INDEXER_COMPRESS, Attention, Comm, Device, Indexer, KernelShape,
+                                      LinearAttention, MoE)
 
 #: the engine's forms, not the model's (CHARTER D5)
 TP = 4
+
+#: what an operator may STATE, and the values each field takes (None: any name). Every one of these is a fact about
+#: the model that a config can leave unsaid -- never a performance axis, which D11 keeps out of the inputs.
+STATEABLE = {
+    "attention.kind": ("mla", "gqa"),
+    "attention.sink": (True, False),
+    "indexer.compress": INDEXER_COMPRESS,
+    "linear.decay": ("channel", "head"),
+    "hc_variant": HC_VARIANTS,
+    "moe.quant": None,
+    "moe.activation": None,
+}
 
 
 @dataclass(frozen=True)
@@ -54,10 +76,15 @@ class Reading:
     shape: "KernelShape | None" = None
     #: blanks the SHAPE can carry (sink, hc_variant): stated as "not established", the lane refuses by name
     unsettled: tuple = ()
+    values: dict = field(default_factory=dict)      # field -> what was read (per rank, as the shape holds it)
 
     @property
     def complete(self) -> bool:
         return self.shape is not None
+
+    def read(self) -> "list[tuple]":
+        """(field, value, source) for every field the reading settled -- the table `tools/onboard.py` prints."""
+        return [(name, self.values.get(name, ""), source) for name, source in self.sources.items()]
 
     def describe(self) -> str:
         head = f"model_type {self.model_type or '(none declared)'}"
@@ -72,130 +99,259 @@ class Reading:
 
 
 def _int(cfg: dict, *keys) -> "tuple[int | None, str]":
+    """The first of `keys` the config states as a positive int. A width of 0 (GLM-5.3's `head_dim`, which its
+    `kv_lora_rank` replaces) is not a width: it reads as unstated, like a missing key or a null."""
     for key in keys:
         value = cfg.get(key)
-        if isinstance(value, int) and not isinstance(value, bool):
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
             return value, key
     return None, ""
 
 
-def read_config(cfg: dict, *, tp: int = TP, placement: "str | None" = None) -> Reading:
-    """Read a checkpoint's text config into a `Reading`. `placement` is the operator's, not the config's: "ep" gives
-    each rank whole experts, "tp" slices every expert's intermediate. A routed model with neither is a blank."""
+def _checked(states: "dict | None") -> dict:
+    states = dict(states or {})
+    for name, value in states.items():
+        if name not in STATEABLE:
+            raise ValueError(f"{name!r} is not a field an operator states; one of {sorted(STATEABLE)}")
+        allowed = STATEABLE[name]
+        if allowed is None:
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"{name} is a name, got {value!r}")
+        elif allowed == (True, False):
+            if not isinstance(value, bool):                 # 1 == True, and a shape must not carry an int here
+                raise ValueError(f"{name} is True or False, got {value!r}")
+        elif value not in allowed:
+            raise ValueError(f"{name} is one of {allowed}, got {value!r}")
+    return states
+
+
+def read_config(cfg: dict, *, tp: int = TP, placement: "str | None" = None, states: "dict | None" = None) -> Reading:
+    """Read a checkpoint's text config into a `Reading`.
+
+    `placement` is the operator's, not the config's: "ep" gives each rank whole experts, "tp" slices every expert's
+    intermediate. A routed model with neither is a blank. `states` is the operator's too -- {field: value} out of
+    `STATEABLE`, for the axes a config cannot settle. It only ever FILLS a blank: stating a field the config settles
+    raises, so no argument to this door can serve something other than what the checkpoint says.
+    """
     if placement not in (None, "ep", "tp"):
         raise ValueError("placement is 'ep', 'tp' or None (not chosen)")
-    sources, blanks, unsettled = {"tp": "hardware (CHARTER D5)", "device": "hardware (CHARTER D5)"}, [], []
+    states = _checked(states)
+    sources = {"tp": "hardware (CHARTER D5)", "device": "hardware (CHARTER D5)"}
+    values, blanks, unsettled = {"tp": tp, "device": "GB10 sm_121a"}, [], []
 
-    def blank(name, why):
-        blanks.append(Blank(name, why))
+    def read(name, key, value):
+        """A field the CONFIG states. An operator state for it is a contradiction, not an override."""
+        if name in states:
+            raise ValueError(f"the config settles {name}: {key}; `states` fills a blank, it does not overrule it")
+        sources[name], values[name] = key, value
+        return value
+
+    def absent(name, why):
+        """A field the config settles by saying nothing (no indexer keys, no MTP head): the absence IS the fact."""
+        sources[name] = why
+        return None
+
+    def ask(name, why, *, carried=False):
+        """A field the config does not settle: the operator's answer, or a blank. `carried`: the shape can hold it
+        as "not established" and the lane refuses it by name, so it does not block."""
+        if name in states:
+            sources[name], values[name] = f"operator: stated {name}", states[name]
+            return states[name]
+        (unsettled if carried else blanks).append(Blank(name, why))
+        return None
+
+    def built(name, make):
+        """A piece of the shape from numbers the config states -- as a blank, never a traceback, when its own
+        numbers contradict the descriptor (a head count that does not divide, a width that is not a power of two)."""
+        try:
+            return make()
+        except ValueError as exc:
+            blanks.append(Blank(name, f"the config's own numbers do not make a {name}: {exc}"))
+            return None
 
     hidden, key = _int(cfg, "hidden_size")
     if hidden is None:
-        blank("hidden", "no `hidden_size`; every lane's width comes from it")
-        return Reading(cfg.get("model_type"), sources, tuple(blanks))
-    sources["hidden"] = key
+        blanks.append(Blank("hidden", "no `hidden_size`; every lane's width comes from it"))
+        return Reading(cfg.get("model_type"), sources, tuple(blanks), None, (), values)
+    read("hidden", key, hidden)
 
     # --- the residual streams ------------------------------------------------------------------------------------
     hc, key = _int(cfg, "hc_mult", "hc_count")
+    hc_variant = None
     if hc is None:
-        hc, sources["hc"], hc_variant = 1, "no hyper-connection key: one residual stream", None
+        hc = 1
+        absent("hc", "no hyper-connection key: one residual stream")
     else:
-        sources["hc"] = key
-        hc_variant = None
-        if hc > 1:
-            unsettled.append(Blank("hc_variant", f"{key} says {hc} streams but no key says HOW they mix (mhc, "
-                                                 "split_sinkhorn, gated_residual): the model's reference does"))
+        read("hc", key, hc)
+        if hc > 1 and cfg.get("mhc") is True:
+            hc_variant = read("hc_variant", "mhc", "mhc")               # the key names the mixer
+        elif hc > 1:
+            hc_variant = ask("hc_variant", f"`{key}` says {hc} streams but no key says HOW they mix (mhc, "
+                                           "split_sinkhorn, gated_residual): the model's reference does", carried=True)
 
     # --- attention -----------------------------------------------------------------------------------------------
     heads, heads_key = _int(cfg, "num_attention_heads")
     kv_heads, kv_key = _int(cfg, "num_key_value_heads")
     latent, latent_key = _int(cfg, "kv_lora_rank")
     head_dim, dim_key = _int(cfg, "head_dim")
+    sink = None
     if heads is None:
-        blank("attention.heads", "no `num_attention_heads`")
+        blanks.append(Blank("attention.heads", "no `num_attention_heads`"))
+    else:
+        read("attention.heads", heads_key, heads // tp)
     kv_heads = 1 if kv_heads is None else kv_heads
     if latent is not None:
-        kind, head_dim, dim_key, kv_heads = "mla", latent, latent_key, 1
-        sources["attention.kind"] = latent_key
+        kind = read("attention.kind", latent_key, "mla")                # a declared latent: one key per position
+        head_dim, dim_key, kv_heads = latent, latent_key, 1
     elif kv_heads > 1:
-        kind = "gqa"
-        sources["attention.kind"] = kv_key
+        kind = read("attention.kind", kv_key, "gqa")
     else:
-        kind = None
-        blank("attention.kind", "one KV head and no `kv_lora_rank`: a latent attention and a GQA with a single KV "
-                                "head declare the same numbers. The model's reference or a profile settles it")
-    if head_dim is None and kind is not None:
-        blank("attention.head_dim", "no `head_dim` and no `kv_lora_rank`")
-    if kind is not None and head_dim is not None:
-        sources["attention.head_dim"] = dim_key
-        unsettled.append(Blank("attention.sink", "no key says whether the softmax denominator carries a learned "
-                                                 "per-head sink; the model's reference does"))
+        kind = ask("attention.kind", "one KV head and no `kv_lora_rank`: a latent attention and a GQA with a single "
+                                     "KV head declare the same numbers. The model's reference or a profile settles it")
+    if kind is not None and head_dim is None:
+        blanks.append(Blank("attention.head_dim", "no `head_dim` and no `kv_lora_rank`"))
+    elif kind is not None:
+        read("attention.head_dim", dim_key, head_dim)
+    if heads is not None:
+        # The sink belongs to the softmax, not to the kind: it is asked of every attention, mla or gqa.
+        sink = ask("attention.sink", "no key says whether the softmax denominator carries a learned per-head sink; "
+                                     "the model's reference does", carried=True)
 
     # --- linear attention ----------------------------------------------------------------------------------------
-    linear_cfg = cfg.get("linear_attn_config") if isinstance(cfg.get("linear_attn_config"), dict) else None
+    nested = cfg.get("linear_attn_config") if isinstance(cfg.get("linear_attn_config"), dict) else None
     k_heads, k_key = _int(cfg, "linear_num_key_heads")
-    if linear_cfg is None and k_heads is None:
-        linear, sources["linear"] = None, "no linear-attention key: the KDA lanes do not apply"
+    linear = None
+    if nested is None and k_heads is None:
+        absent("linear", "no linear-attention key: the KDA lanes do not apply")
     else:
-        linear = None
-        blank("linear.decay", "the config gives the linear-attention widths but not whether the decay is per key "
-                              "channel (KDA) or per head (GDN); modules/linear_attention's axis, from the reference")
+        if nested is not None:      # one head count and one width for both halves (GLM-5.3's spelling)
+            n, n_key = _int(nested, "num_heads")
+            dim, dim_k = _int(nested, "head_dim")
+            conv, conv_k = _int(nested, "short_conv_kernel_size")
+            widths, names = (n, n, dim, dim, conv), f"linear_attn_config.{n_key}/{dim_k}/{conv_k}"
+            named = next((f"linear_attn_config.{k}" for k in nested if "kda" in k.lower()), "")
+        else:                       # key and value heads counted apart (Qwen3.8's spelling)
+            v_heads, v_key = _int(cfg, "linear_num_value_heads")
+            k_dim, k_dim_key = _int(cfg, "linear_key_head_dim")
+            v_dim, v_dim_key = _int(cfg, "linear_value_head_dim")
+            conv, conv_k = _int(cfg, "linear_conv_kernel_dim")
+            widths = (k_heads, v_heads, k_dim, v_dim, conv)
+            names = f"{k_key}/{v_key}/{k_dim_key}/{v_dim_key}/{conv_k}"
+            named = next((k for k in cfg if "kda" in k.lower()), "")
+        # The decay is the family's axis, not a width: "channel" is KDA's per key channel, "head" is GDN's per head
+        # (engine/base/kernel_shape.LinearAttention, engine/modules/linear_attention). A key that NAMES kda settles it.
+        decay = (read("linear.decay", named, "channel") if named else
+                 ask("linear.decay", "the config gives the linear-attention widths but not whether the decay is per "
+                                     "key channel (KDA) or per head (GDN); modules/linear_attention's axis, from the "
+                                     "reference"))
+        if any(w is None for w in widths):
+            blanks.append(Blank("linear", f"a linear attention is declared but one of its widths is not ({names})"))
+        elif decay is not None:
+            heads_l, v_heads_l = max(1, widths[0] // tp), max(1, widths[1] // tp)
+            linear = built("linear", lambda: LinearAttention(heads=heads_l, v_heads=v_heads_l, k_dim=widths[2],
+                                                             v_dim=widths[3], conv=widths[4], decay=decay))
+            if linear is not None:
+                read("linear", names, f"{heads_l}/{v_heads_l}x{widths[2]}x{widths[3]} conv {widths[4]}")
 
     # --- the sparse indexer --------------------------------------------------------------------------------------
     topk, topk_key = _int(cfg, "index_topk", "indexer_budget")
-    index_heads, _ = _int(cfg, "index_n_heads", "indexer_n_heads")
-    if topk is None and index_heads is None:
-        indexer, sources["indexer"] = None, "no indexer key: the attention is dense over its window"
+    idx_heads, idx_heads_key = _int(cfg, "index_n_heads", "indexer_n_heads")
+    idx_dim, idx_dim_key = _int(cfg, "index_head_dim", "indexer_head_dim")
+    pool, pool_key = _int(cfg, "index_kpool", "indexer_compress_ratio")
+    if pool is None and isinstance(cfg.get("compress_ratios"), list):
+        # a ratio per layer: one pooling group above 1 is the indexer's; several, and the config does not say which
+        ratios = {r for r in cfg["compress_ratios"] if isinstance(r, int) and not isinstance(r, bool) and r > 1}
+        pool, pool_key = (ratios.pop(), "compress_ratios") if len(ratios) == 1 else (None, "")
+    indexer = None
+    if topk is None and idx_heads is None:
+        absent("indexer", "no indexer key: the attention is dense over its window")
     else:
-        indexer = None
-        blank("indexer.compress", f"`{topk_key or 'the indexer keys'}` declares a sparse indexer, but how it "
-                                  "compresses keys (kpool, ced, qsa) is the model's own; modules/sparse_indexer "
-                                  "shares the scoring, not the compression")
+        compress = (read("indexer.compress", "index_kpool_compress", "kpool")
+                    if cfg.get("index_kpool_compress") is True else
+                    ask("indexer.compress", f"`{topk_key or idx_heads_key}` declares a sparse indexer, but how it "
+                                            "compresses keys (kpool, ced, qsa) is the model's own; "
+                                            "modules/sparse_indexer shares the scoring, not the compression"))
+        missing = [n for n, v in (("heads", idx_heads), ("head_dim", idx_dim), ("pool", pool), ("topk", topk))
+                   if v is None]
+        if missing:
+            blanks.append(Blank("indexer." + "/".join(missing), "a sparse indexer is declared but the config does not "
+                                f"state its {', '.join(missing)} (index_n_heads/index_head_dim/index_kpool|"
+                                "indexer_compress_ratio|compress_ratios/index_topk|indexer_budget)"))
+        elif compress is not None:
+            indexer = built("indexer", lambda: Indexer(heads=idx_heads, head_dim=idx_dim, pool=pool, topk=topk,
+                                                       compress=compress))
+            if indexer is not None:
+                read("indexer", f"{idx_heads_key}/{idx_dim_key}/{pool_key}/{topk_key}",
+                     f"{compress} {idx_heads}x{idx_dim} pool {pool} top {topk}")
 
     # --- the routed experts --------------------------------------------------------------------------------------
     experts, experts_key = _int(cfg, "n_routed_experts", "num_experts")
     inter, inter_key = _int(cfg, "moe_intermediate_size")
     topk_experts, topk_experts_key = _int(cfg, "num_experts_per_tok")
-    dense_inter, dense_key = _int(cfg, "intermediate_size")
+    dense_inter, dense_key = _int(cfg, "intermediate_size", "shared_expert_intermediate_size")
     shared, _ = _int(cfg, "n_shared_experts")
     quant_cfg = cfg.get("quantization_config")
     if quant_cfg is None:
-        quant, sources["moe.quant"] = "bf16", "no `quantization_config`: the weights are the checkpoint's dtype"
+        quant = read("moe.quant", "no `quantization_config`: the weights are the checkpoint's dtype", "bf16")
     else:
-        quant = None
-        method = quant_cfg.get("quant_method") if isinstance(quant_cfg, dict) else quant_cfg
-        blank("moe.quant", f"`quantization_config` says {method!r}; the lane is admitted against a CELL name "
-                           "(nvfp4, mxfp4-a8), which the preshard or a b12x cell establishes (kernels/cells.py)")
+        stated = (", ".join(f"{k}={v!r}" for k, v in quant_cfg.items() if not isinstance(v, dict))
+                  if isinstance(quant_cfg, dict) else repr(quant_cfg)) or "a nested encoding"
+        quant = ask("moe.quant", f"`quantization_config` says {stated}; the lane is admitted against a CELL name "
+                                 "(nvfp4, mxfp4-a8), which the preshard or a b12x cell establishes (kernels/cells.py)")
+    limit = cfg.get("swiglu_limit")
+    if limit is not None:
+        read("moe.swiglu_limit", "swiglu_limit", limit)
+    if not isinstance(cfg.get("hidden_act"), str):
+        activation = None
+        blanks.append(Blank("moe.activation", "no `hidden_act`: the gate the expert GEMM is admitted for"))
+    elif limit is None:
+        activation = read("moe.activation", "hidden_act", cfg["hidden_act"])
+    else:
+        # Two checkpoints write exactly `hidden_act` silu + `swiglu_limit`, and are served with different gates:
+        # GLM-5.3's is swigluoai_uninterleave, DSv4.1's is silu. The MoE cell is compared by name (kernels/cells.py).
+        activation = ask("moe.activation", f"`hidden_act` says {cfg['hidden_act']!r} and `swiglu_limit` {limit} -- a "
+                                           "clamped gate, whose spelling is not the same in the two checkpoints that "
+                                           "write these keys (swigluoai_uninterleave, silu); the reference settles it")
     if experts is None or inter is None or topk_experts is None:
-        blank("moe", "no routed experts in this config (`n_routed_experts`/`moe_intermediate_size`/"
-                     "`num_experts_per_tok`): a dense model is served through the E=1 lane, which a profile declares")
+        blanks.append(Blank("moe", "no routed experts in this config (`n_routed_experts`/`moe_intermediate_size`/"
+                                   "`num_experts_per_tok`): a dense model is served through the E=1 lane, which a "
+                                   "profile declares"))
     elif placement is None:
-        blank("moe.experts_local", "expert placement is the operator's, not the config's: 'ep' gives a rank whole "
-                                   "experts, 'tp' slices every expert's intermediate")
+        blanks.append(Blank("moe.experts_local", "expert placement is the operator's, not the config's: 'ep' gives a "
+                                                 "rank whole experts, 'tp' slices every expert's intermediate"))
     else:
-        sources["moe.experts"], sources["moe.inter"], sources["moe.topk"] = experts_key, inter_key, topk_experts_key
-        sources["moe.placement"] = f"operator: {placement}"
+        read("moe.experts", experts_key, experts)
+        read("moe.inter", inter_key, inter if placement == "ep" else inter // tp)
+        read("moe.topk", topk_experts_key, topk_experts)
+        sources["moe.placement"], values["moe.placement"] = f"operator: {placement}", placement
     if dense_inter is None and shared and inter:
         dense_inter, dense_key = shared * inter, "n_shared_experts x moe_intermediate_size"
     sources["moe.dense_inter_local"] = dense_key or "no dense MLP width in the config"
+    if dense_inter is not None:
+        values["moe.dense_inter_local"] = dense_inter // tp
 
     spec_k, spec_key = _int(cfg, "num_nextn_predict_layers", "mtp_num_hidden_layers")
-    sources["spec_k"] = spec_key or "no MTP key: one token a step"
+    sources["spec_k"], values["spec_k"] = spec_key or "no MTP key: one token a step", spec_k or 1
+
+    left = [name for name in states if name not in values]
+    if left:      # a state for a part the model does not have would sit in the reading doing nothing
+        raise ValueError(f"nothing for {', '.join(sorted(left))} to fill: this config declares no such part of the "
+                         "model (no indexer, no linear attention, no hyper-connection...)")
 
     if blanks:
-        return Reading(cfg.get("model_type"), sources, tuple(blanks), None, tuple(unsettled))
+        return Reading(cfg.get("model_type"), sources, tuple(blanks), None, tuple(unsettled), values)
 
-    shape = KernelShape(
+    shape = built("shape", lambda: KernelShape(
         comm=Comm(world=tp, hidden=hidden), hidden=hidden, hc=hc, tp=tp,
         attention=Attention(kind=kind, heads=heads // tp, head_dim=head_dim,
-                            kv_heads=max(1, kv_heads // tp) if kind == "gqa" else 1, sink=None),
+                            kv_heads=max(1, kv_heads // tp) if kind == "gqa" else 1, sink=sink),
         linear=linear, indexer=indexer,
         moe=MoE(experts=experts, experts_local=experts // tp if placement == "ep" else experts, hidden=hidden,
                 inter=inter, inter_local=inter if placement == "ep" else inter // tp, topk=topk_experts,
-                quant=quant, activation=cfg.get("hidden_act", "silu"), swiglu_limit=cfg.get("swiglu_limit"),
+                quant=quant, activation=activation, swiglu_limit=limit,
                 dense_inter_local=(dense_inter or 0) // tp),
-        spec_k=spec_k or 1, device=Device(), hc_variant=hc_variant)
-    return Reading(cfg.get("model_type"), sources, (), shape, tuple(unsettled))
+        spec_k=spec_k or 1, device=Device(), hc_variant=hc_variant))
+    return Reading(cfg.get("model_type"), sources, tuple(blanks), shape, tuple(unsettled), values)
 
 
 def judge(reading: Reading) -> dict:
@@ -208,4 +364,4 @@ def judge(reading: Reading) -> dict:
     return {"reading": reading, "admission": verdicts, "plan": cells.plan(verdicts)}
 
 
-__all__ = ["TP", "Blank", "Reading", "read_config", "judge"]
+__all__ = ["TP", "STATEABLE", "Blank", "Reading", "read_config", "judge"]

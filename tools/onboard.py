@@ -3,11 +3,15 @@
 
     python3 tools/onboard.py --ckpt ~/models/<checkpoint>
     python3 tools/onboard.py --config config.json --placement ep --json
+    python3 tools/onboard.py --config config.json --placement ep \
+        --state attention.kind=mla --state indexer.compress=ced --state moe.quant=mxfp4-a8
 
 The engine's forms are the hardware's and it names no model (CHARTER D5). So this reads a checkpoint the way the
 engine would: if a profile claims the config's `model_type`, its own derivation answers; if none does,
-engine/base/onboard reads the config generically and says which fields it could NOT settle, with what would settle
-each. Then engine/kernels/cells judges every lane of the resulting shape and orders the work, cheapest first.
+engine/base/onboard reads the config generically -- every field it settles, with the key each came from -- and says
+which fields it could NOT settle, with what would settle each. A field no config can settle is the operator's to
+state (`--state field=value`), which fills a blank and never overrules a key. Then engine/kernels/cells judges every
+lane of the resulting shape and orders the work, cheapest first.
 
 Nothing here boots, allocates or measures: it reads one config.json and the compiled cells.
 """
@@ -32,7 +36,23 @@ def text_config(path: Path) -> dict:
     return text
 
 
-def run(cfg: dict, *, placement: "str | None", ckpt: "Path | None") -> dict:
+def parse_states(pairs: "list[str] | None") -> dict:
+    """`field=value` -> {field: value}, with the booleans the field takes spelled true/false."""
+    from engine.base.onboard import STATEABLE
+    out = {}
+    for pair in pairs or ():
+        field, _, value = pair.partition("=")
+        if not _:
+            raise SystemExit(f"  --state takes field=value, got {pair!r}; fields: {', '.join(sorted(STATEABLE))}")
+        if STATEABLE.get(field) == (True, False):
+            if value.lower() not in ("true", "false"):
+                raise SystemExit(f"  --state {field} is true or false, got {value!r}")
+            value = value.lower() == "true"
+        out[field] = value
+    return out
+
+
+def run(cfg: dict, *, placement: "str | None", ckpt: "Path | None", states: "dict | None" = None) -> dict:
     from engine.base import kernel_shape as ks
     from engine.base import onboard
     from engine.kernels import cells
@@ -41,17 +61,23 @@ def run(cfg: dict, *, placement: "str | None", ckpt: "Path | None") -> dict:
     if profile is not None and ckpt is not None:
         shape = ks.derive_for(profile, ckpt)
         verdicts = cells.admission(shape)
-        return {"door": f"profile {profile}", "model_type": cfg.get("model_type"), "shape": shape,
+        return {"door": f"profile {profile}", "model_type": cfg.get("model_type"), "shape": shape, "read": [],
                 "blanks": (), "unsettled": (), "admission": verdicts, "plan": cells.plan(verdicts)}
-    reading = onboard.read_config(cfg, placement=placement)
+    reading = onboard.read_config(cfg, placement=placement, states=states)
     judged = onboard.judge(reading)
     door = f"profile {profile} (claims this model_type; pass --ckpt to use its derivation)" if profile else "generic"
-    return {"door": door, "model_type": reading.model_type, "shape": reading.shape, "blanks": reading.blanks,
-            "unsettled": reading.unsettled, "admission": judged["admission"], "plan": judged["plan"]}
+    return {"door": door, "model_type": reading.model_type, "shape": reading.shape, "read": reading.read(),
+            "blanks": reading.blanks, "unsettled": reading.unsettled,
+            "admission": judged["admission"], "plan": judged["plan"]}
 
 
 def render(result: dict) -> str:
     out = [f"  door: {result['door']}", f"  model_type: {result['model_type'] or '(none declared)'}", ""]
+    if result["read"]:
+        width = max(len(f) for f, _, _ in result["read"])
+        out.append("  read (per rank, and the key each came from):")
+        out += [f"    {f:<{width}}  {str(v):<28}  [{s}]" for f, v, s in result["read"]]
+        out.append("")
     if result["shape"] is not None:
         out += [f"  {result['shape'].describe()}", ""]
     if result["blanks"]:
@@ -59,7 +85,7 @@ def render(result: dict) -> str:
         out += [f"    - {b}" for b in result["blanks"]]
         out.append("")
         out.append("  a blank is filled by the checkpoint's reference implementation, a profile under "
-                   "engine/profiles/, or --placement.")
+                   "engine/profiles/, --placement, or --state field=value.")
         return "\n".join(out)
     if result["unsettled"]:
         out.append("  not established (the shape carries it, the lane refuses it by name):")
@@ -85,6 +111,7 @@ def as_json(result: dict) -> str:
         "door": result["door"], "model_type": result["model_type"],
         "shape": None if result["shape"] is None else ks.to_dict(result["shape"]),
         "describe": None if result["shape"] is None else result["shape"].describe(),
+        "read": [{"field": f, "value": v, "source": s} for f, v, s in result["read"]],
         "blanks": [{"field": b.field, "why": b.why} for b in result["blanks"]],
         "unsettled": [{"field": b.field, "why": b.why} for b in result["unsettled"]],
         "admission": cells.to_dicts(result["admission"]) if result["admission"] else [],
@@ -93,12 +120,16 @@ def as_json(result: dict) -> str:
 
 
 def main(argv=None) -> int:
+    from engine.base.onboard import STATEABLE
     ap = argparse.ArgumentParser(prog="python3 tools/onboard.py", description=__doc__.splitlines()[0])
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--ckpt", help="a checkpoint directory (reads its config.json)")
     src.add_argument("--config", help="a config.json to read instead of a checkpoint")
     ap.add_argument("--placement", choices=("ep", "tp"), help="expert placement, the operator's choice: whole experts "
                                                               "a rank (ep) or every expert's intermediate sliced (tp)")
+    ap.add_argument("--state", action="append", metavar="FIELD=VALUE",
+                    help="a fact the config does not state, from the model's reference: "
+                         + ", ".join(sorted(STATEABLE)))
     ap.add_argument("--json", action="store_true", help="print one JSON document")
     a = ap.parse_args(argv)
     ckpt = Path(a.ckpt) if a.ckpt else None
@@ -106,7 +137,7 @@ def main(argv=None) -> int:
     if not path.is_file():
         print(f"  no config at {path}", file=sys.stderr)
         return 1
-    result = run(text_config(path), placement=a.placement, ckpt=ckpt)
+    result = run(text_config(path), placement=a.placement, ckpt=ckpt, states=parse_states(a.state))
     print(as_json(result) if a.json else render(result))
     return 0 if result["shape"] is not None else 2
 
