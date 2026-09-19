@@ -34,6 +34,13 @@ to 60.3-61.8 us for 1-16 rows, 16 sites a graph over rotated weights: 13.2 MB of
 streams between two sites (Qwen3.8's PLE before layer 1, the config's one-indexed 2); `leave` adds an output without the norm for the same
 case. The closing mixer is a site without an injection.
 
+Every leave follows a sublayer's TP sum, and on the fleet a sum mostly waits: the one-shot consumer publishes this rank's
+packet, then idles about 20 us until the other ranks' land, the memory idle with it. A leave launched with `pdl` (carry
+H4, GLM-5.3's AR consumer overlap: the peer wait prepared the next MHC's immutable weights) is that consumer's
+programmatic dependent -- resident through the wait, started when the sum lands -- and with `prefetch` it spends the
+wait pulling the site's down projection into L2, the weight the skinny GEMV reads next and reads once. Neither changes
+a byte the leave computes.
+
 Rounding is the torch form's wherever the form rounds: the division by hc, silu, sigmoid, the gate product and
 the residual product each round to the activations' dtype before the next operation reads them, and the norm
 rounds once after its unit-offset weight, as rmsnorm_unit_offset does. Two reductions are the kernel's own and
@@ -72,13 +79,34 @@ def _norm_streams(X, W, OUT, sX, sO, EPS, HID: tl.constexpr, BD: tl.constexpr):
 
 
 @triton.jit
-def _leave_norm(H, OUT, INJ, W, NORMED, sH, sO, sI, sN, EPS, HID: tl.constexpr, BD: tl.constexpr,
-                NORM: tl.constexpr):
+def _prefetch_l2(NEXT, SECTORS, p, P, BLOCK: tl.constexpr):
+    # program p of P's share of the next launch's weight, as 32-byte sectors (16 BF16) pulled into L2. A prefetch
+    # returns nothing and writes nothing, so the share's clamped tail may name a sector twice
+    per = tl.cdiv(SECTORS, P)
+    lo = p * per
+    hi = tl.minimum(lo + per, SECTORS)
+    for i in range(lo, hi, BLOCK):
+        sector = tl.minimum(i + tl.arange(0, BLOCK), hi - 1)
+        tl.inline_asm_elementwise("prefetch.global.L2 [$1]; // $0", "=r,l", [NEXT + sector * 16], dtype=tl.int32,
+                                  is_pure=False, pack=1)
+
+
+@triton.jit
+def _leave_norm(H, OUT, INJ, W, NORMED, NEXT, sH, sO, sI, sN, EPS, SECTORS, HID: tl.constexpr, BD: tl.constexpr,
+                NORM: tl.constexpr, PDL: tl.constexpr, PREFETCH: tl.constexpr):
     r = tl.program_id(0)
     s = tl.program_id(1)
     d = tl.arange(0, BD)
     m = d < HID
     off = s * HID + d
+    if NORM:
+        w = tl.load(W + off, mask=m, other=0.0).to(tl.float32)   # immutable: read while the sum is still in flight
+    if PREFETCH:
+        _prefetch_l2(NEXT, SECTORS, r * tl.num_programs(1) + s, tl.num_programs(0) * tl.num_programs(1), BD)
+    if PDL:
+        # the sum (OUT) is the primary's; the streams and the injection are read after the wait as well, so a leave
+        # whose previous launch wrote one of them (the MTP head's row selection) reads what that launch wrote
+        tl.extra.cuda.gdc_wait()
     h = tl.load(H + r * sH + off, mask=m, other=0.0)
     o = tl.load(OUT + r * sO + d, mask=m, other=0.0).to(tl.float32)
     g = tl.load(INJ + r * sI + s).to(tl.float32)
@@ -88,7 +116,6 @@ def _leave_norm(H, OUT, INJ, W, NORMED, sH, sO, sI, sN, EPS, HID: tl.constexpr, 
     if NORM:
         x = new.to(tl.float32)
         scale = tl.rsqrt(tl.sum(x * x) / HID + EPS)
-        w = tl.load(W + off, mask=m, other=0.0).to(tl.float32)
         tl.store(NORMED + r * sN + off, ((x * scale) * (1.0 + w)).to(NORMED.dtype.element_ty), mask=m)
 
 
@@ -234,27 +261,58 @@ def norm_streams(h: torch.Tensor, w: torch.Tensor, eps: float, hc: int) -> torch
     return out
 
 
-def leave(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, hc: int) -> torch.Tensor:
+def leave(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, hc: int, *, pdl: bool = False) -> torch.Tensor:
     """h + out (x) inject, in place: the sublayer's output [N, H] added into every stream with that stream's weight
-    [N, hc]. For the site before an injection feature, which reads the streams un-normalised."""
-    return _leave(h, out, inject, None, 0.0, hc, norm=False)[0]
+    [N, hc]. For the site before an injection feature, which reads the streams un-normalised. `pdl`: as leave_norm's."""
+    return _leave(h, out, inject, None, 0.0, hc, norm=False, pdl=pdl)[0]
 
 
 def leave_norm(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, w: torch.Tensor, eps: float,
-               hc: int) -> "tuple[torch.Tensor, torch.Tensor]":
+               hc: int, *, pdl: bool = False, prefetch: "torch.Tensor | None" = None
+               ) -> "tuple[torch.Tensor, torch.Tensor]":
     """The previous site's leave and this site's stream norm in one pass: h updated in place, and the normalised
-    streams the mixer reads. Returns (h, normed)."""
+    streams the mixer reads. Returns (h, normed).
+
+    `pdl` (carry H4): launched as the programmatic dependent of the launch before it -- on the fleet the TP sum of `out`,
+    whose one-shot consumer releases its dependents once it has published and then waits about 20 us for the other
+    ranks' packets. The leave is resident through that wait and starts when the sum lands, not a launch later. Only the
+    immutable norm weight is read before `griddepcontrol.wait`, so the bytes are the ordinary launch's whatever launch
+    comes before. `prefetch`: the weight the next launch reads first (this site's down projection), pulled into L2 during
+    the same wait, `PREFETCH_BYTES` of it -- only with `pdl` (without it the leave starts after the sum and there is no
+    wait to fill) and only for a decode step's rows, which the skinny GEMV serves with one read of the weight."""
     if w.shape != (h.shape[1],):
         raise ValueError("the stream norm's weight covers every stream's channels")
-    return _leave(h, out, inject, w, eps, hc, norm=True)
+    return _leave(h, out, inject, w, eps, hc, norm=True, pdl=pdl, prefetch=prefetch)
 
 
-def _leave(h, out, inject, w, eps, hc, *, norm):
+# The bytes of the next weight a prefetching leave pulls into L2 (carry H4): None, all of it. The mixer's down projection
+# is 6.6 MB; a sum's wait on the fleet is about 20 us, about 4 MB at the memory's bandwidth.
+PREFETCH_BYTES = None
+# Probe hook (probes/engine_qwen38_leave.py): the budget forced when set, bytes (0: none). Read when a leave launches, so
+# a captured graph keeps the budget it was captured with. Nothing served sets it.
+_PREFETCH_BYTES_OVERRIDE = None
+
+
+def _prefetch_sectors(weight, rows: int) -> int:
+    """The 32-byte sectors of `weight` a leave of `rows` rows prefetches: 0 without a weight, past a decode step's rows,
+    or for a weight that is not packed BF16 on the leave's device."""
+    if weight is None or rows > DECODE_ROWS:
+        return 0
+    if weight.dtype != torch.bfloat16 or not weight.is_contiguous() or weight.device.type != "cuda":
+        raise ValueError("a leave prefetches a packed BF16 weight on its own device")
+    budget = PREFETCH_BYTES if _PREFETCH_BYTES_OVERRIDE is None else _PREFETCH_BYTES_OVERRIDE
+    size = weight.numel() * weight.element_size()
+    return (size if budget is None else min(size, budget)) // 32
+
+
+def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None):
     hid = _check_streams(h, hc)
     if out.shape != (h.shape[0], hid) or inject.shape != (h.shape[0], hc):
         raise ValueError(f"a leave takes the output [N, {hid}] and the injection [N, {hc}] for {h.shape[0]} rows")
     if out.dtype != h.dtype or inject.dtype != h.dtype or out.stride(1) != 1 or inject.stride(1) != 1:
         raise ValueError("the output and the injection are packed rows in the streams' dtype")
+    if type(pdl) is not bool:
+        raise ValueError("pdl is a declared boolean")
     if not h.is_cuda:
         h.add_((out.unsqueeze(-2) * inject.unsqueeze(-1)).flatten(-2))
         if not norm:
@@ -262,10 +320,14 @@ def _leave(h, out, inject, w, eps, hc, *, norm):
         from engine.modules.norm import rmsnorm_unit_offset
         return h, rmsnorm_unit_offset(h, w, eps, group=hid)
     normed = torch.empty_like(h) if norm else h
+    # the interpreter (tests' is_cuda stand-in) has neither griddepcontrol nor a prefetch: the ordinary launch there
+    pdl = pdl and h.device.type == "cuda"
+    sectors = _prefetch_sectors(prefetch, h.shape[0]) if pdl else 0
     if h.shape[0]:
-        _leave_norm[(h.shape[0], hc)](h, out, inject, w if norm else h, normed, h.stride(0), out.stride(0),
-                                      inject.stride(0), normed.stride(0), eps, HID=hid,
-                                      BD=triton.next_power_of_2(hid), NORM=norm, num_warps=_warps(hid))
+        _leave_norm[(h.shape[0], hc)](h, out, inject, w if norm else h, normed, prefetch if sectors else h,
+                                      h.stride(0), out.stride(0), inject.stride(0), normed.stride(0), eps, sectors,
+                                      HID=hid, BD=triton.next_power_of_2(hid), NORM=norm, PDL=pdl,
+                                      PREFETCH=sectors > 0, num_warps=_warps(hid), launch_pdl=pdl)
     return h, (normed if norm else None)
 
 

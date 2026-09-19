@@ -4965,6 +4965,32 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **곁**: 그림 디코드(`engine/modules/pictures`)를 GLM 과 공유, 디코드 중 깨지는 그림이 GLM 에서도 500 대신 400. `preshard --vision` 이 `vision.safetensors`.
   [상세·원시](measurements/qwen38_vision_tower_20260919/README.md).
 
+### Qwen3.8 leave 를 TP 합의 PDL 종속으로 + 대기 중 down projection L2 프리페치 (carry H4): 사이트당 −7~−17 µs, PDL 만은 −1 µs; X1 기각 (2026-09-19, srv4 단일 GPU 레인, PR #1270)
+- **무엇.** #1269 의 TP 통신 21%(합마다 약 20 µs 의 피어 대기, 메모리는 논다)에 GLM #473 의 "대기 동안 다음 MHC 불변 가중치 준비"를
+  옮겼다. Qwen 믹서는 `leave_norm` → `down_gates`(6.6 MB) → `up_mean` 으로 나뉘어 있다. 그래서 leave 를 합의 PDL 종속으로 띄우고
+  (norm 가중치만 대기 앞에서 읽음), 대기 동안 그 사이트의 down projection 을 `prefetch.global.L2` 로 미리 읽는다.
+  `lanes.served(leave=off|pdl|prefetch)`, 기본 `prefetch`, 롤백 `ST_LEAVE=off`.
+- **판정(`q38leave-0919b`).** 합을 흉내 낸 PDL 대역(WAIT µs) → leave → 믹서를 16 사이트 한 그래프에 넣고, 가중치는 L2 밖에서
+  돌렸다. 바이트: 다섯 팔 × 1–16 행 모두 `off` 와 같다(3 ms 늦은 합, NaN 위, eager·재생). 대기 20 µs 에서 사이트 µs `off` →
+  `pdl` → prefetch 전부: 1 행 86.5 → 85.4 → **69.1**, 4 행 87.2 → 86.2 → **80.0**, 16 행 91.1 → 90.1 → **80.7**. 대기 0 에서도 나쁘지
+  않다. 소스 계수 추정은 C=1 K=3 스텝당 약 −0.7~0.8 ms. **플릿 미실측**(운영자 결정 2026-09-19: 끝의 창). 첫 실행
+  `q38leave-0919a` 는 srv4 의 다른 세션 학습 부하(96%) 옆이라 시간이 무효다.
+- **X1 기각(측정 없이).** compact 12-CTA consumer 는 ST 엔진이 컴파일한 적이 없다(vLLM 선택 옵션). #967 의 이득은 48-CTA
+  consumer 의 빈 CTA 몫이고, Qwen 은 이미 그 경로다. 켜려면 빌드 전체의 발행 판정과 GLM C=1 경로가 바뀐다.
+  [상세·원시](measurements/qwen38_leave_pdl_20260919/README.md).
+
+### Qwen3.8 랭크 패킷을 leave 가 접기(carry H5)·MoE 패킷(X2): 바이트는 같고 GPU 쪽은 이득 없음 — 둘 다 기각, X2 dense 의 오라클 비교는 무효 (2026-09-19, srv4 단일 GPU 레인, PR #1270)
+- **무엇.** H5: `oneshot_packets` 가 바운드 폭(2560)을 받고, `leave_norm(packets=)` 가 설명자의 네 랭크를 대기 뒤에 랭크 순서로 접는다
+  (consumer 의 합과 같은 산술). X2 MoE: 패킷 grid 가 Qwen 의 게이트 합을 TX 에 바로 쓴다. 코드는 기록 브랜치
+  `record/qwen38-h5-x2-rank-packets`(`83ebfcb6`, `bd165087`)에만 둔다.
+- **바이트.** 단일 GPU one-shot 오라클에서 네 랭크 × 1·4·16 행, 소거 fixture, eager·재생·3 ms 늦은 착지로 봤다. 모두 consumer 합 →
+  leave 와 같고, TX 바이트도 `gated_sum` 출력과 같다. GLM 패킷 시험 5건도 같은 전송 소스로 통과했다.
+- **GPU 쪽 시간(피어 선착지, warm).** H5 는 consumer → leave 대비 1 행 +1.1, 4 행 +3.4, 16 행 +7.1 µs 다(leave 가 네 패킷을 스트림마다
+  다시 읽는다). X2 MoE 는 1 행 −2.3, 4 행 0, 16 행 +3.3 µs 다(피니셔 발사 몫을 접기 비용이 상쇄한다). 서빙 폭에서 이득이 없다.
+- **X2 dense 는 판정 못 함.** GLM 직접 생산자 대 GEMM+패킷을 오라클로 재니 합당 약 150 µs 차이가 났다. 이것은 오라클의 48-CTA
+  커널이 호출당 약 150 µs 인 인공물이다(프로덕션 moe_packets 는 대기 포함 36–44 µs, #967 의 "CTA 당 약 1.4 µs"). 유효한 근거가 없어
+  옮기지 않는다. 재측정 길은 오라클 Ctrl 을 `cudaHostRegister` 로 두거나 GLM 플릿의 `direct_mhc` A/B.
+  [상세·원시](measurements/qwen38_rank_packets_20260919/README.md).
 ### Qwen3.8 비전 2·3단계 — 엔진이 그림을 받는다: mRoPE 커널(텍스트 경로 바이트 동일), 합성 엔진 미디어 훅, `--vision auto`; 타워 bf16 오차 분해 (2026-09-19, CPU·인터프리터, PR #1274)
 **GPU·플릿 판정 없음** — 네 노드에 `vision.safetensors` 를 깔고 창에서 부팅·그림 답을 볼 때까지 서빙되지 않는다(`auto`: 파일이 없으면 텍스트 전용 그대로).
 - **mRoPE**: `qsa_inputs` 가 [3, N] (t, h, w) 위치를, `qsa_index_keys` 가 그룹 첫 멤버의 회전 위치(`rope_first`)를 받는다. 짝 i 는 축 i % 3(구간 11/11/10 의

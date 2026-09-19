@@ -20,6 +20,20 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | Q8 | 공유 커널을 바꿔도 GLM 은 단일 GPU 판정(실가중치 레인 검사 포함)으로 기본 켬. **헌장 D17 규칙 2 의 예외**이며, 해당 PR·원장 항목마다 "운영자 결정 2026-09-17: 플릿 미실측" 을 적는다 |
 | Q9 | 이 목록을 시작할 때 고정한다. 항목마다 머지 또는 기각과 기록으로 닫는다. 도중에 나온 새 아이디어는 다음 목록으로 넘긴다 |
 
+## 운영자 결정 (2026-09-19, 통신·지연 — H4·H5·X1·X2, grill-me)
+
+운영자의 틀: "커널 밖 1/3 을 줄일 후보". 조사에서 확인한 것 — 이 넷은 합 하나에 붙은 GPU 쪽 부대비용(발사 간격, reduce 단계,
+빈 CTA, 복사)만 깎고, one-shot 의 RDMA 바닥(GLM 게이지 0행 외삽 합당 16–20 µs)과 낙오 편차는 그대로다. GLM 쪽 근거도 항목마다
+다르다: H4 의 원형(#473)만 C=1 −0.54 ms 실측이 있고, H5·X2 의 원형(#812·#826·#904·#906)은 속도 주장 없이 기본 켬, X1 은 ST 엔진이
+컴파일한 적이 없다.
+
+| # | 결정 |
+|---|---|
+| 1 | 넷을 carry 규칙대로 PR 하나씩 닫는다(단일 GPU 판정, Q8 예외로 기본 켬). 세 PR(H4·H5·X2)이 머지되면 세션이 `fleet.sh st-hold` 로 플릿 창을 잡는다(quiet gate 로만 양보): 같은 빌드 OFF→ON→OFF, C=1·C=4 같은 요청 묶음, ON 과 첫 OFF 에서 4랭크 진단 트레이스(`decompose_trace.py`)로 합의 바닥·낙오 편차·커널 사이 빈 시간을 분해. ON 이 잡음 밖으로 느리면 기본을 끄고 다음 창에서 항목별로 가른다 |
+| 2 | X1 은 측정 없이 기각한다(전제 오류, 아래 표) |
+| 3 | X2 는 MoE 쪽(패킷 커널의 복사 단계 안에서 Qwen 의 게이트 합)만 만든다. dense 쪽(W4 GEMM 이 TX 슬롯에 직접)은 먼저 GLM 형상의 기존 직접 생산자로 GPU 쪽 시간을 재고, 합당 1 µs 이상 이길 때만 N=2560 으로 옮긴다 |
+| 4 | H4 는 PDL leave 에 더해, 합의 대기 동안 그 사이트 믹서의 down projection 을 L2 로 미리 읽는다(#473 의 "대기 동안 다음 MHC 의 불변 가중치 준비"를 Qwen 의 쪼개진 믹서로). 단일 GPU 부품 프로브의 세 팔(off·pdl·prefetch)로 판정하고, 프리페치는 사이트 시간이 줄 때만 기본으로 둔다 |
+
 ## 세는 법
 
 - **크기:** Qwen3.8 C=1 디코드 한 스텝(타깃 검증 그래프 + MTP 드래프트 그래프)에서 줄어드는 발사·복사·바이트 수다.
@@ -85,8 +99,8 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | H1 | down+inject GEMM 을 `leave_norm` 안으로 접기(디코드 ≤16 행) | MK_SEG_MHC | `kernels/gated_residual.py` | kernel | 사이트당 −1, −100 발사 | gpu | 일 | 기각 제안 — H2 와 같은 구조(down+inject GEMM 15.0 µs 도 대역폭 한계치, 접으면 Triton matvec 이 행마다 다시 읽음). H2 의 실측과 프로브 참조 GB10 주: 이 행의 근거(Triton GEMV 가 cuBLAS 에 진다)는 RTX 5050 의 것 — GB10 에서는 skinny GEMV 가 down+inject 를 cuBLAS 보다 1.11 배 빨리 읽는다(q38gemv-0919c). 남은 장벽은 GEMV 가 아니라 `leave_norm` 의 행 전체 norm 이 곱 앞에 있어야 한다는 격자 의존이다. H2 는 게이트를 down 발사에 태워 닫혔다(아래) |
 | H2 | gates + up GEMM + `mix_mean` 한 발사 | MK_SEG_MHC | `gated_residual.py:mix` | kernel | 사이트당 −2, −200 발사 | gpu | 일 | 머지 #1207: `gated_residual.mix_rows` — 디코드 1..16 행에서 게이트를 down(+inject) 곱의 저장에, `mix_mean` 을 up 곱의 저장에 접어 사이트 5 → 3 발사(−2, H2 의 크기; 게이트는 up 대신 down 발사에 탄다). 두 곱은 `kernels/common/skinny_gemv`(행 16 패딩 tensor-core dot, split-K 는 마지막 도착 프로그램이 split 순서로 합산). 같은 곱의 네 발사 산술과 **바이트 동일**, qualify 통과(max 0.0063). **GB10 실측** (q38site-0919a, 16 사이트 한 그래프·가중치 회전): 믹서 cuBLAS 66.5~70.5 µs(+복사 1) → 60.3~62.7 µs(1·4·8·16 행). #1197·#1201 의 RTX 5050 판정(Triton 접기 기각)은 GB10 에서 반대다. 발사 접기만의 몫은 사이트당 2~3 µs(#1215 의 headroom, 1~8 행) — 나머지는 skinny GEMV 가 cuBLAS 보다 빨리 읽은 몫. 라우터도 같은 GEMV(4~16 행 1.96~2.53 배). 스텝 A/B 약 −1.3 ms(C=1, K=3, 단일 GPU; measurements/qwen38_decode_gemv_20260919) |
 | H3 | hidden 폭 커널을 512 폭 5 타일로 재배치 | #634 | `gated_residual.py` | measure | 0 발사 | cpu·gpu | 시간 | PR #1233: GB10 레인(`qwen38-mix-tiles-0919c`, M5 창 안)에서 `_mix_mean` 의 타일 축(#1224, 바이트 동일)을 스윕 — 캡처 4·17·32 행에서 256 폭 × 4 warps 가 한 블록(4,096×8) 대비 −51·−41·−30%(4.63→2.28, 4.79→2.83, 4.93→3.44 µs/사이트), 64 행부터는 대역폭 한계라 모든 기하가 ±4%. 규칙 `_mix_tile(hid, rows)`: 32 행까지 256×4, 그 위는 한 블록 그대로. `leave_norm`·`norm_streams` 는 채널 방향 축약(norm)이라 타일링하면 반올림 순서가 바뀌어 대상 밖. 엔진 속도는 미실측(32 행 캡처 스텝당 약 −0.14 ms 추정). `measurements/qwen38_mix_tiles_20260919` |
-| H4 | `leave` 를 one-shot consumer 의 PDL 종속으로 | MK AR consumer, #689 | `gated_residual.py`, `lanes.py` | measure | 약 0.4 ms/스텝 추정 | gpu | 일 | 열림 |
-| H5 | `leave` 가 TP4 랭크 패킷을 직접 합산(생산자 TX 슬롯과 함께) | #812 #826 | `gated_residual.py`, `kernels/oneshot` | fold | 스텝당 약 1 MB | cpu | 일 | 열림 |
+| H4 | `leave` 를 one-shot consumer 의 PDL 종속으로 | MK AR consumer, #689 | `gated_residual.py`, `lanes.py` | measure | 약 0.4 ms/스텝 추정 | gpu | 일 | PR #1270: leave 를 합의 PDL 종속으로 띄우고(norm 가중치만 대기 앞에서 읽음) 대기 동안 그 사이트의 down projection 을 L2 로 프리페치 — #473 의 "대기 동안 다음 MHC 불변 가중치 준비"를 쪼개진 Qwen 믹서에(운영자 결정 4). GB10 판정 `q38leave-0919b`: 바이트는 다섯 팔 × 1–16 행 `off` 와 동일. 대기 20 µs 에서 사이트 µs `off` → PDL → 프리페치 전부 1 행 86.5 → 85.4 → 69.1, 4 행 87.2 → 86.2 → 80.0, 16 행 91.1 → 90.1 → 80.7 — PDL 만은 −1 µs, 표의 0.4 ms 는 과대, 프리페치로 스텝당 약 −0.7~0.8 ms 추정(소스 계수). 기본 `prefetch`, 롤백 `ST_LEAVE=off`. 플릿 미실측. `measurements/qwen38_leave_pdl_20260919` |
+| H5 | `leave` 가 TP4 랭크 패킷을 직접 합산(생산자 TX 슬롯과 함께) | #812 #826 | `gated_residual.py`, `kernels/oneshot` | fold | 스텝당 약 1 MB | cpu | 일 | 기각(기록, PR #1270) — 만들어 판정했다(기록 브랜치 `record/qwen38-h5-x2-rank-packets` `83ebfcb6`): `oneshot_packets` 가 바운드 폭을 받고, `leave_norm(packets=)` 가 설명자의 네 랭크를 대기 뒤에 랭크 순서로 접는다. 바이트는 CPU 인터프리터와 GB10 오라클(`q38packets-0919a`: 네 랭크 × 1·4·16 행, 소거 fixture, eager·재생·늦은 착지, GLM 패킷 시험 5건 포함)에서 consumer 합 → leave 와 같다. GPU 쪽 시간(피어 선착지)은 consumer → leave 대비 1 행 +1.1, 4 행 +3.4, 16 행 +7.1 µs — leave 의 (행, 스트림) 프로그램마다 매핑된 호스트 메모리의 네 패킷을 다시 읽는다. 행마다 한 번 읽는 모양은 다음 목록. `measurements/qwen38_rank_packets_20260919` |
 | H6 | `--hc-fp8` 레인 실측(믹서 가중치 읽기가 스텝당 1.32 GB) | — | `net.py:_prepare_hc_fp8` | measure | 바이트 −40%, 발사 +300 | gpu | 시간 | 기각(디코드) — 2026-09-19 두 번째 운영자 창(main `4148c35f`, 런처 기본 K=1·one-shot·`one`): `ST_HC_FP8=1` 이 기본 대비 C=1 디코드 28.35 → 31.08 ms/스텝(**+9.6%**, 다섯 요청 모두 +5.8~+15.3%; 30 ms 이하 스텝 비율 80–93% → 11–67%), C=4 45.25 → 47.29(+4.5%, 두 바퀴 −1.5·+10.1% — 부팅 간 잡음 안). 수용(토큰/스텝)은 같은 분포. 부팅 ready 61.2 → 98.0 s(warm prefill +16 s, capture decode +21 s), prepare dense +0.75 GiB. 한 쌍·순서 one→fp8. 믹서 바이트 절반(산수로 약 −2.4 ms)을 발사 증가와 H2 접기의 이탈(FP8 투영이 두 BF16 곱을 대신하니 접기가 비킨다)이 넘는다. 품질은 판정 안 함(느리므로 불요). 프리필(4,096 행, 믹서 사이트가 청크 디바이스 시간의 43% — f8 census #1245)은 미실측 — 연다면 따로. `measurements/qwen38_s2h6_window_20260919` §2 |
 | H7 | 작은 접기: 임베딩 `repeat`, PLE 층의 분리된 leave 와 out-of-place 덧셈 | — | `net.py` | fold | −3 발사 | cpu | 시간 | 기각: 임베딩 `repeat` 는 all-reduce 뒤라 접을 자리가 없고, PLE 층 둘은 게이트 잔차 커널에 변형을 하나 더 들여야 해서 스텝당 2 발사의 값이 없다 |
 
@@ -118,8 +132,8 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | S1 | swiglu 가 0 패딩된 sh_down 입력을 직접 씀 | #569 #973 | `kernels/common/swiglu.py`, `PaddedDenseLinear` | fold | −98 발사 | cpu·gpu | 시간 | 머지 #1097 |
 | S2 | W4 입력 재사용을 m 2–8, 4120/4224×2560, 2560×1536 에서 admit + hidden 2560 ksr 스윕 | #1050 #888 #946 #939 #969 | `kernels/dense/kernels.cu` | measure | GEMM 98 개의 입력 양자화 대폭 감소 | gpu·glm | 시간 | 기각 — GB10 레인(`qwen38-input-reuse-0919b`, 2026-09-19 두 번째 운영자 창 안, main `4148c35f`)에서 #1241 의 admit 을 쟀다: `InputReuseTests` 3 개 통과, 12 셀(형상 3 × 행 2·4·6·8) 전부 ordinary 와 **바이트 동일**(eager·재생). 시간(콜드 중앙값, 가중치 48 MiB 회전): GDN in_proj 4120×2560 −0.2~−1.8%, QSA in_proj 4224×2560 +0.8~+1.9% — 둘 다 ±2% 안(37 µs 발사) — o_proj 2560×1536 **+4.5~+13.6%**(14.8 → 16.8 µs; 따로 도는 pack 발사가 ksr 3 의 짧은 GEMM 에 얹힌다). K=4096 인 GLM 에서는 타일마다의 입력 양자화가 비싸 이기지만 Qwen3.8 의 K 2560·1536 에서는 pack 값을 못 번다. admit 을 되돌림(PR 이 PR #1241 을 revert — `kernels.cu` 는 #1241 앞과 같다). hidden 2560 ksr 스윕은 미실측으로 남김(ksr 을 바꾸면 합산 순서가 바뀌어 바이트 판정이 아니라 품질 판정이다). `measurements/qwen38_s2h6_window_20260919` §3 |
 | S3 | 부팅 자기 보정(GPTQ W4/FP8·헤드) 배선. 지금 Qwen3.8 팩은 전부 round-to-nearest | #650 #659 #661 #673 #779 | `profiles/qwen38/fleet.py` | kernel | 품질 | gpu | 일 | 열림 |
-| X1 | 작은 합에 compact 12-CTA one-shot consumer | #967 #944 #957 | `kernels/oneshot` | measure | 합 101 개가 48→12 CTA | gpu·glm | 시간 | 열림 |
-| X2 | 생산자·MoE finalizer 가 TX 슬롯에 직접 씀(hidden 을 형상에서) | #826 #904 #906 | `kernels/oneshot`, dense | kernel | 발사 중립, 스텝당 −98 복사 | gpu·glm | 일 | 열림 |
+| X1 | 작은 합에 compact 12-CTA one-shot consumer | #967 #944 #957 | `kernels/oneshot` | measure | 합 101 개가 48→12 CTA | gpu·glm | 시간 | 기각(측정 없이, 운영자 결정 2026-09-19) — 전제 오류: ST 엔진은 compact 12-CTA 를 한 번도 컴파일하지 않았다(`build()` 가 `OSAR_COMPACT_CTA` 를 정의하지 않는다; vLLM overlay 의 선택 옵션이었고 기본 0 — #967 의 기록). #967 의 이득(16행 합 −9~−10%)은 48-CTA consumer 에서 데이터 없는 CTA 가 표만 내고 대기 없이 빠지는 몫이고, Qwen3.8 의 합은 이미 그 경로다(4행 × 2560 = 1,280 벡터, 48 CTA 중 5 개가 데이터). compact 가 더 줄이는 것은 그 빈 CTA 36 개의 발사뿐(추정 합당 1 µs 미만)인데, `OSAR_COMPACT_CTA=1` 은 빌드 전체의 발행 판정을 바꾸고(모든 호출이 wrap-safe 표) GLM C=1 의 합(8행 × 4096 = 32,768, compact 상한)도 compact 로 보내 GLM 판정까지 부른다. 플릿 분해(결정 1)에서 발행이 CTA 스케줄링에 밀리는 게 보이면 다음 목록에서 다시 연다 |
+| X2 | 생산자·MoE finalizer 가 TX 슬롯에 직접 씀(hidden 을 형상에서) | #826 #904 #906 | `kernels/oneshot`, dense | kernel | 발사 중립, 스텝당 −98 복사 | gpu·glm | 일 | 기각(기록, PR #1270) — MoE 쪽은 만들어 판정했다(`bd165087`): 패킷 grid 가 Qwen 의 게이트 합을 TX 에 바로 쓰고(`MOE_GATED`) leave 가 접는다. 바이트(TX 포함)는 `gated_sum` → consumer → leave 와 같다(`q38moepk-0919a`). GPU 쪽은 1 행 −2.3, 4 행 0, 16 행 +3.3 µs — 피니셔 발사를 없앤 몫을 H5 의 접기 비용이 상쇄한다. dense 쪽은 결정 3 의 문(GLM 직접 생산자가 합당 1 µs 이상)을 오라클로 쟀으나(`q38direct-0919a`) 무효: 오라클의 48-CTA one-shot 커널이 호출당 약 150 µs(프로덕션 moe_packets 는 대기 포함 36–44 µs)라 차이 약 150 µs 가 인공물이다. 유효한 근거가 없어 옮기지 않는다. `measurements/qwen38_rank_packets_20260919` |
 
 ## 진행 순서
 

@@ -658,6 +658,11 @@ def main(argv=None) -> int:
                     help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' (the "
                          "default: steps of one request's rows, C=1 -5%% a step on the fleet, measurements/"
                          "qwen38_shared_overlap_20260919), 'all' (every captured step: C=4 +6%%), 'off' (the rollback)")
+    ap.add_argument("--leave", choices=lane_tables.LEAVES, default=lane_tables.LEAVE,
+                    help="how a leave meets the TP sum before it (carry H4): 'prefetch' (the default) launches it as the "
+                         "sum's programmatic dependent and pulls the site's down projection into L2 while the sum waits "
+                         "for the other ranks; 'pdl' the dependent alone; 'off' the ordinary launch after the sum (the "
+                         "rollback). The same bytes every way")
     ap.add_argument("--vision", choices=("auto", "on", "off"), default="auto",
                     help="pictures: auto serves them when every rank has vision.safetensors next to its rank file, on "
                          "requires it, off serves text only (module docstring)")
@@ -703,7 +708,7 @@ def main(argv=None) -> int:
             with rec.phase("wait for the imports"):
                 imports.take()
             rec.gauge("kernel_imports_s", round(imports.seconds, 3))
-            lanes = lane_tables.served()
+            lanes = lane_tables.served(leave=a.leave)
             # every b12x kernel this boot builds or reads, for the next tree's prebuild (kernels/b12x_requests)
             import os
             from engine.kernels import b12x_requests
@@ -738,6 +743,12 @@ def main(argv=None) -> int:
                              name="draft-tap", daemon=True).start()
         print("  shared expert: " + {False: "unforked", True: "forked at one request's rows", "all": "forked at every captured step"}
               [net.shared_overlap], flush=True)
+        leave = {"off": "launched after its sum", "pdl": "its sum's programmatic dependent",
+                 "prefetch": "its sum's programmatic dependent, the mixer's down projection prefetched"}[lanes.leave]
+        if lanes.leave == "prefetch" and net.hc_fp8:
+            # every mixer reads its FP8 lanes (net._mixer_weight): no BF16 projection to prefetch, the dependent only
+            leave = "its sum's programmatic dependent, nothing prefetched (--hc-fp8: the mixers read FP8 weights)"
+        print("  leave: " + leave, flush=True)
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row"
               + (f"; drafts cut below p={model.drafter.threshold}, narrow widths to {a.narrow_rows} rows"
