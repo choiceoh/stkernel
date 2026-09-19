@@ -50,6 +50,16 @@ def audit(args):
     weights_id = seen["calibration_weights_id"]
     if seen["dense_pack_root"] != str(args.root):
         raise ValueError("audit root differs from the boot's declared pack store")
+    if args.expect_rtn:
+        if (seen.get("packs_rtn") != 192 or seen.get("packs_gptq", 0) != 0
+                or seen.get("packs_fp8_gptq", 0) != 0 or seen.get("calibration_GiB") != 0):
+            raise ValueError("baseline must serve RTN with collection disabled")
+        report = dict(rank=args.rank, weights_id=weights_id, serving_rtn_verified=True,
+                      collection_disabled=True, w4_sites=192,
+                      boot_sha256=hashlib.sha256(args.boot.read_bytes()).hexdigest())
+        args.out.write_text(json.dumps(report, indent=2) + "\n")
+        print(json.dumps(report, indent=2))
+        return
     shape = {s.name: s.shape for s in specs.all_specs(facts.load(args.ckpt), mtp=False)}
     names = Qwen38Net.dense_names(shape)
     names["head"] = HEAD_NAME
@@ -99,7 +109,9 @@ def main():
     ap.add_argument("--boot", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--min-rows", type=int, default=131072)
-    ap.add_argument("--expect-gptq", action="store_true")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--expect-gptq", action="store_true")
+    mode.add_argument("--expect-rtn", action="store_true")
     audit(ap.parse_args())
 
 
