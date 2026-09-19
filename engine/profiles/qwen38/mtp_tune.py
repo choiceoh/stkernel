@@ -607,7 +607,8 @@ def extract(args) -> None:
     source = Checkpoint(str(args.ckpt))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    # one tensor in memory at a time (the largest, the experts' gate_up, is 3.4 GB): it runs beside production
+    # one tensor in memory at a time, read through the shard mapping (the largest, the experts' gate_up, is 3.4 GB,
+    # copied once by the writer): it runs beside production under a 6 GB cap
     dtypes = {"BF16": torch.bfloat16, "F32": torch.float32, "F16": torch.float16}
     specs = []
     for name in names:
@@ -615,7 +616,7 @@ def extract(args) -> None:
         specs.append(Spec(name, tuple(header["shape"]), dtypes[header["dtype"]]))
     writer = RankWriter(out / "tune-base.safetensors", specs, {"layout": "qwen38-mtp-tune-base-v1"})
     for name in names:
-        writer.put(name, source.load([name])[name])
+        writer.put(name, source.views([name])[name])            # the mapped bytes: page cache, not this process
     writer.close()
     (out / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {n: "tune-base.safetensors" for n in names}}))
     shutil.copy(Path(args.ckpt) / "config.json", out / "config.json")
