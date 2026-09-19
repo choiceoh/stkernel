@@ -112,7 +112,7 @@ def rank_loader(path, *, expected_layout: str):
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
-          draft_index: "tuple[int, int] | None" = None, mtp_experts_dir: "str | None" = None,
+          draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
@@ -138,7 +138,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, mtp_precision=mtp_precision,
-                    mtp_experts="fp8" if mtp_experts_dir else "nvfp4", shared_overlap=shared_overlap)
+                    mtp_experts=mtp_experts, shared_overlap=shared_overlap)
     specs = net.specs()
     if tap_rows and drafter and comm.rank == 0:
         # the draft queries the head's argmax reads, and its picks, recorded inside the captured draft graphs
@@ -156,10 +156,15 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
     side = {s.name for s in net.side_specs()}
     if side:
-        # the MTP head's experts in the export's FP8 (mtp_fp8.py), loaded into the arena beside the rank file's views
-        from engine.profiles.qwen38 import mtp_fp8
-        side_file = mtp_fp8.path(mtp_experts_dir, comm.rank)
-        side_rank = rank_loader(side_file, expected_layout=mtp_fp8.LAYOUT)
+        # the MTP head's experts from their side file (mtp_side.py: BF16 by default), loaded into the arena beside the
+        # rank file's views
+        from engine.profiles.qwen38 import mtp_side
+        side_file = mtp_side.path(mtp_experts_dir or mtp_side.DIRS[net.mtp_experts], comm.rank, net.mtp_experts)
+        if not side_file.is_file():
+            raise FileNotFoundError(f"{side_file}: the MTP head's {net.mtp_experts} experts are served from side files "
+                                    f"(python3 -m engine.profiles.qwen38.mtp_side --precision {net.mtp_experts} ...); "
+                                    "--mtp-experts nvfp4 serves the rank file's")
+        side_rank = rank_loader(side_file, expected_layout=mtp_side.LAYOUTS[net.mtp_experts])
         files.append(side_file)
     failure = memory = None
     try:
@@ -206,9 +211,10 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                 recorder.gauge(f"packs_{name}", count)
         if side:
             with recorder.phase("mtp experts"):
-                # D3: the FP8 experts' kernel held to its torch form before a draft reads it
-                from engine.kernels.moe_fp8_rows import qualify as qualify_fp8
-                recorder.gauge("mtp_fp8_qualify", max(qualify_fp8(torch.device("cuda")).values()))
+                # D3: the side-file experts' kernel held to its torch form before a draft reads it
+                from engine.kernels.moe_rows import qualify as qualify_rows
+                recorder.gauge("mtp_experts_qualify",
+                               max(qualify_rows(torch.device("cuda"), precision=net.mtp_experts).values()))
         if drafter and draft_index is not None:
             with recorder.phase("draft index"):
                 # the drafter's argmax from an inverted-file index over the head's rows (dense/ivf_head)
@@ -351,9 +357,12 @@ def main(argv=None) -> int:
     ap.add_argument("--draft-index", default=None, metavar="CLUSTERS/PROBES",
                     help="the drafter's argmax from an inverted-file index over the head's rows (e.g. 1024/32): a few MB "
                          "a draft instead of the head's 159; unset, the whole head. Acceptance moves, output does not")
+    ap.add_argument("--mtp-experts", choices=("bf16", "fp8", "nvfp4"), default="bf16",
+                    help="the MTP head's routed experts: the checkpoint's original BF16 (default; the operator's rule of "
+                         "2026-09-19) or the export's FP8 from side files (engine/profiles/qwen38/mtp_side.py), or the "
+                         "rank file's NVFP4 re-encoding")
     ap.add_argument("--mtp-experts-dir", default=None,
-                    help="the MTP head's experts in the export's own FP8 from this directory's side files "
-                         "(engine/profiles/qwen38/mtp_fp8.py) instead of the rank file's NVFP4 re-encoding")
+                    help="the side files' directory (default /home/choiceoh/models/st-qwen38-mtp-<precision>)")
     ap.add_argument("--tap-draft-queries", type=int, default=0, metavar="ROWS",
                     help="rank 0 records the MTP head's draft queries and picks in a ring of ROWS inside the captured "
                          "graphs and writes them under --dump-dir/draft-queries every 30 s (the IVF head's real recall)")
@@ -417,7 +426,8 @@ def main(argv=None) -> int:
                                               drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
                                               query_shards=not a.no_query_shards, mtp_precision=a.mtp_precision,
                                               shared_overlap={"off": False, "one": True, "all": "all"}[a.shared_overlap],
-                                              draft_index=draft_index(a.draft_index), mtp_experts_dir=a.mtp_experts_dir,
+                                              draft_index=draft_index(a.draft_index), mtp_experts=a.mtp_experts,
+                                              mtp_experts_dir=a.mtp_experts_dir,
                                               tap_rows=a.tap_draft_queries)
         if getattr(net, "draft_tap", None) is not None:
             import threading

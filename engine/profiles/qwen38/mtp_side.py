@@ -1,15 +1,20 @@
-"""The MTP head's experts in the checkpoint's own FP8, as a side file a rank loads beside its rank file (profile).
+"""The MTP head's experts at a precision the rank files do not keep, as side files a rank loads beside its rank file
+(profile).
 
-    python3 -m engine.profiles.qwen38.mtp_fp8 --ckpt /home/choiceoh/models/qwen38-flash-next-nvidia-nvfp4 \\
+    python3 -m engine.profiles.qwen38.mtp_side --precision bf16 --ckpt <a copy with the fused BF16 experts> \\
+        --out /home/choiceoh/models/st-qwen38-mtp-bf16
+    python3 -m engine.profiles.qwen38.mtp_side --precision fp8 --ckpt /home/choiceoh/models/qwen38-flash-next-nvidia-nvfp4 \\
         --out /home/choiceoh/models/st-qwen38-mtp-fp8
 
 The rank files keep the MTP head's experts as NVFP4 re-encoded from the export's FP8 (specs.py: quantised twice, the
-activations to FP4 as well, "unmeasured"). NVIDIA's export kept that layer in FP8 where it made the target's experts
-NVFP4. This writes the export's own bytes -- rank r's 128 experts, e4m3 as they are, their BF16 tile scales widened to
-FP32 exactly (specs.mtp_fp8_specs) -- to `mtp-fp8-r{r}of4.safetensors` (base/preshard.RankWriter: the loader's layout)
-in a directory of its own, not the rank files' (theirs is immutable, preshard.py). Each file is read back and every
-tensor's bytes compared with what was written; the directory is built as `<out>.incomplete` and renamed when every
-check passed, with a manifest. A boot serving them: fleet.py --mtp-experts-dir (kernels/moe_fp8_rows).
+activations to FP4 as well). The operator's rule of 2026-09-19 -- the engine is NVFP4 by default, and invests where
+the cost is small and the acceptance impact large -- pins them at the checkpoint's original BF16: "bf16" slices each
+rank's 128 experts out of the older copy's fused BF16 tensors as they are (specs.mtp_bf16_specs); "fp8" writes the NVIDIA
+export's own e4m3 bytes with their tile scales widened to FP32 exactly (specs.mtp_fp8_specs). Rank r's file is
+`mtp-{precision}-r{r}of4.safetensors` (base/preshard.RankWriter: the loader's layout) in a directory of its own, not the
+rank files' (theirs is immutable, preshard.py). Each file is read back and every tensor's bytes compared with what was
+written; the directory is built as `<out>.incomplete` and renamed when every check passed, with a manifest. A boot
+serving them: fleet.py --mtp-experts (kernels/moe_rows).
 """
 from __future__ import annotations
 
@@ -30,31 +35,40 @@ from engine.base.preshard import RankWriter                              # noqa:
 from engine.profiles.qwen38 import facts, specs as layout             # noqa: E402
 from engine.profiles.qwen38.preshard import file_hash, tensor_hash     # noqa: E402
 
-LAYOUT = "qwen38-mtp-fp8-v1"
+LAYOUTS = {"fp8": "qwen38-mtp-fp8-v1", "bf16": "qwen38-mtp-bf16-v1"}
+DIRS = {precision: f"/home/choiceoh/models/st-qwen38-mtp-{precision}" for precision in LAYOUTS}   # fleet --mtp-experts
 
 
-def path(directory, rank: int) -> Path:
-    return Path(directory) / f"mtp-fp8-r{rank}of{facts.TP}.safetensors"
+def side_specs(F, precision: str):
+    if precision == "fp8":
+        return layout.mtp_fp8_specs(F)
+    if precision == "bf16":
+        return layout.mtp_bf16_specs(F)
+    raise ValueError(f"MTP side files are bf16 or fp8, not {precision!r}")
 
 
-def write(ckpt, out, *, source_revision: "str | None" = None) -> dict:
+def path(directory, rank: int, precision: str) -> Path:
+    return Path(directory) / f"mtp-{precision}-r{rank}of{facts.TP}.safetensors"
+
+
+def write(ckpt, out, *, precision: str, source_revision: "str | None" = None) -> dict:
     started = time.monotonic()
     out = Path(out)
     if out.exists():
         raise FileExistsError(f"{out} exists: the side files are immutable, write a new directory")
     F = facts.load(ckpt)
-    specs = layout.mtp_fp8_specs(F)
+    specs = side_specs(F, precision)
     ck = Checkpoint(str(ckpt))
     partial = out.with_name(out.name + ".incomplete")
     if partial.exists():
         shutil.rmtree(partial)
     partial.mkdir(parents=True)
-    report = {"layout": LAYOUT, "world": facts.TP, "source": str(ckpt), "source_revision": source_revision,
+    report = {"layout": LAYOUTS[precision], "precision": precision, "world": facts.TP, "source": str(ckpt), "source_revision": source_revision,
               "source_config_sha256": file_hash(Path(ckpt) / "config.json"), "files": []}
     m = "mtp.layers.0.mlp."
     for r in range(facts.TP):
-        target = path(partial, r)
-        writer = RankWriter(target, specs, {"weight_layout": LAYOUT, "rank": r, "world": facts.TP})
+        target = path(partial, r, precision)
+        writer = RankWriter(target, specs, {"weight_layout": LAYOUTS[precision], "rank": r, "world": facts.TP})
         source = ck.views(sorted(layout.mtp_expert_keys(m, F, r)))
         hashes = {}
         for spec in specs:
@@ -83,12 +97,13 @@ def write(ckpt, out, *, source_revision: "str | None" = None) -> dict:
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="python3 -m engine.profiles.qwen38.mtp_fp8", description=__doc__.splitlines()[0])
-    ap.add_argument("--ckpt", required=True, help="NVIDIA's export: the MTP experts in FP8 (hf_quant_config)")
+    ap = argparse.ArgumentParser(prog="python3 -m engine.profiles.qwen38.mtp_side", description=__doc__.splitlines()[0])
+    ap.add_argument("--precision", choices=tuple(LAYOUTS), required=True)
+    ap.add_argument("--ckpt", required=True, help="bf16: a copy with the fused BF16 MTP experts; fp8: NVIDIA's export")
     ap.add_argument("--out", required=True, help="a new directory for the four side files and the manifest")
     ap.add_argument("--source-revision", default=None)
     a = ap.parse_args(argv)
-    report = write(a.ckpt, a.out, source_revision=a.source_revision)
+    report = write(a.ckpt, a.out, precision=a.precision, source_revision=a.source_revision)
     print(json.dumps({"done": a.out, "files": [f["name"] for f in report["files"]]}), flush=True)
     return 0
 

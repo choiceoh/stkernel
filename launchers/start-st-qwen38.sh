@@ -75,11 +75,15 @@ if [ -n "${ST_DRAFT_INDEX:-}" ]; then
   [[ "$ST_DRAFT_INDEX" =~ ^[1-9][0-9]*/[1-9][0-9]*$ ]] || { echo "ST_DRAFT_INDEX must be CLUSTERS/PROBES" >&2; exit 2; }
   INDEX_ARG="--draft-index $ST_DRAFT_INDEX"
 fi
-EXPERTS_ARG="" EXPERTS_MOUNT=""                               # ST_MTP_EXPERTS_DIR=DIR: the MTP head's experts in the export's FP8 (mtp_fp8.py)
-if [ -n "${ST_MTP_EXPERTS_DIR:-}" ]; then
-  EXPERTS_ARG="--mtp-experts-dir $ST_MTP_EXPERTS_DIR"
-  EXPERTS_MOUNT="-v $ST_MTP_EXPERTS_DIR:$ST_MTP_EXPERTS_DIR:ro"
-fi
+EXPERTS_ARG="" EXPERTS_MOUNT="" EXPERTS_DIR=""                # ST_MTP_EXPERTS=bf16|fp8|nvfp4: the MTP head's experts (fleet default bf16)
+MTP_EXPERTS=${ST_MTP_EXPERTS:-bf16}
+case "$MTP_EXPERTS" in
+  bf16|fp8) EXPERTS_DIR=${ST_MTP_EXPERTS_DIR:-/home/choiceoh/models/st-qwen38-mtp-$MTP_EXPERTS}
+            EXPERTS_ARG="--mtp-experts $MTP_EXPERTS --mtp-experts-dir $EXPERTS_DIR"
+            EXPERTS_MOUNT="-v $EXPERTS_DIR:$EXPERTS_DIR:ro" ;;
+  nvfp4) EXPERTS_ARG="--mtp-experts nvfp4" ;;
+  *) echo "ST_MTP_EXPERTS must be bf16, fp8 or nvfp4" >&2; exit 2 ;;
+esac
 TAP_ARG=""                                                    # ST_TAP_DRAFT_QUERIES=ROWS: rank 0 records the draft queries (the IVF head's recall)
 if [ -n "${ST_TAP_DRAFT_QUERIES:-}" ]; then
   [[ "$ST_TAP_DRAFT_QUERIES" =~ ^[1-9][0-9]*$ ]] || { echo "ST_TAP_DRAFT_QUERIES must be a row count" >&2; exit 2; }
@@ -249,6 +253,12 @@ start_rank() {
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors && test -s $RANKS_DIR/config.json && test -s $RANKS_DIR/tokenizer.json" \
     || { echo "ABORT: $ip lacks rank${r}of4.safetensors or its metadata in $RANKS_DIR (VISION=0 fanout-st-ranks.sh)" >&2; return 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true"
+  if [ -n "$EXPERTS_DIR" ] && ! node_sh "$ip" "test -f $EXPERTS_DIR/mtp-$MTP_EXPERTS-r${r}of4.safetensors"; then
+    # docker would mount a missing directory as an empty one: say what is missing instead
+    echo "$ip: $EXPERTS_DIR/mtp-$MTP_EXPERTS-r${r}of4.safetensors is missing (python3 -m engine.profiles.qwen38.mtp_side" \
+         "--precision $MTP_EXPERTS, then copy rank $r's file here) -- ST_MTP_EXPERTS=nvfp4 serves the rank file's experts"
+    return 1
+  fi
   local reclaim_env=""
   if [ "$RECLAIM_FILE_CACHE" = 1 ]; then
     local returned

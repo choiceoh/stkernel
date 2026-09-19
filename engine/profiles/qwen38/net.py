@@ -60,6 +60,7 @@ BF16, F32 = torch.bfloat16, torch.float32
 HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
 HC_NAME = "Qwen4ExpForCausalLM/hyper_connection"    # the FP8 mixer lanes' names (hc_fp8; no calibration yet)
 MTP_PRECISIONS = ("bf16", "fp8", "w4")                 # the MTP head's dense projections (Qwen38Net mtp_precision)
+MTP_EXPERTS = ("bf16", "fp8", "nvfp4")                  # the MTP head's routed experts (Qwen38Net mtp_experts)
 FIRST_BUCKET = 4096                                # tokens of the smallest context bucket; each next one doubles
 
 
@@ -191,8 +192,9 @@ class Qwen38Net:
         before. A drafter's numbers change how many tokens a step yields, never which (verification picks them).
 
         `mtp_experts`: the MTP head's routed experts as the rank file keeps them ("nvfp4": re-encoded from the export's
-        FP8, on b12x) or in the export's own FP8 ("fp8": the side file mtp_fp8.py writes, on kernels/moe_fp8_rows --
-        `side_specs` names what a boot loads from it).
+        FP8, on b12x), or from a side file mtp_side.py writes, on kernels/moe_rows -- "bf16", the checkpoint's original
+        (the fleet's default: the operator's rule of 2026-09-19, NVFP4 by default and precision where it costs little
+        and moves acceptance), or "fp8", the export's own. `side_specs` names what a boot loads from the side file.
 
         `shared_overlap` (carry M5, GLM-5.3's #789): a captured step's shared expert -- two dense launches and the
         activation between them -- forked onto a second stream beside the router and the routed experts, joined before
@@ -209,8 +211,8 @@ class Qwen38Net:
         if mtp_precision not in MTP_PRECISIONS:
             raise ValueError(f"mtp_precision {mtp_precision!r}: one of {MTP_PRECISIONS}")
         self.mtp_precision = mtp_precision
-        if mtp_experts not in ("nvfp4", "fp8"):
-            raise ValueError(f"mtp_experts {mtp_experts!r}: nvfp4 or fp8")
+        if mtp_experts not in MTP_EXPERTS:
+            raise ValueError(f"mtp_experts {mtp_experts!r}: one of {MTP_EXPERTS}")
         self.mtp_experts = mtp_experts if mtp else "nvfp4"
         if shared_overlap not in (False, True, "all") or type(shared_overlap) not in (bool, str):
             raise ValueError("shared_overlap is False, True (one request's rows) or 'all'")
@@ -235,16 +237,21 @@ class Qwen38Net:
 
     # -- binding ---------------------------------------------------------------------------------------------------
     def specs(self):
-        """Every tensor the net binds: the rank file's, and with FP8 MTP experts the side file's in place of the rank
-        file's NVFP4 ones (`side_specs`)."""
+        """Every tensor the net binds: the rank file's, and with side-file MTP experts the side file's in place of the
+        rank file's NVFP4 ones (`side_specs`)."""
         out = specs.all_specs(self.F, self.layers, mtp=self.mtp)
-        if getattr(self, "mtp_experts", "nvfp4") == "fp8":
-            out = [s for s in out if s.name not in specs.MTP_NVFP4] + specs.mtp_fp8_specs(self.F)
+        side = self.side_specs()
+        if side:
+            out = [s for s in out if s.name not in specs.MTP_NVFP4] + side
         return out
 
     def side_specs(self):
-        """The tensors a boot loads from the MTP side file (mtp_fp8.path), not the rank file."""
-        return specs.mtp_fp8_specs(self.F) if getattr(self, "mtp_experts", "nvfp4") == "fp8" else []
+        """The tensors a boot loads from the MTP side file (mtp_side.path), not the rank file."""
+        precision = getattr(self, "mtp_experts", "nvfp4")
+        if precision == "nvfp4":
+            return []
+        from engine.profiles.qwen38.mtp_side import side_specs
+        return side_specs(self.F, precision)
 
     def bind(self, views: dict) -> None:
         from engine.base.params import bind
@@ -253,9 +260,10 @@ class Qwen38Net:
         F, p = self.F, self.p
         for prefix in [f"L{L}." for L in self.layers] + (["mtp.L0."] if self.mtp else []):
             n = prefix + "moe."
-            if prefix == "mtp.L0." and self.mtp_experts == "fp8":
-                self._experts[prefix] = partial(self._moe_fp8, w13=p[n + "fp8.w13"], s13=p[n + "fp8.s13"],
-                                                w2=p[n + "fp8.w2"], s2=p[n + "fp8.s2"])
+            if prefix == "mtp.L0." and self.mtp_experts != "nvfp4":
+                q = n + self.mtp_experts + "."
+                self._experts[prefix] = partial(self._moe_rows, w13=p[q + "w13"], s13=p.get(q + "s13"),
+                                                w2=p[q + "w2"], s2=p.get(q + "s2"))
                 continue
             scales = ModelOptScales.bind(*(p[n + s] for s in ("w13_alpha", "a13_scale", "w2_alpha", "a2_scale")),
                                          experts=p[n + "w13"].shape[0], device=p[n + "w13"].device)
@@ -731,7 +739,7 @@ class Qwen38Net:
             routed = self._experts[prefix](x, ids, weights, compact=compact)
         else:
             # a captured step's router and EP remap are one launch over the scores row (kernels/moe_route)
-            w13 = p[n + "fp8.w13"] if n + "fp8.w13" in p else p[n + "w13"]      # the route's shape: E, I
+            w13 = next(p[k] for k in (n + "w13", n + "bf16.w13", n + "fp8.w13") if k in p)   # the route's shape: E, I
             ids, weights = lanes.route_local(scores, F.topk_experts, experts=F.experts, first_expert=self.first_expert,
                                              w13=w13, hidden=x.shape[1])
             routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
@@ -772,14 +780,14 @@ class Qwen38Net:
                             finish=lambda parts, shared: lanes.moe_finish(parts[0], shared, parts[1]))
         return self.comm.all_reduce(out)
 
-    def _moe_fp8(self, x, ids, weights, *, w13, s13, w2, s2, compact=False, local=False):
-        """The MTP head's experts on their FP8 side-file weights (lanes.moe_fp8): global routes (an eager step) are
+    def _moe_rows(self, x, ids, weights, *, w13, s13, w2, s2, compact=False, local=False):
+        """The MTP head's experts on their side-file weights (lanes.moe_rows): global routes (an eager step) are
         made this rank's first -- another rank's at weight 0 -- and more rows than the kernel takes go 16 at a time
         (rows are independent; the MTP head runs past its attention only the rows a caller reads)."""
         from engine.profiles.qwen38.lanes import local_routes
         if not local:
             ids, weights = local_routes(ids, weights, self.first_expert, w13.shape[0])
-        run = self.lanes.moe_fp8
+        run = self.lanes.moe_rows
         if x.shape[0] <= 16:
             return run(x, ids, weights, w13, s13, w2, s2)
         return torch.cat([run(x[a:a + 16], ids[a:a + 16], weights[a:a + 16], w13, s13, w2, s2)
@@ -968,4 +976,4 @@ class Qwen38Net:
         hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
         return hidden, streams
 
-__all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME", "MTP_PRECISIONS"]
+__all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME", "MTP_PRECISIONS", "MTP_EXPERTS"]

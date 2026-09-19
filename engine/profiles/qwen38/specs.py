@@ -402,8 +402,8 @@ def mtp_fp8_specs(F: Facts) -> "list[Spec]":
     """The MTP head's routed experts of a rank in the checkpoint's own FP8 (NVIDIA's export, Facts.mtp_experts
     "fp8_block"): per expert its e4m3 gate, up and down under a BF16 `weight_scale_inv` a 128 x 128 tile, which
     multiplies -- stacked as w13 [E, 2I, H] rows [gate; up] with s13 [E, 2I/128, H/128] FP32, and w2 [E, H, I] with
-    s2 [E, H/128, I/128] FP32 (the BF16 scales widened, exactly). The side file mtp_fp8.py writes beside the rank files;
-    kernels/moe_fp8_rows serves it."""
+    s2 [E, H/128, I/128] FP32 (the BF16 scales widened, exactly). The side file mtp_side.py writes beside the rank files;
+    kernels/moe_rows serves it."""
     if F.mtp_experts != "fp8_block" or F.mtp_block != 128:
         raise ValueError(f"the MTP head's FP8 experts need NVIDIA's FP8 export (block 128); this checkpoint keeps "
                          f"{F.mtp_experts!r} (block {F.mtp_block})")
@@ -431,6 +431,30 @@ def mtp_fp8_specs(F: Facts) -> "list[Spec]":
             Spec(MTP_FP8[1], (E, 2 * I // 128, H // 128), F32, src, lambda s, r, W: stacked(s, r, "s13")),
             Spec(MTP_FP8[2], (E, H, I), FP8, src, lambda s, r, W: stacked(s, r, "w2")),
             Spec(MTP_FP8[3], (E, H // 128, I // 128), F32, src, lambda s, r, W: stacked(s, r, "s2"))]
+
+
+MTP_BF16 = ("mtp.L0.moe.bf16.w13", "mtp.L0.moe.bf16.w2")
+
+
+def mtp_bf16_specs(F: Facts) -> "list[Spec]":
+    """The MTP head's routed experts of a rank at the checkpoint's original BF16 (the older copy's fused experts,
+    Facts.mtp_experts "bf16": [512, 2I, H] rows [gate; up] and [512, H, I]): the rank's 128 sliced out as they are --
+    w13 [E, 2I, H], w2 [E, H, I]. The side file mtp_side.py writes; kernels/moe_rows serves it (the operator's rule of
+    2026-09-19: NVFP4 by default, precision where it costs little and moves acceptance)."""
+    if F.mtp_experts != "bf16":
+        raise ValueError(f"the MTP head's BF16 experts need the copy that keeps them fused in BF16; this checkpoint "
+                         f"keeps {F.mtp_experts!r}")
+    E, I, H = F.experts_local, F.moe_inter, F.hidden
+    m = "mtp.layers.0.mlp."
+    gate_up, down = m + "experts.gate_up_proj", m + "experts.down_proj"
+
+    def sliced(s, r, name):
+        lo, hi = F.expert_range(r)
+        return s[name][lo:hi].contiguous()
+
+    src = (gate_up, down)
+    return [Spec(MTP_BF16[0], (E, 2 * I, H), BF, src, lambda s, r, W: sliced(s, r, gate_up)),
+            Spec(MTP_BF16[1], (E, H, I), BF, src, lambda s, r, W: sliced(s, r, down))]
 
 
 def all_specs(F: Facts, layers=None, *, mtp: bool = True) -> "list[Spec]":
@@ -467,4 +491,4 @@ def groups(F: Facts, layers=None, *, mtp: bool = True):
 
 __all__ = ["CK", "top_specs", "layer_specs", "routed_specs", "ple_specs", "ple_shards", "ple_table_name", "mtp_specs",
            "all_specs", "groups", "nvfp4_from_bf16", "dequant_fp8_block", "routed_expert_keys", "mtp_expert_keys",
-           "MTP_FP8", "MTP_NVFP4", "mtp_fp8_specs"]
+           "MTP_FP8", "MTP_NVFP4", "MTP_BF16", "mtp_fp8_specs", "mtp_bf16_specs"]
