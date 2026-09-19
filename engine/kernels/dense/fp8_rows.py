@@ -1,0 +1,88 @@
+"""Block-scaled FP8 x @ W.T for a decode step's handful of rows, in one launch (kernels, dense).
+
+deep_gemm's recipe -- the rows quantized to e4m3 by 128-wide K blocks with power-of-two scales (fp8.quantize), the
+weight e4m3 with power-of-two scales a 128 x 128 block, each K block's FP32 partial times the row's and the weight
+block's scales, summed over the blocks -- with a step's rows padded to 16 for one FP8 tensor-core dot a K block, each
+program owning BLOCK_N weight rows over the whole K. The inputs and scales are deep_gemm's own; only the order of the
+FP32 sums differs, so an output moves by a BF16 step at most.
+
+Qwen3.8's vocabulary head is the shape it is for: 62,080 x 2,560 a rank, 159 MB, read once by the verify step and once
+by each of a K=3 draft chain's three steps. On a GB10 beside production (probes/engine_qwen38_head, q38head-0919b)
+deep_gemm's sm120 GEMM took 949-1013 us for 1-16 rows (157-168 GB/s); this kernel 742-836 us, within 0-12% of a pure
+read of the same bytes (695-747 us); max difference from deep_gemm 0.0037 of the largest logit, argmax identical.
+"""
+from __future__ import annotations
+
+import torch
+import triton
+import triton.language as tl
+
+MAX_ROWS = 16
+
+
+def tile(rows: int) -> "tuple[int, int, int]":
+    """(BLOCK_N, warps, stages) for `rows` rows: 128 weight rows a program for one row, 32 above (q38head-0919b)."""
+    return (128, 4, 3) if rows == 1 else (32, 4, 3)
+
+
+@triton.jit
+def _fp8_rows(XQ, XS, WQ, WS, OUT, M, N, so, K: tl.constexpr, BLOCK_N: tl.constexpr):
+    rows = tl.arange(0, 16)
+    cols = tl.program_id(0) * BLOCK_N + tl.arange(0, BLOCK_N)
+    live, cm = rows < M, cols < N
+    acc = tl.zeros((16, BLOCK_N), dtype=tl.float32)
+    for kb in range(K // 128):
+        ks = kb * 128 + tl.arange(0, 128)
+        xq = tl.load(XQ + rows[:, None] * K + ks[None, :], mask=live[:, None], other=0.0)
+        wq = tl.load(WQ + cols[:, None] * K + ks[None, :], mask=cm[:, None], other=0.0)
+        xs = tl.load(XS + rows * (K // 128) + kb, mask=live, other=0.0)
+        ws = tl.load(WS + (cols // 128) * (K // 128) + kb, mask=cm, other=0.0)
+        acc += tl.dot(xq, tl.trans(wq)) * xs[:, None] * ws[None, :]
+    tl.store(OUT + rows[:, None] * so + cols[None, :], acc.to(OUT.dtype.element_ty), mask=live[:, None] & cm[None, :])
+
+
+def project(q: torch.Tensor, scale: torch.Tensor, weight: "tuple[torch.Tensor, torch.Tensor]", *,
+            out: "torch.Tensor | None" = None) -> torch.Tensor:
+    """(q [M <= 16, K] e4m3, scale [M, K/128] fp32) by weight (wq [N, K] e4m3, ws [N/128, K/128] fp32) -> [M, N] BF16."""
+    wq, ws = weight
+    m, k = q.shape
+    n = wq.shape[0]
+    if (not 1 <= m <= MAX_ROWS or k % 128 or wq.shape[1] != k or n % 128 or tuple(ws.shape) != (n // 128, k // 128)
+            or tuple(scale.shape) != (m, k // 128) or q.dtype != torch.float8_e4m3fn or wq.dtype != q.dtype
+            or not q.is_contiguous() or not wq.is_contiguous() or not scale.is_contiguous() or not ws.is_contiguous()):
+        raise ValueError(f"fp8_rows takes 1..{MAX_ROWS} block-128 FP8 rows of the weight's K: q {tuple(q.shape)}, "
+                         f"weight {tuple(wq.shape)}")
+    if out is None:
+        out = torch.empty(m, n, dtype=torch.bfloat16, device=q.device)
+    elif tuple(out.shape) != (m, n) or out.dtype != torch.bfloat16 or out.stride(1) != 1:
+        raise ValueError("fp8_rows writes packed BF16 [M, N]")
+    block_n, warps, stages = tile(m)
+    _fp8_rows[(triton.cdiv(n, block_n),)](q, scale, wq, ws, out, m, n, out.stride(0), K=k, BLOCK_N=block_n,
+                                          num_warps=warps, num_stages=stages)
+    return out
+
+
+def qualify(device, *, n: int = 1024, k: int = 2560, rows=(1, 4, 16)) -> dict:
+    """D3 before a boot serves: the kernel held to the FP32 product of its own dequantized inputs (the recipe's exact
+    value) on `device` -> {rows: largest error over the largest magnitude}; raises past 2^-7 (one BF16 step), which a
+    wrong scale, block or tile passes by orders."""
+    from .fp8 import quantize
+    gen = torch.Generator(device="cpu").manual_seed(0)
+    w = (torch.randn(n, k, generator=gen) * 0.02).to(torch.bfloat16).to(device)
+    from deep_gemm import per_block_cast_to_fp8
+    wq, ws = per_block_cast_to_fp8(w.float(), use_ue8m0=True)
+    wf = wq.float() * ws.repeat_interleave(128, 0).repeat_interleave(128, 1)[:n, :k]
+    out = {}
+    for m in rows:
+        x = torch.randn(m, k, generator=gen).to(torch.bfloat16).to(device)
+        q, s = quantize(x)
+        ref = (q.float() * s.repeat_interleave(128, 1)) @ wf.t()
+        got = project(q, s, (wq, ws)).float()
+        err = float((got - ref).abs().max() / ref.abs().max().clamp_min(1e-30))
+        if not err <= 2.0 ** -7:
+            raise RuntimeError(f"fp8_rows at {m} rows: error {err:.2e} of the largest magnitude against its recipe")
+        out[m] = round(err, 6)
+    return out
+
+
+__all__ = ["MAX_ROWS", "tile", "project", "qualify"]
