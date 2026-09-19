@@ -71,6 +71,18 @@ class SplitTests(unittest.TestCase):
 
 
 class CollectionTests(unittest.TestCase):
+    def test_parent_window_requires_matching_canonical_holder_and_lease(self):
+        module_path = Path(__file__).resolve().parents[1] / "measurements/qwen38_gptq_20260919/fleet_window.py"
+        spec = importlib.util.spec_from_file_location("gptq_parent_window", module_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        lease = dict(owner='queue/ours', kind='queue')
+        holder = ['ours', '123', 'srv2', '1', '150', 'note', 'boot']
+        self.assertTrue(module.owned_window(lease, holder, 'ours'))
+        self.assertFalse(module.owned_window(dict(lease, owner='queue/other'), holder, 'ours'))
+        self.assertFalse(module.owned_window(lease, ['other'] + holder[1:], 'ours'))
+        self.assertFalse(module.owned_window(lease, holder[:-1] + ['single'], 'ours'))
+
     def test_deferred_window_never_passes_sessions_queue_or_pending_handover(self):
         module_path = Path(__file__).resolve().parents[1] / "measurements/qwen38_gptq_20260919/wait_for_window.py"
         spec = importlib.util.spec_from_file_location("gptq_window_waiter", module_path)

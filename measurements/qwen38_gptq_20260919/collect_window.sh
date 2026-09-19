@@ -4,10 +4,11 @@
 # on srv2; no private prompts or responses are written into this checkout.
 set -euo pipefail
 MODE=${1:-collect}
-case "$MODE" in collect|compare|serve|expanded|collect330|serve330) ;; *) echo 'usage: collect_window.sh collect|compare|serve|expanded|collect330|serve330' >&2; exit 2;; esac
+case "$MODE" in collect|compare|serve|expanded|collect330|serve330|fleet330) ;; *) echo 'usage: collect_window.sh collect|compare|serve|expanded|collect330|serve330|fleet330' >&2; exit 2;; esac
 case "${2:-}" in ''|--preflight) ;; *) echo 'only optional second argument is --preflight' >&2; exit 2;; esac
 TREE=$(cd "$(dirname "$0")/../.." && pwd)
-OWNER=session/q38gptq-0919
+OWNER=${ST_LEASE_OWNER:-session/q38gptq-0919}
+PARENT=${ST_WINDOW_PARENT:-0}
 LOCK=/home/choiceoh/glm53-logs/st-fleet.lock
 OUT=/home/choiceoh/glm53-logs/qwen38-gptq-20260919
 # Keep the failed first scoring attempt beside (not underneath) the final run.
@@ -19,7 +20,7 @@ export PORT=8001 ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-4436
 export ST_IMAGE=st-engine:qwen38-gptq-4436 ST_TAP_MTP_INPUTS=0
 EXPANDED=0
 FIRST_COLLECTION=fit131
-if [[ "$MODE" = expanded || "$MODE" = collect330 || "$MODE" = serve330 ]]; then
+if [[ "$MODE" = expanded || "$MODE" = collect330 || "$MODE" = serve330 || "$MODE" = fleet330 ]]; then
   EXPANDED=1
   [ "$MODE" = expanded ] || FIRST_COLLECTION=fit330
   OUT=/home/choiceoh/glm53-logs/qwen38-gptq-330k-20260919
@@ -28,6 +29,7 @@ if [[ "$MODE" = expanded || "$MODE" = collect330 || "$MODE" = serve330 ]]; then
   export ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-330k-4436
   export ST_IMAGE=st-engine:qwen38-gptq-330k-4436
 fi
+if [ "$MODE" = fleet330 ]; then OUT=$OUT/fleet-20260920; fi
 export ST_SPEC_K=3 ST_HC_FP8=0 ST_MTP_PRECISION=bf16 ST_MTP_EXPERTS=bf16
 export ST_SHARED_OVERLAP=one ST_DRAFT_CANDIDATES=0 ST_DRAFT_THRESHOLD=0.1
 unset ST_MTP_TUNED ST_DRAFT_INDEX
@@ -82,7 +84,7 @@ finish() {
   if [ "$owned" = 1 ] && lease verify --owner "$OWNER" >/dev/null 2>&1; then
     for r in 0 1 2 3; do node "${NODES[$r]}" "docker logs st-qwen38 2>&1" > "$OUT/final-$MODE-rank$r.log" 2>&1 || true; done
     ST_LEASE_OWNER="$OWNER" bash launchers/start-st-qwen38.sh stop >> "$OUT/stop.log" 2>&1 || true
-    lease release --owner "$OWNER" || true
+    [ "$PARENT" = 1 ] || lease release --owner "$OWNER" || true
   else
     lease withdraw-yield --requester "$OWNER" >/dev/null 2>&1 || true
   fi
@@ -92,6 +94,15 @@ trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+if [ "$PARENT" = 1 ]; then
+  [[ "$OWNER" == queue/* ]] || { echo 'parent window must be a canonical queue reservation'; exit 3; }
+  lease verify --owner "$OWNER"
+  python3 - "$OWNER" <<'PY'
+import pathlib, sys
+holder = pathlib.Path('/home/choiceoh/glm53-logs/fleet/holder').read_text().strip().split('|')
+assert holder[0] == sys.argv[1].removeprefix('queue/') and holder[6] == 'boot', 'canonical boot holder differs'
+PY
+else
 # A session owned by somebody else cannot be asked to stop for this run.
 python3 - "$LOCK" <<'PY'
 import json, pathlib, sys
@@ -123,6 +134,7 @@ case "$kind" in
     lease verify --owner "$OWNER" ;;
   *) echo "fleet belongs to another session: $(lease read)" >&2; exit 3 ;;
 esac
+fi
 owned=1
 export ST_LEASE_OWNER="$OWNER"
 for ((i=0; i<120; i++)); do
@@ -145,7 +157,7 @@ for ip in "${NODES[@]}"; do
   if [ "$MODE" = expanded ]; then
     node "$ip" "test ! -e '$host_pack/fit131/mkcalib' && test ! -e '$host_pack/fit240/mkcalib' && test ! -e '$host_pack/fit330/mkcalib' && test ! -e '$host_pack/validation/mkcalib' && test ! -e '$host_pack/heldout/mkcalib'"
   fi
-  if [ "$MODE" = collect330 ]; then
+  if [[ "$MODE" = collect330 || "$MODE" = fleet330 ]]; then
     node "$ip" "test ! -e '$host_pack/fit330/mkcalib'"
   fi
   if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_audit.py "$OUT/audit-$MODE.py";
@@ -215,7 +227,7 @@ collect() {
     done
   fi
   python3 -u probes/qwen38_gptq_feed.py --dataset "$PRIVATE/$split.jsonl" --out "$PRIVATE/$label-collection" \
-    --url "$URL" --min-rows "$minimum" | tee "$OUT/$label-collection.log"
+    --url "$URL" --min-rows "$minimum" --owner "$OWNER" | tee "$OUT/$label-collection.log"
   # The save control is asynchronous. Each rank's complete audit is its receipt.
   for r in 0 1 2 3; do
     ip=${NODES[$r]}
@@ -238,7 +250,7 @@ compare() {
   export ONEPASS_ST_CONTAINER=st-qwen38
   export ONEPASS_PROFILE=extended ONEPASS_JSONL=$OUT/onepass.jsonl
   export ST_BRACKET_SHA=$(git rev-parse HEAD) ST_BRACKET_TREE=$(git rev-parse HEAD:engine)
-  export FLEET_SESSION=q38gptq-0919
+  export FLEET_SESSION=${OWNER#*/}
   local labels=(Bpack A1 B A2) pack_receipts=$OUT first_pack=Bpack
   if [ "$MODE" = expanded ]; then
     labels=(B131pack B240pack B330pack A1 B131 B330 A2)
@@ -247,6 +259,10 @@ compare() {
   if [ "$MODE" = serve330 ]; then
     labels=(A1 B330 A2)
     first_pack=fit330
+  fi
+  if [ "$MODE" = fleet330 ]; then
+    labels=(B330pack A1 B330 A2)
+    first_pack=B330pack
   fi
   if [ "$MODE" = serve ]; then
     # Resume consumer tests only after all four held-out scores succeeded.
@@ -270,6 +286,7 @@ compare() {
       ip=${NODES[$r]}
       if [[ "$label" == B* ]]; then expected=--expect-gptq; else expected=--expect-rtn; fi
       offline_flag=''
+      if [ "$MODE" = fleet330 ] && [[ "$label" == B* ]]; then offline_flag='--min-rows 330000'; fi
       if [ "$MODE" = serve330 ] && [ "$label" = B330 ]; then
         offline_flag="--offline-manifest '$OUT/offline-result-rank$r.json'"
       fi
@@ -289,6 +306,8 @@ compare() {
         [ "$label" != B330pack ] || scores+=(heldout)
       fi
       for split in "${scores[@]}"; do
+      held_root=$PACK/$split
+      [ "$MODE" != fleet330 ] || held_root=/cache/qwen38-gptq-20260919/heldout
       score_prefix=projection
       [ "$MODE" != expanded ] || score_prefix=$label-projection-$split
       jobs=()
@@ -296,7 +315,7 @@ compare() {
         lease verify --owner "$OWNER" >/dev/null
         ip=${NODES[$r]}
         node "$ip" "docker exec -e PYTHONPATH=/repo:$OUT/tools st-qwen38 python3 -m probes.qwen38_gptq_score \
-          --fit '$ST_PACK_ROOT' --heldout '$PACK/$split' --weights /home/choiceoh/models/st-qwen38-tep4/rank${r}of4.safetensors \
+          --fit '$ST_PACK_ROOT' --heldout '$held_root' --weights /home/choiceoh/models/st-qwen38-tep4/rank${r}of4.safetensors \
           --audit '$OUT/$label-audit-rank$r.json' --out '$OUT/$score_prefix-rank$r.json' --device cuda --owner '$OWNER' --parent-verified" \
           > "$OUT/$score_prefix-rank$r.log" 2>&1 &
         jobs+=("$!")
@@ -344,19 +363,24 @@ PY
   done
 }
 
-if [ "$MODE" = collect330 ]; then
+if [[ "$MODE" = collect330 || "$MODE" = fleet330 ]]; then
   collect fit330 train 330000 330000
   gather_expanded
-  python3 - "$OUT" <<'PY'
+  python3 - "$OUT" "$MODE" <<'PY'
 import json, pathlib, sys
 root = pathlib.Path(sys.argv[1])
 audits = [json.loads((root / f'fit330-audit-rank{r}.json').read_bytes()) for r in range(4)]
 assert all(a['statistics_valid'] and a['minimum_rows'] >= 330000 and a['sites'] == 193 for a in audits)
 (root / 'collection-complete.json').write_text(json.dumps(dict(stage='statistics_ready', fit='fit330',
     minimum_rows_by_rank=[a['minimum_rows'] for a in audits],
-    source_sha=(root / 'collect330-source.sha').read_text().strip()), indent=2) + '\n')
+    source_sha=(root / (sys.argv[2] + '-source.sha')).read_text().strip()), indent=2) + '\n')
 PY
-  echo '330K statistics audited; releasing fleet before offline packing on RTX 5050'
+  if [ "$MODE" = fleet330 ]; then
+    compare
+    gather_expanded
+  else
+    echo '330K statistics audited; releasing fleet before offline packing on RTX 5050'
+  fi
 elif [ "$MODE" = expanded ]; then
   collect fit131 train 131072 131072
   collect fit240 train 240490 240490

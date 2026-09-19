@@ -4,7 +4,7 @@
 set -euo pipefail
 TREE=${1:?frozen source tree}
 OUT=${2:?output directory}
-OWNER=session/q38gptq-0919
+OWNER=${ST_LEASE_OWNER:-session/q38gptq-0919}
 LOCK=/home/choiceoh/glm53-logs/st-fleet.lock
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 mkdir -p "$OUT"
