@@ -110,7 +110,7 @@ else
 fi
 logs data2
 # (review, PR #1275) the tap writes on 4,096 rows or its 30 s timer and a stopped container flushes nothing: this
-# immediate stop may have dropped the last < 4,096 positions of the boot -- the next windows wait 35 s first
+# immediate stop may have dropped the last < 4,096 positions of the boot -- #1285 writes them at a stop
 stop_fleet
 stamp "tap: $before -> $(ls $DUMPS/mtp-inputs | wc -l) shards, $(du -sh $DUMPS/mtp-inputs | cut -f1)"
 

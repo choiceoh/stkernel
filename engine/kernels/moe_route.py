@@ -15,8 +15,8 @@ What differs from the composition, and why it is a `kernel` and not a `fold`:
               weighted outputs in another order. A tie at the k-th place may name another expert than torch does;
               every rank runs this launch on the same scores, so the ranks agree.
     exp       Triton's exp is not torch's: the two differ in up to a few last FP32 bits (8e-7 relative), and the
-              softmax's denominator is this program's reduction, not torch's. The weights are rounded to BF16 (the
-              model's boundary: the reference returns them in the scores' dtype), so nearly every weight is the
+              softmax's denominator is this program's reduction, not torch's. With BF16 scores weights round to BF16
+              (the reference returns them in the scores' dtype), so nearly every weight is the
               reference's bit for bit (99.9996% of them, same rows) and the rest are one BF16 step away.
 
     (Measured 2026-09-18 on an RTX 5050 -- sm_120, triton 3.6, torch 2.11 -- not on a GB10.)
@@ -63,17 +63,17 @@ def _softmax_topk(Scores, Ids, Weights, sS, sI, sW, FIRST, LOCAL, FOREIGN,
 
 
 def softmax_topk(scores, k, *, experts=None, first=None, local=None, foreign=0, exact=False):
-    """scores BF16 [N, >= experts] with packed columns -> (ids int32 [N, k], weights FP32 [N, k]).
+    """scores BF16/FP32 [N, >= experts] with packed columns -> (ids int32 [N, k], weights FP32 [N, k]).
 
-    The first `experts` columns (all of them by default; Qwen3.8's scores row carries the shared gate's logit after
-    them) are the router's logits: softmax in FP32, the k largest, renormalised to sum to one, rounded to BF16 and
-    widened for the dispatcher -- engine/modules/moe.route_softmax_topk with `normalize`, then `.float()`. With `first`
+    The first `experts` columns (all by default) are the router's logits: softmax in FP32, the k largest, renormalised
+    to sum to one, then the input dtype's rounding -- engine/modules/moe.route_softmax_topk with `normalize`, then
+    `.float()`. FP32 logits retain FP32 weights, in eager and captured steps alike. With `first`
     and `local`, an id outside this rank's [first, first + local) becomes `foreign` (local expert 0, or the dispatcher's
     zero-weight sentinel) at weight exactly 0 and the others count from `first` (lanes.local_routes). `exact` keeps the
     weights unrounded (the tests hold the arithmetic and the rounding apart: Triton's CPU interpreter does not round
     BF16 the way a GPU does)."""
-    if scores.ndim != 2 or scores.dtype != torch.bfloat16 or not scores.is_cuda or scores.stride(1) != 1:
-        raise ValueError("the router takes BF16 scores [N, >= experts] with packed columns on a CUDA device")
+    if scores.ndim != 2 or scores.dtype not in (torch.bfloat16, torch.float32) or not scores.is_cuda or scores.stride(1) != 1:
+        raise ValueError("the router takes BF16/FP32 scores [N, >= experts] with packed columns on a CUDA device")
     rows, columns = scores.shape
     experts = columns if experts is None else experts
     if type(experts) is not int or type(k) is not int or not 1 <= k <= experts <= columns or k > 64:
@@ -88,7 +88,8 @@ def softmax_topk(scores, k, *, experts=None, first=None, local=None, foreign=0, 
         _softmax_topk[(rows,)](scores, ids, weights, scores.stride(0), ids.stride(0), weights.stride(0),
                                first if remap else 0, local if remap else 0, foreign,
                                E=experts, K=k, EB=tr.next_power_of_2(experts), KB=tr.next_power_of_2(k),
-                               REMAP=remap, ROUND=not exact, num_warps=4, enable_fp_fusion=False)
+                               REMAP=remap, ROUND=not exact and scores.dtype == torch.bfloat16,
+                               num_warps=4, enable_fp_fusion=False)
     return ids, weights
 
 

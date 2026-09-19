@@ -129,6 +129,8 @@ class PatchedForwardTests(unittest.TestCase):
             return x * .25
 
         net._moe = moe
+        observed = []
+        net.head_observer = lambda rows, mask: observed.append(rows.clone())
         embeddings = torch.arange(15, dtype=torch.float32).reshape(5, hidden) / 10
         replacements = torch.tensor([[3., 2., 1.], [-1., -2., -3.]])
         at = torch.tensor([1, 3])
@@ -136,6 +138,8 @@ class PatchedForwardTests(unittest.TestCase):
         net.embed = lambda ids: embeddings.clone()
         step = replace(step, patches=((at, replacements),))
         got = net.forward(step, None, last_hidden_only=True, streams=True)
+        self.assertEqual(observed[0].shape, (5, hidden))   # calibration gets the whole prompt, not only its last row
+        torch.testing.assert_close(got[0], observed[0][-1:], rtol=0, atol=0)
         expected = embeddings.clone()
         expected[at] = replacements
         net.embed = lambda ids: expected.clone()

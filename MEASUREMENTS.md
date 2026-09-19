@@ -4981,7 +4981,7 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **원장(임계를 고르는 경험 곡선 — 보정 측정은 아니다, 리뷰 지적):** 헤드가 0.9~0.97 을 준 드래프트의 greedy 수용 82% → 98%, 행당 수용 1.739 → 1.879.
 - **임계 0.1:** 같은 튜닝 헤드의 켬/끔 짝(간섭 없는 31 개): ms/스텝 −0.26 ± 0.21(유의하지 않음), 토큰/스텝 −1.4% — C=1 에서 이득 없음.
 - **추정(`eval --sampler 1.0,20,0.95`, teacher-forced 대리 지표 — 서빙 T=1 수용도 블록 검증의 하한도 아니다):** 뽑은 드래프트가 정확 일치보다 3차 헤드 +5.9%(원본 +4.6%); 1단 top-2 는 greedy 수용 0.857 → 0.928.
-- **창에서 나온 버그:** 데이터 부팅 끝의 탭 꼬리(4,096 행 미만)를 멈춘 컨테이너가 쓰지 않음(리뷰 지적), 탭 런이 슬롯 id 로 접힘, warmup 100 > 91 스텝(#1263), bare `wait` 가 heartbeat 를 기다림, 평가 창이 첫 데이터셋에서만 나옴(#1271).
+- **창에서 나온 버그:** 데이터 부팅 끝의 탭 꼬리(4,096 행 미만)를 멈춘 컨테이너가 쓰지 않음(리뷰 지적, #1285 로 고침), 탭 런이 슬롯 id 로 접힘, warmup 100 > 91 스텝(#1263), bare `wait` 가 heartbeat 를 기다림, 평가 창이 첫 데이터셋에서만 나옴(#1271).
 - 기록: `measurements/qwen38_mtp_tune_window_20260919/`.
 ### Qwen3.8 leave 를 TP 합의 PDL 종속으로 + 대기 중 down projection L2 프리페치 (carry H4): 사이트당 −7~−17 µs, PDL 만은 −1 µs; X1 기각 (2026-09-19, srv4 단일 GPU 레인, PR #1270)
 - **무엇.** #1269 의 TP 통신 21%(합마다 약 20 µs 의 피어 대기, 메모리는 논다)에 GLM #473 의 "대기 동안 다음 MHC 불변 가중치 준비"를
@@ -5034,4 +5034,14 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **미측정.** GPU 부팅(`qualify grammar`·`prelude_s`·`wait for the prelude` 행)과 `tools` 요청 끝까지 — 운영자의 다음 창. `tools` 요청은 첫 토큰부터
   rich 행이라 tok/s 가 문법 없는 요청보다 낮을 수 있다(미측정).
   [대조·로그](measurements/qwen38_fleet_grammars_20260919/README.md).
+### Qwen3.8 PLE 게이트 한 발사 — 4,096 토큰 청크의 PLE 57.6 → 34.7 ms(−40%), 청크의 약 2.4% (2026-09-19, srv4 단일 GPU 레인 2회, PR #1280)
+`engine/kernels/ngram_gate.gate`: PLE 주입의 게이트(스트림·키 unit-offset 정규화, 내적, 부호 제곱근, 시그모이드, 값 곱)와 conv 정규화를 torch 약 15 발사
+대신 한 발사로. torch 형태의 캐스트를 그대로 따라 인터프리터에서 바이트 동일, 부팅 qualify 에 넣음. 프리필(eager)과 캡처 디코드 둘 다.
+- `--lanes qwen38_prefill` 두 티켓(main `7dcc0f00` 대 `28cc6bbf`): PLE 몫 57.62 → 34.69 ms(컨텍스트 0), 58.89 → 35.99(4,096). `_gate` 1.92 ms.
+- **남은 PLE torch 26.5 ms** 는 dilated causal conv 의 torch 형태 — 다음 레버. **플릿 onepass 미측정**(창은 다른 세션 임대 중, D17 은 다음 창).
+  [상세·원시](measurements/qwen38_ple_gate_20260919/README.md).
 
+
+### Qwen3.8 GLM 정밀도 이식 (2026-09-19)
+
+GLM의 IEEE FP32 라우터·W8A16 검증 헤드·타깃 GPTQ 자기 보정 배선을 Qwen으로 옮겼다. GB10 셀 검사 **83개 통과, 스킵 0**. 실제 헤드 크기의 합성 가중치에서 같은 FP8 가중치를 기준으로 입력·누적·최종 반올림 오차 RMSE가 W8A8 **0.0267** → W8A16 **0.00168**(1/4/16행). 수집 대상 193곳, **2.804 GiB/랭크**, 워밍업·가상 행 제외, 체크포인트 표식 검사·자동 저장을 연결했다. 전체 TP4 출력 품질·수용률·속도·운영 배포 판정은 아니다. [원시 로그·이식 범위·재현](measurements/qwen38_precision_port_20260919/README.md).

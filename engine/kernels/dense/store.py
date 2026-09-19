@@ -58,9 +58,12 @@ class Need(NamedTuple):
 
 
 class PackStore:
-    def __init__(self, root, rank, weights_id=None):
+    def __init__(self, root, rank, weights_id=None, *, require_identity=False):
+        if require_identity and weights_id is None:
+            raise ValueError("strict calibration provenance requires a weights_id")
         self.root, self.rank = Path(root), rank
         self.weights_id = weights_id             # the weights this boot serves; a blob summed under others is refused
+        self.require_identity = require_identity
         self.foreign = set()                     # names whose blob was summed under other weights (re-sum these)
         self._claims = {}                        # calibration path -> the weights_id it claims, cached per boot
         self.stats = Counter()
@@ -97,8 +100,8 @@ class PackStore:
         than no Hessian, so refusing it is the point. The three 2026-09-14 eval arms shared one blob set and their
         head NLL ordered by how far their experts sat from the arm that summed it.
 
-        A blob written before this field makes no claim and is taken: the fleet's existing blobs stay usable, and
-        the next calibration stamps them.
+        A blob written before this field makes no claim and is taken unless require_identity is set. A new profile
+        can require a stamp without changing the legacy fleet's cache policy.
         """
         if self.weights_id is None:
             return True
@@ -107,9 +110,9 @@ class PackStore:
                 blob = torch.load(path, map_location='cpu', mmap=True, weights_only=True)
                 self._claims[path] = blob.get('weights_id')
             except Exception:
-                self._claims[path] = None                # unreadable here: `missing_calibration` says what is wrong
+                return True                              # unreadable here: the normal blob validator reports it
         claimed = self._claims[path]
-        return claimed is None or claimed == self.weights_id
+        return (claimed is None and not self.require_identity) or claimed == self.weights_id
 
     def calibrated(self, name):
         """Whether this store holds a calibration blob for `name` that was summed under this boot's weights

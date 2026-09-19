@@ -4,7 +4,8 @@
 # /cache for the JIT builds, and the fleet's NCCL/RoCE environment (start-st-glm53.sh's, which this script follows).
 #
 #   bash launchers/start-st-qwen38.sh            # start all four (rank 0=srv2, rank 1=srv1, then srv3/srv4)
-#   bash launchers/start-st-qwen38.sh stop       # docker rm -f st-qwen38 on every node
+#   bash launchers/start-st-qwen38.sh stop       # rank 0 by docker stop (it writes what it records), then
+#                                                # docker rm -f st-qwen38 on every node
 #   bash launchers/start-st-qwen38.sh logs [r]   # tail rank r's container log
 #   bash launchers/start-st-qwen38.sh prebuild   # this tree's b12x MoE kernels, compiled on every node's CPU while
 #                                                # production still serves: run it BEFORE taking the window
@@ -57,6 +58,12 @@ case "${ST_DRAFTER:-1}" in
   1) ;;
   0) DRAFTER_ARG="--no-drafter" ;;
   *) echo "ST_DRAFTER must be 0 or 1" >&2; exit 2 ;;
+esac
+CALIB_ARG=""
+case "${ST_SELF_CALIBRATE:-1}" in
+  1) ;;
+  0) CALIB_ARG="--no-self-calibrate" ;;
+  *) echo "ST_SELF_CALIBRATE must be 0 or 1" >&2; exit 2 ;;
 esac
 SHARDS_ARG=""                                                 # ST_QUERY_SHARDS=0: every rank scores every index query (carry Q11's rollback)
 case "${ST_QUERY_SHARDS:-1}" in
@@ -163,6 +170,8 @@ case "$RECLAIM_FILE_CACHE" in
   0|1) ;;
   *) echo "ST_RECLAIM_FILE_CACHE must be 0 or 1" >&2; exit 2 ;;
 esac
+STOP_GRACE=${ST_STOP_GRACE_S:-30}                             # `stop`: rank 0's seconds to write what it records (0: SIGKILL at once)
+[[ "$STOP_GRACE" =~ ^[0-9]+$ ]] || { echo "ST_STOP_GRACE_S must be whole seconds" >&2; exit 2; }
 RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/st-qwen38-tep4}
 ENGINE_DIR=${ST_ENGINE_DIR:-$DEFAULT_ENGINE_DIR}
 # A shell carrying production's environment must not rsync --delete this tree over a release or retag its image:
@@ -233,8 +242,18 @@ case "${1:-start}" in
         echo "ABORT: the fleet is held by $held_owner. Stop it from its own side. STOP_FORCE=1 is the operator's word." >&2; exit 1
       fi
     fi
-    # the owner the node's docker guard asks for is read off the container (launchers/docker-fleet-guard.sh)
-    for ip in "${NODES[@]}"; do node_sh "$ip" "ST_FLEET_OK=\$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $NAME 2>/dev/null | sed -n 's/^ST_LEASE_OWNER=//p' | head -1) docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"; done
+    # The owner the node's docker guard asks for is read off the container (launchers/docker-fleet-guard.sh). Rank 0
+    # goes first, by SIGTERM (`docker stop`): its recorders -- the MTP head's inputs, the draft ledger -- write what
+    # they hold, the rank exits 143 and what they said is shown here (fleet.py close_on_exit). Docker's SIGKILL
+    # follows after ST_STOP_GRACE_S seconds if it does not, so a sick fleet still stops. Then every rank goes by
+    # `rm -f`, as before; ST_STOP_GRACE_S=0 is the old stop, SIGKILL everywhere and rank 0's last records lost.
+    for r in "${!NODES[@]}"; do
+      ip=${NODES[$r]} term=""
+      if [ "$r" = 0 ] && [ "$STOP_GRACE" != 0 ]; then
+        term="ST_FLEET_OK=\"\$owner\" docker stop -t $STOP_GRACE $NAME >/dev/null 2>&1 && docker logs --tail 20 $NAME 2>&1 | sed -n 's/^  SIGTERM: /$ip: /p';"
+      fi
+      node_sh "$ip" "owner=\$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $NAME 2>/dev/null | sed -n 's/^ST_LEASE_OWNER=//p' | head -1); $term ST_FLEET_OK=\"\$owner\" docker rm -f $NAME >/dev/null 2>&1 && echo '$ip: stopped' || echo '$ip: none'"
+    done
     for ip in "${NODES[@]}"; do node_sh "$ip" "bash $ENGINE_DIR/launchers/st-reclaim-broker.sh stop-all $RECLAIM_ROOT >/dev/null 2>&1 || true"; done
     use_lease
     if [ -n "$held_owner" ] && [ "${ST_LEASE_OWNER:-}" = "$held_owner" ]; then
@@ -355,7 +374,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro $EXPERTS_MOUNT -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $LEAVE_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $LEAVE_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR $CALIB_ARG' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

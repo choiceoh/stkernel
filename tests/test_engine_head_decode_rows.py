@@ -115,10 +115,10 @@ class RoutingTests(unittest.TestCase):
         self.assertFalse(head.bf16_rows(torch.zeros(4, 512, dtype=torch.bfloat16)[:, :256]), "not contiguous")
         self.assertFalse(head.bf16_rows(torch.zeros(0, 256, dtype=torch.bfloat16)))
 
-    def test_glms_head_declares_the_lane_and_nothing_else_does(self):
+    def test_glm_and_qwen_heads_declare_the_lane(self):
         users = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "engine/profiles").rglob("*.py")
                        if 'decode_rows="w8a16"' in p.read_text(encoding="utf-8"))
-        self.assertEqual(users, ["engine/profiles/glm53/net.py"])
+        self.assertEqual(users, ["engine/profiles/glm53/net.py", "engine/profiles/qwen38/net.py"])
 
 
 @unittest.skipUnless(torch is not None, "torch required")
