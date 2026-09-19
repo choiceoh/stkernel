@@ -1,0 +1,138 @@
+lease: verified, session session/qwen38-s2h6-0919 on srv2 since 2026-09-19 14:29:02 (operator window: M5 confirm (one then off), H6 (--hc-fp8), S2 lane probe): phase=stopped
+== rank 0 on 10.10.10.2
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 20.60kB 0.0s done
+#4 DONE 0.0s
+
+#5 [3/4] COPY engine /opt/st/engine
+#5 CACHED
+
+#6 [2/4] WORKDIR /opt/st
+#6 CACHED
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 CACHED
+
+#8 exporting to image
+#8 exporting layers done
+#8 writing image sha256:931cfbcfb7620e23cab462a99fae0ae892d8c615cc93a592536cdcf6a71e0ac3 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.0s
+10.10.10.2: file cache returned: MemFree 102.8 GiB, MemAvailable 97.9 GiB, Cached 2.7 GiB -> MemFree 105.4 GiB, MemAvailable 99.2 GiB, Cached 0.3 GiB; commit: overcommit_memory 2, CommitLimit 75.8 GiB, Committed_AS 2.7 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank0 (pid 421141)
+10.10.10.2: started
+== rank 1 on 10.10.10.1
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 20.60kB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/4] WORKDIR /opt/st
+#5 CACHED
+
+#6 [3/4] COPY engine /opt/st/engine
+#6 CACHED
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 CACHED
+
+#8 exporting to image
+#8 exporting layers done
+#8 writing image sha256:904f11465855d5140fb2f637299d7d270405784c77878a62a1c6a646c453ba31 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.0s
+10.10.10.1: file cache returned: MemFree 105.5 GiB, MemAvailable 97.6 GiB, Cached 3.1 GiB -> MemFree 107.5 GiB, MemAvailable 98.5 GiB, Cached 1.1 GiB; commit: overcommit_memory 2, CommitLimit 131.6 GiB, Committed_AS 6.8 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank1 (pid 421021)
+10.10.10.1: started
+== rank 2 on 10.10.10.3
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 20.60kB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/4] WORKDIR /opt/st
+#5 CACHED
+
+#6 [3/4] COPY engine /opt/st/engine
+#6 CACHED
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 CACHED
+
+#8 exporting to image
+#8 exporting layers done
+#8 writing image sha256:a5474ed5f34bf04e433ede96bbaffffd70b248c212d628d0f70d12e62a40d089 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.0s
+10.10.10.3: file cache returned: MemFree 104.1 GiB, MemAvailable 99.1 GiB, Cached 2.8 GiB -> MemFree 106.2 GiB, MemAvailable 100.2 GiB, Cached 0.9 GiB; commit: overcommit_memory 0, CommitLimit 75.8 GiB, Committed_AS 10.5 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank2 (pid 754026)
+10.10.10.3: started
+== rank 3 on 10.10.10.4
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 20.60kB done
+#4 DONE 0.0s
+
+#5 [3/4] COPY engine /opt/st/engine
+#5 CACHED
+
+#6 [2/4] WORKDIR /opt/st
+#6 CACHED
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 CACHED
+
+#8 exporting to image
+#8 exporting layers done
+#8 writing image sha256:a4e3ef1abead972bd0ab4df6fea6238414f509a0e28a2cf4aaab34c50e3ea745 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.0s
+10.10.10.4: file cache returned: MemFree 88.5 GiB, MemAvailable 94.8 GiB, Cached 6.3 GiB -> MemFree 94.3 GiB, MemAvailable 95.0 GiB, Cached 2.0 GiB; commit: overcommit_memory 0, CommitLimit 76.8 GiB, Committed_AS 40.8 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 850031)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status

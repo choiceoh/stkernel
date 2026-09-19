@@ -1,0 +1,4 @@
+10.10.10.2: {"summary": {"built": 0, "cached": 9, "failed": 0, "hit": 33, "into": "/cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops", "requests": 42, "seconds": 1.92}}
+10.10.10.1: {"summary": {"built": 0, "cached": 5, "failed": 0, "hit": 25, "into": "/cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops", "requests": 30, "seconds": 1.525}}
+10.10.10.3: {"summary": {"built": 0, "cached": 9, "failed": 0, "hit": 30, "into": "/cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops", "requests": 39, "seconds": 1.835}}
+10.10.10.4: {"summary": {"built": 0, "cached": 9, "failed": 0, "hit": 31, "into": "/cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops", "requests": 40, "seconds": 1.993}}
