@@ -97,6 +97,17 @@ class CollectionTests(unittest.TestCase):
 
 @unittest.skipUnless(importlib.util.find_spec("torch"), "requires torch")
 class BlobTests(unittest.TestCase):
+    def test_hessian_score_matches_explicit_held_out_projection_error(self):
+        import torch
+        from probes.qwen38_gptq_score import output_error
+        g = torch.Generator().manual_seed(919)
+        x = torch.randn(37, 9, generator=g, dtype=torch.float64)
+        w = torch.randn(13, 9, generator=g, dtype=torch.float64)
+        q = w.round()
+        actual = output_error(w, q, x.T @ x, chunk=4)
+        expected = ((x @ (w - q).T).square().sum() / (x @ w.T).square().sum()).sqrt()
+        self.assertAlmostEqual(actual["relative_rmse"], float(expected), places=13)
+
     def test_saved_hessian_must_match_boot_domain_and_coverage(self):
         import torch
         from probes.qwen38_gptq_audit import validate_blob
