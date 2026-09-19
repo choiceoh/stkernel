@@ -146,9 +146,11 @@ def extrapolate(parts: dict, full=FULL) -> float:
 
 
 def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K,
-          mtp_precision: str = "bf16", mtp_experts: str = "bf16", shared_overlap: "bool | str" = False):
+          mtp_precision: str = "bf16", mtp_experts: str = "bf16", shared_overlap: "bool | str" = False,
+          candidates: int = 0):
     """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft), at
-    `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them)."""
+    `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them); `candidates`:
+    the draft graphs' sampled chain (fleet --draft-candidates)."""
     import dataclasses
     import torch
     from engine.base.arena import Arena
@@ -187,7 +189,8 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     caches = Qwen38Caches(arena, F, net.layers, nb, max_seqs, snapshots, mtp=True)
     tokens = F.spec_k + 1
     target = TargetGraphs(net, caches, max_seqs, tokens, ceiling=F.max_position)
-    draft = DraftGraphs(net, caches, max_seqs, tokens, k=F.spec_k, ceiling=F.max_position, probability=True)
+    draft = DraftGraphs(net, caches, max_seqs, tokens, k=F.spec_k, ceiling=F.max_position, candidates=candidates,
+                        probability=True)
     torch.cuda.synchronize()
     return F, net, caches, target, draft
 
@@ -260,7 +263,8 @@ def served_loop(F, net, caches, target, draft, *, prompt: int = 512, steps: int 
     from engine.profiles.qwen38.adapter import build_model
     caches.reset()
     model, _ = build_model(net, caches, F, eos_ids=[F.vocab + 7], max_new=(steps + 8) * (F.spec_k + 1) + 16, temperature=0.0,
-                           top_p=1.0, seed=0, drafter=True, draft_ahead=draft_ahead)
+                           top_p=1.0, seed=0, drafter=True, draft_ahead=draft_ahead,
+                           draft_candidates=getattr(draft, "candidates", 0))
     model.composition.graphs, model.drafter.graphs = target, draft
     spent = {"stage_ple": 0.0, "target_run": 0.0, "draft_run": 0.0, "picks": 0.0}
 
@@ -336,7 +340,10 @@ def ahead(output=None, ranks=None, *, rank: "int | None" = None, layers=LAYER_SE
     from engine.base import kernel_shape
     from engine.profiles.qwen38 import facts
     kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
-    F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=1, kv_gib=KV_GIB)
+    from engine.profiles.qwen38.fleet import DRAFT_CANDIDATES
+    # the fleet's draft graphs: sampled chains over its candidates, a greedy row's settings temperature 0
+    F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=1, kv_gib=KV_GIB,
+                                          candidates=DRAFT_CANDIDATES)
     runs = []
     try:
         for i, on in enumerate(AHEAD_ORDER):

@@ -41,7 +41,7 @@ class FakeNet:
 
     def __init__(self, k: int, *, record: bool = True):
         self.F = SimpleNamespace(block=16, spec_k=k, vocab=V, max_position=1000, ngram_size=3, hc=1, hidden=2)
-        self.comm = SimpleNamespace(graph_capture_safe=True)
+        self.comm = SimpleNamespace(graph_capture_safe=True, world_size=1)
         self.lanes = SimpleNamespace(graph_resources=None)
         self.ple_stage = None
         self.record, self.heads = record, []
@@ -84,6 +84,16 @@ class FakeNet:
             return picks
         return picks, ((picks % 4) + 1).to(torch.float32) / 5          # 0.2 .. 0.8 by the pick
 
+    def draft_sample(self, h, temperature, top_k, top_p, uniform, *, candidates):
+        """net.draft_sample's rule over made-up candidates: x + 1 first, then x + 2 ... at falling logits."""
+        from engine.base.sampler import rows as sample_rows
+        rows, dev = h.shape[0], h.device
+        ids = ((h[:, 0].long() + 1)[:, None] + torch.arange(candidates, device=dev)) % V
+        values = -torch.arange(candidates, dtype=torch.float32, device=dev).expand(rows, candidates).contiguous()
+        probs = torch.empty(values.shape, dtype=torch.float32, device=dev)
+        at = sample_rows(values, temperature, top_k, top_p, uniform, None, probs).view(-1, 1)
+        return ids.gather(1, at).view(-1), probs.gather(1, at).view(-1), ids, probs
+
 
 class EagerGraphs:
     """base/graphs.DecodeGraphs on the CPU: each shape's inputs made once; `run` fills them and runs the step."""
@@ -101,7 +111,7 @@ class EagerGraphs:
 
 
 def build(*, ahead: bool, k: int = 3, rows: int = 2, device: str = "cpu", eos=(), max_new: int = 200,
-          threshold=None, ledger=None, narrow_rows: int = 0, tap=None):
+          threshold=None, ledger=None, narrow_rows: int = 0, tap=None, candidates: int = 0):
     """The served model over FakeNet and caches that hold only what the adapter reads, its graphs captured."""
     from engine.profiles.qwen38 import decode_graphs
     from engine.profiles.qwen38.adapter import build_model, capture
@@ -112,7 +122,8 @@ def build(*, ahead: bool, k: int = 3, rows: int = 2, device: str = "cpu", eos=()
                              block_table=torch.zeros(rows, 64, dtype=torch.int32, device=dev),
                              prepare=lambda step: None, reset=lambda: None, reset_slot=lambda slot: None)
     model, _ = build_model(net, caches, net.F, eos_ids=list(eos), max_new=max_new, temperature=0.0, top_p=1.0, seed=0,
-                           draft_threshold=threshold, draft_ledger=ledger, draft_ahead=ahead)
+                           draft_threshold=threshold, draft_ledger=ledger, draft_candidates=candidates,
+                           draft_ahead=ahead)
     model.drafter.inputs_tap = tap
     with ExitStack() as stack:
         if dev.type == "cpu":
@@ -320,6 +331,18 @@ class EquivalenceMixin:
     def test_k1(self):
         _, ahead = self.pair([[3, 9, 17, 4, 30]], k=1)
         self.assertEqual(ahead[5].ahead_steps, 12)
+
+    def test_the_served_sampled_draft_graphs(self):
+        """fleet --draft-candidates 20 (the served default, #1266): the draft graph takes each row's sampler settings,
+        a greedy row's temperature 0 -- written on the device behind a verify step, uploaded before one otherwise."""
+        _, ahead = self.pair([[3, 9, 17, 4, 30], [8, 1, 2, 60, 5, 44, 7]], candidates=20, threshold=0.5, narrow_rows=2)
+        self.assertEqual(ahead[5].ahead_steps, 12)
+
+    def test_a_sampled_row_beside_the_served_sampled_drafts(self):
+        """A row at temperature 0.7 draws its drafts from the head and is kept by block verification: the whole step
+        stays synchronous, and nothing changes for it."""
+        _, ahead = self.pair([[3, 9, 17, 4, 30], [8, 1, 2, 60, 5, 44, 7]], steps=8, temps={1: 0.7}, candidates=20)
+        self.assertEqual(ahead[5].ahead_steps, 0)
 
 
 @unittest.skipUnless(torch is not None, "requires torch")
