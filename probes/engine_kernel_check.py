@@ -228,7 +228,7 @@ def main():
         # Interleave build order across rounds: unchanged paths exposed drift in
         # a single sequential pair. These remain single-rank component graphs.
         rounds = [run(None, args.ranks, layer_sets=LAYER_SETS[:1], arms=arms,
-                      shapes=((1, 6), (2, 6), (3, 6), (4, 6)), max_gib=8.0)
+                      shapes=((1, 6), (2, 6), (3, 6), (4, 6)), max_gib=6.0)
                   for arms in (MIX_W8_ARMS, MIX_W8_ARMS[::-1])]
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(json.dumps({"rounds": rounds}, indent=1) + "\n")
