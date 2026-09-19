@@ -19,7 +19,9 @@ minimum is the judge (the lane shares its GPU with production and whatever else 
 
     python3 probes/engine_kernel_check.py --lanes qwen38_stream_order --output /cache/qwen38-stream-order.json
 
-Not a speed claim (D17): one launch's time on one GPU, for the site's record.
+Not a speed claim (D17): one launch's time on one GPU, for the site's record. The 2026-09-20 record
+(q38streamorder-0920a, measurements/qwen38_stream_order_20260920): stream_scales 1,138 -> 792 us at 4,096 rows, 545 -> 396
+at 2,048; leave_norm 1,678 -> 1,159 at 4,096; norm_streams unchanged; every form the same bytes.
 """
 from __future__ import annotations
 

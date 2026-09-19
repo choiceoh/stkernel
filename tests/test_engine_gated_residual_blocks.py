@@ -97,13 +97,14 @@ def kernel_normed(h, out, injection, w, eps):
     launched here: on the CPU the module's entry points take the torch form."""
     normed = torch.empty_like(h)
     bd = triton.next_power_of_2(HIDDEN)
+    grid, rows_first = hcr._stream_grid(h.shape[0], HC)                      # the served order: a row's streams adjacent
     if out is None:
-        hcr._norm_streams[(h.shape[0], HC)](h, w, normed, h.stride(0), normed.stride(0), eps, HID=HIDDEN, BD=bd,
-                                            SCALE_ONLY=False, num_warps=hcr._warps(HIDDEN))
+        hcr._norm_streams[grid](h, w, normed, h.stride(0), normed.stride(0), eps, HID=HIDDEN, BD=bd, SCALE_ONLY=False,
+                                ROWS_FIRST=rows_first, num_warps=hcr._warps(HIDDEN))
     else:
-        hcr._leave_norm[(h.shape[0], HC)](h, out, injection, w, normed, h, h.stride(0), out.stride(0),
-                                          injection.stride(0), normed.stride(0), eps, 0, HID=HIDDEN, BD=bd, NORM=True,
-                                          PDL=False, PREFETCH=False, SCALE_ONLY=False, num_warps=hcr._warps(HIDDEN))
+        hcr._leave_norm[grid](h, out, injection, w, normed, h, h.stride(0), out.stride(0), injection.stride(0),
+                              normed.stride(0), eps, 0, HID=HIDDEN, BD=bd, NORM=True, PDL=False, PREFETCH=False,
+                              SCALE_ONLY=False, ROWS_FIRST=rows_first, num_warps=hcr._warps(HIDDEN))
     return normed
 
 

@@ -48,6 +48,10 @@ streams (20 KB, contiguous) are walked in one go. Over (rows, hc) -- the grid un
 a row were `rows` programs apart, about 60 MB of streams between them at 4,096 rows, past the L2, and the output was
 read from DRAM once a stream: a quarter of the leave's traffic (252 MB against 189 at 4,096 rows). Either order runs
 the same programs on the same elements, so the bytes are the same (`_stream_grid`; probes/engine_qwen38_stream_order).
+On a GB10 (q38streamorder-0920a, the minima of 21 interleaved rounds beside a training job) the prefill site's leave
+(`stream_scales`) went 1,138 -> 792 us at 4,096 rows (239 GB/s, 87% of the memory's), 545 -> 396 at 2,048, 151 -> 126
+at 1,024, 52 -> 49 at 512; `leave_norm` 1,678 -> 1,159 at 4,096 rows; `norm_streams`, which adds no output, was
+unchanged (measurements/qwen38_stream_order_20260920).
 
 On a GB10 (eight sites a graph, interleaved; beside production, so the minima of nine rounds): up and the mean 1,703 ->
 815 us a site at 4,096 rows (x2.09), x1.66 at 2,048, x1.65 at 1,024, x1.39 at 512 (q38sitecmp-0919a, an idle GPU) -- and

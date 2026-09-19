@@ -5154,3 +5154,9 @@ split-K 와 바이트 동일이 아니라 대역 안(최대 0.0066, rms 0.0011).
 - U11: vLLM 의 L2 절벽 없음(16,384×2,560 M 16,384 에서 123 TFLOPS); 번갈아 잰 2차는 L2 안 대조군까지 같이 떨어져 경합. U15: sanitizer 가 컨테이너에서 계측 불가.
   [상세·원시](measurements/sm121_candidates_20260919/README.md).
 
+### Qwen3.8 프리필 leave 의 발사 순서 — 한 행의 네 줄기를 이웃 프로그램으로: 4,096 행 1,138 → 792 µs(×1.44), 바이트 동일 (2026-09-20, srv4 단일 GPU 레인)
+`gated_residual._leave_norm`·`_norm_streams` 의 격자를 `(rows, hc)` 에서 `(hc, rows)` 로. 전에는 한 행의 네 프로그램이 `rows` 프로그램 떨어져 있어 같이 읽는 서브레이어 출력 행(4,096 행에 21 MB)이
+줄기마다 한 번, 네 번 DRAM 에서 읽혔다(leave 트래픽 252 MB 중 63 MB). 이제 이웃이라 한 번. 프로그램의 일은 같아 세 형태 모두 **바이트 동일**(`_stream_grid`, 옛 순서는 프로브 훅 `_STREAM_GRID_OVERRIDE="rows"`).
+- `q38streamorder-0920a`(트리 `f3a8c4d4`, 21 라운드 번갈아 최솟값, 큐 밖 학습 옆 71→96%): `stream_scales` 4,096 행 1,138.5 → 791.6 µs(239 GB/s, 대역폭의 87%), 2,048 행 545 → 396, 1,024 행 151 → 126, 512 행 52 → 49;
+  `leave_norm` 4,096 행 1,678 → 1,159; `out` 없는 `norm_streams` 는 변화 없음(364 → 379, 잡음 안). 전 팔 1,138 은 #1293 의 깨끗한 1,148 과 맞는다.
+- 추정(측정 아님): 4,096 토큰 청크의 `stream_scales` 사이트 95 개 × −347 µs ≈ **−33 ms/청크**. **플릿 onepass·센서스 미측정**(D17). [상세·원시](measurements/qwen38_stream_order_20260920/README.md).

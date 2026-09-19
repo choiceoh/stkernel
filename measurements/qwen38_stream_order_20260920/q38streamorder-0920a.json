@@ -1,0 +1,182 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 21,
+ "calls_a_graph": 8,
+ "rule": [
+  [
+   4,
+   4096
+  ],
+  false
+ ],
+ "gpu_busy_percent": {
+  "start": 71,
+  "end": 96
+ },
+ "rows": {
+  "512": {
+   "stream_scales": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 52.0,
+      "median": 78.0
+     },
+     "streams first": {
+      "min": 48.7,
+      "median": 75.6
+     }
+    }
+   },
+   "leave_norm": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 120.2,
+      "median": 147.1
+     },
+     "streams first": {
+      "min": 116.3,
+      "median": 142.8
+     }
+    }
+   },
+   "norm_streams": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 12.0,
+      "median": 12.5
+     },
+     "streams first": {
+      "min": 11.3,
+      "median": 11.7
+     }
+    }
+   }
+  },
+  "1024": {
+   "stream_scales": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 151.2,
+      "median": 177.9
+     },
+     "streams first": {
+      "min": 126.1,
+      "median": 153.2
+     }
+    }
+   },
+   "leave_norm": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 331.9,
+      "median": 417.9
+     },
+     "streams first": {
+      "min": 289.7,
+      "median": 374.5
+     }
+    }
+   },
+   "norm_streams": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 20.5,
+      "median": 47.3
+     },
+     "streams first": {
+      "min": 20.0,
+      "median": 46.6
+     }
+    }
+   }
+  },
+  "2048": {
+   "stream_scales": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 545.2,
+      "median": 679.0
+     },
+     "streams first": {
+      "min": 395.7,
+      "median": 480.0
+     }
+    }
+   },
+   "leave_norm": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 789.4,
+      "median": 1227.9
+     },
+     "streams first": {
+      "min": 578.4,
+      "median": 893.2
+     }
+    }
+   },
+   "norm_streams": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 178.4,
+      "median": 205.8
+     },
+     "streams first": {
+      "min": 161.7,
+      "median": 190.4
+     }
+    }
+   }
+  },
+  "4096": {
+   "stream_scales": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 1138.5,
+      "median": 2731.3
+     },
+     "streams first": {
+      "min": 791.6,
+      "median": 2053.5
+     }
+    }
+   },
+   "leave_norm": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 1678.2,
+      "median": 2130.1
+     },
+     "streams first": {
+      "min": 1159.4,
+      "median": 1917.5
+     }
+    }
+   },
+   "norm_streams": {
+    "bytes_alike": true,
+    "us_a_launch": {
+     "rows first": {
+      "min": 364.4,
+      "median": 449.7
+     },
+     "streams first": {
+      "min": 378.9,
+      "median": 403.0
+     }
+    }
+   }
+  }
+ }
+}
