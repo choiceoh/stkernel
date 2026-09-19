@@ -1,0 +1,11 @@
+test_synthetic_pack_reload_and_heldout_energy (test_probe_qwen38_gptq_offline.CudaPackSmoke.test_synthetic_pack_reload_and_heldout_energy) ... /work/engine/kernels/dense/packing.py:283: UserWarning: Specified kernel cache directory could not be created! This disables kernel caching. Specified directory is //.cache/torch/kernels. This warning will appear only once per process. (Triggered internally at /__w/pytorch/pytorch/aten/src/ATen/native/cuda/jit_utils.cpp:1504.)
+  W[:n] = weight.float() * torch.exp2(shift[:n, None])
+ok
+test_changed_pack_or_false_serving_claim_is_rejected (test_probe_qwen38_gptq_offline.OfflineBoundaryTests.test_changed_pack_or_false_serving_claim_is_rejected) ... ok
+test_dense_subset_preserves_bytes_and_excludes_experts (test_probe_qwen38_gptq_offline.OfflineBoundaryTests.test_dense_subset_preserves_bytes_and_excludes_experts) ... ok
+test_small_or_partial_calibration_cannot_enter_the_330k_job (test_probe_qwen38_gptq_offline.OfflineBoundaryTests.test_small_or_partial_calibration_cannot_enter_the_330k_job) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 3.997s
+
+OK

@@ -98,6 +98,20 @@ def audit(args):
                 if found[name, kind] != 1:
                     raise ValueError("missing or ambiguous calibrated pack in the isolated store")
         report.update(serving_gptq_verified=True, w4_sites=192, fp8_sites=193)
+        if getattr(args, 'offline_manifest', None):
+            from probes.qwen38_gptq_offline import manifest_files
+            manifest = json.loads(args.offline_manifest.read_bytes())
+            if (manifest['rank'] != args.rank or manifest['weights_id'] != weights_id
+                    or manifest['minimum_fit_rows'] < 330000
+                    or manifest['fit_audit_sha256'] != hashlib.sha256(
+                        args.offline_manifest.with_name(f'fit330-audit-rank{args.rank}.json').read_bytes()).hexdigest()):
+                raise ValueError('offline pack result does not match this 330K collection')
+            manifest_files(manifest, args.root / 'st-dense-packs')
+            if (seen.get('packs_cache') != 192 or seen.get('packs_fp8_cache') != 193
+                    or seen.get('packs_built', 0) != 0 or seen.get('packs_fp8_built', 0) != 0):
+                raise ValueError('the serving boot rebuilt or skipped a 5050 pack')
+            report.update(offline_5050_packs_consumed=True,
+                          offline_manifest_sha256=hashlib.sha256(args.offline_manifest.read_bytes()).hexdigest())
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({k: v for k, v in report.items() if k != "records"}, indent=2))
@@ -106,6 +120,7 @@ def audit(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--expect-row-target", type=int, default=None)
+    ap.add_argument("--offline-manifest", type=Path)
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--rank", type=int, choices=range(4), required=True)
     ap.add_argument("--ckpt", type=Path, required=True)

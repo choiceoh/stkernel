@@ -152,8 +152,8 @@ for ip in "${NODES[@]}"; do
   else scp -q probes/qwen38_gptq_audit.py "choiceoh@$ip:$OUT/audit-$MODE.py"; fi
   if [ "$MODE" != collect ]; then
     node "$ip" "mkdir -p '$OUT/tools/probes'; touch '$OUT/tools/probes/__init__.py'"
-    if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_{score,feed}.py "$OUT/tools/probes/";
-    else scp -q probes/qwen38_gptq_{score,feed}.py "choiceoh@$ip:$OUT/tools/probes/"; fi
+    if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_{score,feed,offline,subset}.py "$OUT/tools/probes/";
+    else scp -q probes/qwen38_gptq_{score,feed,offline,subset}.py "choiceoh@$ip:$OUT/tools/probes/"; fi
     if [ "$EXPANDED" = 1 ]; then
       if [ "$ip" = 10.10.10.2 ]; then cp tests/test_engine_qwen38_precision_port.py "$OUT/tools/gptq_precision_test.py";
       else scp -q tests/test_engine_qwen38_precision_port.py "choiceoh@$ip:$OUT/tools/gptq_precision_test.py"; fi
@@ -269,9 +269,13 @@ compare() {
     for r in 0 1 2 3; do
       ip=${NODES[$r]}
       if [[ "$label" == B* ]]; then expected=--expect-gptq; else expected=--expect-rtn; fi
-      node "$ip" "docker exec -e PYTHONPATH=/repo st-qwen38 python3 '$OUT/audit-$MODE.py' --root '$ST_PACK_ROOT' \
+      offline_flag=''
+      if [ "$MODE" = serve330 ] && [ "$label" = B330 ]; then
+        offline_flag="--offline-manifest '$OUT/offline-result-rank$r.json'"
+      fi
+      node "$ip" "docker exec -e PYTHONPATH=/repo:$OUT/tools st-qwen38 python3 '$OUT/audit-$MODE.py' --root '$ST_PACK_ROOT' \
         --rank $r --ckpt /home/choiceoh/models/st-qwen38-tep4 --boot '$OUT/$label-boot-rank$r.json' \
-        --out '$OUT/$label-audit-rank$r.json' $expected" > "$OUT/$label-audit-rank$r.log" 2>&1
+        --out '$OUT/$label-audit-rank$r.json' $expected $offline_flag" > "$OUT/$label-audit-rank$r.log" 2>&1
       if [ "$label" != "$first_pack" ]; then
         cmp "$pack_receipts/$first_pack-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
         node "$ip" "python3 -c 'import json,sys; a,b=map(lambda p: json.load(open(p)), sys.argv[1:]); assert a[\"weights_id\"] == b[\"weights_id\"], \"checkpoint identity changed since scoring\"' '$pack_receipts/$first_pack-audit-rank$r.json' '$OUT/$label-audit-rank$r.json'"

@@ -4,8 +4,9 @@ Status: the first 131,184-row TP4 real-input collection, all-rank filing/reboot
 audits and held-out projection scoring passed. Every tested W4/FP8 pack reduces
 projection error. The user authorized expansion: 357 distinct training prompts
 with 330,234 Qwen tokens are prepared, with the original evaluation files intact.
-The expanded GPU size/consumer comparison is pending an available fleet window;
-calibration-size convergence, serving quality and adoption remain unverified.
+The latest instruction selects only the new 330K fit. Fleet collection is queued;
+packing and held-out error scoring run on RTX 5050, followed by fleet consumer
+validation. New 330K effects, serving quality and adoption remain unverified.
 
 The target is the 193 projection sites already admitted by #1286, with #1294's
 FP32 MoE accumulation and `as2` domain. The experiment uses one frozen source
@@ -120,30 +121,52 @@ collection. The experiment knob expires on 2026-09-26 under D11 and must be
 removed when selecting a measured default. Existing saved blobs are not appended
 to or replaced. Inference arithmetic and calibration weight identity are unchanged.
 
-Run `collect_window.sh expanded` through the documented session window:
+The user then requested **330K on RTX 5050**, replacing the three-size campaign.
+The former `expanded` waiter was cancelled while still waiting, with no GPU child.
+The original 131K results remain historical evidence; no 131K or 240K re-collection
+or re-packing is scheduled. Reserved validation inputs are unchanged and unused.
 
-1. On one frozen source/image, collect fresh `fit131`, `fit240`, `fit330`,
-   `validation`, and `heldout` stores. Fit targets are 131,072, 240,490 and
-   330,000 rows; the last admitted chunk determines the exact filed count. Before
-   feeding the first split, check the native CUDA collector's numerical result,
-   configured cap and unchanged statistics after the cap on all four ranks.
-2. Restart each fit and audit every rank's actual GPTQ packs. Score all three
-   against the same 55,441-row validation statistics; score 330K separately
-   against the 50,512-row test statistics. Require equal weights, validation
-   digests and RTN reference energies across the size comparison.
-3. Run the canonical extended consumer workload in RTN–131K–330K–RTN order,
-   with two C=1 passes and one C=4 pass per boot. Preserve failed quality checks
-   and all raw output records. This order includes a returning RTN control but
-   cannot by itself eliminate every order effect between the two GPTQ fits.
+1. `collect_window.sh collect330` collects only `fit330`, requiring at least
+   330,000 rows at every one of the 193 sites on all four ranks. The exact total
+   depends on the final admitted chunk. Native cap/arithmetic checks run first.
+   The fleet is released immediately after all four collection audits pass.
+2. `offline_pipeline.py` on srv4 exports only the original dense BF16 tensors
+   (193 / about 1.7 GiB per rank) and copies the independent 50,512-row held-out
+   statistics. This CPU/network preparation can run while fleet is occupied.
+   Once new fit330 audits are ready, it sends the fit statistics and the exact
+   collection RTN caches to RTX 5050. Private prompts are never transferred.
+3. `run_5050.sh` owns the existing single-GPU probe lock. A 4 GiB / 2 CPU container
+   uses the unchanged production `PackStore`, one matrix at a time, to generate
+   W4 and FP8 GPTQ packs from the new 330K statistics. FP64 energy calculations
+   score them on separate held-out H. Small, foreign, changed, or partial input
+   statistics are rejected. Every output pack gets a SHA256 manifest.
+4. Verified packs return to the isolated fleet fit330 cache. `serve330` runs
+   RTN–330K–RTN with two C=1 passes and one C=4 pass per boot. Candidate receipts
+   must prove all 192 W4 / 193 FP8 packs per rank were loaded from cache, with
+   zero rebuilds, and every file still matches the evaluated 5050 bytes.
 
-All expanded artifacts use new `qwen38-gptq-330k-20260919` log/cache roots and a
-new `st-engine:qwen38-gptq-330k-4436` image tag. Engine changes require a new
-frozen image: the 131K control is recollected in that image too. Image and weight
-identities must agree from the first collection through the final consumer boot.
-`summarize_expanded.py` checks and compares all 1,540 projections per size.
-`wait_for_window.py --mode expanded` waits behind existing sessions, queued jobs
-and handovers; it then attempts this complete campaign once. It never promotes
-packs, overrides another owner or retries a failed experiment automatically.
+Collection is pinned to `6253afe7779fee1601607e0842376d58b86d4d98`, engine tree
+`d8ac5e813ffc38af49985f211d3cd31e89251cdf`. Offline and consumer tools may have a
+later source revision, but must share that exact engine tree. Image and weight
+receipts are compared from the first fit330 boot through the final consumer boot.
+The x86 RTX 5050 image is
+`sha256:9f496f0dabe3a7b495d9b97181913cc20be1e4b3d3fcf2694407e34f24b3981b`.
+5050 component time is not fleet serving throughput. Offline packing/scoring is
+explicitly marked `serving_gptq_verified: false` until the separate boot audit.
+
+The new log/cache roots are `qwen38-gptq-330k-20260919`; fleet image tag is
+`st-engine:qwen38-gptq-330k-4436`. Controller status is retained under srv4
+`/home/choiceoh/st-qwen38-gptq-330k-controller-4436/status.json`; 5050 per-rank
+progress/results are under `/home/choiceoh/st-qwen38-gptq-330k-5050-4436/out/`.
+Workers respect current sessions, canonical queued work and pending handovers.
+Failure preserves evidence and stops; no automatic retry or production promotion.
+
+Local CPU validation: 19 tests passed, one explicit CUDA test skipped. On the
+RTX 5050, all four offline boundary/synthetic CUDA tests passed, including the
+production packer's W4/FP8 cache reload and FP64 Gram-energy agreement with an
+explicit held-out projection. See `5050-synthetic-smoke.log`. The synthetic case
+uses 512 random rows and establishes execution compatibility only; it is not
+the real 330K calibration, a quality result, or a throughput claim.
 
 The first candidate boot consumed 192 W4 and 193 FP8 GPTQ packs on each rank,
 with no live collectors. Its first scoring attempt completed rank 0 but refused
