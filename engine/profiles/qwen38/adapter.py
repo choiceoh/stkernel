@@ -193,6 +193,10 @@ class ServedMTP:
             raise ValueError(f"a draft threshold is a probability in [0, 1), not {threshold}")
         self.net, self.caches, self.store, self.k = net, caches, store, k
         self.threshold, self.ledger = threshold, ledger
+        # the row counts a cut pays at: steps of more rows replay the full verify width (decode_graphs.TargetGraphs
+        # narrow_rows, set at capture), where a cut draft is padded back and only its chance of being kept is lost.
+        # None: no captured target, every step as wide as its rows
+        self.narrow_rows = None
         self.graphs = None
         self._next: dict = {}                     # seq -> (picks, head streams [1, hc*H] | None, the chain's position)
         self._waiting: dict = {}                  # seq -> (slot, ctx, next ids, the target's streams rows [m, hc*H])
@@ -286,7 +290,8 @@ class ServedMTP:
                 position += 1
             probs = self._probs.get(seq)
             self._proposed[seq] = (chain, probs)
-            if probs is not None and self.threshold is not None:
+            if probs is not None and self.threshold is not None and (self.narrow_rows is None
+                                                                     or len(seqs) <= self.narrow_rows):
                 # the drafts before the first the head doubts (an eager chain's picks carry no probability: all go)
                 chain = chain[:next((j for j, p in enumerate(probs[:len(chain)]) if p < self.threshold), len(chain))]
             out.append(chain)
@@ -449,6 +454,7 @@ def capture(model, max_seqs: int, *, memory=None, narrow_rows: int = 0) -> None:
         model.composition.capture(max_seqs, k + 1, ceiling=model.max_context, memory=memory,
                                   narrow_rows=min(narrow_rows, max_seqs) if k else 0)
         if model.drafter is not None:
+            model.drafter.narrow_rows = model.composition.graphs.narrow_rows
             model.drafter.capture(max_seqs, ceiling=model.max_context, memory=memory)
     except BaseException as exc:
         from engine.base.graphs import cleanup_after_error

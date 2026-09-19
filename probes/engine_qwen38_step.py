@@ -179,7 +179,7 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     caches = Qwen38Caches(arena, F, net.layers, nb, max_seqs, snapshots, mtp=True)
     tokens = F.spec_k + 1
     target = TargetGraphs(net, caches, max_seqs, tokens, ceiling=F.max_position)
-    draft = DraftGraphs(net, caches, max_seqs, tokens, k=F.spec_k, ceiling=F.max_position)
+    draft = DraftGraphs(net, caches, max_seqs, tokens, k=F.spec_k, ceiling=F.max_position, probability=True)
     torch.cuda.synchronize()
     return F, net, caches, target, draft
 

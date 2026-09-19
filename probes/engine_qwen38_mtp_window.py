@@ -111,7 +111,7 @@ def measure(ranks: Path, rank: int, arms=tuple(ARMS), *, rounds: int = ROUNDS, r
     graphs = {}
     for arm in arms:                                  # the window is read while a graph is captured, never after
         net.mtp_window = ARMS[arm]
-        graphs[arm] = DraftGraphs(net, caches, 1, SPEC_K + 1, k=SPEC_K, ceiling=F.max_position)
+        graphs[arm] = DraftGraphs(net, caches, 1, SPEC_K + 1, k=SPEC_K, ceiling=F.max_position, probability=True)
     net.mtp_window = None
     built = time.perf_counter() - began
     buckets = {}

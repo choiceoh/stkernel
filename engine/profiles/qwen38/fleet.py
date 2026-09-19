@@ -57,6 +57,15 @@ SNAPSHOT_GIB = 2.0
 # chosen by recency instead of scored. On by the operator's decision of 2026-09-19 ("전부 켜"), acceptance unmeasured;
 # fleet --mtp-window off (the launcher's ST_MTP_WINDOW=off) serves the scored selection
 MTP_WINDOW = (1, 511)
+# the drafts a step verifies end before the first pick the head gives less than this (LibraSpec's rule; adapter.ServedMTP
+# `threshold`), and steps of up to NARROW_ROWS rows replay a verify graph as wide as what was proposed -- on by the same
+# decision, the value a guess until the draft ledger's curve says (the ledger is on too: DRAFT_LEDGER); `off` verifies
+# every draft
+DRAFT_THRESHOLD = 0.1
+NARROW_ROWS = 2
+# rank 0 records what the head observes, the fine-tuning data (MTPInputTap) -- on by the same decision, at most
+# TAP_CAP_GIB under --dump-dir/mtp-inputs, counting what earlier boots left there
+TAP_CAP_GIB = 64.0
 MODEL_NAME = "qwen3.8-flash-next"
 DUMP_DIR = "/home/choiceoh/glm53-logs/st-qwen38-dumps"   # the launcher mounts /home/choiceoh/glm53-logs on every node
 
@@ -363,12 +372,17 @@ class MTPInputTap:
     host waits for the device -- a data window's cost, not a measured one's. What is held is written at least every
     `every_s` seconds (a stopped container runs no `finally`)."""
 
-    def __init__(self, directory, rows: int = 4096, every_s: float = 30.0):
+    def __init__(self, directory, rows: int = 4096, every_s: float = 30.0, cap_bytes: "int | None" = None):
+        """`cap_bytes`: the directory's shards stop growing past it, what earlier boots wrote there counted -- a
+        default-on tap must not fill rank 0's disk."""
         import queue
         import threading
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.rows, self.every_s = rows, every_s
+        self.cap_bytes = cap_bytes
+        self.written = sum(f.stat().st_size for f in self.directory.glob("mtp-inputs-*.npz"))
+        self.full = cap_bytes is not None and self.written >= cap_bytes
         self.prefix = f"mtp-inputs-{time.strftime('%Y%m%d-%H%M%S')}"
         self._held, self._count, self._part = [], 0, 0
         self._lock = threading.Lock()
@@ -377,6 +391,8 @@ class MTPInputTap:
         threading.Thread(target=self._write, name="mtp-inputs", daemon=True).start()
 
     def __call__(self, seq: int, ctx: int, next_ids, hidden, decoded: bool) -> None:
+        if self.full:
+            return
         rows = hidden.detach().to("cpu")
         n = rows.shape[0]
         meta = torch.tensor([[seq, ctx + j, int(next_ids[j]), int(decoded)] for j in range(n)], dtype=torch.int64)
@@ -396,6 +412,7 @@ class MTPInputTap:
 
     def _write(self) -> None:
         import numpy as np
+        import os
         import queue
         while True:
             try:
@@ -405,13 +422,21 @@ class MTPInputTap:
                     if time.monotonic() - self._last >= self.every_s:
                         self._flush()
                 continue
-            np.savez(self.directory / f"{self.prefix}-{part:05d}.npz", streams=rows.view(torch.int16).numpy(),
-                     meta=meta.numpy())
+            path = self.directory / f"{self.prefix}-{part:05d}.npz"
+            partial = path.with_name(path.name + ".part")      # a reader never sees a shard half written
+            with open(partial, "wb") as fh:
+                np.savez(fh, streams=rows.view(torch.int16).numpy(), meta=meta.numpy())
+            os.replace(partial, path)
+            self.written += path.stat().st_size
+            if self.cap_bytes is not None and self.written >= self.cap_bytes and not self.full:
+                self.full = True
+                print(f"  mtp inputs: {self.directory} holds {self.written / 2**30:.1f} GiB, the cap -- recording stops",
+                      flush=True)
 
 
 def draft_threshold(text: "str | None") -> "float | None":
-    """`--draft-threshold P` -> P in [0, 1), or None for every draft."""
-    if text is None:
+    """`--draft-threshold P` -> P in [0, 1); `off` (or None) -> None, every draft verified."""
+    if text is None or text == "off":
         return None
     try:
         value = float(text)
@@ -420,6 +445,8 @@ def draft_threshold(text: "str | None") -> "float | None":
     if not 0.0 <= value < 1.0:
         raise SystemExit(f"--draft-threshold {text!r}: 0 <= P < 1")
     return value
+
+
 def mtp_window(text: "str | None") -> "tuple[int, int] | None":
     """`--mtp-window SINK,RECENT` -> (sink, recent) groups of idx_ratio positions; `off` (or None) -> None, the scored
     selection."""
@@ -496,23 +523,25 @@ def main(argv=None) -> int:
     ap.add_argument("--tap-draft-queries", type=int, default=0, metavar="ROWS",
                     help="rank 0 records the MTP head's draft queries and picks in a ring of ROWS inside the captured "
                          "graphs and writes them under --dump-dir/draft-queries every 30 s (the IVF head's real recall)")
-    ap.add_argument("--draft-threshold", default=None, metavar="P",
+    ap.add_argument("--draft-threshold", default=str(DRAFT_THRESHOLD), metavar="P|off",
                     help="a row's drafts end before the first pick the MTP head gives less than P (LibraSpec's rule): "
                          "the verify step is as wide as what is proposed -- steps of up to --narrow-rows rows replay "
-                         "narrower graphs, captured at boot. Unset, every draft is verified")
-    ap.add_argument("--narrow-rows", type=int, default=2,
+                         f"narrower graphs, captured at boot; more rows are never cut. Default {DRAFT_THRESHOLD}, "
+                         "`off` verifies every draft")
+    ap.add_argument("--narrow-rows", type=int, default=NARROW_ROWS,
                     help="with --draft-threshold: the row counts whose narrower verify widths are captured (1..N)")
     ap.add_argument("--mtp-tuned", default=None, metavar="DIR",
                     help="the MTP head's dense weights from mtp_tune.py's export (mtp-tuned-r{r}of4.safetensors) instead "
                          "of the rank file's: the head fine-tuned on the target's own streams; acceptance moves, output "
                          "does not")
-    ap.add_argument("--tap-mtp-inputs", action="store_true",
+    ap.add_argument("--tap-mtp-inputs", action=argparse.BooleanOptionalAction, default=True,
                     help="rank 0 records what the MTP head observes -- the target's streams and the next token at every "
                          "kept position -- under --dump-dir/mtp-inputs (the head's fine-tuning data, mtp_tune.py); "
-                         "20 KB a position, the host waiting for each copy")
-    ap.add_argument("--draft-ledger", action="store_true",
+                         f"20 KB a position, the host copying each after its verify step's read, {TAP_CAP_GIB:.0f} GiB "
+                         "at most. On by default")
+    ap.add_argument("--draft-ledger", action=argparse.BooleanOptionalAction, default=True,
                     help="rank 0 writes one JSON line a verified row under --dump-dir/draft-ledger: the head's picks, "
-                         "their probabilities, how many were proposed and kept (the threshold's curve)")
+                         "their probabilities, how many were proposed and kept (the threshold's curve). On by default")
     ap.add_argument("--mtp-window", default=f"{MTP_WINDOW[0]},{MTP_WINDOW[1]}", metavar="SINK,RECENT|off",
                     help="the MTP head attends its first SINK and last RECENT groups (4 positions each) instead of its "
                          "scored selection -- Windowed-MTP: no index scoring in the draft; acceptance moves, output does "
@@ -532,9 +561,9 @@ def main(argv=None) -> int:
                     help="drafts a step from the MTP head (the checkpoint's 1): K > 1 chains the head K-1 times inside "
                          "the draft replay and the verify step is K+1 tokens wide")
     a = ap.parse_args(argv)
-    if (a.draft_threshold is not None or a.draft_ledger) and a.draft_index is not None:
-        raise SystemExit("--draft-threshold and --draft-ledger read the head's whole row; --draft-index reads a few "
-                         "of its clusters")
+    if (draft_threshold(a.draft_threshold) is not None or a.draft_ledger) and a.draft_index is not None:
+        raise SystemExit("--draft-threshold and --draft-ledger (both on by default) read the head's whole row; "
+                         "--draft-index reads a few of its clusters: pass --draft-threshold off --no-draft-ledger with it")
 
     started = time.perf_counter()
     print(f"  box: {facts.check_box()}", flush=True)       # CUDA is initialised here, on this thread, before any other
@@ -590,7 +619,7 @@ def main(argv=None) -> int:
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
-            model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs")
+            model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
         if getattr(net, "draft_tap", None) is not None:
             import threading
             threading.Thread(target=drain_draft_tap, args=(net.draft_tap, Path(a.dump_dir) / "draft-queries"),
@@ -601,7 +630,8 @@ def main(argv=None) -> int:
               f"(verify step {model.k + 1} tokens a row"
               + (f"; drafts cut below p={model.drafter.threshold}, narrow widths to {a.narrow_rows} rows"
                  if model.drafter is not None and model.drafter.threshold is not None else "")
-              + ("; draft ledger" if a.draft_ledger else "") + ")", flush=True)
+              + ("; draft ledger" if a.draft_ledger else "")
+              + ("; mtp inputs recorded" if a.tap_mtp_inputs else "") + ")", flush=True)
         with rec.phase("door"):
             door = prelude.take()
             tok, chat, tools, efforts = door["tok"], door["chat"], door["tools"], door["efforts"]

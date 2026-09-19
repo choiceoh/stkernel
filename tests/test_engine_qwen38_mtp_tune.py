@@ -196,14 +196,41 @@ class ServedTests(unittest.TestCase):
         self.assertIn('EXPERTS_ARG="$EXPERTS_ARG --mtp-tuned $TUNED_DIR"', launcher)
         self.assertIn("test -f $TUNED_DIR/mtp-tuned-r${r}of4.safetensors", launcher)
 
-    def test_the_tap_is_rank_zeros_and_off_by_default(self):
+    def test_the_tap_is_rank_zeros_and_on_by_default_under_a_cap(self):
+        """The operator's decision of 2026-09-19 ("전부 켜"): every Qwen boot records the head's inputs on rank 0, the
+        directory capped; --no-tap-mtp-inputs (ST_TAP_MTP_INPUTS=0) stops it."""
+        from engine.profiles.qwen38.fleet import TAP_CAP_GIB
+        self.assertEqual(TAP_CAP_GIB, 64.0)
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text()
         self.assertIn("if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:", fleet)
+        self.assertIn('ap.add_argument("--tap-mtp-inputs", action=argparse.BooleanOptionalAction, default=True,', fleet)
+        self.assertIn("cap_bytes=int(TAP_CAP_GIB * 2**30)", fleet)
         adapter = (ROOT / "engine/profiles/qwen38/adapter.py").read_text()
         self.assertIn("self.inputs_tap = None", adapter)
         self.assertIn("hidden[segment.start:segment.start + fed], decoded=True)", adapter)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text()
-        self.assertIn('1) ADAPT_ARG="$ADAPT_ARG --tap-mtp-inputs" ;;', launcher)
+        self.assertIn('0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;', launcher)
+
+    def test_the_tap_stops_at_its_cap(self):
+        import numpy as np
+        from engine.profiles.qwen38.fleet import MTPInputTap
+        with tempfile.TemporaryDirectory() as d:
+            taps = Path(d)
+            np.savez(taps / "mtp-inputs-20260919-000000-00000.npz", streams=np.zeros((64, 8), np.int16),
+                     meta=np.zeros((64, 4), np.int64))                          # an earlier boot's shard
+            held = (taps / "mtp-inputs-20260919-000000-00000.npz").stat().st_size
+            self.assertTrue(MTPInputTap(taps, cap_bytes=held).full)             # counted: already at the cap
+            tap = MTPInputTap(taps, rows=4, every_s=0.2, cap_bytes=held + 1)
+            self.assertFalse(tap.full)
+            tap(1, 0, [5, 6, 7, 8], torch.zeros(4, 8, dtype=torch.bfloat16), False)
+            deadline = time.time() + 5
+            while time.time() < deadline and not tap.full:
+                time.sleep(0.05)
+            self.assertTrue(tap.full)
+            shards = len(list(taps.glob("mtp-inputs-*.npz")))
+            tap(1, 4, [9, 10, 11, 12], torch.zeros(4, 8, dtype=torch.bfloat16), False)   # past the cap: nothing kept
+            time.sleep(0.5)
+            self.assertEqual(len(list(taps.glob("mtp-inputs-*.npz"))), shards)
 
 
 if __name__ == "__main__":

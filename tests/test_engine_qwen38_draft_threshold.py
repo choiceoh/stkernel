@@ -147,6 +147,21 @@ class CutTests(unittest.TestCase):
         mtp.record(7, 16, 0, 0, 1)                                              # nothing proposed since: no picks
         self.assertEqual(records[-1]["picks"], [])
 
+    def test_a_step_wider_than_the_narrow_rows_is_not_cut(self):
+        """More rows than the narrow graphs serve replay the full width: a cut draft is padded back and only its chance
+        of being kept is lost -- no cut there."""
+        from engine.profiles.qwen38.adapter import ServedMTP
+        mtp = ServedMTP(FakeNet(), fake_caches([0] * 7 + [18] * 3, (-1, 7, 8, 9)),
+                        SimpleNamespace(slot_of={7: 1, 8: 2, 9: 3}), 3, threshold=0.5)
+        mtp.graphs = ProbGraphs(3, [0.9, 0.4, 0.95])
+        mtp.narrow_rows = 2
+        for seq, slot in ((7, 1), (8, 2), (9, 3)):
+            mtp.observe(seq, 10, [1, 2, 3, 4], torch.zeros(4, 2))
+        self.assertEqual(mtp.propose([7, 8, 9]), [[100, 101, 102], [110, 111, 112], [120, 121, 122]])
+        for seq in (7, 8):
+            mtp.observe(seq, 14, [5], torch.zeros(1, 2))
+        self.assertEqual(mtp.propose([7, 8]), [[100], [110]])                  # two rows: the narrow graphs, cut
+
     def test_a_threshold_is_a_probability(self):
         for bad in (-0.1, 1.0, 2.0):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
@@ -234,6 +249,7 @@ class FleetTests(unittest.TestCase):
     def test_the_threshold_flag_parses_and_refuses(self):
         from engine.profiles.qwen38.fleet import draft_threshold
         self.assertIsNone(draft_threshold(None))
+        self.assertIsNone(draft_threshold("off"))
         self.assertEqual(draft_threshold("0.3"), 0.3)
         self.assertEqual(draft_threshold("0"), 0.0)
         for bad in ("1", "1.5", "-0.1", "x"):
@@ -259,7 +275,24 @@ class FleetTests(unittest.TestCase):
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text()
         exec_line = next(l for l in launcher.splitlines() if "-m engine.profiles.qwen38.fleet " in l)
         self.assertLess(exec_line.index("$ADAPT_ARG"), exec_line.index("--port"))
-        self.assertIn('ADAPT_ARG="--draft-threshold $ST_DRAFT_THRESHOLD --narrow-rows ${ST_NARROW_ROWS:-2}"', launcher)
+        self.assertIn('ADAPT_ARG="--draft-threshold $ST_DRAFT_THRESHOLD"', launcher)
+        self.assertIn('ADAPT_ARG="$ADAPT_ARG --narrow-rows $ST_NARROW_ROWS"', launcher)
+        self.assertIn('0) ADAPT_ARG="$ADAPT_ARG --no-draft-ledger" ;;', launcher)
+
+    def test_the_fleet_cuts_and_keeps_the_ledger_by_default(self):
+        """The operator's decision of 2026-09-19 ("전부 켜"): drafts cut below 0.1 with narrow widths to two rows, the
+        ledger written; `off` and --no-draft-ledger roll them back, and the draft index asks for both."""
+        from engine.profiles.qwen38.fleet import DRAFT_THRESHOLD, NARROW_ROWS
+        self.assertEqual((DRAFT_THRESHOLD, NARROW_ROWS), (0.1, 2))
+        fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text()
+        self.assertIn('ap.add_argument("--draft-threshold", default=str(DRAFT_THRESHOLD), metavar="P|off",', fleet)
+        self.assertIn('ap.add_argument("--narrow-rows", type=int, default=NARROW_ROWS,', fleet)
+        self.assertIn('ap.add_argument("--draft-ledger", action=argparse.BooleanOptionalAction, default=True,', fleet)
+        self.assertIn("pass --draft-threshold off --no-draft-ledger with it", fleet)
+        adapter = (ROOT / "engine/profiles/qwen38/adapter.py").read_text()
+        self.assertIn("model.drafter.narrow_rows = model.composition.graphs.narrow_rows", adapter)
+        for probe in ("probes/engine_qwen38_step.py", "probes/engine_qwen38_mtp_window.py"):
+            self.assertIn("probability=True)", (ROOT / probe).read_text(), probe)
 
 
 if __name__ == "__main__":
