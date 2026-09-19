@@ -326,6 +326,10 @@ def main():
         from probes.engine_qwen38_moe_precision import run
         run(args.output)
         return
+    if args.lanes == 'qwen38_moe_chunks':
+        from probes.engine_qwen38_moe_chunks import run
+        run(args.output)
+        return
     if args.lanes == 'qwen38_moe':
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe
