@@ -71,7 +71,7 @@ class CaseTable(unittest.TestCase):
         self.assertEqual(p.QWEN38.qkv, 2 * linear.heads * linear.k_dim + linear.v_heads * linear.v_dim)
         self.assertEqual(p.QWEN38.qkv, 2560)
         self.assertEqual(p.QWEN38.state_bytes, 12 * 128 * 128 * 4)
-        self.assertEqual(p.RING_CASES, tuple(itertools.product((1, 2, 4), (1, 2))))
+        self.assertEqual(p.RING_CASES, tuple(itertools.product((1, 2, 4), range(1, facts.SPEC_K + 2))))
         self.assertTrue(all(1 <= tokens <= p.RING_CELLS for _, tokens in p.RING_CASES))
         self.assertEqual(p.RING_EAGER_TOKENS, tuple(range(1, p.RING_CELLS + 1)))       # net._gdn: s.length <= rec_ring
         self.assertEqual(max(rows for rows, _ in p.RING_CASES), p.MAX_ROWS)

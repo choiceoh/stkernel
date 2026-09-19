@@ -15,6 +15,11 @@ capture, every rank runs the same passes:
     kernels  a prefill of each of WIDTHS at context 0, and EDGE tokens ending on each context bucket's last position
              (net.bucket_blocks: the paged QSA kernels compile their table width in, one compile a rung), each through
              the target and the MTP head.
+    head     the MTP head alone over 1..K+1 positions (`head` = K+1), at context 0 and ending on each bucket's last
+             position: what adapter.ServedMTP runs eagerly for a row whose reservation does not hold the draft replay's
+             positions -- its observation (up to K+1), then each chain position (1). Its QSA layer compiles the bucket's
+             table width and the step's size in, and no prefill width is decode-sized, so on 2026-09-19 those kernels
+             were first built inside requests. Zeros in, the drafter's own pick out (`draft_tokens`).
     eager    the eager MoE's decode-sized launches (`eager_moe`): an uncaptured step -- the MTP head observing a parked
              row's positions, a step no graph admits -- dispatches only this rank's (token, route) pairs, one route a
              pair, and up to EAGER_PAIRS of them run the micro kernel, keyed by the pair count AND the capacity of the
@@ -30,9 +35,11 @@ from __future__ import annotations
 
 import time
 
-WIDTHS = (64, 512, 4095)
-"""GLM-5.3's prompt widths above a decode step (its 1 and 8 are decode-sized, and an eager step of that size keys its
-static MoE kernel by the routes the tokens take, which zeros cannot stand in for -- `eager_moe` writes the routes)."""
+WIDTHS = (1, 8, 64, 512, 4095)
+"""GLM-5.3's prompt widths. 1 and 8 were left out while an eager step of that size keyed its static MoE kernel by the
+routes its tokens take -- token 0's routes, here, which are not a prompt's. `eager_moe` now builds every such kernel at
+the one capacity the workspace keeps, and the boot runs it before these passes, so whatever pair count token 0 gives a
+rank reads one of those kernels (up to 8 pairs) or the dynamic kernel, free of the count (more)."""
 EDGE = 64
 EAGER_PAIRS = 8
 """= engine/kernels/b12x/moe_dispatch._MICRO_MAX_TOKENS: an eager launch of more one-route pairs than this over every
@@ -54,31 +61,36 @@ def rungs(block: int, capacity: int, top: int) -> "list[int]":
         reach *= 2
 
 
-def plan(F, *, chunk: int, capacity: int, top: int) -> "list[tuple[str, int, int]]":
+def plan(F, *, chunk: int, capacity: int, top: int, head: int = 0) -> "list[tuple[str, int, int]]":
     """(kind, tokens, context) in run order: the memory pass first (it sizes the allocator the rest reuse), then the
-    widths, then the bucket edges above the first rung."""
+    widths, then the bucket edges above the first rung, then -- with `head` (K+1) -- the MTP head alone over 1..head
+    positions at context 0 and ending on every rung's last position."""
     largest = min(chunk, capacity)
+    edges = rungs(F.block, capacity, top)
     passes = [("memory", largest, 0)]
     passes += [("kernels", w, 0) for w in WIDTHS if w < largest]
-    passes += [("kernels", min(EDGE, end), end - min(EDGE, end)) for end in rungs(F.block, capacity, top)[1:]]
+    passes += [("kernels", min(EDGE, end), end - min(EDGE, end)) for end in edges[1:]]
+    for t in range(1, head + 1):
+        passes += [("head", t, 0)] + [("head", t, end - t) for end in edges if end - t > 0]
     return passes
 
 
-def warmup(net, caches, *, memory, chunk: int, max_context: int, mtp: bool, seq: int = 0) -> dict:
-    """Run `plan`'s passes on sequence `seq` -> {"<kind>/<tokens>/<context>": seconds}."""
+def warmup(net, caches, *, memory, chunk: int, max_context: int, mtp: bool, head: int = 0, seq: int = 0) -> dict:
+    """Run `plan`'s passes on sequence `seq` -> {"<kind>/<tokens>/<context>": seconds}. `head`: K+1, the drafter's
+    widest eager observation (0, or no `mtp`: no head passes)."""
     import torch
     from engine.profiles.qwen38.net import Segment, Step
     F = net.F
     if caches.pool.rows_in_use or any(owner >= 0 for owner in caches.slots.owner[1:]):
         raise ValueError("prefill warmup requires empty request and state slots")
     capacity = min(caches.pool.num_blocks * F.block, max_context)
-    passes = plan(F, chunk=chunk, capacity=capacity, top=caches.block_table.shape[1])
+    passes = plan(F, chunk=chunk, capacity=capacity, top=caches.block_table.shape[1], head=head if mtp else 0)
     paid = {}
     slot = caches.slots.take(seq)
     try:
         caches.pool.reserve(seq, capacity)
         for kind, length, context in passes:
-            name = f"prefill/{length}/{context}"
+            name = f"{'head' if kind == 'head' else 'prefill'}/{length}/{context}"
             caches.reset_slot(slot)
             began = time.perf_counter()
             error = None
@@ -89,15 +101,25 @@ def warmup(net, caches, *, memory, chunk: int, max_context: int, mtp: bool, seq:
                               if i < caches.snapshots and net.takes_mark(p)) if kind == "memory" else ()
                 step = Step(ids, (Segment(seq, slot, context, 0, length),), marks)
                 caches.prepare(step)
-                out, streams = net.forward(step, caches, streams=True)
-                valid = torch.isfinite(net.head(out[-1:])).all() & torch.isfinite(streams).all()
-                if mtp:
-                    # a prompt's observation: the head over the next tokens with the target's streams (adapter.ServedMTP)
-                    head = Step(ids, (Segment(seq, slot, context, 0, length),))
-                    hidden, _ = net.mtp_forward(head, streams, caches, last_hidden_only=True)
-                    valid &= torch.isfinite(net.head(hidden)).all()
+                if kind == "head":
+                    # a parked row's eager head (adapter.ServedMTP._head): the target's streams it would be given are
+                    # zeros here, and its pick is the drafter's own
+                    given = torch.zeros(length, F.hc * F.hidden, device=caches.device, dtype=torch.bfloat16)
+                    hidden, _ = net.mtp_forward(step, given, caches, last_hidden_only=True)
+                    net.draft_tokens(hidden)
+                    valid = torch.isfinite(hidden).all()
+                    del hidden, given
+                else:
+                    out, streams = net.forward(step, caches, streams=True)
+                    valid = torch.isfinite(net.head(out[-1:])).all() & torch.isfinite(streams).all()
+                    if mtp:
+                        # a prompt's observation: the head over the next tokens with the target's streams (ServedMTP)
+                        head = Step(ids, (Segment(seq, slot, context, 0, length),))
+                        hidden, _ = net.mtp_forward(head, streams, caches, last_hidden_only=True)
+                        valid &= torch.isfinite(net.head(hidden)).all()
+                    del out, streams
                 bad = (~valid).to(torch.int32).reshape(1)
-                del out, streams, valid, step, ids
+                del valid, step, ids
             except Exception as exc:                       # noqa: BLE001 -- cast into the vote, re-raised below
                 error, bad = exc, torch.ones(1, dtype=torch.int32, device=caches.device)
             # every rank reaches this collective whatever happened on its way, so a rank that raised stops its peers

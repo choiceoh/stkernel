@@ -1,0 +1,42 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (105 free)
+  kernel shape (record): hidden 2560 hc 4 gated_residual tp 4 | gqa 6x256 no sink | linear 4/12x128x128 conv 4 decay/head | indexer qsa 4x128 pool 4 top 2048 | moe 512(128 local) I640/640 top10 nvfp4 silu | spec 1
+[W919 05:33:42.771414141 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+[oneshot] inline proxy serving peers=3 inline_bytes=8 wr_reuse=1
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+  collectives: one-shot RDMA (NCCL where ineligible)
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988, 0.0027172171976417303)}, 'gdn': {'decay': (1.8527525469380635e-07, 1.2093259726952965e-07), 'beta': (0.0, 0.0), 'raw_beta': (0.0, 0.0), 'norm': (7.038288458716124e-05, 2.438618139422033e-06)}, 'qsa_norm_rope': {'norm_rope_6x256': (0.006172839552164078, 0.0015349400928243995), 'norm_rope_4x128': (0.006896551698446274, 0.002324720611795783)}, 'skinny_gemv': {'513x2560': 0.002813, '324x10240': 0.002272, '320x10240': 0.002349}, 'fp8_rows': {1: 0.002073, 4: 0.001935, 16: 0.002006}}
+boot rendezvous arena-admission: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+boot rendezvous weights-loaded: rank 2 prepared; waiting for 4 ranks (deadline 1800s)
+[b12x-bounds] state_E=128 n=640 tile_m=32 routed_rows=2981 -> rows 7072/7072 tiles 221/221 tasks 1105/1105
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=92981 -> rows 109312/109312 tiles 854/854 tasks 4270/4270
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=76836 -> rows 93184/109312 tiles 728/854 tasks 3640/4270
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=98147 -> rows 114432/114432 tiles 894/894 tasks 4470/4470
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=20773 -> rows 37120/114432 tiles 290/894 tasks 1450/4470
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=30643 -> rows 46976/114432 tiles 367/894 tasks 1835/4470
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=93175 -> rows 109440/114432 tiles 855/894 tasks 4275/4470
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=116048 -> rows 132352/132352 tiles 1034/1034 tasks 5170/5170
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=127903 -> rows 144256/144256 tiles 1127/1127 tasks 5635/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=58281 -> rows 74624/144256 tiles 583/1127 tasks 2915/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=92817 -> rows 109184/144256 tiles 853/1127 tasks 4265/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=75953 -> rows 92288/144256 tiles 721/1127 tasks 3605/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=79447 -> rows 95744/144256 tiles 748/1127 tasks 3740/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=99278 -> rows 115584/144256 tiles 903/1127 tasks 4515/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=42793 -> rows 59136/144256 tiles 462/1127 tasks 2310/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=77220 -> rows 93568/144256 tiles 731/1127 tasks 3655/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=78555 -> rows 94848/144256 tiles 741/1127 tasks 3705/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=72874 -> rows 89216/144256 tiles 697/1127 tasks 3485/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=67820 -> rows 84096/144256 tiles 657/1127 tasks 3285/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=64456 -> rows 80768/144256 tiles 631/1127 tasks 3155/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=86113 -> rows 102400/144256 tiles 800/1127 tasks 4000/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=67567 -> rows 83840/144256 tiles 655/1127 tasks 3275/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=84701 -> rows 100992/144256 tiles 789/1127 tasks 3945/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=91309 -> rows 107648/144256 tiles 841/1127 tasks 4205/5635
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=52512 -> rows 68864/144256 tiles 538/1127 tasks 2690/5635
+  shared expert: forked at one request's rows
+  drafter: MTP head, K=1 (verify step 2 tokens a row)
+  rank 2: ready in 59.9 s, door on port 8000
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)

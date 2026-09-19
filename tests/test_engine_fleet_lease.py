@@ -857,7 +857,7 @@ class OneRecordTests(unittest.TestCase):
         self.assertIn("def fleet_taken_by_another(log)", self.watch)
         self.assertIn('"ST_LEASE_KIND": "production"', self.watch)
         cycle = self.watch[self.watch.index("def cycle("):self.watch.index("def main(")]
-        self.assertLess(cycle.index("fleet_taken_by_another(log)"), cycle.index("ok = deploy(release, log)"))
+        self.assertLess(cycle.index("fleet_taken_by_another(log)"), cycle.index("ok = deploy(release, log, profile)"))
         self.assertIn("# deferred, not rejected", cycle)
 
     def test_the_supervisor_hands_the_ticket_s_owner_to_the_payload(self):

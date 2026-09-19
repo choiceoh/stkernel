@@ -41,7 +41,9 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               'tests.test_engine_qwen38_covered_attention.CoveredAttentionTests',
               'tests.test_engine_qwen38_query_shards.ServedSelectionTests',
               # the decode step's selection in one launch (carry Q7): the rule, and torch.topk's set without ties
-              'tests.test_engine_qwen38_qsa_select.SelectTests')
+              'tests.test_engine_qwen38_qsa_select.SelectTests',
+              # the compact MoE's combine in one launch: each row's pairs in their order, the CPU's sequential sum
+              'tests.test_engine_qwen38_moe_pairs.PairSumTests')
 
 
 def facts():

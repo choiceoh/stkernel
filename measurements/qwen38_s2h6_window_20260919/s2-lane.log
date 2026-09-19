@@ -1,0 +1,51 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-input-reuse-0919b-20260919-143849.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-input-reuse-0919b-20260919-143849.txt
+GO qwen38-input-reuse-0919b 2026-09-19_14:38:50
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+{"event": "device", "name": "NVIDIA GB10", "torch": "2.13.0+cu132", "cuda": "13.2", "triton": "3.7.1"}
+test_eager_reuse_is_the_ordinary_launch_s_bytes (tests.test_engine_qwen38_input_reuse.InputReuseTests.test_eager_reuse_is_the_ordinary_launch_s_bytes) ... ok
+test_reuse_is_the_ordinary_launch_s_bytes_over_changed_and_strided_inputs (tests.test_engine_qwen38_input_reuse.InputReuseTests.test_reuse_is_the_ordinary_launch_s_bytes_over_changed_and_strided_inputs) ... {"event": "input_reuse_tests", "passed": true, "tests": 3}
+ok
+test_the_plan_admits_the_qwen38_shapes_at_their_ordinary_split (tests.test_engine_qwen38_input_reuse.InputReuseTests.test_the_plan_admits_the_qwen38_shapes_at_their_ordinary_split) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 3.290s
+
+OK
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 2, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.08, "warm_us": 29.8, "cold_min_us": 36.59, "warm_min_us": 29.55, "samples": 30}
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 2, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 36.98, "warm_us": 29.11, "cold_min_us": 36.67, "warm_min_us": 28.82, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "gdn_in", "rows": 2, "cold_reuse_over_ordinary": 0.9973, "warm_reuse_over_ordinary": 0.9768}
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 4, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.02, "warm_us": 29.84, "cold_min_us": 36.73, "warm_min_us": 29.59, "samples": 30}
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 4, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 36.95, "warm_us": 29.63, "cold_min_us": 36.68, "warm_min_us": 29.3, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "gdn_in", "rows": 4, "cold_reuse_over_ordinary": 0.9981, "warm_reuse_over_ordinary": 0.993}
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 6, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.29, "warm_us": 30.11, "cold_min_us": 36.8, "warm_min_us": 29.66, "samples": 30}
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 6, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.06, "warm_us": 29.51, "cold_min_us": 36.76, "warm_min_us": 29.03, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "gdn_in", "rows": 6, "cold_reuse_over_ordinary": 0.9938, "warm_reuse_over_ordinary": 0.9801}
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 8, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.56, "warm_us": 30.25, "cold_min_us": 37.0, "warm_min_us": 29.8, "samples": 30}
+{"event": "input_reuse", "shape": "gdn_in", "n": 4120, "k": 2560, "rows": 8, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 36.9, "warm_us": 29.61, "cold_min_us": 36.44, "warm_min_us": 29.24, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "gdn_in", "rows": 8, "cold_reuse_over_ordinary": 0.9824, "warm_reuse_over_ordinary": 0.9788}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 2, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 36.87, "warm_us": 29.71, "cold_min_us": 36.48, "warm_min_us": 29.17, "samples": 30}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 2, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.58, "warm_us": 29.76, "cold_min_us": 36.88, "warm_min_us": 29.27, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "qsa_in", "rows": 2, "cold_reuse_over_ordinary": 1.0193, "warm_reuse_over_ordinary": 1.0017}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 4, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 36.84, "warm_us": 29.65, "cold_min_us": 36.43, "warm_min_us": 29.38, "samples": 30}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 4, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.43, "warm_us": 29.86, "cold_min_us": 36.98, "warm_min_us": 29.11, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "qsa_in", "rows": 4, "cold_reuse_over_ordinary": 1.016, "warm_reuse_over_ordinary": 1.0071}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 6, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.03, "warm_us": 29.81, "cold_min_us": 36.44, "warm_min_us": 29.39, "samples": 30}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 6, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.38, "warm_us": 29.91, "cold_min_us": 37.0, "warm_min_us": 29.45, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "qsa_in", "rows": 6, "cold_reuse_over_ordinary": 1.0095, "warm_reuse_over_ordinary": 1.0034}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 8, "mode": 0, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.12, "warm_us": 30.06, "cold_min_us": 36.63, "warm_min_us": 29.58, "samples": 30}
+{"event": "input_reuse", "shape": "qsa_in", "n": 4224, "k": 2560, "rows": 8, "mode": 2, "layers": 9, "admitted": true, "ksr": 2, "exact": true, "cold_us": 37.43, "warm_us": 30.02, "cold_min_us": 36.8, "warm_min_us": 29.59, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "qsa_in", "rows": 8, "cold_reuse_over_ordinary": 1.0084, "warm_reuse_over_ordinary": 0.9987}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 2, "mode": 0, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 14.75, "warm_us": 12.36, "cold_min_us": 14.63, "warm_min_us": 12.27, "samples": 30}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 2, "mode": 2, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 16.76, "warm_us": 13.95, "cold_min_us": 15.88, "warm_min_us": 13.78, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "o_proj", "rows": 2, "cold_reuse_over_ordinary": 1.1363, "warm_reuse_over_ordinary": 1.1286}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 4, "mode": 0, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 14.78, "warm_us": 12.4, "cold_min_us": 14.64, "warm_min_us": 12.27, "samples": 30}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 4, "mode": 2, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 16.7, "warm_us": 14.04, "cold_min_us": 15.86, "warm_min_us": 13.79, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "o_proj", "rows": 4, "cold_reuse_over_ordinary": 1.1299, "warm_reuse_over_ordinary": 1.1323}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 6, "mode": 0, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 14.87, "warm_us": 12.5, "cold_min_us": 14.76, "warm_min_us": 12.38, "samples": 30}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 6, "mode": 2, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 16.57, "warm_us": 13.94, "cold_min_us": 15.84, "warm_min_us": 13.76, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "o_proj", "rows": 6, "cold_reuse_over_ordinary": 1.1143, "warm_reuse_over_ordinary": 1.1152}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 8, "mode": 0, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 15.0, "warm_us": 12.71, "cold_min_us": 14.85, "warm_min_us": 12.57, "samples": 30}
+{"event": "input_reuse", "shape": "o_proj", "n": 2560, "k": 1536, "rows": 8, "mode": 2, "layers": 23, "admitted": true, "ksr": 3, "exact": true, "cold_us": 15.68, "warm_us": 13.92, "cold_min_us": 15.09, "warm_min_us": 13.74, "samples": 30}
+{"event": "input_reuse_verdict", "shape": "o_proj", "rows": 8, "cold_reuse_over_ordinary": 1.0453, "warm_reuse_over_ordinary": 1.0952}
+{"event": "summary", "gdn_in x 2": {"cold_reuse_over_ordinary": 0.9973, "warm_reuse_over_ordinary": 0.9768}, "gdn_in x 4": {"cold_reuse_over_ordinary": 0.9981, "warm_reuse_over_ordinary": 0.993}, "gdn_in x 6": {"cold_reuse_over_ordinary": 0.9938, "warm_reuse_over_ordinary": 0.9801}, "gdn_in x 8": {"cold_reuse_over_ordinary": 0.9824, "warm_reuse_over_ordinary": 0.9788}, "qsa_in x 2": {"cold_reuse_over_ordinary": 1.0193, "warm_reuse_over_ordinary": 1.0017}, "qsa_in x 4": {"cold_reuse_over_ordinary": 1.016, "warm_reuse_over_ordinary": 1.0071}, "qsa_in x 6": {"cold_reuse_over_ordinary": 1.0095, "warm_reuse_over_ordinary": 1.0034}, "qsa_in x 8": {"cold_reuse_over_ordinary": 1.0084, "warm_reuse_over_ordinary": 0.9987}, "o_proj x 2": {"cold_reuse_over_ordinary": 1.1363, "warm_reuse_over_ordinary": 1.1286}, "o_proj x 4": {"cold_reuse_over_ordinary": 1.1299, "warm_reuse_over_ordinary": 1.1323}, "o_proj x 6": {"cold_reuse_over_ordinary": 1.1143, "warm_reuse_over_ordinary": 1.1152}, "o_proj x 8": {"cold_reuse_over_ordinary": 1.0453, "warm_reuse_over_ordinary": 1.0952}}

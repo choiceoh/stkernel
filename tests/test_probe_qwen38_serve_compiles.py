@@ -111,12 +111,12 @@ class LaneTests(unittest.TestCase):
     def test_it_boots_in_the_fleets_order(self):
         source = (ROOT / "probes/engine_qwen38_serve_compiles.py").read_text(encoding="utf-8")
         body = source[source.index("def build("):source.index("def serve(")]
-        order = [body.index(s) for s in ("warm.warmup(", "warm.eager_moe(", "capture(model, MAX_SEQS)")]
+        order = [body.index(s) for s in ("warm.eager_moe(", "warm.warmup(", "capture(model, MAX_SEQS)")]
         self.assertEqual(order, sorted(order))
 
     def test_it_imports_only_what_the_lane_ships(self):
         tree = ast.parse((ROOT / "probes/engine_qwen38_serve_compiles.py").read_text(encoding="utf-8"))
-        standard = ("__future__", "dataclasses", "gc", "json", "pathlib", "sys", "time", "torch", "triton")
+        standard = ("__future__", "dataclasses", "gc", "inspect", "json", "pathlib", "sys", "time", "torch", "triton")
         for node in ast.walk(tree):
             names = ([node.module] if isinstance(node, ast.ImportFrom) else
                      [alias.name for alias in node.names] if isinstance(node, ast.Import) else [])

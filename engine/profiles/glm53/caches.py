@@ -8,16 +8,12 @@ KDA and indexer rings live together in a second, slot-major arena region.
 """
 from __future__ import annotations
 
-from array import array
 from dataclasses import dataclass
 from math import lcm, prod
 
 from engine.base.arena import ALIGN
 from engine.base.kv import BlockPool, SlotPool
-
-
-def aligned(n: int, unit: int) -> int:
-    return -(-n // unit) * unit
+from engine.base.slot_caches import SlotCaches, StateField, aligned, typed_view
 
 
 def state_dtype(value: str) -> str:
@@ -29,20 +25,6 @@ def state_dtype(value: str) -> str:
 def recurrent_field_dtype(F, override=None) -> str:
     return {"fp32": "f32", "fp16": "f16"}[state_dtype(
         getattr(F, "kda_state_dtype", "fp32") if override is None else override)]
-
-
-def field_dtype(name):
-    import torch
-    return {"f32": torch.float32, "f16": torch.float16, "bf16": torch.bfloat16}[name]
-
-
-@dataclass(frozen=True)
-class StateField:
-    name: str
-    layer: int
-    shape: tuple
-    dtype: str
-    offset: int
 
 
 @dataclass(frozen=True)
@@ -163,7 +145,7 @@ def stage_bytes(F, layers, max_seqs: int, draft=None) -> int:
     return (max_seqs + 1) * stage_layout(F, layers, draft)[0]
 
 
-class Glm53Caches:
+class Glm53Caches(SlotCaches):
     def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, draft=None, snapshots: int = 0, stage: bool = False):
         import torch
 
@@ -187,34 +169,18 @@ class Glm53Caches:
         self.block_table = arena.carve(max_seqs * num_blocks * 4, "glm53 block table").view(torch.int32).view(max_seqs, num_blocks)
         self._fields = {}
         for f in p.fields:
-            dtype = field_dtype(f.dtype)
-            size = 4 if f.dtype == "f32" else 2
-            strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
-            base = self.state.view(dtype)
-            self._fields[f.name, f.layer] = base.as_strided(
-                (max_seqs + 1, *f.shape), (p.slot_bytes // size, *strides),
-                base.storage_offset() + f.offset // size)
+            self._fields[f.name, f.layer] = typed_view(self.state, max_seqs + 1, p.slot_bytes, f)
         self._snap = {}
         if snapshots:
             self.snapshot_store = arena.carve(snapshots * self.snapshot_bytes_n, "glm53 prefix snapshots")
             for f in self._snapshot_fields:
-                dtype = field_dtype(f.dtype)
-                size = 4 if f.dtype == "f32" else 2
-                strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
-                base = self.snapshot_store.view(dtype)
-                self._snap[f.name, f.layer] = base.as_strided((snapshots, *f.shape), (self.snapshot_bytes_n // size, *strides),
-                                                              base.storage_offset() + f.offset // size)
+                self._snap[f.name, f.layer] = typed_view(self.snapshot_store, snapshots, self.snapshot_bytes_n, f)
         self._stage = {}
         if stage:
             self.stage_bytes, self._stage_fields = stage_layout(F, self.layers, draft)
             self.stage_store = arena.carve((max_seqs + 1) * self.stage_bytes, "glm53 boundary stage")
             for f in self._stage_fields:
-                dtype = field_dtype(f.dtype)
-                size = 4 if f.dtype == "f32" else 2
-                strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
-                base = self.stage_store.view(dtype)
-                self._stage[f.name, f.layer] = base.as_strided((max_seqs + 1, *f.shape), (self.stage_bytes // size, *strides),
-                                                               base.storage_offset() + f.offset // size)
+                self._stage[f.name, f.layer] = typed_view(self.stage_store, max_seqs + 1, self.stage_bytes, f)
         record = F.idx_dim + 4
         self._latent = self.paged.view(torch.float8_e4m3fn).view(-1, F.kv_lora)
         self._keys = self.paged.as_strided((self.paged.numel() // record, F.idx_dim),
@@ -223,77 +189,6 @@ class Glm53Caches:
         self._scales = base.as_strided((self.paged.numel() // record,), (record // 4,),
                                       base.storage_offset() + F.idx_dim // 4)
         self.reset()
-
-    def reset(self):
-        """Clear contents at boot/check boundaries; does not change ownership."""
-        self.paged.zero_()
-        self.state.zero_()
-        self.block_table.fill_(-1)
-        self._table_blocks = array("i", [0]) * self.pool.max_seqs
-        self._table_epochs = array("Q", self.pool.epochs)
-
-    def slot_bytes(self, slot: int):
-        """A real slot's bytes as one contiguous uint8 arena view: what the tier parks and restores."""
-        if not 0 < slot < self.slots.num_slots:
-            raise IndexError("only a real state slot has bytes to move")
-        n = self.layout.slot_bytes
-        return self.state[slot * n:(slot + 1) * n]
-
-    def reset_slot(self, slot: int):
-        self.slot_bytes(slot).zero_()
-
-    def prepare(self, step):
-        """Publish changed block mappings before a step, after its reservation.
-
-        Segment bounds and slot ownership are checked without device reads.
-        Rows append within an allocator epoch: upload only their new suffix.
-        Release/reuse or NVMe resume changes the epoch, requiring a fresh prefix
-        and clearing any stale suffix. Unchanged rows perform no CUDA work.
-        """
-        import torch
-
-        for s in step.segments:
-            row = self.pool.row(s.seq)
-            if not 0 < s.slot < self.slots.num_slots or self.slots.owner[s.slot] != s.seq:
-                raise ValueError(f"seq {s.seq} does not own state slot {s.slot}")
-            if s.ctx < 0 or s.length <= 0 or s.ctx + s.length > self.pool.tokens[s.seq]:
-                raise ValueError(f"seq {s.seq} step exceeds its reserved context")
-            count = self.pool.blocks_for(self.pool.tokens[s.seq])
-            previous = self._table_blocks[s.seq]
-            epoch = self.pool.epochs[s.seq]
-            if epoch == self._table_epochs[s.seq] and count == previous:
-                continue
-            start = previous if epoch == self._table_epochs[s.seq] else 0
-            # A released row already contains -1 after its active prefix. Send
-            # that padding with the new ids to clear stale entries in one copy.
-            end = max(count, previous)
-            self._upload_ids(self.block_table[s.seq, start:end], row[start:end])
-            # Commit only after the copy succeeds, so a failed update retries.
-            self._table_blocks[s.seq] = count
-            self._table_epochs[s.seq] = epoch
-
-    def _upload_ids(self, destination, ids):
-        """Upload through a pinned ring; fence reuse after the copy that reads the slot."""
-        import torch
-        if self.device.type != "cuda":
-            destination.copy_(torch.tensor(ids, dtype=torch.int32))
-            return
-        ring = getattr(self, "_id_ring", None)
-        if ring is None:
-            width = self.block_table.shape[1]
-            ring = self._id_ring = [(torch.empty(width, dtype=torch.int32, pin_memory=True), torch.cuda.Event()) for _ in range(16)]
-            self._id_ring_next = 0
-        host, event = ring[self._id_ring_next]
-        self._id_ring_next = (self._id_ring_next + 1) % len(ring)
-        event.synchronize()                                       # the slot's previous copy has landed (almost always already)
-        n = len(ids)
-        host[:n].copy_(torch.tensor(ids, dtype=torch.int32))
-        destination.copy_(host[:n], non_blocking=True)
-        event.record()                                            # the event must cover the upload, not just earlier work
-
-    def _ring_cells(self, position: int, count: int, width: int):
-        import torch
-        return torch.tensor([(position - count + i) % width for i in range(count)], device=self.device)
 
     def checkpoint(self, slot: int, position: int, snap: int, past: int = 0) -> None:
         """Copy the rings' state at chunk boundary `position` out of `slot` into snapshot `snap`. `past`: how many
@@ -336,13 +231,6 @@ class Glm53Caches:
 
     def snapshot_draft_ring(self, snap: int):
         return self._snap["draft", -1][snap]
-
-    def snapshot_bytes(self, snap: int):
-        """A snapshot's bytes as one contiguous uint8 arena view: what the prefix tier writes and reads back."""
-        if not 0 <= snap < self.snapshots:
-            raise IndexError("only a declared snapshot has bytes to move")
-        n = self.snapshot_bytes_n
-        return self.snapshot_store[snap * n:(snap + 1) * n]
 
     # -- boundaries crossed while generating (45차 §23) ----------------------------------------------------------
     def stage_boundaries(self, slots, ctx_before, counts) -> None:

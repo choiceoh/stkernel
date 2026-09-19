@@ -191,6 +191,12 @@ def main():
         from probes.engine_qwen38_step import LAYER_SETS, MTP_ARMS, run as qwen38_step
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=MTP_ARMS)
         return
+    if args.lanes == 'qwen38_mtp_window':
+        # the MTP head's draft graph at every context bucket, its QSA selection scored against a sink-and-recent window
+        # of groups (fleet --mtp-window): what the draft's index scoring costs as the context grows
+        from probes.engine_qwen38_mtp_window import run as qwen38_mtp_window
+        qwen38_mtp_window(args.output, args.ranks)
+        return
     if args.lanes == 'qwen38_step_overlap':
         # one rank's captured step with the shared expert forked beside the routed experts, against the served step (M5)
         from probes.engine_qwen38_step import LAYER_SETS, OVERLAP_ARMS, run as qwen38_step
@@ -213,6 +219,12 @@ def main():
         # a tile sweep) and a pure read of the weight, with each one's error and argmax agreement
         from probes.engine_qwen38_head import run as qwen38_head
         qwen38_head(args.output)
+        return
+    if args.lanes in ('glm53_head', 'glm53_gemv'):
+        # component timings at GLM-5.3's shapes and rows: whether Qwen3.8's decode-row kernels (dense/fp8_rows,
+        # common/skinny_gemv) beat what GLM serves -- its cuBLASLt head reader, torch.mm on the indexer pair
+        from probes.engine_glm53_decode_rows import run_gemv, run_head
+        (run_head if args.lanes == 'glm53_head' else run_gemv)(args.output)
         return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves

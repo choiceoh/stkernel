@@ -6,7 +6,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 
 - **TP=4** — 스파크 네 대가 유일한 world. 랭크-로컬 형상은 사실(`profiles/*/facts.py`)이고 코드에 `// world` 가 없다.
   한 노드 검증도 `base/comm.LocalTP` 로 네 랭크를 스레드로 돌려 진짜 all-reduce 의미를 쓴다.
-- **DGX Spark(GB10)** — 장치 하나, 통합 메모리, SM121. 부팅·검증 때 단언(`facts.check_box`).
+- **DGX Spark(GB10)** — 장치 하나, 통합 메모리, SM121. 부팅·검증 때 단언(`base/box.check_box`, 프로필마다 `facts.check_box` 로 부른다).
 - **NVFP4 가 기본형** — packed 바이트 그대로 상주, packed 위에서 TP, 전역 스케일은 곱셈자, 서빙 커널이 레인. 유일형은
   아니다: 체크포인트가 bf16 으로 가진 것은 bf16 으로 쥔다.
 - **ModelOpt dense 안전장치** — 엔비디아 체크포인트의 첫 3개 dense MLP는 긴 prefill(기본 4,096행)에서
@@ -249,6 +249,20 @@ GLM-5.3 기본 동시 요청 상한은 `MAX_SEQS=2`이며 C=1·2만 캡처한다
 start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤엔 멈추고 사람을 부른다. 프로덕션 vLLM·q38 컨테이너가 보이면 절대 띄우지 않는다.
 `ST_SUPERVISOR_ONCE=1` 로 한 사이클만 판정할 수 있다. 한 노드는 **자기 자신에게 ssh 하지 못하므로**(srv2 가 자기 키를 거부한다) 런처와
 슈퍼바이저는 대상 IP 가 자기 것이면 로컬 셸로 돌린다 — 그래서 헤드에서 도는 슈퍼바이저가 rank 0 의 컨테이너·로그·잠금을 본다.
+
+프로덕션 모델 선택(2026-09-19, 운영자: 데네브에서 엔진의 모델을 고른다): 프로덕션이 어느 모델을 서빙하는지는 한 파일
+`~/glm53-logs/st-production.json` 이 정하고, 슈퍼바이저·deploy-watch·prebuild 가 모두 `launchers/st_production.py` 로 그것을 읽는다.
+파일이 없으면 glm53 — 고른 적 없는 박스는 예전 그대로다. 선택이 바뀌면 슈퍼바이저가 문이 조용해지길(최대 `ST_SWITCH_QUIET_S`, 120 s)
+기다렸다가 돌던 플릿을 내리고 고른 프로필을 같은 production 리스로 띄우며, 단계마다 `st-production-state.json` 에 적는다(데네브가 ssh
+로 읽는 것). 창(티켓·세션)이 플릿을 쥐고 있으면 아무것도 내리지 않고, 창이 끝난 뒤의 프로덕션 부팅이 새 모델이 된다. 고른 모델이
+`LAUNCH_HOLD_AFTER` 번 연속 못 뜨면 HELD 대신 glm53 으로 되돌리고 이유를 선택 파일에 남긴다 — 프로덕션이 못 띄우는 모델은 프로덕션이
+아니다. 프로덕션의 트리·이미지는 모델과 무관하게 프로덕션의 것이고(ST 이미지에는 모델이 없고 릴리스는 엔진 트리 전체다), 모델마다 다른
+것은 런처·컨테이너 이름·문이 답하는 모델 id·실행 환경뿐이다. 실행 환경은 프로필마다 `~/.config/st-<profile>.env` 이고, 다른 모델의
+부팅은 어느 프로필이든 정하는 키(예: st-glm53.env 의 `RANKS_DIR`)를 전부 지운 뒤 자기 것만 얹는다 — `ST_REPO`·`ST_ENGINE_DIR`·
+`ST_IMAGE` 는 프로덕션의 것이라 유지된다. D17 표본(onepass 프로브)은 GLM-5.3 의 계열이라 프로덕션이 다른 모델일 때는 걸지 않는다.
+
+    python3 launchers/st_production.py show                            # 선택·상태·서빙 가능한 프로필
+    python3 launchers/st_production.py select qwen38 --note "why"      # 다음 사이클(≤30 s)에 전환
 
 프로덕션 전환: 프로덕션 vLLM 을 되살리는 경로는 `fleet-idle-recovery.timer`(5 분 유휴 뒤 복구) 하나뿐이다. ST 가 프로덕션이 되는 동안은
 그 타이머를 끄고(`st-glm53.service` 의 `Conflicts=`가 같은 일을 한다) 슈퍼바이저 유닛을 켠다. 되돌리기는 그 반대 순서다:
@@ -563,6 +577,8 @@ UMA 입장 검사는 공간이 부족하면 지정된 모델 보관 경로의 `.
 ```bash
 python3 tools/onboard.py --ckpt ~/models/<checkpoint> --placement ep     # 사람이 읽는 표
 python3 tools/onboard.py --config config.json --json                     # 기계가 읽는 문서
+python3 tools/onboard.py --config config.json --placement ep \
+    --state attention.kind=mla --state indexer.compress=ced              # 레퍼런스가 말한 사실을 채워서
 ```
 
 세 가지 답 중 하나가 나온다.
@@ -571,7 +587,21 @@ python3 tools/onboard.py --config config.json --json                     # 기�
 |---|---|---|
 | **profile \<name\>** | 그 `model_type` 을 선언한 프로필이 있다 | 프로필의 유도로 형상·레인 표가 바로 나온다 |
 | **generic + 형상** | 프로필은 없지만 설정이 필요한 것을 다 말했다 | 레인 표와 `cells.plan()` 의 작업 목록이 그대로 할 일이다 |
-| **generic + 빈칸** | 설정이 정하지 못한 것이 있다 | 빈칸마다 **무엇이 그것을 정하는지**가 같이 나온다 — 체크포인트의 레퍼런스 구현, `engine/profiles/` 의 프로필, 또는 `--placement` |
+| **generic + 빈칸** | 설정이 정하지 못한 것이 있다 | 빈칸마다 **무엇이 그것을 정하는지**가 같이 나온다 — 체크포인트의 레퍼런스 구현, `engine/profiles/` 의 프로필, `--placement`, 또는 `--state <필드>=<값>` |
+
+**라우팅 전문가가 없는 체크포인트**(평범한 dense LLM)도 형상이 선다: 모든 토큰이 지나는 MLP 하나를 이 엔진이 실제로
+서빙하는 **E=1 셀**로 읽는다 — b12x 의 게이트가 라우팅 튜플 옆에 `(1, hidden, dense_inter_local, 1)` 을 승인한다
+(`kernels/b12x/moe_dispatch._glm_tp_scatter_shape`). 그 MLP 는 여기 모든 dense·공유 MLP 처럼 TP 로 쪼개지므로 **고를
+배치가 없고 `--placement` 를 묻지 않는다.** 반대로 설정이 **전문가를 부르는데** 이 문이 못 읽는 철자라면(예: Mixtral 의
+`num_local_experts`) 그것은 **빈칸**이다 — dense 로 읽는 순간 모든 토큰을 MLP 하나로 보내는 모델이 된다.
+
+셋 다 **읽은 것을 먼저 표로 낸다**(필드 · 값 · 그 값이 온 키). 설정이 **이름을 대는** 축은 추측이 아니라 읽기다 —
+`index_kpool_compress` 는 인덱서의 압축을, `kda_layers` 는 선형 어텐션의 채널별 감쇠를, `mhc: true` 는 잔차 혼합을
+그 키가 말한다. 설정이 끝내 말하지 않는 축(`STATEABLE`: 어텐션 종류 · sink · 인덱서 압축 · 감쇠 · 혼합기 · 전문가
+양자화 · 게이트)은 운영자가 `--state` 로 **댈 수 있다**. 이것은 노브가 아니다(D11: 입력은 사실뿐) — **빈칸만
+채우고**, 설정이 이미 정한 필드를 대면 덮어쓰지 않고 **거부한다**. 세 프로필의 유도와 이 앞문이 필드 단위로
+**같다**는 것이 `tests/test_engine_onboard.py` 의 판정이고, 각 모델이 레퍼런스에서 가져오는 사실은 셋 · 다섯 ·
+여섯 개가 전부다.
 
 빈칸은 실패가 아니라 **작업 지시**다. 예: 인덱서를 선언한 설정은 키 압축 방식(kpool·ced·qsa)을 말하지 않고,
 KV 헤드가 하나인 설정은 MLA 인지 GQA 인지 말하지 않는다 — 둘 다 추측하면 **부팅되면서 틀린다.**

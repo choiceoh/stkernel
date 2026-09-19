@@ -106,12 +106,14 @@ class ServedComposition:
         self.net, self.caches = net, caches
         self.graphs = None
 
-    def capture(self, max_seqs: int, tokens: int, *, ceiling: int, memory=None) -> None:
-        """The target's decode (tokens 1) or verify (tokens k+1) graphs, before any request is admitted."""
+    def capture(self, max_seqs: int, tokens: int, *, ceiling: int, memory=None, narrow_rows: int = 0) -> None:
+        """The target's decode (tokens 1) or verify (tokens k+1) graphs, before any request is admitted; every narrower
+        width too for steps of at most `narrow_rows` rows (decode_graphs.TargetGraphs)."""
         from engine.profiles.qwen38.decode_graphs import TargetGraphs
         if self.graphs is not None:
             raise ValueError("the target graphs are already captured")
-        self.graphs = TargetGraphs(self.net, self.caches, max_seqs, tokens, ceiling=ceiling, memory=memory)
+        self.graphs = TargetGraphs(self.net, self.caches, max_seqs, tokens, ceiling=ceiling, memory=memory,
+                                   narrow_rows=narrow_rows)
 
     def close(self) -> None:
         if self.graphs is not None:
@@ -141,8 +143,8 @@ class ServedComposition:
         if not served.marks and self.graphs is not None and self.graphs.admits(served, self.caches.pool):
             # rows: the graph's output row of each of the step's tokens (None: the same rows, nothing was padded)
             # host: the step's ids and carried context as the model holds them (decode_graphs.TargetGraphs.run)
-            scores, streams, rows = self.graphs.run(served, known=host)
-            t, device = self.graphs.tokens, scores.device
+            scores, streams, rows, t = self.graphs.run(served, known=host)
+            device = scores.device
             if logits == "last":
                 if t != 1:                        # one token a row: every row is its segment's last already
                     last = [i * t + s.length - 1 for i, s in enumerate(served.segments)]
@@ -180,20 +182,41 @@ class ServedMTP:
     row holds its kept positions, not the horizon the next step reserves) runs the head eagerly over its observed
     positions alone, as longer observations (a prompt) do at once; the chain then runs eagerly at `propose`."""
 
-    def __init__(self, net, caches, store, k: int):
+    def __init__(self, net, caches, store, k: int, *, threshold: "float | None" = None, ledger=None):
+        """`threshold`: a row's drafts end before its first pick the head gives less probability than this (LibraSpec's
+        rule, arXiv 2608.08721: a draft is verified only while it is likely to pay) -- the graphs report each pick's
+        probability (net.draft_tokens), the same bits on every rank, so every rank cuts alike; None proposes all k.
+        `ledger`: a callable handed one record a verified row (`record`) -- rank 0's draft ledger."""
         if k <= 0:
             raise ValueError("a drafter proposes at least one token")
+        if threshold is not None and not 0.0 <= threshold < 1.0:
+            raise ValueError(f"a draft threshold is a probability in [0, 1), not {threshold}")
         self.net, self.caches, self.store, self.k = net, caches, store, k
+        self.threshold, self.ledger = threshold, ledger
+        # the row counts a cut pays at: steps of more rows replay the full verify width (decode_graphs.TargetGraphs
+        # narrow_rows, set at capture), where a cut draft is padded back and only its chance of being kept is lost.
+        # None: no captured target, every step as wide as its rows
+        self.narrow_rows = None
         self.graphs = None
         self._next: dict = {}                     # seq -> (picks, head streams [1, hc*H] | None, the chain's position)
         self._waiting: dict = {}                  # seq -> (slot, ctx, next ids, the target's streams rows [m, hc*H])
+        self._probs: dict = {}                    # seq -> the head's probability of each of its picks (graph rows)
+        self._proposed: dict = {}                 # seq -> (every pick, their probabilities) of its last proposal
+        # what the head observes, recorded where a boot asks (fleet --tap-mtp-inputs, rank 0): at every kept position
+        # the target's streams and the token after it -- the head's own fine-tuning data (mtp_tune.py)
+        self.inputs_tap = None
+
+    @property
+    def probability(self) -> bool:
+        """Whether the draft graphs report each pick's probability: a threshold cuts on it, a ledger records it."""
+        return self.threshold is not None or self.ledger is not None
 
     def capture(self, max_seqs: int, *, ceiling: int, memory=None) -> None:
         from engine.profiles.qwen38.decode_graphs import DraftGraphs
         if self.graphs is not None:
             raise ValueError("the draft graphs are already captured")
         self.graphs = DraftGraphs(self.net, self.caches, max_seqs, self.k + 1, k=self.k, ceiling=ceiling,
-                                  memory=memory)
+                                  memory=memory, probability=self.probability)
 
     def close(self) -> None:
         if self.graphs is not None:
@@ -220,16 +243,23 @@ class ServedMTP:
             else:
                 eager.append((seq, ctx, ids, streams))
         if rows:
-            for (seq, _slot, ctx, ids, _streams), picks in zip(rows, graphs.run(rows)):
+            out = graphs.run(rows)
+            picks_rows, prob_rows = out if getattr(graphs, "probability", False) else (out, [None] * len(rows))
+            for (seq, _slot, ctx, ids, _streams), picks, probs in zip(rows, picks_rows, prob_rows):
                 self._next[seq] = (picks, None, ctx + len(ids))
+                self._probs[seq] = probs
         for seq, ctx, ids, streams in eager:
             token, head = self._head(seq, ctx, torch.tensor(ids, dtype=torch.int64, device=streams.device), streams)
             self._next[seq] = ([token], head, ctx + len(ids))
+            self._probs[seq] = None
 
-    def observe(self, seq: int, ctx: int, next_ids, hidden) -> None:
+    def observe(self, seq: int, ctx: int, next_ids, hidden, *, decoded: bool = False) -> None:
+        """`decoded`: the positions a verify step kept (ServedModel._verify), not a prompt's -- the tap's record."""
         n = min(len(next_ids), hidden.shape[0])
         if n == 0:
             return
+        if self.inputs_tap is not None:
+            self.inputs_tap(seq, ctx, next_ids[:n], hidden[:n], decoded)
         if seq in self._waiting:
             self._run_waiting([seq])              # its rows are positions before these
         self._next.pop(seq, None)
@@ -258,11 +288,29 @@ class ServedMTP:
                 token, streams = self._head(seq, position, ids, streams)
                 chain.append(token)
                 position += 1
+            probs = self._probs.get(seq)
+            self._proposed[seq] = (chain, probs)
+            if probs is not None and self.threshold is not None and (self.narrow_rows is None
+                                                                     or len(seqs) <= self.narrow_rows):
+                # the drafts before the first the head doubts (an eager chain's picks carry no probability: all go)
+                chain = chain[:next((j for j, p in enumerate(probs[:len(chain)]) if p < self.threshold), len(chain))]
             out.append(chain)
         return out
 
+    def record(self, seq: int, ctx: int, proposed: int, matched: int, committed: int) -> None:
+        """One verified row to the ledger: its context, every pick the head made and their probabilities, how many
+        were proposed (the threshold's cut), how many the target kept, and the tokens the step committed."""
+        if self.ledger is None:
+            return
+        picks, probs = self._proposed.pop(seq, ([], None))
+        self.ledger({"seq": seq, "ctx": ctx, "picks": picks,
+                     "probs": None if probs is None else [round(float(p), 6) for p in probs],
+                     "proposed": proposed, "matched": matched, "committed": committed})
+
     def forget(self, seq: int) -> None:
         self._next.pop(seq, None)
+        self._probs.pop(seq, None)
+        self._proposed.pop(seq, None)
         waiting = self._waiting.get(seq)
         if waiting is not None:
             slot, ctx, ids = waiting[0], waiting[1], waiting[2]
@@ -373,8 +421,10 @@ def _served_model_class():
                     self.drafts_total += 1
                     self.drafted_total += len(d)
                     self.accepted_total += matched
+                if getattr(self.drafter, "ledger", None) is not None:
+                    self.drafter.record(seq, segment.ctx, len(d), matched, fed)
                 self.drafter.observe(seq, segment.ctx, self.tokens[seq][segment.ctx + 1:segment.ctx + fed + 1],
-                                     hidden[segment.start:segment.start + fed])
+                                     hidden[segment.start:segment.start + fed], decoded=True)
                 finished.append(done)
             return finished
 
@@ -382,25 +432,29 @@ def _served_model_class():
 
 
 def build_model(net, caches, F, *, eos_ids, max_new: int, temperature: float, top_p: float, seed: int = 0,
-                drafter: bool = True, grammars=None):
+                drafter: bool = True, grammars=None, draft_threshold: "float | None" = None, draft_ledger=None):
     """The served model (ServedModel: base/composed.ComposedModel with the one-read verify) over the served net and
-    caches, and the MTP drafter when `drafter`."""
+    caches, and the MTP drafter when `drafter` (ServedMTP's `threshold` and `ledger`)."""
     store = ServedStore(caches)
     composition = ServedComposition(net, caches)
-    mtp = ServedMTP(net, caches, store, F.spec_k) if drafter and F.spec_k else None
+    mtp = (ServedMTP(net, caches, store, F.spec_k, threshold=draft_threshold, ledger=draft_ledger)
+           if drafter and F.spec_k else None)
     model = _served_model_class()(composition, store, vocab=F.vocab, eos_ids=eos_ids, max_new=max_new,
                                   temperature=temperature, top_p=top_p, seed=seed, max_context=F.max_position,
                                   drafter=mtp, grammars=grammars)
     return model, store
 
 
-def capture(model, max_seqs: int, *, memory=None) -> None:
+def capture(model, max_seqs: int, *, memory=None, narrow_rows: int = 0) -> None:
     """The fleet's decode graphs, before the door admits work: the target's at the verify width (or one token without a
-    drafter), then the draft head's. The served ceiling is the model's context limit."""
+    drafter) -- every narrower width too for steps of at most `narrow_rows` rows, which a draft threshold's shorter
+    proposals replay -- then the draft head's. The served ceiling is the model's context limit."""
     k = model.k if model.drafter is not None else 0
     try:
-        model.composition.capture(max_seqs, k + 1, ceiling=model.max_context, memory=memory)
+        model.composition.capture(max_seqs, k + 1, ceiling=model.max_context, memory=memory,
+                                  narrow_rows=min(narrow_rows, max_seqs) if k else 0)
         if model.drafter is not None:
+            model.drafter.narrow_rows = model.composition.graphs.narrow_rows
             model.drafter.capture(max_seqs, ceiling=model.max_context, memory=memory)
     except BaseException as exc:
         from engine.base.graphs import cleanup_after_error

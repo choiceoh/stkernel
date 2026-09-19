@@ -174,7 +174,9 @@ class DescriptorTests(unittest.TestCase):
         self.assertEqual(q.hc_variant, "gated_residual")
         self.assertEqual(q.moe, MoE(experts=512, experts_local=128, hidden=2560, inter=640, inter_local=640, topk=10,
                                     quant="nvfp4", activation="silu", swiglu_limit=None, dense_inter_local=160))
-        self.assertEqual((q.spec_k, q.drafter), (1, None))
+        # three drafts a step: the one MTP layer chained (facts.SPEC_K, the 09-18 fleet pair) -- the served count,
+        # not the config's layer count, and the wizard's derivation takes the same one
+        self.assertEqual((q.spec_k, q.drafter), (3, None))
         self.assertNotEqual(q, MEASURED)
         self.assertIn("decay/head", q.describe())
         ks.bind(q)

@@ -17,17 +17,27 @@
 # The rank directory carries the checkpoint's config, tokenizer, generation config and chat template beside the
 # ranks (preshard.py copies them), so a node needs nothing else of the checkpoint.
 #
-# NOT BESIDE PRODUCTION. The ST fleet serves GLM-5.3 (st-glm53): this script refuses while any glm53*/q38*/vllm*/st-*
-# container is up on any node, and it takes the fleet lease exactly as start-st-glm53.sh does -- a ticket's owner
-# (ST_LEASE_OWNER, verified), or ST_LEASE_KIND=session for a session's own window by hand. A window here is production
-# downtime: plan it, announce it, and hand the fleet back (`stop`) when done.
+# NOT BESIDE PRODUCTION. This script refuses while any glm53*/q38*/vllm*/st-* container is up on any node, and it
+# takes the fleet lease exactly as start-st-glm53.sh does -- a ticket's owner (ST_LEASE_OWNER, verified),
+# ST_LEASE_KIND=session for a session's own window by hand, or ST_LEASE_KIND=production for the supervisor's and
+# deploy-watch's own boot when production serves Qwen3.8 (launchers/st_production.py selects the model production
+# serves; GLM-5.3 unless someone chose). A window here is production downtime: plan it, announce it, and hand the
+# fleet back (`stop`) when done.
 #
-# Its own engine directory and image tag: this tree is rsynced to ST_ENGINE_DIR (default ~/st-engine-qwen38) and
-# built as st-engine:qwen38, so a Qwen3.8 window never overwrites production's release tree or its st-engine:glm53.
+# A window keeps its own engine directory and image tag: its tree is rsynced to ST_ENGINE_DIR (default
+# ~/st-engine-qwen38) and built as st-engine:qwen38, so it never overwrites production's release tree or image.
+# PRODUCTION's boot is the other way round: production's tree and image are production's whichever model it serves
+# (~/st-engine, st-engine:glm53 -- the ST image carries no model, and a release is the whole engine tree), so a
+# deploy moves Qwen3.8 exactly as it moves GLM-5.3.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
-IMAGE=${ST_IMAGE:-st-engine:qwen38}
+if [ "${ST_LEASE_KIND:-}" = production ]; then
+  DEFAULT_IMAGE=st-engine:glm53 DEFAULT_ENGINE_DIR=/home/choiceoh/st-engine
+else
+  DEFAULT_IMAGE=st-engine:qwen38 DEFAULT_ENGINE_DIR=/home/choiceoh/st-engine-qwen38
+fi
+IMAGE=${ST_IMAGE:-$DEFAULT_IMAGE}
 PORT=${PORT:-8000}
 KV_ARG=""
 if [ -n "${ST_KV_GIB:-}" ]; then
@@ -84,10 +94,39 @@ case "$MTP_EXPERTS" in
   nvfp4) EXPERTS_ARG="--mtp-experts nvfp4" ;;
   *) echo "ST_MTP_EXPERTS must be bf16, fp8 or nvfp4" >&2; exit 2 ;;
 esac
+TUNED_DIR=${ST_MTP_TUNED:-}                                   # ST_MTP_TUNED=DIR: the head's fine-tuned dense weights (mtp_tune.py export)
+if [ -n "$TUNED_DIR" ]; then
+  EXPERTS_ARG="$EXPERTS_ARG --mtp-tuned $TUNED_DIR"
+  EXPERTS_MOUNT="$EXPERTS_MOUNT -v $TUNED_DIR:$TUNED_DIR:ro"
+fi
 TAP_ARG=""                                                    # ST_TAP_DRAFT_QUERIES=ROWS: rank 0 records the draft queries (the IVF head's recall)
 if [ -n "${ST_TAP_DRAFT_QUERIES:-}" ]; then
   [[ "$ST_TAP_DRAFT_QUERIES" =~ ^[1-9][0-9]*$ ]] || { echo "ST_TAP_DRAFT_QUERIES must be a row count" >&2; exit 2; }
   TAP_ARG="--tap-draft-queries $ST_TAP_DRAFT_QUERIES"
+fi
+ADAPT_ARG=""                                                  # ST_DRAFT_THRESHOLD=P|off: drafts end below the head's probability P
+if [ -n "${ST_DRAFT_THRESHOLD:-}" ]; then                     # (fleet default 0.1)
+  [[ "$ST_DRAFT_THRESHOLD" =~ ^0?\.[0-9]+$|^0$|^off$ ]] || { echo "ST_DRAFT_THRESHOLD must be a probability in [0, 1) or off" >&2; exit 2; }
+  ADAPT_ARG="--draft-threshold $ST_DRAFT_THRESHOLD"
+fi
+if [ -n "${ST_NARROW_ROWS:-}" ]; then                         # ST_NARROW_ROWS=N: rows with narrower verify graphs (fleet default 2)
+  [[ "$ST_NARROW_ROWS" =~ ^[0-9]+$ ]] || { echo "ST_NARROW_ROWS must be a row count" >&2; exit 2; }
+  ADAPT_ARG="$ADAPT_ARG --narrow-rows $ST_NARROW_ROWS"
+fi
+case "${ST_TAP_MTP_INPUTS:-1}" in                            # ST_TAP_MTP_INPUTS=0: rank 0 stops recording the head's inputs (on by default)
+  1) ;;
+  0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;
+  *) echo "ST_TAP_MTP_INPUTS must be 0 or 1" >&2; exit 2 ;;
+esac
+case "${ST_DRAFT_LEDGER:-1}" in                               # ST_DRAFT_LEDGER=0: no per-row draft ledger (on by default)
+  1) ;;
+  0) ADAPT_ARG="$ADAPT_ARG --no-draft-ledger" ;;
+  *) echo "ST_DRAFT_LEDGER must be 0 or 1" >&2; exit 2 ;;
+esac
+WINDOW_ARG=""                                                 # ST_MTP_WINDOW=SINK,RECENT|off: the MTP head's window (fleet default 1,511)
+if [ -n "${ST_MTP_WINDOW:-}" ]; then
+  [[ "$ST_MTP_WINDOW" =~ ^[0-9]+,[1-9][0-9]*$|^off$ ]] || { echo "ST_MTP_WINDOW must be SINK,RECENT groups or off" >&2; exit 2; }
+  WINDOW_ARG="--mtp-window $ST_MTP_WINDOW"
 fi
 ONESHOT_ARG=""                                                # ST_ONESHOT=0: every collective on NCCL (the one-shot cell at hidden 2560 is unmeasured)
 case "${ST_ONESHOT:-1}" in
@@ -95,7 +134,7 @@ case "${ST_ONESHOT:-1}" in
   0) ONESHOT_ARG="--no-oneshot" ;;
   *) echo "ST_ONESHOT must be 0 or 1" >&2; exit 2 ;;
 esac
-SPEC_ARG=""                                                   # ST_SPEC_K=K: K drafts a step from the MTP head (the checkpoint's 1; K > 1 chains it)
+SPEC_ARG=""                                                   # ST_SPEC_K=K: K drafts a step from the MTP head (this profile serves 3, facts.SPEC_K; ST_SPEC_K=1 rolls back)
 if [ -n "${ST_SPEC_K:-}" ]; then
   [[ "$ST_SPEC_K" =~ ^[1-9][0-9]*$ ]] || { echo "ST_SPEC_K must be a positive draft count" >&2; exit 2; }
   SPEC_ARG="--spec-k $ST_SPEC_K"
@@ -107,17 +146,20 @@ case "$RECLAIM_FILE_CACHE" in
   *) echo "ST_RECLAIM_FILE_CACHE must be 0 or 1" >&2; exit 2 ;;
 esac
 RANKS_DIR=${RANKS_DIR:-/home/choiceoh/models/st-qwen38-tep4}
-ENGINE_DIR=${ST_ENGINE_DIR:-/home/choiceoh/st-engine-qwen38}
+ENGINE_DIR=${ST_ENGINE_DIR:-$DEFAULT_ENGINE_DIR}
 # A shell carrying production's environment must not rsync --delete this tree over a release or retag its image:
 # production runs ~/st-engine or a pinned ~/st-releases/<commit> as st-engine:glm53 or st-engine:prod-<commit>.
-case "$(readlink -m "$ENGINE_DIR")" in
-  */st-engine|*/st-engine/|/home/choiceoh/st-releases|/home/choiceoh/st-releases/*)
-    echo "ABORT: $ENGINE_DIR is production's release tree; a Qwen3.8 window uses its own (ST_ENGINE_DIR)" >&2; exit 2 ;;
-esac
-case "$IMAGE" in
-  st-engine:glm53|st-engine:prod-*)
-    echo "ABORT: $IMAGE is production's image tag; a Qwen3.8 window builds its own (ST_IMAGE)" >&2; exit 2 ;;
-esac
+# Production's own boot is the one that may (above).
+if [ "${ST_LEASE_KIND:-}" != production ]; then
+  case "$(readlink -m "$ENGINE_DIR")" in
+    */st-engine|*/st-engine/|/home/choiceoh/st-releases|/home/choiceoh/st-releases/*)
+      echo "ABORT: $ENGINE_DIR is production's release tree; a Qwen3.8 window uses its own (ST_ENGINE_DIR)" >&2; exit 2 ;;
+  esac
+  case "$IMAGE" in
+    st-engine:glm53|st-engine:prod-*)
+      echo "ABORT: $IMAGE is production's image tag; a Qwen3.8 window builds its own (ST_IMAGE)" >&2; exit 2 ;;
+  esac
+fi
 CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new"
 NAME=st-qwen38
@@ -160,14 +202,15 @@ case "${1:-start}" in
     held_owner=$(lease owner --container "$NAME") || {
       echo "ABORT: refusing to stop another fleet owner's lease" >&2; exit 1;
     }
-    # Only the holder stops its own boot: a ticket by its exact owner, a session by its kind, a person with STOP_FORCE=1.
+    # Only the holder stops its own boot: a ticket by its exact owner, a session or production by its kind, a
+    # person with STOP_FORCE=1.
     held_origin=$(lease origin 2>/dev/null || echo unreadable)
     if [ -n "$held_owner" ] && [ "$held_origin" = explicit ]; then
       if [ -n "${ST_LEASE_OWNER:-}" ]; then
         [ "$held_owner" = "$ST_LEASE_OWNER" ] || { echo "ABORT: the fleet is held by $held_owner, not by this ticket ($ST_LEASE_OWNER)" >&2; exit 1; }
-      elif [ "${ST_LEASE_KIND:-}" = session ]; then
+      elif [ "${ST_LEASE_KIND:-}" = production ] || [ "${ST_LEASE_KIND:-}" = session ]; then
         held_kind=$(lease kind 2>/dev/null || echo unreadable)
-        case "$held_kind" in session|free) ;; *) echo "ABORT: the fleet is held by $held_owner ($held_kind), not by a session boot" >&2; exit 1 ;; esac
+        case "$held_kind" in "$ST_LEASE_KIND"|free) ;; *) echo "ABORT: the fleet is held by $held_owner ($held_kind), not by a $ST_LEASE_KIND boot" >&2; exit 1 ;; esac
       elif [ "${STOP_FORCE:-0}" != 1 ]; then
         echo "ABORT: the fleet is held by $held_owner. Stop it from its own side. STOP_FORCE=1 is the operator's word." >&2; exit 1
       fi
@@ -193,7 +236,7 @@ esac
 
 for ip in "${NODES[@]}"; do
   busy=$(node_sh "$ip" "docker ps --format '{{.Names}}' | grep -E '^(glm53|q38|vllm|st-)' || true")
-  [ -z "$busy" ] || { echo "ABORT: $ip runs $busy -- the fleet is taken (production is st-glm53: hand off, do not squat)" >&2; exit 1; }
+  [ -z "$busy" ] || { echo "ABORT: $ip runs $busy -- the fleet is taken (production is st-glm53 or st-qwen38: hand off, do not squat)" >&2; exit 1; }
 done
 use_lease
 legacy=$(node_sh "${NODES[0]}" "cat $LEGACY_LOCK 2>/dev/null || true")
@@ -205,6 +248,14 @@ if [ -n "${ST_LEASE_OWNER:-}" ]; then
     || { echo "ABORT: this boot's ticket does not hold the fleet: $held" >&2; exit 1; }
   echo "lease: verified, $held"
   LEASE_MODE=ticket
+elif [ "${ST_LEASE_KIND:-}" = production ]; then
+  # production serves Qwen3.8 (launchers/st_production.py): the lease start-st-glm53.sh takes for GLM-5.3,
+  # the fleet's default state that the queue asks to hand over only through the quiet gate
+  LEASE_OWNER=${LEASE_OWNER_PRODUCTION:-production/$(hostname -s)/$$}
+  lease acquire --owner "$LEASE_OWNER" --kind production --container "$NAME" --est-minutes "${LEASE_MINUTES:-0}" \
+        --note "${LEASE_NOTE:-production st-qwen38 on four Sparks}" \
+    || { echo "ABORT: $(lease read 2>/dev/null || echo 'the fleet lease refused')" >&2; exit 1; }
+  LEASE_MODE=production
 elif [ "${ST_LEASE_KIND:-}" = session ]; then
   lease acquire --owner "$LEASE_OWNER" --kind session --container "$NAME" --est-minutes "${LEASE_MINUTES:-45}" \
         --note "${LEASE_NOTE:-st-qwen38 on four Sparks}" \
@@ -214,6 +265,7 @@ else
   cat >&2 <<EOF
 ABORT: this boot holds no reservation, and a boot nobody reserved is not started. Say what it is:
   ST_LEASE_OWNER=queue/<session>   a ticket's boot -- the queue takes the lease at GO and hands the owner here
+  ST_LEASE_KIND=production $0       the supervisor's / deploy-watch's own boot, when production serves Qwen3.8
   ST_LEASE_KIND=session $0          a session's own window by hand (production is down for its length)
 EOF
   exit 1
@@ -224,7 +276,7 @@ cleanup() {
   rm -rf "$stage"
   if [ "$launched" = 0 ]; then
     case "$LEASE_MODE" in
-      session) lease release --owner "$LEASE_OWNER" >/dev/null || true ;;
+      production|session) lease release --owner "$LEASE_OWNER" >/dev/null || true ;;
       ticket) lease publish --owner "$LEASE_OWNER" --state phase=boot-failed >/dev/null 2>&1 || true ;;
     esac
   fi
@@ -253,6 +305,11 @@ start_rank() {
   node_sh "$ip" "test -s $RANKS_DIR/rank${r}of4.safetensors && test -s $RANKS_DIR/config.json && test -s $RANKS_DIR/tokenizer.json" \
     || { echo "ABORT: $ip lacks rank${r}of4.safetensors or its metadata in $RANKS_DIR (VISION=0 fanout-st-ranks.sh)" >&2; return 1; }
   node_sh "$ip" "docker rm -f $NAME >/dev/null 2>&1 || true"
+  if [ -n "$TUNED_DIR" ] && ! node_sh "$ip" "test -f $TUNED_DIR/mtp-tuned-r${r}of4.safetensors"; then
+    echo "$ip: $TUNED_DIR/mtp-tuned-r${r}of4.safetensors is missing (python3 -m engine.profiles.qwen38.mtp_tune export," \
+         "then copy rank $r's file here)" >&2
+    return 1
+  fi
   if [ -n "$EXPERTS_DIR" ] && ! node_sh "$ip" "test -f $EXPERTS_DIR/mtp-$MTP_EXPERTS-r${r}of4.safetensors"; then
     # docker would mount a missing directory as an empty one: say what is missing instead
     echo "$ip: $EXPERTS_DIR/mtp-$MTP_EXPERTS-r${r}of4.safetensors is missing (python3 -m engine.profiles.qwen38.mtp_side" \
@@ -280,7 +337,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro $EXPERTS_MOUNT -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

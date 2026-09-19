@@ -6,7 +6,7 @@ engine/kernels/gated_residual.mix is four launches a site: cuBLAS's BF16 GEMM fo
 the gates, cuBLAS's GEMM for up, a Triton launch for the streams' mean. H2 (and H1, the same idea for the down GEMM)
 would fold a GEMM into a Triton launch to save launches -- 200 a step by the carry table's count. This probe holds a
 prototype of that launch to the lane, byte for byte, and times both through a CUDA graph at the rows a captured step
-has (SPEC_K=1: two tokens a row, so 2, 4, 6, 8 rows of 10,240 channels).
+had when it ran (SPEC_K was 1: two tokens a row, so 2, 4, 6, 8 rows of 10,240 channels; the profile serves 3 since).
 
 What it found on an RTX 5050 (sm_120, triton 3.6, torch 2.11; 2026-09-18), which is why H2 was not built:
 
@@ -58,7 +58,7 @@ from engine.kernels import gated_residual as hcr  # noqa: E402
 from probes.probe_report import write_report  # noqa: E402
 
 HC, HIDDEN, RANK = 4, 2560, 320                     # Qwen3.8's streams, hidden width and mixer rank (hc_lowrank)
-ROWS = (1, 2, 4, 6, 8)                              # a captured step's token rows: max_seqs 4 x (SPEC_K + 1)
+ROWS = (1, 2, 4, 6, 8)                              # the rows this ran at: max_seqs 4 x (SPEC_K 1 + 1), 2026-09-18
 
 
 @triton.jit

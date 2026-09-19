@@ -101,8 +101,11 @@ class ServingTests(unittest.TestCase):
         from unittest import mock
         from engine.profiles.qwen38.net import Qwen38Net
         net = object.__new__(Qwen38Net)
-        net.draft_index = None
-        with mock.patch.object(Qwen38Net, "head_tokens", return_value=torch.tensor([7])) as full:
+        net.draft_index, net.rank, net.vp = None, 0, 10
+        net.comm = mock.Mock(all_reduce_max=lambda t: t)
+        logits = torch.zeros(1, 10)
+        logits[0, 7] = 1.0
+        with mock.patch.object(Qwen38Net, "draft_logits", return_value=logits) as full:
             self.assertEqual(net.draft_tokens(torch.zeros(1, 4)).tolist(), [7])
             full.assert_called_once()
 

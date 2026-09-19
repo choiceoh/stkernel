@@ -36,6 +36,25 @@ def covered_pool_ids(complete, topk_pools, *, out=None):
     return out.masked_fill_(out >= complete[:, None], -1)
 
 
+def window_pool_ids(complete, topk_pools, sink, recent):
+    """A sink and a recent window of the visible pools in a scored selection's place (Windowed-MTP, arXiv 2607.21535:
+    the draft attends the first positions and the latest, the target everything it selects): every visible pool while
+    they fit `sink + recent`, else the first `sink` and the last `recent`; ascending, -1 after, int32 [rows,
+    topk_pools] -- `covered_pool_ids`' form, so the attention reads them as it reads a selection. Device arithmetic
+    only: a captured step builds them with no host read."""
+    import torch
+    if complete.ndim != 1 or topk_pools <= 0 or sink < 0 or recent <= 0 or sink + recent > topk_pools:
+        raise ValueError('a window selection is a nonnegative sink and a positive recent count within the width')
+    width = sink + recent
+    ids = torch.arange(topk_pools, device=complete.device, dtype=torch.int32)[None, :]
+    seen = complete.to(torch.int32)[:, None]
+    # past the window, the recent pools slide: column j >= sink reads pool j + (seen - width), the last `recent` seen
+    slide = torch.where((seen > width) & (ids >= sink), seen - width, torch.zeros((), dtype=torch.int32,
+                                                                                device=complete.device))
+    return torch.where(ids < torch.clamp(seen, max=width), ids + slide, torch.full((), -1, dtype=torch.int32,
+                                                                                  device=complete.device))
+
+
 @dataclass(frozen=True)
 class QueryShard:
     rows: int

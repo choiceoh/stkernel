@@ -88,6 +88,7 @@ def run(output=None) -> dict:
         return go
 
     arms_of = {"deep_gemm": lambda x: lane(x), "served": lambda x: served(x),
+               "draft w8a16": lambda x: fp8_rows.project_bf16(x, served.weight),       # net.draft_logits
                **{f"fp8_rows {t}": at(t) for t in TILES}}
     for m in ROWS:
         x = torch.randn(m, HIDDEN, device="cuda").to(torch.bfloat16)

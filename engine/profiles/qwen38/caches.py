@@ -20,34 +20,15 @@ kernels never learn the block-major layout. A block's page for the index keys is
 """
 from __future__ import annotations
 
-from array import array
 from dataclasses import dataclass
 from math import lcm, prod
 
 from engine.base.arena import ALIGN
 from engine.base.kv import BlockPool, SlotPool
+from engine.base.slot_caches import SIZES, SlotCaches, StateField, aligned, typed_view
 
 QSA_KEY_RING = 8            # raw index keys kept per sequence: the open group (3) plus a verify step (K+1), no aliasing
 PLE_ID_RING = 8             # token ids kept per sequence: the n-gram's previous 2 plus a verify step (check_rings: K <= 4)
-SIZES = {"f32": 4, "f16": 2, "bf16": 2, "i64": 8}
-
-
-def aligned(n: int, unit: int) -> int:
-    return -(-n // unit) * unit
-
-
-def field_dtype(name):
-    import torch
-    return {"f32": torch.float32, "f16": torch.float16, "bf16": torch.bfloat16, "i64": torch.int64}[name]
-
-
-@dataclass(frozen=True)
-class StateField:
-    name: str
-    layer: int
-    shape: tuple
-    dtype: str
-    offset: int
 
 
 @dataclass(frozen=True)
@@ -148,7 +129,7 @@ def cache_capacity(F, layers, kv_gib: float, max_seqs: int, snapshot_gib: float,
     return blocks, snapshots
 
 
-class Qwen38Caches:
+class Qwen38Caches(SlotCaches):
     def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, snapshots: int = 0, *, mtp: bool = True):
         import torch
         self.F, self.layers, self.mtp = F, tuple(layers), mtp
@@ -167,12 +148,12 @@ class Qwen38Caches:
         self.block_table = arena.carve(max_seqs * num_blocks * 4, "qwen38 block table").view(torch.int32).view(max_seqs, num_blocks)
         self._fields = {}
         for f in p.fields:
-            self._fields[f.name, f.layer] = self._typed(self.state, max_seqs + 1, p.slot_bytes, f)
+            self._fields[f.name, f.layer] = typed_view(self.state, max_seqs + 1, p.slot_bytes, f)
         self._snap = {}
         if snapshots:
             self.snapshot_store = arena.carve(snapshots * self.snapshot_bytes_n, "qwen38 prefix snapshots")
             for f in self._snapshot_fields:
-                self._snap[f.name, f.layer] = self._typed(self.snapshot_store, snapshots, self.snapshot_bytes_n, f)
+                self._snap[f.name, f.layer] = typed_view(self.snapshot_store, snapshots, self.snapshot_bytes_n, f)
         self._kv, self._keys = {}, {}
         kv_row = F.kv_heads_local * F.head_dim * 2
         bf = self.paged.view(torch.bfloat16)
@@ -191,62 +172,16 @@ class Qwen38Caches:
                                           (rows, F.idx_dim, F.idx_dim, 1), bf.storage_offset() + offset // 2)
         self.reset()
 
-    @staticmethod
-    def _typed(storage, count, stride_bytes, f):
-        dtype = field_dtype(f.dtype)
-        size = SIZES[f.dtype]
-        strides = tuple(prod(f.shape[i + 1:]) for i in range(len(f.shape)))
-        base = storage.view(dtype)
-        return base.as_strided((count, *f.shape), (stride_bytes // size, *strides), base.storage_offset() + f.offset // size)
-
     def reset(self):
         """Clear contents at boot and check boundaries; ownership is unchanged. PLE's id ring starts DEAD (-1)."""
-        self.paged.zero_()
-        self.state.zero_()
+        super().reset()
         if ("ple_ids", -1) in self._fields:
             self._fields["ple_ids", -1].fill_(-1)
-        self.block_table.fill_(-1)
-        self._table_blocks = array("i", [0]) * self.pool.max_seqs
-        self._table_epochs = array("Q", self.pool.epochs)
-
-    def slot_bytes(self, slot: int):
-        if not 0 < slot < self.slots.num_slots:
-            raise IndexError("only a real state slot has bytes to move")
-        n = self.layout.slot_bytes
-        return self.state[slot * n:(slot + 1) * n]
 
     def reset_slot(self, slot: int):
-        self.slot_bytes(slot).zero_()
+        super().reset_slot(slot)
         if ("ple_ids", -1) in self._fields:
             self._fields["ple_ids", -1][slot].fill_(-1)
-
-    def snapshot_bytes(self, snap: int):
-        if not 0 <= snap < self.snapshots:
-            raise IndexError("only a declared snapshot has bytes to move")
-        n = self.snapshot_bytes_n
-        return self.snapshot_store[snap * n:(snap + 1) * n]
-
-    def prepare(self, step):
-        """Publish changed block mappings before a step (engine/profiles/glm53/caches.Glm53Caches.prepare's contract:
-        rows append within an allocator epoch, so only a new suffix is uploaded)."""
-        import torch
-        for s in step.segments:
-            row = self.pool.row(s.seq)
-            if not 0 < s.slot < self.slots.num_slots or self.slots.owner[s.slot] != s.seq:
-                raise ValueError(f"seq {s.seq} does not own state slot {s.slot}")
-            if s.ctx < 0 or s.length <= 0 or s.ctx + s.length > self.pool.tokens[s.seq]:
-                raise ValueError(f"seq {s.seq} step exceeds its reserved context")
-            count = self.pool.blocks_for(self.pool.tokens[s.seq])
-            previous = self._table_blocks[s.seq]
-            epoch = self.pool.epochs[s.seq]
-            if epoch == self._table_epochs[s.seq] and count == previous:
-                continue
-            start = previous if epoch == self._table_epochs[s.seq] else 0
-            end = max(count, previous)
-            ids = torch.tensor(row[start:end], dtype=torch.int32)
-            self.block_table[s.seq, start:end].copy_(ids, non_blocking=False)
-            self._table_blocks[s.seq] = count
-            self._table_epochs[s.seq] = epoch
 
     # -- typed views the net and the lanes read --------------------------------------------------------------------
     def kv(self, layer: int):
@@ -283,10 +218,6 @@ class Qwen38Caches:
         return (pages * layer_rows + positions % per).to(self.block_table.dtype)
 
     # -- prefix snapshots at block boundaries --------------------------------------------------------------------
-    def _ring_cells(self, position: int, count: int, width: int):
-        import torch
-        return torch.tensor([(position - count + i) % width for i in range(count)], device=self.device)
-
     def checkpoint(self, slot: int, position: int, snap: int) -> None:
         F = self.F
         if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:

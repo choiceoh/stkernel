@@ -20,10 +20,11 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from engine.base.box import BOX, check_box  # noqa: F401 -- the box is the engine's (D5); boot calls facts.check_box
+
 CKPT = Path("/home/choiceoh/models/st-glm53-nvidia-tp4-9391")
 RANKS = CKPT                                                         # preshard output and metadata, one file per rank
 TP = 4                                                                # four Sparks: the only world this profile has
-BOX = {"name": "GB10 (DGX Spark)", "capability": (12, 1), "sms": 48, "devices": 1, "unified": True}
 CHUNK_ALIGN = 2304                                                    # the prefill chunk's alignment: launcher --block-size (shapes.py's 6,912 law)
 BLOCK = 768                                                           # the paged KV / prefix-reuse block: a third of the chunk alignment (45차 §23:
                                                                       # production reuses whole 2,304 blocks; three per chunk alignment lets a shared
@@ -219,24 +220,6 @@ def architecture(c: dict) -> Facts:
     assert not t["tie_word_embeddings"]
     assert f.kda_heads % TP == 0 and f.heads % TP == 0 and f.moe_inter % (TP * 16) == 0 and f.dense_inter % TP == 0 and f.vocab % TP == 0, "TP=4 splits"
     return f
-
-
-def check_box() -> str:
-    """The node this profile is written for, asserted (D3): one GB10, unified memory."""
-    import torch
-    if torch.cuda.device_count() != BOX["devices"]:
-        raise SystemExit(f"box: {torch.cuda.device_count()} devices, this profile is written for {BOX['devices']} ({BOX['name']})")
-    cap = torch.cuda.get_device_capability(0)
-    if cap != BOX["capability"]:
-        raise SystemExit(f"box: capability {cap}, this profile's kernels are SM{BOX['capability'][0]}{BOX['capability'][1]} ({BOX['name']})")
-    free, total = torch.cuda.mem_get_info()
-    mem_total = 0
-    for line in open("/proc/meminfo"):
-        if line.startswith("MemTotal:"):
-            mem_total = int(line.split()[1]) * 1024
-    if abs(total - mem_total) > mem_total // 64:
-        raise SystemExit(f"box: device total {total / 2**30:.1f} GiB != host {mem_total / 2**30:.1f} GiB: not unified memory")
-    return f"{BOX['name']}: SM{cap[0]}{cap[1]}, unified {total / 2**30:.0f} GiB ({free / 2**30:.0f} free)"
 
 
 def _selfcheck() -> None:

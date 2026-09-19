@@ -231,6 +231,8 @@ class Qwen38Net:
         self.dense = {}
         self.draft_index = None                         # dense/ivf_head over the head's rows (prepare_draft_head)
         self.draft_tap = None                           # kernels/common/row_tap: what draft_tokens saw (fleet --tap-draft-queries)
+        self.mtp_window = None                          # (sink, recent) groups the head attends instead of its scored
+                                                        # selection (Windowed-MTP; fleet --mtp-window; `_qsa`)
         self._experts = {}
         self._ple = self._ple_hash = self._ple_scale = None
         self.ple_table = self.ple_stage = None          # attach_ple: the rank's SSD table and the staged rows
@@ -409,12 +411,36 @@ class Qwen38Net:
         return {"clusters": clusters, "probes": probes, "cap": self.draft_index.cap,
                 "read_MB": round(self.draft_index.read_bytes() / 1e6, 2)}
 
-    def draft_tokens(self, h: torch.Tensor) -> torch.Tensor:
-        """The drafter's greedy picks: `head_tokens` over the whole head, or the index's argmax where one is prepared
-        (the same key, all-reduced the same way)."""
+    def draft_logits(self, h: torch.Tensor) -> torch.Tensor:
+        """This rank's vocabulary logits [N, vp] for the drafter's argmax: the head's FP8 weight against the rows in BF16
+        (dense/fp8_rows.project_bf16) -- the verify step's head quantises its rows to FP8 as well, the draft's does not,
+        at the same bytes (the operator's rule of 2026-09-19: precision where it costs nothing and moves acceptance).
+        A head the FP8 decode-row kernel does not take (a cuBLAS reader, more than 16 rows, the CPU) is the verify step's."""
+        from engine.kernels.dense import FP8Linear, fp8_rows
+        head = self.dense.get("head")
+        if (isinstance(head, FP8Linear) and head.cublas is None and h.is_cuda and 1 <= h.shape[0] <= fp8_rows.MAX_ROWS
+                and h.dtype == torch.bfloat16):
+            return fp8_rows.project_bf16(h.contiguous(), head.weight)[:, :self.vp]
+        return self.head_local(h)[:, :self.vp]
+
+    def draft_tokens(self, h: torch.Tensor, *, probability: bool = False):
+        """The drafter's greedy picks: the argmax of `draft_logits` over the whole head, or the index's argmax where one
+        is prepared (the same key, all-reduced the same way). `probability`: (picks, the head's softmax probability of
+        each) -- modules/vocab.argmax_probability over the same `draft_logits`, so a pick is the same with it or without,
+        identical on every rank; the index reads no whole row, so it has none."""
         index = self.draft_index
+        if probability:
+            if index is not None:
+                raise ValueError("the draft index reads a few clusters of the head, not the row a probability sums")
+            from engine.modules.vocab import argmax_probability
+            picks, probs = argmax_probability(self.draft_logits(h), self.comm, self.rank * self.vp)
+            tap = getattr(self, "draft_tap", None)
+            if tap is not None:
+                tap(h, picks)
+            return picks, probs
         if index is None or not h.is_cuda or not 1 <= h.shape[0] <= 16:
-            picks = self.head_tokens(h)
+            from engine.modules.vocab import argmax
+            picks = argmax(self.draft_logits(h), self.comm, self.rank * self.vp)
         else:
             from engine.kernels.dense import ivf_head
             key = ivf_head.argmax_key(index, h, self.rank * self.vp, self.vp)
@@ -673,7 +699,18 @@ class Qwen38Net:
                                       meta.lengths, F.idx_budget, F.idx_ratio, group=runs)
         return mine.collect(scored, meta.groups_seen, self.comm)
 
-    def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None):
+    def _window_blocks(self, meta: StepMeta, window) -> torch.Tensor:
+        """The groups a windowed head attends (`mtp_window`): the first `sink` and the last `recent` complete groups
+        each row sees, or all of them while they fit -- modules/prefill_indexer.window_pool_ids, no score read; one
+        launch on the device (kernels/qsa_window)."""
+        from engine.kernels.qsa_window import window_ids
+        return window_ids(meta.positions32, self.F.idx_ratio, self.F.index_blocks, *window)
+
+    def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None,
+             window=None):
+        """`window` (sink, recent): the layer attends those groups (`_window_blocks`) instead of scoring its index
+        queries -- its index keys are neither written nor read, so a layer is windowed for the life of its caches (the
+        MTP head's, `mtp_window`), never step by step."""
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix or f"L{L}.attn."
         cache_layer = L if cache_layer is None else cache_layer
@@ -689,12 +726,13 @@ class Qwen38Net:
         K, V = caches.kv(cache_layer)
         ring = caches.key_ring(cache_layer)
         ik = idx[:, idx_q:]
-        # the indexer's keys first: each group this step closes pooled from the raw-key ring (members before the step)
-        # and this step's rows, normalised and rotated at its first position and stored -- one launch, which must read
-        # the ring before this step's raw keys overwrite it
-        lanes.qsa_index_keys(ik, ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions, meta.key_slots,
-                             F.idx_ratio, p[n + "idx_k_norm"], F.rms_eps, F.rope_theta, F.rotary_dim,
-                             caches.index_keys(cache_layer))
+        if window is None:
+            # the indexer's keys first: each group this step closes pooled from the raw-key ring (members before the
+            # step) and this step's rows, normalised and rotated at its first position and stored -- one launch, which
+            # must read the ring before this step's raw keys overwrite it
+            lanes.qsa_index_keys(ik, ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions, meta.key_slots,
+                                 F.idx_ratio, p[n + "idx_k_norm"], F.rms_eps, F.rope_theta, F.rotary_dim,
+                                 caches.index_keys(cache_layer))
         # then one launch for the rest, all read through their strides: the query and index query heads normalised and
         # rotated at their positions, the key head the same straight into K, the value rows into V and the raw keys
         # into the ring by position
@@ -703,7 +741,9 @@ class Qwen38Net:
                                  p[n + "k_norm"], p[n + "idx_q_norm"], F.rms_eps, F.rope_theta, F.rotary_dim, K, V,
                                  meta.kv_slots, ring, meta.ring_slots)
         attend_covered = getattr(lanes, "qsa_attend_covered", None)
-        if attend_covered is not None and Qwen38Net._covers(F, step):
+        # a window narrower than the budget attends less than a covered step's every group
+        whole = window is None or sum(window) == F.index_blocks
+        if attend_covered is not None and whole and Qwen38Net._covers(F, step):
             # a step the budget covers chooses nothing: one dense causal launch, a run of rows sharing each K/V tile,
             # the sparse launch's bytes (carry Q10)
             attended = attend_covered(q, K, V, meta.positions32, meta.lengths, F.idx_ratio, F.idx_budget,
@@ -711,7 +751,7 @@ class Qwen38Net:
         else:
             # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a lane
             # table without the covered launch attends a covered step's unscored ids
-            blocks = self._covered_blocks(step, meta)
+            blocks = self._window_blocks(meta, window) if window is not None else self._covered_blocks(step, meta)
             if blocks is None:
                 blocks = self._sharded_blocks(iq, step, meta, caches.index_keys(cache_layer))
             if blocks is None:
@@ -965,7 +1005,8 @@ class Qwen38Net:
         g = lanes.hc_norm(given, p["mtp.pre_fc_norm_hidden"], F.rms_eps, 1).view(-1, F.hc, F.hidden)
         h = (self._bf16(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
-        out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers)
+        out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers,
+                        window=self.mtp_window)
         if last_hidden_only and rows is None:
             rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
         if rows is not None:
