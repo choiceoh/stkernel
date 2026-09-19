@@ -230,7 +230,8 @@ class LauncherTests(unittest.TestCase):
         self.assertLess(exec_line.index("$MTP_ARG"), exec_line.index("--port"))
         fleet = Path(__file__).resolve().parents[1].joinpath("engine", "profiles", "qwen38", "fleet.py").read_text()
         self.assertIn('ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",', fleet)
-        self.assertIn("mtp_precision=a.mtp_precision)", fleet)
+        self.assertIn("mtp_precision=a.mtp_precision,", fleet)
+        self.assertIn("draft_index=draft_index(a.draft_index))", fleet)
 
 
 if __name__ == "__main__":
