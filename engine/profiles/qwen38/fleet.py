@@ -404,45 +404,81 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         raise
 
 
-def drain_draft_tap(tap, directory, every_s: float = 30.0) -> None:
+class DraftQueries:
     """Rank 0's draft queries to `directory` as they come (the tap is drained on a stream of its own), one npz a drain:
-    `rows` the BF16 queries as int16 bits, `ids` the picks. Runs until the process ends -- a stopped container runs no
-    `finally`, so nothing waits for the end to write."""
-    import numpy as np
-    directory = Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    tap.drained = int(tap.count.to("cpu"))              # the boot's warmup and capture rows are not queries
-    part = 0
-    while True:
-        time.sleep(every_s)
-        rows, ids, count = tap.drain()
-        if len(ids):
-            np.savez(directory / f"draft-queries-{part:05d}.npz", rows=rows.view(torch.int16).numpy(),
-                     ids=ids.numpy(), count=count)
-            part += 1
+    `rows` the BF16 queries as int16 bits, `ids` the picks -- every `every_s` seconds on a thread of its own, and once
+    more at `close` (close_on_exit), the rows still behind the counter's slack included."""
+
+    def __init__(self, tap, directory, every_s: float = 30.0):
+        import threading
+        self.tap, self.directory, self.every_s = tap, Path(directory), every_s
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.part = 0
+        self._lock = threading.Lock()                   # a drain at a time: each moves the tap's `drained`
+        self._closed = threading.Event()
+        tap.drained = int(tap.count.to("cpu"))          # the boot's warmup and capture rows are not queries
+        threading.Thread(target=self._run, name="draft-tap", daemon=True).start()
+
+    def _run(self) -> None:
+        while not self._closed.wait(self.every_s):
+            self._drain(final=False)
+
+    def _drain(self, *, final: bool) -> int:
+        import numpy as np
+        with self._lock:
+            rows, ids, count = self.tap.drain(final=final)
+            if len(ids):
+                np.savez(self.directory / f"draft-queries-{self.part:05d}.npz", rows=rows.view(torch.int16).numpy(),
+                         ids=ids.numpy(), count=count)
+                self.part += 1
+            return len(ids)
+
+    def close(self, timeout_s: float = 20.0) -> str:
+        """The last drain, waited for at most `timeout_s`: it reads the device, which a wedged step may never give back
+        (so close_on_exit runs it after the host-side recorders, and an exit never hangs on it)."""
+        import threading
+        self._closed.set()
+        drained = []
+        last = threading.Thread(target=lambda: drained.append(self._drain(final=True)), name="draft-tap-last",
+                                daemon=True)
+        last.start()
+        last.join(timeout_s)
+        return (f"draft queries: {drained[0]} rows in the last drain" if drained
+                else f"draft queries: the last drain did not return in {timeout_s:.0f} s")
 
 
 class DraftLedger:
     """Rank 0's draft ledger (adapter.ServedMTP.record): one JSON line a verified row -- every pick the head made and
     its probability, how many were proposed, how many the target kept -- under `directory`, flushed every `every`
-    records or second, whichever first (a stopped container runs no `finally`)."""
+    records or second, whichever first. Both are judged when a record arrives, so a boot's last records wait in the
+    buffer for the next one; `close` (close_on_exit) writes them at the process's end."""
 
     def __init__(self, directory, every: int = 64):
+        import threading
         directory = Path(directory)
         directory.mkdir(parents=True, exist_ok=True)
         self.path = directory / f"draft-ledger-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
         self.file = open(self.path, "a", buffering=1 << 16)
         self.every, self.count, self.flushed = every, 0, time.monotonic()
+        self._lock = threading.Lock()                   # a text file is not safe across threads: `close` runs on another
 
     def __call__(self, record: dict) -> None:
         import json
         record["t"] = round(time.time(), 3)
-        self.file.write(json.dumps(record, separators=(",", ":")) + "\n")
-        self.count += 1
-        now = time.monotonic()
-        if self.count % self.every == 0 or now - self.flushed > 1.0:
+        line = json.dumps(record, separators=(",", ":")) + "\n"
+        with self._lock:
+            self.file.write(line)
+            self.count += 1
+            now = time.monotonic()
+            if self.count % self.every == 0 or now - self.flushed > 1.0:
+                self.file.flush()
+                self.flushed = now
+
+    def close(self, timeout_s: float = 0.0) -> str:
+        """The buffer to the file. The file stays open: the step loop may still hand a record, which nothing waits for."""
+        with self._lock:
             self.file.flush()
-            self.flushed = now
+            return f"draft ledger: {self.count} records in {self.path.name}"
 
 
 class MTPInputTap:
@@ -451,7 +487,8 @@ class MTPInputTap:
     to `rows` rows under `directory`, handed to a thread of their own and written there: `streams` [R, hc*H] BF16 as
     int16 bits, `meta` [R, 4] int64 (sequence, position, next token, 1 where a verify step kept it). The copy to the
     host waits for the device -- a data window's cost, not a measured one's. What is held is written at least every
-    `every_s` seconds (a stopped container runs no `finally`)."""
+    `every_s` seconds, and at the process's end by `close` (close_on_exit: the interpreter's exit, or the SIGTERM the
+    launcher's `stop` sends rank 0). A SIGKILL still loses what the timer had not written."""
 
     def __init__(self, directory, rows: int = 4096, every_s: float = 30.0, cap_bytes: "int | None" = None):
         """`cap_bytes`: the directory's shards stop growing past it, what earlier boots wrote there counted -- a
@@ -464,20 +501,26 @@ class MTPInputTap:
         self.cap_bytes = cap_bytes
         self.written = sum(f.stat().st_size for f in self.directory.glob("mtp-inputs-*.npz"))
         self.full = cap_bytes is not None and self.written >= cap_bytes
+        self.closed = False
+        self.failed = 0                                 # shards the writer could not write (said when it happened)
         self.prefix = f"mtp-inputs-{time.strftime('%Y%m%d-%H%M%S')}"
         self._held, self._count, self._part = [], 0, 0
         self._lock = threading.Lock()
+        self._pending = 0                               # shards handed to the writer and not yet done with
+        self._in_place = threading.Condition(self._lock)
         self._queue = queue.Queue()
         self._last = time.monotonic()
         threading.Thread(target=self._write, name="mtp-inputs", daemon=True).start()
 
     def __call__(self, seq: int, ctx: int, next_ids, hidden, decoded: bool) -> None:
-        if self.full:
+        if self.full or self.closed:
             return
         rows = hidden.detach().to("cpu")
         n = rows.shape[0]
         meta = torch.tensor([[seq, ctx + j, int(next_ids[j]), int(decoded)] for j in range(n)], dtype=torch.int64)
         with self._lock:
+            if self.closed:                             # closed while the copy ran: not recorded
+                return
             self._held.append((rows, meta))
             self._count += n
             if self._count >= self.rows:
@@ -488,8 +531,20 @@ class MTPInputTap:
             rows = torch.cat([r for r, _ in self._held])
             meta = torch.cat([m for _, m in self._held])
             self._queue.put((self._part, rows, meta))
+            self._pending += 1
             self._held, self._count, self._part = [], 0, self._part + 1
         self._last = time.monotonic()
+
+    def close(self, timeout_s: float = 20.0) -> str:
+        """What is held handed to the writer, then every shard it was handed renamed into place, waiting at most
+        `timeout_s`. Nothing observed after it is recorded. From any thread, and again: a second close waits the same."""
+        with self._lock:
+            self.closed = True
+            held = self._count
+            self._flush()
+            self._in_place.wait_for(lambda: self._pending == 0, timeout_s)
+            return (f"mtp inputs: {held} rows held at close; this boot {self._part - self._pending - self.failed} "
+                    f"shards written, {self._pending} still waiting, {self.failed} failed")
 
     def _write(self) -> None:
         import numpy as np
@@ -508,14 +563,71 @@ class MTPInputTap:
             # reader sooner or later loads a truncated zip -- EOFError, in the middle of a data window.
             final = self.directory / f"{self.prefix}-{part:05d}.npz"
             partial = self.directory / f".{final.name}.part"
-            with open(partial, "wb") as handle:
-                np.savez(handle, streams=rows.view(torch.int16).numpy(), meta=meta.numpy())
-            os.replace(partial, final)
-            self.written += final.stat().st_size
+            try:
+                with open(partial, "wb") as handle:
+                    np.savez(handle, streams=rows.view(torch.int16).numpy(), meta=meta.numpy())
+                os.replace(partial, final)
+                self.written += final.stat().st_size
+            except OSError as exc:                      # a full disk loses this shard, not the writer: `close` still returns
+                self.failed += 1
+                print(f"  mtp inputs: {final.name} not written: {type(exc).__name__}: {exc}", flush=True)
+                try:
+                    partial.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            finally:
+                with self._lock:
+                    self._pending -= 1
+                    self._in_place.notify_all()
             if self.cap_bytes is not None and self.written >= self.cap_bytes and not self.full:
                 self.full = True
                 print(f"  mtp inputs: {self.directory} holds {self.written / 2**30:.1f} GiB, the cap -- recording stops",
                       flush=True)
+
+
+CLOSE_S = 20.0      # what the recorders get at the process's end: under the 30 s the launcher's `stop` gives rank 0
+
+
+def close_on_exit(closers: list, timeout_s: float = CLOSE_S) -> None:
+    """The recorders' `close` in `closers` (in order; the boot appends them as it makes them, the device's last) run
+    when the process ends: at the interpreter's exit, and on SIGTERM -- after which the process exits 143.
+
+    SIGTERM is `docker stop`'s, which the launcher's `stop` sends rank 0 before it removes the containers. The
+    container's python is its PID 1 (`exec python3`, no --init), and a PID 1 without a handler never receives SIGTERM
+    at all. A handler alone is not enough either: Python runs it on the main thread between bytecodes, never while
+    that thread sits in a wedged CUDA or NCCL call (base/stall.py). So the handler here does nothing but make the
+    signal arrive -- its C half writes the signal's number to the wakeup fd the moment it does, and a thread of its
+    own reads it there, closes the recorders within one `timeout_s` between them, and ends the process with
+    `os._exit`, whatever the main thread is doing. Main thread only; the process's one wakeup fd (nothing else in
+    the fleet sets one)."""
+    import atexit
+    import os
+    import signal
+    import threading
+
+    def close_all(why: str) -> None:
+        deadline = time.monotonic() + timeout_s
+        for close in list(closers):
+            try:
+                said = close(max(0.0, deadline - time.monotonic()))
+            except Exception as exc:                   # noqa: BLE001 -- one recorder's failure leaves the rest to write
+                said = f"{type(exc).__name__}: {exc}"
+            print(f"  {why}: {said}", flush=True)
+
+    def watch(woken: int) -> None:
+        while byte := os.read(woken, 1):
+            if byte[0] == signal.SIGTERM:
+                try:
+                    close_all("SIGTERM")
+                finally:                                # a SIGTERM ends the process, whatever the closing did
+                    os._exit(128 + signal.SIGTERM)
+
+    atexit.register(close_all, "exit")
+    woken, wake = os.pipe()
+    os.set_blocking(wake, False)
+    signal.set_wakeup_fd(wake, warn_on_full_buffer=False)
+    signal.signal(signal.SIGTERM, lambda signum, frame: None)
+    threading.Thread(target=watch, args=(woken,), name="sigterm", daemon=True).start()
 
 
 def draft_threshold(text: "str | None") -> "float | None":
@@ -683,6 +795,10 @@ def main(argv=None) -> int:
     started = time.perf_counter()
     print(f"  box: {facts.check_box()}", flush=True)       # CUDA is initialised here, on this thread, before any other
     boxed = time.perf_counter()
+    # Rank 0's recorders, appended below as the boot makes them, write what they hold when the process ends -- at its
+    # exit, and on the SIGTERM the launcher's `stop` sends (close_on_exit). Any rank exits 143 on a SIGTERM.
+    closers = []
+    close_on_exit(closers)
     shape, source = kernel_shape.bind_recorded(a.ranks, Path(a.ckpt_meta) / "config.json",
                                                lambda: facts.load(a.ckpt_meta).kernel_shape())
     print(f"  kernel shape ({source}): {shape.describe()}", flush=True)
@@ -737,10 +853,11 @@ def main(argv=None) -> int:
                                               draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
+            closers.append(model.drafter.inputs_tap.close)
+        if isinstance(getattr(model.drafter, "ledger", None), DraftLedger):
+            closers.append(model.drafter.ledger.close)
         if getattr(net, "draft_tap", None) is not None:
-            import threading
-            threading.Thread(target=drain_draft_tap, args=(net.draft_tap, Path(a.dump_dir) / "draft-queries"),
-                             name="draft-tap", daemon=True).start()
+            closers.append(DraftQueries(net.draft_tap, Path(a.dump_dir) / "draft-queries").close)   # the device's: last
         print("  shared expert: " + {False: "unforked", True: "forked at one request's rows", "all": "forked at every captured step"}
               [net.shared_overlap], flush=True)
         leave = {"off": "launched after its sum", "pdl": "its sum's programmatic dependent",
