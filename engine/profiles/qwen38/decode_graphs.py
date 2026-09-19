@@ -50,6 +50,8 @@ def bucket_ladder(block: int, pool_blocks: int, ceiling: int, tokens: int) -> "l
 class _Rows:
     """The graphs' shared admission: rows, width, buckets, and the reservation and block-table publication of the
     padded positions."""
+    pictures = None                 # net.pictures when the net serves pictures (__init__); a text-only graph has none
+    _meta_rows = 0                  # the metadata rows past the fixed ones: 1 for the rows' mRoPE deltas
 
     def __init__(self, net, caches, max_seqs: int, tokens: int, ceiling: int, reach: "int | None" = None):
         F = net.F
@@ -63,8 +65,18 @@ class _Rows:
             raise ValueError(f"{type(net.comm).__name__} collectives cannot be captured")
         self.net, self.caches, self.F = net, caches, F
         self.max_seqs, self.tokens, self.reach = max_seqs, tokens, reach
+        # a net that serves pictures turns a sequence whose prompt held one at its mRoPE positions: its rows carry the
+        # sequence's delta (net.pictures, the adapter's; a sequence absent there is 0) in one more metadata row. A
+        # text-only net's graphs have no such row -- the step they capture is the one they always captured.
+        self.pictures = net.pictures if getattr(net, "serves_pictures", False) else None
+        self._meta_rows = 0 if self.pictures is None else 1
         self.buckets = bucket_ladder(F.block, caches.block_table.shape[1], ceiling, reach)
         self.shapes = [(n, tokens, b) for n in range(max_seqs, 0, -1) for b in reversed(self.buckets)]
+
+    def delta(self, seq: int) -> int:
+        """A row's mRoPE delta: its prompt's (net.pictures), 0 for a text-only sequence."""
+        layout = self.pictures.get(seq)
+        return 0 if layout is None else int(layout[1])
 
     def shape(self, rows: int, end: int, tokens: "int | None" = None) -> "tuple[int, int, int]":
         if not 1 <= rows <= self.max_seqs:
@@ -104,17 +116,21 @@ class TargetGraphs(_Rows):
         self.narrow_rows = narrow_rows
         self.shapes = [(n, t, b) for n in range(max_seqs, 0, -1) for t in self.widths(n) for b in reversed(self.buckets)]
         dev = caches.device
-        self._meta_host = torch.empty(3 * max_seqs, dtype=torch.int64, pin_memory=True)
+        rows = 3 + self._meta_rows
+        self._meta_host = torch.empty(rows * max_seqs, dtype=torch.int64, pin_memory=True)
         self._meta = self._meta_host.numpy()
         self.metadata = {}
 
         def make_inputs(n, t, blocks):
-            meta = self.metadata[n, t, blocks] = torch.empty(3, n, dtype=torch.int64, device=dev)
-            contexts, seqs, slots = meta.unbind(0)
+            meta = self.metadata[n, t, blocks] = torch.empty(rows, n, dtype=torch.int64, device=dev)
+            contexts, seqs, slots, *deltas = meta.unbind(0)
             contexts.zero_()
             torch.arange(n, out=seqs)
             torch.add(seqs, 1, out=slots)
-            return DeviceStep(torch.zeros(n * t, dtype=torch.int64, device=dev), contexts, slots, seqs, t, blocks)
+            for d in deltas:
+                d.zero_()
+            return DeviceStep(torch.zeros(n * t, dtype=torch.int64, device=dev), contexts, slots, seqs, t, blocks,
+                              deltas[0] if deltas else None)
 
         def forward(step):
             hidden, streams = net.forward(step, caches, streams=True)
@@ -156,13 +172,15 @@ class TargetGraphs(_Rows):
         meta = self._meta
         for i, s in enumerate(segments):
             meta[i], meta[n + i], meta[2 * n + i] = s.ctx, s.seq, s.slot
+            if self.pictures is not None:
+                meta[3 * n + i] = self.delta(s.seq)
         padded = any(s.length != t for s in segments)
         if padded:
             index = [s.start + min(j, s.length - 1) for s in segments for j in range(t)]
             ids = step.ids.index_select(0, torch.tensor(index, device=step.ids.device))
         else:
             ids = step.ids
-        host = self._meta_host[:3 * n].view(3, n)
+        host = self._meta_host[:(3 + self._meta_rows) * n].view(3 + self._meta_rows, n)
         net = self.net
         if net.ple_stage is not None:
             # the PLE rows of the step's n x t tokens, read off the SSD table on the host before the replay (a replay
@@ -214,7 +232,7 @@ def draft_chain(net, caches, step, given, last, counts, k: int, *, probability: 
     picks, probs = [first], [p]
     contexts = step.contexts + counts
     for depth in range(1, k):
-        chain = DeviceStep(picks[-1], contexts, step.slots, step.seqs, 1, step.blocks)
+        chain = DeviceStep(picks[-1], contexts, step.slots, step.seqs, 1, step.blocks, getattr(step, "deltas", None))
         hidden, streams = net.mtp_forward(chain, given, caches, last_hidden_only=False)
         got, p = pick(hidden, depth)
         picks.append(got)
@@ -246,26 +264,29 @@ class DraftGraphs(_Rows):
         self.k, self.probability, self.candidates = k, probability or candidates > 0, candidates
         F, dev = net.F, caches.device
         width = F.hc * F.hidden
-        self._meta_host = torch.empty(5 * max_seqs, dtype=torch.int64, pin_memory=True)
+        rows = 5 + self._meta_rows
+        self._meta_host = torch.empty(rows * max_seqs, dtype=torch.int64, pin_memory=True)
         self._ids_host = torch.empty(max_seqs * tokens, dtype=torch.int64, pin_memory=True)
         self._meta, self._ids = self._meta_host.numpy(), self._ids_host.numpy()
         self.metadata = {}
 
         def make_inputs(n, t, blocks):
-            meta = self.metadata[n, t, blocks] = torch.empty(5, n, dtype=torch.int64, device=dev)
-            contexts, seqs, slots, last, counts = meta.unbind(0)
+            meta = self.metadata[n, t, blocks] = torch.empty(rows, n, dtype=torch.int64, device=dev)
+            contexts, seqs, slots, last, counts, *deltas = meta.unbind(0)
             contexts.zero_()
             torch.arange(n, out=seqs)
             torch.add(seqs, 1, out=slots)
             torch.add(seqs * t, t - 1, out=last)
             counts.fill_(t)
+            for d in deltas:
+                d.zero_()
             given = torch.zeros(n * t, width, dtype=torch.bfloat16, device=dev)
             sampler = None
             if candidates:
                 sampler = (torch.zeros(n, dtype=torch.float32, device=dev), torch.zeros(n, dtype=torch.int32, device=dev),
                            torch.ones(n, dtype=torch.float32, device=dev), torch.zeros(n, k, dtype=torch.float32, device=dev))
-            return DeviceStep(torch.zeros(n * t, dtype=torch.int64, device=dev), contexts, slots, seqs, t, blocks), \
-                given, last, counts, sampler
+            return DeviceStep(torch.zeros(n * t, dtype=torch.int64, device=dev), contexts, slots, seqs, t, blocks,
+                              deltas[0] if deltas else None), given, last, counts, sampler
 
         def forward(inputs):
             step, given, last, counts, sampler = inputs
@@ -302,11 +323,13 @@ class DraftGraphs(_Rows):
         for i, (seq, slot, ctx, next_ids, streams) in enumerate(rows):
             m = len(next_ids)
             meta[i], meta[n + i], meta[2 * n + i], meta[3 * n + i], meta[4 * n + i] = ctx, seq, slot, i * t + m - 1, m
+            if self.pictures is not None:
+                meta[5 * n + i] = self.delta(seq)
             for j in range(t):
                 ids[i * t + j] = next_ids[min(j, m - 1)]
             given.append(streams if m == t else torch.cat([streams, streams[-1:].expand(t - m, -1)]))
         given = torch.cat(given)
-        host_meta, host_ids = self._meta_host[:5 * n].view(5, n), self._ids_host[:n * t]
+        host_meta, host_ids = self._meta_host[:(5 + self._meta_rows) * n].view(5 + self._meta_rows, n), self._ids_host[:n * t]
 
         settings = None
         if self.candidates:

@@ -19,6 +19,9 @@ What it records:
     drew other weights than the served image's from the same seed).
   * --real: the checkpoint's tower in transformers (fp32, and bf16 -- what bf16 alone costs) against this repo's `Vision`
     (bf16) on two pictures.
+  * --precision: where the tower's bf16 error comes from -- this repo's tower with fp32 in one place at a time
+    (attention, MLP, merger, the stream between blocks, every block's arithmetic) against the whole tower in fp32 (the
+    bf16 weights widened), and the fp32 stream's size block by block (its largest value, its largest channel's share).
 """
 from __future__ import annotations
 
@@ -246,11 +249,74 @@ def real_comparison(ckpt: Path) -> dict:
     return out
 
 
+def precision_breakdown(ckpt: Path) -> dict:
+    """The tower's bf16 error taken apart (module docstring, --precision), CPU, two pictures."""
+    import torch.nn.functional as Fn
+    from engine.base.checkpoint import Checkpoint
+    from engine.profiles.qwen38 import vision
+    V = vision.load(ckpt)
+    S = vision.specs(V)
+    tower = vision.Vision(V, {k: v.to(torch.bfloat16) for k, v in Checkpoint(str(ckpt)).load([s.name for s in S]).items()})
+    p16 = tower.p
+    p32 = {k: v.float() for k, v in p16.items()}
+    P, out = vision.PREFIX, {}
+    for name in ("rgb_640x480_aligned", "rgb_517x333_rounds"):
+        item = vision.Door(V).prepare("image", cases()[name])
+        pv = vision.pixel_values(V, item["canvas"], item["grid"]).to(torch.bfloat16)
+        pos, cos, sin = tower.tables(item["grid"][1], item["grid"][2])
+
+        def run(attn=False, mlp=False, merger=False, stream=False, every=False, trace=None):
+            """fp32 where asked (every: all of it, the bf16 weights widened), bf16 elsewhere, as served."""
+            f32 = lambda on: (p32, torch.float32) if on or every else (p16, torch.bfloat16)      # noqa: E731
+            pw, dt = f32(False)
+            x = Fn.linear(pv.to(dt), pw[P + "patch_embed.proj.weight"].view(V.hidden, -1), pw[P + "patch_embed.proj.bias"])
+            x = x + pos.to(dt)
+            for i in range(V.depth):
+                b, L = f"{P}blocks.{i}.", x.shape[0]
+                pa, da = f32(attn)
+                h = Fn.layer_norm(x.to(da), (V.hidden,), pa[b + "norm1.weight"], pa[b + "norm1.bias"], vision.LN_EPS)
+                q, k, v = Fn.linear(h, pa[b + "attn.qkv.weight"], pa[b + "attn.qkv.bias"]).view(L, 3, V.heads, V.head_dim).unbind(1)
+                q, k = tower._rope(q, cos, sin), tower._rope(k, cos, sin)
+                heads = lambda z: z.transpose(0, 1).unsqueeze(0)                                   # noqa: E731
+                a = Fn.scaled_dot_product_attention(heads(q), heads(k), heads(v), scale=V.head_dim ** -0.5)
+                a = Fn.linear(a.squeeze(0).transpose(0, 1).reshape(L, V.hidden), pa[b + "attn.proj.weight"], pa[b + "attn.proj.bias"])
+                x = (x.float() + a.float()) if stream or every else x + a.to(x.dtype)
+                pm, dm = f32(mlp)
+                h = Fn.layer_norm(x.to(dm), (V.hidden,), pm[b + "norm2.weight"], pm[b + "norm2.bias"], vision.LN_EPS)
+                h = Fn.gelu(Fn.linear(h, pm[b + "mlp.linear_fc1.weight"], pm[b + "mlp.linear_fc1.bias"]), approximate="tanh")
+                h = Fn.linear(h, pm[b + "mlp.linear_fc2.weight"], pm[b + "mlp.linear_fc2.bias"])
+                x = (x.float() + h.float()) if stream or every else (x + h.to(x.dtype)).to(torch.bfloat16)
+                if trace is not None:
+                    trace.append(x.float())
+            pg, dg = f32(merger)
+            y = Fn.layer_norm(x.to(dg), (V.hidden,), pg[P + "merger.norm.weight"], pg[P + "merger.norm.bias"], vision.LN_EPS)
+            y = Fn.gelu(Fn.linear(y.reshape(-1, 4 * V.hidden), pg[P + "merger.linear_fc1.weight"], pg[P + "merger.linear_fc1.bias"]))
+            return Fn.linear(y, pg[P + "merger.linear_fc2.weight"], pg[P + "merger.linear_fc2.bias"]).float()
+
+        with torch.no_grad():
+            stream_ref, stream_bf = [], []
+            ref = run(every=True, trace=stream_ref)
+            arms = {"all bf16 (served)": run(trace=stream_bf), "attention fp32": run(attn=True), "mlp fp32": run(mlp=True),
+                    "merger fp32": run(merger=True), "stream fp32": run(stream=True),
+                    "every block's arithmetic fp32 (stream bf16)": run(attn=True, mlp=True, merger=True)}
+
+        def rel(a, b):
+            return round(float((a - b).norm() / b.norm()), 5)
+        out[name] = {"tokens": int(ref.shape[0]),
+                     "arms": {k: {"rel_err": rel(v, ref), "row_cos_mean": round(float(Fn.cosine_similarity(v, ref, dim=-1).mean()), 6)}
+                              for k, v in arms.items()},
+                     "stream": [{"after_block": i, "bf16_rel_err": rel(b, r), "absmax": round(float(r.abs().max()), 1),
+                                 "top_channel_share": round(float(r.pow(2).sum(0).max() / r.pow(2).sum()), 4)}
+                                for i, (b, r) in enumerate(zip(stream_bf, stream_ref))]}
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ckpt", type=Path, required=True)
     ap.add_argument("--fixture", type=Path)
     ap.add_argument("--real", type=Path)
+    ap.add_argument("--precision", type=Path)
     a = ap.parse_args()
     torch.set_num_threads(max(1, torch.get_num_threads()))
     if a.fixture:
@@ -262,6 +328,10 @@ def main():
         ref["torchvision"], ref["pil"] = torchvision.__version__, PIL.__version__
         a.fixture.write_text(json.dumps(ref, indent=1) + "\n")
         print(f"wrote {a.fixture}")
+    if a.precision:
+        rep = precision_breakdown(a.ckpt)
+        a.precision.write_text(json.dumps(rep, indent=1) + "\n")
+        print(json.dumps({k: v["arms"] for k, v in rep.items()}, indent=1))
     if a.real:
         rep = real_comparison(a.ckpt)
         a.real.write_text(json.dumps(rep, indent=1) + "\n")

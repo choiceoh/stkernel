@@ -92,6 +92,74 @@ class VerdictTests(unittest.TestCase):
         self.assertNotIn("FAILED", states)                 # CI stays quiet about a wheel it could not install
 
 
+class ShardTests(unittest.TestCase):
+    """CI runs the verdict as parts on separate runners that never talk to each other. A file in no part is a test
+    that silently stopped running; a file in two is a verdict counted twice. Both would read as a green check."""
+
+    MODULES = [f"tests.test_engine_{i:03d}" for i in range(37)]
+
+    def test_the_parts_cover_every_module_exactly_once(self):
+        weight = check.weights(self.MODULES, {m: float(i % 7 + 1) for i, m in enumerate(self.MODULES)})
+        for n in range(1, 9):
+            parts = [check.part(self.MODULES, weight, k, n) for k in range(1, n + 1)]
+            flat = [m for p in parts for m in p]
+            self.assertEqual(sorted(flat), self.MODULES, f"{n} parts")
+
+    def test_the_cut_depends_only_on_the_list_and_the_table(self):
+        """Each runner computes its own part; the order it listed the files in must not move the cut."""
+        weight = check.weights(self.MODULES, {self.MODULES[3]: 50.0, self.MODULES[9]: 40.0})
+        shuffled = self.MODULES[::-1]
+        self.assertEqual([check.part(self.MODULES, weight, k, 4) for k in (1, 2, 3, 4)],
+                         [check.part(shuffled, weight, k, 4) for k in (1, 2, 3, 4)])
+
+    def test_the_long_files_are_spread_and_start_first(self):
+        table = {m: 1.0 for m in self.MODULES}
+        table.update({self.MODULES[1]: 60.0, self.MODULES[2]: 50.0, self.MODULES[5]: 40.0})
+        weight = check.weights(self.MODULES, table)
+        parts = [check.part(self.MODULES, weight, k, 3) for k in (1, 2, 3)]
+        self.assertEqual(sorted(p[0] for p in parts), sorted([self.MODULES[1], self.MODULES[2], self.MODULES[5]]))
+        loads = [sum(weight[m] for m in p) for p in parts]
+        self.assertLessEqual(max(loads) - min(loads), 1.0)
+
+    def test_a_file_the_table_has_not_seen_counts_as_its_median(self):
+        weight = check.weights(["a", "b", "c", "new"], {"a": 1.0, "b": 3.0, "c": 50.0})
+        self.assertEqual(weight["new"], 3.0)
+        self.assertEqual(check.weights(["x"], {})["x"], 1.0)
+
+    def test_k_of_n_is_read_strictly(self):
+        self.assertEqual(check.shard("2/4"), (2, 4))
+        for text in ("0/4", "5/4", "x/4", "4", "2/0", "-1/4"):
+            with self.assertRaises(Exception, msg=text):
+                check.shard(text)
+
+    def test_every_file_gets_one_thread_unless_the_caller_chose(self):
+        """A thread per core made the engine suite 2.8x slower (check.py's docstring has the numbers)."""
+        import os
+        import subprocess
+        from unittest import mock
+        seen = []
+        done = subprocess.CompletedProcess([], 0, PASSED, "")
+        with mock.patch.object(check.subprocess, "run", side_effect=lambda *a, **k: seen.append(k["env"]) or done):
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("OMP_NUM_THREADS", None)
+                v = check.run("tests.m", False, 5)
+                os.environ["OMP_NUM_THREADS"] = "3"
+                check.run("tests.m", False, 5)
+        self.assertEqual((v.state, v.tests), ("ok", 4))
+        self.assertEqual([env["OMP_NUM_THREADS"] for env in seen], ["1", "3"])
+        self.assertEqual(seen[0]["CUDA_VISIBLE_DEVICES"], "")
+
+    def test_the_table_keeps_what_ran_and_forgets_what_is_gone(self):
+        import json
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "durations.json"
+            path.write_text(json.dumps({"tests.test_agent_tools": 9.0, "tests.test_no_such_file": 5.0}))
+            check.record(path, [check.Verdict("tests.test_agent_tools", "ok", 4, seconds=1.25),
+                                check.Verdict("tests.test_engine_prefix", "CANNOT RUN", seconds=0.1)])
+            self.assertEqual(json.loads(path.read_text()), {"tests.test_agent_tools": 1.2})
+
+
 class PushCheckTests(unittest.TestCase):
     """A branch whose pull request is already merged still accepts pushes; the commit just never reaches main.
     That happened twice on 2026-09-12, the second time with a note in memory saying not to, which is how a thing
