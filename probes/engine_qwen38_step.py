@@ -298,6 +298,34 @@ def assemble(builds: dict, F) -> dict:
     return out
 
 
+def stacks(fn, *, top: int = 30) -> list:
+    """The kernels one eager call of `fn` launches, grouped by the torch op that launched them and the innermost engine
+    frame on its Python stack -> [{'op', 'where', 'launches', 'us', 'kernels'}], the largest first. A replay's kernels
+    have no stack (CUPTI sees the graph, not the Python that recorded it); the same forward run eagerly does."""
+    import torch
+    from torch.profiler import ProfilerActivity, profile
+    fn()
+    torch.cuda.synchronize()
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], with_stack=True) as prof:
+        fn()
+        torch.cuda.synchronize()
+    groups = {}
+    for e in prof.events():
+        kernels = [k for k in getattr(e, "kernels", []) or []]
+        if not kernels:
+            continue
+        frames = [f for f in (e.stack or []) if "/engine/" in f or "/probes/" in f]
+        where = frames[0] if frames else "?"
+        key = (e.name, where)
+        g = groups.setdefault(key, {"op": e.name, "where": where, "launches": 0, "us": 0.0, "kernels": set()})
+        for k in kernels:
+            g["launches"] += 1
+            g["us"] += k.duration
+            g["kernels"].add(k.name[:80])
+    rows = sorted(groups.values(), key=lambda g: -g["us"])[:top]
+    return [{**g, "us": round(g["us"], 1), "kernels": sorted(g["kernels"])[:3]} for g in rows]
+
+
 def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REPLAYS, kv_gib: float = KV_GIB,
             max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False, arm: str = "served") -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row.
@@ -330,7 +358,19 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
             graphs[key] = replay_profile(g, shape, replays)
             print(json.dumps({"arm": arm, "layers": list(layers), "graph": key, "wall_us": graphs[key]["wall_us"],
                               "device_us": graphs[key]["device_us"], "launches": graphs[key]["launches"]}), flush=True)
-    if loop:
+    if loop:                                      # the first layer set: where the eager forward's kernels come from
+        from engine.profiles.qwen38.decode_graphs import draft_chain
+        n, blocks = shapes[0]
+        shape = (n, F.spec_k + 1, blocks)
+        where = {}
+        for label, g, fn in (("target", target, lambda i: net.forward(i, caches, streams=True)),
+                             ("draft", draft, lambda i: draft_chain(net, caches, *i, F.spec_k))):
+            if shape in g.graphs.inputs:
+                seat(g, caches, F, shape)
+                inputs = g.graphs.inputs[shape]
+                where[label] = stacks(lambda: fn(inputs))
+                print(json.dumps({"arm": arm, "stacks": label, "top": where[label][:12]}), flush=True)
+        caches.reset()
         served = served_loop(F, net, caches, target, draft)
         one = shapes[0]
         replays = sum(graphs.get(f"{label} rows {one[0]} blocks {one[1]}", {}).get("wall_us", 0.0)
@@ -344,6 +384,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
            "errors": {k: v for k, v in graphs.items() if "error" in v}}
     if loop:
         row["served_loop"] = served
+        row["stacks"] = where
     target.close()
     draft.close()
     return row

@@ -164,6 +164,11 @@ def main():
         from probes.engine_qwen38_step import run as qwen38_step
         qwen38_step(args.output, args.ranks)
         return
+    if args.lanes == 'qwen38_step_where':
+        # one layer set's build only: its graphs, the served loop, and the Python stack each eager kernel came from
+        from probes.engine_qwen38_step import LAYER_SETS, run as qwen38_step
+        qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[:1])
+        return
     if args.lanes == 'qwen38_step_ab':
         # the same step, each layer set built under the served lanes and again with the skinny GEMV's shapes on
         # torch.mm -- what the router's and the mixers' down projections on it change in a replayed step
