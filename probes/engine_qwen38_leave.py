@@ -36,7 +36,26 @@ CHECK_WAIT_US = 3000                               # long enough that an early r
 BUDGETS = (2 << 20, 4 << 20, None)                 # prefetch arms: bytes of the down projection (None: all 6.6 MB)
 COPIES_BYTES = 64 << 20                            # weights rotated over at least this many bytes: more than GB10's L2
 SITES = 16                                         # sites a graph
-ROUNDS = 9
+ROUNDS = 15
+
+
+def gpu_busy():
+    """The device's utilization as nvidia-smi reports it, or None: the lane runs beside production and anything else
+    on the box, and a record says what shared the GPU while it timed (q38leave-0919a ran beside a 96% training job)."""
+    import subprocess
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10).stdout.split()
+        return int(out[0]) if out else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def stats(v):
+    """min, p25 and median of a list of us: a replay the GPU shares with another context takes a whole time slice
+    more (about 2.3 ms a 16-site graph beside that training job), so the low end is the uncontended launch."""
+    v = sorted(v)
+    return {"min": round(v[0], 2), "p25": round(v[len(v) // 4], 2), "median": round(statistics.median(v), 2)}
 
 
 def _stand_in():
@@ -90,8 +109,8 @@ def run(output=None) -> dict:
               "down_MB": round((RANK + HC) * width * 2 / 1e6, 2), "pair_MB": round(pair / 1e6, 2),
               "qualify": {k: [round(x, 6) for x in v] for k, v in hcr.qualify(
                   torch.device("cuda"), hc=HC, hidden=HIDDEN, rank=RANK, eps=EPS).items()},
-              "checks": {}, "rows": {}}
-    print(json.dumps({"qualify": report["qualify"]}), flush=True)
+              "checks": {}, "rows": {}, "gpu_busy_percent": {"start": gpu_busy()}}
+    print(json.dumps({"qualify": report["qualify"], "gpu_busy_percent": report["gpu_busy_percent"]}), flush=True)
 
     def site(i, h, src, out, inject, mode, budget, wait_us, poison=False):
         """One site: the stand-in's sum (over NaN when `poison`), the leave the mode serves, the mixer.
@@ -167,10 +186,10 @@ def run(output=None) -> dict:
                     g.replay()
                     torch.cuda.synchronize()
                     times[name].append((time.perf_counter() - began) / SITES * 1e6)
-            row = {name: round(statistics.median(v), 2) for name, v in times.items()}
-            spread = {name: round(max(v) - min(v), 2) for name, v in times.items()}
-            report["rows"][m][wait_us] = {"us_a_site": row, "spread": spread,
-                                          "saved_us_a_site": {k: round(row["off"] - v, 2) for k, v in row.items()}}
+            row = {name: stats(v) for name, v in times.items()}
+            report["rows"][m][wait_us] = {
+                "us_a_site": row, "gpu_busy_percent": gpu_busy(),
+                "saved_us_a_site": {k: {q: round(row["off"][q] - v[q], 2) for q in v} for k, v in row.items()}}
             print(json.dumps({f"rows {m} wait {wait_us} us": report["rows"][m][wait_us]}), flush=True)
             del graphs
         del keep
