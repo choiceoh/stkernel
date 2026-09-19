@@ -831,6 +831,9 @@ def main(argv=None) -> int:
                     help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' (the "
                          "default: steps of one request's rows, C=1 -5%% a step on the fleet, measurements/"
                          "qwen38_shared_overlap_20260919), 'all' (every captured step: C=4 +6%%), 'off' (the rollback)")
+    ap.add_argument("--moe-decode-chunks", action="store_true",
+                    help="experimental: split 9..16-token routed MoE decode into two micro launches; "
+                         "GB10 component checks passed, TP4 throughput and quality not yet judged")
     ap.add_argument("--leave", choices=lane_tables.LEAVES, default=lane_tables.LEAVE,
                     help="how a leave meets the TP sum before it (carry H4): 'prefetch' (the default) launches it as the "
                          "sum's programmatic dependent and pulls the site's down projection into L2 while the sum waits "
@@ -893,7 +896,7 @@ def main(argv=None) -> int:
             with rec.phase("wait for the imports"):
                 imports.take()
             rec.gauge("kernel_imports_s", round(imports.seconds, 3))
-            lanes = lane_tables.served(leave=a.leave)
+            lanes = lane_tables.served(leave=a.leave, moe_decode_chunks=a.moe_decode_chunks)
             # every b12x kernel this boot builds or reads, for the next tree's prebuild (kernels/b12x_requests)
             from engine.kernels import b12x_requests
             b12x_requests.record_loaded("qwen38", b12x_requests.path_under(
@@ -934,6 +937,7 @@ def main(argv=None) -> int:
             closers.append(DraftQueries(net.draft_tap, Path(a.dump_dir) / "draft-queries").close)   # the device's: last
         print("  shared expert: " + {False: "unforked", True: "forked at one request's rows", "all": "forked at every captured step"}
               [net.shared_overlap], flush=True)
+        print("  MoE decode chunks: " + ("two micro launches at 9..16 tokens" if a.moe_decode_chunks else "off"), flush=True)
         leave = {"off": "launched after its sum", "pdl": "its sum's programmatic dependent",
                  "prefetch": "its sum's programmatic dependent, the mixer's down projection prefetched"}[lanes.leave]
         if lanes.leave == "prefetch" and net.hc_fp8:

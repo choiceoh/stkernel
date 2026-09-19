@@ -70,22 +70,33 @@ def run(output=None):
         with torch.inference_mode(), p.pinned(md, _EP_ZERO_WEIGHT_MICRO_CELL=md._EP_ZERO_WEIGHT_MICRO_CELL,
                                              **{name: None for name in p.HOOKS}):
             probe.setup(shape)
+            integrated_lane = lanes.served(moe_decode_chunks=True)
             # Largest first, as capture at boot; then a C=1 guard and the C=2 shape.
-            for rows in (16, 12, 9, 8, 4):
+            for rows in (16, 15, 14, 13, 12, 11, 10, 9, 8, 4):
                 patterns = [p.pattern(rows, c, probe.generator, "cuda", min_local=2) for _ in range(8)]
                 x0, ids0, w0 = patterns[0]
+                scores = torch.randn(rows, c.experts, generator=probe.generator, device="cuda")
+                route_args = dict(experts=c.experts, first_expert=c.first_expert,
+                                  w13=probe.layers[0].w13, hidden=c.hidden)
+                base_ids, base_weights = probe.lane.route_local(scores, c.topk, **route_args)
+                split_ids, split_weights = integrated_lane.route_local(scores, c.topk, **route_args)
+                base_sentinel = c.local if rows <= 8 else 0
+                comparable = torch.where(split_ids == c.local, base_sentinel, split_ids)
+                if not torch.equal(base_weights, split_weights) or not torch.equal(base_ids, comparable):
+                    raise AssertionError(f"split router changed local experts or weights at {rows} tokens")
                 foreign = (x0, p.foreign_routes(ids0, c), w0)
                 zeros = (x0, ids0, torch.zeros_like(w0))
                 # Two independent oracle inputs catch chunk output aliasing and row reordering.
                 oracles = [p.oracle(*source, probe.layers[0], c, probe.quant) for source in patterns[:2]]
                 arms = []
-                variants = [("served", None, None), ("chunks8", 8, None),
-                            ("chunks4", 4, None), ("chunks8_m32", 8, 32)]
+                variants = [("served", None, None), ("chunks8", 8, None), ("integrated", None, None)]
                 for name, limit, tile in variants:
                     if limit is not None and rows <= limit and tile is None:
                         continue
                     ranges = ((0, rows),) if limit is None else chunks(rows, limit)
-                    sentinel = c.local if max(end - begin for begin, end in ranges) <= 8 else None
+                    expected_ranges = lanes.moe_decode_ranges(rows, True) if name == "integrated" else ranges
+                    sentinel = c.local if max(end - begin for begin, end in expected_ranges) <= 8 else None
+                    lane = integrated_lane if name == "integrated" else probe.lane
 
                     def local(source):
                         x, ids, weights = source
@@ -98,7 +109,7 @@ def run(output=None):
 
                     def call():
                         x, ids, weights = inputs
-                        parts = [probe.lane.moe(x[begin:end], ids[begin:end], weights[begin:end],
+                        parts = [lane.moe(x[begin:end], ids[begin:end], weights[begin:end],
                                                 layer.w13, layer.w13_sf, layer.w2, layer.w2_sf,
                                                 scales=layer.scales, first_expert=c.first_expert, local=True)
                                  for begin, end in ranges]
@@ -106,8 +117,8 @@ def run(output=None):
 
                     with p.pinned(md, _MICRO_TILE_M_OVERRIDE=tile), p.Launches(md) as launches:
                         graph, out = _capture(call)
-                        probe.owners.append(probe.lane.graph_resources())
-                        launch_rows = launches.log[-len(ranges):]
+                        probe.owners.append(lane.graph_resources())
+                        launch_rows = launches.log[-len(expected_ranges):]
                         eager = call().clone()
                         graph.replay()
                         replay = out.clone()
@@ -126,10 +137,10 @@ def run(output=None):
                              and relative <= p.ORACLE_RELATIVE and not any(nonzero)
                              and p.stable(replay, eager) and p.stable(replay_new, eager_new))
                     expected = "micro" if sentinel is not None else "static"
-                    valid = valid and len(launch_rows) == len(ranges) and all(
+                    valid = valid and len(launch_rows) == len(expected_ranges) and all(
                         row["kernel"] == expected and (sentinel is None or row.get("skip") == c.local)
                         and (tile is None or row.get("tile") == [tile, 128]) for row in launch_rows)
-                    report("chunk_check", tokens=rows, arm=name, ranges=ranges, launched=launch_rows,
+                    report("chunk_check", tokens=rows, arm=name, ranges=expected_ranges, launched=launch_rows,
                            oracle_relative=relative, zero_nonzero=nonzero,
                            replay_stable=p.stable(replay, eager), new_replay_stable=p.stable(replay_new, eager_new),
                            passed=valid)

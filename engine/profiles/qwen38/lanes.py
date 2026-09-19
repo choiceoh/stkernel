@@ -149,6 +149,20 @@ def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, tor
 STATIC_TILE_ROWS = 16                 # the static MoE kernel's smallest judged row count (static_pad)
 
 
+def moe_decode_ranges(rows: int, enabled: bool = False) -> tuple[tuple[int, int], ...]:
+    """Experimental EP decode split: two micro launches for the 9..16-token band.
+
+    Balance the halves so nine tokens become 5+4, never 8+1 (the sentinel skip
+    does not admit m=1). Other widths and eager prefill retain their own path.
+    The GB10 component gate is measurements/qwen38_moe_chunks_20260920;
+    this stays opt-in until a matched TP4 throughput/quality comparison.
+    """
+    if enabled and 8 < rows <= 16:
+        middle = (rows + 1) // 2
+        return ((0, middle), (middle, rows))
+    return ((0, rows),)
+
+
 def static_pad(rows: int, micro_cap: int = 8) -> int:
     """Rows a captured MoE launch adds when it is above the micro kernel's cap and below one 16-row tile of the static
     kernel. On 2026-09-18 (srv4, Qwen3.8's cell E128/I640/top-10) the static kernel faulted -- an illegal address -- at
@@ -347,10 +361,12 @@ def import_kernels() -> None:
         importlib.import_module(name)
 
 
-def served(*, tp=None, leave: str = LEAVE) -> Lanes:
+def served(*, tp=None, leave: str = LEAVE, moe_decode_chunks: bool = False) -> Lanes:
     """Bind the ST kernel package for this shape. `tp` (a base/comm.LocalTP) hands each call to the main thread, where
     Triton's autotuner and the b12x JIT can run; on the fleet (one rank a process) the calls are direct. `leave`: one of
-    LEAVES, the leaves' launch (carry H4); every choice computes the same bytes."""
+    LEAVES, the leaves' launch (carry H4); every choice computes the same bytes.
+    `moe_decode_chunks` experiments with two micro launches at 9..16 decode
+    tokens, so foreign routes can use the micro kernel's zero-weight skip."""
     if leave not in LEAVES:
         raise ValueError(f"leave {leave!r}: one of {LEAVES}")
     from engine.base.lanes import served as common_lanes
@@ -419,13 +435,31 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
 
     def route_local(scores, k, *, experts, first_expert, w13, hidden):
         rows = scores.shape[0]                  # the launch `moe` makes of them: padded to the static kernel's tile
-        sentinel = sentinel_of(rows + static_pad(rows, md._MICRO_MAX_TOKENS), k, w13, hidden)
+        ranges = moe_decode_ranges(rows, moe_decode_chunks)
+        if len(ranges) > 1:
+            sentinel = split_sentinel(ranges, k, w13, hidden)
+        else:
+            sentinel = sentinel_of(rows + static_pad(rows, md._MICRO_MAX_TOKENS), k, w13, hidden)
         return moe_route.softmax_topk(scores, k, experts=experts, first=first_expert, local=w13.shape[0],
                                       foreign=0 if sentinel is None else sentinel)
+
+    def split_sentinel(ranges, k, w13, hidden):
+        sentinels = [sentinel_of(end - begin, k, w13, hidden) for begin, end in ranges]
+        if any(value != w13.shape[0] for value in sentinels):
+            raise ValueError("every MoE decode chunk must admit the bound EP zero-weight skip")
+        return w13.shape[0]
 
     def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert, compact=False, local=False):
         E = w13.shape[0]
         views, sf13, sf2 = moe_prepare(w13, w13_sf, w2, w2_sf, ids.shape[1], scales=scales)
+        ranges = moe_decode_ranges(x.shape[0], moe_decode_chunks)
+        if not compact and len(ranges) > 1:
+            sentinel = split_sentinel(ranges, ids.shape[1], w13, x.shape[1])
+            if not local:
+                ids, weights = local_routes(ids, weights, first_expert, E, sentinel)
+            return torch.cat([dispatch(x[begin:end], ids[begin:end], weights[begin:end],
+                                       w13, sf13, w2, sf2, views, scales, E)
+                              for begin, end in ranges])
         if local:
             if compact:
                 raise ValueError("an eager step counts its own pairs from the global routes")

@@ -5,6 +5,16 @@ from probes.engine_qwen38_moe_chunks import chunks
 
 
 class ChunkTests(unittest.TestCase):
+    def test_serving_split_is_bounded_and_default_off(self):
+        from engine.profiles.qwen38.lanes import moe_decode_ranges
+        for rows in range(1, 34):
+            self.assertEqual(moe_decode_ranges(rows), ((0, rows),))
+            ranges = moe_decode_ranges(rows, True)
+            if 8 < rows <= 16:
+                self.assertEqual(ranges, chunks(rows, 8))
+            else:
+                self.assertEqual(ranges, ((0, rows),))
+
     def test_all_captured_widths_cover_each_token_once(self):
         for rows in range(2, 33):
             for limit in (4, 8):
