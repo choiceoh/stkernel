@@ -595,8 +595,7 @@ def _main() -> int:
 
     kq = _load("korean-corruption.py", "onepass_korean")
     cq = _load("check-quality.py", "onepass_quality")
-    bd = _load("bench-dec.py", "onepass_bench_dec")
-    br = _load("bracket.py", "onepass_bracket")
+    bd = br = _load("onepass_metrics.py", "onepass_metrics")
     rec = build_record(args, br._git_sha())
     if os.environ.get("FLEET_EXPERIMENT_ID"):
         rec["experiment_id"] = os.environ["FLEET_EXPERIMENT_ID"]

@@ -392,9 +392,8 @@ class IntegrationTests(unittest.TestCase):
             def __enter__(self): return self
             def __exit__(self, *a): pass
         modules = {'check-quality.py': cq, 'korean-corruption.py': scanner(),
-                   'bench-dec.py': SimpleNamespace(URL='http://fixture/v1/chat/completions', METRICS='metrics',
-                                                   _parse_spec_metrics=lambda x: {}),
-                   'bracket.py': SimpleNamespace(_git_sha=lambda: 'fixture', _StepWindows=Windows,
+                   'onepass_metrics.py': SimpleNamespace(URL='http://fixture/v1/chat/completions', METRICS='metrics',
+                       _parse_spec_metrics=lambda x: {}, _git_sha=lambda: 'fixture', _StepWindows=Windows,
                        _spec_delta=lambda a, b: (0, 0), spec_k_eff=lambda a, b: 6)}
         environment = {'ONEPASS_RUN_INDEX': str(run_index)} if run_index is not None else {}
         environment['ONEPASS_PROFILE'] = profile

@@ -22,6 +22,16 @@ unset ST_MTP_TUNED ST_DRAFT_INDEX
 URL=http://127.0.0.1:$PORT
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 cd "$TREE"
+# Load real CPU dependencies before requesting any fleet downtime. --help exits
+# before these imports and the mocked request tests cannot detect missing files.
+if [ "$MODE" != collect ]; then
+  PYTHONPATH=bench BENCH_MODEL=qwen3.8-flash-next GLM53_API_PORT=$PORT python3 - <<'PY'
+import onepass
+for filename in ('korean-corruption.py', 'check-quality.py', 'onepass_metrics.py'):
+    onepass._load(filename, 'gptq_preflight_' + filename.replace('-', '_').replace('.', '_'))
+print('canonical onepass CPU dependencies loaded', flush=True)
+PY
+fi
 mkdir -p "$OUT"
 lease() { python3 engine/base/fleet_lease.py "$@" --path "$LOCK"; }
 node() { local ip=$1; shift; if [ "$ip" = 10.10.10.2 ]; then bash -c "$*"; else ssh -n -o BatchMode=yes -o ConnectTimeout=8 "choiceoh@$ip" "$@"; fi; }
