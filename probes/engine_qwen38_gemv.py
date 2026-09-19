@@ -339,11 +339,7 @@ def run_site_components(output=None) -> dict:
         def block_up(tile):
             def fn():
                 mixed = torch.empty(m, HIDDEN, device="cuda", dtype=torch.bfloat16)
-                bm, bd, bk, warps, stages = tile
-                hcr._up_mean_rows[(triton.cdiv(m, bm), triton.cdiv(HIDDEN, bd))](
-                    gates, up, normed, mixed, m, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0),
-                    float(HC), HID=HIDDEN, R=RANK, HC=HC, BLOCK_M=bm, BLOCK_D=bd, BLOCK_K=bk, FP32_DOT=False,
-                    num_warps=warps, num_stages=stages)
+                hcr.up_mean_block(gates, up, normed, mixed, HC, tile=tile)
                 return mixed
             return fn
 

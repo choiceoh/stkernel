@@ -643,7 +643,6 @@ def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor,
     if not rows:
         return mixed, injection
     inj = gates if injection is None else injection
-    interpreted = not normed.is_cuda
     if norm is not None:
         scale, w = norm
         if (scale.shape != (rows, hc) or scale.dtype != torch.float32 or scale.stride(1) != 1
@@ -658,13 +657,20 @@ def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor,
                         num_warps=4)
     else:
         down_gates_block(normed, down_inject, gates, inj, hc, inject=inject, tile=tiles["down"], norm=norm)
+    up_mean_block(gates, up, normed, mixed, hc, tile=tiles["up"], norm=norm)
+    return mixed, injection
+
+
+def up_mean_block(gates, up, normed, mixed, hc: int, *, tile, norm=None) -> None:
+    """`_up_mean_rows` at `tile` (BLOCK_M, BLOCK_D, BLOCK_K, warps, stages): the streams' mean [N, H] weighted by
+    sigmoid(up(gates)) stored into `mixed`. `norm`: as down_gates_block's."""
+    rows, hid = normed.shape[0], mixed.shape[1]
     scale, w = (gates, gates) if norm is None else norm
-    bm, bd, bk, warps, stages = tiles["up"]
+    bm, bd, bk, warps, stages = tile
     _up_mean_rows[(triton.cdiv(rows, bm), triton.cdiv(hid, bd))](
         gates, up, normed, mixed, scale, w, rows, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0),
-        scale.stride(0), float(hc), HID=hid, R=rank, HC=hc, BLOCK_M=bm, BLOCK_D=bd, BLOCK_K=bk,
-        NORM_IN=norm is not None, FP32_DOT=interpreted, num_warps=warps, num_stages=stages)
-    return mixed, injection
+        scale.stride(0), float(hc), HID=hid, R=gates.shape[1], HC=hc, BLOCK_M=bm, BLOCK_D=bd, BLOCK_K=bk,
+        NORM_IN=norm is not None, FP32_DOT=not normed.is_cuda, num_warps=warps, num_stages=stages)
 
 
 def mix_rows(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
