@@ -5089,3 +5089,8 @@ sparse 발사와 바이트 동일(GPU). net 은 한 세그먼트 호스트 스�
 `moe_route.compact_routes`(local_routes + 이 랭크 마스크, torch 발사 아홉 개 → 하나)와 `moe_route.pair_rows`(x.index_select + 두 인덱스 모으기 → 하나): eager 프리필의 compact MoE.
 - `q38moeglue-0919c`(21 라운드 최솟값, 호스트 발사 포함): 재매핑+마스크+nonzero 512 행 418 → 161 µs, 4,096 행 414 → 170; 모으기 512 행 121 → 74, 4,096 행 345 → 350(대역폭).
 - 같은 판에서 단계별 비용 목록(라우터·라우팅·공유 게이트·pair_sum). **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_moe_glue_20260919/README.md).
+
+### Qwen3.8 공유 전문가 게이트를 라우터 발사의 마지막 열로 — 층마다 4,096 행 −87 µs, 512 행 −104 µs; 4,096 값 중 1 개가 한 BF16 칸 다름 (2026-09-19, srv4 단일 GPU 레인, PR #1308)
+`router_bf16` 레인은 게이트 513 행을 MMA 라우터에 넘기고 마지막 열을 BF16 로 반올림해 sigmoid(전: 따로 BF16 mm [1] — 프리필 cuBLAS, 디코드 skinny GEMV).
+- 시간 `q38moeglue-0919c`: [512]+공유 387.7 → [513] 301.2 µs(4,096 행), 200.9 → 96.9(512 행). 일치 `q38router-0919d`: cuBLAS 와 다른 값 0/16, 0/512, 1/4,096, float64 오차 같음.
+- **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_shared_gate_fold_20260919/README.md).
