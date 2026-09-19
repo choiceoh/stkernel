@@ -92,7 +92,8 @@ class LaneTests(unittest.TestCase):
         self.assertEqual(probe.LAYER_SETS, ((4, 5, 6, 7), (4, 5), (7,), (1,)))
 
     def test_the_memory_ceiling_is_the_tickets_budget(self):
-        self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": "6"}), 6.0)
+        self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": "8"}), 7.0)      # less the context the allocator does not see
+        self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": "1.5"}), 1.0)
         self.assertEqual(probe.ceiling_gib({}), probe.MAX_GIB)
         self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": ""}), probe.MAX_GIB)
 

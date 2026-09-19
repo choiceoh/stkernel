@@ -25,7 +25,7 @@ Beside production the lane leaves a probe about 4 GiB, so as the step probe does
         --output /cache/qwen38-prefill.json                                       (the queue's single-GPU lane)
 
 `--lanes qwen38_prefill:8192` sets the chunk's tokens (default 4096). The process's device-memory ceiling is the
-ticket's budget (ST_PROBE_GIB, which the lane exports), 4 GiB without one.
+ticket's budget (ST_PROBE_GIB, which the lane exports: a kernel check's 8) less a GiB, 4 GiB without one.
 
 One rank's compute and launches, random token ids through real weights: the router sees real embeddings, so this
 rank's share of the routes is a real one, but it is not a prompt's. No collective is timed. Not a speed claim (D17):
@@ -50,6 +50,7 @@ CHUNK = 4096
 CHUNKS = 2                                # the prompt's first chunk and its second: contexts 0 and CHUNK
 MAX_GIB = 4.0                             # this process's device-memory ceiling where the ticket names no budget: the
                                           # lane exports its own as ST_PROBE_GIB, and the ceiling follows it
+CONTEXT_GIB = 1.0                         # of a ticket's budget: the CUDA context, cuBLAS, Triton and deep_gemm's modules
 TOP = 25                                  # kernels kept a chunk, by device time
 SLACK = 128                               # tokens of cache beyond the prompt (two blocks: the MTP head's reach)
 
@@ -139,10 +140,11 @@ def prompt_passes(model, caches, F, *, chunk: int, chunks: int, seed: int) -> "l
 
 
 def ceiling_gib(environ=None) -> float:
-    """The ticket's budget (the lane's ST_PROBE_GIB) where it names one, else MAX_GIB: the decode census's four-layer
-    set peaks at 3.7 GiB with no chunk's activations, so a chunk of thousands of tokens asks for a larger ticket."""
+    """What this process may allocate on the device: the ticket's budget (ST_PROBE_GIB -- the lane exports its own, a
+    kernel check's 8, when the submitter names none) less CONTEXT_GIB for what torch's allocator does not see, else
+    MAX_GIB. The decode census's four-layer set peaks at 3.7 GiB with no chunk's activations."""
     value = (os.environ if environ is None else environ).get("ST_PROBE_GIB", "")
-    return float(value) if value else MAX_GIB
+    return max(1.0, float(value) - CONTEXT_GIB) if value else MAX_GIB
 
 
 def measure(ranks: Path, rank: int, layers, *, chunk: int = CHUNK, chunks: int = CHUNKS, max_gib: "float | None" = None) -> dict:
