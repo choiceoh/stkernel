@@ -12,7 +12,7 @@ this table is where its wire items land (engine/kernels/cells.py names the servi
     kda_ring      gdn_ring / gdn_ring_rows: recurrent_gdn_ring(_rows), GDN's gate computed in the ring kernel
     mhc_decode    hc_*: engine/kernels/gated_residual -- the gated residual in five launches a site (three for a
     mhc_prefill     decode step's rows: mix_rows), not the dozen of the composed form the wizard's recipe named (its
-                    "fused kernel when launches matter")
+                    "fused kernel when launches matter"); a leave is its TP sum's programmatic dependent (LEAVES)
     mla           qsa_attend: the BF16-KV sparse paged GQA ported with the QSA ops (engine/kernels/qsa), the kernel
                   that served this model in the vLLM stack, instead of glue.gqa's one-scale e4m3 latent
     indexer       qsa_compress / qsa_store / qsa_select: engine/kernels/qsa
@@ -36,7 +36,9 @@ class Lanes:
     # hyper-connections (engine/kernels/gated_residual)
     hc_norm: object         # (h [N, hc*H], w [hc*H], eps, hc) -> normed [N, hc*H]; hc 1: one unit-offset norm over the row
     hc_leave: object        # (h, out [N, H], inject [N, hc], hc) -> h, in place
-    hc_leave_norm: object   # (h, out, inject, w, eps, hc) -> (h in place, normed)
+    hc_leave_norm: object   # (h, out, inject, w, eps, hc, *, prefetch=None) -> (h in place, normed); `prefetch`: the
+                            #  weight the site's mixer reads next, which a served leave may pull into L2 while the sum
+                            #  before it waits (served(leave=...), carry H4); a lane that does not prefetch ignores it
     hc_mix: object          # (normed, down_inject [r(+hc), hc*H], up [hc*H, r], hc, *, inject, project_down=None,
                             #  project_up=None) -> (mixed [N, H], inject [N, hc] | None); the projections replace the
                             #  BF16 matmuls when a quantised lane serves the mixer (net.Qwen38Net hc_fp8); without
@@ -100,6 +102,15 @@ class Lanes:
     rows_linear: object = None      # (x [N, K] bf16, w [M, K] bf16) -> x @ w.T: a decode step's handful of rows by
                                     #  a weight it reads once -- the router (engine/kernels/common/skinny_gemv,
                                     #  torch.mm past its shapes); None: torch.mm
+    leave: object = None            # how the served leaves meet the TP sum before them (served(leave=...), LEAVES);
+                                    #  None: a table whose leaves are not the served kernel's
+
+
+# How a served leave meets the TP sum before it (carry H4, engine/kernels/gated_residual.leave_norm): "off", launched
+# after the sum as any launch is; "pdl", the sum's programmatic dependent, resident through the other ranks' wait;
+# "prefetch", that and the site's down projection pulled into L2 during the wait.
+LEAVES = ("off", "pdl", "prefetch")
+LEAVE = "prefetch"
 
 
 def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -161,7 +172,7 @@ def reference() -> Lanes:
     def hc_leave(h, out, inject, hc):
         return h.add_((out.unsqueeze(-2) * inject.unsqueeze(-1)).flatten(-2))
 
-    def hc_leave_norm(h, out, inject, w, eps, hc):
+    def hc_leave_norm(h, out, inject, w, eps, hc, *, prefetch=None):
         hc_leave(h, out, inject, hc)
         return h, hc_norm(h, w, eps, hc)
 
@@ -309,9 +320,12 @@ def import_kernels() -> None:
         importlib.import_module(name)
 
 
-def served(*, tp=None) -> Lanes:
+def served(*, tp=None, leave: str = LEAVE) -> Lanes:
     """Bind the ST kernel package for this shape. `tp` (a base/comm.LocalTP) hands each call to the main thread, where
-    Triton's autotuner and the b12x JIT can run; on the fleet (one rank a process) the calls are direct."""
+    Triton's autotuner and the b12x JIT can run; on the fleet (one rank a process) the calls are direct. `leave`: one of
+    LEAVES, the leaves' launch (carry H4); every choice computes the same bytes."""
+    if leave not in LEAVES:
+        raise ValueError(f"leave {leave!r}: one of {LEAVES}")
     from engine.base.lanes import served as common_lanes
     from engine.kernels import gated_residual as hcr
     from engine.kernels import gdn, moe_output, moe_route, qsa
@@ -417,10 +431,18 @@ def served(*, tp=None) -> Lanes:
             return tp.on_main(fn, *a, **k)
         return run
 
+    pdl = leave != "off"
+
+    def hc_leave(h, out, inject, hc):
+        return hcr.leave(h, out, inject, hc, pdl=pdl)
+
+    def hc_leave_norm(h, out, inject, w, eps, hc, *, prefetch=None):
+        return hcr.leave_norm(h, out, inject, w, eps, hc, pdl=pdl, prefetch=prefetch if leave == "prefetch" else None)
+
     # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
     md.configure_ep_zero_weight_micro(True)
     common = common_lanes()
-    bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
+    bound = [hcr.norm_streams, hc_leave, hc_leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
              recurrent_gdn_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
              qsa.norm_rope_partial, qsa.qsa_store_cache_rows, qsa.qsa_compress_groups_with_ratio,
              qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, route_softmax_topk, moe]
@@ -429,7 +451,7 @@ def served(*, tp=None) -> Lanes:
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
-                 rows_linear=on_main(linear_rows), moe_rows=on_main(moe_rows.moe))
+                 rows_linear=on_main(linear_rows), moe_rows=on_main(moe_rows.moe), leave=leave)
 
 
 def qualify(device, F) -> dict:
@@ -448,5 +470,5 @@ def qualify(device, F) -> dict:
             "skinny_gemv": skinny_gemv.qualify(device), "fp8_rows": fp8_rows.qualify(device)}
 
 
-__all__ = ["Lanes", "KERNEL_MODULES", "import_kernels", "reference", "served", "qualify", "route_softmax_topk", "local_routes",
-           "static_pad", "pad_static_launch"]
+__all__ = ["Lanes", "KERNEL_MODULES", "LEAVES", "LEAVE", "import_kernels", "reference", "served", "qualify",
+           "route_softmax_topk", "local_routes", "static_pad", "pad_static_launch"]

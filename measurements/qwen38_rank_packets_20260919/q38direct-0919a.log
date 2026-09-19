@@ -1,0 +1,71 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-q38direct-0919a-20260919-175051.txt
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 14.0 GiB, this check's budget 8.0 GiB, floor 16.0: 6.0 GiB would be left 2026-09-19_17:50:51
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 13.9 GiB, this check's budget 8.0 GiB, floor 16.0: 5.9 GiB would be left 2026-09-19_17:51:06
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 14.0 GiB, this check's budget 8.0 GiB, floor 16.0: 6.0 GiB would be left 2026-09-19_17:51:27
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 13.9 GiB, this check's budget 8.0 GiB, floor 16.0: 5.9 GiB would be left 2026-09-19_17:51:48
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 14.0 GiB, this check's budget 8.0 GiB, floor 16.0: 6.0 GiB would be left 2026-09-19_17:52:09
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 13.9 GiB, this check's budget 8.0 GiB, floor 16.0: 5.9 GiB would be left 2026-09-19_17:52:29
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 14.0 GiB, this check's budget 8.0 GiB, floor 16.0: 6.0 GiB would be left 2026-09-19_17:52:30
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 13.5 GiB, this check's budget 8.0 GiB, floor 16.0: 5.5 GiB would be left 2026-09-19_17:53:31
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 14.0 GiB, this check's budget 8.0 GiB, floor 16.0: 6.0 GiB would be left 2026-09-19_17:53:51
+waiting: pos 6/8, srv4: no room beside production -- MemAvailable 14.2 GiB, this check's budget 8.0 GiB, floor 16.0: 6.2 GiB would be left 2026-09-19_17:54:12
+waiting: pos 6/9, srv4: no room beside production -- MemAvailable 14.2 GiB, this check's budget 8.0 GiB, floor 16.0: 6.2 GiB would be left 2026-09-19_17:54:54
+waiting: pos 6/10, srv4: no room beside production -- MemAvailable 14.2 GiB, this check's budget 8.0 GiB, floor 16.0: 6.2 GiB would be left 2026-09-19_17:55:12
+waiting: pos 6/10, srv4: no room beside production -- MemAvailable 14.1 GiB, this check's budget 8.0 GiB, floor 16.0: 6.1 GiB would be left 2026-09-19_17:55:14
+waiting: pos 6/10, srv4: no room beside production -- MemAvailable 13.9 GiB, this check's budget 8.0 GiB, floor 16.0: 5.9 GiB would be left 2026-09-19_17:55:35
+waiting: pos 6/10, srv4: no room beside production -- MemAvailable 15.0 GiB, this check's budget 8.0 GiB, floor 16.0: 7.0 GiB would be left 2026-09-19_17:55:56
+waiting: pos 6/11, srv4: no room beside production -- MemAvailable 15.0 GiB, this check's budget 8.0 GiB, floor 16.0: 7.0 GiB would be left 2026-09-19_17:56:15
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.0 GiB, this check's budget 8.0 GiB, floor 16.0: 5.0 GiB would be left 2026-09-19_17:56:17
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 12.7 GiB, this check's budget 8.0 GiB, floor 16.0: 4.7 GiB would be left 2026-09-19_17:56:38
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.0 GiB, this check's budget 8.0 GiB, floor 16.0: 5.0 GiB would be left 2026-09-19_17:57:39
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.2 GiB, this check's budget 8.0 GiB, floor 16.0: 5.2 GiB would be left 2026-09-19_17:58:00
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 11.7 GiB, this check's budget 8.0 GiB, floor 16.0: 3.7 GiB would be left 2026-09-19_17:58:21
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 11.6 GiB, this check's budget 8.0 GiB, floor 16.0: 3.6 GiB would be left 2026-09-19_17:58:22
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.1 GiB, this check's budget 8.0 GiB, floor 16.0: 5.1 GiB would be left 2026-09-19_17:58:42
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.0 GiB, this check's budget 8.0 GiB, floor 16.0: 5.0 GiB would be left 2026-09-19_17:59:03
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 12.8 GiB, this check's budget 8.0 GiB, floor 16.0: 4.8 GiB would be left 2026-09-19_17:59:23
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.2 GiB, this check's budget 8.0 GiB, floor 16.0: 5.2 GiB would be left 2026-09-19_17:59:44
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.1 GiB, this check's budget 8.0 GiB, floor 16.0: 5.1 GiB would be left 2026-09-19_18:01:09
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.2 GiB, this check's budget 8.0 GiB, floor 16.0: 5.2 GiB would be left 2026-09-19_18:01:51
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.4 GiB, this check's budget 8.0 GiB, floor 16.0: 5.4 GiB would be left 2026-09-19_18:02:11
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.3 GiB, this check's budget 8.0 GiB, floor 16.0: 5.3 GiB would be left 2026-09-19_18:02:31
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.1 GiB, this check's budget 8.0 GiB, floor 16.0: 5.1 GiB would be left 2026-09-19_18:02:53
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.4 GiB, this check's budget 8.0 GiB, floor 16.0: 5.4 GiB would be left 2026-09-19_18:03:34
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 12.6 GiB, this check's budget 8.0 GiB, floor 16.0: 4.6 GiB would be left 2026-09-19_18:04:16
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.1 GiB, this check's budget 8.0 GiB, floor 16.0: 5.1 GiB would be left 2026-09-19_18:04:36
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 12.5 GiB, this check's budget 8.0 GiB, floor 16.0: 4.5 GiB would be left 2026-09-19_18:04:57
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 12.4 GiB, this check's budget 8.0 GiB, floor 16.0: 4.4 GiB would be left 2026-09-19_18:04:58
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.0 GiB, this check's budget 8.0 GiB, floor 16.0: 5.0 GiB would be left 2026-09-19_18:05:18
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.1 GiB, this check's budget 8.0 GiB, floor 16.0: 5.1 GiB would be left 2026-09-19_18:05:38
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.4 GiB, this check's budget 8.0 GiB, floor 16.0: 5.4 GiB would be left 2026-09-19_18:05:59
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:40
+waiting: pos 5/11, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:41
+waiting: pos 6/12, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:42
+waiting: pos 5/11, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:51
+waiting: pos 4/10, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:52
+waiting: pos 4/9, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:54
+waiting: pos 4/8, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:55
+waiting: pos 4/7, srv4: no room beside production -- MemAvailable 13.6 GiB, this check's budget 8.0 GiB, floor 16.0: 5.6 GiB would be left 2026-09-19_18:06:56
+waiting: pos 4/7 2026-09-19_18:07:01
+waiting: pos 3/6, held by q38leave-0919b [single] (pid 1219956@srv2, since 18:07, est 15m, carry H4 rerun on a quiet GB10: a leave behind a stand-in TP sum, off/pdl/prefetch) 2026-09-19_18:07:02
+waiting: pos 2/5, held by sm121-batchA-0919b [single] (pid 2276677@srv2, since 18:07, est 50m, SM121 intake batch A: U13 GDN prefill, U11 FP8 GEMM past the L2, U15 sanitizer) 2026-09-19_18:07:16
+waiting: pos 2/5, held by sm121-batchA-0919b [single] (pid 2276677@srv2, since 18:07, est 50m, SM121 intake batch A: U13 GDN prefill, U11 FP8 GEMM past the L2, U15 sanitizer), srv4: a probe is already running there (st-probe-srv2-2293371) 2026-09-19_18:07:22
+waiting: pos 2/5, srv4: a probe is already running there (st-probe-srv2-2293371) 2026-09-19_18:08:01
+waiting: pos 1/4, held by q38packets-0919a [single] (pid 1324568@srv2, since 18:08, est 20m, carry H5: rank packets folded by the leave vs the consumer, oracle bytes + GPU-side timing; GLM packet gates) 2026-09-19_18:08:04
+waiting: pos 1/4, held by q38packets-0919a [single] (pid 1324568@srv2, since 18:08, est 20m, carry H5: rank packets folded by the leave vs the consumer, oracle bytes + GPU-side timing; GLM packet gates), srv4: a probe is already running there (st-probe-srv2-2303483) 2026-09-19_18:08:25
+waiting: pos 1/4, srv4: a probe is already running there (st-probe-srv2-2303483) 2026-09-19_18:09:44
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-q38direct-0919a-20260919-175051.txt
+GO q38direct-0919a 2026-09-19_18:09:48
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+{"direct_producer_timing": {"shape": [4096, 2048], "rows": 8, "cache": "warm", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 187.33, "min": 184.34}, "direct": {"median": 39.05, "min": 38.22}}, "direct_saves_us_median": 148.28}}
+{"direct_producer_timing": {"shape": [4096, 2048], "rows": 8, "cache": "evicted", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 480.57, "min": 189.28}, "direct": {"median": 44.42, "min": 43.9}}, "direct_saves_us_median": 436.15}}
+{"direct_producer_timing": {"shape": [4096, 2048], "rows": 16, "cache": "warm", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 213.86, "min": 211.58}, "direct": {"median": 46.31, "min": 43.32}}, "direct_saves_us_median": 167.55}}
+{"direct_producer_timing": {"shape": [4096, 2048], "rows": 16, "cache": "evicted", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 490.85, "min": 216.06}, "direct": {"median": 49.45, "min": 48.67}}, "direct_saves_us_median": 441.4}}
+{"direct_producer_timing": {"shape": [4096, 3072], "rows": 8, "cache": "warm", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 192.04, "min": 190.68}, "direct": {"median": 45.59, "min": 44.96}}, "direct_saves_us_median": 146.45}}
+{"direct_producer_timing": {"shape": [4096, 3072], "rows": 8, "cache": "evicted", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 500.66, "min": 352.33}, "direct": {"median": 48.78, "min": 48.02}}, "direct_saves_us_median": 451.88}}
+{"direct_producer_timing": {"shape": [4096, 3072], "rows": 16, "cache": "warm", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 220.26, "min": 218.27}, "direct": {"median": 52.42, "min": 51.18}}, "direct_saves_us_median": 167.84}}
+{"direct_producer_timing": {"shape": [4096, 3072], "rows": 16, "cache": "evicted", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 529.54, "min": 381.82}, "direct": {"median": 55.67, "min": 54.6}}, "direct_saves_us_median": 473.87}}
+{"direct_producer_timing": {"shape": [4096, 4096], "rows": 8, "cache": "warm", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 192.85, "min": 191.32}, "direct": {"median": 34.3, "min": 33.54}}, "direct_saves_us_median": 158.55}}
+{"direct_producer_timing": {"shape": [4096, 4096], "rows": 8, "cache": "evicted", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 219.78, "min": 200.22}, "direct": {"median": 42.3, "min": 41.17}}, "direct_saves_us_median": 177.48}}
+{"direct_producer_timing": {"shape": [4096, 4096], "rows": 16, "cache": "warm", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 226.47, "min": 222.58}, "direct": {"median": 57.25, "min": 54.41}}, "direct_saves_us_median": 169.22}}
+{"direct_producer_timing": {"shape": [4096, 4096], "rows": 16, "cache": "evicted", "chain": 8, "same_bytes": true, "us_a_sum": {"gemm + packets": {"median": 544.06, "min": 265.81}, "direct": {"median": 60.68, "min": 60.12}}, "direct_saves_us_median": 483.38}}
