@@ -10,8 +10,9 @@ this table is where its wire items land (engine/kernels/cells.py names the servi
                   the shared expert's 160-column down projection); not a table entry, as in GLM-5.3's profile
     kda_chunk     gdn_chunk: chunk_kda_with_decay over the decay `gdn_gates` computes (engine/kernels/gdn)
     kda_ring      gdn_ring / gdn_ring_rows: recurrent_gdn_ring(_rows), GDN's gate computed in the ring kernel
-    mhc_decode    hc_*: engine/kernels/gated_residual -- the gated residual in five launches a site, not the
-    mhc_prefill     dozen of the composed form the wizard's recipe named (its "fused kernel when launches matter")
+    mhc_decode    hc_*: engine/kernels/gated_residual -- the gated residual in five launches a site (three for a
+    mhc_prefill     decode step's rows: mix_rows), not the dozen of the composed form the wizard's recipe named (its
+                    "fused kernel when launches matter")
     mla           qsa_attend: the BF16-KV sparse paged GQA ported with the QSA ops (engine/kernels/qsa), the kernel
                   that served this model in the vLLM stack, instead of glue.gqa's one-scale e4m3 latent
     indexer       qsa_compress / qsa_store / qsa_select: engine/kernels/qsa
@@ -38,7 +39,8 @@ class Lanes:
     hc_leave_norm: object   # (h, out, inject, w, eps, hc) -> (h in place, normed)
     hc_mix: object          # (normed, down_inject [r(+hc), hc*H], up [hc*H, r], hc, *, inject, project_down=None,
                             #  project_up=None) -> (mixed [N, H], inject [N, hc] | None); the projections replace the
-                            #  BF16 matmuls when a quantised lane serves the mixer (net.Qwen38Net hc_fp8)
+                            #  BF16 matmuls when a quantised lane serves the mixer (net.Qwen38Net hc_fp8); without
+                            #  them a decode step's rows take the served lane's two-launch fold (gated_residual.mix_rows)
     # GatedDeltaNet (engine/kernels/gdn, engine/kernels/kda, the causal conv kernels)
     gdn_gates: object       # (a [N, HV], b [N, HV], A_log f32, dt_bias f32, *, sigmoid_beta) -> (decay f32 [N, HV], beta [N, HV])
     gdn_chunk: object       # (q, k [1, T, Hk, D], v [1, T, HV, D], decay f32 [1, T, HV], beta [1, T, HV] sigmoided,
@@ -93,8 +95,8 @@ class Lanes:
                                     #  row what one call does. The selection lane's own statement -- it picks its
                                     #  selector by the rows it is handed; None: no lane has said, and no net splits
     rows_linear: object = None      # (x [N, K] bf16, w [M, K] bf16) -> x @ w.T: a decode step's handful of rows by
-                                    #  a weight it reads once -- the router and the mixers' down projections
-                                    #  (engine/kernels/common/skinny_gemv, torch.mm past its shapes); None: torch.mm
+                                    #  a weight it reads once -- the router (engine/kernels/common/skinny_gemv,
+                                    #  torch.mm past its shapes); None: torch.mm
 
 
 def route_softmax_topk(logits: torch.Tensor, k: int) -> "tuple[torch.Tensor, torch.Tensor]":
@@ -416,14 +418,6 @@ def served(*, tp=None) -> Lanes:
             out.index_add_(0, token, pairs.float())
         return out.to(x.dtype)
 
-    def mix(normed, down_inject, up, hc, *, inject=True, project_down=None, project_up=None):
-        # the down projection is a weight [r(+hc), hc*H] read once for the step's rows: the skinny GEMV where it has
-        # the shape; a quantised lane's projection (hc_fp8) stays that lane's
-        if project_down is None:
-            def project_down(normed, w=down_inject):
-                return linear_rows(normed, w)
-        return hcr.mix(normed, down_inject, up, hc, inject=inject, project_down=project_down, project_up=project_up)
-
     def on_main(fn):
         if tp is None:
             return fn
@@ -434,7 +428,7 @@ def served(*, tp=None) -> Lanes:
     # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
     md.configure_ep_zero_weight_micro(True)
     common = common_lanes()
-    bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
+    bound = [hcr.norm_streams, hcr.leave, hcr.leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
              recurrent_gdn_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
              qsa.norm_rope_partial, qsa.qsa_store_cache_rows, qsa.qsa_compress_groups_with_ratio,
              qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, route_softmax_topk, moe]

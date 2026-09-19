@@ -177,8 +177,8 @@ def main():
         qwen38_gemv(args.output)
         return
     if args.lanes == 'qwen38_site':
-        # component timings: a hyper-connection site's mixer on cuBLAS, with the skinny GEMV's down projection, and as
-        # two Triton launches (carry H1 + H2 over the skinny GEMV), 16 sites a graph -- what the fold is worth on a GB10
+        # component timings: a hyper-connection site's mixer as five launches on cuBLAS and as gated_residual.mix serves
+        # a decode step's rows (two launches, carry H1 + H2), 16 sites a graph -- what the fold is worth on a GB10
         from probes.engine_qwen38_gemv import run_site as qwen38_site
         qwen38_site(args.output)
         return

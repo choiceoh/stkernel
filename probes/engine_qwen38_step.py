@@ -25,8 +25,9 @@ and the PLE injection are four unknowns from four layer sets, per graph and per 
         --output /cache/qwen38-step.json                                          (the queue's single-GPU lane)
 
 `--lanes qwen38_step_ab` builds every layer set twice, one after the other: the served lanes (`served`) and the same
-lanes with every BF16 product of a handful of rows back on torch.mm (`mm`: engine/kernels/common/skinny_gemv's table
-emptied, the lanes before it) -- the step and its families per arm, and the served arm less the other.
+lanes with the skinny GEMV's table emptied (`mm`: the router back on torch.mm, the mixer sites back to five launches on
+cuBLAS -- the lanes before engine/kernels/common/skinny_gemv) -- the step and its families per arm, and the served arm
+less the other.
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ KV_GIB = 0.25
 SPEC_K = 3                                # the operator's K (#1182: fleet --spec-k 3): verify 4 tokens, draft a chain of 3
 MAX_GIB = 4.0                             # this process's own device-memory ceiling: the lane's budget beside production
 FULL = {"fixed": 1, "gdn": 36, "qsa": 12, "ple": 1}
-ARMS = ("served", "mm")                   # qwen38_step_ab: the served lanes, and the skinny GEMV's shapes on torch.mm
+ARMS = ("served", "mm")                   # qwen38_step_ab: the served lanes, and the lanes before the skinny GEMV
 
 FAMILIES = (
     ("moe b12x", r"[Mm]oe|[Mm]icro|[Ss]tatic|[Dd]ynamic|b12x|kernel_cutlass"),
@@ -300,7 +301,7 @@ def assemble(builds: dict, F) -> dict:
 def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REPLAYS, kv_gib: float = KV_GIB,
             max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False, arm: str = "served") -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row.
-    `arm` "mm": the skinny GEMV's table emptied first, so its shapes run on torch.mm as the lanes did before it."""
+    `arm` "mm": the skinny GEMV's table emptied first -- the router on torch.mm, the mixers in five launches on cuBLAS."""
     import torch
     if arm not in ARMS:
         raise ValueError(f"arm {arm!r}: one of {ARMS}")

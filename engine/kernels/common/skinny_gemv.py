@@ -7,6 +7,8 @@ router [513, 2560] it took 27.9 / 33.6 / 35.7 us for 4 / 8 / 16 rows (94-74 GB/s
 the two tie (13.8 against 14.0, 31.0 against 31.1), and at the mixers' up projection [10240, 320] they tie at every row
 count (30.3-31.3 against 29.1-30.8) -- so `linear_rows` takes 2..16 rows of the shapes in CONFIGS and hands everything
 else to torch.mm: the same product in BF16 with FP32 accumulation, rounded once; only the order of the sums differs.
+The mixers do not call it: engine/kernels/gated_residual.mix_rows folds both of a site's products, with the launch after
+each, into two kernels over `rows_dot` and `split_sum` here, at the down projection's tile in CONFIGS.
 (probes/engine_qwen38_gemv, ticket q38gemv-0919c, 2026-09-19: CUDA graphs of 16 calls, interleaved, weights rotated
 over 64 MB, production idle beside it; medians of nine.)
 
@@ -39,14 +41,10 @@ _LOCKS: "dict[torch.device, torch.Tensor]" = {}
 
 
 @triton.jit
-def _skinny_gemv_kernel(X, W, OUT, PART, LOCKS, M, N, K, sx, sw, so, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-                        SPLIT: tl.constexpr, FP32_DOT: tl.constexpr):
-    pid_n, pid_k = tl.program_id(0), tl.program_id(1)
-    rows = tl.arange(0, 16)
-    cols = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-    span = tl.cdiv(tl.cdiv(K, SPLIT), BLOCK_K) * BLOCK_K         # whole tiles a split: none straddles two programs
-    k0 = pid_k * span
-    k1 = tl.minimum(k0 + span, K)
+def rows_dot(X, W, sx, sw, rows, cols, M, N, k0, k1, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+             FP32_DOT: tl.constexpr):
+    """[16, BLOCK_N] FP32: X's rows (< M, padded to 16) times W's rows `cols` (< N) over K in [k0, k1), BLOCK_K at a
+    time -- one read of each weight tile for every row. The kernels that fold a product into their store call it."""
     acc = tl.zeros((16, BLOCK_N), dtype=tl.float32)
     for k in range(k0, k1, BLOCK_K):
         ks = k + tl.arange(0, BLOCK_K)
@@ -56,19 +54,49 @@ def _skinny_gemv_kernel(X, W, OUT, PART, LOCKS, M, N, K, sx, sw, so, BLOCK_N: tl
         if FP32_DOT:                                              # the interpreter reads a BF16 dot's bits as integers
             x, w = x.to(tl.float32), w.to(tl.float32)
         acc += tl.dot(x, tl.trans(w))
+    return acc
+
+
+@triton.jit
+def split_span(K, pid_k, SPLIT: tl.constexpr, BLOCK_K: tl.constexpr):
+    """[k0, k1) of split `pid_k`: whole tiles a split, so none straddles two programs."""
+    span = tl.cdiv(tl.cdiv(K, SPLIT), BLOCK_K) * BLOCK_K
+    k0 = pid_k * span
+    return k0, tl.minimum(k0 + span, K)
+
+
+@triton.jit
+def split_sum(acc, PART, LOCKS, pid_n, pid_k, rows, cols, M, N, SPLIT: tl.constexpr):
+    """(total, last): this program's partial stored and counted in on its column block's arrival word; for the last
+    to arrive, the block's partials summed in split order and the word reset -- `total` is meaningful where `last`."""
+    keep = (rows[:, None] < M) & (cols[None, :] < N)
+    at = rows[:, None] * N + cols[None, :]
+    tl.store(PART + pid_k * M * N + at, acc, mask=keep)
+    arrived = tl.atomic_add(LOCKS + pid_n, 1, sem="acq_rel")      # the partial above is visible to whoever sums
+    last = arrived == SPLIT - 1
+    total = tl.zeros_like(acc)
+    if last:
+        for s in range(SPLIT):
+            total += tl.load(PART + s * M * N + at, mask=keep, other=0.0, cache_modifier=".cg")
+        tl.atomic_xchg(LOCKS + pid_n, 0)
+    return total, last
+
+
+@triton.jit
+def _skinny_gemv_kernel(X, W, OUT, PART, LOCKS, M, N, K, sx, sw, so, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+                        SPLIT: tl.constexpr, FP32_DOT: tl.constexpr):
+    pid_n, pid_k = tl.program_id(0), tl.program_id(1)
+    rows = tl.arange(0, 16)
+    cols = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    k0, k1 = split_span(K, pid_k, SPLIT, BLOCK_K)
+    acc = rows_dot(X, W, sx, sw, rows, cols, M, N, k0, k1, BLOCK_N, BLOCK_K, FP32_DOT)
     keep = (rows[:, None] < M) & (cols[None, :] < N)
     if SPLIT == 1:
         tl.store(OUT + rows[:, None] * so + cols[None, :], acc.to(OUT.dtype.element_ty), mask=keep)
     else:
-        at = rows[:, None] * N + cols[None, :]
-        tl.store(PART + pid_k * M * N + at, acc, mask=keep)
-        arrived = tl.atomic_add(LOCKS + pid_n, 1, sem="acq_rel")  # the partial above is visible to whoever sums
-        if arrived == SPLIT - 1:
-            total = tl.zeros((16, BLOCK_N), dtype=tl.float32)
-            for s in range(SPLIT):
-                total += tl.load(PART + s * M * N + at, mask=keep, other=0.0, cache_modifier=".cg")
+        total, last = split_sum(acc, PART, LOCKS, pid_n, pid_k, rows, cols, M, N, SPLIT)
+        if last:
             tl.store(OUT + rows[:, None] * so + cols[None, :], total.to(OUT.dtype.element_ty), mask=keep)
-            tl.atomic_xchg(LOCKS + pid_n, 0)
 
 
 def prepare(device) -> torch.Tensor:
@@ -141,4 +169,5 @@ def qualify(device, rows=(1, 4, 16)) -> dict:
     return out
 
 
-__all__ = ["CONFIGS", "MAX_ROWS", "MIN_ROWS", "gemv", "linear_rows", "prepare", "qualify"]
+__all__ = ["CONFIGS", "MAX_ROWS", "MIN_ROWS", "gemv", "linear_rows", "prepare", "qualify", "rows_dot", "split_span",
+           "split_sum"]
