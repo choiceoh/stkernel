@@ -258,6 +258,26 @@ class EagerMoeTests(unittest.TestCase):
         self.assertEqual(eager_counts(), [8, 1, 2, 3, 4, 5, 6, 7])
         self.assertEqual(sorted(eager_counts()), list(range(1, EAGER_PAIRS + 1)))
 
+    def test_with_the_local_experts_one_count_in_each_dynamic_band_follows(self):
+        from engine.profiles.qwen38.warmup import eager_counts
+        self.assertEqual(eager_counts(local=128), [8, 1, 2, 3, 4, 5, 6, 7, 9, 1920, 6144, 12288])
+
+    def test_the_bands_are_the_dispatchers_tile_crossovers(self):
+        # moe_dispatch._select_dynamic_tile_m: 16 below 15 rows an expert, 32 below 48, 64 below 96, then 128 -- read
+        # from its source, so the warm pass and the dispatcher cannot drift apart unseen
+        import re
+        from engine.profiles.qwen38.warmup import DYNAMIC_BANDS, EAGER_PAIRS, eager_counts
+        source = (ROOT / "engine/kernels/b12x/moe_dispatch.py").read_text(encoding="utf-8")
+        body = source[source.index("def _select_dynamic_tile_m("):source.index("def _get_static_compact_cutover_pairs(")]
+        crossings = [(int(a), int(b)) for a, b in re.findall(r"if routed_rows < (\d+) \* num_experts:\s+return (\d+)", body)]
+        self.assertEqual(crossings, [(15, 16), (48, 32), (96, 64)])
+        self.assertEqual(DYNAMIC_BANDS, tuple(a for a, _ in crossings))
+
+        def tile(rows, experts=128):                       # the table, as the dispatcher reads it
+            return next((t for a, t in crossings if rows < a * experts), 128)
+        dynamic = eager_counts(local=128)[EAGER_PAIRS:]
+        self.assertEqual([tile(m) for m in dynamic], [16, 32, 64, 128])     # one launch a band, every band
+
     def test_it_is_the_dispatchers_micro_ceiling(self):
         source = (ROOT / "engine/kernels/b12x/moe_dispatch.py").read_text(encoding="utf-8")
         from engine.profiles.qwen38.warmup import EAGER_PAIRS
@@ -271,8 +291,9 @@ class EagerMoeTests(unittest.TestCase):
             net = EagerNet(rank=rank)
             paid = eager_moe(net)
             with self.subTest(rank=rank):
-                self.assertEqual([l["pairs"] for l in net.launches], [8, 1, 2, 3, 4, 5, 6, 7])
-                self.assertEqual([l["rows"] for l in net.launches], [8, 1, 2, 3, 4, 5, 6, 7])
+                counts = [8, 1, 2, 3, 4, 5, 6, 7, 9, 1920, 6144, 12288]           # micro counts, then a count a band
+                self.assertEqual([l["pairs"] for l in net.launches], counts)
+                self.assertEqual([l["rows"] for l in net.launches], counts)
                 self.assertTrue(all(l["compact"] and l["local_in_first_route"] for l in net.launches))
                 self.assertEqual({l["prefix"] for l in net.launches}, {"L0."})        # a target layer's experts
                 self.assertEqual(net.launches[0]["dtypes"], (torch.bfloat16, torch.int32, torch.float32))
@@ -280,7 +301,9 @@ class EagerMoeTests(unittest.TestCase):
                 self.assertTrue(all(len(set(row.tolist())) == row.numel() for row in ids))   # distinct routes a row
                 self.assertEqual(len(set(ids[:, 0].tolist())), 8)                               # distinct experts
                 self.assertTrue(bool(((ids >= 0) & (ids < 512)).all()))
-                self.assertEqual(list(paid), [f"eager/{m}" for m in (8, 1, 2, 3, 4, 5, 6, 7)])
+                self.assertEqual(list(paid), [f"eager/{m}" for m in counts])
+                big = net.launches[-1]["ids"][:, 0] - net.first_expert
+                self.assertEqual(torch.bincount(big.long(), minlength=128).tolist(), [96] * 128)   # spread evenly
                 self.assertEqual(net.votes, [0])
 
     def test_the_mtp_head_when_there_is_no_target_layer_and_nothing_on_fp8_experts(self):

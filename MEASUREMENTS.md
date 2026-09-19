@@ -4911,6 +4911,8 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **곁가지 하나.** 09-19 의 W8A16 항목(#1246)이 제목 줄을 두 번 들고 있었다(`PR #TBD` 와 `PR #1246`, 본문은 하나).
   `#TBD` 줄을 지웠다 — 본문은 손대지 않았다.
 
+### Qwen3.8 — dynamic MoE 타일 밴드를 eager 워밍업에 넣은 뒤 문 뒤에서 처음 쓰는 커널: K=1 8 · K=3 7, dynamic MoE 0 (2026-09-19, srv4 단일 GPU 레인 2회)
+- `--lanes qwen38_serve_compiles:K`(브랜치 `eager-moe-dynamic-bands` = main `b5613857` + 밴드 넷): b12x dynamic 커널이 요청 중 0(main 에서 3). 남은 것은 conv 5(#1238), `_mix_mean` 타일 1, QSA split-K merge 1(K=1), 점수 커널 G 1 변형 1 — 넷 모두 한 번 컴파일되면 디스크에 남는 유한 집합. 다른 세션 창의 `micro_m1/m3_…_t10_r80` 은 C=1 K=1 에서 재현되지 않음. 속도 주장 없음. [기록](measurements/qwen38_serve_compiles_20260919c/README.md).
 ### Qwen3.8 두 번째 운영자 창 — S2 입력 재사용 기각(o_proj +4.5~+13.6%, in_proj ±2%), H6 `--hc-fp8` 디코드 C=1 +9.6% 기각, M5 확인 쌍 무효 (2026-09-19 14:29~14:43, 네 Spark + srv4 단일 레인)
 
 운영자 "ㅇㅇ"(짧은 창 제안). main `4148c35f`(#1241·#1234·#1233), 런처 기본(K=1, one-shot, 4 행, `one`). prebuild 0 빌드, yield 14:29:02, 세 부팅(`off`·`one`·`fp8`)에
