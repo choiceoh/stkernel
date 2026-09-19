@@ -1,0 +1,55 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 21,
+ "calls_a_graph": 8,
+ "rows": {
+  "16": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 62.9,
+     "min": 36.8
+    },
+    "fp32 router (router_fp32)": {
+     "median": 67.2,
+     "min": 41.3
+    },
+    "widen only (x.float())": {
+     "median": 30.2,
+     "min": 3.6
+    }
+   }
+  },
+  "512": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 117.9,
+     "min": 92.5
+    },
+    "fp32 router (router_fp32)": {
+     "median": 253.8,
+     "min": 227.8
+    },
+    "widen only (x.float())": {
+     "median": 56.2,
+     "min": 30.3
+    }
+   }
+  },
+  "4096": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 748.0,
+     "min": 538.9
+    },
+    "fp32 router (router_fp32)": {
+     "median": 2329.7,
+     "min": 1596.0
+    },
+    "widen only (x.float())": {
+     "median": 547.9,
+     "min": 261.4
+    }
+   }
+  }
+ }
+}

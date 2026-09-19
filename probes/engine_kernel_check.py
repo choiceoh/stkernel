@@ -321,6 +321,11 @@ def main():
         from probes.engine_qwen38_ple import run as qwen38_ple_conv
         qwen38_ple_conv(args.output)
         return
+    if args.lanes == 'qwen38_router':
+        # the router projection: IEEE FP32 (router_fp32) against the BF16 matmul it replaced, decode and prefill rows
+        from probes.engine_qwen38_router import run as qwen38_router
+        qwen38_router(args.output)
+        return
     if args.lanes == 'qwen38_prefill' or args.lanes.startswith('qwen38_prefill:'):
         # component census: a prefill chunk's wall, device and host time by kernel family, solved from four small
         # nets of the rank file's own weights (--ranks); `:N` sets the chunk's tokens

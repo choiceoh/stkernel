@@ -1,0 +1,103 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 21,
+ "calls_a_graph": 8,
+ "rows": {
+  "16": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 37.2,
+     "min": 36.7
+    },
+    "bf16 mm [512] fp32 out": {
+     "median": 12.8,
+     "min": 12.5
+    },
+    "fp32 router (router_fp32)": {
+     "median": 41.5,
+     "min": 40.7
+    },
+    "mma router (router_logits_mma, bf16 gates)": {
+     "median": 18.2,
+     "min": 17.9
+    },
+    "widen only (x.float())": {
+     "median": 3.9,
+     "min": 3.7
+    }
+   },
+   "checks": {
+    "mma_vs_ieee_max": 1.430511474609375e-06,
+    "mma_vs_fp64_max": 1.1761439964175224e-06,
+    "ieee_vs_fp64_max": 6.239424692466855e-07,
+    "mma_rows_alike": true,
+    "ieee_rows_alike": false,
+    "mma_top8_is_ieee_top8": true
+   }
+  },
+  "512": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 91.9,
+     "min": 91.4
+    },
+    "bf16 mm [512] fp32 out": {
+     "median": 39.7,
+     "min": 39.1
+    },
+    "fp32 router (router_fp32)": {
+     "median": 227.9,
+     "min": 227.0
+    },
+    "mma router (router_logits_mma, bf16 gates)": {
+     "median": 82.9,
+     "min": 82.5
+    },
+    "widen only (x.float())": {
+     "median": 30.6,
+     "min": 30.2
+    }
+   },
+   "checks": {
+    "mma_vs_ieee_max": 1.9073486328125e-06,
+    "mma_vs_fp64_max": 1.559070369694382e-06,
+    "ieee_vs_fp64_max": 1.1329539120197296e-06,
+    "mma_rows_alike": true,
+    "ieee_rows_alike": false,
+    "mma_top8_is_ieee_top8": true
+   }
+  },
+  "4096": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 537.1,
+     "min": 535.6
+    },
+    "bf16 mm [512] fp32 out": {
+     "median": 187.2,
+     "min": 186.5
+    },
+    "fp32 router (router_fp32)": {
+     "median": 1417.4,
+     "min": 1413.8
+    },
+    "mma router (router_logits_mma, bf16 gates)": {
+     "median": 230.3,
+     "min": 228.8
+    },
+    "widen only (x.float())": {
+     "median": 261.5,
+     "min": 259.7
+    }
+   },
+   "checks": {
+    "mma_vs_ieee_max": 7.62939453125e-06,
+    "mma_vs_fp64_max": 1.8245773389935493e-06,
+    "ieee_vs_fp64_max": 7.775670383125544e-06,
+    "mma_rows_alike": true,
+    "ieee_rows_alike": false,
+    "mma_top8_is_ieee_top8": true
+   }
+  }
+ }
+}

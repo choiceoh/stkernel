@@ -21,6 +21,9 @@ RESIDUAL_BYTES_PER_TOKEN = 4 * 2560 * 2          # hc_count x hidden, bf16
 CONSTRUCTION_UPPER_GIB = 8.77
 RUNTIME_FLOOR_GIB = 5.54                         # GLM 40th boot table; re-measure
 OS_RESERVE_MULTIPLE = 2.0
+# base/kv_tier: the conversation tier's 64 MiB pinned staging + 64 MiB device scratch and the prefix tier's 32 + 32 --
+# an upper bound: the fleet's default mapped staging makes each scratch an alias of its staging (fleet.py)
+NVME_STAGING_BYTES = 2 * (64 << 20) + 2 * (32 << 20)
 
 
 def budget(chunk: int = 4096, box_gib: "float | None" = None, tenants_gib: float = 0.0) -> Budget:
@@ -46,6 +49,8 @@ def budget(chunk: int = 4096, box_gib: "float | None" = None, tenants_gib: float
         Line(f"activation @ chunk {chunk:,}",
              chunk / 1024 * ACTIVATION_GIB_PER_1K + chunk * RESIDUAL_BYTES_PER_TOKEN / GIB, MEASURED,
              "GDN layer 0.286 GiB/1K linear (HF layer, shapes only); QSA kernel-bounded pending"),
+        Line("NVMe tier staging", NVME_STAGING_BYTES / GIB, DECLARED,
+             "kv_tier: pinned staging + device scratch, conversations and prefix tiers (mapped: one each)"),
     ]
     return Budget(box_gib, lines, label=f"Qwen3.8-Flash-Next, one rank of TEP=4, chunk {chunk:,}")
 

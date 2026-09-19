@@ -105,6 +105,8 @@ class Lanes:
                                     #  a weight it reads once -- the router (engine/kernels/common/skinny_gemv,
                                     #  torch.mm past its shapes); None: torch.mm
     router_logits: object = None   # (x BF16, w FP32) -> IEEE FP32 logits, including the top-k boundary's low bits
+    router_bf16: bool = False       # router_logits takes the checkpoint's BF16 gates as they are (router_fp32
+                                    #  .router_logits_mma: exact products, FP32 sums), so no FP32 copy is admitted
     leave: object = None            # how the served leaves meet the TP sum before them (served(leave=...), LEAVES);
                                     #  None: a table whose leaves are not the served kernel's
     ple_gate: object = None         # (h [N, hc*H], key [N, hc*H], value [N, H], q_norm, k_norm, conv_norm, eps, hc)
@@ -471,7 +473,8 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
-                 rows_linear=on_main(linear_rows), router_logits=on_main(router_fp32.router_logits),
+                 rows_linear=on_main(linear_rows), router_logits=on_main(router_fp32.router_logits_mma),
+                 router_bf16=True,
                  moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate), hc_site=on_main(hc_site),
                  ple_conv=on_main(ngram_gate.conv_add), leave=leave)
 

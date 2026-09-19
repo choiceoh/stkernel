@@ -326,7 +326,10 @@ class Qwen38Net:
         return out
 
     def router_nbytes(self):
-        """The target and MTP expert selectors, widened once in the admitted arena (GLM's IEEE FP32 router)."""
+        """The target and MTP expert selectors, widened once in the admitted arena (GLM's IEEE FP32 router); none where
+        the lanes' router reads the BF16 gates themselves (Lanes.router_bf16)."""
+        if getattr(getattr(self, "lanes", None), "router_bf16", False):
+            return 0
         return (len(self.layers) + int(self.mtp)) * self.F.experts * self.F.hidden * 4
 
     def prepare_routers(self, arena):
@@ -339,6 +342,9 @@ class Qwen38Net:
                 raise ValueError("Qwen router requires BF16 [experts + shared gate, hidden] weights")
         for prefix in prefixes:
             weight = self.p[prefix + "moe.gates"][:self.F.experts]
+            if getattr(getattr(self, "lanes", None), "router_bf16", False):
+                self._router_weights[prefix] = weight                  # the gates' own rows: exact in the MMA router
+                continue
             resident = arena.carve(weight.numel() * 4, f"router/{prefix}").view(F32).view_as(weight)
             resident.copy_(weight)
             self._router_weights[prefix] = resident
