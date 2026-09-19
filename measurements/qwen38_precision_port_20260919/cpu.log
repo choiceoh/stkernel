@@ -1,0 +1,8 @@
+  Qwen calibration: filed 1 blobs (filed 4096/131072 rows over 1 blobs); next boot packs GPTQ
+...............  rank 0: no boot dump under /tmp/tmpi84vghmc/file/dumps: NotADirectoryError: [Errno 20] Not a directory: '/tmp/tmpi84vghmc/file/dumps'
+.................ss.....s..............................................
+----------------------------------------------------------------------
+Ran 86 tests in 5.139s
+
+OK (skipped=3)
+  expert_layout: tile-major bytes read back row-major per expert OK

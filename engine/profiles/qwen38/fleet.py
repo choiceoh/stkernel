@@ -35,7 +35,8 @@ needs the GIL. Every rank writes its phase table (boot-rank{r}.json) and memory 
 --dump-dir, and rank 0 prints the table: the first fleet boot's 107.4 s and 40.1 s had no rows, only container
 timestamps.
 
-Not here yet: the asynchronous decode pipeline, the NVMe tier, self-calibration and video. Prefill runs
+Not here yet: the asynchronous decode pipeline, the NVMe tier and video. Target GPTQ self-calibration uses the shared
+collector, disarmed through warmup/capture; the next boot reads its stamped Hessians. Prefill runs
 eagerly.
 """
 from __future__ import annotations
@@ -173,7 +174,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
           mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
-          vision: str = "auto"):
+          vision: str = "auto", self_calibrate: bool = True):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background of `door_host_half`) is joined in its own row before the capture: the capture is Python
     dispatch, and a host thread still running there would take the GIL from it. Its grammar compiler is bound to the
@@ -191,6 +192,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     from engine.profiles.qwen38.boot import eos_ids, generation_defaults
     from engine.profiles.qwen38.caches import Qwen38Caches, cache_capacity, layout, snapshot_layout
     from engine.profiles.qwen38.net import Qwen38Net
+    from engine.profiles.qwen38 import calibration as calibrate
 
     F = facts.load(ckpt_meta)
     if spec_k is not None and spec_k != F.spec_k:
@@ -228,9 +230,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                                 f"(python3 -m engine.profiles.qwen38.preshard --vision --out {ranks_dir})")
     VF = eyes.load(ckpt_meta) if vision != "off" and vision_file.is_file() else None
     vspecs = eyes.specs(VF) if VF is not None else []
-    store = PackStore("/cache", comm.rank)
     arena_bytes = (total_bytes(specs) + 256 * (len(specs) + 64) + cache_layout.nbytes(nb, max_seqs)
-                   + snapshots * snapshot_bytes)
+                   + snapshots * snapshot_bytes + net.router_nbytes())
     files = sorted(Path(ranks_dir).glob("rank*of4.safetensors"))
     if VF is not None:
         arena_bytes += total_bytes(vspecs) + 256 * (len(vspecs) + 64)
@@ -255,6 +256,14 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         tuned_rank = rank_loader(tuned_path, expected_layout=mtp_tune.LAYOUT)
         tuned = set(mtp_tune.served_names(F)) & {s.name for s in specs}
         files.append(tuned_path)
+    calib_files = [*files, Path(ranks_dir) / facts.ple_file(comm.rank, facts.TP)]
+    weights_id = calibrate.identity(rank.metadata, calib_files, F.config, hc_fp8=hc_fp8)
+    store = PackStore("/cache", comm.rank, weights_id=weights_id, require_identity=True)
+    calib_plan, calib_bytes, deferred = calibrate.plan(net, specs, store) if self_calibrate else ([], 0, [])
+    arena_bytes += calib_bytes
+    store.release_pages()
+    recorder.gauge("calibration_GiB", round(calib_bytes / GIB, 3))
+    recorder.gauge("calibration_deferred", len(deferred))
     failure = memory = None
     try:
         report = prepare_allocation(arena_bytes, files, int((workspace_gib + OS_RESERVE_GIB) * GIB),
@@ -312,6 +321,13 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                 recorder.gauge(f"{name}_s", round(seconds, 3))
             for name, count in sorted(store.stats.items()):
                 recorder.gauge(f"packs_{name}", count)
+        with recorder.phase("prepare precision"):
+            net.prepare_routers(arena)
+            # GLM's IEEE GEMM extension must build outside CUDA graph capture.
+            from engine.kernels.router_fp32 import build as build_router
+            build_router()
+            calibration = calibrate.attach(net, calib_plan, arena,
+                                           max_decode_rows=max(32, max_seqs * (F.spec_k + 1)))
         if side:
             with recorder.phase("mtp experts"):
                 # D3: the side-file experts' kernel held to its torch form before a draft reads it
@@ -341,6 +357,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
                                       decode_token_budget=F.chunk_align + k)
             model.memory, model.arena = memory, arena
+            model.calibration, model.calibration_root = calibration, store.root
+            model.calibration_weights_id = weights_id
             if VF is not None:
                 model.composition.vision = eyes.Vision(VF, vviews, comm)
         with recorder.phase("wait for weight preparation"):
@@ -381,6 +399,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                     recorder.gauge(name.replace("/", "_") + "_s", seconds)
         with recorder.phase("capture decode"):
             capture(model, max_seqs, memory=memory, narrow_rows=narrow_rows if draft_threshold else 0)
+        if calibration is not None:
+            calibration.arm()
         if memory is not None:
             memory.checkpoint("ready")
             memory.ready = True
@@ -775,6 +795,8 @@ def main(argv=None) -> int:
                          "sum's programmatic dependent and pulls the site's down projection into L2 while the sum waits "
                          "for the other ranks; 'pdl' the dependent alone; 'off' the ordinary launch after the sum (the "
                          "rollback). The same bytes every way")
+    ap.add_argument("--no-self-calibrate", action="store_true",
+                    help="skip collecting missing target GPTQ Hessians (up to 8 GiB); existing matching blobs still pack")
     ap.add_argument("--vision", choices=("auto", "on", "off"), default="auto",
                     help="pictures: auto serves them when every rank has vision.safetensors next to its rank file, on "
                          "requires it, off serves text only (module docstring)")
@@ -849,7 +871,8 @@ def main(argv=None) -> int:
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
-                                              vision=a.vision, draft_candidates=a.draft_candidates,
+                                              vision=a.vision, self_calibrate=not a.no_self_calibrate,
+                                              draft_candidates=a.draft_candidates,
                                               draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
@@ -895,10 +918,15 @@ def main(argv=None) -> int:
         server.loop()
         return 0
     finally:
-        if model is not None:
-            from engine.profiles.qwen38.adapter import close
-            close(model)                        # the graphs' NCCL references go before the process group
-        comm.close()
+        try:
+            if model is not None:
+                from engine.profiles.qwen38.adapter import close
+                try:
+                    model.file_calibration()
+                finally:
+                    close(model)                # the graphs' NCCL references go before the process group
+        finally:
+            comm.close()
 
 
 if __name__ == "__main__":

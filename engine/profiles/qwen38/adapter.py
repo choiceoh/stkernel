@@ -545,7 +545,9 @@ def _served_model_class():
     from engine.base.composition import Segment as BaseSegment, Step as BaseStep
     from engine.base.sampler import sample
 
-    class ServedModel(ComposedModel):
+    from engine.profiles.qwen38.calibration import Lifecycle
+
+    class ServedModel(Lifecycle, ComposedModel):
         """base/composed.ComposedModel with a verify step that reads the host once for its picks.
 
         The base verify picks one position at a time -- a device read, and for a sampled row four small uploads, per

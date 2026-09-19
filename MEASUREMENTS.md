@@ -5023,3 +5023,7 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **남은 PLE torch 26.5 ms** 는 dilated causal conv 의 torch 형태 — 다음 레버. **플릿 onepass 미측정**(창은 다른 세션 임대 중, D17 은 다음 창).
   [상세·원시](measurements/qwen38_ple_gate_20260919/README.md).
 
+
+### Qwen3.8 GLM 정밀도 이식 (2026-09-19)
+
+GLM의 IEEE FP32 라우터·W8A16 검증 헤드·타깃 GPTQ 자기 보정 배선을 Qwen으로 옮겼다. GB10 셀 검사 **83개 통과, 스킵 0**. 실제 헤드 크기의 합성 가중치에서 같은 FP8 가중치를 기준으로 입력·누적·최종 반올림 오차 RMSE가 W8A8 **0.0267** → W8A16 **0.00168**(1/4/16행). 수집 대상 193곳, **2.804 GiB/랭크**, 워밍업·가상 행 제외, 체크포인트 표식 검사·자동 저장을 연결했다. 전체 TP4 출력 품질·수용률·속도·운영 배포 판정은 아니다. [원시 로그·이식 범위·재현](measurements/qwen38_precision_port_20260919/README.md).

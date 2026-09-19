@@ -149,7 +149,7 @@ class SoftmaxTopkTests(unittest.TestCase):
         from engine.kernels import moe_route
         scores = self.scores(2)
         cases = {
-            "fp32 scores": lambda: moe_route.softmax_topk(scores.float(), K),
+            "fp16 scores": lambda: moe_route.softmax_topk(scores.half(), K),
             "strided columns": lambda: moe_route.softmax_topk(scores.t().contiguous().t(), K),
             "more routes than experts": lambda: moe_route.softmax_topk(scores, 9, experts=8),
             "more experts than columns": lambda: moe_route.softmax_topk(scores, K, experts=E + 2),
@@ -210,13 +210,13 @@ class LayerTests(unittest.TestCase):
             with self.subTest(first=first, sentinel=sentinel):
                 composed = self.layer(x, gates, first=first, sentinel=sentinel, fused=False)
                 fused = self.layer(x, gates, first=first, sentinel=sentinel, fused=True)
-                self.assertEqual(fused["shape"], ((5, self.EXPERTS + 1), self.LOCAL, self.H))
+                self.assertEqual(fused["shape"], ((5, self.EXPERTS), self.LOCAL, self.H))
                 (ids, w, was_local), (want_ids, want_w, composed_local) = fused["routes"], composed["routes"]
                 self.assertEqual((was_local, composed_local), (True, False))
                 self.assertTrue(torch.equal(ids, want_ids))
                 self.assertTrue(torch.equal(w == 0, want_w == 0))
-                # one BF16 step under the interpreter's truncating cast, half of one on a GPU
-                torch.testing.assert_close(w, want_w, rtol=2 ** -7 if INTERPRET else 2 ** -8, atol=0)
+                # FP32 router scores keep FP32 weights on both paths, including the fused EP remap.
+                torch.testing.assert_close(w, want_w, rtol=2e-6, atol=0)
                 self.assertTrue(torch.equal(fused["gate"], composed["gate"]))      # torch's sigmoid on both paths
                 self.assertTrue(torch.equal(fused["gate"], torch.sigmoid((x @ gates.t())[:, self.EXPERTS:].float())))
 
@@ -239,7 +239,7 @@ class LaneTests(unittest.TestCase):
         net = (ROOT / "engine/profiles/qwen38/net.py").read_text(encoding="utf-8")
         self.assertIn("lanes.route_local(scores, F.topk_experts", net)
         self.assertIn("compact=False, local=True)", net)
-        self.assertIn("gate = torch.sigmoid(scores[:, F.experts:].float())", net)      # never the launch's exp
+        self.assertIn("gate = torch.sigmoid(shared_score.float())", net)      # never the launch's exp
 
 
 if __name__ == "__main__":

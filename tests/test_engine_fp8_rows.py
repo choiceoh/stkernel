@@ -46,11 +46,10 @@ class RoutingTests(unittest.TestCase):
     def test_a_lane_that_did_not_opt_in_stays_on_deep_gemm(self):
         self.assertEqual(self.run_rows(self.lane(False), 4), ["deep_gemm"])
 
-    def test_only_qwen38s_head_opts_in(self):
-        from pathlib import Path
-        root = Path(__file__).resolve().parents[1]
-        users = [p for p in (root / "engine").rglob("*.py") if "decode_rows=True" in p.read_text(encoding="utf-8")]
-        self.assertEqual([p.relative_to(root).as_posix() for p in users], ["engine/profiles/qwen38/net.py"])
+    def test_qwen38s_head_keeps_bf16_decode_inputs(self):
+        from tests.test_engine_qwen38_consume_dense import ConsumeDenseTests
+        net, _ = ConsumeDenseTests().prepared(False)
+        self.assertEqual(net.dense["head"].options["decode_rows"], "w8a16")
 
     def test_one_tile_for_every_decode_row_count(self):
         from engine.kernels.dense.fp8_rows import MAX_ROWS, tile

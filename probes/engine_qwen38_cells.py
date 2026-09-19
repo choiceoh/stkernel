@@ -34,6 +34,8 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               'tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests',
               'tests.test_engine_qwen38_kernels.SparseAttentionTests',
               'tests.test_engine_qwen38_kernels.NormRopeTests',
+              'tests.test_engine_qwen38_precision_port.GpuPrecisionPortTests',
+              'tests.test_engine_qwen38_shared_overlap.ForkTests',
               'tests.test_engine_qwen38_moe_route.SoftmaxTopkTests', 'tests.test_engine_qwen38_moe_route.LayerTests',
               'tests.test_engine_gdn_chunk_native.NativeChunkTests',
               # the QSA selection's folds on the served kernels (carry Q8, Q11): on a GB10 the split step is the
