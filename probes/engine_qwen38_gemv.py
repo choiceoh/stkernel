@@ -381,7 +381,7 @@ def run_site_components(output=None) -> dict:
 
 
 # down tiles a whole site tries with the streams normalised inside the fold, besides the table's
-WHOLE_TRIES = ((128, 64, 64, 4, 3, 1), (256, 64, 64, 8, 3, 1), (128, 128, 32, 8, 3, 1), (64, 128, 64, 4, 3, 2))
+WHOLE_TRIES = ((128, 64, 64, 4, 3, 1), (128, 128, 64, 8, 3, 1), (128, 128, 32, 8, 3, 1), (64, 128, 64, 4, 3, 2))
 
 
 def run_site_whole(output=None) -> dict:

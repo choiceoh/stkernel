@@ -42,10 +42,14 @@ third of the leave's bytes): the leave stores each stream's scale [N, hc] FP32 i
 launches normalise each tile of the streams as they read it -- the stream norm's own arithmetic on the same scale, so
 the operand is the normalised streams' bytes and the outputs are leave_norm-then-mix_block's byte for byte.
 
-On a GB10 (q38sitecmp-0919a, eight sites a graph, interleaved): up and the mean 1,703 -> 815 us a site at 4,096 rows
-(x2.09), x1.66 at 2,048, x1.65 at 1,024, x1.39 at 512 -- and the output byte for byte cuBLAS's up with `_mix_mean`.
-The down projection and the gates, before the column blocks were adjacent programs: 590 -> 557 us at 4,096 rows at
-128 x 128 x 32 tiles (-5.7%), level with cuBLAS at 1,024 and 2,048 rows, behind it at 512 (+24%).
+On a GB10 (eight sites a graph, interleaved; beside production, so the minima of nine rounds): up and the mean 1,703 ->
+815 us a site at 4,096 rows (x2.09), x1.66 at 2,048, x1.65 at 1,024, x1.39 at 512 (q38sitecmp-0919a, an idle GPU) -- and
+the output byte for byte cuBLAS's up with `_mix_mean`. The down projection and the gates at the table's tiles
+(q38sitecmp-0919d): 584 -> 532 us at 4,096 rows, 298 -> 268 at 2,048, 168 -> 164 at 1,024, and 86 -> 102 at 512, where
+the whole site still wins on the write it no longer makes. At 4,096 rows the down fold is the MMA's: 27.2 GFLOP of it
+padded to 384 columns, about 51 TFLOPS. The whole site, leave to mixed, at the first table's down tiles (q38sitewhole-0919a:
+128 x 64 x 64 from 512 rows, 128 x 128 x 32 from 4,096): 3,756 -> 2,919 us at 4,096 rows, 2,380 -> 1,746 at 2,048,
+1,152 -> 812 at 1,024; the leave alone 1,554 -> 1,148 us without the normalised write.
 
 The arithmetic after each product is `_gates`' and `_mix_mean`'s, on the same BF16 product, so the site's outputs are
 byte for byte the five-launch site's with the same products (probes/engine_qwen38_gemv, q38site-0919a). On a GB10 at
@@ -88,7 +92,7 @@ PREFILL_ROWS = 512                          # rows from this take `mix_block` (a
 # mix_block's down tile (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages, split) by the rows it serves from, the last entry the
 # rows reach; rows short of every entry take cuBLAS and `_gates`. Its up tile (BLOCK_M, BLOCK_D, BLOCK_K, warps, stages)
 # at every row.
-DOWN_TILES = ((512, (128, 64, 64, 4, 3, 1)), (4096, (128, 128, 32, 8, 3, 1)))
+DOWN_TILES = ((512, (64, 128, 64, 4, 3, 2)), (1024, (128, 64, 64, 4, 3, 1)), (2048, (128, 128, 64, 8, 3, 1)))
 UP_BLOCK_TILE = (64, 64, 32, 4, 4)
 UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
