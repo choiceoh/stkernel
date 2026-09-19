@@ -1,0 +1,8 @@
+{
+  "repository": "Qwen/Qwen3.8-Flash-Next",
+  "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+  "url": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/de4b8e4d43b917e7706784d8bb445c9af86a3540/chat_template.jinja",
+  "sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+  "license": "qwen-community-1.0",
+  "served_copies": "byte-identical in /home/choiceoh/models/st-qwen38-tep4, qwen38-flash-next-nvfp4 and qwen38-flash-next-nvidia-nvfp4 on srv2 (2026-09-20)"
+}

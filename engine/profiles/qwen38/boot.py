@@ -46,13 +46,19 @@ def template_kwargs(kwargs) -> dict:
 
 
 def chat_renderer(ckpt: Path):
-    """messages -> prompt text through the checkpoint's chat template (transformers renders it)."""
+    """messages -> prompt text through the checkpoint's chat template (transformers renders it).
+
+    Leading system turns go in as one: this template writes a single system block and raises 'System message must be
+    at the beginning' on a second, which an OpenAI client that sends `system` and `developer` instructions produces
+    (base/serve.one_system). GLM-5.3's template writes a block per system turn and needs nothing."""
     from transformers import AutoTokenizer
+    from engine.base.serve import one_system
     t = AutoTokenizer.from_pretrained(str(ckpt))
 
     def render(messages, kwargs, *, generation_prompt: bool = True, continue_final: bool = False):
         extra = {"continue_final_message": True} if continue_final else {}
-        return t.apply_chat_template(messages, tokenize=False, add_generation_prompt=generation_prompt and not continue_final,
+        return t.apply_chat_template(one_system(messages), tokenize=False,
+                                     add_generation_prompt=generation_prompt and not continue_final,
                                      **template_kwargs(kwargs), **extra)
     return render
 

@@ -1330,6 +1330,98 @@ class TemplateMessagesTests(unittest.TestCase):
             with self.subTest(role=role), self.assertRaisesRegex(RequestError, "is not served"):
                 template_messages([{"role": role, "content": "x"}])
 
+    def test_a_think_block_folded_into_content_becomes_reasoning_content(self):
+        """A client that showed the reasoning inline and sent the display text back: the template renders reasoning
+        from `reasoning_content` alone, and would write an empty block and then the inline one."""
+        from engine.base.serve import THINK_TAGS, inline_think, template_messages
+        self.assertEqual(inline_think("<think>\nhmm\n</think>\n\nHello!"), ("hmm", "Hello!"))
+        self.assertEqual(inline_think("<think></think>Hello!"), ("", "Hello!"))
+        self.assertEqual(inline_think("</think>\n\nHello!"), ("", "Hello!"))                 # the template opened it
+        self.assertEqual(inline_think("<think>\nnever closed"), None)
+        self.assertEqual(inline_think("Hello! <think>not at the start</think>"), None)
+        self.assertEqual(inline_think([{"type": "text", "text": "<think>x</think>y"}]), None)   # parts are the template's
+        self.assertEqual(inline_think(None), None)
+        self.assertEqual(inline_think("<r>x</r>y", ("<r>", "</r>")), ("x", "y"))
+        folded = {"role": "assistant", "content": "<think>\nhmm\n</think>\n\nHello!"}
+        own = {"role": "assistant", "content": "<think>\nhmm\n</think>\n\nHello!", "reasoning_content": "kept"}
+        via_reasoning = {"role": "assistant", "content": "<think>\nhmm\n</think>\n\nHello!", "reasoning": "kept"}
+        user = {"role": "user", "content": "<think>not a turn's reasoning</think>"}
+        out = template_messages([user, folded, own, via_reasoning], think=THINK_TAGS)
+        self.assertIs(out[0], user)                                                          # only assistant turns
+        self.assertEqual(out[1], {"role": "assistant", "content": "Hello!", "reasoning_content": "hmm"})
+        self.assertIs(out[2], own)                                                           # a turn with its own reasoning
+        self.assertEqual(out[3]["reasoning_content"], "kept")
+        self.assertEqual(out[3]["content"], folded["content"])
+        self.assertIs(template_messages([user, folded])[1], folded)                          # no tags: text stays text
+        self.assertEqual(folded["content"], "<think>\nhmm\n</think>\n\nHello!")                # the caller's untouched
+
+    def test_one_system_joins_leading_system_turns_only(self):
+        from engine.base.serve import one_system, template_messages
+        first, second = {"role": "system", "content": "Be brief.", "name": "ops"}, {"role": "system", "content": "Be kind."}
+        user, late = {"role": "user", "content": "hi"}, {"role": "system", "content": "later"}
+        out = one_system([first, second, user, late])
+        self.assertEqual(out, [{"role": "system", "content": "Be brief.\n\nBe kind.", "name": "ops"}, user, late])
+        self.assertIs(out[1], user)                                                          # the rest, the same objects
+        self.assertEqual(first["content"], "Be brief.")                                      # the caller's untouched
+        single = [first, user]
+        self.assertIs(one_system(single), single)                                            # nothing to join
+        parts = [first, {"role": "system", "content": [{"type": "text", "text": "x"}]}, user]
+        self.assertIs(one_system(parts), parts)                                              # parts are the template's
+        self.assertEqual(one_system([user, first, second])[1:], [first, second])             # not leading: the template's
+        self.assertEqual(one_system("not a list"), "not a list")
+        # after the door's own mapping, a system and a developer message are two leading system turns
+        developer = {"role": "developer", "content": "Be kind."}
+        self.assertEqual(one_system(template_messages([first, developer, user]))[0]["content"], "Be brief.\n\nBe kind.")
+
+
+@unittest.skipUnless(importlib.util.find_spec("jinja2") is not None, "renders the real template with jinja2")
+class Qwen38TemplateTests(unittest.TestCase):
+    """The served Qwen3.8 template (tests/fixtures/qwen38_official_chat_template.jinja, byte-identical to the
+    checkpoint's) rendered as transformers renders it, on the two message shapes the door reshapes for it."""
+
+    @classmethod
+    def render(cls, messages, **kwargs):
+        import jinja2
+        from jinja2.sandbox import ImmutableSandboxedEnvironment
+        env = ImmutableSandboxedEnvironment(trim_blocks=True, lstrip_blocks=True, extensions=["jinja2.ext.loopcontrols"])
+        env.filters["tojson"] = lambda x, ensure_ascii=False, **kw: json.dumps(x, ensure_ascii=ensure_ascii, **kw)
+        def raise_exception(message):
+            raise jinja2.TemplateError(message)
+        env.globals["raise_exception"] = raise_exception
+        template = (Path(__file__).resolve().parent / "fixtures" / "qwen38_official_chat_template.jinja").read_text()
+        return env.from_string(template).render(messages=messages, add_generation_prompt=True, **kwargs)
+
+    def test_two_leading_system_turns_render_as_one_block_after_the_join(self):
+        import jinja2
+        from engine.base.serve import one_system
+        messages = [{"role": "system", "content": "Be brief."}, {"role": "system", "content": "Be kind."},
+                    {"role": "user", "content": "hi"}]
+        with self.assertRaisesRegex(jinja2.TemplateError, "System message must be at the beginning"):
+            self.render(messages)
+        out = self.render(one_system(messages), enable_thinking=False)
+        self.assertEqual(out, "<|im_start|>system\nBe brief.\n\nBe kind.<|im_end|>\n<|im_start|>user\nhi<|im_end|>\n"
+                              "<|im_start|>assistant\n<think>\n\n</think>\n\n")
+
+    def test_a_folded_think_block_renders_as_the_one_block_the_model_wrote(self):
+        from engine.base.serve import THINK_TAGS, template_messages
+        messages = [{"role": "user", "content": "hi"},
+                    {"role": "assistant", "content": "<think>\nhmm\n</think>\n\nHello!"},
+                    {"role": "user", "content": "more"}]
+        as_sent = self.render(messages, reasoning_effort="medium")
+        self.assertIn("<|im_start|>assistant\n<think>\n\n</think>\n\n<think>\nhmm\n</think>\n\nHello!<|im_end|>", as_sent)
+        reshaped = self.render(template_messages(messages, think=THINK_TAGS), reasoning_effort="medium")
+        self.assertIn("<|im_start|>assistant\n<think>\nhmm\n</think>\n\nHello!<|im_end|>", reshaped)
+        self.assertEqual(reshaped.count("<think>"), 2)                                       # that turn's, and the generation prompt's
+
+    def test_the_generation_prompt_is_what_reasoning_marks_reads(self):
+        """thinking on opens the block; thinking off closes it and writes a blank line (the tail `reasoning_marks`
+        reads); the template's own default effort injects a system line, `medium` injects nothing."""
+        user = [{"role": "user", "content": "hi"}]
+        self.assertTrue(self.render(user, reasoning_effort="medium").endswith("<|im_start|>assistant\n<think>\n"))
+        self.assertTrue(self.render(user, enable_thinking=False).endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n"))
+        self.assertTrue(self.render(user).startswith("<|im_start|>system\nReasoning effort is set to xhigh."))
+        self.assertTrue(self.render(user, reasoning_effort="medium").startswith("<|im_start|>user\n"))
+
 
 class DoorDecisionTests(unittest.TestCase):
     """A full queue says when to come back; a thinking turn that named no limit gets room to think; a reasoning budget
@@ -2609,6 +2701,23 @@ class OpenAIDialectTests(unittest.TestCase):
                                                    {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1,
                                                     "reasoning_effort": "high", "chat_template_kwargs": {"reasoning_effort": "low"}}))
         self.assertEqual(err.exception.code, 400)
+
+    def test_a_think_block_in_assistant_content_reaches_the_template_as_reasoning(self):
+        """Only where this door splits reasoning: with no reasoning end, `<think>` in a content is text."""
+        seen = []
+        def chat(messages, kwargs, *, generation_prompt=True, continue_final=False):
+            seen.append(messages)
+            return "".join(m.get("content") or "" for m in messages)
+        body = {"messages": [{"role": "user", "content": "a"}, {"role": "assistant", "content": "<think>\nx\n</think>\n\ny"},
+                             {"role": "user", "content": "b"}], "max_tokens": 1}
+        for end, expect in ((None, {"role": "assistant", "content": "<think>\nx\n</think>\n\ny"}),
+                            (7, {"role": "assistant", "content": "y", "reasoning_content": "x"})):
+            with self.subTest(reasoning_end=end):
+                s = chat_server()
+                s.reasoning_end, s.chat = end, chat
+                self.assertEqual(s.think_tags, None if end is None else ("<think>", "</think>"))
+                self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+                self.assertEqual(seen[-1][1], expect)
 
     def test_the_reset_hook_takes_an_empty_post_because_it_configures_nothing(self):
         """`body()` demands 1..4 MiB, so `curl -X POST .../v1/prefix/reset` -- how an operator

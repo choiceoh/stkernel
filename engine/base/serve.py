@@ -195,8 +195,48 @@ def effort_rungs_checked(render, rungs: dict) -> dict:
 
 CHAT_ROLES = ("system", "developer", "user", "assistant", "tool")
 
+THINK_TAGS = ("<think>", "</think>")
+"""The tags a think block is written in (`Server.reasoning_tags`): what `template_messages` reads a block off when a
+client folded one into an assistant turn's content. Both served templates write these; `reasoning_marks` reads the
+same defaults off a template."""
 
-def template_messages(messages):
+
+def inline_think(content, tags=THINK_TAGS) -> "tuple[str, str] | None":
+    """(reasoning, answer) when `content` opens with a whole think block in `tags`: the text between the tags and the
+    text after the closing one, each without the newlines the tags sit on. A content that opens with the closing tag
+    alone (the template wrote the opener, the model closed an empty block, a client sent the display text back) is an
+    empty reasoning and the answer. Anything else is text, and None."""
+    start, end = tags
+    if not isinstance(content, str):
+        return None
+    if content.startswith(start):
+        i = content.find(end, len(start))
+        if i < 0:
+            return None
+        return content[len(start):i].strip("\n"), content[i + len(end):].lstrip("\n")
+    if content.startswith(end):
+        return "", content[len(end):].lstrip("\n")
+    return None
+
+
+def one_system(messages):
+    """`messages` with consecutive leading system turns joined into one (their texts, a blank line between), for a
+    template that writes one system block and refuses a second: Qwen3.8's raises 'System message must be at the
+    beginning' on it, and an OpenAI client that sends a `system` and a `developer` message (`template_messages` makes
+    both `system`) sends exactly that. A leading system turn whose content is not text (parts), or a system turn that
+    is not leading, is left for the template to judge. The caller's list is not modified."""
+    if not isinstance(messages, list):
+        return messages
+    n = 0
+    while (n < len(messages) and isinstance(messages[n], dict) and messages[n].get("role") == "system"
+           and isinstance(messages[n].get("content"), str)):
+        n += 1
+    if n < 2:
+        return messages
+    return [dict(messages[0], content="\n\n".join(m["content"] for m in messages[:n]))] + messages[n:]
+
+
+def template_messages(messages, *, think: "tuple[str, str] | None" = None):
     """The messages as a chat template reads them.
 
     - A tool call's `arguments` arrive as JSON text on OpenAI's wire, and templates iterate them as a mapping: a
@@ -207,6 +247,12 @@ def template_messages(messages):
     - An assistant turn's reasoning arrives as `reasoning` from current OpenAI-compatible clients and as
       `reasoning_content` from older ones; templates render `reasoning_content`, and a turn whose reasoning went
       missing is also a turn the next render cannot continue (45차 §85).
+    - An assistant turn that carries its think block in its content (`<think>…</think>` and then the answer: a client
+      that showed the reasoning inline and sent the display text back) is split into `reasoning_content` and content
+      when `think` names the tags (`Server.think_tags`: the tags where the door splits reasoning, None where it does
+      not). A template renders reasoning from `reasoning_content` alone, and would otherwise write an empty block and
+      then the inline one -- a turn shaped like nothing the model ever wrote. Only a turn without reasoning of its
+      own, and only a block at the very start (`inline_think`).
     - A role no template renders is refused rather than dropped (D3).
 
     Anything else is left as it came, for the template to judge. The caller's list is not modified.
@@ -225,6 +271,10 @@ def template_messages(messages):
             message = dict(message, role="system")
         if role == "assistant" and message.get("reasoning_content") is None and isinstance(message.get("reasoning"), str):
             message = dict(message, reasoning_content=message["reasoning"])
+        if role == "assistant" and think is not None and message.get("reasoning_content") is None:
+            split = inline_think(message.get("content"), think)
+            if split is not None:
+                message = dict(message, reasoning_content=split[0], content=split[1])
         calls = message.get("tool_calls")
         if not isinstance(calls, list):
             out.append(message)
@@ -1414,7 +1464,8 @@ class Server:
                  tool_grammar=None, tool_call_start: "int | None" = None,
                  lease: "dict | None" = None, latency_root=None, reasoning_effort_aliases: "dict | None" = None,
                  step_watch=None, park_min_tokens: int = 0, reasoning_tail=(), effort_rungs: "dict | None" = None,
-                 reasoning_opener: str = "", tool_reasoning_opener: "str | None" = None):
+                 reasoning_opener: str = "", tool_reasoning_opener: "str | None" = None,
+                 reasoning_tags: "tuple[str, str]" = THINK_TAGS):
         if type(max_pending) is not int or max_pending <= 0:
             raise ValueError("max_pending must be a positive integer")
         if type(request_timeout_s) not in (int, float) or not request_timeout_s > 0:
@@ -1456,6 +1507,10 @@ class Server:
         self.detok_repairs = new_repairs()         # this door's, so a scrape names who repaired
         self.chat, self.model_name, self.reasoning_end = chat, model_name, reasoning_end
         self.reasoning_tail = tuple(reasoning_tail)  # what the template writes after reasoning_end when thinking is off
+        if (not isinstance(reasoning_tags, tuple) or len(reasoning_tags) != 2
+                or any(not isinstance(t, str) or not t for t in reasoning_tags)):
+            raise ValueError("reasoning_tags is the (opening, closing) text of a think block")
+        self.reasoning_tags = reasoning_tags         # the text of the block `reasoning_end` closes (`think_tags`)
         if not isinstance(reasoning_opener, str):
             raise ValueError("reasoning_opener must be text")
         if tool_reasoning_opener is not None and not isinstance(tool_reasoning_opener, str):
@@ -2096,6 +2151,13 @@ class Server:
             return kwargs
         opener = self.tool_reasoning_opener if tools and self.tool_reasoning_opener is not None else self.reasoning_opener
         return {**kwargs, "reasoning_opener": opener} if opener else kwargs
+
+    @property
+    def think_tags(self) -> "tuple[str, str] | None":
+        """The tags `template_messages` reads an inline think block off: `reasoning_tags` where this door splits
+        reasoning at all, None where it does not (a model with no think block writes `<think>` as text, and text
+        stays text)."""
+        return self.reasoning_tags if self.reasoning_end is not None else None
 
     def reasoning_closed(self, ids) -> bool:
         """Whether a rendered prompt already closed its think block, so everything generated is content: it ends with
@@ -3681,7 +3743,7 @@ class Server:
                     template_start = time.perf_counter()
                     opening, resuming = prompt_switches(req)
                     kwargs = server.opener_kwargs(kwargs, opening, req.get("tools"))
-                    prompt = server.chat(template_messages(messages), dict(kwargs, tools=tools) if tools else kwargs,
+                    prompt = server.chat(template_messages(messages, think=server.think_tags), dict(kwargs, tools=tools) if tools else kwargs,
                                          generation_prompt=opening, continue_final=resuming)
                 except Exception as exc:                                  # noqa: BLE001 -- the template's verdict on these messages
                     raise RequestError(f"chat template rejected the request: {exc}") from exc
@@ -3979,7 +4041,7 @@ class Server:
                     try:
                         opening, resuming = prompt_switches(req)
                         kwargs = server.opener_kwargs(dict(kwargs), opening, req.get("tools"))
-                        prompt = server.chat(template_messages(req["messages"]), dict(kwargs, tools=tools) if tools else dict(kwargs),
+                        prompt = server.chat(template_messages(req["messages"], think=server.think_tags), dict(kwargs, tools=tools) if tools else dict(kwargs),
                                              generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                              # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
@@ -4046,7 +4108,7 @@ class Server:
                         tools = None if req.get("tool_choice") == "none" else req.get("tools")
                         opening, resuming = prompt_switches(req)
                         kwargs = server.opener_kwargs(dict(kwargs), opening, req.get("tools"))
-                        prompt = server.chat(template_messages(req["messages"]), dict(kwargs, tools=tools) if tools else kwargs,
+                        prompt = server.chat(template_messages(req["messages"], think=server.think_tags), dict(kwargs, tools=tools) if tools else kwargs,
                                              generation_prompt=opening, continue_final=resuming)
                     except Exception as exc:                          # noqa: BLE001
                         raise RequestError(f"chat template rejected the request: {exc}") from exc
