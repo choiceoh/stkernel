@@ -1,0 +1,16 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-q38streamorder-0920a-20260920-001543.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-q38streamorder-0920a-20260920-001543.txt
+GO q38streamorder-0920a 2026-09-20_00:15:43
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+{"stream_scales rows 512": {"rows first": 52.0, "streams first": 48.7}, "bytes_alike": true}
+{"leave_norm rows 512": {"rows first": 120.2, "streams first": 116.3}, "bytes_alike": true}
+{"norm_streams rows 512": {"rows first": 12.0, "streams first": 11.3}, "bytes_alike": true}
+{"stream_scales rows 1024": {"rows first": 151.2, "streams first": 126.1}, "bytes_alike": true}
+{"leave_norm rows 1024": {"rows first": 331.9, "streams first": 289.7}, "bytes_alike": true}
+{"norm_streams rows 1024": {"rows first": 20.5, "streams first": 20.0}, "bytes_alike": true}
+{"stream_scales rows 2048": {"rows first": 545.2, "streams first": 395.7}, "bytes_alike": true}
+{"leave_norm rows 2048": {"rows first": 789.4, "streams first": 578.4}, "bytes_alike": true}
+{"norm_streams rows 2048": {"rows first": 178.4, "streams first": 161.7}, "bytes_alike": true}
+{"stream_scales rows 4096": {"rows first": 1138.5, "streams first": 791.6}, "bytes_alike": true}
+{"leave_norm rows 4096": {"rows first": 1678.2, "streams first": 1159.4}, "bytes_alike": true}
+{"norm_streams rows 4096": {"rows first": 364.4, "streams first": 378.9}, "bytes_alike": true}

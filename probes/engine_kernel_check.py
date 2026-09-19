@@ -360,6 +360,12 @@ def main():
         from probes.engine_qwen38_qualify_soak import REPEATS, run as qwen38_qualify_soak
         qwen38_qualify_soak(args.output, repeats=int((args.lanes.split(':')[1:] or [REPEATS])[0]))
         return
+    if args.lanes == 'qwen38_stream_order':
+        # the stream launches' grid order: a stream's rows adjacent (the grid until 2026-09-20) against a row's streams
+        # adjacent -- the leave's three forms at a prefill chunk's rows, many rounds; bytes checked first
+        from probes.engine_qwen38_stream_order import run as qwen38_stream_order
+        qwen38_stream_order(args.output)
+        return
     if args.lanes == 'qwen38_ple_conv':
         # the PLE conv, its silu and the gated add: the torch form against ngram_gate.conv_add, many rounds
         from probes.engine_qwen38_ple import run as qwen38_ple_conv
