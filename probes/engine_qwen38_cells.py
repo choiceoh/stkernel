@@ -19,6 +19,7 @@ measurement record beside the judgment (engine/QWEN38_CARRY.md, C2-C5).
 import json
 from pathlib import Path
 import sys
+import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -47,6 +48,12 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               # the short conv (GDN's, and GLM-5.3's KDA): byte for byte the frozen legacy adapter, prefill and ring,
               # with its token count an argument -- one kernel for every prompt length
               'tests.test_engine_causal_conv.SingleConvTests', 'tests.test_engine_conv_ring.ConvRingTests')
+GLUE_LEFT_OUT = ('tests.test_engine_causal_conv.SingleConvTests.test_graph_replay_changed_inputs_state_and_independent_streams',
+                 'tests.test_engine_conv_ring.ConvRingTests.test_declared_reference_conv_disables_direct_ring')
+"""Cases of those classes this lane does not run: they build GLM-5.3's served lane table (glm53.lanes.served), which arms
+the MLA lane's prefill mode for the process -- after the MLA glue case above has armed it with another, so they refuse
+(`configure_prefill: the MLA lane is already armed`, the 2026-09-19 run). They judge GLM's wiring, which GLM's own check
+runs in a process of its own; the conv's arithmetic is the rest of their classes."""
 
 
 def facts():
@@ -69,8 +76,16 @@ def held(qualified: dict) -> dict:
             for name, lane in qualified.items()}
 
 
+def _cases(suite):
+    """The test cases of a loaded suite, flattened."""
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            yield from _cases(item)
+        else:
+            yield item
+
+
 def run(output=None):
-    import unittest
     import torch
     assert torch.cuda.get_device_capability() == (12, 1), 'requires GB10'
     rows = []
@@ -82,7 +97,8 @@ def run(output=None):
     from engine.profiles.qwen38 import lanes
     F = facts()
     report('qwen38_qualify', config_sha256=CONFIG_SHA256, **held(lanes.qualify(torch.device('cuda'), F)))
-    suite = unittest.defaultTestLoader.loadTestsFromNames(GLUE_CASES)
+    suite = unittest.TestSuite(case for case in _cases(unittest.defaultTestLoader.loadTestsFromNames(GLUE_CASES))
+                               if case.id() not in GLUE_LEFT_OUT)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     if not result.wasSuccessful() or result.skipped:
         raise RuntimeError(f'glue GPU cases failed or skipped: {len(result.failures)} failed, {len(result.errors)} errors, '
