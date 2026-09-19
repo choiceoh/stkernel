@@ -632,6 +632,33 @@ class ServeTests(unittest.TestCase):
         self.assertEqual(s.take_result(b), [7, 7])
         self.assertEqual(s.runner.parked_record(b)["tokens"], prompt)          # its own conversation, parked beside `first`
 
+    def test_a_retry_waits_for_a_conversation_that_comes_back_only_to_park_again(self):
+        """A turn cancelled while its conversation was being read back leaves the history as it was: the conversation
+        parks again unchanged. The gateway's retry of the same prompt waits for that and continues it -- it is not
+        `busy`, and prefilling a long history fresh would be the expensive answer to a timeout."""
+        from test_engine_tier import MemoryTier
+        gate = threading.Event()
+        gate.set()
+        s = server(rows=2, keep_idle=True, tier=MemoryTier(gate=gate))
+        first, _ = s.submit([3, 4], 2, 0)
+        self.drain(s, retained=True)
+        prompt = s.runner.parked_record(first)["tokens"] + [7]
+        gate.clear()
+        a, _ = s.submit(prompt, 2, 0, continue_history=True)
+        s.once()
+        self.assertEqual([e["request"] for e in s._resuming.values()], [a])   # its read is on the tier's thread
+        s.cancel(a)                                                             # the client gave up ...
+        b, _ = s.submit(prompt, 2, 0, continue_history=True)                   # ... and the gateway retried
+        for _ in range(3):
+            s.once()
+        self.assertEqual([entry[0] for entry in s._waiting], [b])
+        gate.set()
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(b), [7, 7])
+        self.assertEqual(s.continuation_fallbacks, {})
+        self.assertFalse(s.runner.is_parked(b), "it continued `first` rather than starting its own")
+        self.assertGreater(len(s.runner.parked_record(first)["tokens"]), len(prompt) - 1)
+
     def test_admission_rechecks_a_hint_against_the_conversation_as_it_stands(self):
         """The hint is taken before the lock and admitted steps later; in between the conversation can move on. Only
         its current history, read on the loop, decides."""

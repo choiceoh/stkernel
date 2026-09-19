@@ -1856,10 +1856,11 @@ class Server:
         The scan took it on rank 0, off the lock, while the loop kept evicting, parking and continuing rows; so it is
         checked again here, on the loop, against the conversation as every rank holds it. Only the books every rank
         keeps alike decide which history is read (the tier alone is not: a park still landing is on one rank's disk
-        before another's, which is why `_admit` waits out `_retiring` before calling this). "gone": no row and no tier
-        holds it. "busy": another request is continuing it -- that turn will lengthen the history, so the hint cannot hold
-        again (the n choices of one chat request all hint the same conversation). "changed": its history is no longer the
-        one the hint was taken from. One list compare of the history, once per look at the request."""
+        before another's, which is why `_admit` waits out `_retiring` -- and a read-back whose turn was cancelled, which
+        only parks the history again -- before calling this). "gone": no row and no tier holds it. "busy": another
+        request is continuing it -- that turn will lengthen the history, so the hint cannot hold again (the n choices of
+        one chat request all hint the same conversation). "changed": its history is no longer the one the hint was taken
+        from. One list compare of the history, once per look at the request."""
         row = self._conversations.get(key)
         if row is not None:
             if row not in self.runner.idle:
@@ -2427,8 +2428,10 @@ class Server:
             if conversation is None and hint is not None:
                 key, prefix, drop = hint
                 rest = self._media_after(media, prefix)
-                if rest is not None and key in self._retiring.values():
-                    break                                         # its park is still landing: every rank looks again next step
+                if rest is not None and (key in self._retiring.values() or any(
+                        e["conversation"] == key and e["cancelled"] is not None for e in self._resuming.values())):
+                    break                                         # its park is still landing, or it is coming back only to park
+                                                                  # again (its turn was cancelled): every rank looks again next step
                 stale = "picture" if rest is None else self._stale_hint(key, ids, media, prefix, drop)   # a picture straddles the cut
                 if stale is not None:
                     self.continuation_fallbacks[stale] = self.continuation_fallbacks.get(stale, 0) + 1
