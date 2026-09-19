@@ -4780,3 +4780,18 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **딸려 고친 살아 있는 참조.** `CHARTER.md` 0절·D5·D6, `engine/README.md` 의 profiles 줄, 최상위 `README.md`,
   `engine/DSV41_COMPOSITION.md` 머리말, `base/kernel_shape.py` 의 D5 인용, `kernels/cells.py` 의 moe 거절 문구
   ("nvfp4 only (D5)" → "compiled for nvfp4 only (D5's base form, not a model bound)").
+
+### greedy argmax 의 두 발사는 GB10 에서 4 warps 가 맞다 — 1 warp 는 +7~+75%, 캐리 D5 기각 (2026-09-19, srv4 단일 GPU 레인, PR #1213)
+
+`engine/QWEN38_CARRY.md` D5(GLM #1004 "한 warp" 처방을 `vocab_candidates.argmax_key` 의 `_argmax_partials`·`_argmax_finish` 로). 티켓
+`vocab-argmax-warps-0919`, 트리 `59077c6a`, 프로브 `engine_kernel_check.py --lanes vocab_argmax`. 프로덕션 옆, 플릿 임대 없음.
+**커널 컴포넌트 시간이다 — 엔진 속도 주장 없음.**
+- **정합(타이밍 전, 전부 통과):** 4·2·1 warps 와 서빙 진입점의 패킷이 CPU 분기의 키와 바이트 동일 — 무작위, 부분 결과 안/사이의 동률,
+  `±0`·`±NaN`·`±inf`, strided 샤드, 디코드 컷. 키가 정수라 warps 는 패킷을 못 바꾼다.
+- **시간(그래프 안 호출당 µs, 중앙값):** Qwen3.8 샤드 62,080 열 — 2 행 3.34 / 3.69 / 5.51(4 / 2 / 1 warps), 4 행 3.84 / 3.93 / 5.85,
+  16 행 7.15 / 6.91 / 7.68, 32 행 10.83 / 10.37 / 12.59. GLM-5.3 샤드 38,720 열 — 1 행 3.07 / 3.46 / 5.38, 7 행 3.98 / 3.97 / 5.88,
+  14 행 5.40 / 5.25 / 6.49, 28 행 7.42 / 7.17 / 8.02. (62,080 × 8 행의 중앙값은 옆 프로덕션 버스트에 걸렸다; 최솟값 5.13 / 5.41 / 6.96.)
+- **판정:** 1 warp 는 어디서도 이기지 못한다. 2 warps 는 16 행 이상 −3~−4%, 서빙이 도는 C=1 행 수에서 +11~+13%. 기본값 유지,
+  `ARGMAX_WARPS = 4` 로 선언만. #1004 와 반대인 이유: 후보 선택은 MAX 축약을 16 번 연달아 돌려 매 단계 warp 간 교환을 냈고, greedy 는
+  1,024 열의 MAX 한 번이다.
+- 기록: `measurements/vocab_argmax_warps_20260919/`.

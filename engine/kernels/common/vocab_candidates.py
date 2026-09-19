@@ -44,6 +44,14 @@ def _argmax_finish(PARTIALS, OUT, PARTS: tl.constexpr, BLOCK: tl.constexpr):
     tl.store(OUT + row, tl.max(key, 0))
 
 
+ARGMAX_WARPS = 4
+"""Warps of argmax_key's two launches, declared (Qwen3.8 carry D5). #1004 took the candidate selection below to one warp:
+its programs run sixteen integer MAX reductions in a row, and every one paid the warps' exchange. A greedy program is a
+single MAX over 1,024 columns, or over a row's few dozen partials, and there more threads still win: measured, not
+assumed -- probes/engine_vocab_selection.argmax_run holds 4, 2 and 1 warps against each other inside a captured graph
+(the keys are integers, so the packet is the same bytes at any of them)."""
+
+
 def argmax_key(local_logits, start, valid):
     """One exact MAX packet per row, without a full FP32 vocabulary temporary."""
     rows = local_logits.shape[0]
@@ -52,11 +60,11 @@ def argmax_key(local_logits, start, valid):
     parts = triton.cdiv(valid, 1024)
     partials = torch.empty((rows, parts), dtype=torch.int64, device=local_logits.device)
     _argmax_partials[(rows, parts)](local_logits, partials, local_logits.stride(0),
-                                  local_logits.stride(1), valid, start, parts, 1024)
+                                  local_logits.stride(1), valid, start, parts, 1024, num_warps=ARGMAX_WARPS)
     if parts == 1:
         return partials.view(rows)
     out = torch.empty(rows, dtype=torch.int64, device=local_logits.device)
-    _argmax_finish[(rows,)](partials, out, parts, triton.next_power_of_2(parts))
+    _argmax_finish[(rows,)](partials, out, parts, triton.next_power_of_2(parts), num_warps=ARGMAX_WARPS)
     return out
 
 
