@@ -1,0 +1,32 @@
+== run 1
+xgrammar 0.2.3 transformers 5.15.1 tokenizers 0.22.2
+import xgrammar: 4.85 s (transformers already in: True)
+vocab_size 248320, engine stops [248046, 248044]
+backend: Tokenizer.from_file 0.61 s + tokenizer_info 1.32 s
+transformers: AutoTokenizer 5.16 s (Qwen2Tokenizer) + from_huggingface 1.09 s
+vocab dicts: transformers 248077, backend 248077, equal True
+decoded vocab: 248320 vs 248320, 0 differ
+vocab_type VocabType.BYTE_LEVEL vs VocabType.BYTE_LEVEL; add_prefix_space False vs False; vocab_size 248320 vs 248320
+stop ids equal True [248044, 248046]
+special ids equal True (243 of them)
+dump_metadata equal True
+<tool_call> -> [248058]; decoded [b'<tool_call>'] / [b'<tool_call>']
+tool (lazy): 25 positions walked, masks equal True, terminated [True, True]
+json_object: 22 positions walked, masks equal True, terminated [True, True]
+GrammarCompiler x2: 0.00 s
+== run 2
+xgrammar 0.2.3 transformers 5.15.1 tokenizers 0.22.2
+import xgrammar: 4.20 s (transformers already in: True)
+vocab_size 248320, engine stops [248046, 248044]
+backend: Tokenizer.from_file 0.73 s + tokenizer_info 1.56 s
+transformers: AutoTokenizer 5.56 s (Qwen2Tokenizer) + from_huggingface 1.09 s
+vocab dicts: transformers 248077, backend 248077, equal True
+decoded vocab: 248320 vs 248320, 0 differ
+vocab_type VocabType.BYTE_LEVEL vs VocabType.BYTE_LEVEL; add_prefix_space False vs False; vocab_size 248320 vs 248320
+stop ids equal True [248044, 248046]
+special ids equal True (243 of them)
+dump_metadata equal True
+<tool_call> -> [248058]; decoded [b'<tool_call>'] / [b'<tool_call>']
+tool (lazy): 25 positions walked, masks equal True, terminated [True, True]
+json_object: 22 positions walked, masks equal True, terminated [True, True]
+GrammarCompiler x2: 0.00 s
