@@ -34,10 +34,11 @@ HC, HIDDEN, RANK, EPS = 4, 2560, 320, 1e-6       # Qwen3.8's site at TP=4: 324 d
 ROWS = (512, 1024, 2048, 4096)
 CALLS = 8                                        # sites a graph
 ROUNDS = 21
-TILES = ((32, 64, 32, 8, 3), (32, 64, 64, 8, 2), (64, 64, 32, 8, 3), (64, 64, 64, 8, 2), (32, 128, 64, 8, 2),
-         (32, 64, 32, 4, 3))                     # (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) of leave_down_block: every
-                                                 # stage holds the A tile and all six W tiles, so 64 x 64 x 64 at three
-                                                 # stages wants 111 KB of shared memory (the GB10 has 99): out of resources
+TILES = ((64, 128, 64, 16, 2), (64, 128, 64, 8, 2), (64, 64, 64, 16, 2), (64, 64, 64, 8, 2), (64, 128, 32, 16, 3),
+         (64, 128, 32, 8, 3), (64, 64, 32, 16, 3), (128, 128, 32, 16, 2), (32, 128, 64, 8, 2), (32, 128, 64, 4, 2))
+                                                 # (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) of leave_down_block: a
+                                                 # stage in flight holds the A tile and every W tile (64 x 64 x 64: 56 KB),
+                                                 # and the GB10 has 99 KB, so 64-deep K pipelines two stages, 32-deep three
 BAND = 2.0 ** -6                                 # a few BF16 steps: rounding order, not a wrong formula
 
 
@@ -85,6 +86,25 @@ def check(rows: int, device, gen, tile, *, hidden: int = HIDDEN, rank: int = RAN
             "two_launches_vs_torch": rel_err(mixed_two, ref_mixed)}
 
 
+def compiled(fn) -> dict:
+    """The kernels Triton has compiled for `fn` on this process's devices, by cache key (Triton 3.x's device_caches,
+    or the older `cache`) -> {key: CompiledKernel}; empty where the layout is unknown."""
+    out = {}
+    caches = getattr(fn, "device_caches", None) or getattr(fn, "cache", None) or {}
+    for entry in caches.values():
+        cache = entry[0] if isinstance(entry, tuple) else entry
+        for key, kern in (cache.items() if hasattr(cache, "items") else ()):
+            out[str(key)] = kern
+    return out
+
+
+def resources(kern) -> dict:
+    """What the compiled kernel asks of an SM: registers a thread, spills, shared memory bytes -- None where unknown."""
+    meta = getattr(kern, "metadata", None)
+    return {"n_regs": getattr(kern, "n_regs", None), "n_spills": getattr(kern, "n_spills", None),
+            "shared": getattr(meta, "shared", None)}
+
+
 def passes(record: dict) -> bool:
     return (record["h_bytes_alike"] and record["scale_max_rel"] < 1e-5
             and max(record["mixed_vs_two_launches"], record["inject_vs_two_launches"], record["mixed_vs_torch"],
@@ -103,8 +123,11 @@ def run(output=None) -> dict:
         tiles = hcr.block_tiles(t)
         checks, fits = {}, []
         for tile in TILES:
+            before = set(compiled(hcr._leave_down_rows))
             try:
                 checks[str(tile)] = record = check(t, device, gen, tile)
+                fresh = [k for key, k in compiled(hcr._leave_down_rows).items() if key not in before]
+                record["resources"] = [resources(k) for k in fresh]   # the tile's kernel, compiled by this check
             except Exception as e:                       # a tile the card cannot hold (shared memory) is recorded, not run
                 checks[str(tile)] = record = {"error": f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"}
                 torch.cuda.synchronize()

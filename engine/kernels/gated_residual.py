@@ -43,16 +43,17 @@ launches normalise each tile of the streams as they read it -- the stream norm's
 the operand is the normalised streams' bytes and the outputs are leave_norm-then-mix_block's byte for byte.
 
 From LEAVE_DOWN_TILES' rows the leave and the down fold are ONE launch (`leave_down_block`, `_leave_down_rows`): a
-program is a block of rows of one stream, a row block's hc programs adjacent. It leaves the output into its rows and
-sums their squares (`stream_scales`' arithmetic, BLOCK_K channels at a time -- the scale to a few FP32 ulps), then reads
-its rows back out of L2, normalises them ONCE and multiplies them into every column block of its stream's K slice of
-down(+inject) at the same time (five 64-wide blocks and a 16-wide tail for the mixer's 324 columns); the stream's FP32
-partial goes to a scratch, and the last of the row block's hc programs to arrive sums the four in stream order and
-stores the gates. Against `stream_scales` and then the down fold: the streams read from DRAM once instead of twice
-(84 MB at 4,096 rows), the A tile transformed once instead of once a column block, and the MMA overlapped with the
-leave's memory traffic across the programs resident on an SM. The gates come out within the oracle's band, not byte
-for byte the two launches' (the sum of squares and the K sum associate differently); the leave's rows are byte for byte
-the leave's. `site` then finishes with `up_mean_block` over the streams and the scales.
+program is a block of rows of one stream, a row block's hc programs adjacent, and ONE pass over the channels: it leaves
+the output into its rows, keeps their squares elementwise (reduced once after the loop), and multiplies the rows times
+1 + w, in BF16, into every column block of its stream's K slice of down(+inject) at the same time (three 128-wide
+blocks, or five 64-wide and a 16-wide tail, for the mixer's 324 columns) -- the GEMM's loads and its MMA in one
+pipelined loop, as a GEMM's are. The stream's scale is a constant of each row, so it multiplies the FP32 accumulators
+after the dot (the operand rounds to BF16 at h x (1 + w), the two launches' at h x scale x (1 + w): the oracle's band,
+not their bytes -- the leave's rows are the leave's bytes). The stream's FP32 partial goes to a scratch, and the last of
+the row block's hc programs to arrive sums the four in stream order and stores the gates. Against `stream_scales` and
+then the down fold: the streams read from DRAM once instead of twice (84 MB at 4,096 rows), the A tile transformed once
+instead of once a column block, and the MMA under the leave's memory traffic. `site` then finishes with `up_mean_block`
+over the streams and the scales.
 
 The stream launches (`_leave_norm`, `_norm_streams`) run one program a (row, stream) over the grid (hc, rows): a row's
 hc programs back to back, so the output row they all add (21 MB at 4,096 rows) is read from DRAM once and the row's
@@ -123,7 +124,7 @@ UP_BLOCK_TILE = (64, 64, 32, 4, 4)
 # The fused leave + down fold's tile (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) by the rows it serves from, as DOWN_TILES
 # (`leave_down_block`; probes/engine_qwen38_leave_down). Rows short of every entry leave with `stream_scales` and fold
 # with mix_block's two launches.
-LEAVE_DOWN_TILES = ((512, (32, 64, 32, 8, 3)),)     # a stage holds the A tile and six W tiles: 64-deep at 3 stages is 111 KB
+LEAVE_DOWN_TILES = ((512, (64, 128, 64, 16, 2)),)   # a stage in flight holds the A tile and every W tile: 56 KB of the GB10's 99
 LEAVE_DOWN_BLOCKS = 5                       # full column blocks the fused kernel unrolls at most (the mixer's 320 in 64s), plus a tail
 UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
@@ -792,13 +793,15 @@ def _leave_down_rows(H, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, M, N, sH, sO,
                      BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, FULL: tl.constexpr,
                      TAIL: tl.constexpr, TAIL_W: tl.constexpr, LEAVE: tl.constexpr, PDL: tl.constexpr,
                      FP32_DOT: tl.constexpr):
-    # One program: BLOCK_M rows of stream s, a row block's HC programs adjacent (the sum's rows shared through L2).
-    # Pass 1 -- the leave (OUT x INJ[:, s] into the stream's channels in place, `_leave_norm`'s rounding) and the
-    # stream's sum of squares, BLOCK_K channels at a time; its scale to SC[:, s]. Pass 2 -- the rows read back (L2's:
-    # this program just wrote them), normalised with that scale and 1 + W as `_tile_dot_normed` does -- once, for every
-    # column block at the same time: FULL blocks of BLOCK_N and a TAIL-wide last one -- times this stream's K slice of
-    # DW. The stream's FP32 partial [BLOCK_M, N] goes to PART[s]; the last of a row block's HC programs to arrive sums
-    # the partials in stream order and stores the gates (`_gate_store`).
+    # One program: BLOCK_M rows of stream s, a row block's HC programs adjacent (the sum's rows shared through L2), one
+    # pass over the stream's channels BLOCK_K at a time: the leave (OUT x INJ[:, s] into the channels in place,
+    # `_leave_norm`'s rounding), the squares kept elementwise (reduced once after the loop -- nothing crosses threads in
+    # the loop), and the rows times 1 + W, rounded to BF16, into every column block of this stream's K slice of DW at
+    # the same time: FULL blocks of BLOCK_N and a TAIL-wide last one. The stream's scale is a constant of each row, so it
+    # multiplies the FP32 accumulators after the dot instead of the operand before it (the product rounds to BF16 at
+    # h x (1 + w) rather than at h x scale x (1 + w): the oracle's band, not the two launches' bytes). The stream's
+    # partial [BLOCK_M, N] goes to PART[s]; the last of a row block's HC programs to arrive sums the partials in stream
+    # order and stores the gates (`_gate_store`).
     s = tl.program_id(0)
     pid_m = tl.program_id(1)
     rows = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
@@ -808,22 +811,6 @@ def _leave_down_rows(H, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, M, N, sH, sO,
         tl.extra.cuda.gdc_wait()
     if LEAVE:
         g = tl.load(INJ + rows * sI + s, mask=live, other=0.0).to(tl.float32)
-    sq = tl.zeros((BLOCK_M,), dtype=tl.float32)
-    for k in range(0, HID, BLOCK_K):
-        ks = k + tl.arange(0, BLOCK_K)
-        at = rows[:, None] * sH + (s * HID + ks)[None, :]
-        h = tl.load(H + at, mask=live[:, None], other=0.0)
-        if LEAVE:
-            o = tl.load(OUT + rows[:, None] * sO + ks[None, :], mask=live[:, None], other=0.0).to(tl.float32)
-            delta = (o * g[:, None]).to(h.dtype)                  # the product rounds, then the sum does
-            h = (h.to(tl.float32) + delta.to(tl.float32)).to(h.dtype)
-            tl.store(H + at, h, mask=live[:, None])
-        x = h.to(tl.float32)
-        sq += tl.sum(x * x, axis=1)
-    scale = tl.rsqrt(sq / HID + EPS)
-    tl.store(SC + rows * sS + s, scale, mask=live)
-    if LEAVE:
-        tl.debug_barrier()                                        # the rows stored above are read back by other threads
     c0 = tl.arange(0, BLOCK_N)
     c1 = BLOCK_N + c0
     c2 = 2 * BLOCK_N + c0
@@ -836,37 +823,49 @@ def _leave_down_rows(H, OUT, INJ, W, SC, DW, MIX, IJ, PART, LOCKS, M, N, sH, sO,
     acc3 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     acc4 = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
     acct = tl.zeros((BLOCK_M, TAIL_W), dtype=tl.float32)
+    sq = tl.zeros((BLOCK_M, BLOCK_K), dtype=tl.float32)
     for k in range(0, HID, BLOCK_K):
-        kk = s * HID + k + tl.arange(0, BLOCK_K)
-        x = tl.load(H + rows[:, None] * sH + kk[None, :], mask=live[:, None], other=0.0)
+        ks = k + tl.arange(0, BLOCK_K)
+        kk = s * HID + ks
+        at = rows[:, None] * sH + kk[None, :]
+        h = tl.load(H + at, mask=live[:, None], other=0.0)
+        if LEAVE:
+            o = tl.load(OUT + rows[:, None] * sO + ks[None, :], mask=live[:, None], other=0.0).to(tl.float32)
+            delta = (o * g[:, None]).to(h.dtype)                  # the product rounds, then the sum does
+            h = (h.to(tl.float32) + delta.to(tl.float32)).to(h.dtype)
+            tl.store(H + at, h, mask=live[:, None])
+        x = h.to(tl.float32)
+        sq += x * x
         nw = tl.load(W + kk).to(tl.float32)
-        x = ((x.to(tl.float32) * scale[:, None]) * (1.0 + nw[None, :])).to(H.dtype.element_ty)
+        a = (x * (1.0 + nw[None, :])).to(H.dtype.element_ty)
         if FP32_DOT:                                              # the interpreter reads a BF16 dot's bits as integers
-            x = x.to(tl.float32)
-        acc0 += tl.dot(x, _w_tile(DW, sW, c0, kk, N, FP32_DOT))
+            a = a.to(tl.float32)
+        acc0 += tl.dot(a, _w_tile(DW, sW, c0, kk, N, FP32_DOT))
         if FULL > 1:
-            acc1 += tl.dot(x, _w_tile(DW, sW, c1, kk, N, FP32_DOT))
+            acc1 += tl.dot(a, _w_tile(DW, sW, c1, kk, N, FP32_DOT))
         if FULL > 2:
-            acc2 += tl.dot(x, _w_tile(DW, sW, c2, kk, N, FP32_DOT))
+            acc2 += tl.dot(a, _w_tile(DW, sW, c2, kk, N, FP32_DOT))
         if FULL > 3:
-            acc3 += tl.dot(x, _w_tile(DW, sW, c3, kk, N, FP32_DOT))
+            acc3 += tl.dot(a, _w_tile(DW, sW, c3, kk, N, FP32_DOT))
         if FULL > 4:
-            acc4 += tl.dot(x, _w_tile(DW, sW, c4, kk, N, FP32_DOT))
+            acc4 += tl.dot(a, _w_tile(DW, sW, c4, kk, N, FP32_DOT))
         if TAIL > 0:
-            acct += tl.dot(x, _w_tile(DW, sW, ct, kk, N, FP32_DOT))
+            acct += tl.dot(a, _w_tile(DW, sW, ct, kk, N, FP32_DOT))
+    scale = tl.rsqrt(tl.sum(sq, axis=1) / HID + EPS)
+    tl.store(SC + rows * sS + s, scale, mask=live)
     MN = M * N
     mine = PART + s * MN
-    _partial_store(mine, acc0, rows, c0, live, N)
+    _partial_store(mine, acc0 * scale[:, None], rows, c0, live, N)
     if FULL > 1:
-        _partial_store(mine, acc1, rows, c1, live, N)
+        _partial_store(mine, acc1 * scale[:, None], rows, c1, live, N)
     if FULL > 2:
-        _partial_store(mine, acc2, rows, c2, live, N)
+        _partial_store(mine, acc2 * scale[:, None], rows, c2, live, N)
     if FULL > 3:
-        _partial_store(mine, acc3, rows, c3, live, N)
+        _partial_store(mine, acc3 * scale[:, None], rows, c3, live, N)
     if FULL > 4:
-        _partial_store(mine, acc4, rows, c4, live, N)
+        _partial_store(mine, acc4 * scale[:, None], rows, c4, live, N)
     if TAIL > 0:
-        _partial_store(mine, acct, rows, ct, live, N)
+        _partial_store(mine, acct * scale[:, None], rows, ct, live, N)
     tl.debug_barrier()                                            # every thread's partial is stored before one arrives
     arrived = tl.atomic_add(LOCKS + pid_m, 1, sem="acq_rel")
     if arrived == HC - 1:
@@ -896,7 +895,9 @@ def leave_down_block(h, out, injection, w, eps: float, hc: int, down_inject, gat
     left into the streams h in place -- or, `out` None, the streams as they are -- and the gates [N, r] and, with
     `inject`, the injection [N, hc] (`inj`; `gates` again without one) stored from down(+inject) of the streams
     normalised with `w`; returns each stream's scale [N, hc] FP32 (`stream_scales`' value to a few FP32 ulps: the sum of
-    squares is BLOCK_K channels at a time), which the up fold normalises with. `pdl`: as leave_norm's."""
+    squares is BLOCK_K channels at a time), which the up fold normalises with. The dot takes the rows times 1 + w in
+    BF16 and the scale multiplies its FP32 sum: the gates are within the oracle's band of the two launches', not their
+    bytes. `pdl`: as leave_norm's."""
     hid = _check_streams(h, hc)
     rows, width = h.shape
     n = down_inject.shape[0]
