@@ -243,6 +243,11 @@ def main():
         from probes.engine_glm53_decode_rows import run_gemv, run_head
         (run_head if args.lanes == 'glm53_head' else run_gemv)(args.output)
         return
+    if args.lanes == 'sm121_inventory':
+        # what the seed image carries for engine/SM121_INTAKE.md (U0): files, imports and signatures -- nothing compiled
+        from probes.engine_sm121_inventory import run as sm121_inventory
+        sm121_inventory(args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10

@@ -79,7 +79,8 @@ def kernel_shape(cfg: dict, tp: int = 4, spec_k: "int | None" = None) -> "Kernel
         comm=Comm(world=tp, hidden=hidden), hidden=hidden, hc=cfg["hc_mult"], tp=tp,
         attention=Attention(kind="mla", heads=cfg["num_attention_heads"] // tp, head_dim=cfg["head_dim"],
                             kv_heads=max(1, cfg["num_key_value_heads"] // tp),
-                            sink=True),                        # modules/sparse_attention.sparse_attn: attn_sink
+                            sink=True,                         # modules/sparse_attention.sparse_attn: attn_sink
+                            window=cfg.get("sliding_window") or 0),   # the raw positions read beside the selection
         linear=None,
         indexer=Indexer(heads=cfg["index_n_heads"], head_dim=cfg["index_head_dim"],
                         pool=max(ratios) if ratios else 1, topk=cfg["index_topk"], compress="ced"),

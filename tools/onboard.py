@@ -28,11 +28,19 @@ if str(ROOT) not in sys.path:
 
 
 def text_config(path: Path) -> dict:
-    """A checkpoint's text config: `text_config` when the file nests it (multimodal checkpoints), else the file."""
+    """A checkpoint's text config: `text_config` when the file nests it (multimodal checkpoints), else the file.
+
+    What the outer config states for the text model comes in with it -- `quantization_config` (DSv4.1), `mtp_config`
+    (Inkling), and the outer `model_type` when the nested one declares none -- and so does ModelOpt's
+    hf_quant_config.json beside the file, which is where its exports state the algorithm (`hf_quant_config`)."""
     cfg = json.loads(path.read_text())
-    text = cfg.get("text_config") if isinstance(cfg.get("text_config"), dict) else cfg
-    if "quantization_config" in cfg and "quantization_config" not in text:
-        text = dict(text, quantization_config=cfg["quantization_config"])   # DSv4.1 states it on the outer config
+    text = dict(cfg.get("text_config") if isinstance(cfg.get("text_config"), dict) else cfg)
+    for key in ("quantization_config", "mtp_config", "model_type"):
+        if key in cfg and key not in text:
+            text[key] = cfg[key]
+    beside = path.parent / "hf_quant_config.json"
+    if beside.is_file():
+        text["hf_quant_config"] = json.loads(beside.read_text())
     return text
 
 

@@ -221,17 +221,24 @@ class ServedMTP:
     launches it on the device (`chain`, DraftGraphs.run_after) before it reads the picks, and hands each row its drafts
     once its own count of kept positions agrees (`adopt`); `propose` reads them then, the draft step long done."""
 
-    def __init__(self, net, caches, store, k: int, *, threshold: "float | None" = None, ledger=None):
+    def __init__(self, net, caches, store, k: int, *, threshold: "float | None" = None, ledger=None,
+                 candidates: int = 0):
         """`threshold`: a row's drafts end before its first pick the head gives less probability than this (LibraSpec's
         rule, arXiv 2608.08721: a draft is verified only while it is likely to pay) -- the graphs report each pick's
         probability (net.draft_tokens), the same bits on every rank, so every rank cuts alike; None proposes all k.
-        `ledger`: a callable handed one record a verified row (`record`) -- rank 0's draft ledger."""
+        `ledger`: a callable handed one record a verified row (`record`) -- rank 0's draft ledger.
+        `candidates` > 0: a row `propose` is handed sampling settings for draws its drafts from the head's distribution
+        over its `candidates` largest logits (decode_graphs.draft_chain `sampled`), and `distribution` hands the verify
+        step what they were drawn from (base/sampler.block_verify_batch). Such a row proposes all k: a cut decided on
+        the drawn token's own probability would bias the drafts the verification divides by."""
         if k <= 0:
             raise ValueError("a drafter proposes at least one token")
         if threshold is not None and not 0.0 <= threshold < 1.0:
             raise ValueError(f"a draft threshold is a probability in [0, 1), not {threshold}")
+        if candidates < 0:
+            raise ValueError(f"a sampled draft reads a positive number of candidates, not {candidates}")
         self.net, self.caches, self.store, self.k = net, caches, store, k
-        self.threshold, self.ledger = threshold, ledger
+        self.threshold, self.ledger, self.candidates = threshold, ledger, candidates
         # the row counts a cut pays at: steps of more rows replay the full verify width (decode_graphs.TargetGraphs
         # narrow_rows, set at capture), where a cut draft is padded back and only its chance of being kept is lost.
         # None: no captured target, every step as wide as its rows
@@ -243,6 +250,8 @@ class ServedMTP:
         self._proposed: dict = {}                 # seq -> (every pick, their probabilities) of its last proposal
         self._ahead: dict = {}                    # seq -> (_Ahead, its row there, the chain's position): `adopt`
         self._lanes, self._users, self._turn = None, [None, None], 0     # `chain`'s two pinned row sets, alternating
+        self._dist: dict = {}                     # seq -> (candidates [k, C], the distribution over them [k, C]) of
+        #                                           drafts drawn from the head (sampled rows only)
         # what the head observes, recorded where a boot asks (fleet --tap-mtp-inputs, rank 0): at every kept position
         # the target's streams and the token after it -- the head's own fine-tuning data (mtp_tune.py)
         self.inputs_tap = None
@@ -257,7 +266,7 @@ class ServedMTP:
         if self.graphs is not None:
             raise ValueError("the draft graphs are already captured")
         self.graphs = DraftGraphs(self.net, self.caches, max_seqs, self.k + 1, k=self.k, ceiling=ceiling,
-                                  memory=memory, probability=self.probability)
+                                  memory=memory, probability=self.probability, candidates=self.candidates)
 
     def close(self) -> None:
         if self.graphs is not None:
@@ -272,9 +281,12 @@ class ServedMTP:
         token = int(self.net.draft_tokens(hidden)[0])
         return token, streams
 
-    def _run_waiting(self, seqs) -> None:
+    def _run_waiting(self, seqs, sampling=None) -> None:
         """The waiting rows of `seqs`: in one replay when each row's reservation holds the replay's positions (its
-        observation padded to the verify width, then the chain), else the head eagerly over its observed positions."""
+        observation padded to the verify width, then the chain), else the head eagerly over its observed positions.
+        `sampling`: seq -> (temperature, top_k, top_p, k DRAFT uniforms) for the rows whose drafts are drawn; a row
+        without (or replayed before its verify step, or run eagerly) takes the head's argmax."""
+        sampling = sampling or {}
         pool, graphs = self.caches.pool, self.graphs
         rows, eager = [], []
         for seq in seqs:
@@ -284,11 +296,20 @@ class ServedMTP:
             else:
                 eager.append((seq, ctx, ids, streams))
         if rows:
-            out = graphs.run(rows)
-            picks_rows, prob_rows = out if getattr(graphs, "probability", False) else (out, [None] * len(rows))
-            for (seq, _slot, ctx, ids, _streams), picks, probs in zip(rows, picks_rows, prob_rows):
-                self._next[seq] = (picks, None, ctx + len(ids))
-                self._probs[seq] = probs
+            if getattr(graphs, "candidates", 0):
+                settings = [sampling.get(seq) for seq, *_ in rows]
+                picks_rows, prob_rows, cand, dist = graphs.run(rows, settings)
+                for i, ((seq, _slot, ctx, ids, _streams), picks, probs) in enumerate(zip(rows, picks_rows, prob_rows)):
+                    self._next[seq] = (picks, None, ctx + len(ids))
+                    self._probs[seq] = probs
+                    if settings[i] is not None:
+                        self._dist[seq] = (cand[i], dist[i])
+            else:
+                out = graphs.run(rows)
+                picks_rows, prob_rows = out if getattr(graphs, "probability", False) else (out, [None] * len(rows))
+                for (seq, _slot, ctx, ids, _streams), picks, probs in zip(rows, picks_rows, prob_rows):
+                    self._next[seq] = (picks, None, ctx + len(ids))
+                    self._probs[seq] = probs
         for seq, ctx, ids, streams in eager:
             token, head = self._head(seq, ctx, torch.tensor(ids, dtype=torch.int64, device=streams.device), streams)
             self._next[seq] = ([token], head, ctx + len(ids))
@@ -340,6 +361,7 @@ class ServedMTP:
         if seq in self._waiting:
             self._run_waiting([seq])              # its rows are positions before these
         self._next.pop(seq, None)
+        self._dist.pop(seq, None)
         if self.graphs is not None and n <= self.k + 1:
             self._waiting[seq] = (self.store.slot_of[seq], ctx, [int(t) for t in next_ids[:n]], hidden[:n])
             return
@@ -347,8 +369,12 @@ class ServedMTP:
         token, streams = self._head(seq, ctx, ids, hidden[:n])
         self._next[seq] = ([token], streams, ctx + n)
 
-    def propose(self, seqs) -> "list[list[int]]":
+    def propose(self, seqs, sampling=None) -> "list[list[int]]":
+        """Each row's drafts. `sampling` (seq -> the row's sampler settings and k DRAFT uniforms, `_run_waiting`): the
+        rows whose drafts are drawn this step; `distribution` then hands out what each was drawn from. A row whose
+        drafts a greedy verify step launched ahead (`adopt`) reads them here."""
         for seq in seqs:
+            self._dist.pop(seq, None)
             got = self._ahead.pop(seq, None)
             if got is not None:
                 handle, row, position = got
@@ -357,7 +383,7 @@ class ServedMTP:
                 self._probs[seq] = None if probs is None else probs[row]
         waiting = [seq for seq in seqs if seq in self._waiting]
         if waiting:
-            self._run_waiting(waiting)
+            self._run_waiting(waiting, sampling)
         out = []
         for seq in seqs:
             got = self._next.get(seq)
@@ -374,12 +400,19 @@ class ServedMTP:
                 position += 1
             probs = self._probs.get(seq)
             self._proposed[seq] = (chain, probs)
-            if probs is not None and self.threshold is not None and (self.narrow_rows is None
-                                                                     or len(seqs) <= self.narrow_rows):
+            if seq in self._dist and len(chain) < self.k:
+                self._dist.pop(seq)               # an eager chain's picks were not drawn from what the graph reported
+            if (probs is not None and self.threshold is not None and seq not in self._dist
+                    and (self.narrow_rows is None or len(seqs) <= self.narrow_rows)):
                 # the drafts before the first the head doubts (an eager chain's picks carry no probability: all go)
                 chain = chain[:next((j for j, p in enumerate(probs[:len(chain)]) if p < self.threshold), len(chain))]
             out.append(chain)
         return out
+
+    def distribution(self, seq: int):
+        """(candidates [k, C], the distribution over them [k, C]) the row's drafts were drawn from this step, or None --
+        a greedy or rich row, or one whose drafts are the argmax (its verification is the exact-match loop)."""
+        return self._dist.get(seq)
 
     def record(self, seq: int, ctx: int, proposed: int, matched: int, committed: int) -> None:
         """One verified row to the ledger: its context, every pick the head made and their probabilities, how many
@@ -389,13 +422,15 @@ class ServedMTP:
         picks, probs = self._proposed.pop(seq, ([], None))
         self.ledger({"seq": seq, "ctx": ctx, "picks": picks,
                      "probs": None if probs is None else [round(float(p), 6) for p in probs],
-                     "proposed": proposed, "matched": matched, "committed": committed})
+                     "proposed": proposed, "matched": matched, "committed": committed,
+                     "sampled": seq in self._dist})
 
     def forget(self, seq: int) -> None:
         # drafts launched ahead: their head's rows went into the row's blocks with the replay, before any park or release
         self._ahead.pop(seq, None)
         self._next.pop(seq, None)
         self._probs.pop(seq, None)
+        self._dist.pop(seq, None)
         self._proposed.pop(seq, None)
         waiting = self._waiting.get(seq)
         if waiting is not None:
@@ -542,11 +577,11 @@ def _served_model_class():
                 finished.append(done)
             return finished
 
-        def _draw_ahead(self, seqs, segments, logits):
+        def _draw_ahead(self, seqs, segments, logits, skip=()):
             ahead = [None] * len(seqs)
             index, temps, top_ps, top_ks, keys, plain = [], [], [], [], [], []
             for i, (seq, s) in enumerate(zip(seqs, segments)):
-                if self._rich(seq):                 # min_tokens only relaxes as the row grows: rich now or never
+                if self._rich(seq) or i in skip:    # min_tokens only relaxes as the row grows: rich now or never
                     continue
                 opts = self.options.get(seq, {})
                 count = self.generated_count(seq)
@@ -585,8 +620,72 @@ def _served_model_class():
             tokens = self.tokens[seq]
             return [tokens[p] if p >= 0 else DEAD for p in range(ctx - width, ctx)]
 
+        def _draft_sampling(self, seqs) -> dict:
+            """seq -> (temperature, top_k, top_p, its k DRAFT uniforms) for each plain row that samples: its drafts are
+            drawn from the head's distribution under the row's own sampler (ServedMTP `candidates`) and verified by
+            `_block_verify`. The uniforms hang off the key the verification's hang off (base/draws.step_layout: the
+            walk's K, the verification's K, the correction's one). A greedy or rich row keeps the argmax drafts."""
+            out = {}
+            for seq in seqs:
+                temperature = self.limits[seq][1]
+                if temperature <= 0 or self._rich(seq):
+                    continue
+                opts = self.options.get(seq, {})
+                key = draws.row_key(self.seeds.get(seq, self.seed), self.nonces[seq], self.generated_count(seq))
+                out[seq] = (temperature, int(opts.get("top_k") or 0), float(opts.get("top_p", self.top_p)),
+                            draws.uniforms(key, draws.DRAFT, self.k))
+            return out
+
+        def _block_verify(self, seqs, drafts, segments, logits) -> list:
+            """Rows whose drafts were drawn from the head's distribution (ServedMTP.distribution) verified by block
+            verification (base/sampler.block_verify_batch, Sun et al.): the tokens come out distributed as the target's
+            own draws, and the accepted prefix is longer on average than one draft at a time -- or than the exact match
+            of a drawn pick, which keeps a draft only when the target's own draw lands on it. -> each row's committed
+            tokens (its accepted drafts, then the drawn one), None for a row the exact-match loop verifies."""
+            from engine.base.sampler import block_verify_batch, rows as sampler_rows
+            from engine.modules.draft_agreement import agree_verdict
+            out = [None] * len(seqs)
+            groups = {}
+            for i, (seq, d) in enumerate(zip(seqs, drafts)):
+                if d and self.drafter.distribution(seq) is not None:
+                    groups.setdefault(len(d), []).append(i)
+            dev = logits.device
+            for K, group in sorted(groups.items()):
+                index = torch.tensor([segments[i].start + j for i in group for j in range(K + 1)], device=dev)
+                rows = logits.index_select(0, index).contiguous()
+                opts = [self.options.get(seqs[i], {}) for i in group]
+                per = K + 1
+                temps = torch.tensor([self.limits[seqs[i]][1] for i in group for _ in range(per)],
+                                     dtype=torch.float32, device=dev)
+                top_ps = torch.tensor([float(o.get("top_p", self.top_p)) for o in opts for _ in range(per)],
+                                      dtype=torch.float32, device=dev)
+                top_ks = torch.tensor([int(o.get("top_k") or 0) for o in opts for _ in range(per)],
+                                      dtype=torch.int32, device=dev)
+                target = torch.empty(rows.shape, dtype=torch.float32, device=dev)
+                sampler_rows(rows, temps, top_ks, top_ps, None, self.vocab, target)
+                dists = [self.drafter.distribution(seqs[i]) for i in group]
+                cand = torch.stack([c[:K] for c, _ in dists])
+                dist = torch.stack([q[:K] for _, q in dists])
+                uniforms = []
+                for i in group:
+                    seq = seqs[i]
+                    key = draws.row_key(self.seeds.get(seq, self.seed), self.nonces[seq], self.generated_count(seq))
+                    uniforms.append(draws.uniforms(key, draws.VERIFY, K) + [draws.uniform(key, draws.FRESH, 0)])
+                accepted, tokens, _count = block_verify_batch(
+                    target.view(len(group), per, -1), torch.tensor([drafts[i] for i in group], dtype=torch.int64,
+                                                                   device=dev),
+                    cand, dist, torch.tensor(uniforms, dtype=torch.float32, device=dev))
+                # rank 0's verdict on every rank: the correction draw's cumsum is not bit-stable on the GB10s
+                # (modules/draft_agreement.agree_verdict -- one sampled row split GLM's ranks, 2026-09-14)
+                accepted, tokens = agree_verdict(self.composition.net.comm, accepted, tokens)
+                tokens, count = tokens.tolist(), (accepted + 1).tolist()
+                for g, i in enumerate(group):
+                    out[i] = [int(t) for t in tokens[g][:count[g]]]
+            return out
+
         def _verify(self, seqs):
-            proposals = self.drafter.propose(seqs)
+            sampling = self._draft_sampling(seqs) if getattr(self.drafter, "candidates", 0) else None
+            proposals = self.drafter.propose(seqs) if sampling is None else self.drafter.propose(seqs, sampling=sampling)
             drafts = []                             # no more drafts than the row can still take after its next token
             for seq, proposal in zip(seqs, proposals):
                 room = min(self.limits[seq][0] - self.generated_count(seq), self.max_context - self.context(seq)) - 1
@@ -605,11 +704,20 @@ def _served_model_class():
                     return finished
             logits, hidden = self.composition.forward(step, self.store, logits="all", hidden=True, host=(flat, carried))
             self.steps += 1
-            ahead = self._draw_ahead(seqs, step.segments, logits)
+            blocked = self._block_verify(seqs, drafts, step.segments, logits) if sampling else [None] * len(seqs)
+            ahead = self._draw_ahead(seqs, step.segments, logits,
+                                     skip={i for i, tokens in enumerate(blocked) if tokens is not None})
             finished = []
-            for seq, d, segment, drawn in zip(seqs, drafts, step.segments, ahead):
+            for seq, d, segment, drawn, tokens in zip(seqs, drafts, step.segments, ahead, blocked):
                 fed, done, matched = 0, False, 0
-                for j in range(segment.length):
+                if tokens is not None:              # block verification's: the accepted drafts, then the drawn token
+                    for j, pick in enumerate(tokens):
+                        done = self._commit(seq, pick)
+                        fed = j + 1
+                        if done:
+                            break
+                    matched = min(fed, len(tokens) - 1)
+                for j in range(segment.length if tokens is None else 0):
                     if drawn is not None:
                         pick = drawn[j]
                     else:
@@ -637,13 +745,14 @@ def _served_model_class():
 
 def build_model(net, caches, F, *, eos_ids, max_new: int, temperature: float, top_p: float, seed: int = 0,
                 drafter: bool = True, grammars=None, draft_threshold: "float | None" = None, draft_ledger=None,
-                draft_ahead: bool = False):
+                draft_ahead: bool = False, draft_candidates: int = 0):
     """The served model (ServedModel: base/composed.ComposedModel with the one-read verify) over the served net and
-    caches, and the MTP drafter when `drafter` (ServedMTP's `threshold` and `ledger`); `draft_ahead`: a greedy step's
-    draft step follows its verify step on the device (ServedModel._verify_ahead)."""
+    caches, and the MTP drafter when `drafter` (ServedMTP's `threshold`, `ledger` and `candidates`); `draft_ahead`: a
+    greedy step's draft step follows its verify step on the device (ServedModel._verify_ahead)."""
     store = ServedStore(caches)
     composition = ServedComposition(net, caches)
-    mtp = (ServedMTP(net, caches, store, F.spec_k, threshold=draft_threshold, ledger=draft_ledger)
+    mtp = (ServedMTP(net, caches, store, F.spec_k, threshold=draft_threshold, ledger=draft_ledger,
+                     candidates=draft_candidates)
            if drafter and F.spec_k else None)
     model = _served_model_class()(composition, store, vocab=F.vocab, eos_ids=eos_ids, max_new=max_new,
                                   temperature=temperature, top_p=top_p, seed=seed, max_context=F.max_position,
