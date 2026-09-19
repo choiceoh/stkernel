@@ -1,9 +1,10 @@
 """ModelOpt NVFP4's dequantisation multipliers bound to the b12x quantisation contract (module).
 
 For each FC, ModelOpt dequantises x as q*s*a and W as q*s*w. The MMA quantisers b12x imports DIVIDE by a; their GEMM
-epilogues need a*w. Derived FP32 alphas are made once, before CUDA graph capture; packed weights and E4M3 block scales
-remain untouched. Every ModelOpt NVFP4 checkpoint's experts read this way (GLM-5.3's, Qwen3.8's): it is a feature of
-the quantisation, not of a model -- engine/profiles/glm53/modelopt_scales.py carries the same contract for GLM-5.3.
+epilogues need a*w. The direct micro backend uses reciprocal quantiser scales and normalises them in dispatch. Derived
+FP32 alphas are made once, before CUDA graph capture; packed weights and E4M3 block scales remain untouched. Every
+ModelOpt NVFP4 checkpoint's experts read this way (GLM-5.3's, Qwen3.8's): it is a feature of the quantisation, not of
+a model, and both profiles bind through this one class (engine/profiles/glm53/modelopt_scales.py re-exports it).
 """
 from dataclasses import dataclass
 

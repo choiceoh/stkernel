@@ -37,17 +37,13 @@ zero -- so the step's all-reduce sums the one rank that holds each row, as the a
 from __future__ import annotations
 
 import json
-import mmap
-import os
-from concurrent.futures import ThreadPoolExecutor
+import os  # noqa: F401 -- the reader is lookup_table's; tests patch its `os` through this name
 from pathlib import Path
 
 import numpy as np
 
+from engine.modules.lookup_table import SPLIT_AT, THREADS, MappedTable  # noqa: F401 -- SPLIT_AT: the split gather uses
 from engine.profiles.qwen38 import facts
-
-THREADS = 8                     # srv2's best for the pread loop this replaced; the take has not been swept there
-SPLIT_AT = 64                   # rows below which one thread reads them all (a decode step's rows are few)
 
 
 def local_rows(rows: np.ndarray, rank: int, per_rank: int) -> "tuple[np.ndarray, np.ndarray]":
@@ -58,25 +54,13 @@ def local_rows(rows: np.ndarray, rank: int, per_rank: int) -> "tuple[np.ndarray,
     return np.where(mine, local, 0), mine
 
 
-class PLETable:
-    """One rank's table file: `gather` reads rows by local id."""
+class PLETable(MappedTable):
+    """One rank's PLE table file: `gather` and `close` are the lookup-table module's (a row by local id off a
+    read-only mapping); this adds the scale the rows are stored under and the sidecar `open` checks."""
 
     def __init__(self, path: "str | Path", *, rows: int, width: int, scale: float, threads: int = THREADS):
-        self.path = Path(path)
-        self.rows, self.width, self.scale = int(rows), int(width), float(scale)
-        size = self.path.stat().st_size
-        if size != self.rows * self.width:
-            raise ValueError(f"{self.path.name}: {size:,} bytes, not {self.rows:,} rows of {self.width}")
-        self.fd = os.open(self.path, os.O_RDONLY)
-        self._map = self._rows = None
-        if size:
-            self._map = mmap.mmap(self.fd, 0, access=mmap.ACCESS_READ)
-            if hasattr(self._map, "madvise") and hasattr(mmap, "MADV_RANDOM"):
-                self._map.madvise(mmap.MADV_RANDOM)       # a row's neighbours are other n-grams: no readahead
-            self._rows = np.frombuffer(self._map, dtype=np.uint8).reshape(self.rows, self.width)
-        self.threads = max(1, int(threads))
-        self._pool = None
-        self.reads = self.rows_read = 0                   # counters: gathers, and rows read
+        super().__init__(path, width=width, rows=rows, threads=threads)
+        self.scale = float(scale)
 
     @classmethod
     def open(cls, ranks_dir: "str | Path", rank: int, F: facts.Facts, *, world: int = facts.TP,
@@ -95,43 +79,6 @@ class PLETable:
                                  f"{want!r}; regenerate the table files with engine/profiles/qwen38/preshard.py")
         return cls(ranks_dir / facts.ple_file(rank, world), rows=sidecar["rows"], width=sidecar["width"],
                    scale=sidecar["scale"], threads=threads)
-
-    def gather(self, rows: np.ndarray) -> np.ndarray:
-        """uint8 [N, width]: the rows (int64 [N], local ids, repeats allowed) as stored."""
-        rows = np.asarray(rows, dtype=np.int64).reshape(-1)
-        n = rows.shape[0]
-        out = np.empty((n, self.width), dtype=np.uint8)
-        if n == 0:
-            return out
-        lo, hi = int(rows.min()), int(rows.max())
-        if lo < 0 or hi >= self.rows:
-            raise IndexError(f"table rows {lo}..{hi} outside 0..{self.rows - 1}")
-        # mode="clip": the ids were just checked, and "raise" makes numpy buffer `out`
-        if n < SPLIT_AT or self.threads == 1:
-            np.take(self._rows, rows, axis=0, out=out, mode="clip")
-        else:
-            # the take releases the GIL, so the threads' page faults overlap: what a cold cache waits for
-            if self._pool is None:
-                self._pool = ThreadPoolExecutor(self.threads)
-            per = -(-n // self.threads)
-            list(self._pool.map(lambda at: np.take(self._rows, rows[at:at + per], axis=0, out=out[at:at + per],
-                                                   mode="clip"), range(0, n, per)))
-        self.reads += 1
-        self.rows_read += n
-        return out
-
-    def close(self) -> None:
-        if self._pool is not None:
-            self._pool.shutdown(wait=True)
-            self._pool = None
-        self._rows = None                                 # the view holds the mapping's buffer: it goes first
-        if self._map is not None:
-            self._map.close()
-            self._map = None
-        if self.fd >= 0:
-            os.close(self.fd)
-            self.fd = -1
-
 
 class PLEStaging:
     """The rows a captured step reads: [capacity, heads, width] uint8 on the device -- the graphs' static input, every
