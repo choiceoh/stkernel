@@ -313,45 +313,43 @@ def shards(directories) -> "list[Path]":
     return [shard for directory in directories for shard in sorted(Path(directory).glob("mtp-inputs-*.npz"))]
 
 
-def load_meta(files) -> dict:
-    """{(boot, sequence): {position: (shard index, row, next token, decoded)}} -- a boot's sequence ids are its own, and
-    a position seen twice (a prompt prefilled again after a park) keeps its last record."""
+def load_meta(files) -> list:
+    """The tap's records as runs, in the order the stream wrote them: [(boot, seq, [(position, shard index, row, next
+    token, decoded)])]. A sequence id is a serving slot's and comes back for the slot's next request (the
+    2026-09-19 window: four ids over 1,441 requests), so a run ends where the next record of its id is not the
+    position after its last -- a new request (at 0, or past a cached prefix) or the same one prefilled again."""
     import numpy as np
-    table = {}
+    runs, current = [], {}
     for index, shard in enumerate(files):
         boot = "-".join(shard.stem.split("-")[2:4])
         for row, (seq, position, token, decoded) in enumerate(np.load(shard)["meta"].tolist()):
-            table.setdefault((boot, seq), {})[position] = (index, row, token, decoded)
-    return table
+            run = current.get((boot, seq))
+            if run is None or position != run[2][-1][0] + 1:
+                run = current[(boot, seq)] = (boot, seq, [])
+                runs.append(run)
+            run[2].append((position, index, row, token, decoded))
+    return runs
 
 
 def build_runs(files, out: Path, *, holdout: float = 0.1, min_length: int = 32, seed: int = 0) -> dict:
-    """Each sequence's contiguous positions as a run file (streams BF16 as int16 bits, the next tokens, decoded
-    flags); a whole sequence goes to evaluation with probability `holdout`. The shards' streams are read one shard at a
-    time and each run is written when its last row is in. -> the index, written to runs.json."""
+    """Each run of contiguous positions (`load_meta`) as a file (streams BF16 as int16 bits, the next tokens, decoded
+    flags); a run goes to evaluation with probability `holdout`. The shards' streams are read one shard at a time and
+    each run is written when its last row is in. -> the index, written to runs.json."""
     import numpy as np
     out.mkdir(parents=True, exist_ok=True)
-    table = load_meta(files)
     rng = random.Random(seed)
     runs, waiting = [], {}                                  # shard index -> [(run, slot, row)]
-    for key in sorted(table):
-        positions = table[key]
-        split = "eval" if rng.random() < holdout else "train"
-        ordered = sorted(positions)
-        begin = 0
-        for i in range(1, len(ordered) + 1):
-            if i == len(ordered) or ordered[i] != ordered[i - 1] + 1:
-                span = ordered[begin:i]
-                if len(span) >= min_length:
-                    picked = [positions[p] for p in span]
-                    run = {"file": f"run-{len(runs):06d}.npz", "boot": key[0], "seq": key[1], "start": span[0],
-                           "length": len(span), "decoded": sum(d for *_, d in picked), "split": split,
-                           "_tokens": [t for _, _, t, _ in picked], "_flags": [d for *_, d in picked],
-                           "_rows": [None] * len(span), "_left": len(span)}
-                    runs.append(run)
-                    for slot, (shard, row, _, _) in enumerate(picked):
-                        waiting.setdefault(shard, []).append((run, slot, row))
-                begin = i
+    for boot, seq, records in load_meta(files):
+        if len(records) < min_length:
+            continue
+        run = {"file": f"run-{len(runs):06d}.npz", "boot": boot, "seq": seq, "start": records[0][0],
+               "length": len(records), "decoded": sum(r[4] for r in records),
+               "split": "eval" if rng.random() < holdout else "train",
+               "_tokens": [r[3] for r in records], "_flags": [r[4] for r in records],
+               "_rows": [None] * len(records), "_left": len(records)}
+        runs.append(run)
+        for slot, (_position, shard, row, _token, _decoded) in enumerate(records):
+            waiting.setdefault(shard, []).append((run, slot, row))
     for index in sorted(waiting):
         streams = np.load(files[index])["streams"]
         for run, slot, row in waiting.pop(index):
@@ -492,13 +490,20 @@ def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0, rank: int =
     return {key: round(value / max(weight, 1), 5) for key, value in zip(keys, total)} | {"positions": int(weight)}
 
 
+def learning_rate(step: int, *, total: int, peak: float, warmup: int) -> float:
+    """Linear warmup, then a cosine to zero at `total`. The warmup is at most a tenth of the run: the 2026-09-19
+    window trained 91 steps under the default warmup of 100, and its rate never came within a quarter of `peak`."""
+    warmup = max(1, min(warmup, total // 10))
+    return peak * min(1.0, step / warmup) * 0.5 * (1 + math.cos(math.pi * min(1.0, step / total)))
+
+
 def train(args) -> None:
     cfg, prefix = config(args.ckpt)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     rank, world = distributed()
     torch.manual_seed(args.seed)
     rng = random.Random(args.seed * 1000 + rank)                   # each rank its own windows
-    model = Head(cfg, checkpoint_tensors(args.ckpt, prefix), prefix=prefix, device=device)
+    model = Head(cfg, checkpoint_tensors(args.ckpt, prefix, tuned=args.init), prefix=prefix, device=device)
     train_runs = Runs(args.data, "train", window=args.window, depth=args.depth)
     eval_runs = Runs(args.data, "eval", window=args.window, depth=args.depth)
     out = Path(args.out)
@@ -520,7 +525,7 @@ def train(args) -> None:
     total = args.steps
     best = base["tokens_a_step"]
     for step in range(1, total + 1):
-        lr = args.lr * min(1.0, step / max(1, args.warmup)) * 0.5 * (1 + math.cos(math.pi * min(1.0, step / total)))
+        lr = learning_rate(step, total=total, peak=args.lr, warmup=args.warmup)
         for group in optimizer.param_groups:
             group["lr"] = lr
         optimizer.zero_grad(set_to_none=True)
@@ -652,6 +657,9 @@ def main(argv=None) -> int:
         p.add_argument("--seed", type=int, default=0)
         if name == "train":
             p.add_argument("--out", required=True)
+            p.add_argument("--init", type=Path, default=None,
+                           help="start from a tuned head (a run's head.safetensors) instead of the checkpoint's; "
+                                "step 0's evaluation is then that head's, and only a better one is saved")
             p.add_argument("--steps", type=int, default=2000)
             p.add_argument("--accumulate", type=int, default=4)
             p.add_argument("--lr", type=float, default=2e-5)

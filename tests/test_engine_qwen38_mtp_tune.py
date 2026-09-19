@@ -13,6 +13,7 @@ Held on the CPU over the small Qwen3.8-shaped composition with a random MTP head
 """
 import importlib.util
 import json
+import math
 import random
 import tempfile
 import time
@@ -138,7 +139,7 @@ def _ddp_rank(rank, world, port, data_dir, out_dir, results):
     _, _, cfg, weights = tiny()
     args = SimpleNamespace(ckpt=Path(data_dir), data=data_dir, out=out_dir, depth=3, window=12, eval_windows=4, seed=0,
                            steps=3, accumulate=2, lr=1e-3, warmup=1, beta=0.6, auf=False, clip=1.0, log_every=1,
-                           eval_every=3)
+                           eval_every=3, init=None)
     with mock.patch.object(mt, "config", lambda ckpt: (cfg, "model.")), \
             mock.patch.object(mt, "checkpoint_tensors", lambda ckpt, prefix, tuned=None: weights.__getitem__), \
             mock.patch.object(mt.Head, "__init__", _float32_head_init(mt.Head.__init__)):
@@ -158,6 +159,19 @@ def _float32_head_init(init):
 
 
 @unittest.skipUnless(torch is not None, "requires torch")
+class ScheduleTests(unittest.TestCase):
+    def test_a_short_run_still_reaches_its_peak_rate(self):
+        """The 2026-09-19 window: 91 steps under the default warmup of 100 peaked below a quarter of the rate."""
+        from engine.profiles.qwen38.mtp_tune import learning_rate
+        rates = [learning_rate(step, total=91, peak=5e-5, warmup=100) for step in range(1, 92)]
+        self.assertGreater(max(rates), 0.9 * 5e-5)
+        self.assertEqual(rates.index(max(rates)) + 1, 9)                 # a tenth of the run
+        self.assertLess(rates[-1], 1e-12)
+        long = [learning_rate(step, total=2000, peak=2e-5, warmup=100) for step in (50, 100, 1000)]
+        self.assertAlmostEqual(long[0], 2e-5 * 0.5 * 0.5 * (1 + math.cos(math.pi * 50 / 2000)))
+        self.assertAlmostEqual(long[2], 2e-5 * 0.5)
+
+
 class DistributedTests(unittest.TestCase):
     """`train` data parallel: each rank its own windows, the gradients averaged, the ranks' weights the same bits and
     moved; the evaluation split across ranks and summed back."""
@@ -176,6 +190,31 @@ class DistributedTests(unittest.TestCase):
             np.savez(Path(d) / f"mtp-inputs-20260919-150000-{seq:05d}.npz",
                      streams=streams.to(torch.bfloat16).view(torch.int16).numpy(), meta=meta)
         return build_runs(sorted(Path(d).glob("mtp-inputs-*.npz")), Path(d) / "data", holdout=0.34, min_length=16, seed=1)
+
+    def test_a_run_from_a_tuned_head_reads_it_over_the_checkpoint(self):
+        """`--init`: the 2026-09-19 window's second training started from the first one's head."""
+        from types import SimpleNamespace
+        from unittest import mock
+        from engine.profiles.qwen38 import mtp_tune as mt
+        _, _, cfg, weights = tiny()
+        asked = []
+
+        def tensors(ckpt, prefix, tuned=None):
+            asked.append(tuned)
+            return weights.__getitem__
+        with tempfile.TemporaryDirectory() as d:
+            self.data(d)
+            init = Path(d) / "run1" / "head.safetensors"
+            args = SimpleNamespace(ckpt=Path(d), data=str(Path(d) / "data"), out=str(Path(d) / "run"), depth=3, window=12,
+                                   eval_windows=4, seed=0, steps=0, accumulate=1, lr=1e-3, warmup=1, beta=0.6, auf=False,
+                                   clip=1.0, log_every=1, eval_every=1, init=init)
+            with mock.patch.object(mt, "config", lambda ckpt: (cfg, "model.")), \
+                    mock.patch.object(mt, "checkpoint_tensors", tensors), \
+                    mock.patch.object(mt.Head, "__init__", _float32_head_init(mt.Head.__init__)):
+                mt.train(args)
+            events = [json.loads(line)["event"] for line in (Path(d) / "run" / "log.jsonl").read_text().splitlines()]
+        self.assertEqual(asked, [init])
+        self.assertEqual(events, ["start", "eval", "end"])
 
     def test_two_ranks_end_on_the_same_weights(self):
         import socket
@@ -218,7 +257,7 @@ class DataTests(unittest.TestCase):
             tap(1, 0, list(range(100, 140)), rows(40, 1), False)             # a prompt of 40 positions
             tap(1, 40, [140, 141], rows(2, 2), True)                         # a verify step kept two
             tap(2, 0, list(range(200, 205)), rows(5, 3), False)              # a short sequence
-            tap(1, 41, [999], rows(1, 4), True)                              # position 41 again: the later wins
+            tap(1, 41, [999], rows(1, 4), True)                              # 41 again: a new run, too short to keep
             tap(1, 42, [142], rows(1, 5), True)
             import numpy as np
             written = lambda: sum(np.load(f)["meta"].shape[0] for f in shards([taps]))
@@ -229,15 +268,31 @@ class DataTests(unittest.TestCase):
             self.assertEqual(written(), 49)
             self.assertGreaterEqual(len(files), 2)                             # a full shard, then the timer's
             index = build_runs(files, Path(d) / "data", holdout=0.0, min_length=8)
-            self.assertEqual([(r["seq"], r["start"], r["length"], r["decoded"]) for r in index["runs"]], [(1, 0, 43, 3)])
+            self.assertEqual([(r["seq"], r["start"], r["length"], r["decoded"]) for r in index["runs"]], [(1, 0, 42, 2)])
             run = np.load(Path(d) / "data" / index["runs"][0]["file"])
-            self.assertEqual(run["tokens"].tolist()[-3:], [140, 999, 142])
+            self.assertEqual(run["tokens"].tolist()[-3:], [139, 140, 141])
             got = torch.from_numpy(run["streams"]).view(torch.bfloat16)
-            self.assertEqual(got[:, 0].tolist()[38:], [1.0, 1.0, 2.0, 4.0, 5.0])
+            self.assertEqual(got[:, 0].tolist()[38:], [1.0, 1.0, 2.0, 2.0])
             windows = list(Runs(Path(d) / "data", "train", window=16, depth=3).windows(random.Random(0), 5))
             for streams, tokens, start in windows:
                 self.assertEqual((streams.shape, tokens.shape), ((19, width), (19,)))
-                self.assertTrue(0 <= start <= 43 - 19)
+                self.assertTrue(0 <= start <= 42 - 19)
+
+    def test_a_slot_id_serving_one_request_after_another_is_two_runs(self):
+        """The door's sequence ids are its slots' (the 2026-09-19 window: four ids over 1,441 requests): a record that
+        does not continue its id's last position starts a run -- a new request at 0, or one past a cached prefix."""
+        import numpy as np
+        from engine.profiles.qwen38.mtp_tune import build_runs
+        with tempfile.TemporaryDirectory() as d:
+            meta = [[0, p, 1000 + p, 0] for p in range(40)] + [[1, p, 3000 + p, 0] for p in range(35)] \
+                + [[0, p, 2000 + p, 0] for p in range(30)] + [[0, p, 5000 + p, 0] for p in range(12, 45)]
+            np.savez(Path(d) / "mtp-inputs-20260919-100000-00000.npz", streams=np.zeros((len(meta), 4), np.int16),
+                     meta=np.array(meta, dtype=np.int64))
+            index = build_runs(sorted(Path(d).glob("*.npz")), Path(d) / "data", holdout=0.0, min_length=8)
+            self.assertEqual([(r["seq"], r["start"], r["length"]) for r in index["runs"]],
+                             [(0, 0, 40), (1, 0, 35), (0, 0, 30), (0, 12, 33)])
+            third = np.load(Path(d) / "data" / index["runs"][2]["file"])
+            self.assertEqual(third["tokens"].tolist()[:2], [2000, 2001])
 
     def test_two_boots_keep_their_sequences_apart_and_a_sequence_is_held_out_whole(self):
         import numpy as np
