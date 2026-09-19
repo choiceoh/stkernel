@@ -3,8 +3,8 @@
 This directory contains a portable code-graph snapshot for `engine/base`.
 
 - Source scope: `engine/base/`
-- Source revision: `56c4c50`
-- Source digest: `10ffb5d18551bdc7d8ecf625dcf5d11618491e1e8bf05727c6fefab1fe10a157`
+- Source revision: `c278bbb`
+- Source digest: `60887c4dfa3ba1ba71532256b547c51139a49c807ea3729b95c1d65dafaabd5b`
 - Generated: 2026-09-19
 - Extractor: `graphifyy 0.4.19`
 - Extraction mode: AST-only (code-only corpus)

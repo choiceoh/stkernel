@@ -338,9 +338,45 @@ def drift(ours: torch.Tensor, ref: torch.Tensor) -> "tuple[float, float]":
     of a value (7 mantissa bits): an operation that rounds where the torch form does not -- a reduction's partial
     sums -- moves an element by a step or two, far under the tenths that a wrong formula, stream or channel gives."""
     a, b = ours.float(), ref.float()
-    err = (a - b).abs()
+    err = _far((a - b).abs())
     return (float((err.max() / b.abs().max().clamp_min(1e-30)).item()),
             float((err.square().mean().sqrt() / b.square().mean().sqrt().clamp_min(1e-30)).item()))
+
+
+def _far(err: torch.Tensor) -> torch.Tensor:
+    """An element that is not a number is as far from its reference as an element gets. Left a NaN it would pass every
+    hold: `nan > band` is false, and so is what `max(0.0, nan)` compares."""
+    return torch.nan_to_num(err, nan=float("inf"), posinf=float("inf"))
+
+
+def blame(ours: torch.Tensor, ref: torch.Tensor, ours_fn, ref_fn, host_fn=None, *, band_max: float = 5e-2) -> str:
+    """What a failed hold says about itself, for its error -- `drift`'s two numbers cannot say where the error sits or
+    whose it is, and a failure that does not come back leaves nothing else to read (measurements/qwen38_lane_20260919).
+    `ours` and `ref` are the tensors that failed; `ours_fn()` and `ref_fn()` make the same two calls again. Says where
+    the elements past `band_max` sit (how many, the span of each index, the worst one's two values), whether each side
+    repeats itself -- a side that gives other bytes to the same call is the wrong one, and its fault is not its
+    arithmetic -- and, with `host_fn` (the reference computed on the CPU), which side leaves it. The failing path only."""
+    a, b = ours.float(), ref.float()
+    err = _far((a - b).abs())
+    past = (err > band_max * b.abs().max().clamp_min(1e-30)).nonzero()
+    if past.shape[0]:
+        spans = ", ".join(f"dim {d} {int(past[:, d].min())}..{int(past[:, d].max())} ({int(past[:, d].unique().numel())} "
+                          f"distinct)" for d in range(past.shape[1]))
+        at = tuple(int(i) for i in (err == err.max()).nonzero()[0])
+        said = [f"{past.shape[0]} of {err.numel()} elements past the max band: {spans}; the worst at {at} is "
+                f"{a[at].item():.6g} against the reference's {b[at].item():.6g}"]
+    else:
+        said = ["no element is past the max band (the rms band is what failed)"]
+    for name, first, fn in (("ours", ours, ours_fn), ("the reference", ref, ref_fn)):
+        again = fn()
+        moved = int(((again != first) & ~(again.isnan() & first.isnan())).sum().item())
+        said.append(f"{name} computed again gives the same bytes" if not moved else
+                    f"{name} computed again differs in {moved} elements -- it does not repeat itself")
+    if host_fn is not None:
+        host = host_fn().to(ref.device)
+        said.append(f"against the CPU's reference ours drifts {drift(ours, host)} and the device's reference "
+                    f"{drift(ref, host)}")
+    return "; ".join(said)
 
 
 def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.bfloat16, rows=(1, 5, 64),
@@ -387,4 +423,4 @@ def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.
 
 
 __all__ = ["DECODE_ROWS", "pack_down_inject", "norm_streams", "leave", "leave_norm", "mix", "folds", "mix_rows", "drift",
-           "qualify"]
+           "blame", "qualify"]
