@@ -1,0 +1,4 @@
+C=1 #0: device 112389.3 us/step over 32 steps; step ms profiled 79.71888709677421 vs plain 36.77808152173913; tokens/step 0.0; accept 0.8333333333333334; kernels 99
+C=1 #1: device 32048.7 us/step over 32 steps; step ms profiled 38.953897435897616 vs plain 36.91575543478257; tokens/step 0.0; accept 0.6557971014492754; kernels 99
+C=4 #0: device 57074.0 us/step over 32 steps; step ms profiled 61.59136363636332 vs plain 61.795669902912735; tokens/step 0.0; accept 0.5833333333333334; kernels 96
+PROFILE done
