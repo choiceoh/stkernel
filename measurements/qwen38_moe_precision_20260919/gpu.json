@@ -1,0 +1,310 @@
+[
+  {
+    "event": "device",
+    "name": "NVIDIA GB10",
+    "torch": "2.13.0+cu132",
+    "cuda": "13.2",
+    "shape": [
+      128,
+      2560,
+      640,
+      10
+    ],
+    "default_search": 2
+  },
+  {
+    "event": "quant_parity",
+    "radius": -1,
+    "mode": "normal",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 0,
+    "mode": "normal",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_numeric",
+    "radius": 1,
+    "checked_finite_blocks": 151322,
+    "changed_scales": 11203,
+    "synthetic_mse_reduction_pct": 3.1655268976932605,
+    "worsened_blocks": 0
+  },
+  {
+    "event": "quant_numeric",
+    "radius": 2,
+    "checked_finite_blocks": 151322,
+    "changed_scales": 11732,
+    "synthetic_mse_reduction_pct": 3.2272424582009074,
+    "worsened_blocks": 0
+  },
+  {
+    "event": "quant_parity",
+    "radius": -1,
+    "mode": "zero",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 0,
+    "mode": "zero",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 1,
+    "mode": "zero",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 2,
+    "mode": "zero",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": -1,
+    "mode": "negative",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 0,
+    "mode": "negative",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 1,
+    "mode": "negative",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 2,
+    "mode": "negative",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": -1,
+    "mode": "infinite",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 0,
+    "mode": "infinite",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 1,
+    "mode": "infinite",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 2,
+    "mode": "infinite",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": -1,
+    "mode": "nan",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 0,
+    "mode": "nan",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 1,
+    "mode": "nan",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "quant_parity",
+    "radius": 2,
+    "mode": "nan",
+    "blocks": 151594,
+    "passed": true
+  },
+  {
+    "event": "accumulation",
+    "rows": 64,
+    "slices": 5,
+    "baseline_sse": 0.01610628764604846,
+    "fp32_sse": 0.005194311418436709,
+    "reduction_pct": 67.74979105932528,
+    "exact_rounded_oracle": true
+  },
+  {
+    "event": "projection",
+    "rows": 1,
+    "topk": 1,
+    "radius": 0,
+    "relative_error": 0.0058139534667134285
+  },
+  {
+    "event": "projection",
+    "rows": 1,
+    "topk": 1,
+    "radius": 2,
+    "relative_error": 0.0062500000931322575
+  },
+  {
+    "event": "projection",
+    "rows": 8,
+    "topk": 1,
+    "radius": 0,
+    "relative_error": 0.0036231884732842445
+  },
+  {
+    "event": "projection",
+    "rows": 8,
+    "topk": 1,
+    "radius": 2,
+    "relative_error": 0.0036764706019312143
+  },
+  {
+    "event": "projection",
+    "rows": 64,
+    "topk": 1,
+    "radius": 0,
+    "relative_error": 0.004999999888241291
+  },
+  {
+    "event": "projection",
+    "rows": 64,
+    "topk": 1,
+    "radius": 2,
+    "relative_error": 0.005076142027974129
+  },
+  {
+    "event": "projection",
+    "rows": 4,
+    "topk": 10,
+    "radius": 0,
+    "relative_error": 0.003496503457427025
+  },
+  {
+    "event": "projection",
+    "rows": 4,
+    "topk": 10,
+    "radius": 2,
+    "relative_error": 0.0037878789007663727
+  },
+  {
+    "event": "projection",
+    "rows": 16,
+    "topk": 10,
+    "radius": 0,
+    "relative_error": 0.004854368977248669
+  },
+  {
+    "event": "projection",
+    "rows": 16,
+    "topk": 10,
+    "radius": 2,
+    "relative_error": 0.005154639016836882
+  },
+  {
+    "event": "projection",
+    "rows": 129,
+    "topk": 10,
+    "radius": 0,
+    "relative_error": 0.004464285913854837
+  },
+  {
+    "event": "projection",
+    "rows": 129,
+    "topk": 10,
+    "radius": 2,
+    "relative_error": 0.006637168116867542
+  },
+  {
+    "event": "activation_projection_error",
+    "sample": 0,
+    "baseline_sse": 58.42356460548251,
+    "as2_sse": 45.94874546419774,
+    "reduction_pct": 21.352375921468724,
+    "reference": "same weights, no activation quantization"
+  },
+  {
+    "event": "activation_projection_error",
+    "sample": 1,
+    "baseline_sse": 89.26906111912845,
+    "as2_sse": 77.52408685511291,
+    "reduction_pct": 13.15682512706392,
+    "reference": "same weights, no activation quantization"
+  },
+  {
+    "event": "activation_projection_error",
+    "sample": 2,
+    "baseline_sse": 73.75074425466039,
+    "as2_sse": 58.975685386604454,
+    "reduction_pct": 20.0337759535522,
+    "reference": "same weights, no activation quantization"
+  },
+  {
+    "event": "graph",
+    "tile": 32,
+    "rows": 129,
+    "changed_inputs": true,
+    "poisoned_accumulator": true,
+    "zero_weights": true
+  },
+  {
+    "event": "graph",
+    "tile": 64,
+    "rows": 129,
+    "changed_inputs": true,
+    "poisoned_accumulator": true,
+    "zero_weights": true
+  },
+  {
+    "event": "graph",
+    "tile": 128,
+    "rows": 129,
+    "changed_inputs": true,
+    "poisoned_accumulator": true,
+    "zero_weights": true
+  },
+  {
+    "event": "served_prefill",
+    "rows": 4096,
+    "finite": true,
+    "foreign_routes_zero": true
+  },
+  {
+    "event": "passed",
+    "passed": true,
+    "peak_bytes": 1246733824,
+    "not_measured": "real checkpoint, TP4 consumer output quality, acceptance and throughput"
+  }
+]

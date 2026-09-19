@@ -1,0 +1,6 @@
+.........ssss  Qwen calibration: filed 1 blobs (filed 4096/131072 rows over 1 blobs); next boot packs GPTQ
+...............................ssss.............s
+----------------------------------------------------------------------
+Ran 62 tests in 1.239s
+
+OK (skipped=9)

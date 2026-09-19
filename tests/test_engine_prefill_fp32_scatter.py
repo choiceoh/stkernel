@@ -34,6 +34,21 @@ class Tensor:
 
 
 class ScatterCeilingTests(unittest.TestCase):
+    def test_compact_ep_rows_use_bound_width_and_owned_grow_only_storage(self):
+        ns, events, allocations = self.namespace()
+        ns['_admitted_moe'] = lambda: SimpleNamespace(hidden=2560)
+        fn = ns['_ep_local_scatter_buffer']
+        ws = SimpleNamespace(device='cuda:0', ep_scatter_fp32=None)
+        first = fn(ws, Tensor((40960, 2560)), 40960, 2560, bound_ep=True)
+        again = fn(ws, Tensor((17, 2560)), 17, 2560, bound_ep=True)
+        self.assertEqual(first.data_ptr(), again.data_ptr())
+        self.assertEqual(len(allocations), 1)
+        self.assertEqual(len(events), 2)
+        with self.assertRaises(ValueError):
+            fn(ws, Tensor((17, 4096)), 17, 4096, bound_ep=True)
+        with self.assertRaises(ValueError):
+            fn(ws, Tensor((2**31 // (2560*4) + 1, 2560)), 2**31 // (2560*4) + 1, 2560, bound_ep=True)
+
     def namespace(self):
         events, allocations = [], []
         def empty(shape, **kw):

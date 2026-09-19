@@ -29,6 +29,8 @@ from dataclasses import dataclass
 
 import torch
 
+MOE_ACTIVATION_SCALE_SEARCH = 2
+
 
 @dataclass(frozen=True)
 class Lanes:
@@ -457,6 +459,7 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
 
     # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
     md.configure_ep_zero_weight_micro(True)
+    md.configure_activation_scale_search(MOE_ACTIVATION_SCALE_SEARCH)  # five-candidate FC1/FC2 search, compact EP too
     common = common_lanes()
     bound = [hcr.norm_streams, hc_leave, hc_leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
              recurrent_gdn_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,

@@ -100,6 +100,7 @@ from flashinfer.gemm.kernels.dense_blockscaled_gemm_sm120_b12x import (
     Sm120B12xBlockScaledDenseGemmKernel as DenseGemmKernel,
 )
 from ..moe_activation import gated_activation_f32, is_gated_activation
+from ..moe_micro_kernel import scatter_add_bf16x4_to_f32
 
 
 _SF_VEC_SIZE = 16
@@ -1004,7 +1005,8 @@ class MoEDynamicKernel:
         num_experts = Int32(row_counts.shape[0])
         sf_blocks_per_row = cols // Int32(self.sf_vec_size)
         output_bytes_per_row = cols // Int32(2)
-        cols_u32 = cols // Int32(2)
+        # The FP32 accumulator has twice the byte extent of the BF16 ABI.
+        cols_u32 = cols if cutlass.const_expr(scatter_output.element_type == cutlass.Float32) else cols // Int32(2)
         scatter_output_u32 = cute.recast_tensor(scatter_output, cutlass.Uint32)
         total_pairs = Int32(topk_ids.shape[0])
         num_topk = total_pairs // num_tokens
@@ -2580,19 +2582,19 @@ class MoEDynamicKernel:
                                         epi_buffer,
                                     ]
                                 )
-                                scatter_add_v4_bf16x2(
-                                    get_ptr_as_int64(
-                                        scatter_output, tok * scatter_N + global_col
-                                    ),
-                                    wv * sc_v0,
-                                    wv * sc_v1,
-                                    wv * sc_v2,
-                                    wv * sc_v3,
-                                    wv * sc_v4,
-                                    wv * sc_v5,
-                                    wv * sc_v6,
-                                    wv * sc_v7,
-                                )
+                                if cutlass.const_expr(scatter_output.element_type == cutlass.Float32):
+                                    # Retain the weighted BF16 contributions, widening only their sum.
+                                    scatter_add_bf16x4_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col),
+                                        wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3)
+                                    scatter_add_bf16x4_to_f32(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col + Int32(4)),
+                                        wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7)
+                                else:
+                                    scatter_add_v4_bf16x2(
+                                        get_ptr_as_int64(scatter_output, tok * scatter_N + global_col),
+                                        wv * sc_v0, wv * sc_v1, wv * sc_v2, wv * sc_v3,
+                                        wv * sc_v4, wv * sc_v5, wv * sc_v6, wv * sc_v7)
                                 vec_idx += Int32(self.num_threads_per_warp)
 
                             # Post-scatter barrier: needed to ensure all warps
