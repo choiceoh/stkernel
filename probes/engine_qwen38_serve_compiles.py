@@ -21,6 +21,11 @@ dispatcher's kernel caches. A step that added a kernel is reported with the kern
 One rank, two layers: a 48-layer rank compiles the same kernels (every layer of a type takes the same shapes), not
 more. OneRankComm: no collective. The PLE table is zeros. Step times are this small net's and are not a claim (D17);
 what is recorded is which kernels appeared after the door and at which step.
+
+"Appeared" is a kernel's first use in this process: Triton and the b12x getters put a kernel read back from their disk
+caches into the same in-process caches as one they compiled. On the lane the disk caches (/cache) outlive a run, so a
+kernel an earlier run built appears here as a read of milliseconds, where a fleet node without it compiles for seconds:
+the list is what a tree's first boot would build after its door; the step's seconds say which kind this run saw.
 """
 from __future__ import annotations
 
