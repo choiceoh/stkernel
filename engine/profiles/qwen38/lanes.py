@@ -94,6 +94,11 @@ class Lanes:
                                     #  without blocks -- a dense causal launch, a run of `group` rows of one request
                                     #  sharing each K/V tile; the same bytes (carry Q10). None: such a step attends its
                                     #  unscored ids through qsa_attend
+    qsa_attend_union: object = None  # qsa_tile_union.attention(q, k, v caches, blocks, positions, starts, ratio, topk,
+                                    #  table, token_to_req, *, gate): qsa_attend for a prefill step
+                                    #  qsa_tile_union.admits takes -- two rows of a segment walk the union of their
+                                    #  chosen blocks once (vLLM PR 55430, engine/SM121_INTAKE.md U12); within the
+                                    #  sparse launch's band, not its bytes. None: every step attends through qsa_attend
     qsa_select_alike: object = None  # qsa.shards_select_alike(rows, shards, columns, topk / ratio, group) -> bool: whether
                                     #  qsa_select over disjoint row ranges of a step (their row counts) chooses row for
                                     #  row what one call does. The selection lane's own statement -- it picks its
@@ -345,7 +350,7 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
         raise ValueError(f"leave {leave!r}: one of {LEAVES}")
     from engine.base.lanes import served as common_lanes
     from engine.kernels import gated_residual as hcr
-    from engine.kernels import gdn, moe_output, moe_route, qsa
+    from engine.kernels import gdn, moe_output, moe_route, qsa, qsa_tile_union
     from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.causal_conv_single import causal_conv1d_single
     from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
@@ -474,19 +479,21 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
-                 qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
+                 qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention),
+                 qsa_attend_union=on_main(qsa_tile_union.attention), route_local=on_main(route_local),
                  rows_linear=on_main(linear_rows), router_logits=on_main(router_fp32.router_logits_mma),
                  router_bf16=True,
                  moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate), hc_site=on_main(hc_site),
                  ple_conv=on_main(ngram_gate.conv_add), leave=leave)
 
 
-def qualify(device, F) -> dict:
+def qualify(device, F, *, tile_union: bool = True) -> dict:
     """The served lanes that own arithmetic the wizard's glue does not cover, held to their oracles on `device` before
     a boot serves (D3): the gated residual at the model's widths, GDN's gates and output norm, QSA's head norm with
     its partial rotation (the query heads and the indexer's), the skinny GEMV at the shapes it takes, and the head's
-    FP8 decode-row kernel against its recipe, and the PLE injection's gate."""
-    from engine.kernels import gated_residual, gdn, ngram_gate, qsa
+    FP8 decode-row kernel against its recipe, the PLE injection's gate, and the tile-union prefill attention against
+    the split-K launch it replaces (unless the boot declined it: `tile_union`, fleet.py --no-tile-union)."""
+    from engine.kernels import gated_residual, gdn, ngram_gate, qsa, qsa_tile_union
     from engine.kernels.common import skinny_gemv
     from engine.kernels.dense import fp8_rows
     return {"gated_residual": gated_residual.qualify(device, hc=F.hc, hidden=F.hidden, rank=F.hc_rank, eps=F.rms_eps),
@@ -495,7 +502,10 @@ def qualify(device, F) -> dict:
                                          rotary_dim=F.rotary_dim, theta=F.rope_theta, eps=F.rms_eps,
                                          max_position=F.max_position),
             "skinny_gemv": skinny_gemv.qualify(device), "fp8_rows": fp8_rows.qualify(device),
-            "ngram_gate": ngram_gate.qualify(device, hc=F.hc, hidden=F.hidden, eps=F.rms_eps)}
+            "ngram_gate": ngram_gate.qualify(device, hc=F.hc, hidden=F.hidden, eps=F.rms_eps),
+            **({"qsa_tile_union": qsa_tile_union.qualify(device, heads=F.heads_local, head_dim=F.head_dim,
+                                                         ratio=F.idx_ratio, budget=F.idx_budget, page_size=F.block)}
+               if tile_union else {})}
 
 
 __all__ = ["Lanes", "KERNEL_MODULES", "LEAVES", "LEAVE", "import_kernels", "reference", "served", "qualify",

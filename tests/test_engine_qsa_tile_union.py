@@ -31,6 +31,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -216,6 +217,15 @@ class TileUnionTests(unittest.TestCase):
             shared = tile_union(meta, q, k_cache, v_cache, blocks, gate, layout=layout)
         self.assertTrue(torch.equal(shared, alone))
 
+    @unittest.skipIf(INTERPRET, "a 1,024-row step at the model's widths: the GB10 lane runs it")
+    def test_the_boot_qualification_passes(self):
+        """What Qwen3.8's boot runs before it serves the launch (lanes.qualify)."""
+        from engine.kernels import qsa_tile_union
+        held = qsa_tile_union.qualify(DEVICE, heads=W.heads, head_dim=W.head_dim, ratio=W.ratio, budget=W.budget,
+                                      page_size=W.block)
+        self.assertLessEqual(held["largest"], qsa_tile_union.BAND[0])
+        self.assertLessEqual(held["rms"], qsa_tile_union.BAND[1])
+
     def test_the_band_has_power(self):
         """One block fewer in each row moves the output far past the band: the comparison above would see a tile
         that lost or leaked a block."""
@@ -342,10 +352,57 @@ class ProvenanceTests(unittest.TestCase):
         notices = (ROOT / "engine/kernels/THIRD_PARTY_NOTICES.md").read_text()
         self.assertIn("qsa_tile_union.py", notices)
 
-    def test_no_lane_serves_it(self):
-        """Not wired: turning it on is the operator's decision after a GB10 judgment (engine/QWEN38_CARRY.md)."""
-        for path in ("engine/profiles/qwen38/lanes.py", "engine/profiles/qwen38/net.py"):
-            self.assertNotIn("qsa_tile_union", (ROOT / path).read_text(), path)
+
+class ServedTests(unittest.TestCase):
+    """On by the operator's decision of 2026-09-19 (fleet unmeasured): the lane table binds it, the net takes it for a
+    prefill step `admits` takes, and a boot can decline it from the launcher to the net."""
+
+    def net(self, **kw):
+        from engine.profiles.qwen38.net import Qwen38Net
+        stand_in = Qwen38Net.__new__(Qwen38Net)
+        stand_in.F = SimpleNamespace(idx_ratio=W.ratio, idx_budget=W.budget)
+        stand_in.lanes = SimpleNamespace(qsa_attend_union=kw.pop("lane", object()))
+        stand_in.tile_union = kw.pop("tile_union", True)
+        return stand_in
+
+    def asks(self, stand_in, rows=1024, segments=1, captured=False):
+        meta = SimpleNamespace(page_table=torch.zeros(segments, 40, dtype=torch.int32))
+        K = torch.zeros(64, W.block, 1, 1)
+        return stand_in._tile_union(SimpleNamespace(captured=captured), meta, K, rows)
+
+    def test_a_prefill_step_admits_takes_is_on_the_union(self):
+        self.assertTrue(self.asks(self.net()))
+
+    def test_every_other_step_stays_on_the_split_k_launch(self):
+        self.assertFalse(self.asks(self.net(), rows=1023))                         # below the tile's row gate
+        self.assertFalse(self.asks(self.net(), rows=1024, segments=17))           # under 64 rows a segment
+        self.assertFalse(self.asks(self.net(), captured=True))
+        self.assertFalse(self.asks(self.net(tile_union=False)))                   # a boot declined it
+        self.assertFalse(self.asks(self.net(lane=None)))                          # a lane table without it
+
+    def test_it_is_on_unless_a_boot_declines(self):
+        import inspect
+        from engine.profiles.qwen38 import lanes
+        from engine.profiles.qwen38.net import Qwen38Net
+        self.assertIs(inspect.signature(Qwen38Net.__init__).parameters["tile_union"].default, True)
+        self.assertIs(inspect.signature(lanes.qualify).parameters["tile_union"].default, True)
+        self.assertIn("qsa_attend_union=on_main(qsa_tile_union.attention)",
+                      (ROOT / "engine/profiles/qwen38/lanes.py").read_text(encoding="utf-8"))
+        fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
+        self.assertIn('ap.add_argument("--no-tile-union", action="store_true",', fleet)
+        self.assertIn("tile_union=not a.no_tile_union", fleet)
+        self.assertIn("qualify(torch.device(\"cuda\"), F, tile_union=not a.no_tile_union)", fleet)
+        launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
+        self.assertIn('case "${ST_QSA_TILE_UNION:-1}" in', launcher)
+        self.assertIn('0) UNION_ARG="--no-tile-union" ;;', launcher)
+        self.assertIn("$UNION_ARG $ONESHOT_ARG", launcher)
+        defaults = (ROOT / "engine/SERVING_DEFAULTS.md").read_text(encoding="utf-8")
+        self.assertIn("`ST_QSA_TILE_UNION=1`", defaults)
+
+    def test_the_net_refuses_a_choice_that_is_not_a_boolean(self):
+        from engine.profiles.qwen38.net import Qwen38Net
+        with self.assertRaisesRegex(ValueError, "declared boolean"):
+            Qwen38Net(SimpleNamespace(), SimpleNamespace(world_size=4, rank=0), None, tile_union=1)
 
 
 if __name__ == "__main__":

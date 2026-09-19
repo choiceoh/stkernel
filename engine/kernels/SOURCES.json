@@ -472,11 +472,12 @@
       "sha256": "9a843bf24775220b91e65d0df00b3b75b4a78e86fcbf43ae5056353f48f52a59",
       "origin": "pull request",
       "license": "Apache-2.0",
-      "local_sha256": "5bf9b78b572923274aed058da05e0b089a26ae702f93488dacf5478d8202c85f",
+      "local_sha256": "74f3f4401fa2858eee7a454eeca0a4bf88d91c0ce0bf3855266f15ed7fa8d5f1",
       "local_modifications": [
         "2026-09-19 engine port (sm_121a intake U12): the three kernels' bodies are the PR's but for two marked changes -- the attention kernel's output gate is a GATED constexpr (the PR always gates; ungated, the store is the rounded attention, as the split-K launch's), and the build kernel reads the engine's int32 positions (StepMeta.positions32) where the PR reads vLLM's int64 buffer, the same arithmetic. Imports are triton's own (no vllm.envs, vllm.logger, vllm.platforms, vllm.triton_utils or the warmup helper).",
         "2026-09-19 D11/D3: no VLLM_QSA_TILE_UNION switch, device-capability table or explicit-tile override -- the PR's SM121 tile (R=2, 8 blocks a step, 4 warps, gates 1,024 rows and 64 a request) is the constant TILE. Eligibility is admits() over host integers (the PR's static contract, its int32 cache bound and its row gates; no decode-token count, the engine's steps being pure prefill or decode) and attention() raises on a step it does not admit.",
-        "2026-09-19 host entry: attention() takes the engine's QSA inputs -- the compact per-row block selection before expansion, positions, segment row offsets (StepMeta.starts), the row -> segment map and page table, strided paged K/V -- in place of QSATileUnionInputs; tiles() is qsa_tile_union_layout at the constant tile. Left out: warmup_qsa_tile_union, qsa_tile_union_workspace and the dispatch inside the split-K entry. Not wired into serving."
+        "2026-09-19 host entry: attention() takes the engine's QSA inputs -- the compact per-row block selection before expansion, positions, segment row offsets (StepMeta.starts), the row -> segment map and page table, strided paged K/V -- in place of QSATileUnionInputs; tiles() is qsa_tile_union_layout at the constant tile. Left out: warmup_qsa_tile_union, qsa_tile_union_workspace and the dispatch inside the split-K entry.",
+        "2026-09-19 qualify(): the boot holds one admitted step at the model's widths to the split-K launch within the served band before Qwen3.8 serves it (engine/profiles/qwen38/lanes.qualify); served by default from the same day (net.Qwen38Net tile_union, the operator's decision), fleet.py --no-tile-union the rollback."
       ]
     }
   }

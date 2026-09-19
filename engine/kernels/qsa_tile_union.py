@@ -619,3 +619,52 @@ def attention(q, k_cache, v_cache, block_indices, query_positions, starts, compr
         num_warps=TILE.warps, num_stages=1,
     )
     return out
+
+
+QUALIFY_CONTEXT = 12000             # a qualifying segment starts past the budget: every row chooses among more groups
+BAND = (2 * 2.0 ** -7, 2.0 ** -7)   # the served sparse attention's band: two BF16 steps at the largest value, one in rms
+
+
+def qualify(device, *, heads: int, head_dim: int, ratio: int, budget: int, page_size: int, seed: int = 0) -> dict:
+    """The launch a boot serves held to the one it replaces (D3): one step `admits` takes -- TILE.min_rows rows of one
+    segment QUALIFY_CONTEXT positions deep, a prefill's selection (a segment-wide score plus a little of each row's own,
+    so neighbours share most of their groups), BF16 K/V on shuffled pages, the output gate -- through `attention` and
+    through `qsa.qsa_sparse_paged_attention_blocks`, within BAND. Raises RuntimeError outside it; returns the drift."""
+    from engine.kernels import qsa
+    gen = torch.Generator().manual_seed(seed)
+    rows, ctx = TILE.min_rows, QUALIFY_CONTEXT
+    total = ctx + rows
+    need = -(-total // page_size)
+    pages = need + 3
+    page_table = torch.randperm(pages, generator=gen)[:need].to(torch.int32).view(1, need).to(device)
+    positions = torch.arange(ctx, total, dtype=torch.int32)
+    seen = (positions + 1) // ratio
+    groups, keep = int(seen.max()), budget // ratio
+    scores = torch.rand(1, groups, generator=gen) + 0.05 * torch.rand(rows, groups, generator=gen)
+    scores = scores.masked_fill(torch.arange(groups).unsqueeze(0) >= seen.unsqueeze(1), -1.0)
+    blocks = scores.topk(keep, dim=1).indices.to(torch.int32).contiguous().to(device)
+
+    def bf16(*shape, scale=1.0):
+        return (torch.randn(*shape, generator=gen) * scale).to(torch.bfloat16).to(device)
+    k_cache, v_cache = bf16(pages, page_size, 1, head_dim), bf16(pages, page_size, 1, head_dim)
+    q, gate = bf16(rows, heads, head_dim, scale=2.0), bf16(rows, heads, head_dim)
+    positions32 = positions.to(device)
+    lengths = torch.tensor([total], dtype=torch.int32, device=device)
+    starts = torch.tensor([0, rows], dtype=torch.int32, device=device)
+    rows_req = torch.zeros(rows, dtype=torch.int32, device=device)
+    if not admits(rows, 1, compress_ratio=ratio, token_topk=budget, page_size=page_size, table_width=need,
+                  cache_pages=pages):
+        raise RuntimeError(f"qsa_tile_union.qualify: the model's widths (ratio {ratio}, budget {budget}, pages of "
+                           f"{page_size}) are not ones the tile-union launch takes")
+    want = qsa.qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, blocks, positions32, lengths, ratio, budget,
+                                                 page_table, rows_req, gate=gate).float()
+    got = attention(q, k_cache, v_cache, blocks, positions32, starts, ratio, budget, page_table, rows_req,
+                    gate=gate).float()
+    difference = got - want
+    largest = float(difference.abs().max() / want.abs().max().clamp_min(1e-30))
+    rms = float(difference.pow(2).mean().sqrt() / want.pow(2).mean().sqrt().clamp_min(1e-30))
+    if not bool(torch.isfinite(got).all()) or largest > BAND[0] or rms > BAND[1]:
+        raise RuntimeError(f"qsa_tile_union.qualify: {rows} rows against the split-K launch -- largest {largest:.3g} "
+                           f"(band {BAND[0]:.3g}), rms {rms:.3g} (band {BAND[1]:.3g}), finite "
+                           f"{bool(torch.isfinite(got).all())}")
+    return {"rows": rows, "largest": round(largest, 6), "rms": round(rms, 6)}
