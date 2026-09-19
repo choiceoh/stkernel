@@ -395,8 +395,7 @@ class ServedTests(unittest.TestCase):
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
         self.assertIn('case "${ST_QSA_TILE_UNION:-1}" in', launcher)
         self.assertIn('0) UNION_ARG="--no-tile-union" ;;', launcher)
-        self.assertRegex(launcher, r"engine\.profiles\.qwen38\.fleet [^
-]*\$UNION_ARG")
+        self.assertRegex(launcher, r"engine\.profiles\.qwen38\.fleet [^\n]*\$UNION_ARG")
         defaults = (ROOT / "engine/SERVING_DEFAULTS.md").read_text(encoding="utf-8")
         self.assertIn("`ST_QSA_TILE_UNION=1`", defaults)
 
