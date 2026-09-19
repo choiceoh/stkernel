@@ -609,6 +609,21 @@ def configure_tp_sf6_q0(enabled: bool) -> None:
     _TP_SF6_Q0_ENABLED = bool(enabled)
 
 
+_ACTIVATION_SCALE_SEARCH_RADIUS = None      # profile default, fixed before weight views exist
+
+
+def configure_activation_scale_search(radius: int) -> None:
+    """Declare a profile's NVFP4 activation search without selecting GLM's weight layout."""
+    global _ACTIVATION_SCALE_SEARCH_RADIUS
+    if type(radius) is not int or radius not in (0, 1, 2):
+        raise ValueError("activation scale search radius must be 0, 1 or 2")
+    if radius == _ACTIVATION_SCALE_SEARCH_RADIUS:
+        return
+    if _WEIGHT_CACHE or _REFORM_SF_CACHE:
+        raise RuntimeError("configure activation scale search before preparing MoE weights")
+    _ACTIVATION_SCALE_SEARCH_RADIUS = radius
+
+
 def _activation_scale_search_for(**geometry) -> int:
     """The bound routed/dense NVFP4 cell only; the old ss recipe stays FC2-only.
 
@@ -617,6 +632,8 @@ def _activation_scale_search_for(**geometry) -> int:
     """
     cfg = _STATIC_V2_OVERRIDE if _STATIC_V2_OVERRIDE is not None else _GLM53_B12X_STATIC_V2
     radius = int((cfg or {}).get("activation_scale_search", 0))
+    if _STATIC_V2_OVERRIDE is None and _ACTIVATION_SCALE_SEARCH_RADIUS is not None:
+        radius = _ACTIVATION_SCALE_SEARCH_RADIUS
     if (radius and geometry["quant_mode"] == "nvfp4"
             and _glm_tp_scatter_fp32(**geometry)):
         return radius
@@ -2954,8 +2971,24 @@ _MICRO_KERNEL_CACHE: Dict[Tuple, Tuple] = {}
 def _glm_tp_scatter_shape(state_E, weight_E, k, n, num_topk, cell=None):
     """The admitted routed cell (this rank's experts) and the dense/shared MLP served through the E=1 lane."""
     cell = _admitted_moe() if cell is None else cell
-    return state_E == weight_E and (weight_E, k, n, num_topk) in (
-        (cell.experts_local, cell.hidden, cell.inter_local, cell.topk), (1, cell.hidden, cell.dense_inter_local, 1))
+    shapes = ((cell.experts_local, cell.hidden, cell.inter_local, cell.topk),
+              (1, cell.hidden, cell.dense_inter_local, 1))
+    # An EP eager prefill expands local (token, route) pairs into one route per
+    # row. It is the same expert cell, including decode-sized compact tails.
+    if getattr(cell, "experts", cell.experts_local) > cell.experts_local:
+        shapes += ((cell.experts_local, cell.hidden, cell.inter_local, 1),)
+    return state_E == weight_E and (weight_E, k, n, num_topk) in shapes
+
+
+def _bound_ep_prefill_fp32(*, E, k, n, num_topk, quant_mode, activation,
+                          swiglu_alpha, swiglu_beta, swiglu_limit, tiled):
+    """Row-major bound EP experts, both full routes and compact local pairs."""
+    cell = _admitted_moe()
+    return (not tiled and getattr(cell, "experts", cell.experts_local) > cell.experts_local
+            and E == cell.experts_local and _glm_tp_scatter_fp32(
+                state_E=E, weight_E=E, k=k, n=n, num_topk=num_topk,
+                quant_mode=quant_mode, activation=activation, swiglu_alpha=swiglu_alpha,
+                swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit, cell=cell))
 
 
 def _glm_tp_scatter_fp32(*, state_E, weight_E, k, n, num_topk, quant_mode,
@@ -4794,6 +4827,11 @@ def _get_dynamic_kernel(
         tp_sf6_q0=tp_sf6_q0,
     )
     cache_key = (*cache_key, "tp_prefill_scatter_fp32_v1", tp_sf6_q0)
+    bound_ep_fp32 = _bound_ep_prefill_fp32(
+        E=E, k=k, n=n, num_topk=num_topk, quant_mode=quant_mode, activation=activation,
+        swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit, tiled=tiled)
+    if bound_ep_fp32:
+        cache_key = (*cache_key, "bound_ep_prefill_fp32_v1")
     prefill_word_unpack = _long_prefill_sf6_word_unpack(
         m=m, E=E, k=k, n=n, num_topk=num_topk, tile_m=tile_m,
         quant_mode=quant_mode, tiled=tiled, reform_sf_pack=reform_sf_pack,
@@ -4843,6 +4881,7 @@ def _get_dynamic_kernel(
     alpha_dtype = cutlass.Float32
 
     kernel: Any = None if _prefill_tile64 else MoEDynamicKernel(
+        scatter_fp32=bound_ep_fp32,
         sf_vec_size=sf_vec_size,
         mma_tiler_mn=mma_tiler_mn,
         input_scales_are_reciprocal=input_scales_are_reciprocal,
@@ -5060,7 +5099,7 @@ def _get_dynamic_kernel(
     global_scale_fake = cute.runtime.make_fake_compact_tensor(
         alpha_dtype, (E,), assumed_align=16
     )
-    scatter_dtype = cutlass.Float32 if ep_local_cls is not None or tp_sf6_q0 or prefill_word_unpack else a_dtype
+    scatter_dtype = cutlass.Float32 if ep_local_cls is not None or tp_sf6_q0 or prefill_word_unpack or bound_ep_fp32 else a_dtype
     scatter_fake = make_ptr(scatter_dtype, 16, cute.AddressSpace.gmem, assumed_align=16)
     token_map_fake = make_ptr(cutlass.Int32, 4, cute.AddressSpace.gmem, assumed_align=4)
     token_weights_fake = make_ptr(
@@ -5165,7 +5204,7 @@ def _get_dynamic_kernel(
 # ---------------------------------------------------------------------------
 # Dynamic launch
 # ---------------------------------------------------------------------------
-def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False, long_prefill=False):
+def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False, long_prefill=False, bound_ep=False):
     """Get this shared workspace's FP32 sum while preserving the BF16 ABI.
 
     Grow-only: the buffer is sized by the largest call so far. The legacy `tp`
@@ -5175,11 +5214,17 @@ def _ep_local_scatter_buffer(workspace, output, num_tokens, k, *, tp=False, long
     long request allocates nothing here.
     """
     ceiling = 32768 if long_prefill else 16384
+    width = 4096
+    if bound_ep:
+        width = _admitted_moe().hidden
+        # Compact rows can exceed source tokens by top-k. Bound the byte
+        # extent rather than borrowing GLM's source-token ceiling.
+        ceiling = (2**31 - 1) // (k * 4)
     if (output.dtype != torch.bfloat16 or tuple(output.shape) != (num_tokens, k)
             or not output.is_contiguous() or output.device != workspace.device
-            or k != 4096
-            or not (1 if tp or getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= ceiling):
-        raise ValueError("expert-local FP32 scatter requires contiguous CUDA BF16 [T,4096]")
+            or k != width
+            or not (1 if tp or bound_ep or getattr(workspace, "ep_tiled", False) else 4096) <= num_tokens <= ceiling):
+        raise ValueError(f"expert-local FP32 scatter requires contiguous CUDA BF16 [T,{width}]")
     current = workspace.ep_scatter_fp32
     if current is not None and (current.dtype != torch.float32 or current.device != output.device
             or current.ndim != 2 or current.shape[1] != k or not current.is_contiguous()):
@@ -5359,9 +5404,13 @@ def launch_sm120_dynamic_moe(
         swiglu_limit=swiglu_limit, ep_local=ep_local, tp_sf6_q0=tp_scatter_fp32,
         share_input_across_experts=input_gs_is_shared)
     tp_scatter_fp32 = tp_scatter_fp32 or long_prefill_fp32
+    bound_ep_fp32 = _bound_ep_prefill_fp32(
+        E=num_experts, k=k, n=n, num_topk=top_k, quant_mode=quant_mode, activation=activation,
+        swiglu_alpha=swiglu_alpha, swiglu_beta=swiglu_beta, swiglu_limit=swiglu_limit,
+        tiled=bool(getattr(weights, "tiled", False)))
     accumulator = (_ep_local_scatter_buffer(workspace, scatter_output, num_tokens, k,
-                                            tp=tp_scatter_fp32, long_prefill=long_prefill_fp32)
-                   if ep_local or tp_scatter_fp32 else scatter_output)
+                                            tp=tp_scatter_fp32, long_prefill=long_prefill_fp32, bound_ep=bound_ep_fp32)
+                   if ep_local or tp_scatter_fp32 or bound_ep_fp32 else scatter_output)
     compiled, mac = _get_dynamic_kernel(
         num_experts,
         num_tokens,
@@ -5448,7 +5497,7 @@ def launch_sm120_dynamic_moe(
         cell = _admitted_moe()
         print(f"[tp-sf6-q0] LAUNCHED E{cell.experts}/H{cell.hidden}/I{cell.inter_local}/top{cell.topk} T={num_tokens}", flush=True)
         _TP_SF6_Q0_LAUNCH_LOGGED = True
-    if ep_local or tp_scatter_fp32:
+    if ep_local or tp_scatter_fp32 or bound_ep_fp32:
         # CuTe and copy_ use the current PyTorch stream; completion of all
         # atomic updates precedes this single FP32 -> BF16 conversion.
         scatter_output.copy_(accumulator)

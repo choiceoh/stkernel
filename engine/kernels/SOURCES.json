@@ -138,10 +138,11 @@
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/_moe_dynamic/generic.py",
       "sha256": "38b112ffe5ca00789b1fa84b7f606431385305d9c835e4adbf2e94ade60655da",
       "origin": "image",
-      "local_sha256": "cd95d495c1328344953e2ead65213628bf441960e5fd41cce2eacbcf29f131fe",
+      "local_sha256": "68988a795f1e71a14c8ed26a84d69d58187c5f0227bfb7ae7fbcc6c1aa9ccb57",
       "local_modifications": [
         "2026-09-18: acquire prior CTA counter arrivals before epoch release; order packed activation publication before TMA where applicable.",
-        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier."
+        "2026-09-18: deduplicate the identical adjacent async-global fence introduced by merging publication repairs; keep the first fence after the grid barrier.",
+        "2026-09-19: preserve weighted BF16 contributions while accumulating bound EP prefill in FP32; clear the whole typed output plane."
       ]
     },
     "b12x/moe_activation.py": {
@@ -203,7 +204,11 @@
     "b12x/moe_dynamic_kernel.py": {
       "source": "flashinfer/fused_moe/cute_dsl/blackwell_sm12x/moe_dynamic_kernel.py",
       "sha256": "7532e1338df8e80c4b8f0bd6473c2ffeda9a5028018c77775c4e9fe2fa47b072",
-      "origin": "image"
+      "origin": "image",
+      "local_sha256": "ed57fda51bf842e686856c7fa3c13c5ca267259e8e6188c7180e1f244aec8c66",
+      "local_modifications": [
+        "2026-09-19: explicit FP32 scatter selects the generic dynamic body; stock optimized BF16 body remains unchanged."
+      ]
     },
     "b12x/moe_micro_kernel.py": {
       "source": "overlay/modules/glm53_moe/moe_micro_kernel.py",

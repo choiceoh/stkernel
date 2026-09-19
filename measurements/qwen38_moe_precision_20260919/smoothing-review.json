@@ -1,0 +1,24 @@
+{
+  "seed": 919,
+  "synthetic": true,
+  "real_checkpoint": false,
+  "dtype": "bfloat16",
+  "shape": [
+    64,
+    2560,
+    320
+  ],
+  "direct_fold_changed_norm_channels": 2162,
+  "direct_fold_projection_relative_rmse": 0.022581304819837715,
+  "direct_fold_projection_max_abs": 0.08825285464990884,
+  "witness": {
+    "weight": 0.125,
+    "scale": 64.0,
+    "stored_new_weight": -0.984375,
+    "desired_gain": 1.125,
+    "actual_gain": 1.0
+  },
+  "explicit_scale_norm_roundtrip_exact": true,
+  "explicit_scale_fp64_projection_exact": true,
+  "limits": "Finite normal synthetic values. No FP8/W4 repacking, model calibration, native kernel cost or output-quality measurement."
+}
