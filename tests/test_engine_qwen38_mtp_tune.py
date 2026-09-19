@@ -253,6 +253,28 @@ class DataTests(unittest.TestCase):
 
 
 @unittest.skipUnless(torch is not None, "requires torch")
+class ExtractTests(unittest.TestCase):
+    def test_the_extract_is_the_tensors_the_tuning_reads_byte_for_byte(self):
+        from types import SimpleNamespace
+        from safetensors.torch import save_file
+        from engine.profiles.qwen38 import mtp_tune as mt
+        _, _, cfg, weights = tiny()
+        with tempfile.TemporaryDirectory() as d:
+            ckpt = Path(d) / "ckpt"
+            ckpt.mkdir()
+            bf16 = {k: v.to(torch.bfloat16).contiguous() for k, v in weights.items()}
+            save_file(bf16, str(ckpt / "model-00001.safetensors"))
+            (ckpt / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {k: "model-00001.safetensors" for k in bf16}}))
+            (ckpt / "config.json").write_text(json.dumps(cfg))
+            mt.extract(SimpleNamespace(ckpt=ckpt, out=str(Path(d) / "base")))
+            names = [*mt.TRAINED, *mt.EXPERTS, mt.HEAD, *mt.target_names("model.").values()]
+            got = mt.checkpoint_tensors(Path(d) / "base", "model.")
+            for name in names:
+                self.assertTrue(torch.equal(got(name), bf16[name]), name)
+            self.assertEqual(mt.config(Path(d) / "base"), (cfg, "model."))
+
+
+@unittest.skipUnless(torch is not None, "requires torch")
 class ServedTests(unittest.TestCase):
     def test_the_export_replaces_the_heads_served_dense_tensors(self):
         from engine.profiles.qwen38.mtp_tune import LAYOUT, TRAINED, tuned_file

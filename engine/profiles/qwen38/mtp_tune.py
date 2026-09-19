@@ -600,13 +600,23 @@ def extract(args) -> None:
     config): what the other nodes train from without the 126 GB copy."""
     import shutil
     from engine.base.checkpoint import Checkpoint
-    from safetensors.torch import save_file
+    from engine.base.params import Spec
+    from engine.base.preshard import RankWriter
     cfg, prefix = config(args.ckpt)
     names = [*TRAINED, *EXPERTS, HEAD, *target_names(prefix).values()]
-    tensors = Checkpoint(str(args.ckpt)).load(names)
+    source = Checkpoint(str(args.ckpt))
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    save_file({name: tensors[name].contiguous() for name in names}, str(out / "tune-base.safetensors"))
+    # one tensor in memory at a time (the largest, the experts' gate_up, is 3.4 GB): it runs beside production
+    dtypes = {"BF16": torch.bfloat16, "F32": torch.float32, "F16": torch.float16}
+    specs = []
+    for name in names:
+        header = source.reader(source.weight_map[name]).header[name]
+        specs.append(Spec(name, tuple(header["shape"]), dtypes[header["dtype"]]))
+    writer = RankWriter(out / "tune-base.safetensors", specs, {"layout": "qwen38-mtp-tune-base-v1"})
+    for name in names:
+        writer.put(name, source.load([name])[name])
+    writer.close()
     (out / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {n: "tune-base.safetensors" for n in names}}))
     shutil.copy(Path(args.ckpt) / "config.json", out / "config.json")
     print(json.dumps({"tensors": len(names), "bytes": (out / "tune-base.safetensors").stat().st_size}), flush=True)
