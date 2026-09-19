@@ -243,6 +243,12 @@ def main():
         from probes.engine_qwen38_gemv import run_site as qwen38_site
         qwen38_site(args.output)
         return
+    if args.lanes == 'qwen38_leave':
+        # component timings: a decode site's leave behind a stand-in TP sum that waits like the fleet's -- launched
+        # after it, as its programmatic dependent, and prefetching the mixer's down projection (H4); bytes checked first
+        from probes.engine_qwen38_leave import run as qwen38_leave
+        qwen38_leave(args.output)
+        return
     if args.lanes == 'qwen38_moe':
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe

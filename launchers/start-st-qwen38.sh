@@ -67,6 +67,12 @@ case "${ST_SHARED_OVERLAP:-one}" in
   off|all) OVERLAP_ARG="--shared-overlap $ST_SHARED_OVERLAP" ;;
   *) echo "ST_SHARED_OVERLAP must be off, one or all" >&2; exit 2 ;;
 esac
+LEAVE_ARG=""                                                  # ST_LEAVE=off|pdl|prefetch: a leave and the TP sum before it (carry H4; fleet default prefetch)
+case "${ST_LEAVE:-prefetch}" in
+  prefetch) ;;
+  off|pdl) LEAVE_ARG="--leave $ST_LEAVE" ;;
+  *) echo "ST_LEAVE must be off, pdl or prefetch" >&2; exit 2 ;;
+esac
 HC_ARG=""                                                     # ST_HC_FP8=1: the mixers on FP8 (a quality bracket judges it)
 case "${ST_HC_FP8:-0}" in
   0) ;;
@@ -337,7 +343,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro $EXPERTS_MOUNT -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $LEAVE_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

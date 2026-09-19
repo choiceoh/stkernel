@@ -20,6 +20,20 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | Q8 | 공유 커널을 바꿔도 GLM 은 단일 GPU 판정(실가중치 레인 검사 포함)으로 기본 켬. **헌장 D17 규칙 2 의 예외**이며, 해당 PR·원장 항목마다 "운영자 결정 2026-09-17: 플릿 미실측" 을 적는다 |
 | Q9 | 이 목록을 시작할 때 고정한다. 항목마다 머지 또는 기각과 기록으로 닫는다. 도중에 나온 새 아이디어는 다음 목록으로 넘긴다 |
 
+## 운영자 결정 (2026-09-19, 통신·지연 — H4·H5·X1·X2, grill-me)
+
+운영자의 틀: "커널 밖 1/3 을 줄일 후보". 조사에서 확인한 것 — 이 넷은 합 하나에 붙은 GPU 쪽 부대비용(발사 간격, reduce 단계,
+빈 CTA, 복사)만 깎고, one-shot 의 RDMA 바닥(GLM 게이지 0행 외삽 합당 16–20 µs)과 낙오 편차는 그대로다. GLM 쪽 근거도 항목마다
+다르다: H4 의 원형(#473)만 C=1 −0.54 ms 실측이 있고, H5·X2 의 원형(#812·#826·#904·#906)은 속도 주장 없이 기본 켬, X1 은 ST 엔진이
+컴파일한 적이 없다.
+
+| # | 결정 |
+|---|---|
+| 1 | 넷을 carry 규칙대로 PR 하나씩 닫는다(단일 GPU 판정, Q8 예외로 기본 켬). 세 PR(H4·H5·X2)이 머지되면 세션이 `fleet.sh st-hold` 로 플릿 창을 잡는다(quiet gate 로만 양보): 같은 빌드 OFF→ON→OFF, C=1·C=4 같은 요청 묶음, ON 과 첫 OFF 에서 4랭크 진단 트레이스(`decompose_trace.py`)로 합의 바닥·낙오 편차·커널 사이 빈 시간을 분해. ON 이 잡음 밖으로 느리면 기본을 끄고 다음 창에서 항목별로 가른다 |
+| 2 | X1 은 측정 없이 기각한다(전제 오류, 아래 표) |
+| 3 | X2 는 MoE 쪽(패킷 커널의 복사 단계 안에서 Qwen 의 게이트 합)만 만든다. dense 쪽(W4 GEMM 이 TX 슬롯에 직접)은 먼저 GLM 형상의 기존 직접 생산자로 GPU 쪽 시간을 재고, 합당 1 µs 이상 이길 때만 N=2560 으로 옮긴다 |
+| 4 | H4 는 PDL leave 에 더해, 합의 대기 동안 그 사이트 믹서의 down projection 을 L2 로 미리 읽는다(#473 의 "대기 동안 다음 MHC 의 불변 가중치 준비"를 Qwen 의 쪼개진 믹서로). 단일 GPU 부품 프로브의 세 팔(off·pdl·prefetch)로 판정하고, 프리페치는 사이트 시간이 줄 때만 기본으로 둔다 |
+
 ## 세는 법
 
 - **크기:** Qwen3.8 C=1 디코드 한 스텝(타깃 검증 그래프 + MTP 드래프트 그래프)에서 줄어드는 발사·복사·바이트 수다.
@@ -118,7 +132,7 @@ Qwen3.8 에 **그대로** 닿는 것은 36.5% 였고, 나머지는 재측정·�
 | S1 | swiglu 가 0 패딩된 sh_down 입력을 직접 씀 | #569 #973 | `kernels/common/swiglu.py`, `PaddedDenseLinear` | fold | −98 발사 | cpu·gpu | 시간 | 머지 #1097 |
 | S2 | W4 입력 재사용을 m 2–8, 4120/4224×2560, 2560×1536 에서 admit + hidden 2560 ksr 스윕 | #1050 #888 #946 #939 #969 | `kernels/dense/kernels.cu` | measure | GEMM 98 개의 입력 양자화 대폭 감소 | gpu·glm | 시간 | 기각 — GB10 레인(`qwen38-input-reuse-0919b`, 2026-09-19 두 번째 운영자 창 안, main `4148c35f`)에서 #1241 의 admit 을 쟀다: `InputReuseTests` 3 개 통과, 12 셀(형상 3 × 행 2·4·6·8) 전부 ordinary 와 **바이트 동일**(eager·재생). 시간(콜드 중앙값, 가중치 48 MiB 회전): GDN in_proj 4120×2560 −0.2~−1.8%, QSA in_proj 4224×2560 +0.8~+1.9% — 둘 다 ±2% 안(37 µs 발사) — o_proj 2560×1536 **+4.5~+13.6%**(14.8 → 16.8 µs; 따로 도는 pack 발사가 ksr 3 의 짧은 GEMM 에 얹힌다). K=4096 인 GLM 에서는 타일마다의 입력 양자화가 비싸 이기지만 Qwen3.8 의 K 2560·1536 에서는 pack 값을 못 번다. admit 을 되돌림(PR 이 PR #1241 을 revert — `kernels.cu` 는 #1241 앞과 같다). hidden 2560 ksr 스윕은 미실측으로 남김(ksr 을 바꾸면 합산 순서가 바뀌어 바이트 판정이 아니라 품질 판정이다). `measurements/qwen38_s2h6_window_20260919` §3 |
 | S3 | 부팅 자기 보정(GPTQ W4/FP8·헤드) 배선. 지금 Qwen3.8 팩은 전부 round-to-nearest | #650 #659 #661 #673 #779 | `profiles/qwen38/fleet.py` | kernel | 품질 | gpu | 일 | 열림 |
-| X1 | 작은 합에 compact 12-CTA one-shot consumer | #967 #944 #957 | `kernels/oneshot` | measure | 합 101 개가 48→12 CTA | gpu·glm | 시간 | 열림 |
+| X1 | 작은 합에 compact 12-CTA one-shot consumer | #967 #944 #957 | `kernels/oneshot` | measure | 합 101 개가 48→12 CTA | gpu·glm | 시간 | 기각(측정 없이, 운영자 결정 2026-09-19) — 전제 오류: ST 엔진은 compact 12-CTA 를 한 번도 컴파일하지 않았다(`build()` 가 `OSAR_COMPACT_CTA` 를 정의하지 않는다; vLLM overlay 의 선택 옵션이었고 기본 0 — #967 의 기록). #967 의 이득(16행 합 −9~−10%)은 48-CTA consumer 에서 데이터 없는 CTA 가 표만 내고 대기 없이 빠지는 몫이고, Qwen3.8 의 합은 이미 그 경로다(4행 × 2560 = 1,280 벡터, 48 CTA 중 5 개가 데이터). compact 가 더 줄이는 것은 그 빈 CTA 36 개의 발사뿐(추정 합당 1 µs 미만)인데, `OSAR_COMPACT_CTA=1` 은 빌드 전체의 발행 판정을 바꾸고(모든 호출이 wrap-safe 표) GLM C=1 의 합(8행 × 4096 = 32,768, compact 상한)도 compact 로 보내 GLM 판정까지 부른다. 플릿 분해(결정 1)에서 발행이 CTA 스케줄링에 밀리는 게 보이면 다음 목록에서 다시 연다 |
 | X2 | 생산자·MoE finalizer 가 TX 슬롯에 직접 씀(hidden 을 형상에서) | #826 #904 #906 | `kernels/oneshot`, dense | kernel | 발사 중립, 스텝당 −98 복사 | gpu·glm | 일 | 열림 |
 
 ## 진행 순서

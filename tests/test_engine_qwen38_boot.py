@@ -68,7 +68,7 @@ class BootOrderTests(unittest.TestCase):
         self.assertLess(started, self.main.index("comm = Comm.init()"))
         joined = self.main.index("imports.take()")
         self.assertGreater(joined, self.main.index('with rec.phase("lanes")'))
-        self.assertLess(joined, self.main.index("lanes = lane_tables.served()"))
+        self.assertLess(joined, self.main.index("lanes = lane_tables.served(leave=a.leave)"))
 
     def test_the_prelude_starts_before_the_load_and_joins_before_the_capture(self):
         started = self.main.index('"boot-prelude").start()')

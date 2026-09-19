@@ -535,7 +535,8 @@ class Qwen38Net:
                 out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
             x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
             out = self._moe(n, x, compact=not rows)
-        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc)
+        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
+                                        prefetch=self._mixer_weight("close.", "down"))
         hidden, _ = self._mix("close.", normed, "down", inject=False)
         if last_hidden_only:
             if rows:
@@ -550,9 +551,16 @@ class Qwen38Net:
         if out is None:
             normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
         else:
-            h, normed = lanes.hc_leave_norm(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc)
+            h, normed = lanes.hc_leave_norm(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc,
+                                            prefetch=self._mixer_weight(prefix, "down_inject"))
         x, injection = self._mix(prefix, normed, "down_inject", inject=True)
         return x, injection, h
+
+    def _mixer_weight(self, prefix: str, down_name: str):
+        """The weight a site's mixer reads first, its BF16 down projection, for the leave before it to pull into L2 while
+        the sum it adds is still waiting for the other ranks (Lanes.hc_leave_norm's `prefetch`, carry H4); None where
+        the mixer reads another (hc_fp8's FP8 lanes)."""
+        return None if prefix in self._hc_projections else self.p[prefix + down_name]
 
     # -- GatedDeltaNet -------------------------------------------------------------------------------------------------
     def _gdn(self, L: int, x: torch.Tensor, step: Step, caches) -> torch.Tensor:
@@ -1013,7 +1021,8 @@ class Qwen38Net:
             h, out, inject = h.index_select(0, rows), out.index_select(0, rows), inject.index_select(0, rows)
         x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
         out = self._moe("mtp.L0.", x, compact=not getattr(step, "captured", False))
-        streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc)
+        streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc,
+                                              prefetch=self._mixer_weight("mtp.close.", "down"))
         hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
         return hidden, streams
 
