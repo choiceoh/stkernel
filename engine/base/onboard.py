@@ -132,6 +132,10 @@ def read_config(cfg: dict, *, tp: int = TP, placement: "str | None" = None, stat
     intermediate. A routed model with neither is a blank. `states` is the operator's too -- {field: value} out of
     `STATEABLE`, for the axes a config cannot settle. It only ever FILLS a blank: stating a field the config settles
     raises, so no argument to this door can serve something other than what the checkpoint says.
+
+    A config with no expert key at all is read as the E=1 cell -- the one MLP every token passes, which is what this
+    engine serves a dense or shared MLP through -- and asks for no placement. One that DOES name experts in a
+    spelling this door cannot read is a blank instead: reading it as dense would serve every token through one MLP.
     """
     if placement not in (None, "ep", "tp"):
         raise ValueError("placement is 'ep', 'tp' or None (not chosen)")
@@ -285,6 +289,12 @@ def read_config(cfg: dict, *, tp: int = TP, placement: "str | None" = None, stat
                      f"{compress} {idx_heads}x{idx_dim} pool {pool} top {topk}")
 
     # --- the routed experts --------------------------------------------------------------------------------------
+    # any key that names experts or a router, in any spelling -- a config that states one is a routed model whose
+    # numbers this door may simply not know how to read (Mixtral counts its experts in `num_local_experts`). The
+    # vocabulary is deliberately wide: a false blank costs a question, and reading a routed model as dense does not.
+    named_experts = sorted(k for k, v in cfg.items() if v is not None
+                           and (any(w in k.lower() for w in ("expert", "router"))
+                                or k.lower().startswith(("moe", "n_routed"))))
     experts, experts_key = _int(cfg, "n_routed_experts", "num_experts")
     inter, inter_key = _int(cfg, "moe_intermediate_size")
     topk_experts, topk_experts_key = _int(cfg, "num_experts_per_tok")
@@ -312,23 +322,43 @@ def read_config(cfg: dict, *, tp: int = TP, placement: "str | None" = None, stat
         activation = ask("moe.activation", f"`hidden_act` says {cfg['hidden_act']!r} and `swiglu_limit` {limit} -- a "
                                            "clamped gate, whose spelling is not the same in the two checkpoints that "
                                            "write these keys (swigluoai_uninterleave, silu); the reference settles it")
-    if experts is None or inter is None or topk_experts is None:
-        blanks.append(Blank("moe", "no routed experts in this config (`n_routed_experts`/`moe_intermediate_size`/"
-                                   "`num_experts_per_tok`): a dense model is served through the E=1 lane, which a "
-                                   "profile declares"))
-    elif placement is None:
-        blanks.append(Blank("moe.experts_local", "expert placement is the operator's, not the config's: 'ep' gives a "
-                                                 "rank whole experts, 'tp' slices every expert's intermediate"))
-    else:
-        read("moe.experts", experts_key, experts)
-        read("moe.inter", inter_key, inter if placement == "ep" else inter // tp)
-        read("moe.topk", topk_experts_key, topk_experts)
-        sources["moe.placement"], values["moe.placement"] = f"operator: {placement}", placement
     if dense_inter is None and shared and inter:
         dense_inter, dense_key = shared * inter, "n_shared_experts x moe_intermediate_size"
     sources["moe.dense_inter_local"] = dense_key or "no dense MLP width in the config"
     if dense_inter is not None:
         values["moe.dense_inter_local"] = dense_inter // tp
+
+    experts_local = inter_local = None
+    if experts is not None and inter is not None and topk_experts is not None:
+        if placement is None:
+            blanks.append(Blank("moe.experts_local", "expert placement is the operator's, not the config's: 'ep' "
+                                                     "gives a rank whole experts, 'tp' slices every expert's "
+                                                     "intermediate"))
+        else:
+            experts_local = experts // tp if placement == "ep" else experts
+            inter_local = inter if placement == "ep" else inter // tp
+            read("moe.experts", experts_key, experts)
+            read("moe.inter", inter_key, inter_local)
+            read("moe.topk", topk_experts_key, topk_experts)
+            sources["moe.placement"], values["moe.placement"] = f"operator: {placement}", placement
+    elif named_experts:
+        missing = [k for k, v in (("`n_routed_experts`|`num_experts`", experts), ("`moe_intermediate_size`", inter),
+                                  ("`num_experts_per_tok`", topk_experts)) if v is None]
+        blanks.append(Blank("moe", f"this config names experts ({', '.join(named_experts)}) but not "
+                                   f"{', '.join(missing)}: a spelling this door does not read is a blank, never a "
+                                   "dense model -- reading it as one would serve every token through a single MLP"))
+    elif dense_inter is not None:
+        # No routed experts anywhere in the config. The one MLP every token passes is what this engine serves
+        # through the E=1 cell -- b12x's gate admits (1, hidden, dense_inter_local, 1) beside the routed tuple
+        # (engine/kernels/b12x/moe_dispatch._glm_tp_scatter_shape) -- and it is TP-sharded, like every dense and
+        # shared MLP here, so there is no expert placement to choose and none is asked for.
+        experts, experts_local, topk_experts = 1, 1, 1
+        inter, inter_local = dense_inter, dense_inter // tp
+        sources["moe"] = f"no expert key: the one MLP ({dense_key}) as the E=1 cell b12x serves it"
+        values["moe"] = f"1 expert, I{inter_local}, top1"
+    else:
+        blanks.append(Blank("moe", "no experts (`n_routed_experts`/`moe_intermediate_size`/`num_experts_per_tok`) "
+                                   "and no MLP width (`intermediate_size`) either: this config declares no MLP"))
 
     spec_k, spec_key = _int(cfg, "num_nextn_predict_layers", "mtp_num_hidden_layers")
     sources["spec_k"], values["spec_k"] = spec_key or "no MTP key: one token a step", spec_k or 1
@@ -346,9 +376,8 @@ def read_config(cfg: dict, *, tp: int = TP, placement: "str | None" = None, stat
         attention=Attention(kind=kind, heads=heads // tp, head_dim=head_dim,
                             kv_heads=max(1, kv_heads // tp) if kind == "gqa" else 1, sink=sink),
         linear=linear, indexer=indexer,
-        moe=MoE(experts=experts, experts_local=experts // tp if placement == "ep" else experts, hidden=hidden,
-                inter=inter, inter_local=inter if placement == "ep" else inter // tp, topk=topk_experts,
-                quant=quant, activation=activation, swiglu_limit=limit,
+        moe=MoE(experts=experts, experts_local=experts_local, hidden=hidden, inter=inter, inter_local=inter_local,
+                topk=topk_experts, quant=quant, activation=activation, swiglu_limit=limit,
                 dense_inter_local=(dense_inter or 0) // tp),
         spec_k=spec_k or 1, device=Device(), hc_variant=hc_variant))
     return Reading(cfg.get("model_type"), sources, tuple(blanks), shape, tuple(unsettled), values)
