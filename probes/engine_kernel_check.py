@@ -360,6 +360,12 @@ def main():
         from probes.engine_qwen38_qualify_soak import REPEATS, run as qwen38_qualify_soak
         qwen38_qualify_soak(args.output, repeats=int((args.lanes.split(':')[1:] or [REPEATS])[0]))
         return
+    if args.lanes == 'qwen38_leave_down':
+        # a prefill site's leave and down fold as one launch (gated_residual.leave_down_block) against stream_scales
+        # and the down fold, tiles swept, many rounds; the leave's bytes and the gates' band checked first
+        from probes.engine_qwen38_leave_down import run as qwen38_leave_down
+        qwen38_leave_down(args.output)
+        return
     if args.lanes == 'qwen38_stream_order':
         # the stream launches' grid order: a stream's rows adjacent (the grid until 2026-09-20) against a row's streams
         # adjacent -- the leave's three forms at a prefill chunk's rows, many rounds; bytes checked first

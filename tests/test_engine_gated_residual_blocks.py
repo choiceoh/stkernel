@@ -231,7 +231,12 @@ class MixBlockTests(unittest.TestCase):
         h_ref, normed = hcr.leave_norm(h_ref, out, injection, w, 1e-6, HC)
         want = hcr.mix_block(normed, down, up, HC)
         got = hcr.site(h, out, injection, w, 1e-6, HC, down, up)
-        self.assertTrue(torch.equal(h, h_ref) and torch.equal(got[0], want[0]) and torch.equal(got[1], want[1]))
+        # the fused leave (leave_mix_block) leaves the same bytes; its gates associate the sums differently, so the
+        # mixer's outputs are within a few BF16 steps of the two launches', not the same bytes
+        self.assertTrue(torch.equal(h, h_ref))
+        for mine, theirs in zip(got, want):
+            err = float((mine.float() - theirs.float()).abs().max() / theirs.float().abs().max())
+            self.assertLess(err, 2.0 ** -6)
 
     def test_it_is_the_torch_form_within_the_oracle_band(self):
         normed, down, up = site(True, 97, DEVICE, seed=3)
@@ -245,7 +250,10 @@ class MixBlockTests(unittest.TestCase):
         least = min(r for r, _ in hcr.DOWN_TILES)
         self.assertIsNone(hcr.block_tiles(least - 1)["down"])
         for r, tile in hcr.DOWN_TILES:
-            self.assertEqual(hcr.block_tiles(r), {"down": tile, "up": hcr.UP_BLOCK_TILE})
+            self.assertEqual((hcr.block_tiles(r)["down"], hcr.block_tiles(r)["up"]), (tile, hcr.UP_BLOCK_TILE))
+        self.assertIsNone(hcr.block_tiles(min(r for r, _ in hcr.LEAVE_DOWN_TILES) - 1)["leave_down"])
+        for r, tile in hcr.LEAVE_DOWN_TILES:
+            self.assertEqual(hcr.block_tiles(r)["leave_down"], tile)
         self.assertEqual((hcr.narrow_tail(324, 64), hcr.narrow_tail(324, 128), hcr.narrow_tail(320, 64),
                           hcr.narrow_tail(324, 256)), (16, 0, 0, 128))
 
