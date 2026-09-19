@@ -87,7 +87,7 @@ class LaunchTests(unittest.TestCase):
                 self.result = hcr.leave_norm(h, out, inject, w, EPS, HC, **kwargs)
         self.assertEqual(len(calls), 1)
         grid, args, kw = calls[0]
-        self.assertEqual(grid, (rows, HC))
+        self.assertEqual((grid, kw["ROWS_FIRST"]), ((HC, rows), False))    # a row's streams adjacent (_stream_grid)
         return args, kw
 
     def test_the_ordinary_launch_by_default(self):

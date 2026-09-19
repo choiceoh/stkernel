@@ -42,6 +42,13 @@ third of the leave's bytes): the leave stores each stream's scale [N, hc] FP32 i
 launches normalise each tile of the streams as they read it -- the stream norm's own arithmetic on the same scale, so
 the operand is the normalised streams' bytes and the outputs are leave_norm-then-mix_block's byte for byte.
 
+The stream launches (`_leave_norm`, `_norm_streams`) run one program a (row, stream) over the grid (hc, rows): a row's
+hc programs back to back, so the output row they all add (21 MB at 4,096 rows) is read from DRAM once and the row's
+streams (20 KB, contiguous) are walked in one go. Over (rows, hc) -- the grid until 2026-09-20 -- the four programs of
+a row were `rows` programs apart, about 60 MB of streams between them at 4,096 rows, past the L2, and the output was
+read from DRAM once a stream: a quarter of the leave's traffic (252 MB against 189 at 4,096 rows). Either order runs
+the same programs on the same elements, so the bytes are the same (`_stream_grid`; probes/engine_qwen38_stream_order).
+
 On a GB10 (eight sites a graph, interleaved; beside production, so the minima of nine rounds): up and the mean 1,703 ->
 815 us a site at 4,096 rows (x2.09), x1.66 at 2,048, x1.65 at 1,024, x1.39 at 512 (q38sitecmp-0919a, an idle GPU) -- and
 the output byte for byte cuBLAS's up with `_mix_mean`. The down projection and the gates over the normalised streams
@@ -101,10 +108,16 @@ UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps,
 
 
 @triton.jit
-def _norm_streams(X, W, OUT, sX, sO, EPS, HID: tl.constexpr, BD: tl.constexpr, SCALE_ONLY: tl.constexpr):
+def _norm_streams(X, W, OUT, sX, sO, EPS, HID: tl.constexpr, BD: tl.constexpr, SCALE_ONLY: tl.constexpr,
+                  ROWS_FIRST: tl.constexpr):
     # SCALE_ONLY: OUT is [N, hc] FP32, the stream's scale and not the normalised stream (`stream_scales`)
-    r = tl.program_id(0)
-    s = tl.program_id(1)
+    # ROWS_FIRST: the grid is (rows, hc), a stream's rows adjacent; else (hc, rows), a row's streams (`_stream_grid`)
+    if ROWS_FIRST:
+        r = tl.program_id(0)
+        s = tl.program_id(1)
+    else:
+        s = tl.program_id(0)
+        r = tl.program_id(1)
     d = tl.arange(0, BD)
     m = d < HID
     off = s * HID + d
@@ -132,17 +145,28 @@ def _prefetch_l2(NEXT, SECTORS, p, P, BLOCK: tl.constexpr):
 
 @triton.jit
 def _leave_norm(H, OUT, INJ, W, NORMED, NEXT, sH, sO, sI, sN, EPS, SECTORS, HID: tl.constexpr, BD: tl.constexpr,
-                NORM: tl.constexpr, PDL: tl.constexpr, PREFETCH: tl.constexpr, SCALE_ONLY: tl.constexpr):
+                NORM: tl.constexpr, PDL: tl.constexpr, PREFETCH: tl.constexpr, SCALE_ONLY: tl.constexpr,
+                ROWS_FIRST: tl.constexpr):
     # SCALE_ONLY: NORMED is [N, hc] FP32, the stream's scale and not the normalised stream (`stream_scales`)
-    r = tl.program_id(0)
-    s = tl.program_id(1)
+    # ROWS_FIRST: the grid is (rows, hc), a stream's rows adjacent; else (hc, rows), a row's streams (`_stream_grid`)
+    if ROWS_FIRST:
+        r = tl.program_id(0)
+        s = tl.program_id(1)
+    else:
+        s = tl.program_id(0)
+        r = tl.program_id(1)
     d = tl.arange(0, BD)
     m = d < HID
     off = s * HID + d
     if NORM and not SCALE_ONLY:
         w = tl.load(W + off, mask=m, other=0.0).to(tl.float32)   # immutable: read while the sum is still in flight
     if PREFETCH:
-        _prefetch_l2(NEXT, SECTORS, r * tl.num_programs(1) + s, tl.num_programs(0) * tl.num_programs(1), BD)
+        # this program's index in the launch, whichever axis is the rows'
+        if ROWS_FIRST:
+            p = r * tl.num_programs(1) + s
+        else:
+            p = r * tl.num_programs(0) + s
+        _prefetch_l2(NEXT, SECTORS, p, tl.num_programs(0) * tl.num_programs(1), BD)
     if PDL:
         # the sum (OUT) is the primary's; the streams and the injection are read after the wait as well, so a leave
         # whose previous launch wrote one of them (the MTP head's row selection) reads what that launch wrote
@@ -248,6 +272,27 @@ def _warps(width: int) -> int:
     return 4 if width <= 1024 else 8
 
 
+# Probe hook (probes/engine_qwen38_stream_order.py): the stream launches' grid order forced when set -- "rows", a stream's
+# rows adjacent, the grid until 2026-09-20 -- the rule when None. Read when a launch is made, so a captured graph keeps
+# the order it was captured with. Nothing served sets it.
+_STREAM_GRID_OVERRIDE = None
+
+
+def _stream_grid(rows: int, hc: int) -> "tuple[tuple[int, int], bool]":
+    """(grid, ROWS_FIRST) of a launch of one program a (row, stream) -- `_leave_norm`, `_norm_streams`. The rule is
+    (hc, rows): program p of the launch order is stream p % hc of row p // hc, so a row's hc programs run back to back,
+    the output row they share read from DRAM once and its streams (hc*H contiguous) walked in one go. Over (rows, hc)
+    the programs of one row are `rows` programs apart -- at 4,096 rows about 60 MB of streams between them, past the
+    L2 -- and the output is read from DRAM once a stream. The same programs on the same elements either way: the same
+    bytes."""
+    forced = _STREAM_GRID_OVERRIDE
+    if forced is None:
+        return (hc, rows), False
+    if forced != "rows":
+        raise ValueError('_STREAM_GRID_OVERRIDE is None (a row\'s streams adjacent) or "rows" (a stream\'s rows adjacent)')
+    return (rows, hc), True
+
+
 # Probe hook (probes/engine_qwen38_mix_tiles.py, carry H3): mix_mean's (tile width, warps) forced when set, the rule when
 # None. Read when `mix` launches, so a captured graph keeps the tile it was captured with. Nothing served sets it.
 _MIX_TILE_OVERRIDE = None
@@ -299,8 +344,9 @@ def norm_streams(h: torch.Tensor, w: torch.Tensor, eps: float, hc: int) -> torch
         return rmsnorm_unit_offset(h, w, eps, group=None if hc == 1 else hid)
     out = torch.empty_like(h)
     if h.shape[0]:
-        _norm_streams[(h.shape[0], hc)](h, w, out, h.stride(0), out.stride(0), eps,
-                                        HID=hid, BD=triton.next_power_of_2(hid), SCALE_ONLY=False, num_warps=_warps(hid))
+        grid, rows_first = _stream_grid(h.shape[0], hc)
+        _norm_streams[grid](h, w, out, h.stride(0), out.stride(0), eps, HID=hid, BD=triton.next_power_of_2(hid),
+                            SCALE_ONLY=False, ROWS_FIRST=rows_first, num_warps=_warps(hid))
     return out
 
 
@@ -339,8 +385,9 @@ def stream_scales(h: torch.Tensor, out: "torch.Tensor | None", injection: "torch
         return _leave(h, out, injection, h, eps, hc, norm=True, pdl=pdl, scale_only=True)[1]
     scale = torch.empty(h.shape[0], hc, device=h.device, dtype=torch.float32)
     if h.shape[0]:
-        _norm_streams[(h.shape[0], hc)](h, h, scale, h.stride(0), scale.stride(0), eps, HID=hid,
-                                        BD=triton.next_power_of_2(hid), SCALE_ONLY=True, num_warps=_warps(hid))
+        grid, rows_first = _stream_grid(h.shape[0], hc)
+        _norm_streams[grid](h, h, scale, h.stride(0), scale.stride(0), eps, HID=hid, BD=triton.next_power_of_2(hid),
+                            SCALE_ONLY=True, ROWS_FIRST=rows_first, num_warps=_warps(hid))
     return scale
 
 
@@ -386,11 +433,11 @@ def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None, scale_
     pdl = pdl and h.device.type == "cuda"
     sectors = _prefetch_sectors(prefetch, h.shape[0]) if pdl else 0
     if h.shape[0]:
-        _leave_norm[(h.shape[0], hc)](h, out, inject, w if norm else h, normed, prefetch if sectors else h,
-                                      h.stride(0), out.stride(0), inject.stride(0), normed.stride(0), eps, sectors,
-                                      HID=hid, BD=triton.next_power_of_2(hid), NORM=norm, PDL=pdl,
-                                      PREFETCH=sectors > 0, SCALE_ONLY=scale_only, num_warps=_warps(hid),
-                                      launch_pdl=pdl)
+        grid, rows_first = _stream_grid(h.shape[0], hc)
+        _leave_norm[grid](h, out, inject, w if norm else h, normed, prefetch if sectors else h,
+                          h.stride(0), out.stride(0), inject.stride(0), normed.stride(0), eps, sectors,
+                          HID=hid, BD=triton.next_power_of_2(hid), NORM=norm, PDL=pdl, PREFETCH=sectors > 0,
+                          SCALE_ONLY=scale_only, ROWS_FIRST=rows_first, num_warps=_warps(hid), launch_pdl=pdl)
     return h, (normed if norm else None)
 
 
