@@ -696,7 +696,7 @@ class QwenProductionLaunchTests(LaunchHarness):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         runs = self.boot_commands()
         self.assertEqual(len(runs), 4, runs)
-        self.assertTrue(all(f"--tier-dir {TIER_ROOT} --port" in run for run in runs), runs)
+        self.assertTrue(all(run.endswith(f" --tier-dir {TIER_ROOT}") for run in runs), runs)
         (self.home / "runs").unlink()
         self.assertEqual(self.run_script("start-st-qwen38.sh", "stop").returncode, 0)
         self.env["ST_TIER_DIR"] = "off"
@@ -704,7 +704,7 @@ class QwenProductionLaunchTests(LaunchHarness):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         runs = self.boot_commands()
         self.assertEqual(len(runs), 4, runs)
-        self.assertTrue(all("--tier-dir= --port" in run for run in runs), runs)
+        self.assertTrue(all(run.endswith(" --tier-dir=") for run in runs), runs)
 
     def test_a_tier_off_the_mounted_directory_is_refused_before_any_node_boots(self):
         """A tier the containers cannot see boots fine and throws everything away with the container

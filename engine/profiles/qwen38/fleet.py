@@ -904,10 +904,9 @@ def main(argv=None) -> int:
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
                                               vision=a.vision, self_calibrate=not a.no_self_calibrate,
-                                              draft_candidates=a.draft_candidates,
-                                              draft_ahead=a.draft_ahead, tier_dir=a.tier_dir or None,
+                                              draft_candidates=a.draft_candidates, tier_dir=a.tier_dir or None,
                                               lease_owner=os.environ.get("ST_LEASE_OWNER") or None,
-                                              mapped_staging=a.nvme_mapped_staging)
+                                              mapped_staging=a.nvme_mapped_staging, draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
             closers.append(model.drafter.inputs_tap.close)
