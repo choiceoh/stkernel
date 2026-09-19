@@ -1070,9 +1070,16 @@ def run_runs(output=None):
                                                               m.rows_req, out, gate=base.gate, one_request=True)
                 return launch
 
+            def presorted():
+                qsa.qsa_sparse_paged_attention_blocks(base.q, base.K, base.V, qsa.sorted_blocks(blocks), m.positions32,
+                                                      m.lengths, cell.ratio, cell.budget, m.page_table, m.rows_req, out,
+                                                      gate=base.gate, presorted=True)
+
             split()
             want = out.clone()
-            gates, launches = {}, {"split (before)": split}
+            presorted()
+            gates, launches = {"split presorted": dict(bytes=bool(torch.equal(out, want)))}, {"split (before)": split,
+                                                                                            "split presorted": presorted}
             for tile in RUN_TRIES:
                 try:
                     runs(tile)()

@@ -454,6 +454,7 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
     stride_gate_head=0,
     GATED: tl.constexpr = False,
     BLOCK_SORT: tl.constexpr = 1,
+    SORTED: tl.constexpr = False,
 ) -> None:
     row = tl.program_id(0)
     kv_head = tl.program_id(1)
@@ -488,7 +489,11 @@ def _qsa_sparse_paged_gqa_splitk_kernel(
             mask=sort_ranks < BLOCK_TOPK,
             other=2147483647,
         )
-        ordered = tl.sort(tl.where(chosen < 0, 2147483647, chosen))
+        if SORTED:
+            # the rows arrive ascending, -1 last (`sorted_blocks`): the order the sort below makes of any selection
+            ordered = tl.where(chosen < 0, 2147483647, chosen)
+        else:
+            ordered = tl.sort(tl.where(chosen < 0, 2147483647, chosen))
 
     head_offsets = tl.arange(0, BLOCK_M)
     dim_offsets = tl.arange(0, HEAD_DIM)
@@ -2113,9 +2118,17 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
                                    gate=gate)
 
 
+def sorted_blocks(block_indices: torch.Tensor) -> torch.Tensor:
+    """A selection's rows ascending, -1 last -- the order the sparse kernel sorts every row into before it reads it --
+    in one launch for all rows, so the attention need not sort a row in each of its programs (`presorted`)."""
+    big = torch.iinfo(torch.int32).max
+    ordered = torch.where(block_indices < 0, big, block_indices).sort(dim=1).values
+    return torch.where(ordered == big, -1, ordered).to(torch.int32)
+
+
 def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_positions, sequence_lengths,
                                       compress_ratio, token_topk, block_table, token_to_req, out=None, *, gate=None,
-                                      one_request: bool = False):
+                                      one_request: bool = False, presorted: bool = False):
     """`qsa_sparse_paged_attention` at the positions `expand_qsa_block_indices_cuda` expands the chosen blocks to --
     int32 [rows, token_topk // compress_ratio] as `qsa_select_paged_blocks` writes them -- computed tile by tile in the
     attention's own launch (FROM_BLOCKS), without the expansion launch and its [rows, token_topk + compress_ratio - 1]
@@ -2143,7 +2156,7 @@ def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_
     return _sparse_paged_attention(q, k_cache, v_cache, block_indices, block_table, token_to_req, out,
                                    token_topk + compress_ratio - 1,
                                    blocks=(query_positions, sequence_lengths, compress_ratio, block_topk), gate=gate,
-                                   runs=one_request and rows >= RUNS_MIN_ROWS)
+                                   runs=one_request and rows >= RUNS_MIN_ROWS, presorted=presorted)
 
 
 def _split_profile(rows: int, kv_heads: int, block_m: int, width: int):
@@ -2307,7 +2320,7 @@ def _sparse_runs(q, k_cache, v_cache, block_indices, block_table, token_to_req, 
 
 
 def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width, blocks=None,
-                            gate=None, runs=False):
+                            gate=None, runs=False, presorted=False):
     """The launch of both entries: `logical_indices` holds the positions at `width` columns, or (with `blocks` --
     query positions, sequence lengths, the compression ratio and the block top-k) the chosen blocks whose expansion
     is `width` columns wide. `gate`, when given, is applied in the final store (the one-split launch or the merge)."""
@@ -2368,7 +2381,7 @@ def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, t
         expansion = dict(query_positions_ptr=query_positions, sequence_lengths_ptr=sequence_lengths,
                          num_lengths=sequence_lengths.shape[0], FROM_BLOCKS=True, BLOCK_TOPK=block_topk,
                          BLOCK_SORT=triton.next_power_of_2(block_topk),
-                         COMPRESS_RATIO=compress_ratio)
+                         COMPRESS_RATIO=compress_ratio, SORTED=presorted)
     _qsa_sparse_paged_gqa_splitk_kernel[(q.shape[0], k_cache.shape[2], num_splits)](
         q, k_cache, v_cache, logical_indices, block_table, token_to_req, partial_output, partial_lse, out,
         q.stride(0), q.stride(1), k_cache.stride(0), k_cache.stride(1), k_cache.stride(2),
