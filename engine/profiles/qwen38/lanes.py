@@ -38,7 +38,8 @@ class Lanes:
     hc_leave: object        # (h, out [N, H], inject [N, hc], hc) -> h, in place
     hc_leave_norm: object   # (h, out, inject, w, eps, hc, *, prefetch=None) -> (h in place, normed); `prefetch`: the
                             #  weight the site's mixer reads next, which a served leave may pull into L2 while the sum
-                            #  before it waits (served(leave=...), carry H4); a lane that does not prefetch ignores it
+                            #  before it waits (served(leave=...), carry H4); a lane that does not prefetch ignores it.
+                            #  With `packets`, `out` of either leave may be a one-shot exchange's RankPackets (carry H5)
     hc_mix: object          # (normed, down_inject [r(+hc), hc*H], up [hc*H, r], hc, *, inject, project_down=None,
                             #  project_up=None) -> (mixed [N, H], inject [N, hc] | None); the projections replace the
                             #  BF16 matmuls when a quantised lane serves the mixer (net.Qwen38Net hc_fp8); without
@@ -104,6 +105,8 @@ class Lanes:
                                     #  torch.mm past its shapes); None: torch.mm
     leave: object = None            # how the served leaves meet the TP sum before them (served(leave=...), LEAVES);
                                     #  None: a table whose leaves are not the served kernel's
+    packets: bool = False           # the leaves take a sum as the exchange's rank packets and fold them themselves
+                                    #  (engine/kernels/gated_residual `packets`, carry H5)
 
 
 # How a served leave meets the TP sum before it (carry H4, engine/kernels/gated_residual.leave_norm): "off", launched
@@ -433,11 +436,19 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
 
     pdl = leave != "off"
 
+    # `out` is the reduced sum, or (a net's rank_packets, carry H5) the exchange's RankPackets: consumed here, on the
+    # exchange's stream before any other collective, the descriptor handed to the leave that folds the ranks
     def hc_leave(h, out, inject, hc):
+        if hasattr(out, "consume"):
+            return out.consume(lambda own, descriptor: hcr.leave(h, own, inject, hc, pdl=pdl, packets=descriptor))
         return hcr.leave(h, out, inject, hc, pdl=pdl)
 
     def hc_leave_norm(h, out, inject, w, eps, hc, *, prefetch=None):
-        return hcr.leave_norm(h, out, inject, w, eps, hc, pdl=pdl, prefetch=prefetch if leave == "prefetch" else None)
+        prefetch = prefetch if leave == "prefetch" else None
+        if hasattr(out, "consume"):
+            return out.consume(lambda own, descriptor: hcr.leave_norm(h, own, inject, w, eps, hc, pdl=pdl,
+                                                                      prefetch=prefetch, packets=descriptor))
+        return hcr.leave_norm(h, out, inject, w, eps, hc, pdl=pdl, prefetch=prefetch)
 
     # the bound EP cell's decode routes to other ranks skip in the micro kernel (engine/base/kernel_shape bound first)
     md.configure_ep_zero_weight_micro(True)
@@ -451,7 +462,7 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
-                 rows_linear=on_main(linear_rows), moe_rows=on_main(moe_rows.moe), leave=leave)
+                 rows_linear=on_main(linear_rows), moe_rows=on_main(moe_rows.moe), leave=leave, packets=True)
 
 
 def qualify(device, F) -> dict:

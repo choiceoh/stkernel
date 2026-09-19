@@ -128,7 +128,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
-          mtp_tuned_dir: "str | None" = None):
+          mtp_tuned_dir: "str | None" = None, rank_packets: bool = False):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
@@ -154,7 +154,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, mtp_precision=mtp_precision,
-                    mtp_experts=mtp_experts, shared_overlap=shared_overlap)
+                    mtp_experts=mtp_experts, shared_overlap=shared_overlap, rank_packets=rank_packets)
     if mtp_window is not None:
         # the head attends a sink and a recent window of groups instead of scoring (Windowed-MTP; its index keys are
         # never written) -- acceptance moves, output does not
@@ -569,6 +569,9 @@ def main(argv=None) -> int:
                          "sum's programmatic dependent and pulls the site's down projection into L2 while the sum waits "
                          "for the other ranks; 'pdl' the dependent alone; 'off' the ordinary launch after the sum (the "
                          "rollback). The same bytes every way")
+    ap.add_argument("--no-rank-packets", action="store_true",
+                    help="every captured sum reduced by the one-shot consumer, as before carry H5: the rollback of the "
+                         "leaves folding the ranks' packets themselves (the same bytes; needs the one-shot transport)")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     ap.add_argument("--spec-k", type=int, default=None,
                     help=f"drafts a step from the MTP head (this profile serves {facts.SPEC_K}; the checkpoint has one "
@@ -631,7 +634,8 @@ def main(argv=None) -> int:
                                               draft_ledger=partial(DraftLedger, Path(a.dump_dir) / "draft-ledger")
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
-                                              mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned)
+                                              mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
+                                              rank_packets=not a.no_rank_packets)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
         if getattr(net, "draft_tap", None) is not None:
@@ -643,6 +647,8 @@ def main(argv=None) -> int:
         print("  leave: " + {"off": "launched after its sum", "pdl": "its sum's programmatic dependent",
                              "prefetch": "its sum's programmatic dependent, the mixer's down projection prefetched"}
               [lanes.leave], flush=True)
+        print("  sums: " + ("the leaves fold the ranks' packets" if net._packets_live() else
+                            "reduced before the leaves"), flush=True)
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row"
               + (f"; drafts cut below p={model.drafter.threshold}, narrow widths to {a.narrow_rows} rows"

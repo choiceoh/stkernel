@@ -1097,12 +1097,14 @@ static at::Tensor py_oneshot_consumer(at::Tensor input) {
   return py_oneshot_impl(input, {}, {}, true);
 }
 
+// Rows of any width the transport was bound for (OneShot.exchange checks the bound hidden): the kernel moves
+// numel() elements and names four [rows, width] packets; its consumer knows the width.
 static at::Tensor py_oneshot_packets(at::Tensor input) {
   TORCH_CHECK(g_started && input.is_cuda() && input.scalar_type() == at::kBFloat16 &&
-              input.is_contiguous() && input.dim() == 2 && input.size(1) == 4096 &&
+              input.is_contiguous() && input.dim() == 2 && input.size(1) > 0 && input.size(1) % 8 == 0 &&
               input.size(0) > 0 && input.size(0) <= 64 && input.numel() <= MAXEL &&
               (reinterpret_cast<uintptr_t>(input.data_ptr()) & 15) == 0,
-              "one-shot packets require a live TP4 transport and aligned BF16 [1..64,4096]");
+              "one-shot packets require a live TP4 transport and aligned BF16 [1..64, 8k] rows");
   auto addresses = torch::empty({4}, input.options().dtype(at::kLong));
   cudaLaunchConfig_t cfg{};
   cfg.gridDim = dim3(ARGRID);

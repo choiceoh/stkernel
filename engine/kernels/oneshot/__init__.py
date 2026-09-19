@@ -16,6 +16,8 @@ import torch.distributed as dist
 from engine.kernels.cells import (ONESHOT_CONSUMER_MAX_ELEMENTS as CONSUMER_MAX_ELEMENTS,
                                   ONESHOT_MAX_ELEMENTS as MAX_ELEMENTS, ONESHOT_WORLD as COMPILED_WORLD)
 
+PACKET_ROWS = 64        # rows one exchange of rank packets names (dsv4_oneshot_ar.cu py_oneshot_packets)
+
 
 def _cell():
     """The bound kernel shape's collective geometry (world, hidden); the transport takes its
@@ -308,8 +310,10 @@ class OneShot:
 
     def exchange(self, t):
         self.assert_consumed()
-        if self.closed or not self.eligible(t) or t.ndim != 2 or t.shape[1] != self.hidden:
-            raise ValueError(f'rank packets require live TP{self.world} BF16 [1..{MAX_ELEMENTS // self.hidden},{self.hidden}]')
+        if (self.closed or not self.eligible(t) or t.ndim != 2 or t.shape[1] != self.hidden
+                or t.shape[0] > PACKET_ROWS):
+            rows = min(PACKET_ROWS, MAX_ELEMENTS // self.hidden)
+            raise ValueError(f'rank packets require live TP{self.world} BF16 [1..{rows},{self.hidden}]')
         return self._packet(t, lambda: self.ext.oneshot_packets(t))
 
     def produce(self, template, producer):

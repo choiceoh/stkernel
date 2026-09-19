@@ -92,8 +92,19 @@ def _prefetch_l2(NEXT, SECTORS, p, P, BLOCK: tl.constexpr):
 
 
 @triton.jit
-def _leave_norm(H, OUT, INJ, W, NORMED, NEXT, sH, sO, sI, sN, EPS, SECTORS, HID: tl.constexpr, BD: tl.constexpr,
-                NORM: tl.constexpr, PDL: tl.constexpr, PREFETCH: tl.constexpr):
+def _rank_sum(DESC, offs, m):
+    # the four ranks' packets named by an exchange's descriptor, folded in rank order 0, 1, 2, 3 in fp32 and rounded
+    # once: the one-shot consumer's sum (osar_sum_rank_order), so the replicated streams agree on every rank
+    acc = tl.load(tl.load(DESC).to(tl.pointer_type(tl.bfloat16)) + offs, mask=m, other=0.0).to(tl.float32)
+    for k in tl.static_range(1, 4):
+        acc += tl.load(tl.load(DESC + k).to(tl.pointer_type(tl.bfloat16)) + offs, mask=m, other=0.0).to(tl.float32)
+    return acc.to(tl.bfloat16).to(tl.float32)
+
+
+@triton.jit
+def _leave_norm(H, OUT, INJ, W, NORMED, NEXT, DESC, sH, sO, sI, sN, EPS, SECTORS, HID: tl.constexpr,
+                BD: tl.constexpr, NORM: tl.constexpr, PDL: tl.constexpr, PREFETCH: tl.constexpr,
+                PACKETS: tl.constexpr):
     r = tl.program_id(0)
     s = tl.program_id(1)
     d = tl.arange(0, BD)
@@ -104,11 +115,15 @@ def _leave_norm(H, OUT, INJ, W, NORMED, NEXT, sH, sO, sI, sN, EPS, SECTORS, HID:
     if PREFETCH:
         _prefetch_l2(NEXT, SECTORS, r * tl.num_programs(1) + s, tl.num_programs(0) * tl.num_programs(1), BD)
     if PDL:
-        # the sum (OUT) is the primary's; the streams and the injection are read after the wait as well, so a leave
-        # whose previous launch wrote one of them (the MTP head's row selection) reads what that launch wrote
+        # the sum (OUT, or the packets and their descriptor) is the primary's; the streams and the injection are read
+        # after the wait as well, so a leave whose previous launch wrote one of them (the MTP head's row selection)
+        # reads what that launch wrote
         tl.extra.cuda.gdc_wait()
     h = tl.load(H + r * sH + off, mask=m, other=0.0)
-    o = tl.load(OUT + r * sO + d, mask=m, other=0.0).to(tl.float32)
+    if PACKETS:
+        o = _rank_sum(DESC, r * HID + d, m)                       # [rows, HID] packets, one a rank
+    else:
+        o = tl.load(OUT + r * sO + d, mask=m, other=0.0).to(tl.float32)
     g = tl.load(INJ + r * sI + s).to(tl.float32)
     delta = (o * g).to(h.dtype)                                   # the product rounds, then the sum does
     new = (h.to(tl.float32) + delta.to(tl.float32)).to(h.dtype)
@@ -261,15 +276,17 @@ def norm_streams(h: torch.Tensor, w: torch.Tensor, eps: float, hc: int) -> torch
     return out
 
 
-def leave(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, hc: int, *, pdl: bool = False) -> torch.Tensor:
+def leave(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, hc: int, *, pdl: bool = False,
+          packets: "torch.Tensor | None" = None) -> torch.Tensor:
     """h + out (x) inject, in place: the sublayer's output [N, H] added into every stream with that stream's weight
-    [N, hc]. For the site before an injection feature, which reads the streams un-normalised. `pdl`: as leave_norm's."""
-    return _leave(h, out, inject, None, 0.0, hc, norm=False, pdl=pdl)[0]
+    [N, hc]. For the site before an injection feature, which reads the streams un-normalised. `pdl`, `packets`: as
+    leave_norm's."""
+    return _leave(h, out, inject, None, 0.0, hc, norm=False, pdl=pdl, packets=packets)[0]
 
 
 def leave_norm(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, w: torch.Tensor, eps: float,
-               hc: int, *, pdl: bool = False, prefetch: "torch.Tensor | None" = None
-               ) -> "tuple[torch.Tensor, torch.Tensor]":
+               hc: int, *, pdl: bool = False, prefetch: "torch.Tensor | None" = None,
+               packets: "torch.Tensor | None" = None) -> "tuple[torch.Tensor, torch.Tensor]":
     """The previous site's leave and this site's stream norm in one pass: h updated in place, and the normalised
     streams the mixer reads. Returns (h, normed).
 
@@ -279,10 +296,15 @@ def leave_norm(h: torch.Tensor, out: torch.Tensor, inject: torch.Tensor, w: torc
     immutable norm weight is read before `griddepcontrol.wait`, so the bytes are the ordinary launch's whatever launch
     comes before. `prefetch`: the weight the next launch reads first (this site's down projection), pulled into L2 during
     the same wait, `PREFETCH_BYTES` of it -- only with `pdl` (without it the leave starts after the sum and there is no
-    wait to fill) and only for a decode step's rows, which the skinny GEMV serves with one read of the weight."""
+    wait to fill) and only for a decode step's rows, which the skinny GEMV serves with one read of the weight.
+
+    `packets` (carry H5): a one-shot exchange's descriptor, int64 [4] on the device -- the four ranks' [N, H] packets in
+    rank order (engine/kernels/oneshot.OneShot.exchange) -- and `out` this rank's own packet: the leave folds the ranks
+    in order 0, 1, 2, 3 in fp32 and rounds once, the consumer's sum byte for byte, so no reduced tensor is written or
+    read. The exchange owns the packets until this launch; the caller consumes them (RankPackets.consume)."""
     if w.shape != (h.shape[1],):
         raise ValueError("the stream norm's weight covers every stream's channels")
-    return _leave(h, out, inject, w, eps, hc, norm=True, pdl=pdl, prefetch=prefetch)
+    return _leave(h, out, inject, w, eps, hc, norm=True, pdl=pdl, prefetch=prefetch, packets=packets)
 
 
 # The bytes of the next weight a prefetching leave pulls into L2 (carry H4): None, all of it. The mixer's down projection
@@ -305,7 +327,7 @@ def _prefetch_sectors(weight, rows: int) -> int:
     return (size if budget is None else min(size, budget)) // 32
 
 
-def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None):
+def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None, packets=None):
     hid = _check_streams(h, hc)
     if out.shape != (h.shape[0], hid) or inject.shape != (h.shape[0], hc):
         raise ValueError(f"a leave takes the output [N, {hid}] and the injection [N, {hc}] for {h.shape[0]} rows")
@@ -313,6 +335,9 @@ def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None):
         raise ValueError("the output and the injection are packed rows in the streams' dtype")
     if type(pdl) is not bool:
         raise ValueError("pdl is a declared boolean")
+    if packets is not None and (not h.is_cuda or packets.dtype != torch.int64 or packets.shape != (4,)
+                                or not packets.is_contiguous() or not out.is_contiguous()):
+        raise ValueError("rank packets are four addresses (int64 [4]) a device leave folds, beside its own packed packet")
     if not h.is_cuda:
         h.add_((out.unsqueeze(-2) * inject.unsqueeze(-1)).flatten(-2))
         if not norm:
@@ -325,9 +350,10 @@ def _leave(h, out, inject, w, eps, hc, *, norm, pdl=False, prefetch=None):
     sectors = _prefetch_sectors(prefetch, h.shape[0]) if pdl else 0
     if h.shape[0]:
         _leave_norm[(h.shape[0], hc)](h, out, inject, w if norm else h, normed, prefetch if sectors else h,
-                                      h.stride(0), out.stride(0), inject.stride(0), normed.stride(0), eps, sectors,
-                                      HID=hid, BD=triton.next_power_of_2(hid), NORM=norm, PDL=pdl,
-                                      PREFETCH=sectors > 0, num_warps=_warps(hid), launch_pdl=pdl)
+                                      inject if packets is None else packets, h.stride(0), out.stride(0),
+                                      inject.stride(0), normed.stride(0), eps, sectors, HID=hid,
+                                      BD=triton.next_power_of_2(hid), NORM=norm, PDL=pdl, PREFETCH=sectors > 0,
+                                      PACKETS=packets is not None, num_warps=_warps(hid), launch_pdl=pdl)
     return h, (normed if norm else None)
 
 

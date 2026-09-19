@@ -172,7 +172,7 @@ class StepMeta:
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
                  query_shards: bool = True, mtp_precision: str = "bf16", mtp_experts: str = "nvfp4",
-                 shared_overlap: "bool | str" = False):
+                 shared_overlap: "bool | str" = False, rank_packets: bool = False):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
@@ -201,7 +201,12 @@ class Qwen38Net:
         the gated sum reads both (engine/kernels/dense/shared_mlp.SharedOverlap). The same launches on the same
         inputs, so the same bytes; what moves is when they run. False (the default: a GB10's step decides it, and GLM's
         gave 1% at one request and lost at more), True (steps of one request, spec_k + 1 rows, as GLM serves it) or
-        "all" (every captured step). An eager step never forks: its launches fill the device by themselves."""
+        "all" (every captured step). An eager step never forks: its launches fill the device by themselves.
+
+        `rank_packets` (carry H5, GLM-5.3's direct MHC #812): inside a captured step, a sublayer's TP sum goes out as the
+        one-shot exchange's rank packets and the leave after it folds them in rank order itself -- the consumer's
+        reduce, and the reduced tensor's write and read, go. The same bytes (the leave's fold is the consumer's); needs
+        the one-shot transport and leaves that take packets (Lanes.packets), else every sum is reduced as before."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
@@ -217,6 +222,10 @@ class Qwen38Net:
         if shared_overlap not in (False, True, "all") or type(shared_overlap) not in (bool, str):
             raise ValueError("shared_overlap is False, True (one request's rows) or 'all'")
         self.shared_overlap = shared_overlap
+        if type(rank_packets) is not bool:
+            raise ValueError("rank_packets is a declared boolean")
+        self.rank_packets = rank_packets
+        self._direct = False                                     # this step's sums go out as packets (`_sum`)
         self._overlap = None                                     # the fork's stream, made at the first captured step
         self._hc_projections = {}
         self.rank = comm.rank
@@ -521,22 +530,30 @@ class Qwen38Net:
         rows = getattr(step, "captured", False)
         h = self.embed(step.ids).repeat(1, F.hc)
         out = inject = None
-        for L in self.layers:
-            n = f"L{L}."
-            if L in F.ple_layers:
-                if out is not None:
-                    h = lanes.hc_leave(h, out, inject, F.hc)
-                    out = None
-                h = h + (self._ple_inject_rows(L, h, step, caches) if rows else self._ple_inject(L, h, step, meta, caches))
-            x, inject, h = self._site(n + "hc.attn.", h, out, inject)
-            if F.is_qsa(L):
-                out = self._qsa(L, x, step, meta, caches)
-            else:
-                out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
-            x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
-            out = self._moe(n, x, compact=not rows)
-        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
-                                        prefetch=self._mixer_weight("close.", "down"))
+        # a captured step's sublayer sums go out as rank packets, each consumed by the leave after it (`_sum`)
+        self._direct = bool(rows) and self._packets_live()
+        try:
+            for L in self.layers:
+                n = f"L{L}."
+                if L in F.ple_layers:
+                    if out is not None:
+                        h = lanes.hc_leave(h, out, inject, F.hc)
+                        out = None
+                    h = h + (self._ple_inject_rows(L, h, step, caches) if rows else
+                             self._ple_inject(L, h, step, meta, caches))
+                x, inject, h = self._site(n + "hc.attn.", h, out, inject)
+                if F.is_qsa(L):
+                    out = self._qsa(L, x, step, meta, caches)
+                else:
+                    out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
+                x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
+                out = self._moe(n, x, compact=not rows)
+            h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
+                                            prefetch=self._mixer_weight("close.", "down"))
+            if self._direct:
+                self.comm.transport.assert_consumed()
+        finally:
+            self._direct = False
         hidden, _ = self._mix("close.", normed, "down", inject=False)
         if last_hidden_only:
             if rows:
@@ -624,7 +641,7 @@ class Qwen38Net:
         o = lanes.gdn_ring_rows(q, k, v, a[None], b[None], p[n + "A_log"], p[n + "dt_bias"], rec, step.slots,
                                 step.contexts)
         out = lanes.gdn_norm(o[0], z.view(N, Hv, D), p[n + "norm"], F.rms_eps)
-        return self.comm.all_reduce(self.linear(out, n + "out_proj"))
+        return Qwen38Net._sum(self, self.linear(out, n + "out_proj"))
 
     def _heads(self, y, t):
         F = self.F
@@ -770,7 +787,7 @@ class Qwen38Net:
             attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
                                         F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
         out = attended.reshape(N, Hq * D)
-        return self.comm.all_reduce(self.linear(out, n + "o_proj"))
+        return Qwen38Net._sum(self, self.linear(out, n + "o_proj"))
 
     # -- MoE ----------------------------------------------------------------------------------------------------------
     def _routed(self, prefix: str, x: torch.Tensor, *, compact: bool):
@@ -819,14 +836,33 @@ class Qwen38Net:
         if not Qwen38Net._forks(self, x, compact):
             routed, gate = Qwen38Net._routed(self, prefix, x, compact=compact)
             shared = Qwen38Net._shared(self, prefix, x)
-            return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
+            return Qwen38Net._sum(self, lanes.moe_finish(routed, shared, gate))
         if getattr(self, "_overlap", None) is None:
             from engine.kernels.dense.shared_mlp import SharedOverlap
             self._overlap = SharedOverlap(x.device)
         out = self._overlap(lambda rows: Qwen38Net._shared(self, prefix, rows), x,
                             lambda join: join(Qwen38Net._routed(self, prefix, x, compact=compact)),
                             finish=lambda parts, shared: lanes.moe_finish(parts[0], shared, parts[1]))
-        return self.comm.all_reduce(out)
+        return Qwen38Net._sum(self, out)
+
+    def _packets_live(self) -> bool:
+        """Whether this net's sums may go out as rank packets: `rank_packets`, leaves that fold them (Lanes.packets) and
+        the one-shot transport that exchanges them."""
+        transport = getattr(self.comm, "transport", None)
+        return bool(getattr(self, "rank_packets", False) and getattr(self.lanes, "packets", False)
+                    and transport is not None and hasattr(transport, "exchange"))
+
+    def _sum(self, t):
+        """A sublayer's TP sum for the leave after it: reduced, or -- while `_direct` (a captured step of a net with
+        `rank_packets`, carry H5) -- the one-shot exchange's RankPackets, which that leave consumes and folds. A sum the
+        exchange cannot carry (past its rows, off its width) is reduced as before."""
+        if getattr(self, "_direct", False):
+            from engine.kernels.oneshot import PACKET_ROWS
+            t = self.comm._settled(t)
+            transport = self.comm.transport
+            if transport.eligible(t) and t.ndim == 2 and t.shape[0] <= PACKET_ROWS and t.shape[1] == self.F.hidden:
+                return transport.exchange(t)
+        return self.comm.all_reduce(t)
 
     def _moe_rows(self, x, ids, weights, *, w13, s13, w2, s2, compact=False, local=False):
         """The MTP head's experts on their side-file weights (lanes.moe_rows): global routes (an eager step) are
@@ -1013,16 +1049,27 @@ class Qwen38Net:
         g = lanes.hc_norm(given, p["mtp.pre_fc_norm_hidden"], F.rms_eps, 1).view(-1, F.hc, F.hidden)
         h = (self._bf16(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
-        out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers,
-                        window=self.mtp_window)
-        if last_hidden_only and rows is None:
-            rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
-        if rows is not None:
-            h, out, inject = h.index_select(0, rows), out.index_select(0, rows), inject.index_select(0, rows)
-        x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
-        out = self._moe("mtp.L0.", x, compact=not getattr(step, "captured", False))
-        streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc,
-                                              prefetch=self._mixer_weight("mtp.close.", "down"))
+        captured = getattr(step, "captured", False)
+        live = bool(captured) and self._packets_live()
+        try:
+            # rank packets only where the leave follows the sum: a row selection between them reads a reduced tensor
+            self._direct = live and rows is None and not last_hidden_only
+            out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers,
+                            window=self.mtp_window)
+            self._direct = False
+            if last_hidden_only and rows is None:
+                rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
+            if rows is not None:
+                h, out, inject = h.index_select(0, rows), out.index_select(0, rows), inject.index_select(0, rows)
+            x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
+            self._direct = live
+            out = self._moe("mtp.L0.", x, compact=not captured)
+            streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc,
+                                                  prefetch=self._mixer_weight("mtp.close.", "down"))
+            if live:
+                self.comm.transport.assert_consumed()
+        finally:
+            self._direct = False
         hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
         return hidden, streams
 
