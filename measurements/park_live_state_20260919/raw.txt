@@ -1,0 +1,50 @@
+# 2026-09-19. stk-test (Mac 의 docker, python 3.12.14, CPU; Triton 인터프리터). 프로덕션 숫자는 srv2 rank 0 티어 매니페스트(읽기 전용).
+
+## slot_breakdown.py — GLM-5.3 실제 설정(srv2 st-glm53-meta/config.json), 프로덕션 슬롯 299932672 B
+F: layers 45 (kda 34, dsa 11), kda heads/rank 16, kda dim 128, conv 4, spec_k 7, kpool 4, idx dim 128
+slot without the drafter ring: 289,446,912 B; production slot 299,932,672 B -> drafter ring ~10,485,760 B
+  rec     285,212,672 B   95.1%
+  conv      4,177,920 B    1.4%
+  tail         56,320 B    0.0%
+live state only (conv ring + rec[(ctx-1) % 8] + tails + drafter ring): 50,371,584 B = 48.0 MiB, 5.95x less than the slot
+prefix snapshot at a block boundary (for comparison): ~47,390,720 B = 45.2 MiB
+
+## 프로덕션 GLM-5.3 rank 0 티어 (measurements/parked_record_bound_20260919/tier_manifest.py, 2026-09-19 20:30:20)
+entries 223, live 223, with a record file 223
+KV tokens: sum 147775, mean 663, p50 233, p90 340, max 43318
+used 63.80 GiB; slot bytes [299932672]; block_bytes [4730880]; blocks 343
+
+## 계산 (위 숫자로)
+KV 블록: 343 x 4,730,880 = 1,622,691,840 B (1.51 GiB); 대화당 평균 7,276,645 B
+지금  : 223 x 299,932,672 + KV = 68,507,677,696 B = 63.80 GiB   (대화당 307,209,317 B -> 64 GiB 에 223.7 개)
+후    : 223 x  50,371,584 + KV = 12,855,555,072 B = 11.97 GiB   (대화당  57,648,229 B -> 64 GiB 에 1,192 개)
+슬롯 부분 읽기·쓰기: 5.1 GB/s(kv_tier 문서의 드라이브 순차 속도)에서 299,932,672 B = 58.8 ms -> 50,371,584 B = 9.9 ms (계산, 미측정)
+
+## wrong_cell.py — TRITON_INTERPRET=1, 실제 recurrent_kda_ring (h 2, kd 16, 칸 8, context 13, 한 토큰)
+resumed with the live cell: output equal = True
+resumed with the cell after it: output equal = False
+resumed with no cell: output equal = False
+
+## 테스트 (이 브랜치, stk-test)
+python3 -m unittest -v tests.test_engine_park_live_state               -> Ran 8, OK (skipped=2: 커널 둘은 인터프리터나 GPU)
+TRITON_INTERPRET=1 python3 -m unittest -v tests.test_engine_park_live_state.KdaRingTests -> Ran 2, OK
+python3 -m unittest tests.test_engine_mapped_tier tests.test_engine_tier tests.test_engine_serve tests.test_engine_runtime
+  tests.test_engine_tier_agreement tests.test_engine_settle_symmetry tests.test_engine_glm53 tests.test_engine_boundary_stage
+  tests.test_engine_state tests.test_engine_prefix tests.test_engine_park_live_state -> Ran 423, OK (skipped=55)
+TRITON_INTERPRET=1 python3 -m unittest tests.test_engine_kernel_glue tests.test_engine_gdn_ring_gate tests.test_engine_park_live_state -> Ran 38, OK (skipped=3)
+
+## qwen38_slot_breakdown.py — Qwen3.8 서빙(K=3, MTP 행), 저장소 고정 설정(probes/qwen38_config.json)
+F: layers 48, spec_k 3; slot 114,645,248 B
+  rec         113,246,208 B   98.8%
+  conv          1,105,920 B    1.0%
+  ple_conv        266,240 B    0.2%
+  keys             26,624 B    0.0%
+  ple_ids              64 B    0.0%
+live state only (rec[(ctx-1) % 4] + every other field): 29,710,400 B = 28.3 MiB, 3.86x less than the slot
+prefix snapshot (for comparison): 29,049,088 B
+대화 하나(블록 10,862,592 B / 768 토큰): 한 블록이면 125,507,840 -> 40,572,992 B (3.09배), 10K 토큰(14 블록)이면
+266,721,536 -> 181,786,688 B (1.47배; KV 가 커진다)
+
+## Qwen3.8 테스트 (이 브랜치를 #1298 위로 옮긴 뒤, stk-test)
+python3 -m unittest -v tests.test_engine_park_live_state -> Ran 11, OK (skipped=3: 커널 셋은 인터프리터나 GPU)
+TRITON_INTERPRET=1 python3 -m unittest -v tests.test_engine_park_live_state.KdaRingTests tests.test_engine_park_live_state.GdnRingTests -> Ran 3, OK

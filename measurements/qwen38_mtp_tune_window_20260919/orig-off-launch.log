@@ -1,0 +1,142 @@
+lease: verified, session session/q38mtp-tune-0919 on srv2 since 2026-09-19 15:33:19 (operator window: MTP head fine-tune -- data, four-node training, original and tuned head paired): phase=stopped
+== rank 0 on 10.10.10.2
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 59.05kB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/4] WORKDIR /opt/st
+#5 CACHED
+
+#6 [3/4] COPY engine /opt/st/engine
+#6 DONE 0.2s
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 0.981 W0919 07:04:37.083000 7 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+#7 DONE 3.6s
+
+#8 exporting to image
+#8 exporting layers 0.1s done
+#8 writing image sha256:0d17528f9f061247a72c7b105260b322f5bf2590b732109eb8c64545a25be9a1 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.2s
+10.10.10.2: file cache returned: MemFree 76.5 GiB, MemAvailable 91.2 GiB, Cached 28.8 GiB -> MemFree 105.8 GiB, MemAvailable 99.6 GiB, Cached 0.4 GiB; commit: overcommit_memory 2, CommitLimit 75.8 GiB, Committed_AS 2.7 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank0 (pid 971561)
+10.10.10.2: started
+== rank 1 on 10.10.10.1
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 59.05kB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/4] WORKDIR /opt/st
+#5 CACHED
+
+#6 [3/4] COPY engine /opt/st/engine
+#6 DONE 0.1s
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 0.866 W0919 07:04:37.531000 7 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+#7 DONE 3.3s
+
+#8 exporting to image
+#8 exporting layers 0.1s done
+#8 writing image sha256:0fff0df8ab06ec70ca9e7b610b5d1c8f3b636477ccc0d449cb0d71174376a127 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.1s
+10.10.10.1: file cache returned: MemFree 92.1 GiB, MemAvailable 92.9 GiB, Cached 16.7 GiB -> MemFree 108.1 GiB, MemAvailable 99.1 GiB, Cached 1.0 GiB; commit: overcommit_memory 2, CommitLimit 131.6 GiB, Committed_AS 6.9 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank1 (pid 689583)
+10.10.10.1: started
+== rank 2 on 10.10.10.3
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 59.05kB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/4] WORKDIR /opt/st
+#5 CACHED
+
+#6 [3/4] COPY engine /opt/st/engine
+#6 DONE 0.1s
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 1.514 W0919 07:04:38.035000 7 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+#7 DONE 3.2s
+
+#8 exporting to image
+#8 exporting layers 0.1s done
+#8 writing image sha256:54aa5133f6868cd5a8e26f2be215d5882bcad77d55be8f3f20d1958a182958c6 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.1s
+10.10.10.3: file cache returned: MemFree 89.8 GiB, MemAvailable 96.2 GiB, Cached 17.6 GiB -> MemFree 106.9 GiB, MemAvailable 100.9 GiB, Cached 0.9 GiB; commit: overcommit_memory 0, CommitLimit 75.8 GiB, Committed_AS 10.5 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank2 (pid 927879)
+10.10.10.3: started
+== rank 3 on 10.10.10.4
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 1.01kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#2 DONE 0.0s
+
+#3 [1/4] FROM docker.io/library/st-engine-seed:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 59.05kB 0.0s done
+#4 DONE 0.0s
+
+#5 [2/4] WORKDIR /opt/st
+#5 CACHED
+
+#6 [3/4] COPY engine /opt/st/engine
+#6 DONE 0.1s
+
+#7 [4/4] RUN CUDA_VISIBLE_DEVICES= python3 -m engine.runtime.verify > /opt/st/runtime-manifest.json
+#7 1.648 W0919 07:04:38.243000 6 torch/utils/cpp_extension.py:178] No CUDA runtime is found, using CUDA_HOME='/usr/local/cuda-13.2'
+#7 DONE 4.1s
+
+#8 exporting to image
+#8 exporting layers 0.1s done
+#8 writing image sha256:3097b3912f2f9c93209adb99a8baeec9b6255279ac35c26356c1163da5da3ec2 done
+#8 naming to docker.io/library/st-engine:qwen38 done
+#8 DONE 0.1s
+10.10.10.4: file cache returned: MemFree 64.0 GiB, MemAvailable 93.0 GiB, Cached 25.2 GiB -> MemFree 92.6 GiB, MemAvailable 93.4 GiB, Cached 2.1 GiB; commit: overcommit_memory 0, CommitLimit 76.8 GiB, Committed_AS 39.8 GiB
+reclaim broker serving /home/choiceoh/glm53-logs/st-reclaim/rank3 (pid 3108976)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status

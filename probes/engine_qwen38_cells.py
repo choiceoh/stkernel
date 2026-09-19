@@ -50,7 +50,10 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               'tests.test_engine_qwen38_moe_pairs.PairSumTests',
               # the short conv (GDN's, and GLM-5.3's KDA): byte for byte the frozen legacy adapter, prefill and ring,
               # with its token count an argument -- one kernel for every prompt length
-              'tests.test_engine_causal_conv.SingleConvTests', 'tests.test_engine_conv_ring.ConvRingTests')
+              'tests.test_engine_causal_conv.SingleConvTests', 'tests.test_engine_conv_ring.ConvRingTests',
+              # the QSA prefill attention over a tile's union of blocks (sm_121a intake U12, vLLM PR 55430) against the
+              # split-K launch at the per-rank cell, steps of 1,024+ rows: not served, judged before anyone wires it
+              'tests.test_engine_qsa_tile_union.TileUnionTests')
 GLUE_LEFT_OUT = ('tests.test_engine_causal_conv.SingleConvTests.test_graph_replay_changed_inputs_state_and_independent_streams',
                  'tests.test_engine_conv_ring.ConvRingTests.test_declared_reference_conv_disables_direct_ring')
 """Cases of those classes this lane does not run: they build GLM-5.3's served lane table (glm53.lanes.served), which arms

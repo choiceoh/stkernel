@@ -58,7 +58,7 @@
 | U9 | GLM KDA chunked prefill 을 FlashKDA 로(업스트림 GB300 1.7~3.8×; sm_121a 빌드부터) | vllm#55737 | kernel | gpu→fleet | 열림 |
 | U10 | skinny FP8 GEMM(M=1 GEMV, M≥2 CUTLASS)을 `dense/fp8_rows`·W8A16 과 GB10 에서 대조 | sglang#38082 | measure | gpu | 열림 |
 | U11 | FP8 prefill GEMM 의 L2 절벽(가중치 > 24 MiB, M ≥ 8k) — 우리 cuBLASLt 에도 있나, 있으면 래스터 스위즐 | vllm#55180 | measure | gpu | 열림 |
-| U12 | Qwen3.8 QSA prefill 타일 합집합(연속 행이 고른 블록의 합집합을 한 번씩) | vllm#55430 | kernel | gpu→fleet | 열림 |
+| U12 | Qwen3.8 QSA prefill 타일 합집합(연속 행이 고른 블록의 합집합을 한 번씩) | vllm#55430 | kernel | gpu→fleet | PR(기본 켬, 운영자 09-19 "빠른건 기본에 켜"): GB10 1,024 행 1.7~2.7배·4,096 행 1.33~1.41배, 부팅 자격 검사 통과, 플릿 미측정 — [기록](../measurements/qwen38_tile_union_20260919/README.md) |
 | U13 | Qwen3.8 GDN prefill 을 FlashInfer 로, GDN gate 투영 | vllm#55715, #57318 | kernel | gpu→fleet | 열림 |
 | U14 | Qwen3.8 PLE 표를 NVFP4 로 묶어 상주(파일 읽기와 메모리의 교환) | vllm#56273 | kernel | gpu+품질 | 열림 |
 

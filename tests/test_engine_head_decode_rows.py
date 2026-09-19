@@ -115,6 +115,16 @@ class RoutingTests(unittest.TestCase):
         self.assertFalse(head.bf16_rows(torch.zeros(4, 512, dtype=torch.bfloat16)[:, :256]), "not contiguous")
         self.assertFalse(head.bf16_rows(torch.zeros(0, 256, dtype=torch.bfloat16)))
 
+    def test_prepared_scales_must_be_powers_of_two(self):
+        """engine/SM121_INTAKE.md U20: a checkpoint's own FP32 block scales are refused at bind -- the readers take
+        UE8M0 exponents, and DeepGEMM on sm_121 faults or asserts on anything else (vllm#54125, sglang#39482)."""
+        from engine.kernels.dense import FP8Linear
+        q = torch.zeros(256, 256).to(torch.float8_e4m3fn)
+        for scale in (torch.full((2, 2), 2.0 ** -9), torch.tensor([[1.0, 0.5], [4.0, 2.0 ** -20]])):
+            FP8Linear(torch.zeros(200, 256, dtype=torch.bfloat16), quantized=(q, scale), name="head")
+        with self.assertRaisesRegex(ValueError, "head: prepared FP8 block scales must be powers of two"):
+            FP8Linear(torch.zeros(200, 256, dtype=torch.bfloat16), quantized=(q, torch.full((2, 2), 0.3)), name="head")
+
     def test_glm_and_qwen_heads_declare_the_lane(self):
         users = sorted(p.relative_to(ROOT).as_posix() for p in (ROOT / "engine/profiles").rglob("*.py")
                        if 'decode_rows="w8a16"' in p.read_text(encoding="utf-8"))

@@ -77,9 +77,13 @@ registered supervisor owns admission for every new GPU command.
 The queue has three GPU lanes. A boot or a live onepass takes the
 fleet: four Sparks, one holder. An ST check that needs **one** GPU
 (`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
-takes the single-GPU lane instead: **one Spark beside production**, srv4 by
-default (`FLEET_SINGLE_GPU_HOST`; set it empty to turn the lane off), with its own
-holder (`holder-single`) and its own evidence. Beside production the GPU is never
+takes the single-GPU lane instead: **one Spark beside production**, the first of the
+pool `FLEET_SINGLE_GPU_HOSTS` (srv4 srv3 srv1 srv2) with no live holder and room -- so up
+to four checks run at once, one a Spark (operator, 2026-09-19) -- with a holder each (the
+first host's is `holder-single`, the others' `holder-single@<host>`) and its own evidence.
+An explicit `FLEET_SINGLE_GPU_HOST` names a pool of one, and empty turns the lane off. The
+controller (srv2) is one of the four and runs its share itself, not over ssh; a fleet boot
+waits for every single check on a Spark. Beside production the GPU is never
 free, so the evidence is *room*: that box's MemAvailable less the check's budget
 (`ST_PROBE_GIB`, 8 GiB by default) must clear the 16 GiB floor a `--test` boot
 keeps, and only one probe container runs there at a time; a box that cannot
@@ -93,8 +97,8 @@ takes no fleet lease. A check that needs every rank file cannot run on one node
 `run --gpu --fleet`. A box of its own (ost-97x, the operator's Windows PC on the
 tailnet, once it has sshd in WSL2 and an x86_64 image) works the same way through
 an ssh alias in the controller's `~/.ssh/config`, which owns address, user and
-port. `status` shows the lane beside the fleet, and `kick [--force] single`
-clears its holder.
+port. `status` shows the lane beside the fleet, a line a Spark, and `kick [--force] single [HOST]`
+clears a holder (the pool's first host's without HOST).
 
 The third lane is the **check lane** (operator, 2026-09-19: two one-GPU lanes at once):
 `run --gpu --check` sends a one-GPU check to the RTX 5050 on ost-97x
@@ -104,7 +108,10 @@ not a GB10: a verdict there is a compile, correctness or shape verdict, never a 
 `MEASUREMENTS.md` (CHARTER D5) -- a GB10 number stays in the single lane. The box's floor,
 budget, check image and vendored flashinfer are facts in `bench/fleet_single.py` `HOSTS`
 (`bench/OST_97X_LANE.md`), a probe that asks more than a kernel check's budget is refused
-there, and `kick [--force] check` clears its holder.
+there, and `kick [--force] check` clears its holder. A card both one-GPU lanes name (a
+`FLEET_SINGLE_GPU_HOST=ost-97x` left from before this lane) takes one check at a time: each
+lane's live holder is the other's evidence. The fleet's lease passes only to the fleet lane's
+head, never lost to a one-GPU check ranked ahead of a waiting boot.
 
 What a single-GPU check measured comes back as a report, not only as an exit
 code. The supervisor gives the ticket `ST_PROBE_REPORT` (a file under the

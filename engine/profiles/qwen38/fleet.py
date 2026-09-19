@@ -178,8 +178,8 @@ def rank_loader(path, *, expected_layout: str):
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
-          spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
-          draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
+          spec_k: "int | None" = None, prelude=None, query_shards: bool = True, tile_union: bool = True,
+          mtp_precision: str = "bf16", draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
           mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
@@ -213,8 +213,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         # the head chains its draft: K picks a step from one MTP layer, the verify step K+1 wide; the rings the
         # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
         F = dataclasses.replace(F, spec_k=spec_k)
-    net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, mtp_precision=mtp_precision,
-                    mtp_experts=mtp_experts, shared_overlap=shared_overlap)
+    net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, tile_union=tile_union,
+                    mtp_precision=mtp_precision, mtp_experts=mtp_experts, shared_overlap=shared_overlap)
     if mtp_window is not None:
         # the head attends a sink and a recent window of groups instead of scoring (Windowed-MTP; its index keys are
         # never written) -- acceptance moves, output does not
@@ -793,7 +793,11 @@ def main(argv=None) -> int:
                     help="rank 0 records what the MTP head observes -- the target's streams and the next token at every "
                          "kept position -- under --dump-dir/mtp-inputs (the head's fine-tuning data, mtp_tune.py); "
                          f"20 KB a position, the host copying each after its verify step's read, {TAP_CAP_GIB:.0f} GiB "
-                         "at most. On by default")
+                         "at most (--tap-mtp-inputs-cap-gib). On by default")
+    ap.add_argument("--tap-mtp-inputs-cap-gib", type=float, default=TAP_CAP_GIB,
+                    help="the tap directory's cap, earlier boots' shards counted: a data window that prefills more than "
+                         f"the default {TAP_CAP_GIB:.0f} GiB (every prefilled position is recorded, the prompt's too) "
+                         "raises it for its own boots")
     ap.add_argument("--draft-ahead", action=argparse.BooleanOptionalAction, default=True,
                     help="behind a verify step whose rows are all greedy and plain, the next draft step runs on the device "
                          "before the host reads the picks (adapter.ServedModel._verify_ahead): the host's read, commit and "
@@ -813,6 +817,10 @@ def main(argv=None) -> int:
     ap.add_argument("--no-query-shards", action="store_true",
                     help="every rank scores every index query of a prefill step, as before carry Q11: the rollback of the "
                          "quarter-a-rank scoring, on by the operator's decision of 2026-09-18 with the fleet unmeasured")
+    ap.add_argument("--no-tile-union", action="store_true",
+                    help="every prefill step's sparse QSA attention on the split-K launch, as before sm121 intake U12: the "
+                         "rollback of the tile-union launch, on by the operator's decision of 2026-09-19 with the fleet "
+                         "unmeasured")
     ap.add_argument("--shared-overlap", choices=("off", "one", "all"), default="one",
                     help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' (the "
                          "default: steps of one request's rows, C=1 -5%% a step on the fleet, measurements/"
@@ -886,14 +894,15 @@ def main(argv=None) -> int:
                 os.environ.get("FLASHINFER_WORKSPACE_BASE"), "qwen38"))
         F = facts.load(a.ckpt_meta)
         with rec.phase("qualify lanes"):
-            qualified = lane_tables.qualify(torch.device("cuda"), F)
+            qualified = lane_tables.qualify(torch.device("cuda"), F, tile_union=not a.no_tile_union)
         print(f"  lanes qualified: {qualified}", flush=True)
         # The door's host half builds under the load and the packs; build() joins it before the capture.
         prelude = Background(partial(door_host_half, a.ckpt_meta, renderer=comm.rank == 0), "boot-prelude").start()
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                               drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
-                                              query_shards=not a.no_query_shards, mtp_precision=a.mtp_precision,
+                                              query_shards=not a.no_query_shards, tile_union=not a.no_tile_union,
+                                              mtp_precision=a.mtp_precision,
                                               shared_overlap={"off": False, "one": True, "all": "all"}[a.shared_overlap],
                                               draft_index=draft_index(a.draft_index), mtp_experts=a.mtp_experts,
                                               mtp_experts_dir=a.mtp_experts_dir,
@@ -908,7 +917,8 @@ def main(argv=None) -> int:
                                               lease_owner=os.environ.get("ST_LEASE_OWNER") or None,
                                               mapped_staging=a.nvme_mapped_staging, draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
-            model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
+            model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs",
+                                                   cap_bytes=int(a.tap_mtp_inputs_cap_gib * 2**30))
             closers.append(model.drafter.inputs_tap.close)
         if isinstance(getattr(model.drafter, "ledger", None), DraftLedger):
             closers.append(model.drafter.ledger.close)

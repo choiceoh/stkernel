@@ -595,6 +595,20 @@ class ComposedModel:
     def state_bytes(self, slot: int):
         return self.store.slot_bytes(slot)
 
+    def park_bytes(self, slot: int, context: int):
+        """What the tier keeps of a conversation parked after `context` tokens: the store's live state when it names one
+        (a served store's delta-rule rings keep one state of K+1, `live_bytes`), else the slot whole."""
+        live = getattr(self.store, "live_bytes", None)
+        return self.store.slot_bytes(slot) if live is None else live(slot, context)
+
+    def resume_bytes(self, slot: int, context: int):
+        """Where that reads back: the slot cleared first, as `open` leaves a new row's (`clear`), then the same views."""
+        live = getattr(self.store, "live_bytes", None)
+        if live is None:
+            return self.store.slot_bytes(slot)
+        self.store.clear(slot)
+        return live(slot, context)
+
     def park(self, seq: int) -> dict:
         if seq not in self.store.slot_of:
             raise ValueError(f"seq {seq} is not open")

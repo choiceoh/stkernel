@@ -53,9 +53,10 @@ had a capacity at all, so the only brake was `reserve_bytes` -- one gigabyte of 
 on a root that also carries the checkpoints, the images and the logs. It had eaten 75 GiB of a
 disk that was 99% full, and nothing in the engine had ever deleted a byte of it.
 
-A GLM-5.3 conversation is ~260 MiB here (one block plus its 247 MiB state slot, the size 45차
-§49 left open), so 64 GiB is about 250 of them and 16 GiB is about 30 prefix boundaries; a
-Qwen3.8 one is its 109 MiB state slot plus 10.4 MiB a 768-token block (~254 MiB at 10K tokens).
+A GLM-5.3 conversation is its slot's live state here, 48 MiB of the 286 MiB slot (`Runner.park_begin`:
+one KDA state of K+1 per layer), plus 4.5 MiB a 768-token block -- until 2026-09-19 the whole slot, and
+64 GiB held about 223 of them (srv2 rank 0, that day). A Qwen3.8 one is 28 MiB of its 109 MiB slot
+(K=3) plus 10.4 MiB a 768-token block (~173 MiB at 10K tokens). 16 GiB is about 30 prefix boundaries.
 The prefix tier gets the smaller share on purpose: a boundary is a cache that recomputes, a
 conversation is a turn the user may come back to (D16). Past the cap the LRU forgets, foreign
 layouts first (`NvmeTier.oldest`). The caps are the fleet's, not a profile's: whichever engine
@@ -222,6 +223,10 @@ class TieredKV:
     def blocks(self, key: int) -> int:
         """Blocks a parked conversation will need back."""
         return int(self.tier.index[str(key)]["blocks"])
+
+    def extra_bytes(self, key: int) -> int:
+        """The slot bytes a parked conversation carries: a whole slot, or only its live state (`Runner.park_begin`)."""
+        return int(self.tier.index[str(key)].get("extra", 0))
 
     def keys(self) -> "list[int]":
         lister = getattr(self.tier, "keys", None)

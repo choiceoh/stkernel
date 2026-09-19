@@ -93,4 +93,62 @@ def softmax_topk(scores, k, *, experts=None, first=None, local=None, foreign=0, 
     return ids, weights
 
 
-__all__ = ["softmax_topk"]
+@tr.jit
+def _compact_routes(Ids, Weights, Local, W, Mine, N, FIRST, LOCAL, BLOCK: tl.constexpr):
+    i = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    live = i < N
+    shifted = tl.load(Ids + i, live, 0) - FIRST
+    mine = (shifted >= 0) & (shifted < LOCAL)
+    tl.store(Local + i, tl.where(mine, shifted, 0), live)
+    tl.store(W + i, tl.where(mine, tl.load(Weights + i, live, 0.0), 0.0), live)
+    tl.store(Mine + i, mine.to(tl.int8), live)
+
+
+def compact_routes(ids, weights, first, local):
+    """(local ids, weights, mine) [N, k] of global routes for an eager step's compact MoE, in one launch: this rank's
+    routes counted from `first`, another rank's on local expert 0 at weight exactly 0 (profiles/qwen38/lanes.
+    local_routes without a sentinel), and which routes are this rank's (bool, for torch.nonzero) -- the nine small torch
+    launches of the remap and the mask as one, bit for bit theirs (selects and an integer offset)."""
+    if (ids.ndim != 2 or weights.shape != ids.shape or ids.dtype != torch.int32 or weights.dtype != torch.float32
+            or not ids.is_contiguous() or not weights.is_contiguous() or ids.device != weights.device
+            or type(first) is not int or type(local) is not int or first < 0 or local <= 0):
+        raise ValueError("compact routes take int32 ids and FP32 weights [N, k], packed, and the rank's expert span")
+    out = torch.empty_like(ids), torch.empty_like(weights), torch.empty(ids.shape, dtype=torch.int8, device=ids.device)
+    n = ids.numel()
+    if n:
+        _compact_routes[(tr.cdiv(n, 1024),)](ids, weights, *out, n, first, local, BLOCK=1024, num_warps=4)
+    return out[0], out[1], out[2].view(torch.bool)
+
+
+@tr.jit
+def _pair_rows(X, Local, W, Token, Route, Xp, Ip, Wp, sX, sXp, K, H, BLOCK: tl.constexpr):
+    p = tl.program_id(0)
+    c = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
+    t = tl.load(Token + p)
+    tl.store(Xp + p * sXp + c, tl.load(X + t * sX + c, c < H), c < H)
+    if tl.program_id(1) == 0:
+        at = t * K + tl.load(Route + p)
+        tl.store(Ip + p, tl.load(Local + at))
+        tl.store(Wp + p, tl.load(W + at))
+
+
+def pair_rows(x, local_ids, weights, token, route):
+    """The compact MoE's pairs gathered in one launch: (x's rows [P, H] at `token`, the pairs' local ids [P, 1] and
+    weights [P, 1] at (token, route)) -- x.index_select and two index gathers, the same bytes (copies)."""
+    if (x.ndim != 2 or x.stride(1) != 1 or local_ids.ndim != 2 or weights.shape != local_ids.shape
+            or not local_ids.is_contiguous() or not weights.is_contiguous() or local_ids.shape[0] != x.shape[0]
+            or token.ndim != 1 or route.shape != token.shape or token.dtype != torch.int64 or route.dtype != torch.int64
+            or not token.is_contiguous() or not route.is_contiguous()):
+        raise ValueError("pair rows take x [N, H], packed ids and weights [N, k], and int64 (token, route) [P]")
+    p, h = token.shape[0], x.shape[1]
+    xp = torch.empty(p, h, dtype=x.dtype, device=x.device)
+    ip = torch.empty(p, 1, dtype=local_ids.dtype, device=x.device)
+    wp = torch.empty(p, 1, dtype=weights.dtype, device=x.device)
+    if p:
+        block = min(1024, tr.next_power_of_2(h))
+        _pair_rows[(p, tr.cdiv(h, block))](x, local_ids, weights, token, route, xp, ip, wp, x.stride(0), xp.stride(0),
+                                           local_ids.shape[1], h, BLOCK=block, num_warps=4)
+    return xp, ip, wp
+
+
+__all__ = ["softmax_topk", "compact_routes", "pair_rows"]

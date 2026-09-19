@@ -8,6 +8,11 @@ and FlashInfer. The per-file source paths and pre-port SHA256 hashes are in
   sources, under Apache License 2.0 (see this package's `LICENSE`). The
   Qwen3.8 QSA kernels in `qsa.py` are ported from vLLM's
   `models/qwen3_8_flash_next/nvidia/ops/qsa.py` under the same license.
+  The QSA tile-union prefill kernels in `qsa_tile_union.py` are ported
+  from vLLM pull request #55430 (`vllm/models/qwen4_exp/nvidia/ops/
+  qsa_tile_union.py`, jschmied/vllm commit
+  `c5d7eba35823043331b295fa2359e4bd6a85cfd2`), contributed to the vLLM
+  project under the same license.
 - FlashInfer contributors: b12x API, dispatch, and CuTe DSL kernels, under
   Apache License 2.0. ST maintains its modified copies in `b12x/` and uses
   the installed FlashInfer package for shared utilities and compilation.

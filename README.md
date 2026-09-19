@@ -52,16 +52,17 @@ python3 tools/dev_doctor.py --json
 모드에서 막히는 조건이다. 진단 도구는 패키지를 설치하거나 GPU 메모리를
 할당하지 않는다.
 
-### 네 노드와 Mac 을 같은 환경으로 (`tools/devenv/`)
+### 노드들과 Mac 을 같은 환경으로 (`tools/devenv/`)
 
-버전의 원본은 저장소의 `tools/devenv/versions.env` 다. 버전을 바꾸려면 이 파일을 고치는 PR 하나면 된다.
+버전의 원본은 저장소의 `tools/devenv/versions.env` 다. 버전을 바꾸려면 이 파일을 고치는 PR 하나면 된다. 노드는 GB10
+네 대(srv1~srv4, aarch64)와 RTX 5050 PC `ost-97x`(WSL2 Ubuntu, x86_64 — 테일넷 이름, Windows 본체와 별개)다.
 
 | 파일 | 하는 일 |
 |---|---|
-| `node.sh` | 노드 하나를 목록에 맞춘다: `~/.local/bin`(uv·gh·mergiraf·wt·node·codex·claude), 시스템 python3(3.12) 사용자 영역의 torch(CUDA 13.0)·triton·`PY_PACKAGES`, graphify, git 전역 설정, `~/stkernel` 체크아웃. 없거나 버전이 다른 것만 설치하고, 이미 있는 git 설정과 깨끗한 main 이 아닌 체크아웃은 건드리지 않는다. 판정은 GPU 를 가린 `dev_doctor.py --strict` |
-| `sync.sh` | srv1~srv4 에 `node.sh` 를 한꺼번에 적용하고 노드마다 판정을 찍는다(`--verify` 는 CPU 시험 몇 개까지). 로그는 `~/.local/state/devenv-sync/` |
+| `node.sh` | 노드 하나를 목록에 맞춘다: `~/.local/bin`(uv·gh·mergiraf·wt·node·codex·claude, 아키텍처에 맞는 릴리스), 시스템 python3(3.12) 사용자 영역의 torch(CUDA 13.0)·triton·`PY_PACKAGES`, graphify, git 전역 설정, `~/stkernel` 체크아웃. 없거나 버전이 다른 것만 설치하고(바꾸는 파일은 `~/.local/bin/.pre-devenv/` 로 옮겨 둔다), 이미 있는 git 설정과 추적 파일이 바뀐 체크아웃은 건드리지 않는다. 릴리스 압축 파일은 `versions.env` 에 아키텍처별로 적힌 SHA-256 과 같을 때만 푼다 — 버전을 올리면 `bash tools/devenv/node.sh --digests` 가 적을 줄을 뽑아 준다. 판정은 GPU 를 가린 `dev_doctor.py --strict` |
+| `sync.sh` | 모든 노드에 `node.sh` 를 한꺼번에 적용하고 노드마다 판정을 찍는다(`--verify` 는 CPU 시험 몇 개까지). Windows 가 잠들 수 있는 `ost-97x` 만 닿지 않아도 건너뛰고, 서버가 닿지 않으면 나머지를 맞춘 뒤 실패로 끝난다. 로그는 `~/.local/state/devenv-sync/` |
 | `devenv-sync` + `.service`/`.timer` | srv4 의 사용자 타이머가 매일 05:10 에 **main 의** `tools/devenv` 로 `sync.sh` 를 돌린다(작업 트리가 아니라 `origin/main` 에서 읽는다). 설치는 srv4 에서 `bash tools/devenv/sync.sh --install` |
-| `mac.sh` | Mac: `~/.venvs/stkernel`(Python 3.12, torch 의 macOS 휠)을 만들고 zsh 의 PATH 맨 앞에 둔다. macOS 용 triton 은 없어서 Triton 시험은 `stk-test` 컨테이너에서 돈다 |
+| `mac.sh` | Mac: `~/.venvs/stkernel`(`PYTHON_VERSION` 3.12, torch 의 macOS 휠)을 만들고 zsh 의 PATH 맨 앞에 둔다. 다른 Python 으로 만든 venv 는 옆으로 옮겨 두고 다시 만든다. graphify 는 `GRAPHIFY_VERSION` 그대로 자기 venv(`~/.venvs/stkernel-graphify`)에 두고 핀이 바뀌면 다시 설치해서, 위 venv 의 bin 에 링크한다(pipx 같은 다른 설치는 건드리지 않는다). macOS 용 triton 은 없어서 Triton 시험은 `stk-test` 컨테이너에서 돈다 |
 
 사람이 할 일은 로그인뿐이다 — `gh auth login`(git 의 github.com 자격 증명도 gh 가 답한다), codex·claude 의 첫 로그인.
 

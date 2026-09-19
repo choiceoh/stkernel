@@ -22,6 +22,31 @@ class Storage(bytearray):
         return len(self)
 
 
+def extra_bytes(extra) -> bytes:
+    """A tier's `extra` as bytes: a memoryview, a uint8 tensor, or `Segments` of them back to back."""
+    from engine.base.kv_tier import Segments
+    if isinstance(extra, Segments):
+        import torch
+        out = torch.empty(extra.numel(), dtype=torch.uint8)
+        extra.gather(out, 0, extra.numel())
+        return out.numpy().tobytes()
+    return extra.numpy().tobytes() if hasattr(extra, "numpy") else bytes(extra)
+
+
+def extra_size(extra) -> int:
+    return extra.numel() if hasattr(extra, "numel") else len(extra)
+
+
+def fill_extra(extra, data: bytes) -> None:
+    """`data` back into `extra` (see `extra_bytes`)."""
+    from engine.base.kv_tier import Segments
+    if isinstance(extra, Segments) or hasattr(extra, "numpy"):
+        import torch
+        Segments.of(extra).scatter(torch.frombuffer(bytearray(data), dtype=torch.uint8), 0, len(data))
+    else:
+        extra[:] = data
+
+
 class MemoryTier:
     """Byte storage with failures after partial I/O, exercising real pool ownership.
 
@@ -81,7 +106,7 @@ class MemoryTier:
         data = b"".join(storage[i * 4:(i + 1) * 4] for i in ids)
         self.data[seq] = data
         if extra is not None:
-            self.extra[seq] = bytes(extra)
+            self.extra[seq] = extra_bytes(extra)
         if record is not None:
             self.records[seq] = json.loads(json.dumps(record))    # what a JSON file would give back
         self.index[str(seq)] = {"tokens": tokens, "blocks": len(ids), "bytes": len(data) + len(self.extra.get(seq, b"")),
@@ -94,7 +119,7 @@ class MemoryTier:
         if ids is not None and len(ids) != self.index[str(seq)]["blocks"]:
             raise ValueError("wrong block count")
         want = len(self.extra.get(seq, b""))
-        if (len(extra) if extra is not None else 0) != want:
+        if (extra_size(extra) if extra is not None else 0) != want:
             raise ValueError("slot bytes on disk do not match the view given")
         if ids is None and not want:
             raise ValueError("a snapshot-only read would read nothing")
@@ -105,7 +130,7 @@ class MemoryTier:
         if self.fail_promote and ids is None:
             raise OSError("disk read failed")
         if want:
-            extra[:] = self.extra[seq]
+            fill_extra(extra, self.extra[seq])
         return want if ids is None else self.index[str(seq)]["bytes"]
 
     def forget(self, seq):
