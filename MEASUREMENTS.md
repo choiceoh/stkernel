@@ -4866,6 +4866,9 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
   — 주인 세션에 전달.
 - 기록: `measurements/qwen38_shared_overlap_20260919/`, `measurements/qwen38_mix_tiles_20260919/`.
 
+### Qwen3.8 — 프리필 청크 하나의 내역: 4,096 토큰이 랭크 하나에 디바이스 1005 ms, 43% 가 믹서 사이트 (2026-09-19, srv4 단일 GPU 레인)
+- `--lanes qwen38_prefill`(main `048270ef`): 서빙 `prefill` 을 실가중치 작은 net 넷에서 재고 48 층으로 풀었다. 디바이스 컨텍스트 0 1004.7 ms · 4,096 1025.9 ms. 게이트 잔차 Triton 226.3 + 믹서 GEMM 중심 cuBLAS 214.4 ms(약 43%), torch elementwise 174.2 ms(PLE 한 곳 49 ms), MoE 148.4 ms, QSA 119.3 ms.
+- 벽시계 · 호스트 몫은 쓸 수 없다: 두 칸에 2.3 – 2.7 s 가 한 번씩 끼었다(프로덕션 옆 레인, 한 번 잰 벽시계). 판정은 디바이스 표뿐. 속도 주장 없음. [표 · 원시](measurements/qwen38_prefill_census_20260919/README.md).
 ### Qwen3.8 — 디코드 크기 워밍업(헤드 패스 · 폭 1 · 8) 뒤 문 뒤에서 처음 쓰는 커널 12 → 9, 첫 디코드 스텝의 1.1 s 컴파일이 사라짐 (2026-09-19, srv4 단일 GPU 레인)
 - `--lanes qwen38_serve_compiles` 를 브랜치 `decode-sized-warm`(main `048270ef` + 이 변경)에서: 문 뒤 **9** 개(main 12). 덮인 QSA 2 (짧은 프리필과 첫 디코드 스텝 1.10 s)와 GDN `_gates` 1 이 사라졌고, 모든 디코드 스텝이 16 ms 이하. 남은 9 는 conv 5(#1238), dynamic MoE 밴드 3, 점수 커널 G 1 변형 1.
 - 부팅의 값: MTP 헤드만 도는 패스 20 개 8.35 s, 폭 1 · 8 0.431 · 1.47 s — 대부분 첫 컴파일, 그 뒤 부팅은 디스크 읽기. 속도 주장 없음. [기록](measurements/qwen38_serve_compiles_20260919b/README.md).
