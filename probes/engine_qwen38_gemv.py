@@ -136,7 +136,12 @@ def run_site(output=None) -> dict:
     downs = [torch.randn(RANK + HC, width, device="cuda", dtype=torch.bfloat16) * 0.02 for _ in range(copies)]
     ups = [torch.randn(width, RANK, device="cuda", dtype=torch.bfloat16) * 0.02 for _ in range(copies)]
     report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "sites_a_graph": CALLS,
-              "pair_MB": round(pair / 1e6, 2), "up_tile": list(hcr.UP_TILE), "rows": {}}
+              "pair_MB": round(pair / 1e6, 2), "up_tile": list(hcr.UP_TILE), "rows": {},
+              # the boot's own D3 checks at Qwen3.8's widths: 1 and 5 rows fold, 64 do not (fleet eps)
+              "qualify": {"gated_residual": {k: [round(x, 6) for x in v] for k, v in hcr.qualify(
+                  torch.device("cuda"), hc=HC, hidden=HIDDEN, rank=RANK, eps=1e-6).items()},
+                          "skinny_gemv": skinny_gemv.qualify(torch.device("cuda"))}}
+    print(json.dumps({"qualify": report["qualify"]}), flush=True)
     for m in ROWS:
         normed = torch.randn(m, width, device="cuda", dtype=torch.bfloat16)
         keep = []                                         # a graph's outputs live with it
