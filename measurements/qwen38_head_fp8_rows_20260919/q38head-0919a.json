@@ -1,0 +1,149 @@
+{
+ "device": "NVIDIA GB10",
+ "weight_MB": 159.0,
+ "rounds": 7,
+ "calls_a_graph": 8,
+ "algorithms": {
+  "direct": {
+   "1": {
+    "index": 0,
+    "workspace": 0,
+    "id": 70,
+    "tile": 20,
+    "stages": 36,
+    "split_k": 1,
+    "reduction": 0,
+    "swizzle": 0,
+    "custom": 0,
+    "alignment_a": 16,
+    "alignment_b": 16,
+    "alignment_c": 16,
+    "alignment_d": 16
+   }
+  },
+  "split": {
+   "1": {
+    "index": 0,
+    "workspace": 0,
+    "id": 70,
+    "tile": 20,
+    "stages": 36,
+    "split_k": 1,
+    "reduction": 0,
+    "swizzle": 0,
+    "custom": 0,
+    "alignment_a": 16,
+    "alignment_b": 16,
+    "alignment_c": 16,
+    "alignment_d": 16
+   },
+   "5": {
+    "index": 0,
+    "workspace": 0,
+    "id": 70,
+    "tile": 20,
+    "stages": 36,
+    "split_k": 1,
+    "reduction": 0,
+    "swizzle": 0,
+    "custom": 0,
+    "alignment_a": 16,
+    "alignment_b": 16,
+    "alignment_c": 16,
+    "alignment_d": 16
+   }
+  }
+ },
+ "rows": {
+  "1": {
+   "deep_gemm": {
+    "us": 878.2,
+    "GBps": 181.0,
+    "rel_err": 0.038447,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas direct": {
+    "us": 917.6,
+    "GBps": 173.2,
+    "rel_err": 0.038447,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas split": {
+    "us": 1006.9,
+    "GBps": 157.9,
+    "rel_err": 0.038447,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas block128": {
+    "us": 1022.8,
+    "GBps": 155.4,
+    "rel_err": 0.038447,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   }
+  },
+  "4": {
+   "deep_gemm": {
+    "us": 886.2,
+    "GBps": 179.4,
+    "rel_err": 0.041392,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas direct": {
+    "us": 902.8,
+    "GBps": 176.1,
+    "rel_err": 0.041392,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas split": {
+    "us": 1000.7,
+    "GBps": 158.9,
+    "rel_err": 0.041392,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas block128": {
+    "us": 841.5,
+    "GBps": 188.9,
+    "rel_err": 0.041392,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   }
+  },
+  "16": {
+   "deep_gemm": {
+    "us": 899.1,
+    "GBps": 176.8,
+    "rel_err": 0.039238,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas direct": {
+    "us": 919.7,
+    "GBps": 172.8,
+    "rel_err": 0.039238,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas split": {
+    "us": 986.4,
+    "GBps": 161.2,
+    "rel_err": 0.039238,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas block128": {
+    "us": 916.7,
+    "GBps": 173.4,
+    "rel_err": 0.039238,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   }
+  }
+ }
+}

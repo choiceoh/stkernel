@@ -535,10 +535,13 @@ class PaddedDenseLinear(DenseLinear):
 
 class FP8Linear:
     """Block-scaled FP8 for prefill and the accuracy-sensitive vocabulary head. `quantized`: (q, scale) prepared by
-    the store -- GPTQ on the fp8 grid from the weight's calibration (packing.fp8_gptq) -- instead of round-to-nearest."""
-    def __init__(self, weight, *, quantized=None, name=None):
+    the store -- GPTQ on the fp8 grid from the weight's calibration (packing.fp8_gptq) -- instead of round-to-nearest.
+    `decode_rows`: 1..16 rows go to fp8_rows' one-launch kernel instead of deep_gemm (the same quantized inputs and
+    scales; a profile opts in where it measured the shape)."""
+    def __init__(self, weight, *, quantized=None, name=None, decode_rows=False):
         self.rows, self.cols = weight.shape
         self.name = name
+        self.decode_rows = decode_rows
         self.observer = None  # calibration sums this layer's inputs through it when it stands alone (the head)
         self.executed = False
         self.calibrated = quantized is not None
@@ -607,8 +610,6 @@ class FP8Linear:
             result = self.cublas.project_quantized(q, scale, out=out)
             self.executed = True
             return result[:, :self.rows]
-        from deep_gemm import fp8_gemm_nt
-        from engine.kernels.deep_gemm import _initialize
         if (q.ndim != 2 or q.shape[1] != self.cols or q.dtype != torch.float8_e4m3fn
                 or scale.shape != (q.shape[0], self.cols // 128) or scale.dtype != torch.float32
                 or not q.is_contiguous() or not scale.is_contiguous()
@@ -620,7 +621,13 @@ class FP8Linear:
         elif (tuple(out.shape) != shape or out.dtype != torch.bfloat16 or out.device != q.device
               or not out.is_contiguous() or out.data_ptr() % 16):
             raise ValueError("FP8 output must be aligned contiguous BF16 with the full padded weight width")
-        _initialize()
-        fp8_gemm_nt((q, scale), self.weight, out)
+        from . import fp8_rows
+        if self.decode_rows and q.shape[0] <= fp8_rows.MAX_ROWS:
+            fp8_rows.project(q, scale, self.weight, out=out)
+        else:
+            from deep_gemm import fp8_gemm_nt
+            from engine.kernels.deep_gemm import _initialize
+            _initialize()
+            fp8_gemm_nt((q, scale), self.weight, out)
         self.executed = True
         return out[:, :self.rows]

@@ -274,7 +274,9 @@ class Qwen38Net:
                 else:
                     self.retained_sources.append(key)
         head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
-        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
+        # a decode step's head rows on one launch over deep_gemm's own FP8 inputs (dense/fp8_rows: 688-709 against
+        # 873-893 us a read of the rank's 159 MB, q38head-0919c)
+        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME, decode_rows=True)
         self._hc_projections = self._prepare_hc_fp8() if self.hc_fp8 else {}
 
     def _hc_sites(self):
