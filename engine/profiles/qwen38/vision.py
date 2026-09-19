@@ -38,6 +38,7 @@ from engine.modules.pictures import decode as decode_picture
 
 BF = torch.bfloat16
 FILE = "vision.safetensors"          # next to the rank files: the tower, whole, under its checkpoint names
+LAYOUT = "qwen38-vision-v1"          # the file's weight_layout marker (fleet.rank_loader refuses another)
 PREFIX = "model.visual."
 LIMITS = {"image": 4}                # per prompt: GLM-5.3's served limit (PR #431); video is not served here yet
 ROPE_BASE = 10000.0                  # the tower's 2-D rotary: get_rope(head_dim, partial_rotary_factor 0.5), neox halves
@@ -146,7 +147,7 @@ def write_file(ckpt: "str | Path", out_dir: "str | Path", log=print) -> int:
     S = specs(V)
     path = Path(out_dir) / FILE
     sizes = write_ranks([("vision", [s.name for s in S], lambda r: S)], [path], lambda keys: Checkpoint(str(ckpt)).load(keys), 1,
-                        metadata={"model": "qwen38", "part": "vision", "layout": "engine.profiles.qwen38.vision"}, log=log)
+                        metadata={"model": "qwen38", "part": "vision", "weight_layout": LAYOUT}, log=log)
     return sizes[0]
 
 
@@ -437,5 +438,5 @@ class Vision:
         return np.stack([x + 0 * y, y + 0 * x, (x + y) % 256]).astype(np.uint8)[None]      # [1, 3, H, W]
 
 
-__all__ = ["FILE", "LIMITS", "PREFIX", "Door", "Vision", "VisionFacts", "load", "pixel_values", "resize", "rope_positions",
+__all__ = ["FILE", "LAYOUT", "LIMITS", "PREFIX", "Door", "Vision", "VisionFacts", "load", "pixel_values", "resize", "rope_positions",
            "smart_resize", "specs", "write_file"]

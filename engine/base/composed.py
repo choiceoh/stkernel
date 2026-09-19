@@ -24,6 +24,15 @@ the step feeds [last token] + the row's drafts as a verify segment, samples ever
 same generation count would draw without drafts, accepts drafts while the sample agrees, appends accepted + 1 tokens
 and accepts that many into the store -- so a drafter changes how many tokens a step yields, never which. The math is
 the composition's; nothing here knows a model.
+
+Pictures (a door with a vision tower, base/serve): the request's records -- kind, digest, the placeholder positions their
+rows replace, the canvas, the grid -- are kept a row, their positions absolute in the row's tokens (a continued turn's
+are re-based past the history), and handed to a composition that declares it sees them (`sees_media`): `check_media(
+tokens, records)` refuses what it cannot serve before the row changes, `bind_media(seq, tokens, records)` adopts them
+once it has (its rotary layout, say), `forget_media(seq)` drops them, and `forward(..., media=records)` receives them
+with every prefill piece, which encodes what that piece reaches. `media_marks` salts the prefix cache; a parked row keeps the
+marks and grids, not the canvases -- the caches hold the pictures' effect. A composition without `sees_media` serves
+text only.
 """
 from __future__ import annotations
 
@@ -410,6 +419,7 @@ class ComposedModel:
         self.grammars = grammars                         # base/grammar.Grammars (or its protocol): structured output
         self.history = None                              # base/sampler.History, built at the first row with penalties
         self.matchers, self.lps, self.thinking = {}, {}, {}
+        self.media = {}                                  # seq -> picture records, positions absolute (module docstring)
         self.drafts_total = self.accepted_total = self.drafted_total = 0
         self.covered_mass = self.reachable_mass = 0.0
 
@@ -467,19 +477,42 @@ class ComposedModel:
         if self.history is not None:
             self.history.forget(seq)                     # the row's tokens were just replaced or extended by a new turn
 
-    def add(self, seq: int, ids, max_new=None, temperature=None, min_new: int = 0, options=None, media=None) -> None:
-        if media:
+    def _media(self, ids: "list[int]", media, base: int) -> "list[dict]":
+        """The door's records for `ids` (the new tokens, standing at `base` in the row), their positions made absolute.
+        What a record's grid means is the composition's (`bind_media`); its shape is checked here."""
+        if not getattr(self.composition, "sees_media", False):
             raise ValueError("the composed engine serves text only")
+        items = []
+        for m in media:
+            positions = [int(p) for p in m["positions"]]
+            grid = tuple(int(g) for g in m["grid"])
+            if (m.get("kind") not in ("image", "video") or not positions or len(grid) != 3
+                    or any(b <= a for a, b in zip(positions, positions[1:])) or positions[0] < 0 or positions[-1] >= len(ids)):
+                raise ValueError("a media record needs a kind, a grid and increasing placeholder positions inside the prompt")
+            items.append({"kind": m["kind"], "digest": str(m["digest"]), "positions": [base + p for p in positions],
+                          "canvas": m.get("canvas"), "grid": grid})
+        return items
+
+    def add(self, seq: int, ids, max_new=None, temperature=None, min_new: int = 0, options=None, media=None) -> None:
         if seq in self.tokens:
             raise ValueError(f"seq {seq} is live or has an uncollected result")
-        self._bind(seq, list(ids), max_new, temperature, min_new, options)
-        self.tokens[seq] = list(ids)
+        ids = list(ids)
+        items = self._media(ids, media, 0) if media else None
+        if items:
+            self.composition.check_media(ids, items)              # refused before the row takes anything
+        self._bind(seq, ids, max_new, temperature, min_new, options)
+        self.tokens[seq] = ids
         self.prompt_len[seq] = len(ids)
+        if items:
+            self.media[seq] = items
+            self.composition.bind_media(seq, ids, items)
 
     def forget(self, seq: int) -> None:
         for d in (self.tokens, self.prompt_len, self.limits, self.min_new, self.options, self.ends, self.seeds, self.nonces,
                   self.matchers, self.lps, self.thinking):
             d.pop(seq, None)
+        if self.media.pop(seq, None) is not None:
+            self.composition.forget_media(seq)
         if self.history is not None:
             self.history.forget(seq)
         if self.drafter is not None:
@@ -488,16 +521,22 @@ class ComposedModel:
     def extend(self, seq: int, ids, max_new=None, temperature=None, min_new: int = 0, options=None, media=None,
                drop_unfed: bool = False) -> int:
         """A new turn on a conversation the store still holds: returns the tokens to prefill (the last sampled, never
-        fed, and the new ones)."""
-        if media:
-            raise ValueError("the composed engine serves text only")
+        fed, and the new ones). `media` positions are the new tokens' (the door re-bases a continued turn's)."""
+        ids = list(ids)
+        if drop_unfed and len(self.tokens[seq]) - self.context(seq) != 1:
+            raise ValueError("only one never-fed token can be dropped")
+        base = len(self.tokens[seq]) - (1 if drop_unfed else 0)
+        items = self._media(ids, media, base) if media else None
+        if items:
+            self.composition.check_media(self.tokens[seq][:base] + ids, self.media.get(seq, []) + items)
         if drop_unfed:
-            if len(self.tokens[seq]) - self.context(seq) != 1:
-                raise ValueError("only one never-fed token can be dropped")
             del self.tokens[seq][-1]
-        self._bind(seq, list(ids), max_new, temperature, min_new, options)
-        self.tokens[seq] += list(ids)
+        self._bind(seq, ids, max_new, temperature, min_new, options)
+        self.tokens[seq] += ids
         self.prompt_len[seq] = len(self.tokens[seq])
+        if items:
+            self.media[seq] = self.media.get(seq, []) + items
+            self.composition.bind_media(seq, self.tokens[seq], self.media[seq])
         return len(self.tokens[seq]) - self.context(seq)
 
     def extension_tokens(self, seq: int, ids) -> int:
@@ -526,8 +565,10 @@ class ComposedModel:
         processed row's, the door's logprobs shape), else None."""
         return self.lps.get(seq)
 
-    def media_marks(self, seq: int) -> list:
-        return []
+    def media_marks(self, seq: int) -> "list[tuple[int, str]]":
+        """(first position, digest) of every picture in the conversation, in order (the door's continuation check and
+        the prefix cache's salts)."""
+        return [(m["positions"][0], m["digest"]) for m in self.media.get(seq, [])]
 
     # -- the runner's protocol ----------------------------------------------------------------------------------------
     def open(self, seq: int, slot: int) -> None:
@@ -561,6 +602,9 @@ class ComposedModel:
                   "tokens": list(self.tokens[seq]), "prompt_len": self.prompt_len[seq],
                   "limits": [self.limits[seq][0], self.limits[seq][1]], "min_new": self.min_new.get(seq, 0),
                   "options": {k: v for k, v in self.options.get(seq, {}).items() if k != "grammar"}}
+        if self.media.get(seq):                          # marks and grids only: the caches hold the pictures' effect
+            record["media"] = [[m["kind"], m["digest"], m["positions"][0], len(m["positions"]), list(m["grid"])]
+                               for m in self.media[seq]]
         self.close(seq)
         self.forget(seq)
         return record
@@ -573,9 +617,16 @@ class ComposedModel:
         options = dict(record.get("options") or {})
         if options.get("logit_bias"):                    # base/kv_tier keeps the record as JSON: its keys come back as text
             options["logit_bias"] = {int(k): float(v) for k, v in options["logit_bias"].items()}
+        media = [{"kind": kind, "digest": str(digest), "positions": list(range(int(first), int(first) + int(count))),
+                  "canvas": None, "grid": tuple(int(g) for g in grid)} for kind, digest, first, count, grid in record.get("media") or ()]
+        if media:
+            self.composition.check_media(self.tokens[seq], media)
         self._bind(seq, self.tokens[seq], int(record["limits"][0]), float(record["limits"][1]),
                    int(record.get("min_new", 0)), options)
         self.store.resume(seq, slot, int(record["context"]))
+        if media:
+            self.media[seq] = media
+            self.composition.bind_media(seq, self.tokens[seq], media)
 
     # -- sampling: one uniform a row from base/draws, the row's key as GLM-5.3 keys it ----------------------------------
     def _uniform(self, seq: int) -> float:
@@ -696,9 +747,10 @@ class ComposedModel:
                 at, inside = p, []
         pieces.append((start + tokens, tuple(inside)))
         at, logits, kept = start, None, []
+        pictures = {"media": self.media[seq]} if self.media.get(seq) else {}
         for stop, inside in pieces:
             piece = torch.tensor(ids[at - start:stop - start], dtype=torch.int64, device=self.store.device)
-            taken = {"marks": inside} if inside else {}
+            taken = dict({"marks": inside} if inside else {}, **pictures)
             if self.drafter is None:
                 logits = self.composition.forward(Step.of([(seq, at, piece)]), self.store, **taken)
             else:
