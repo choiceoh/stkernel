@@ -56,6 +56,24 @@ def run(output=None) -> dict:
                                                           ieee[:r])) for r in (1, 4, 16) if r <= m),
                   "mma_top8_is_ieee_top8": bool(torch.equal(mma.topk(8).indices.sort(1).values,
                                                             ieee.topk(8).indices.sort(1).values))}
+        # the shared gate three ways, BF16 as the gate reads it: cuBLAS's BF16 matmul (a prefill step before), the
+        # skinny GEMV (a decode step before), the MMA router's last column rounded (both now)
+        from engine.kernels.common.skinny_gemv import linear_rows
+        folded = router_fp32.router_logits_mma(x, gates)[:, EXPERTS:].to(torch.bfloat16)
+        cublas = torch.mm(x, gates[EXPERTS:].t())
+        exact_shared = (x.double() @ gates[EXPERTS:].double().t())
+        checks.update({
+            "shared_folded_vs_cublas_differ": int((folded != cublas).sum()),
+            "shared_rows": m,
+            "shared_folded_vs_rows_first16_differ": int((folded[:16] != linear_rows(x[:16].contiguous(),
+                                                                                    gates[EXPERTS:])).sum()),
+            "shared_cublas_vs_rows_first16_differ": int((cublas[:16] != linear_rows(x[:16].contiguous(),
+                                                                                    gates[EXPERTS:])).sum()),
+            "shared_folded_err_vs_fp64_max": float((folded.double() - exact_shared).abs().max()),
+            "shared_cublas_err_vs_fp64_max": float((cublas.double() - exact_shared).abs().max()),
+            "folded_rows_alike": all(bool(torch.equal(router_fp32.router_logits_mma(x[:r].contiguous(), gates),
+                                                      router_fp32.router_logits_mma(x, gates)[:r])) for r in (1, 16)
+                                     if r <= m)})
         graphs = {}
         for name, fn in arms.items():
             fn()

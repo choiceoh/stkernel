@@ -228,6 +228,56 @@ class LayerTests(unittest.TestCase):
         self.assertFalse(seen["routes"][2])
 
 
+@unittest.skipUnless(RUNS, "requires Triton with CUDA, or TRITON_INTERPRET=1")
+class CompactPairsTests(unittest.TestCase):
+    """An eager step's compact MoE: the remap and the mask (`compact_routes`) and the pairs' gathers (`pair_rows`) in
+    one launch each, bit for bit the torch launches they replace."""
+
+    def routes(self, rows, seed):
+        gen = torch.Generator().manual_seed(seed)
+        ids = torch.stack([torch.randperm(E, generator=gen)[:K] for _ in range(rows)]).to(torch.int32).to(DEVICE)
+        weights = torch.rand(rows, K, generator=gen).to(DEVICE)
+        return ids, weights
+
+    def test_the_remap_and_the_mask_are_local_routes_and_the_range(self):
+        from engine.kernels import moe_route
+        from engine.profiles.qwen38.lanes import local_routes
+        for rows, first in ((1, 0), (37, 128), (300, 384)):
+            ids, weights = self.routes(rows, rows)
+            local_ids, w, mine = moe_route.compact_routes(ids, weights, first, 128)
+            want_ids, want_w = local_routes(ids, weights, first, 128)
+            shifted = ids - first
+            with self.subTest(rows=rows, first=first):
+                self.assertTrue(torch.equal(local_ids, want_ids) and torch.equal(w, want_w))
+                self.assertTrue(torch.equal(mine, (shifted >= 0) & (shifted < 128)))
+
+    def test_the_pairs_are_the_index_gathers(self):
+        from engine.kernels import moe_route
+        from engine.profiles.qwen38.lanes import local_routes
+        gen = torch.Generator().manual_seed(5)
+        for rows, h in ((40, 2560), (9, 100)):
+            x = torch.randn(rows, h, generator=gen).to(torch.bfloat16).to(DEVICE)
+            ids, weights = self.routes(rows, h)
+            local_ids, w = local_routes(ids, weights, 128, 128)
+            token, route = ((ids >= 128) & (ids < 256)).nonzero(as_tuple=True)
+            xp, ip, wp = moe_route.pair_rows(x, local_ids, w, token, route)
+            with self.subTest(rows=rows, h=h):
+                self.assertTrue(torch.equal(xp, x.index_select(0, token)))
+                self.assertTrue(torch.equal(ip, local_ids[token, route][:, None]))
+                self.assertTrue(torch.equal(wp, w[token, route][:, None]))
+        empty = torch.zeros(0, dtype=torch.int64, device=DEVICE)
+        xp, ip, wp = moe_route.pair_rows(x, local_ids, w, empty, empty)
+        self.assertEqual((tuple(xp.shape), tuple(ip.shape), tuple(wp.shape)), ((0, h), (0, 1), (0, 1)))
+
+    def test_the_served_compact_moe_uses_both(self):
+        served = (ROOT / "engine/profiles/qwen38/lanes.py").read_text(encoding="utf-8")
+        body = served[served.index("    def moe(x, ids, weights, w13, w13_sf, w2, w2_sf, *, scales, first_expert, "
+                                   "compact=False, local=False):"):]
+        self.assertIn("moe_route.compact_routes(", body)
+        self.assertIn("token, route = mine.nonzero(as_tuple=True)", body)
+        self.assertIn("moe_route.pair_rows(x, local_ids, w, token, route)", body)
+
+
 @unittest.skipUnless(torch is not None, "requires torch")
 class LaneTests(unittest.TestCase):
     def test_the_reference_table_composes_and_the_served_table_binds_the_kernel(self):

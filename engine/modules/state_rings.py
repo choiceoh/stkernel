@@ -11,6 +11,9 @@ copies those cells out, restoring copies them back, and a prefill step that cuts
 writes its state and conv taps straight in (`mark_state`). The ring widths are read off the rings themselves, so a
 model's speculative width (K) never has to be passed.
 
+A conversation that leaves its slot for the NVMe tier keeps the same one recurrent cell (`live_bytes`): the other K
+are draft positions' states, and most of a slot -- 238 of a GLM-5.3 slot's 286 MiB, 81 of a Qwen3.8 one's 109.
+
 `StateRings` is a mixin for an engine/base/slot_caches.SlotCaches subclass whose layout carries those fields. The
 subclass names its ring layers (`ring_layers`: the delta-rule ones, in layer order) and, if its conv is not
 `F.conv` wide, `conv_history`. What else a boundary keeps -- a drafter's window, a lookup table's id ring -- is the
@@ -65,6 +68,34 @@ class StateRings:
             conv, rec = self.rings(L, slot)
             conv.index_copy_(1, cells(conv.shape[1]), self._snap["conv", L][snap])
             rec[(position - 1) % rec.shape[0]].copy_(self._snap["rec", L][snap])
+
+    def live_bytes(self, slot: int, position: int):
+        """What a conversation stopped after `position` tokens needs of `slot` to continue, as a tier moves it
+        (engine/base/kv_tier.Segments): every field of the slot whole, but of each ring layer's recurrent ring only the
+        state after position-1. A step reads (context-1) % (K+1) alone and writes every position it computes before
+        anything reads it (engine/kernels/state `_read_rec`, engine/kernels/kda/fused_recurrent) -- the rule a restored
+        prefix boundary already relies on -- so the other K cells, draft positions' states, are not the conversation's.
+        A GLM-5.3 slot is 286 MiB and this 48; a Qwen3.8 one (K=3) 109 and 28. Reads the layout's `fields` and
+        `slot_bytes`, and `state`."""
+        from math import prod
+
+        from engine.base.kv_tier import Segments
+        from engine.base.slot_caches import SIZES
+
+        if not 0 < slot < self.slots.num_slots:
+            raise IndexError("only a real state slot has bytes to move")
+        if position <= 0:
+            raise ValueError("a conversation with nothing computed has no state to keep")
+        rings = {("rec", L) for L in self.ring_layers()}
+        base = slot * self.layout.slot_bytes
+        views = []
+        for f in sorted(self.layout.fields, key=lambda f: f.offset):
+            at, size = base + f.offset, prod(f.shape) * SIZES[f.dtype]
+            if (f.name, f.layer) in rings:
+                size //= f.shape[0]                                  # one cell of the ring: [K + 1, ...]
+                at += (position - 1) % f.shape[0] * size
+            views.append(self.state[at:at + size])
+        return Segments(views)
 
     def mark_state(self, layer: int, snap: int, state, taps) -> None:
         """A block boundary inside a prefill step: the layer's recurrent state there and the conv inputs of the conv-1

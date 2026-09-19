@@ -5069,3 +5069,36 @@ sparse 발사와 바이트 동일(GPU). net 은 한 세그먼트 호스트 스�
 `router_fp32.router_logits_mma`: BF16 게이트 그대로 BF16 MMA, K 타일 합은 IEEE `add.rn.f32`, FP32 출력. Qwen 서빙 레인이 쓰고(`router_bf16`) FP32 라우터 아레나(랭크당 ≈ 257 MB)를 잡지 않는다.
 - `q38router-0919c`(21 라운드 최솟값): 16 행 40.7 → 17.9 µs, 512 행 227.0 → 82.5, 4,096 행 1,413.8 → 228.8. float64 대비 최대 오차 1.2~1.8e-6(FP32 라우터 0.6~7.8e-6).
 - 같은 행의 비트가 행 수와 무관(MMA 참, cuBLAS FP32 거짓), 상위 8 선택 같음. **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_router_mma_20260919/README.md).
+### NVMe 대화 티어 — 파킹은 슬롯 통째가 아니라 살아 있는 상태만: GLM-5.3 대화 하나 286 → 48.0 MiB(5.95배, 64 GiB 에 223 → 약 1,192 개), Qwen3.8 109 → 28.3 MiB(3.86배) (2026-09-19, stk-test CPU·Triton 인터프리터, 계산)
+- **무엇.** 파킹이 쓰는 슬롯의 대부분이 `rec` — 층마다 K+1 개의 fp32 상태로, 초안이 거절되면 인덱스로 되돌리려고 둔 것이다: GLM-5.3
+  299,932,672 B 의 95.1%(KDA 34층 × 8칸), Qwen3.8 114,645,248 B 의 98.8%(GDN × 4칸, K=3). 링은 위치로 주소를 매기고 스텝은
+  `(context-1) % (K+1)` 한 칸만 읽는다(`state._read_rec`, `kda/fused_recurrent` — KDA·GDN 링 커널이 같은 커널, 실험용 `kda/deferred` 도,
+  두 넷의 프리필도 같은 칸). 파킹은 이제 그 한 칸과 슬롯의 나머지 필드만 쓴다(`StateRings.live_bytes` → `kv_tier.Segments`,
+  `Model.park_bytes`; Qwen3.8 은 `ComposedModel` → `ServedStore`): GLM 50,371,584 B, Qwen 29,710,400 B. 재개는 슬롯을 0으로 지우고(`open`
+  처럼, Qwen 은 PLE id 링도 빈 칸) 그 바이트를 되돌린다 — prefix 경계 복원과 같은 모양. 통째로 파킹된 옛 대화는 manifest `extra` 크기로
+  알아보고 통째로 읽는다.
+- **같은 결과.** 실제 링 커널(`recurrent_kda_ring`, `_rows`, `recurrent_gdn_ring`)을 인터프리터로: 파킹한 링과 재개한 링(살아 있는 칸 + 0)의
+  스텝 출력과 쓴 칸이 바이트까지 같다; 틀린 칸이나 빈 링은 다르다. NvmeTier 는 조각을 한 바이트 범위로 쓰고(CPU O_DIRECT) 조각마다 되읽는다.
+- **계산.** GLM-5.3 프로덕션 rank 0 의 223개(20:30, 평균 KV 7.3 MB)는 63.80 → 11.97 GiB, 같은 평균이면 64 GiB 에 약 1,192개(5.3배). 파킹·재개의
+  슬롯 바이트 286 → 48 MiB(5.1 GB/s 에서 58.8 → 9.9 ms, 미측정). Qwen3.8 대화는 한 블록 125.5 → 40.6 MB, 10K 토큰 266.7 → 181.8 MB.
+- **미측정.** GPU·플릿 — GLM 은 `probes/engine_full_check.py`(플릿)나 `boot.py --local --layers 0-4 --park`(실캐시 파킹·재개·4토큰 이어 쓰기
+  = 한 번에 돌린 것), Qwen 은 플릿 파킹 자체가 아직 GPU 미검증(#1298). 실제 시간·대화 수.
+  [상세·원시](measurements/park_live_state_20260919/README.md).
+
+### Qwen3.8 프리필 MoE 의 쌍 고르기와 모으기를 한 발사씩 — 재매핑·마스크 414 → 170 µs(4,096 행), 모으기 121 → 74 µs(512 행), 바이트 동일 (2026-09-19, srv4 단일 GPU 레인, PR #1307)
+`moe_route.compact_routes`(local_routes + 이 랭크 마스크, torch 발사 아홉 개 → 하나)와 `moe_route.pair_rows`(x.index_select + 두 인덱스 모으기 → 하나): eager 프리필의 compact MoE.
+- `q38moeglue-0919c`(21 라운드 최솟값, 호스트 발사 포함): 재매핑+마스크+nonzero 512 행 418 → 161 µs, 4,096 행 414 → 170; 모으기 512 행 121 → 74, 4,096 행 345 → 350(대역폭).
+- 같은 판에서 단계별 비용 목록(라우터·라우팅·공유 게이트·pair_sum). **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_moe_glue_20260919/README.md).
+
+### Qwen3.8 공유 전문가 게이트를 라우터 발사의 마지막 열로 — 층마다 4,096 행 −87 µs, 512 행 −104 µs; 4,096 값 중 1 개가 한 BF16 칸 다름 (2026-09-19, srv4 단일 GPU 레인, PR #1308)
+`router_bf16` 레인은 게이트 513 행을 MMA 라우터에 넘기고 마지막 열을 BF16 로 반올림해 sigmoid(전: 따로 BF16 mm [1] — 프리필 cuBLAS, 디코드 skinny GEMV).
+- 시간 `q38moeglue-0919c`: [512]+공유 387.7 → [513] 301.2 µs(4,096 행), 200.9 → 96.9(512 행). 일치 `q38router-0919d`: cuBLAS 와 다른 값 0/16, 0/512, 1/4,096, float64 오차 같음.
+- **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_shared_gate_fold_20260919/README.md).
+### Qwen3.8 QSA 프리필 타일 합집합 — 1,024 행 1.7~2.7배, 4,096 행 1.33~1.41배(이웃 행이 비슷하게 고를 때), 기본 켬 (2026-09-19, srv4 단일 GPU 레인, sm121 intake U12)
+`qsa_tile_union.attention`(vLLM PR 55430 이식): 한 세그먼트의 두 행이 고른 블록의 합집합을 한 번씩 읽고 행마다 자기 블록만 softmax 에 넣는다.
+split-K 와 바이트 동일이 아니라 대역 안(최대 0.0066, rms 0.0011).
+- `sm121-u12-0919c`(중앙값/최솟값, 프로덕션 옆): 프리필형 선택 1,024 행 4,808.7/2,941.3 → 1,753.8/1,743.8 µs, 4,096 행 19,067/17,624 → 14,119/12,707.
+  이웃이 따로 고르면 중앙값 14~26% 느리다. `sm121-u12cells-0919e`: 부팅 자격 검사 최대 0.005882, GPU 글루 91 통과.
+- 운영자 "빠른건 기본에 켜"(09-19) → 기본 켬, `--no-tile-union`/`ST_QSA_TILE_UNION=0` 롤백. **플릿 onepass 미측정**(D17).
+  [상세·원시](measurements/qwen38_tile_union_20260919/README.md).
+

@@ -29,12 +29,18 @@ of the same cudaHostAlloc window. Gather/scatter access it directly, omitting
 the intermediate device/host copy. Both aliases share allocation ownership;
 the stream/I/O synchronization and durable disk format remain unchanged.
 
-A parked conversation is more than its paged blocks: the state slot (KDA
-rings, indexer tails, the drafter ring -- 247 MiB on GLM-5.3) and a small
-host record (token history, context) go with it. The file holds three
-things in order: the gathered blocks, the slot bytes padded to a sector,
-and -- beside it -- a JSON record. The manifest names all of them, so a
-conversation parked before a reboot is still a conversation after it.
+A parked conversation is more than its paged blocks: its state slot's bytes
+(KDA rings, indexer tails, the drafter ring) and a small host record (token
+history, context) go with it. A model that names its live state
+(`Runner.park_begin`, `Model.park_bytes`) sends only that, as `Segments`: a
+KDA or GDN ring keeps K+1 states for rolling drafts back and a continuation
+reads one, so a GLM-5.3 conversation writes 48 MiB of its 286 MiB slot and
+a Qwen3.8 one 28 of 109 (until 2026-09-19 the whole slot; `extra` in the
+manifest says which). The file
+holds three things in order: the gathered blocks, the slot bytes padded to
+a sector, and -- beside it -- a JSON record. The manifest names all of
+them, so a conversation parked before a reboot is still a conversation
+after it.
 
 Capacity is the disk's (D16): a demote that would not leave `reserve_bytes`
 free on the filesystem (or exceed a declared `capacity_bytes`) raises
@@ -68,6 +74,54 @@ def _sectors(n: int) -> int:
 
 class TierFull(MemoryError):
     """The disk cannot take this conversation; forget one or drop this one."""
+
+
+class Segments:
+    """What a tier moves as a sequence's `extra`: contiguous uint8 views, back to back as one byte range.
+
+    A whole state slot is one view. A parked conversation's live state is several: the one recurrent state of each
+    delta-rule layer that a continuation reads, and the slot's other fields (engine/modules/state_rings `live_bytes`)
+    -- 48 MiB of a GLM-5.3 slot's 286. The file holds them in this order, and a staging window copies across their
+    seams as if they were one view."""
+
+    def __init__(self, views):
+        self.views = [v for v in views if v.numel()]
+        if not self.views:
+            raise ValueError("segments need at least one nonempty view")
+        self.nbytes = sum(int(v.numel()) for v in self.views)
+
+    @classmethod
+    def of(cls, extra) -> "Segments":
+        return extra if isinstance(extra, cls) else cls([extra])
+
+    def numel(self) -> int:
+        return self.nbytes
+
+    @property
+    def device(self):
+        return self.views[0].device
+
+    def _spans(self, off: int, n: int):
+        """(view, offset in it, offset in the window, bytes) for bytes [off, off + n) of the whole."""
+        at = 0
+        for v in self.views:
+            size = int(v.numel())
+            lo, hi = max(off, at), min(off + n, at + size)
+            if lo < hi:
+                yield v, lo - at, lo - off, hi - lo
+            at += size
+            if at >= off + n:
+                return
+
+    def gather(self, out, off: int, n: int) -> None:
+        """Bytes [off, off + n) into out[:n]: copies on the current stream, not waited for."""
+        for view, at, to, k in self._spans(off, n):
+            out[to:to + k].copy_(view[at:at + k], non_blocking=True)
+
+    def scatter(self, src, off: int, n: int) -> None:
+        """src[:n] back into bytes [off, off + n): copies on the current stream, not waited for."""
+        for view, at, to, k in self._spans(off, n):
+            view[at:at + k].copy_(src[to:to + k], non_blocking=True)
 
 
 class NvmeTier:
@@ -233,9 +287,10 @@ class NvmeTier:
 
     def demote(self, seq: int, storage, block_ids: "list[int]", tokens: int, extra=None, record=None) -> int:
         """Write blocks `block_ids` of `storage` ([num_blocks * block_bytes] uint8)
-        contiguously, then `extra` (a contiguous device uint8 view: the state
-        slot) padded to a sector, and `record` (JSON-serialisable) beside them.
-        Returns bytes. Device work runs on the tier stream only."""
+        contiguously, then `extra` (a contiguous device uint8 view -- the state
+        slot -- or `Segments` of them, back to back) padded to a sector, and
+        `record` (JSON-serialisable) beside them. Returns bytes. Device work
+        runs on the tier stream only."""
         with self._transfer_lock:
             return self._demote(seq, storage, block_ids, tokens, extra, record)
 
@@ -246,7 +301,8 @@ class NvmeTier:
             # its conversations from its own parked set, so a key both used is expected. Refusing it dropped the live
             # conversation to keep one that nothing here can read.
             self._forget(seq)
-        extra_bytes = int(extra.numel()) if extra is not None else 0
+        extra = Segments.of(extra) if extra is not None else None
+        extra_bytes = extra.numel() if extra is not None else 0
         cache = getattr(self, "snapshot_cache", None)
         builder = cache.begin(extra_bytes) if cache is not None and extra_bytes else None
         old_file = self._path(seq).name
@@ -278,7 +334,7 @@ class NvmeTier:
             for off in range(0, extra_bytes, self.stage_bytes):
                 n = min(self.stage_bytes, extra_bytes - off)
                 with torch.cuda.stream(self.stream):
-                    self.stage_t[:n].copy_(extra[off:off + n], non_blocking=True)
+                    extra.gather(self.stage_t, off, n)
                 self.stream.synchronize()
                 written += self._write_window(fd, _sectors(n), written)     # the sector tail is stale staging bytes, never read back
                 if builder is not None:
@@ -339,8 +395,9 @@ class NvmeTier:
 
     def promote(self, seq: int, storage, block_ids: "list[int]", extra=None) -> int:
         """Read the sequence back into blocks `block_ids` of `storage` and its
-        slot bytes into `extra` (required iff the file carries them). Returns
-        disk bytes read; a compressed snapshot-only hit returns zero.
+        slot bytes into `extra` (required iff the file carries them; a view or
+        `Segments` of the size written). Returns disk bytes read; a compressed
+        snapshot-only hit returns zero.
 
         `block_ids` None: the blocks are already in memory and only `extra` is
         read -- a faded prefix boundary (base/prefix.py) whose KV was never
@@ -361,7 +418,8 @@ class NvmeTier:
         if block_ids is not None and len(block_ids) != meta["blocks"]:
             raise ValueError(f"seq {seq}: {meta['blocks']} blocks on disk, {len(block_ids)} given")
         extra_bytes = int(meta.get("extra", 0))
-        given = int(extra.numel()) if extra is not None else 0
+        extra = Segments.of(extra) if extra is not None else None
+        given = extra.numel() if extra is not None else 0
         if given != extra_bytes:
             raise ValueError(f"seq {seq}: {extra_bytes} slot bytes on disk, a view of {given} given")
         if block_ids is None and not extra_bytes:
@@ -391,7 +449,7 @@ class NvmeTier:
                 at += n; read += n
             def upload(off, n):
                 with torch.cuda.stream(self.stream):
-                    extra[off:off + n].copy_(self.stage_t[:n], non_blocking=True)
+                    extra.scatter(self.stage_t, off, n)
                 self.stream.synchronize()
             if compressed is not None:
                 started = time.perf_counter()

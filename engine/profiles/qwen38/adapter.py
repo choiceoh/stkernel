@@ -63,6 +63,15 @@ class ServedStore:
     def slot_bytes(self, slot: int):
         return self.caches.slot_bytes(slot)
 
+    def live_bytes(self, slot: int, position: int):
+        """What a conversation parked after `position` tokens keeps of its slot (engine/modules/state_rings): each GDN
+        layer's one live state of K+1 and every other field -- 29.7 of the served slot's 114.6 MB at K=3."""
+        return self.caches.live_bytes(slot, position)
+
+    def clear(self, slot: int) -> None:
+        """The slot as `open` leaves it -- zeros, PLE's id ring DEAD: where a parked live state reads back."""
+        self.caches.reset_slot(slot)
+
     def snapshot_bytes(self, snap: int):
         return self.caches.snapshot_bytes(snap)
 
