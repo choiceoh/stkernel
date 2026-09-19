@@ -170,7 +170,7 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = True, mtp_precision: str = "bf16"):
+                 query_shards: bool = True, mtp_precision: str = "bf16", mtp_experts: str = "nvfp4"):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
@@ -187,7 +187,11 @@ class Qwen38Net:
         checkpoint keeps in BF16. "bf16" (the default, the operator's decision of 2026-09-19): the checkpoint's weights
         through torch's matmul, no quantisation -- a K=3 draft graph 4.39 ms against W4A8's 3.97 (q38mtp-0919a). "fp8":
         block-scaled FP8, decode rows on dense/fp8_rows, 4.10 ms. "w4": the target layers' W4A8 at decode rows, as
-        before. A drafter's numbers change how many tokens a step yields, never which (verification picks them)."""
+        before. A drafter's numbers change how many tokens a step yields, never which (verification picks them).
+
+        `mtp_experts`: the MTP head's routed experts as the rank file keeps them ("nvfp4": re-encoded from the export's
+        FP8, on b12x) or in the export's own FP8 ("fp8": the side file mtp_fp8.py writes, on kernels/moe_fp8_rows --
+        `side_specs` names what a boot loads from it)."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
@@ -197,6 +201,9 @@ class Qwen38Net:
         if mtp_precision not in MTP_PRECISIONS:
             raise ValueError(f"mtp_precision {mtp_precision!r}: one of {MTP_PRECISIONS}")
         self.mtp_precision = mtp_precision
+        if mtp_experts not in ("nvfp4", "fp8"):
+            raise ValueError(f"mtp_experts {mtp_experts!r}: nvfp4 or fp8")
+        self.mtp_experts = mtp_experts if mtp else "nvfp4"
         self._hc_projections = {}
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
@@ -215,7 +222,16 @@ class Qwen38Net:
 
     # -- binding ---------------------------------------------------------------------------------------------------
     def specs(self):
-        return specs.all_specs(self.F, self.layers, mtp=self.mtp)
+        """Every tensor the net binds: the rank file's, and with FP8 MTP experts the side file's in place of the rank
+        file's NVFP4 ones (`side_specs`)."""
+        out = specs.all_specs(self.F, self.layers, mtp=self.mtp)
+        if getattr(self, "mtp_experts", "nvfp4") == "fp8":
+            out = [s for s in out if s.name not in specs.MTP_NVFP4] + specs.mtp_fp8_specs(self.F)
+        return out
+
+    def side_specs(self):
+        """The tensors a boot loads from the MTP side file (mtp_fp8.path), not the rank file."""
+        return specs.mtp_fp8_specs(self.F) if getattr(self, "mtp_experts", "nvfp4") == "fp8" else []
 
     def bind(self, views: dict) -> None:
         from engine.base.params import bind
@@ -224,6 +240,10 @@ class Qwen38Net:
         F, p = self.F, self.p
         for prefix in [f"L{L}." for L in self.layers] + (["mtp.L0."] if self.mtp else []):
             n = prefix + "moe."
+            if prefix == "mtp.L0." and self.mtp_experts == "fp8":
+                self._experts[prefix] = partial(self._moe_fp8, w13=p[n + "fp8.w13"], s13=p[n + "fp8.s13"],
+                                                w2=p[n + "fp8.w2"], s2=p[n + "fp8.s2"])
+                continue
             scales = ModelOptScales.bind(*(p[n + s] for s in ("w13_alpha", "a13_scale", "w2_alpha", "a2_scale")),
                                          experts=p[n + "w13"].shape[0], device=p[n + "w13"].device)
             if self.lanes.moe_prepare is not None:
@@ -691,8 +711,9 @@ class Qwen38Net:
             routed = self._experts[prefix](x, ids, weights, compact=compact)
         else:
             # a captured step's router and EP remap are one launch over the scores row (kernels/moe_route)
+            w13 = p[n + "fp8.w13"] if n + "fp8.w13" in p else p[n + "w13"]      # the route's shape: E, I
             ids, weights = lanes.route_local(scores, F.topk_experts, experts=F.experts, first_expert=self.first_expert,
-                                             w13=p[n + "w13"], hidden=x.shape[1])
+                                             w13=w13, hidden=x.shape[1])
             routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
         # the down projection's 160 columns pad to 256 (PaddedDenseLinear): the activation's launch writes the zeros
         down = getattr(self, "dense", {}).get(n + "sh_down")
@@ -701,6 +722,19 @@ class Qwen38Net:
         # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
         gate = torch.sigmoid(scores[:, F.experts:].float())
         return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
+
+    def _moe_fp8(self, x, ids, weights, *, w13, s13, w2, s2, compact=False, local=False):
+        """The MTP head's experts on their FP8 side-file weights (lanes.moe_fp8): global routes (an eager step) are
+        made this rank's first -- another rank's at weight 0 -- and more rows than the kernel takes go 16 at a time
+        (rows are independent; the MTP head runs past its attention only the rows a caller reads)."""
+        from engine.profiles.qwen38.lanes import local_routes
+        if not local:
+            ids, weights = local_routes(ids, weights, self.first_expert, w13.shape[0])
+        run = self.lanes.moe_fp8
+        if x.shape[0] <= 16:
+            return run(x, ids, weights, w13, s13, w2, s2)
+        return torch.cat([run(x[a:a + 16], ids[a:a + 16], weights[a:a + 16], w13, s13, w2, s2)
+                          for a in range(0, x.shape[0], 16)])
 
     # -- PLE -----------------------------------------------------------------------------------------------------------
     def _ple_feature(self, L: int):
