@@ -151,6 +151,98 @@ class BootOrderTests(unittest.TestCase):
         self.assertLess(warm, build.index('with recorder.phase("capture decode")'))
         self.assertIn("mtp=model.drafter is not None", build[warm:])
 
+    def test_the_boot_warms_the_eager_moe_after_the_prefill_and_before_the_capture(self):
+        source = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
+        build = source[source.index("def build("):source.index("def write_dumps(")]
+        eager = build.index('with recorder.phase("warm eager moe")')
+        self.assertLess(build.index('with recorder.phase("warm prefill")'), eager)
+        self.assertLess(eager, build.index('with recorder.phase("capture decode")'))
+        self.assertIn("eager_moe(net)", build[eager:])
+
+
+class EagerNet:
+    """The fields `eager_moe` reads: F, first_expert, _experts, p, comm -- the experts a recorder of each launch's
+    pairs, as lanes.moe's compact path counts them (the routes that fall in this rank's range)."""
+
+    def __init__(self, *, rank=1, local=128, experts=512, topk=10, fail_at=None, peer_bad=False, mtp_only=False,
+                 mtp_experts="nvfp4"):
+        self.F = NS(experts=experts, topk_experts=topk, hidden=16)
+        self.first_expert, self.local, self.mtp_experts = rank * local, local, mtp_experts
+        self.launches, self.votes, self.fail_at, self.peer_bad = [], [], fail_at, peer_bad
+        prefixes = ["mtp.L0."] if mtp_only else ["L0.", "L1.", "mtp.L0."]
+        self._experts = {prefix: (lambda prefix: lambda x, ids, w, compact: self.launch(prefix, x, ids, w, compact))(prefix)
+                         for prefix in prefixes}
+        self.p = {prefix + "moe.w13": torch.empty(local, 2, 1) for prefix in prefixes}
+        net = self
+
+        class Comm:
+            def all_reduce_max(self, t):
+                net.votes.append(int(t.item()))
+                return torch.ones_like(t) if net.peer_bad else t
+        self.comm = Comm()
+
+    def launch(self, prefix, x, ids, weights, compact):
+        if self.fail_at == len(self.launches) + 1:
+            raise RuntimeError("a CuTe DSL compile failed")
+        shifted = ids.to(torch.int64) - self.first_expert
+        local = (shifted >= 0) & (shifted < self.local)
+        self.launches.append(dict(prefix=prefix, rows=x.shape[0], pairs=int(local.sum()), compact=compact,
+                                  local_in_first_route=bool(local[:, 0].all()), ids=ids, weights=weights,
+                                  dtypes=(x.dtype, ids.dtype, weights.dtype)))
+        return torch.zeros_like(x)
+
+
+@unittest.skipUnless(torch is not None, "requires torch")
+class EagerMoeTests(unittest.TestCase):
+    def test_the_ceiling_first_then_every_count_below_it(self):
+        from engine.profiles.qwen38.warmup import EAGER_PAIRS, eager_counts
+        self.assertEqual(eager_counts(), [8, 1, 2, 3, 4, 5, 6, 7])
+        self.assertEqual(sorted(eager_counts()), list(range(1, EAGER_PAIRS + 1)))
+
+    def test_it_is_the_dispatchers_micro_ceiling(self):
+        source = (ROOT / "engine/kernels/b12x/moe_dispatch.py").read_text(encoding="utf-8")
+        from engine.profiles.qwen38.warmup import EAGER_PAIRS
+        self.assertIn(f"_MICRO_MAX_TOKENS = {EAGER_PAIRS}", source.splitlines())
+        # above it a one-route launch over every local expert is the dynamic kernel's, free of the count
+        self.assertIn("num_experts == num_local_experts > 1 and num_tokens > _MICRO_MAX_TOKENS", source)
+
+    def test_each_launch_keeps_exactly_its_count_of_this_ranks_pairs(self):
+        from engine.profiles.qwen38.warmup import eager_moe
+        for rank in range(4):
+            net = EagerNet(rank=rank)
+            paid = eager_moe(net)
+            with self.subTest(rank=rank):
+                self.assertEqual([l["pairs"] for l in net.launches], [8, 1, 2, 3, 4, 5, 6, 7])
+                self.assertEqual([l["rows"] for l in net.launches], [8, 1, 2, 3, 4, 5, 6, 7])
+                self.assertTrue(all(l["compact"] and l["local_in_first_route"] for l in net.launches))
+                self.assertEqual({l["prefix"] for l in net.launches}, {"L0."})        # a target layer's experts
+                self.assertEqual(net.launches[0]["dtypes"], (torch.bfloat16, torch.int32, torch.float32))
+                ids = net.launches[0]["ids"]
+                self.assertTrue(all(len(set(row.tolist())) == row.numel() for row in ids))   # distinct routes a row
+                self.assertEqual(len(set(ids[:, 0].tolist())), 8)                               # distinct experts
+                self.assertTrue(bool(((ids >= 0) & (ids < 512)).all()))
+                self.assertEqual(list(paid), [f"eager/{m}" for m in (8, 1, 2, 3, 4, 5, 6, 7)])
+                self.assertEqual(net.votes, [0])
+
+    def test_the_mtp_head_when_there_is_no_target_layer_and_nothing_on_fp8_experts(self):
+        from engine.profiles.qwen38.warmup import eager_moe
+        net = EagerNet(mtp_only=True)
+        eager_moe(net)
+        self.assertEqual({l["prefix"] for l in net.launches}, {"mtp.L0."})
+        net = EagerNet(mtp_only=True, mtp_experts="fp8")
+        self.assertEqual(eager_moe(net), {})
+        self.assertEqual((net.launches, net.votes), ([], []))
+
+    def test_a_rank_that_fails_or_a_peer_that_failed_stops_the_boot(self):
+        from engine.profiles.qwen38.warmup import eager_moe
+        net = EagerNet(fail_at=3)
+        with self.assertRaisesRegex(RuntimeError, "CuTe DSL"):
+            eager_moe(net)
+        self.assertEqual(net.votes, [1])                   # it voted before raising: its peers stop at the same vote
+        net = EagerNet(peer_bad=True)
+        with self.assertRaisesRegex(RuntimeError, "on a peer"):
+            eager_moe(net)
+
 
 if __name__ == "__main__":
     unittest.main()

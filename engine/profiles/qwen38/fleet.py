@@ -243,6 +243,13 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
                           max_context=model.max_context, mtp=model.drafter is not None)
             if comm.rank == 0:
                 print("  warm prefill: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
+        with recorder.phase("warm eager moe"):
+            # the eager MoE's decode-sized launches at the one capacity they will keep: the 2026-09-19 K=3 window's
+            # first requests compiled six of them mid-request (warmup.eager_moe)
+            from engine.profiles.qwen38.warmup import eager_moe
+            paid = eager_moe(net)
+            if comm.rank == 0:
+                print("  warm eager moe: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
         with recorder.phase("capture decode"):
             capture(model, max_seqs, memory=memory)
         if memory is not None:
