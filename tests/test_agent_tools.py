@@ -156,8 +156,85 @@ class ShardTests(unittest.TestCase):
             path = pathlib.Path(tmp) / "durations.json"
             path.write_text(json.dumps({"tests.test_agent_tools": 9.0, "tests.test_no_such_file": 5.0}))
             check.record(path, [check.Verdict("tests.test_agent_tools", "ok", 4, seconds=1.25),
-                                check.Verdict("tests.test_engine_prefix", "CANNOT RUN", seconds=0.1)])
+                                check.Verdict("tests.test_engine_prefix", "CANNOT RUN", seconds=0.1),
+                                check.Verdict("tests.test_engine_serve[2/3]", "ok", 9, seconds=4.0)])
             self.assertEqual(json.loads(path.read_text()), {"tests.test_agent_tools": 1.2})
+
+
+class SliceTests(unittest.TestCase):
+    """A file longer than a slot's share runs as slices. Every test of it has to run in exactly one slice, and the
+    slices together have to read the way the file would have: a slice that dropped a test, or ran one twice, or turned
+    an import error into a pass, would each still show a green check."""
+
+    FILE = '''
+import os, unittest
+def mark(test):
+    with open(os.environ["SLICE_LOG"], "a") as log:
+        log.write(test.id() + "\\n")
+class A(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.ready = True
+    def test_1(self): mark(self); self.assertTrue(self.ready)
+    def test_2(self): mark(self)
+    def test_3(self): mark(self)
+class B(unittest.TestCase):
+    def test_1(self): mark(self)
+    def test_2(self): mark(self); self.assertEqual(os.environ.get("BREAK"), None)
+'''
+
+    def slices(self, k, body=None, env=None):
+        import os
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            (pathlib.Path(tmp) / "test_sliced.py").write_text(body or self.FILE)
+            log = pathlib.Path(tmp) / "log"
+            log.touch()
+            out = []
+            for j in range(k):
+                p = subprocess.run([sys.executable, "-c", check.SLICE, "test_sliced", str(j), str(k)], cwd=tmp,
+                                   env={**os.environ, "SLICE_LOG": str(log), **(env or {})},
+                                   capture_output=True, text=True, timeout=60)
+                name = "tests.x" if k == 1 else f"tests.x[{j + 1}/{k}]"      # what run() calls it
+                out.append((("tests.x", j, k), check.judge(name, p.stdout + p.stderr, p.returncode)))
+            return out, log.read_text().split()
+
+    def test_every_test_runs_in_exactly_one_slice(self):
+        for k in (1, 2, 3, 5, 7):                       # 7 slices of 5 tests: two of them run nothing
+            done, ran = self.slices(k)
+            self.assertEqual(sorted(ran), sorted(f"test_sliced.{c}.test_{i}" for c, n in (("A", 3), ("B", 2))
+                                                 for i in range(1, n + 1)), f"{k} slices")
+            merged, = check.gather(done)
+            self.assertEqual((merged.module, merged.state, merged.tests), ("tests.x", "ok", 5), f"{k} slices")
+
+    def test_a_failure_in_one_slice_fails_the_file(self):
+        done, _ = self.slices(2, env={"BREAK": "1"})
+        merged, = check.gather(done)
+        self.assertEqual((merged.state, merged.tests), ("FAILED", 5))
+        self.assertIn("test_2", merged.detail)
+
+    def test_an_import_error_is_still_one_that_cannot_run(self):
+        done, ran = self.slices(3, body="import no_such_module_anywhere\n" + self.FILE)
+        merged, = check.gather(done)
+        self.assertEqual(ran, [])
+        self.assertEqual(merged.state, "CANNOT RUN")
+        self.assertIn("Failed to import test module", merged.detail)
+
+    def test_slices_on_another_runner_are_named_not_hidden(self):
+        ok = check.Verdict("tests.x[1/3]", "ok", 4, seconds=2.0)
+        merged, = check.gather([(("tests.x", 0, 3), ok), (("tests.x", 2, 3), check.Verdict("tests.x[3/3]", "ok", 1))])
+        self.assertEqual((merged.module, merged.tests), ("tests.x[1,3/3]", 5))
+
+    def test_only_a_file_longer_than_a_slot_share_is_sliced(self):
+        weight = {"tests.long": 90.0, "tests.mid": 20.0, **{f"tests.s{i}": 1.0 for i in range(70)}}
+        pieces = check.units(list(weight), weight, 2, 4)       # share = 180 s / 8 slots = 22.5 s
+        self.assertEqual(sorted(u for u in pieces if u[0] == "tests.long"), [("tests.long", j, 4) for j in range(4)])
+        self.assertEqual(pieces[("tests.long", 0, 4)], 22.5)
+        self.assertIn(("tests.mid", 0, 1), pieces)
+        self.assertEqual(len(pieces), 72 + 3)
+        self.assertEqual(len(check.units(list(weight), weight, 1, 4)), 73)   # one runner: share 45 s, cut in two
 
 
 class PushCheckTests(unittest.TestCase):
