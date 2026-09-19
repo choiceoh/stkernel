@@ -182,7 +182,10 @@ compare() {
       node "$ip" "docker exec -e PYTHONPATH=/repo st-qwen38 python3 '$OUT/audit-$MODE.py' --root '$ST_PACK_ROOT' \
         --rank $r --ckpt /home/choiceoh/models/st-qwen38-tep4 --boot '$OUT/$label-boot-rank$r.json' \
         --out '$OUT/$label-audit-rank$r.json' $expected" > "$OUT/$label-audit-rank$r.log" 2>&1
-      if [ "$label" != Bpack ]; then cmp "$pack_receipts/Bpack-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"; fi
+      if [ "$label" != Bpack ]; then
+        cmp "$pack_receipts/Bpack-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
+        node "$ip" "python3 -c 'import json,sys; a,b=map(lambda p: json.load(open(p)), sys.argv[1:]); assert a[\"weights_id\"] == b[\"weights_id\"], \"checkpoint identity changed since scoring\"' '$pack_receipts/Bpack-audit-rank$r.json' '$OUT/$label-audit-rank$r.json'"
+      fi
     done
     if [ "$label" = Bpack ]; then
       echo "== actual GPTQ packs verified; held-out projection scoring $(date -Is)"

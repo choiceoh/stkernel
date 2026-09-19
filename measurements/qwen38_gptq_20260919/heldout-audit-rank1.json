@@ -1,0 +1,1749 @@
+{
+  "rank": 1,
+  "sites": 193,
+  "weights_id": "qwen38:0bb1ef835e371176ef67214cb9d50b2b7f02403af6da96fb283a8d90224727f5",
+  "minimum_rows": 50512,
+  "maximum_rows": 50512,
+  "statistics_valid": true,
+  "serving_gptq_verified": false,
+  "boot_sha256": "28c2ad6583b5a77cc054fafd2ff7a8af8c87a351fb5063cab76eec28bd2cfffb",
+  "records": [
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.0.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "999bc81bd96b2dbdff8963253ddc1ce056560e142894f72f1d55cbe73a3b3738",
+      "amax_sha256": "687b5803a179250ecca13b39e3ec16820acc9b67d4e25a823c1de5a5c9d33a93",
+      "key": "L0.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.0.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "212c442f9d686e396045d6a775cf2283697f5a4a4364b33cb4bae039622861b2",
+      "amax_sha256": "ee00216dbf1a40f369c811e3733af5678d33af3c990e52b5ecb8049cda196d1b",
+      "key": "L0.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.0.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "2346c3fd883df41c9311eada089c3cc6a3f16c9aeb48be613b9fbe7f65610bc9",
+      "amax_sha256": "63dd70cee91fea792ffb99cf24ceae2259b3c1df541b4be7b4cbbf05d1468b4c",
+      "key": "L0.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.0.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "018b575a67c2f6ea9e1b4f8a813e00b240e1b6eca2f708fc113574ab073c3b83",
+      "amax_sha256": "7f95a6ddec2d3722f7d4c9dcf420bb98010ff2bd1a6b1e233eaae7958afcfb3b",
+      "key": "L0.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.1.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "2c5c9d7555bde741508631b5fe591435372e5c1c26196042f4ee90fe944a61ed",
+      "amax_sha256": "747adbd2ce6d763b4c61482b6e010cd29f9d7d3cfde778a921da36e8765e6049",
+      "key": "L1.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.1.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "b93c515ae43072a6a1711610dd5b998effed6c36a570a3ce51495a79f2ada115",
+      "amax_sha256": "510458e3f42bd1c94a733e7aff135e79ccfffbcdf597f219347b5c530a50c644",
+      "key": "L1.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.1.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "90252b7b2d50a94e0f5750064a055f3884081f97c0a59937541002a8381df56a",
+      "amax_sha256": "733c2dae20b060d0ad7a35f309e2066ec518ca76273961aed9e798ffdafc0d1c",
+      "key": "L1.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.1.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e4f21833500aed0869b27ea90a9f425192e1b6b00a33ea88a0c225b9908945af",
+      "amax_sha256": "ab58011aba660da9e1639c09046d4d237d6052d1ac767cc06eb0776866d534f1",
+      "key": "L1.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.10.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "3d1e874666199ca9c382c4ff82a4ba74ffd10d0589034888b6ef52dbcdfb2588",
+      "amax_sha256": "593a214a630bc7b5ab2c2ae14a9da49f231a32ebea7812f77467a64896de01e9",
+      "key": "L10.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.10.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "87c19ca77e8024800e3ed9a0127207d2b2e9230d89bf093b55af618f1ac691e4",
+      "amax_sha256": "74c74e66e830f4c261135b31d4eb3b071fae9dbb14e7dc0a86ca3ce6737b4727",
+      "key": "L10.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.10.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "3b57f278ef275b57dfd2ce68911da46f26be7a8e0deaf750d663560ee6659097",
+      "amax_sha256": "58377e507fdd75781d030dbe63b98319164b3e33906d285aa48f7791e3d7bea6",
+      "key": "L10.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.10.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ffdeef8f892a3fbe32363326da8ec2f6d6546c2ef57c520450e813dc210b971d",
+      "amax_sha256": "8115d9cc77229c09fec9b678d5b40e44fa853a6d874f04b2b261aff5442ba1bb",
+      "key": "L10.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.11.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "71785a0dd2399a548257e0b8e97874ab5b102c3b5ccc81cdc470ba23b035a7bb",
+      "amax_sha256": "3dd5c133af818af231cf1b1db25497fea6e0f89577cb9665dfdca30775a03a2d",
+      "key": "L11.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.11.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "969c7b45fe59b67030c52713f91a78756189be6ea7772eb58354ed032ce8f098",
+      "amax_sha256": "2259c342e7eb29460881eb27fee0b27d651798844dac80bc0988e0c730160d42",
+      "key": "L11.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.11.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "affca40c67ba31672a048f55da2305de415ceb6d83a59fc202fc862c9239ecf6",
+      "amax_sha256": "dea01fed05f8d74143f4b0bb5d4fe319fa624090da8996ad29f0c14781a146d2",
+      "key": "L11.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.11.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e7099f02d2e06254ed4506a4479dfa217bf66c3960d4a678061a5a64302ef9ea",
+      "amax_sha256": "833e89d9d038fafae2fdb7cc0fe737c8bfaaddc744d389e73c7f7272680d33db",
+      "key": "L11.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.12.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ae2f744fdd4d981e4d5e7c372e2d95250b0d23fbcacc616fb162c2ff00fb700e",
+      "amax_sha256": "c8783586d3d5fad90853038112e0e0064f8ddd7d61dce762808d54526fb75c5f",
+      "key": "L12.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.12.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ee6887869f5ef27e16727a72152952f4335f338dd6f7c65cd2313ea016984935",
+      "amax_sha256": "6ab906034667a081f77fcb6a28fe8ab5b9318904deee9da0b25016d069e8ada0",
+      "key": "L12.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.12.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "54458db1278b15e1ef49e95ef11d6b374638ce4084ba2539f2be51ec8259add6",
+      "amax_sha256": "3f30f328e29f0872978ca5628032e9736b9fd7f23b8c80285774e6b8e3653d18",
+      "key": "L12.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.12.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "a577a225d95655af8dad2282f53871dea6c60c9b640e7205b67461c8ae58bf70",
+      "amax_sha256": "ae885433f022c7daf3960dc74779e3c3f2ea358000c5c4565503d39546d5828e",
+      "key": "L12.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.13.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "84f014b0e50e7786601bf9f10b20fe3cf961df689c963c9c88ca26623af4f7ea",
+      "amax_sha256": "70738f5db7660fc0643005dd66f3e6cfe7fe9072bbfc5bb2e698d694f8438512",
+      "key": "L13.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.13.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "58941fca59d03fc9ff884a99a08363196a2620099726e6304d052dff7d2be457",
+      "amax_sha256": "6ef18a451f2626e1da7d278516864aa6c2ecac3d12b4f66f2442ac7714304111",
+      "key": "L13.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.13.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "c75d6206923e4147388e356731cf4dc3e009cdce8ff6cfc801987cc2422fc435",
+      "amax_sha256": "616be696b5ac37fa3c62cf052576f452a225d5075dcbc9cf2c4a522a3ee81435",
+      "key": "L13.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.13.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "bf545f92bbad4a6f7aff7a257ccf5377fc85b44a27671a175c94a619fa19735b",
+      "amax_sha256": "cd9253f5f5908e937a3a9e9f9e0669d343c91190325da47d2efb20326a6798f0",
+      "key": "L13.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.14.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "1c0ed98072454e5425563741cbcc2dd9253c34a214ef31cc4494afcf1896eabd",
+      "amax_sha256": "e3ab323077aef79ad21cb65932ad7c28841dbf4492ffedf74248a6b2551b51e3",
+      "key": "L14.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.14.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "c2975bb97bca9d85239199754dbbce6d8f07d28d8be776b53622070fa924bc85",
+      "amax_sha256": "6681ec2ff13c1294beade1a8145338092aa830ce29cc2cffe61ad60af325ddfd",
+      "key": "L14.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.14.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "2ef0237ee914877aa4262fe1f3a65d327fb27f3c6bb263fe0f984af1c1a9f1e6",
+      "amax_sha256": "52f6dd6663f88c112f04cb9acf0ad0dee3669517edb0eb21af773b2bdfa6fcde",
+      "key": "L14.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.14.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "823cbe83d5c4204e3bae6be79ecdb1d1f9ecf2df1e82736e3dbe6f9ed2d9eeaf",
+      "amax_sha256": "f4982b88e72eaf804f9ec2cee084428bef67bdacf63bd9e26d84f14ddf486341",
+      "key": "L14.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.15.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "fbc354fe0d2e71cbe1dfa113b1a04ba5e38d7d61cf176b0087bbed05f887ae7b",
+      "amax_sha256": "23f6c4e54e85e5e0d26bf0114c31a65a0c307d1bfac25b89a1e18563d77880ce",
+      "key": "L15.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.15.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "98119a36348d3059d394bf5b0383ee43c06f4f6f8424a6a621c863964df8401d",
+      "amax_sha256": "6e4d33612d040796a9c69c2310937de8cda1c066cb0791cef97ed74c76b1a23c",
+      "key": "L15.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.15.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "139253289d0ab60612137e7b0760b645853df31fb36b87c9dafe3363b991c7b9",
+      "amax_sha256": "66697fa99abf9c5041e73cd8f170001348cf440f05db7c1a11beff73e819cc0c",
+      "key": "L15.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.15.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "13e11f962dddabdee91e2e4eff4a7801a02ace7ae6e93b1cfdf6da79c9048dad",
+      "amax_sha256": "22cba3186ca4ae6e957ce28e853b45bf9ae8a2970cabff5fbcb36bb61f523eb5",
+      "key": "L15.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.16.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d4e0594700c8410176fcd13d47882266c1ca38b7ae07d3b65ef05e3c2aa639e3",
+      "amax_sha256": "abf6d8da836fd237e274dc79843b456674171d80f7be41dc46035bf140cad81f",
+      "key": "L16.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.16.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "0ed6eff9a4fe6bd82baa8b8087c8be77c3388d9bebc38b704fa9c5a4be142ba4",
+      "amax_sha256": "32605105be8ce8072e43c8d6942cbe3e7a2a57bf1d756b9c8762ac1ca9909bc9",
+      "key": "L16.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.16.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "83a31ad8885d5a79b1f5d4ca50607592c44156a77b1498e7fcd36c6818cf49d9",
+      "amax_sha256": "954040e0653f71c5530458e1da538596e200515093216d149f6cc1dd90ab49d8",
+      "key": "L16.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.16.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "bc296d7b48032ba6a25c2e157a97d9ef1bcc773dfa391f5ef7cebbe523dd0662",
+      "amax_sha256": "afddf766e41bfae6e6f615e179a9f3429a40d4174dccd785fa516e358d72a472",
+      "key": "L16.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.17.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "656bbfaef034515657a15d9b9ecc516e9593df6c9d46101b1bcb01bf148cd734",
+      "amax_sha256": "fa5a8c3a78b27c49abc8f5fbe4b6d714b2133c935d86503a8be3368eefd6ba9d",
+      "key": "L17.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.17.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "72bccaae577107cefa8bec1401b7a610c1f608fdd33cfd1bb4eac110df1f7a1c",
+      "amax_sha256": "a4c89a777477cd45724e9256dde58348277fec5acf7f611c19cb4a5f62df1dcf",
+      "key": "L17.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.17.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "294fc09b1f87986701c622f9705a22e89ed54ac707f9ade2b74e85259a4c636a",
+      "amax_sha256": "b26bc4df858996d8bd8410f16b553494bd6839bfe834b79bca8c8d8705d8daaf",
+      "key": "L17.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.17.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d0cfa3b048f2cd7194bea087c0b1417d9f116e184e03ce76f34444a307d75984",
+      "amax_sha256": "b9df6c8e0565aaf6973419b2522df350a324e53baebf127206afec732c5b8755",
+      "key": "L17.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.18.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e81e6e8546d9547f19209d32f523de0d3e739a92cfea9df625b90c2ddcabe6d5",
+      "amax_sha256": "4204f81d707e83722e501d771357ce9203e0355b2c2c5efd12f4cc93edbfed06",
+      "key": "L18.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.18.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ec9e99c3b8c208550ec28845494d242fea111444e21bb144619f36e80bc8b2a4",
+      "amax_sha256": "3467a88eff59518d0352a937a888e09621e5c33f30a4f4e4d7519e9d21483c52",
+      "key": "L18.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.18.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "b3a9c6cf5228e41ea20e90dc0f5b043d1ccb1442dc4c2f1e2db2cfa37fc79c99",
+      "amax_sha256": "09311fbc2118151ea08488151c7ef1bcd328b52e660e9d3268c945f2636f67ca",
+      "key": "L18.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.18.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "b90ecdb32f59fd0839aacf65b79f58bfbf85915e8d0a8b130cb3e9becda46641",
+      "amax_sha256": "0965f34c70eadbf225e5f1c55d9389d81725eda7b9a625918378366d1a04d2d1",
+      "key": "L18.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.19.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "a07be505278f8b8032041596da968d5047904720c9bce8796a372a9613be41ea",
+      "amax_sha256": "7b06d10673059f4349a58f822729ee25e649980c6ffdd010324f3c05c9f0b3ce",
+      "key": "L19.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.19.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "efdbade6c5cdeeec50072a17f6fe090d709b335042f4215d7f8b0cf111d983cf",
+      "amax_sha256": "4a0c9e3c939c649f5c5af895ac53dc6e6061bbefe969182444f852929de2caa9",
+      "key": "L19.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.19.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "694fd7ffebb033f42dd0a96776a36b8e1e5bbf16231f6f512f89b33238b7a360",
+      "amax_sha256": "7c0ea672560f6c354329a015493e998550f9b670fbbfd67560e0d8f4e788b6e2",
+      "key": "L19.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.19.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ce46afbb6d3924d139b11a6387b952d22d97df627b26027a089b4cbc899d7f25",
+      "amax_sha256": "5c6a1c0df98dba640b707aa050acde1c35800da20e8fabee186b175c2a625eb8",
+      "key": "L19.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.2.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "3b284ec073a7f1d09818023cc658cc0494b666bc3473250736715e3c7cfb64e5",
+      "amax_sha256": "0c25bad8049ac44a13e184a5ab9ae754e1ad540c3e9d34c69735449560efeee6",
+      "key": "L2.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.2.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "44fa57ea09be43fddc1f2624ab143fb2ec670b8e9644191df587897f1249421a",
+      "amax_sha256": "70c72a6f997fb2f226a66a7b254b9c2f493695cfec2e7ff1e5550699cb7c0c03",
+      "key": "L2.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.2.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "40a6e1698fc5e9000326b3ce35e2d81eb38a7566abd38a06f356422181ae2f0d",
+      "amax_sha256": "2d0adca9da0792e325bd32b15b16ed88c662617d14ce2c2a48516dc20de4d211",
+      "key": "L2.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.2.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e4e37671a37799d2f3c6758de50df27356dd4b2d05f457be20c1628c9c302d3b",
+      "amax_sha256": "9715840906d35a494d58055ce1f0580d09c17034564e537685f01c80e7bf8cfe",
+      "key": "L2.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.20.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "6503264b6975246750ed14aae243401a02a9e105c113601b97392c5e74a2aed7",
+      "amax_sha256": "3c401a00300e4dd4d31c0df983902ffcddea32cc91fac5393f48b46a031037dc",
+      "key": "L20.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.20.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "74cceb050e5192eb3198e2905145f050418fee722b616bd1de85198ac2dabf1a",
+      "amax_sha256": "d449eefd11a1a3b4ded2bb567dadf545092bdd0b94b2070d0d49a6bdb325b278",
+      "key": "L20.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.20.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "3c1d603ff4d1a7c8f5e1c7c0ca93d6e443d4412a03cfbc161b2a1cddb124b156",
+      "amax_sha256": "e92b5cc2b3535f75de46b31393ba5616308cc7345b93ba60e4f98fae7b47a742",
+      "key": "L20.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.20.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "882ba47b6818caa2a376998cb4392e9e7dc9403d9a892a9fca822b15c4250a6d",
+      "amax_sha256": "91dabdf2a823f1533e5a3b09fd1d16d462dff636bd0171351576fb9ff7e7808d",
+      "key": "L20.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.21.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d0576127399d935b25e63a1c5f7c64542e3fb8a2c8ff17f59e9e288077b7205c",
+      "amax_sha256": "ad9e16118007fb368a4a7da1489553c8ab6239bd9f07ce62927bd7074c265c65",
+      "key": "L21.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.21.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "2582bc83885cd5ea77290a81c06140555f25ddf36e147f89b670bd7b1ecea7d2",
+      "amax_sha256": "febdfd8d193440474b80a50798bb6e3cdbef5ff63d4de39520d2448c0c769ab0",
+      "key": "L21.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.21.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "d535306d3ddc20b8db7873b6c2acfd77d488f45eacadbc645f47fc43f4b1a0c0",
+      "amax_sha256": "797a6844b9fabcbdbfbdc30b421571d3bfb7d3e1ecafebf5e79fc5db989daf00",
+      "key": "L21.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.21.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "4a5afb9dee89a39bf9230a7c3e2f77b2608c4e34e12987c772dff93140a52dd6",
+      "amax_sha256": "adcadb3ab390d710e6a5de8097e746b9e0f8f7eb7e2d8761db6c0f5b88186418",
+      "key": "L21.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.22.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e60277cdb864eda8fdab797119422fb5cc78f49396c6c772b1335d7e48c37ec4",
+      "amax_sha256": "c988534c9f61e5e13de1bb8d3d2f979591a0e818b4137fb77d902cccfa2717cf",
+      "key": "L22.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.22.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "5d21048db9b7d9fb49b9f5385c926573cfde0b9ae03807f62eac7aa4b4af92c5",
+      "amax_sha256": "a4e3c6a809d54aa0d7e28d6da27630537cc1fa0a6810520e9895b8642e42dc41",
+      "key": "L22.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.22.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "dc8dd0ef71ea42d99bd7c97791a6d5970c5c091d99fba955a314078591fe6729",
+      "amax_sha256": "9f82c599861248e3f7eb66cfa12b30ef7ba8d1e741c3c7a49ed75d11ff3366e6",
+      "key": "L22.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.22.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d32dd136221b94455123f6387ff96c731efa942e0a37baf6535528f455161d25",
+      "amax_sha256": "621ca05bfe2a95bab350f336bdf7d00288ddfbca758e298eaf5fd11147a3563d",
+      "key": "L22.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.23.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "72a6cfd62f0ae5981d949c4b42eac917ad0f254c3e027ecf4b06f17012a0bf33",
+      "amax_sha256": "5ab3651ed7bf87da336f535123aa385daf0bc9e2123fa5580efafa270266863f",
+      "key": "L23.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.23.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "05346c90ba06e7edd7e4884c667fad652c7f8c37553e9a483761b7fe884da436",
+      "amax_sha256": "1eaf89e388d0b81ccd45bd8db7feac2e936b83522e32c80eb67076792e65b260",
+      "key": "L23.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.23.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "8b9a11657a05759c26804e1c9598eca22d9a11a43265111fe5d51cb09b30bf9a",
+      "amax_sha256": "9159666733302b443348d94a886ff4e55a400de11e63d19c27e03c01c1649c19",
+      "key": "L23.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.23.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "485e1462169afe455b987fe2440f60c1384ab38e3c983c111d94f79818cb869e",
+      "amax_sha256": "03fed0f195b6c31868e2bf27afaeb09858c4de9459ab3c41c0badf57b7987097",
+      "key": "L23.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.24.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "0a6711753685a85bc60f072546b7138ca08ef87ec035aa2ad5005eb129a58316",
+      "amax_sha256": "ddd6e49a5ed222f06ef48a5d057de3cddba4afdb1e90383199876ffb9e89c1e2",
+      "key": "L24.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.24.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "c544217773fbef53515d2402dd85e0af458e2a78387974e40916105ed0ce415f",
+      "amax_sha256": "dd45e134a5dffa9317eda0fc341153084146df586f19c101f5f8e103dd269602",
+      "key": "L24.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.24.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "5a179f3b5296dd4a02013682aa3b37fde29428321db2f2d5631a33044e234dd4",
+      "amax_sha256": "5e1304e006ce014d6c19744395efc42bec7b09f0b5473fe03c4d8f6f07e4a298",
+      "key": "L24.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.24.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "bfe566728afa0de356f6201c28e68eb4da64bb70aee876ec27a121b779347d71",
+      "amax_sha256": "e0600d808f0a8bf7cd3c139008e5e9cdeb54861768b0582af913b6ecc4fe9058",
+      "key": "L24.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.25.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "cbec0d84c82438a8eb3a8f0d85644ca60f0ebb88058e8e2d11759dd13250a130",
+      "amax_sha256": "9fafa7beb19749d54909c9abb4aeded4d0791a72151abad6567d24ecafb8f0c0",
+      "key": "L25.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.25.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "541b89531aaa25dbb25b3d473944d1131dbb4c09bbd911ffb36e93f4866d9db3",
+      "amax_sha256": "dfaef0edbf6b29166a8a5fd5b2cfc4660ab830a5178fff8e89e38c28ffad4dbc",
+      "key": "L25.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.25.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "16e7c85696bbd3f272ec9aca581e3198ff29b8434e90bcf45f551a1915353cf0",
+      "amax_sha256": "f13970765f4678d3a00e5ce6c7de3380df478f36f7396900d5b3d2bff784d6ec",
+      "key": "L25.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.25.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "1902a88b1955bcb0cd7abdba8b10879ecf791d62bdda6dbd85637cdb3ff01f3e",
+      "amax_sha256": "da0bb2f0d2e939811eaeec21011bcc9606784925ce03c54a62e2b2a95e53ce20",
+      "key": "L25.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.26.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "c501ab951921f4c49d209cebc1855e6ab8083b2c27db99e46a361b4f033049a0",
+      "amax_sha256": "876b48cbdea314ec508b2cf319e78fb4d172b84db7044162fc1c06c1bdfd8fa1",
+      "key": "L26.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.26.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d20d58d3164872d80c5bec4ca7ba52d88fbfc7a80da341379267a83dbe28be35",
+      "amax_sha256": "e49e861464e359d88a58a542a7c8902d40288beb5c82bc357344f9807dd72fde",
+      "key": "L26.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.26.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "7ec19587fb787cdf3d6645e08dd3472c9aecd2626470b6fd41823e3f843cd405",
+      "amax_sha256": "64bb473abd332e1aa4ebe076f357cf299b5c34c87ef26cddeb402823aa7eeefc",
+      "key": "L26.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.26.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "96de7fbd734915daf01bfc268b7f4b422b0b517551077adc8e6ce43c12f7a2fa",
+      "amax_sha256": "b3cd4a11b9c8dead5eae96b188dd495488c1b007c2d0c986c3dcc29d0e49419d",
+      "key": "L26.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.27.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ba6646f584bdd6308c901c0af79b60f3ac95e58ffbf1f0ba53bbb763f56b9ca3",
+      "amax_sha256": "50ee1ef0e69624788af55418b890043cd64162129dcfcbe59ff8b72fefbca3d0",
+      "key": "L27.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.27.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "a8d0d18f866fca4c3eabc0f8d4a67ce0ca8fc099105a99c426077851aaa5bc2c",
+      "amax_sha256": "b0c12e5af57177eccf4dc0f912a3eed719f7a94e199d42ddcfb4006e10fb4d4c",
+      "key": "L27.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.27.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "95abc6f7a710aae3dd354ce1f8b4f801552057bf60228bc9c23f9322f526d551",
+      "amax_sha256": "76719696852b56e66fc01d215ed75b5016c5b92b6e5901c24ce2239ec11c2251",
+      "key": "L27.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.27.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d0c53391540716615e8476add679f5d54be8f5650155b4d88df4f57ac1dac430",
+      "amax_sha256": "7e87118f604ba00b971356660b0780d4047d8e20accec9365a612080909c04ad",
+      "key": "L27.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.28.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "932f055b098b7884bd7adab4b622ff4a65e6fb62f2a026227bd5424e8c4c7454",
+      "amax_sha256": "dbe4b79f192d869c4d7a3e94d2bed40fa8c45093a86cedfc41b9e3f62f357730",
+      "key": "L28.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.28.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "64685677e7411d357492c53d607b7f194a754f26de502abb9d7091e7470467a6",
+      "amax_sha256": "ab3324f5718fb11664b87847a1e600329f4eff12da612d3fd1118cc7b7dfe7fd",
+      "key": "L28.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.28.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "a6f8b8845759dc0441a3ac09511f5e79f85625ea2f9b467b3e35758e7876bf8b",
+      "amax_sha256": "b6c097a108276d4d176ea5f1213aa4ce88bc4855a81468017e85fcb23c33843b",
+      "key": "L28.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.28.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "1a122920dce174010d9f6a4556ba0c087e2780afd0e17ebf9558ed730b808809",
+      "amax_sha256": "0d745fc582277ee826b8f5b708d2d887eb02b962e1e40bc595f470d5bc3e56ad",
+      "key": "L28.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.29.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "61b7c80ccc163e7a89264cffafb669ca699454699771d64d0c51b94773f630f4",
+      "amax_sha256": "5ac977e96b27938bb5ecab8db31ff00836da79d717905aca7ec2c7710b71de18",
+      "key": "L29.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.29.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "6aa3ce2f9fe8d4e53136895407d62d0beba695a765d77b23b6520c723f2467c5",
+      "amax_sha256": "46f1b5c35772f9ee7be5cdb037b08904916a20f97681651df876392f0f9db292",
+      "key": "L29.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.29.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "fc282a8d2f68b9505beee8daabe9468e21805439a75260fc5376040a00dda54e",
+      "amax_sha256": "8d8902ecf6ca9669ae5b4028a3a38fa60009cd919fdd7cb97ccf0b7808af07b5",
+      "key": "L29.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.29.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ab6e7edee73171ebf7929e8e68d2693fc5f927be251f822ec52348a2ec986601",
+      "amax_sha256": "7b053a84a9e483983a6034916b071a37aea1cf8869d1da30d55f470c4db15855",
+      "key": "L29.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.3.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d8a403b6306e8b700d88f56b34722bc1231cab73c79dbdcd7cb68bf4a9c2d5b5",
+      "amax_sha256": "037d45293ecfeafd38617ba9202df9909f42ab75aac671b034c91277b9e28be4",
+      "key": "L3.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.3.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "78175ce203a03e4c65fc4e3c8626d84f38d149ccb3f3a00c4b9b27672bd58b25",
+      "amax_sha256": "0abd508ed4e9b695256caf207791814429d5671c9e8195d2c8af06e695dd1d16",
+      "key": "L3.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.3.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "e555c7e4c45d72ba5507b4808526e491ecc47c513c2087d2ab366274b9b96ae5",
+      "amax_sha256": "fdb94475005f9d66a8550282c604ea43f7d178b9c0881a562499120844c9fef5",
+      "key": "L3.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.3.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "140f8276de89a49b5be00048494b8f8e71712f53a8a6133e7eed7ffd75176581",
+      "amax_sha256": "66945d7c50b0a291f99a095835f9d8ba8aaba08e3c277b7840294f39d22f523c",
+      "key": "L3.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.30.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "3a0b1e797456e513fbb1c1a59ada65854aced6a1e11aae23c30123f415f00ffb",
+      "amax_sha256": "a49899cf5c3c16da9df6b02c179ae9a7e390c2e16ae3bb8b7e588bef6ae9d528",
+      "key": "L30.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.30.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d5829df34356ede907dc1bbe053c0486f88289050444c8cc694b95205f57f588",
+      "amax_sha256": "2953627a89525263d1271f460c6ad4d7cb0f795a8e280760cf95406be73cfbfa",
+      "key": "L30.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.30.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "9ca6e0e34de848500ff139729e404ff5586c2f5dc29989f230fa277c3a61f35b",
+      "amax_sha256": "6f4ba2b0ad3597153f486bccaa9afb6503c34f94e7f1575b1d5bd92ee534acc2",
+      "key": "L30.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.30.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "0c00c8aa60a648df7d22deaaae202da1f5d79be2cc49ddf6fa9cf589485bcbc0",
+      "amax_sha256": "db3f8ed81474377427163e58243eec23700e6cabb1b7603a916e668198d7185f",
+      "key": "L30.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.31.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e94518c11d425c612cdf591e946c0f9c79bc1837ec1189c5bb694f0edfa2f5eb",
+      "amax_sha256": "64c5b0b768e4aa0897c00a9f6737e9ce23595ee8e9d7b3f8b606255caaf967d6",
+      "key": "L31.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.31.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8560998d129d7278780cd94676ade4cc98605a6d35a36063aff04437e01e2c05",
+      "amax_sha256": "0e91c9c3df63a678ee446e9ccf9df3f94fbfaeb5bd23d727eb6d20920fc77744",
+      "key": "L31.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.31.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "d351527f636de46a17d9a26a48e9bacf7647591386c66b01ba8ba9e34eb68eb3",
+      "amax_sha256": "1b5355aad5a3c87eddf093f54069f346c2b086e16e7f00e83b33e6749cb0d1be",
+      "key": "L31.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.31.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "a930b9bffc39eb06a6be921552d2f9866aa6f1bf921a3012108370ae89bc4c4e",
+      "amax_sha256": "0e9643464c4804fcb0d2b08720830ee5807abf2bb260b58ea1d2bd47c8e3c3e0",
+      "key": "L31.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.32.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "2c94d007a40a81230bf94b3089c926e968424c298b9783a1cc4cbac9398ab9df",
+      "amax_sha256": "16e0587fffbfffac09a95f17649c3b3d0775cd96970e12229a4f94a1b5b10ed5",
+      "key": "L32.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.32.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "161fa2ac3c5e18b2e4533fed5b17daf7257a492fb5dadb66612b1a997e793e5b",
+      "amax_sha256": "30bba6d84d00093a236ec184ff9fa6846ccda336507dab181393f9bad880e05b",
+      "key": "L32.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.32.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "8d54753f8edcec8a6a6a79a216862ee4449e2e1d31564b8d3b425293ec99bb9c",
+      "amax_sha256": "a343ce67b51790cc4ed4aca5fe253227411d748f681da054eaeb2d3db80c6b77",
+      "key": "L32.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.32.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "11ca6eef55619c94c87ad6760086da84fc1e449d26cb6c5f33b79bbd8e639433",
+      "amax_sha256": "cf11830e2f0c63bca53a5bc061ed06c4ef4dfa6ee18ec065bdab237236cba0e1",
+      "key": "L32.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.33.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "326292374eefcc355448ebc4f5ed034512e0ffeeee9ca0254878fe12d0ebd753",
+      "amax_sha256": "6be2054c488e985aeeffa5e4c277d8825d1baac9d622ddcc0602377c96bd814f",
+      "key": "L33.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.33.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "73af95e02258e654b882dec2f55ad1215c710661bd8ca3b2ae281a1db45f213d",
+      "amax_sha256": "6a42ca82683a338cddb168eff55183ed80f599c4e6dcf2ce76261dfdb8584dd9",
+      "key": "L33.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.33.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "3773fecab16edaba08c9121f55d7dc9151446e7c23896202e30817bae264c4fc",
+      "amax_sha256": "998488773802a98db36e6f2ded2f57b92c8861db43291e51c9e57d9d2b48fc3e",
+      "key": "L33.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.33.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "77b653cb410f0c63bc48fe1f09b852cfef8de2fb1e5126fa2280a57074aa0f19",
+      "amax_sha256": "8c0b60892841c5801b6d7ed1d7db15f45a0e955549865dc6485e5b19580272b7",
+      "key": "L33.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.34.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8a9f6f344e726e8599b643aceec9e2b38eb402291ed2d3cc504456c50f12d366",
+      "amax_sha256": "9fbec1168d50aa3c7da22195037b24ca538d1e30bfdccdca726737854402d582",
+      "key": "L34.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.34.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "79f88459cd09eb40cfa3853a4f689baf0b027aa1c1c9a2d8766003737300d099",
+      "amax_sha256": "e05947b639dfebfb2c3625fbce4d367b7768d3fa9dc6d6d2ffcc3ccf6cfe11b1",
+      "key": "L34.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.34.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "ea90f85f5f4dcaf6ab237bf0320c0a82391ac243665632773c1b8070f8a46aba",
+      "amax_sha256": "e60ecd61f13312256c034ec44946ba4260e7e1ee2ad8b9cdcab67be2413222a4",
+      "key": "L34.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.34.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8b053f3069b7bdb671484bb97f8df024770344bc4b3a850c497f4ba7ccf27568",
+      "amax_sha256": "a0bb26580b0af1f00979c40a6c88b94f477087ba48f6bd1dce5f4e37ee84d16a",
+      "key": "L34.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.35.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8c7c831f69db0ee345bb848ec1e4c92108ba9129ae7f9fdc6d81128ddb9e371b",
+      "amax_sha256": "4afd3d6eb9dbe10ce69e10896843712ca00eb2eee639f1d7a9d677523b885753",
+      "key": "L35.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.35.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ffb4b8928743104eafb518edc6757149819b4a8a340db1d0f88446aa1b8169bb",
+      "amax_sha256": "1761a6d5c00a8d734b38873d29bd937f664ac31c5f0ab30b6efe4b6bb6187be6",
+      "key": "L35.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.35.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "ead967d77ac1e11c435a01b7b958431c87488e7ed27a66a890c023ed7582b9be",
+      "amax_sha256": "6c3ab4264f747cf5edc3ef232af3d7975baa0f60b6a23a45e7d810090c126002",
+      "key": "L35.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.35.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "9ab980dcc4ff74148d8e06a67bbdcfc1e16ff06478988311471446d32c3364f5",
+      "amax_sha256": "6c86aed011264610179d1e391384662f94bc3829b5f6c93ea3d730acc0ea808a",
+      "key": "L35.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.36.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "f38eddf26968f78dc717ceffd21b68c6072bb789172f8afabb994dcfdded6f28",
+      "amax_sha256": "38b1ddcb688f53f977512ddbd5e6f621d95618f70f3b8c43a065f4b163c65bc5",
+      "key": "L36.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.36.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "43d34636f236a86dfb609c0c9617392974e57e0c2b9aed3bc68bfb759e84bb88",
+      "amax_sha256": "55afaf75627ac36d45be962d807f4e85a10b0386a522b1368819baa31f4bf7e7",
+      "key": "L36.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.36.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "bf211f926d2f9056ea9354002600e0b672b5d06d72663ec163870204cff7b636",
+      "amax_sha256": "62ec35409a98903b47d148d24e2e4c79303238ba86beef42f41720e3aec4c525",
+      "key": "L36.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.36.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "510f0621fc02971e5dab6366b465c8898e89fe223d1a4cbb87ac0bd649e381d9",
+      "amax_sha256": "5295a50c6641cd23b0de876c9dec8f3a55d2a8c65a30e07eeded9c11b5205c7f",
+      "key": "L36.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.37.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8bce97f6c4a94d1407b1737842e2e8b24d726e272b3e7e7c52b159dc9516d830",
+      "amax_sha256": "dedf1eaaa9b657d6c68a1989dca88c44f31bd5df59db5e5feab30acc51cfe5c6",
+      "key": "L37.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.37.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "db45094862b089decaa26a30182647638e54020f0518f49be328f952df6b636c",
+      "amax_sha256": "eea5ccab365e555cfbf46e2deaec5c1170906f02538198a597e0916223a5d35a",
+      "key": "L37.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.37.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "d73e8e1978ec9986c39428f3140162628857ea9d41764858a4d9b576786c011d",
+      "amax_sha256": "7bfc5691a9476b029e7fee5414b7607ebece0d16de5221f49dc07aa6222e09bc",
+      "key": "L37.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.37.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "b4d5e6f42b611a58961b0d425e27ec0cd159444e4f1040bf54d767a84b44899e",
+      "amax_sha256": "edce5fe0ddd12fc6b79c90ca5069cbb0f34c9952c80b5c7a79c168737305fcbf",
+      "key": "L37.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.38.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "7362e98a777778f5ad4a0938c42d8c019333aa1bbb187f1bbf5d8716d2f87963",
+      "amax_sha256": "d356a8346f4a4767c2e3dd32b1e0f293b2e1b85eb09afd8bb63175510659470f",
+      "key": "L38.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.38.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "b6b234f0b412680cd825a48df08a89e07ccf650b93cc8f75a213d31a954d33de",
+      "amax_sha256": "d345443b7090afb693d9a6cce419709122044cd2cb19216601289f350ff25f43",
+      "key": "L38.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.38.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "d3687462cbb94e1d3c61aec0a0f9f4246cbf3eb1d147c55a7e95d8b076928af6",
+      "amax_sha256": "3a5e79bfbda20447d918e810eb1bfb0da50f29bbd5617ebc3c945806e6938271",
+      "key": "L38.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.38.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "ea677d4b975971223c9959b70ecab91f0b0cb2763a329b5482daaa23329b2b29",
+      "amax_sha256": "c24af034f1d4113eea7c28de285c6f0c265ce29184eb94489479d4171de5c003",
+      "key": "L38.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.39.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "383e606c24a1ca1d16f3848ea91932528fdddb8c16d857c25e4ea3821df36967",
+      "amax_sha256": "7832245f9ffeefae47fdeae978cdf8305518a362f03dee3ac1d9fab5821f6158",
+      "key": "L39.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.39.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "45935f37208b369f486be25b08d2066ba4403a78b8ea43683e46ce44fceabba9",
+      "amax_sha256": "1a33848924fe812c0ecf15e3306578eb0cdaa048c433d6912665138ae16e93ee",
+      "key": "L39.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.39.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "a9c34878286e1929c42c00a93af1a50365dfb3ac4f0868cfdb5c10b53c0bd139",
+      "amax_sha256": "d22160c8e45bc4e19c91046ffa591c1b56f4f72c341b63ecf04c8dd29152aaae",
+      "key": "L39.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.39.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8558b49179cad384296a562047e85b8b85d3e4a45c6c1625d0ee15c589cf0dfc",
+      "amax_sha256": "d51c7721d3769ebe0543de6b02194581f1c8aa25fa947185241caad7814ebf12",
+      "key": "L39.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.4.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "1ea5bbd8ad988e71eae14aeb39486c5f0358090e371c24e041aace1da9d1ac7b",
+      "amax_sha256": "62767f334c442e6bd92d7d09c80940ec39a8ace8147fa42b1d2f3dc03cc95c03",
+      "key": "L4.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.4.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "81e860dd83e505e34349d699e07059a5dba2d72eaf26583c1aae7e1149467cb2",
+      "amax_sha256": "b2ad2dd4beb8e3897f48c646b16d522e57e11e5fbf0b455b5b19c23c62d9bef5",
+      "key": "L4.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.4.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "8c43cb193f34a770aa0489e05f0838a0336311861944468fd4b7a858102c4517",
+      "amax_sha256": "2e1b1bb30ae7787fe609c3ca7da9ddc1dacaa5de0aead7a288fea52e5d9686ee",
+      "key": "L4.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.4.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "26314565d47f3036b0b85b4c1b770315059a5bf73704b4c6f361c2a5fd595c1b",
+      "amax_sha256": "ffd1a35119e5ea8ea829f0fc3166bf46d135ad9fc741d95d7f32e4d442c39ff3",
+      "key": "L4.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.40.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "3322440b0884da446cdcbc6cfafa71030f3bedd31292f0afb9e5f86f8bd090e0",
+      "amax_sha256": "957217358787412f58243579da2299a3b0ae6cccde930795142dfdf28aaea3b2",
+      "key": "L40.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.40.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "92cabce57e3087f4ecbc6d935a31cc63c38766e4ecbbb4d505ced608aede7bc6",
+      "amax_sha256": "7dc5a38104e26a5fa890c89a4e413013146547d24c6e91c8639fd8a4ab4dc621",
+      "key": "L40.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.40.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "e39081a983337113d366edfae0cd7f3afee304cd303a30b2442e38fb954ddc05",
+      "amax_sha256": "0b3e3e40195d1d1aa20e24a2af8d703b2b1a0e89322843c0f57e66d6f802f13f",
+      "key": "L40.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.40.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "c840a3668912559cfd6288c22116898836c009a9147129c30200c49d673d641f",
+      "amax_sha256": "eab250cd9a58edf3f04f0989ebd8275b748d447df56c927e02c64cf161e6b1ba",
+      "key": "L40.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.41.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "088de06c1a3661b22b1506404e854826396d5a46e55d2f72623f92eb92e0ad8d",
+      "amax_sha256": "df9f08af8155be0a6a70c2c436ee3d849f8963cc6c41490528f7663783f94926",
+      "key": "L41.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.41.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "a6ba0604f2634a99477c33a64b7d9d8312d268cbcb6d47bd1c9282e2a26a27d5",
+      "amax_sha256": "03b5b7cacd1630d9bceb9c3281a6d52372b0b91b801827d41da10889e60350c0",
+      "key": "L41.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.41.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "bcf2ff93c0b54ac04702dbb01fe8d5f340d71aa9f77174d99762c34693724b0f",
+      "amax_sha256": "adcee6767856ef1987fe9671178c6b328a3ec35c8b6519ca362ebb813b27a60a",
+      "key": "L41.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.41.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "4f0beaee5fa7e1f77af590176986c44de1c8632d025c7d7e79d1626e052647d3",
+      "amax_sha256": "0250a7877deeff1da0bd76e6ad93ba81c97aef61dfe22157eeb5b2ead0a816cd",
+      "key": "L41.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.42.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e3278153362639b109df438c3e221fae1b689ce205a5028bf38772944f002418",
+      "amax_sha256": "b2f8bc09a22d675b329fe67aec107b0fca4b9147d0f3cca778f1c7d292f179d4",
+      "key": "L42.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.42.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "085fa48141203bdae20c02af30be217af7a01d4e632f981e48acca45dd89287c",
+      "amax_sha256": "f141b682713130b060c19a45fe103c8298865514a9dd261fd5983f127036946c",
+      "key": "L42.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.42.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "b240b6019bc9cc499ebfa3953a048c59550d995f46111406e04a13ac626d55d0",
+      "amax_sha256": "e44f588fa5656c1bf7a5bcc2243412e92b4108df1f1251a939bcc481948f25e2",
+      "key": "L42.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.42.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "135d67af483e39afae116c1f27f077e33b081d613c730b2ab6c4593620ef535d",
+      "amax_sha256": "149cd492a22092ba9ac8a04d27d126d4e2bc0c6b920de158883104deac356887",
+      "key": "L42.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.43.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "d482ff8c4a2e6b19a5d7d8af4031705b4d2d1a45b440493a4663a2b41fd209b6",
+      "amax_sha256": "eaf1fa5af8e0521347be34036766e807ed51ec90e9a589aac4c38d5f6c801a51",
+      "key": "L43.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.43.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "b7963f673e76d192e1dfd18f8daf11af47bbe49497d93f97d61cdc94cc31c6d8",
+      "amax_sha256": "cda40b924efe8786f7375efa12499d6e3e0b9a682f580f57a66a470910e2c7bc",
+      "key": "L43.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.43.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "147fba396e65de0547e500382ba1a1f1c6a1fc136d911083a9954896d58880ab",
+      "amax_sha256": "d9c30a26eb5cfe29c1b0f6bbc4e8b7fda0267b1dd73aae1023d718671aa36d30",
+      "key": "L43.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.43.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "137f15106deb06d30fbe61c5d122e52100be67e578a081bd3261635cab11c0cb",
+      "amax_sha256": "6dee85b1b78993450185e5fb702638da2db854caf3f8beb13146b76d0cf59826",
+      "key": "L43.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.44.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "0583c9c0a928acd01e0712037f675226b569c1c71e159aa8293abf71be7c69dd",
+      "amax_sha256": "c5678d73bdc0928b693b8b4ee8ce489d1c3f7be79c5787dae91ac091448a5b08",
+      "key": "L44.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.44.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "95f45d1ebb61e591dd767baeb5ea79efc6758f01ed30f3e827f5e93ffd4c067b",
+      "amax_sha256": "039ed7bbbf18529bde9aa1a41cbc3e99cb16776b99154c4fd1b45c360241abc5",
+      "key": "L44.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.44.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "f3c4c7b673fea0969d5b9510fe726c1512ce04241ec3ce01403dccef5814ec6a",
+      "amax_sha256": "621ae59636bccc405f1107b5fd66e7d9425366f46a21743638f1c9edf89c1bed",
+      "key": "L44.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.44.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8e877dc090a0303cdc1709e6ed23adbe7d4107df525e7812f302465cc2e69ca6",
+      "amax_sha256": "cfd9c23f7ee8fe520e0e1666f603b92c4bf4803f6b3c364974beddcd13caa29d",
+      "key": "L44.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.45.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "939e9d66dff01cf5d2098bb4b0c5bff776c539e5217d39ff7be88dec7daa20f5",
+      "amax_sha256": "bfebf527a0eae3432fe0136d899133a343326fb280af39abb62f33ba67c95280",
+      "key": "L45.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.45.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "db6d8a3c102756ae8edb7e466dfd9dbf036e694efd9b458630a9ea2ee798f014",
+      "amax_sha256": "82e6a97b931d4ff1db1054d370c4d70c8302838d2f5c5d65e110dcc3e3ed1775",
+      "key": "L45.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.45.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "38378bfce7963f2d3f512434687b98007cca4b132d7c094eb098ac810d6461b6",
+      "amax_sha256": "d32cd1fa43298eaaedf1d46582cd00884fe17ef3b1ca543764381afec461dcc0",
+      "key": "L45.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.45.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "7a0979cd4c3c4eb98d9cba6014b09636cd6d9f43088daf3c2d572737efbfcbaa",
+      "amax_sha256": "b43591310e42d7f978e0f8efd98428f5e97c01631d768da0083e54264afa3ee4",
+      "key": "L45.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.46.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "dee4abc566fac697dd02c8540a824049baf2b93a0dceb6483c2f6680904a6586",
+      "amax_sha256": "57ea1d928f62669c045ee57a8dd8e10c82995d4d804867a42246742624b356c0",
+      "key": "L46.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.46.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "43cbd668d946745c6cc51ec13da267268a9919a4629e3b51d0068b090abcf150",
+      "amax_sha256": "42da5cf743b7e43324579f0bc63f7062a45bd6eacb777fff5f583b0b0d5a1540",
+      "key": "L46.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.46.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "a8e93bc3e6c30d0ada8bc9225686e2239a9be0d3f294585161186a6422c9f466",
+      "amax_sha256": "d396c0b36d192f08fa3e0c3c4297e47f69a64d3b214254f5b7c2ac2ac4359d25",
+      "key": "L46.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.46.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "2033c98ec2658dc715e3cdc52ffbd4907315c107f9cd91751e82d72b285d74d3",
+      "amax_sha256": "1c6a544d741162e1e8691a18082bc1edfd25df690f93d079e70c1cdce53e4baa",
+      "key": "L46.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.47.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "2116af92f92602ba8d51704f946d4f0ec75cd6f7765948b33369add03c2faf4d",
+      "amax_sha256": "a362ad2fc695c506c760f6c05054e3a7ce4416001d996ded4652c0b92875c183",
+      "key": "L47.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.47.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "2973bd7ffe5f9c9b93fcdf821fa094be08d34d7acaeb154a6ff73ffdc4bfb15e",
+      "amax_sha256": "56e4b6fb08702d136ffe53e372a9d0e319da4ec7fbcc61731fae9c497bb477b0",
+      "key": "L47.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.47.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "1aae205b8e3b5ffd3f7c9275c2cb2380ea8df7d02323ea8f282fe225b9ca47f8",
+      "amax_sha256": "5a44935e6720e1026cd69971c8b5103a1db1acfd44860961724d2efb0664e7de",
+      "key": "L47.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.47.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "358967f58578073600eda0273e7358223aadaaceb1f85b228137e8c056a5c2ba",
+      "amax_sha256": "3a9eebd81ab1a1ea131a9b81f1460488794848222656ec076c22f44dd9fd5b6f",
+      "key": "L47.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.5.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "c9dea3f91ecf4fefeaa1eb55e40af3d952ca80e609a8e3f4a0e2bc2a30db75d7",
+      "amax_sha256": "2ed88c367f8d5cc7f156a439e5cb3908e0da4c010a057072b55f991dc52caf55",
+      "key": "L5.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.5.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "cc3fae79231cc842dc01fa68cc656daba2c4d2f40c6302aa268d870b4c5bcbe8",
+      "amax_sha256": "1123a5a02177537fd5b5b8680a3bbea7468be664b65dc7c1d6097511ed720c32",
+      "key": "L5.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.5.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "ef2b68e20a9bacbdf3a232c56ebea9d5d78a414c3a874eb4c726236587d607f9",
+      "amax_sha256": "b34a657bfb6554e66227707edfd1fe87d5a49fc09ee2fca7de5ffe19512d86ab",
+      "key": "L5.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.5.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "6ec7281fd9e70f7c97212181aecefdd967a777f35ceae419bed35b0195821649",
+      "amax_sha256": "ccbe75e8203b49bceb9e073b008973c8b5e8b0c91b431324396543d8fe388356",
+      "key": "L5.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.6.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "46fe63a350eb365f5af11a2c25d640bece68a73c1396bd471861b78062881a6d",
+      "amax_sha256": "c96f839182878a3f49b7e5f06d4275d796d88c9504dfd2319cedf7ade3dbb557",
+      "key": "L6.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.6.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e15142b99728034b97072a2d402e23b9ce682a90b8b40cbca8ccfd68b9e95dc8",
+      "amax_sha256": "53bc7141f7d9a96053ce608b9302d764d69ca4a2170ac1b8c1a3ab99d5299070",
+      "key": "L6.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.6.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "525798978f18e4025e6479eaed8966f5130ad02c41f8cac56624332734b95939",
+      "amax_sha256": "6c5ce26648ff9ee3c8bc14a0965f34ee17ce635e8c3c6d6b9bc37131f7c1b497",
+      "key": "L6.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.6.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "471c813fd269eaf1eb635ad06835f2049a50a135412c149f225280891e6cfb4f",
+      "amax_sha256": "c5db37df11d70236cbf45417da1c7d87bbc5da5c7d7ff1a879f28dbb8eecf160",
+      "key": "L6.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.7.self_attn.in_proj_qgkvi",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "87e797ef68d05cab9866ac96f1b6f1bc886e6498e628eb2af0ff2e6489714eb6",
+      "amax_sha256": "405ae47d64da3820acd9d486be543909c94b204c8f9de96870daf399ba960499",
+      "key": "L7.attn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.7.self_attn.o_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "a1d3a7195f66a9edd467f72cacedc85fd8fc21dea091733fe3f765381857452c",
+      "amax_sha256": "d1f2514bf354b0cd5c8b32001bdf6af86104809eaaa2345b26020fb7f428dd6c",
+      "key": "L7.attn.o_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.7.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "40950fabdc573cd05e28efdf6befcbcf823ac10ebada4929958a51c5bef0d7f0",
+      "amax_sha256": "6e3a4b84e176883d2ff2a1452538f2e6de9b9c8fbdb1676be21298a37dcb9f29",
+      "key": "L7.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.7.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "38e70e71b6889142e79ccc777bdd6b100dd58153129d980f9ebe056e4a651953",
+      "amax_sha256": "4e1aa750f37d58e10651161c201da4e534aa8f1502a36be97fc65fcf29aebd61",
+      "key": "L7.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.8.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "a0960e81f86a9f71b5574d61619db402d7fcbac1a6820d6f0f594c53df82b609",
+      "amax_sha256": "a0d9dacab302b426eae93fd9d632526b7049f1bc940090ab3ec0b5f91bc0acb1",
+      "key": "L8.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.8.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "466f8f26499707249a4a4c6f1042c1240f1f66f0a4865e225329765c8501e6dc",
+      "amax_sha256": "d6a2338afe6691862c4c04a1d3a56692856d0f2539c32aa4cc4fb933c5624f86",
+      "key": "L8.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.8.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "4eb47346ab85e0a4aab17d066ce839c79ac6d70f0fa6204c12374133a445ae13",
+      "amax_sha256": "917fde0c21f0915e4d2aec9b09dedc106ea9d8490afc45e6df765bd143da9021",
+      "key": "L8.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.8.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "f5c6c5f20192cd5619c214079f6abcfb1643310e599c761c9895cc35e05b5a66",
+      "amax_sha256": "2f333ad0d1ccb46c404e5ad4855e46c55a6e6f82ffe5e1fc87b1ec2986e66536",
+      "key": "L8.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.9.linear_attn.in_proj_qkvzba",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "e48e7827629e3b5787b7eb735247d259497e71e54e414ce2c3e56825055267f1",
+      "amax_sha256": "26cede8bef592c941ef4657e7974d4f2c3e3762294e142268d909a484a17b66c",
+      "key": "L9.gdn.in_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.9.linear_attn.out_proj",
+      "width": 1536,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "c58f9b8af3025bc4731c09024f82b2d9f91fdd1c7bb51afe48d0cba633674ead",
+      "amax_sha256": "31c9642064269fda43c7f6af98556bb46f0cc7b74e7ad4e64b4d29df91721b95",
+      "key": "L9.gdn.out_proj"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.9.mlp.shared_expert.down_proj",
+      "width": 256,
+      "ntok": 50512,
+      "dead_columns": 96,
+      "hessian_sha256": "fab2a2c308928635b2577d809f039c02d402822570a50e2982ee23c4c2ab049f",
+      "amax_sha256": "1c8ce125664942d7ea3fafbd855a056a272ae3247c86ea886e2a1c0be8b6990c",
+      "key": "L9.moe.sh_down"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/model.language_model.layers.9.mlp.shared_expert.gate_up_proj",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "3fea407d31e819e658df01ee24ee9fecb4c64726fa60b41b62db297306ad1f7a",
+      "amax_sha256": "47767e7b28813a52d80b685004a577476f2df7146d34032ee9f48a07a2dc5725",
+      "key": "L9.moe.sh_gate_up"
+    },
+    {
+      "name": "Qwen4ExpForCausalLM/lm_head",
+      "width": 2560,
+      "ntok": 50512,
+      "dead_columns": 0,
+      "hessian_sha256": "8eb8e03e69400d7a42912006dc1866218c4e90aa29cbb3d1fb9cacd6c7718bf5",
+      "amax_sha256": "7c219fda69d7813142cc5820b18ec21586f412299633d2d9f10216da7b9cce14",
+      "key": "head"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/home/choiceoh/glm53-logs/qwen38-gptq-20260919/tools/probes/qwen38_gptq_score.py", line 124, in <module>
+    main()
+  File "/home/choiceoh/glm53-logs/qwen38-gptq-20260919/tools/probes/qwen38_gptq_score.py", line 120, in main
+    score(ap.parse_args())
+  File "/home/choiceoh/glm53-logs/qwen38-gptq-20260919/tools/probes/qwen38_gptq_score.py", line 43, in score
+    verify_owner(args.lease, args.owner)
+  File "/home/choiceoh/glm53-logs/qwen38-gptq-20260919/tools/probes/qwen38_gptq_feed.py", line 29, in verify_owner
+    if json.loads(Path(path).read_bytes()).get("owner") != owner:
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1021, in read_bytes
+    with self.open(mode='rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/glm53-logs/st-fleet.lock'

@@ -71,6 +71,27 @@ class SplitTests(unittest.TestCase):
 
 
 class CollectionTests(unittest.TestCase):
+    def test_deferred_window_never_passes_sessions_queue_or_pending_handover(self):
+        module_path = Path(__file__).resolve().parents[1] / "measurements/qwen38_gptq_20260919/wait_for_window.py"
+        spec = importlib.util.spec_from_file_location("gptq_window_waiter", module_path)
+        waiter = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(waiter)
+        with tempfile.TemporaryDirectory() as root:
+            lease, queue = Path(root) / "lease", Path(root) / "queue"
+            queue.write_text("")
+            self.assertTrue(waiter.available(lease, queue)[0])
+            lease.write_text(json.dumps(dict(kind="session", owner="session/another")))
+            self.assertFalse(waiter.available(lease, queue)[0])
+            lease.write_text(json.dumps(dict(kind="production", owner="production/model")))
+            self.assertTrue(waiter.available(lease, queue)[0])
+            queue.write_text("waiting-job\n")
+            self.assertFalse(waiter.available(lease, queue)[0])
+            queue.write_text("")
+            lease.write_text(json.dumps(dict(kind="production", yield_to=dict(requester="other"))))
+            self.assertFalse(waiter.available(lease, queue)[0])
+            lease.write_text("not json")
+            self.assertFalse(waiter.available(lease, queue)[0])
+
     def test_nested_rank_scoring_requires_the_inherited_verified_owner(self):
         from probes.qwen38_gptq_score import verify_gpu_owner
         args = SimpleNamespace(device="cuda", parent_verified=True, owner="session/ours")

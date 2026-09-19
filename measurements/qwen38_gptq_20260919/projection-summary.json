@@ -1,0 +1,117 @@
+{
+  "scope": "Weight-packing projection error on held-out real-input Gram statistics; not whole-model accuracy.",
+  "lanes": {
+    "w4": {
+      "sites": 768,
+      "improved": 768,
+      "worsened": 0,
+      "median_rtn_rmse": 0.07118474998560342,
+      "median_gptq_rmse": 0.0426193931341432,
+      "median_paired_rmse_ratio": 0.7034915939597897,
+      "minimum_paired_rmse_ratio": 0.12647934594218355,
+      "maximum_paired_rmse_ratio": 0.9824523931678227
+    },
+    "fp8": {
+      "sites": 772,
+      "improved": 772,
+      "worsened": 0,
+      "median_rtn_rmse": 0.023846075120746754,
+      "median_gptq_rmse": 0.013195083455968027,
+      "median_paired_rmse_ratio": 0.6507002352991906,
+      "minimum_paired_rmse_ratio": 0.12134323182480276,
+      "maximum_paired_rmse_ratio": 0.9713401443766201
+    }
+  },
+  "ranks": [
+    {
+      "rank": 0,
+      "w4": {
+        "sites": 192,
+        "median_rtn_rmse": 0.0712639679658714,
+        "median_gptq_rmse": 0.04308233580401953,
+        "improved": 192,
+        "worsened": 0
+      },
+      "fp8": {
+        "sites": 193,
+        "median_rtn_rmse": 0.024009084655998224,
+        "median_gptq_rmse": 0.013478566078512258,
+        "improved": 193,
+        "worsened": 0
+      }
+    },
+    {
+      "rank": 1,
+      "w4": {
+        "sites": 192,
+        "median_rtn_rmse": 0.07271792513042699,
+        "median_gptq_rmse": 0.045563020494094594,
+        "improved": 192,
+        "worsened": 0
+      },
+      "fp8": {
+        "sites": 193,
+        "median_rtn_rmse": 0.023876828988776085,
+        "median_gptq_rmse": 0.014008515214229973,
+        "improved": 193,
+        "worsened": 0
+      }
+    },
+    {
+      "rank": 2,
+      "w4": {
+        "sites": 192,
+        "median_rtn_rmse": 0.06969581884159039,
+        "median_gptq_rmse": 0.040524763085188986,
+        "improved": 192,
+        "worsened": 0
+      },
+      "fp8": {
+        "sites": 193,
+        "median_rtn_rmse": 0.0235642798707536,
+        "median_gptq_rmse": 0.012605765309619129,
+        "improved": 193,
+        "worsened": 0
+      }
+    },
+    {
+      "rank": 3,
+      "w4": {
+        "sites": 192,
+        "median_rtn_rmse": 0.07099125872061829,
+        "median_gptq_rmse": 0.04212319175158266,
+        "improved": 192,
+        "worsened": 0
+      },
+      "fp8": {
+        "sites": 193,
+        "median_rtn_rmse": 0.023155239197137616,
+        "median_gptq_rmse": 0.013133699867559327,
+        "improved": 193,
+        "worsened": 0
+      }
+    }
+  ],
+  "head": [
+    {
+      "rank": 0,
+      "rtn": 0.03048395025962902,
+      "gptq": 0.015925176940988533
+    },
+    {
+      "rank": 1,
+      "rtn": 0.03198392116655568,
+      "gptq": 0.0157635442782194
+    },
+    {
+      "rank": 2,
+      "rtn": 0.03145205287468284,
+      "gptq": 0.014935660508787772
+    },
+    {
+      "rank": 3,
+      "rtn": 0.03232681215424393,
+      "gptq": 0.014490621414604016
+    }
+  ]
+}

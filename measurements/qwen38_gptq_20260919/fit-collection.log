@@ -1,0 +1,33 @@
+{"requests": 16, "total_requests": 294, "prompt_tokens": 11079}
+{"requests": 32, "total_requests": 294, "prompt_tokens": 17680}
+{"requests": 48, "total_requests": 294, "prompt_tokens": 29631}
+{"requests": 64, "total_requests": 294, "prompt_tokens": 44242}
+{"requests": 80, "total_requests": 294, "prompt_tokens": 52382}
+{"requests": 96, "total_requests": 294, "prompt_tokens": 63275}
+{"requests": 112, "total_requests": 294, "prompt_tokens": 74587}
+{"requests": 128, "total_requests": 294, "prompt_tokens": 88388}
+{"requests": 144, "total_requests": 294, "prompt_tokens": 98742}
+{"requests": 160, "total_requests": 294, "prompt_tokens": 106919}
+{"requests": 176, "total_requests": 294, "prompt_tokens": 121676}
+{"requests": 192, "total_requests": 294, "prompt_tokens": 131560}
+{"requests": 208, "total_requests": 294, "prompt_tokens": 147982}
+{"requests": 224, "total_requests": 294, "prompt_tokens": 164510}
+{"requests": 240, "total_requests": 294, "prompt_tokens": 185939}
+{"requests": 256, "total_requests": 294, "prompt_tokens": 202791}
+{"requests": 272, "total_requests": 294, "prompt_tokens": 218303}
+{"requests": 288, "total_requests": 294, "prompt_tokens": 236246}
+{"requests": 294, "total_requests": 294, "prompt_tokens": 240490}
+{
+  "split": "train",
+  "requests": 294,
+  "prompt_tokens": 240490,
+  "cached_tokens": 0,
+  "min_collected_rows": 131184.0,
+  "rank0_sites": 193,
+  "save_requested": true,
+  "all_rank_file_validation": "pending",
+  "elapsed_s": 171.2631566169439,
+  "dataset_sha256": "133f0ac06ce1b5e8e3afaee3631c697429cdcf4a5c8302a3cda1fc123b47030b",
+  "owner": "session/q38gptq-0919",
+  "scope": "collection only; elapsed_s is not inference throughput"
+}

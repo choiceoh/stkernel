@@ -1,0 +1,19 @@
+{"requests": 16, "total_requests": 69, "prompt_tokens": 8953}
+{"requests": 32, "total_requests": 69, "prompt_tokens": 18278}
+{"requests": 48, "total_requests": 69, "prompt_tokens": 28777}
+{"requests": 64, "total_requests": 69, "prompt_tokens": 44931}
+{"requests": 69, "total_requests": 69, "prompt_tokens": 50512}
+{
+  "split": "test",
+  "requests": 69,
+  "prompt_tokens": 50512,
+  "cached_tokens": 0,
+  "min_collected_rows": 50512.0,
+  "rank0_sites": 193,
+  "save_requested": true,
+  "all_rank_file_validation": "pending",
+  "elapsed_s": 38.768714605947025,
+  "dataset_sha256": "b713ced48029ce19040b97c85abda23220d26015d0c1821f856e9dcb84fab000",
+  "owner": "session/q38gptq-0919",
+  "scope": "collection only; elapsed_s is not inference throughput"
+}

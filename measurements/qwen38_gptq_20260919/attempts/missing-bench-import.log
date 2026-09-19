@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "/home/choiceoh/st-worktrees/qwen38-gptq-4436/bench/onepass.py", line 984, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/home/choiceoh/st-worktrees/qwen38-gptq-4436/bench/onepass.py", line 527, in main
+    return _main()
+           ^^^^^^^
+  File "/home/choiceoh/st-worktrees/qwen38-gptq-4436/bench/onepass.py", line 598, in _main
+    bd = _load("bench-dec.py", "onepass_bench_dec")
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/choiceoh/st-worktrees/qwen38-gptq-4436/bench/onepass.py", line 62, in _load
+    spec.loader.exec_module(mod)
+  File "<frozen importlib._bootstrap_external>", line 991, in exec_module
+  File "<frozen importlib._bootstrap_external>", line 1128, in get_code
+  File "<frozen importlib._bootstrap_external>", line 1186, in get_data
+FileNotFoundError: [Errno 2] No such file or directory: '/home/choiceoh/st-worktrees/qwen38-gptq-4436/bench/bench-dec.py'

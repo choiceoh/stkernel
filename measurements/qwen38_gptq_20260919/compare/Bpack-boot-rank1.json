@@ -1,0 +1,166 @@
+{
+ "root": {
+  "name": "rank1",
+  "seconds": 0.0,
+  "counters": {
+   "dense_pack_root": "/cache/qwen38-gptq-20260919/fit",
+   "calibration_weights_id": "qwen38:0bb1ef835e371176ef67214cb9d50b2b7f02403af6da96fb283a8d90224727f5",
+   "calibration_GiB": 0.0,
+   "calibration_deferred": 0,
+   "boot_immediately_free_GiB": 102.33,
+   "prelude_s": 4.254,
+   "blocks": 1528,
+   "arena_GiB": 38.668
+  },
+  "children": [
+   {
+    "name": "front",
+    "seconds": 2.822283,
+    "counters": {
+     "import_s": 1.767,
+     "box_s": 0.383,
+     "shape_s": 0.002
+    }
+   },
+   {
+    "name": "comm",
+    "seconds": 0.322834,
+    "dev_gib": 0.085
+   },
+   {
+    "name": "prepare one-shot",
+    "seconds": 2.721149,
+    "dev_gib": 2.005
+   },
+   {
+    "name": "lanes",
+    "seconds": 0.009653,
+    "dev_gib": -0.0,
+    "counters": {
+     "kernel_imports_s": 2.546
+    },
+    "children": [
+     {
+      "name": "wait for the imports",
+      "seconds": 1.7e-05,
+      "dev_gib": 0.0
+     }
+    ]
+   },
+   {
+    "name": "qualify lanes",
+    "seconds": 2.259407,
+    "dev_gib": 2.132
+   },
+   {
+    "name": "arena",
+    "seconds": 1.598722,
+    "dev_gib": 39.368
+   },
+   {
+    "name": "load",
+    "seconds": 6.158083,
+    "dev_gib": 2.934,
+    "counters": {
+     "blocks": 52,
+     "bytes": 21970363672,
+     "direct": 1,
+     "stage_s": 0.902,
+     "wait_s": 0.212,
+     "copy_s": 0.032,
+     "views_s": 0.0,
+     "tensors": 2,
+     "read_bytes": 838868992
+    }
+   },
+   {
+    "name": "ple table",
+    "seconds": 0.001541,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "prepare dense",
+    "seconds": 9.211478,
+    "dev_gib": 0.488,
+    "counters": {
+     "weight_digest_calls": 193,
+     "weight_digest_s": 3.638,
+     "pack_calls": 192,
+     "pack_s": 3.966,
+     "pack_fp8_calls": 193,
+     "pack_fp8_s": 3.367,
+     "packs_cache": 192,
+     "packs_calibration_digest_reused": 192,
+     "packs_fp8_cache": 193,
+     "packs_fp8_gptq": 193,
+     "packs_gptq": 192
+    }
+   },
+   {
+    "name": "prepare precision",
+    "seconds": 0.011479,
+    "dev_gib": -0.176
+   },
+   {
+    "name": "mtp experts",
+    "seconds": 0.012137,
+    "dev_gib": 0.004,
+    "counters": {
+     "mtp_experts_qualify": 0.0
+    }
+   },
+   {
+    "name": "caches",
+    "seconds": 0.00135,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "engine",
+    "seconds": 0.016228,
+    "dev_gib": 0.004
+   },
+   {
+    "name": "wait for weight preparation",
+    "seconds": 0.049982,
+    "dev_gib": 0.001
+   },
+   {
+    "name": "runner",
+    "seconds": 6.7e-05,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "wait for the prelude",
+    "seconds": 1.3e-05,
+    "dev_gib": 0.0
+   },
+   {
+    "name": "qualify grammar",
+    "seconds": 0.046137,
+    "dev_gib": 0.005
+   },
+   {
+    "name": "warm eager moe",
+    "seconds": 0.698155,
+    "dev_gib": 0.75
+   },
+   {
+    "name": "warm prefill",
+    "seconds": 31.36472,
+    "dev_gib": 1.939
+   },
+   {
+    "name": "capture decode",
+    "seconds": 18.534553,
+    "dev_gib": 1.769
+   },
+   {
+    "name": "door",
+    "seconds": 0.02271,
+    "dev_gib": 0.0
+   }
+  ]
+ },
+ "memory_sampling": true,
+ "when": "2026-09-19T12:52:37"
+}
