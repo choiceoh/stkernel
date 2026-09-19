@@ -40,18 +40,27 @@ fi
 # ---- elsewhere: the single-GPU lane's host. Nothing below this block runs for it -- no
 # local mounts, no lease -- because none of that is about the GPU it uses.
 probe_host=${ST_PROBE_HOST:-}
-if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${probe_host#*@}" != "$(hostname)" ]; then
+here=0
+if [ -n "$probe_host" ] && { [ "${probe_host#*@}" = "$(hostname -s)" ] || [ "${probe_host#*@}" = "$(hostname)" ]; }; then here=1; fi
+# A lane's run (ST_PROBE_LANE, set by the queue's supervisor) takes this path even on this host: the
+# single lane is a pool of the Sparks and the controller is one of them -- no lease, room first --
+# and a host does not ssh to itself (srv2 refuses its own key), so here `at` runs its commands here.
+if [ -n "$probe_host" ] && { [ "$here" = 0 ] || [ -n "${ST_PROBE_LANE:-}" ]; }; then
   # The host is used exactly as given: the controller's ~/.ssh/config (Host ost-97x) names
   # the address, user and port, because that box is not a Spark and not choiceoh's.
   SSHOPT="-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new"
+  at() { if [ "$here" = 1 ]; then bash -c "cd && $1"; else ssh $SSHOPT "$probe_host" "$1"; fi; }   # on that host, from its home
   tree=${ST_PROBE_TREE:-st-probe-tree}          # under that host's home
-  home=$(ssh $SSHOPT "$probe_host" "mkdir -p '$tree' .cache/st && printf %s \"\$HOME\"") \
+  home=$(at "mkdir -p '$tree' .cache/st && printf %s \"\$HOME\"") \
     || { echo "ABORT: $probe_host is unreachable; the single-GPU lane cannot run $probe" >&2; exit 1; }
-  rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes" "$repo/tests" "$probe_host:$tree/" \
-    || { echo "ABORT: could not push engine/, probes/ and tests/ to $probe_host:$tree" >&2; exit 1; }
+  if [ "$here" = 1 ]; then
+    rsync -a --delete --exclude __pycache__ "$repo/engine" "$repo/probes" "$repo/tests" "$home/$tree/"
+  else
+    rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes" "$repo/tests" "$probe_host:$tree/"
+  fi || { echo "ABORT: could not push engine/, probes/ and tests/ to $probe_host:$tree" >&2; exit 1; }
   mounts=(--mount "type=bind,src=$home/$tree,dst=/repo,readonly"
           --mount "type=bind,src=$home/.cache/st,dst=/cache")
-  if ssh $SSHOPT "$probe_host" "test -d '$models'"; then
+  if at "test -d '$models'"; then
     mounts+=(--mount "type=bind,src=$models,dst=$models,readonly")
   fi
   # The image production runs on that box, unless the caller named one: the check then
@@ -61,7 +70,7 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
   if [ -z "${ST_IMAGE:-}" ]; then
     # neither found is an answer, not a failure: under pipefail the bare assignment ended the script
     # silently on a box that serves nothing (ost-97x, 2026-09-19)
-    image=$(ssh $SSHOPT "$probe_host" "docker inspect st-glm53 --format '{{.Config.Image}}' 2>/dev/null \
+    image=$(at "docker inspect st-glm53 --format '{{.Config.Image}}' 2>/dev/null \
               || docker image inspect st-engine:glm53 --format '{{index .RepoTags 0}}' 2>/dev/null" | tail -1) || image=
     [ -n "$image" ] || image=$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")
     [ -n "$image" ] || { echo "ABORT: no ST image on $probe_host (no st-glm53 container, no st-engine:glm53); name one with ST_IMAGE" >&2; exit 1; }
@@ -71,7 +80,7 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
   # mounted over the image's site-packages -- which shadow dist-packages, so that is the place.
   read -r vendored site <<< "$(python3 "$repo/bench/fleet_single.py" vendored --host "$probe_host")" || true
   if [ -n "${vendored:-}" ] && [ "$image" = "$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")" ]; then
-    for entry in $(ssh $SSHOPT "$probe_host" "ls -1 '$vendored' 2>/dev/null"); do
+    for entry in $(at "ls -1 '$vendored' 2>/dev/null"); do
       mounts+=(--mount "type=bind,src=$home/$vendored/$entry,dst=$site/$entry,readonly")
     done
   fi
@@ -95,11 +104,11 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
   NAME=st-probe-$(hostname -s)-$$
   # Killed here (the queue's supervisor stops its process group), the container there must
   # not outlive us: remove it however this ends.
-  trap 'ssh $SSHOPT "$probe_host" "docker rm -f $NAME" >/dev/null 2>&1 || true' EXIT INT TERM
+  trap 'at "docker rm -f $NAME" >/dev/null 2>&1 || true' EXIT INT TERM
   printf -v remote '%q ' docker run --rm --name "$NAME" "${gpu[@]}" "${mounts[@]}" "${envs[@]}" \
     --entrypoint python3 "$image" -u "/repo/$probe" "$@"
   echo "  single GPU: $probe on $probe_host (tree ~/$tree, image $image, budget $budget GiB $where, no fleet lease)" >&2
-  rc=0; ssh $SSHOPT "$probe_host" "$remote" || rc=$?
+  rc=0; at "$remote" || rc=$?
   exit $rc
 fi
 
