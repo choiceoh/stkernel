@@ -33,7 +33,7 @@ jobs:
     # are thousands of tiny ops. One thread per file (check.py sets it; the env below covers the plain unittest steps)
     # and the verdict cut into four parts, each on its own runner, longest files first (tools/check_durations.json).
     name: check ${{ matrix.part }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     strategy:
       fail-fast: false                                  # every part reports: a red part does not hide another one
