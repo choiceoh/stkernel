@@ -1,0 +1,27 @@
+{"label": "data3b", "door_open_after_s": 63.0, "model": "qwen3.8-flash-next"}
+{"label": "data3b", "elapsed_s": 15, "of": 261, "next": 16, "done": 12, "prompt_tokens": 27570, "errors": 0, "chat": 12, "raw": 0}
+{"label": "data3b", "elapsed_s": 30, "of": 261, "next": 35, "done": 31, "prompt_tokens": 52987, "errors": 0, "chat": 31, "raw": 0}
+{"label": "data3b", "elapsed_s": 45, "of": 261, "next": 50, "done": 46, "prompt_tokens": 77947, "errors": 0, "chat": 46, "raw": 0}
+{"label": "data3b", "kind": "chat", "id": "1000244-1", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "elapsed_s": 60, "of": 261, "next": 68, "done": 63, "prompt_tokens": 106891, "errors": 1, "chat": 63, "raw": 0}
+{"label": "data3b", "elapsed_s": 75, "of": 261, "next": 82, "done": 77, "prompt_tokens": 138804, "errors": 1, "chat": 77, "raw": 0}
+{"label": "data3b", "kind": "chat", "id": "1000292-4", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "elapsed_s": 90, "of": 261, "next": 105, "done": 99, "prompt_tokens": 166178, "errors": 2, "chat": 99, "raw": 0}
+{"label": "data3b", "elapsed_s": 105, "of": 261, "next": 125, "done": 119, "prompt_tokens": 193482, "errors": 2, "chat": 119, "raw": 0}
+{"label": "data3b", "elapsed_s": 120, "of": 261, "next": 148, "done": 142, "prompt_tokens": 216145, "errors": 2, "chat": 142, "raw": 0}
+{"label": "data3b", "kind": "chat", "id": "1000150-0", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "elapsed_s": 135, "of": 261, "next": 169, "done": 162, "prompt_tokens": 242401, "errors": 3, "chat": 162, "raw": 0}
+{"label": "data3b", "elapsed_s": 150, "of": 261, "next": 189, "done": 182, "prompt_tokens": 268701, "errors": 3, "chat": 182, "raw": 0}
+{"label": "data3b", "kind": "chat", "id": "1000296-0", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "kind": "chat", "id": "1000292-1", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "elapsed_s": 165, "of": 261, "next": 213, "done": 204, "prompt_tokens": 295047, "errors": 5, "chat": 204, "raw": 0}
+{"label": "data3b", "kind": "chat", "id": "1000244-3", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "kind": "chat", "id": "1000150-1", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "elapsed_s": 180, "of": 261, "next": 230, "done": 219, "prompt_tokens": 323160, "errors": 7, "chat": 219, "raw": 0}
+{"label": "data3b", "kind": "chat", "id": "1000264-4", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "elapsed_s": 195, "of": 261, "next": 247, "done": 235, "prompt_tokens": 353986, "errors": 8, "chat": 235, "raw": 0}
+{"label": "data3b", "kind": "chat", "id": "1000232-1", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "kind": "chat", "id": "1000232-2", "error": "<HTTPError 400: 'Bad Request'>"}
+{"label": "data3b", "elapsed_s": 210, "of": 261, "next": 264, "done": 250, "prompt_tokens": 383062, "errors": 10, "chat": 250, "raw": 0}
+{"label": "data3b", "elapsed_s": 225, "of": 261, "next": 265, "done": 251, "prompt_tokens": 387988, "errors": 10, "chat": 251, "raw": 0}
+{"label": "data3b", "final": {"next": 265, "done": 251, "prompt_tokens": 387988, "errors": 10, "chat": 251, "raw": 0}, "elapsed_s": 225}

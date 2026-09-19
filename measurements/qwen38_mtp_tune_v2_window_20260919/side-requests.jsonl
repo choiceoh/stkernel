@@ -1,0 +1,32 @@
+{"door": "up", "model": "qwen3.8-flash-next", "jobs": 150}
+{"elapsed_s": 20, "next": 9, "done": 7, "errors": 0, "prompt_tokens": 12033}
+{"elapsed_s": 40, "next": 16, "done": 14, "errors": 0, "prompt_tokens": 22782}
+{"elapsed_s": 60, "next": 24, "done": 22, "errors": 0, "prompt_tokens": 34157}
+{"elapsed_s": 80, "next": 32, "done": 30, "errors": 0, "prompt_tokens": 47347}
+{"elapsed_s": 100, "next": 40, "done": 38, "errors": 0, "prompt_tokens": 61065}
+{"elapsed_s": 120, "next": 44, "done": 42, "errors": 0, "prompt_tokens": 84231}
+{"elapsed_s": 140, "next": 47, "done": 45, "errors": 0, "prompt_tokens": 105470}
+{"elapsed_s": 160, "next": 52, "done": 50, "errors": 0, "prompt_tokens": 139613}
+{"elapsed_s": 180, "next": 57, "done": 55, "errors": 0, "prompt_tokens": 171472}
+{"elapsed_s": 200, "next": 62, "done": 60, "errors": 0, "prompt_tokens": 200770}
+{"elapsed_s": 220, "next": 64, "done": 62, "errors": 0, "prompt_tokens": 215958}
+{"elapsed_s": 240, "next": 67, "done": 65, "errors": 0, "prompt_tokens": 247359}
+{"elapsed_s": 260, "next": 73, "done": 71, "errors": 0, "prompt_tokens": 289655}
+{"elapsed_s": 280, "next": 78, "done": 76, "errors": 0, "prompt_tokens": 316872}
+{"elapsed_s": 300, "next": 82, "done": 80, "errors": 0, "prompt_tokens": 339230}
+{"elapsed_s": 320, "next": 88, "done": 86, "errors": 0, "prompt_tokens": 373823}
+{"elapsed_s": 340, "next": 92, "done": 90, "errors": 0, "prompt_tokens": 405607}
+{"elapsed_s": 360, "next": 97, "done": 95, "errors": 0, "prompt_tokens": 428391}
+{"elapsed_s": 380, "next": 103, "done": 101, "errors": 0, "prompt_tokens": 468734}
+{"elapsed_s": 400, "next": 109, "done": 107, "errors": 0, "prompt_tokens": 507567}
+{"elapsed_s": 420, "next": 114, "done": 112, "errors": 0, "prompt_tokens": 533784}
+{"elapsed_s": 440, "next": 119, "done": 117, "errors": 0, "prompt_tokens": 561851}
+{"elapsed_s": 460, "next": 124, "done": 122, "errors": 0, "prompt_tokens": 593211}
+{"elapsed_s": 480, "next": 127, "done": 125, "errors": 0, "prompt_tokens": 617882}
+{"elapsed_s": 500, "next": 132, "done": 130, "errors": 0, "prompt_tokens": 650796}
+{"elapsed_s": 520, "next": 137, "done": 135, "errors": 0, "prompt_tokens": 691439}
+{"elapsed_s": 540, "next": 143, "done": 141, "errors": 0, "prompt_tokens": 720123}
+{"elapsed_s": 560, "next": 147, "done": 145, "errors": 0, "prompt_tokens": 743228}
+{"elapsed_s": 580, "next": 151, "done": 149, "errors": 0, "prompt_tokens": 772250}
+{"elapsed_s": 600, "next": 152, "done": 150, "errors": 0, "prompt_tokens": 781312}
+{"final": {"next": 152, "done": 150, "errors": 0, "prompt_tokens": 781312}, "elapsed_s": 600}
