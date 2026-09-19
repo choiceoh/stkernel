@@ -1,0 +1,96 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (105 free)
+  kernel shape (record): hidden 2560 hc 4 gated_residual tp 4 | gqa 6x256 no sink | linear 4/12x128x128 conv 4 decay/head | indexer qsa 4x128 pool 4 top 2048 | moe 512(128 local) I640/640 top10 nvfp4 silu | spec 1
+[W919 13:08:45.229386632 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+NCCL version 2.29.7+cuda13.2
+[oneshot] inline proxy serving peers=3 inline_bytes=8 wr_reuse=1
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+  collectives: one-shot RDMA (NCCL where ineligible)
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.0058823530562222, 0.0024845092557370663), 'leave': (0.0058823530562222, 0.0024845092557370663), 'close': (0.007194244768470526, 0.0027172171976417303), 'site': (0.0062500000931322575, 0.0010940515203401446), 'site_inject': (0.004854368977248669, 0.0013956144684925675), 'site_close': (0.007194244768470526, 0.0027172171976417303)}, 'gdn': {'decay': (1.8527525469380635e-07, 1.2093259726952965e-07), 'beta': (0.0, 0.0), 'raw_beta': (0.0, 0.0), 'norm': (7.038288458716124e-05, 2.438618139422033e-06)}, 'qsa_norm_rope': {'norm_rope_6x256': (0.006172839552164078, 0.0015349400928243995), 'norm_rope_4x128': (0.006896551698446274, 0.002324720611795783)}, 'skinny_gemv': {'513x2560': 0.002813, '324x10240': 0.002272, '320x10240': 0.002349, '4224x2560': 0.003003, '2560x1536': 0.002604, '2560x2560': 0.002821, '320x2560': 0.003817, '2560x160': 0.002879}, 'fp8_rows': {1: 0.002073, 4: 0.001935, 16: 0.002006}, 'ngram_gate': {'3_rows': (0.0, 0.0), '64_rows': (0.0, 0.001479)}}
+boot rendezvous arena-admission: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+[transformers] You are using a model of type `qwen4_exp` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=9 -> rows 144/144 tiles 9/9 tasks 45/45
+[b12x-bounds] state_E=128 n=640 tile_m=32 routed_rows=1920 -> rows 5984/5984 tiles 187/187 tasks 935/935
+[b12x-bounds] state_E=128 n=640 tile_m=64 routed_rows=6144 -> rows 14272/14272 tiles 223/223 tasks 1115/1115
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=12288 -> rows 28544/28544 tiles 223/223 tasks 1115/1115
+  warm eager moe: eager/8 0.45s, eager/1 0.011s, eager/2 0.01s, eager/3 0.01s, eager/4 0.006s, eager/5 0.006s, eager/6 0.005s, eager/7 0.005s, eager/9 0.006s, eager/1920 0.015s, eager/6144 0.019s, eager/12288 0.028s
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=31887 -> rows 48256/48256 tiles 377/377 tasks 1885/1885
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=30004 -> rows 46336/48256 tiles 362/377 tasks 1810/1885
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=53270 -> rows 69632/69632 tiles 544/544 tasks 2720/2720
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=76145 -> rows 92416/92416 tiles 722/722 tasks 3610/3610
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=44671 -> rows 60928/92416 tiles 476/722 tasks 2380/3610
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=34781 -> rows 51072/92416 tiles 399/722 tasks 1995/3610
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=50386 -> rows 66688/92416 tiles 521/722 tasks 2605/3610
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=40506 -> rows 56832/92416 tiles 444/722 tasks 2220/3610
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=27372 -> rows 43648/92416 tiles 341/722 tasks 1705/3610
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=14661 -> rows 30976/92416 tiles 242/722 tasks 1210/3610
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=86856 -> rows 103168/103168 tiles 806/806 tasks 4030/4030
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=68949 -> rows 85248/103168 tiles 666/806 tasks 3330/4030
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=60678 -> rows 77056/103168 tiles 602/806 tasks 3010/4030
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=60103 -> rows 76416/103168 tiles 597/806 tasks 2985/4030
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=90618 -> rows 106880/106880 tiles 835/835 tasks 4175/4175
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=88461 -> rows 104832/106880 tiles 819/835 tasks 4095/4175
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=32758 -> rows 49024/106880 tiles 383/835 tasks 1915/4175
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=63765 -> rows 80128/106880 tiles 626/835 tasks 3130/4175
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=85492 -> rows 101760/106880 tiles 795/835 tasks 3975/4175
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=69514 -> rows 85888/106880 tiles 671/835 tasks 3355/4175
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=70303 -> rows 86656/106880 tiles 677/835 tasks 3385/4175
+  warm prefill: memory/32256/0 24.469s, kernels/1/0 0.2s, kernels/8/0 1.273s, kernels/64/0 0.286s, kernels/512/0 0.374s, kernels/4095/0 1.266s, kernels/64/8384 1.312s, kernels/64/16832 0.292s, kernels/64/32960 0.291s, kernels/64/65984 0.288s, kernels/64/131264 0.33s, kernels/64/262080 0.292s, head/1/0 0.031s, head/1/4607 0.015s, head/1/8447 0.014s, head/1/16895 0.017s, head/1/33023 0.019s, head/1/66047 0.018s, head/1/131327 0.016s, head/1/262143 0.018s, head/2/0 0.023s, head/2/4606 0.018s, head/2/8446 0.017s, head/2/16894 0.02s, head/2/33022 0.019s, head/2/66046 0.02s, head/2/131326 0.018s, head/2/262142 0.016s, head/3/0 0.008s, head/3/4605 0.015s, head/3/8445 0.018s, head/3/16893 0.016s, head/3/33021 0.02s, head/3/66045 0.018s, head/3/131325 0.019s, head/3/262141 0.018s, head/4/0 0.009s, head/4/4604 0.009s, head/4/8444 0.008s, head/4/16892 0.009s, head/4/33020 0.009s, head/4/66044 0.009s, head/4/131324 0.008s, head/4/262140 0.008s
+  shared expert: forked at one request's rows
+  leave: its sum's programmatic dependent, the mixer's down projection prefetched
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger; draft step ahead of the host's read; mtp inputs recorded)
+  pictures: not served (--vision auto)
+  structured output: on
+phase                                      seconds   dev GiB  counters
+front                                        3.998            import_s=2.819 box_s=0.446 shape_s=0.002
+comm                                         1.717     +0.20  
+prepare one-shot                             2.834     +1.13  
+lanes                                        0.008     +0.00  kernel_imports_s=3.124
+  wait for the imports                       0.000     +0.00  
+qualify lanes                                2.982     +1.55  
+arena                                        1.563    +39.38  
+load                                         4.016     +3.16  blocks=52 bytes=2.19704e+10 direct=1 stage_s=1.073 wait_s=0.094 copy_s=0.033 views_s=0 tensors=2 read_bytes=8.38869e+08
+ple table                                    0.001     +0.00  
+prepare dense                              270.555     +3.42  weight_digest_calls=193 weight_digest_s=2.359 pack_calls=192 pack_s=177.249 pack_fp8_calls=193 pack_fp8_s=92.741 packs_built=192 packs_calibration_digest_reused=192 packs_factor_built=193 packs_factor_reused=192 packs_fp8_built=193 packs_fp8_gptq=193 packs_gptq=192
+prepare precision                            0.022     +0.00  
+mtp experts                                  0.013     +0.00  mtp_experts_qualify=0
+caches                                       0.001     +0.00  
+engine                                       0.018     -0.00  
+wait for weight preparation                 18.638     -0.29  
+runner                                       0.106     +0.00  nvme_mapped_staging=1
+wait for the prelude                         0.000     +0.00  
+qualify grammar                              0.059     +0.00  
+warm eager moe                               0.594     +0.55  
+warm prefill                                31.174     +1.37  
+capture decode                               8.418     +0.87  
+door                                         0.418     +0.00  
+total                                      347.136
+  NVMe tier: 262 conversations parked from before, 41.3 GiB of 64 GiB
+  NVMe tier: 222 prefix boundaries parked from before, 16.0 GiB of 16 GiB
+  rank 0: ready in 345.3 s, door on port 8000
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[serve] death rank=0 kind=local phase='settling transfers': ValueError: seq 1 already owns resident resources
+[rank0]: Traceback (most recent call last):
+[rank0]:   File "<frozen runpy>", line 198, in _run_module_as_main
+[rank0]:   File "<frozen runpy>", line 88, in _run_code
+[rank0]:   File "/repo/engine/profiles/qwen38/fleet.py", line 984, in <module>
+[rank0]:     sys.exit(main())
+[rank0]:              ^^^^^^
+[rank0]:   File "/repo/engine/profiles/qwen38/fleet.py", line 962, in main
+[rank0]:     server.loop()
+[rank0]:   File "/repo/engine/base/serve.py", line 4167, in loop
+[rank0]:     ran = self.once()
+[rank0]:           ^^^^^^^^^^^
+[rank0]:   File "/repo/engine/base/serve.py", line 3239, in once
+[rank0]:     self._admit()
+[rank0]:   File "/repo/engine/base/serve.py", line 2567, in _admit
+[rank0]:     self.runner.submit(row, len(ids), ids=ids, salts=salts, chain=chain)
+[rank0]:   File "/repo/engine/base/runner.py", line 153, in submit
+[rank0]:     raise ValueError(f"seq {seq} already owns resident resources")
+[rank0]: ValueError: seq 1 already owns resident resources
+  exit: mtp inputs: 764 rows held at close; this boot 1 shards written, 0 still waiting, 0 failed
+  exit: draft ledger: 0 records in draft-ledger-20260919-131329.jsonl

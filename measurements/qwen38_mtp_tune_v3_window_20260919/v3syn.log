@@ -1,0 +1,8 @@
+[21:03:44] seeds
+{"stage": "seeds", "final": {"next": 352, "ok": 320, "failed": 0, "rows": 1169}, "elapsed_s": 180}
+[21:06:44] seeds: 1169
+{"stage": "convos", "final": {"next": 1195, "ok": 1163, "failed": 0, "rows": 1119}, "elapsed_s": 1120}
+[21:25:24] convos: 1119
+{"convos": 1119, "kept": 1074, "dropped": {"not Korean": 29, "kept: reasoning cut by max_tokens": 134, "loop": 6, "Chinese characters in a Korean user turn": 4, "near duplicate": 6}, "raw_docs": 12}
+{"conversations": 1074, "raw_docs": 12, "chars": 5621905, "raw_chars": 56804, "approx_tokens": 2184119, "mix_by_chars": {"plain_chat": 0.453, "served_shapes": 0.537, "raw_text": 0.01}, "shape": {"single": 778, "multi": 204, "tool": 76, "longdoc": 16}, "lang": {"ko": 647, "en": 366, "mixed": 61}, "thinking": {"False": 801, "True": 273}, "final_temperature": {"1.0": 328, "0.0": 746}, "category": {"coding_write": 104, "general_qa": 103, "explain": 94, "business_finance": 86, "math": 78, "tool": 76, "writing_business": 74, "howto": 53, "energy_solar": 47, "summarize": 47, "coding_debug": 45, "life_health": 41, "legal_tax_admin": 33, "ai_ml": 31, "chitchat": 30, "data_sql": 29, "tech_ops": 29, "writing_creative": 27, "translate_edit": 27, "reasoning": 20}, "turns": {"1": 870, "2": 125, "3": 79}}
+[21:25:25] done

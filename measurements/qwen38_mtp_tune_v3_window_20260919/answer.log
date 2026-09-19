@@ -1,0 +1,17 @@
+{"stage": "answer", "jobs": 986, "already": 0}
+{"stage": "answer", "elapsed_s": 20, "jobs": 986, "next": 133, "ok": 101, "failed": 0, "rows": 101}
+{"stage": "answer", "elapsed_s": 40, "jobs": 986, "next": 224, "ok": 192, "failed": 0, "rows": 192}
+{"stage": "answer", "elapsed_s": 60, "jobs": 986, "next": 336, "ok": 304, "failed": 0, "rows": 304}
+{"stage": "answer", "elapsed_s": 80, "jobs": 986, "next": 384, "ok": 352, "failed": 0, "rows": 352}
+{"stage": "answer", "elapsed_s": 100, "jobs": 986, "next": 488, "ok": 456, "failed": 0, "rows": 456}
+{"stage": "answer", "elapsed_s": 120, "jobs": 986, "next": 631, "ok": 599, "failed": 0, "rows": 599}
+{"stage": "answer", "elapsed_s": 140, "jobs": 986, "next": 703, "ok": 671, "failed": 0, "rows": 671}
+{"stage": "answer", "elapsed_s": 160, "jobs": 986, "next": 787, "ok": 755, "failed": 0, "rows": 755}
+{"stage": "answer", "elapsed_s": 180, "jobs": 986, "next": 832, "ok": 800, "failed": 0, "rows": 800}
+{"stage": "answer", "elapsed_s": 200, "jobs": 986, "next": 880, "ok": 848, "failed": 0, "rows": 848}
+{"stage": "answer", "elapsed_s": 220, "jobs": 986, "next": 921, "ok": 889, "failed": 0, "rows": 889}
+{"stage": "answer", "elapsed_s": 240, "jobs": 986, "next": 958, "ok": 926, "failed": 0, "rows": 926}
+{"stage": "answer", "elapsed_s": 260, "jobs": 986, "next": 989, "ok": 957, "failed": 0, "rows": 957}
+{"stage": "answer", "elapsed_s": 280, "jobs": 986, "next": 1016, "ok": 984, "failed": 0, "rows": 984}
+{"stage": "answer", "elapsed_s": 300, "jobs": 986, "next": 1018, "ok": 986, "failed": 0, "rows": 986}
+{"stage": "answer", "final": {"next": 1018, "ok": 986, "failed": 0, "rows": 986}, "elapsed_s": 300}

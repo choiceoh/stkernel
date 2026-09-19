@@ -1,0 +1,15 @@
+{"label": "data6h", "door_open_after_s": 65.0, "model": "qwen3.8-flash-next", "jobs": 262}
+{"label": "data6h", "elapsed_s": 30, "next": 26, "done": 20, "errors": 0, "prompt_tokens": 74312, "cached_tokens": 39936}
+{"label": "data6h", "elapsed_s": 60, "next": 47, "done": 41, "errors": 0, "prompt_tokens": 160438, "cached_tokens": 82176}
+{"label": "data6h", "elapsed_s": 90, "next": 62, "done": 56, "errors": 0, "prompt_tokens": 260488, "cached_tokens": 130560}
+{"label": "data6h", "elapsed_s": 120, "next": 76, "done": 70, "errors": 0, "prompt_tokens": 362115, "cached_tokens": 177408}
+{"label": "data6h", "elapsed_s": 150, "next": 90, "done": 84, "errors": 0, "prompt_tokens": 445577, "cached_tokens": 208128}
+{"label": "data6h", "elapsed_s": 180, "next": 103, "done": 97, "errors": 0, "prompt_tokens": 514568, "cached_tokens": 223488}
+{"label": "data6h", "elapsed_s": 210, "next": 120, "done": 114, "errors": 0, "prompt_tokens": 589326, "cached_tokens": 238848}
+{"label": "data6h", "elapsed_s": 240, "next": 135, "done": 129, "errors": 0, "prompt_tokens": 644013, "cached_tokens": 244992}
+{"label": "data6h", "elapsed_s": 270, "next": 147, "done": 141, "errors": 0, "prompt_tokens": 698339, "cached_tokens": 244992}
+{"label": "data6h", "elapsed_s": 300, "next": 172, "done": 166, "errors": 0, "prompt_tokens": 753024, "cached_tokens": 244992}
+{"label": "data6h", "elapsed_s": 330, "next": 212, "done": 206, "errors": 0, "prompt_tokens": 809028, "cached_tokens": 244992}
+{"label": "data6h", "elapsed_s": 360, "next": 247, "done": 241, "errors": 0, "prompt_tokens": 862372, "cached_tokens": 244992}
+{"label": "data6h", "elapsed_s": 390, "next": 268, "done": 262, "errors": 0, "prompt_tokens": 907157, "cached_tokens": 244992}
+{"label": "data6h", "final": {"next": 268, "done": 262, "errors": 0, "prompt_tokens": 907157, "cached_tokens": 244992}, "elapsed_s": 390}

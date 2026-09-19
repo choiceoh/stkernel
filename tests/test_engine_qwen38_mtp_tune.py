@@ -523,6 +523,9 @@ class ServedTests(unittest.TestCase):
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text()
         self.assertIn('EXPERTS_ARG="$EXPERTS_ARG --mtp-tuned $TUNED_DIR"', launcher)
         self.assertIn("test -f $TUNED_DIR/mtp-tuned-r${r}of4.safetensors", launcher)
+        # the fifth head is the default (D11, operator 2026-09-20 after window 6b); ST_MTP_TUNED=off is the rollback
+        self.assertIn("TUNED_DIR=${ST_MTP_TUNED:-/home/choiceoh/models/st-qwen38-mtp-tuned5}", launcher)
+        self.assertIn('[ "$TUNED_DIR" = off ] && TUNED_DIR=""', launcher)
 
     def test_the_tap_is_rank_zeros_and_on_by_default_under_a_cap(self):
         """The operator's decision of 2026-09-19 ("전부 켜"): every Qwen boot records the head's inputs on rank 0, the
