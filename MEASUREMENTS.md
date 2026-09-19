@@ -5069,3 +5069,18 @@ sparse 발사와 바이트 동일(GPU). net 은 한 세그먼트 호스트 스�
 `router_fp32.router_logits_mma`: BF16 게이트 그대로 BF16 MMA, K 타일 합은 IEEE `add.rn.f32`, FP32 출력. Qwen 서빙 레인이 쓰고(`router_bf16`) FP32 라우터 아레나(랭크당 ≈ 257 MB)를 잡지 않는다.
 - `q38router-0919c`(21 라운드 최솟값): 16 행 40.7 → 17.9 µs, 512 행 227.0 → 82.5, 4,096 행 1,413.8 → 228.8. float64 대비 최대 오차 1.2~1.8e-6(FP32 라우터 0.6~7.8e-6).
 - 같은 행의 비트가 행 수와 무관(MMA 참, cuBLAS FP32 거짓), 상위 8 선택 같음. **플릿 onepass 미측정**(D17). [상세·원시](measurements/qwen38_router_mma_20260919/README.md).
+### NVMe 대화 티어 — 파킹은 슬롯 통째가 아니라 살아 있는 상태만: GLM-5.3 대화 하나 286 → 48.0 MiB(5.95배, 64 GiB 에 223 → 약 1,192 개), Qwen3.8 109 → 28.3 MiB(3.86배) (2026-09-19, stk-test CPU·Triton 인터프리터, 계산)
+- **무엇.** 파킹이 쓰는 슬롯의 대부분이 `rec` — 층마다 K+1 개의 fp32 상태로, 초안이 거절되면 인덱스로 되돌리려고 둔 것이다: GLM-5.3
+  299,932,672 B 의 95.1%(KDA 34층 × 8칸), Qwen3.8 114,645,248 B 의 98.8%(GDN × 4칸, K=3). 링은 위치로 주소를 매기고 스텝은
+  `(context-1) % (K+1)` 한 칸만 읽는다(`state._read_rec`, `kda/fused_recurrent` — KDA·GDN 링 커널이 같은 커널, 실험용 `kda/deferred` 도,
+  두 넷의 프리필도 같은 칸). 파킹은 이제 그 한 칸과 슬롯의 나머지 필드만 쓴다(`StateRings.live_bytes` → `kv_tier.Segments`,
+  `Model.park_bytes`; Qwen3.8 은 `ComposedModel` → `ServedStore`): GLM 50,371,584 B, Qwen 29,710,400 B. 재개는 슬롯을 0으로 지우고(`open`
+  처럼, Qwen 은 PLE id 링도 빈 칸) 그 바이트를 되돌린다 — prefix 경계 복원과 같은 모양. 통째로 파킹된 옛 대화는 manifest `extra` 크기로
+  알아보고 통째로 읽는다.
+- **같은 결과.** 실제 링 커널(`recurrent_kda_ring`, `_rows`, `recurrent_gdn_ring`)을 인터프리터로: 파킹한 링과 재개한 링(살아 있는 칸 + 0)의
+  스텝 출력과 쓴 칸이 바이트까지 같다; 틀린 칸이나 빈 링은 다르다. NvmeTier 는 조각을 한 바이트 범위로 쓰고(CPU O_DIRECT) 조각마다 되읽는다.
+- **계산.** GLM-5.3 프로덕션 rank 0 의 223개(20:30, 평균 KV 7.3 MB)는 63.80 → 11.97 GiB, 같은 평균이면 64 GiB 에 약 1,192개(5.3배). 파킹·재개의
+  슬롯 바이트 286 → 48 MiB(5.1 GB/s 에서 58.8 → 9.9 ms, 미측정). Qwen3.8 대화는 한 블록 125.5 → 40.6 MB, 10K 토큰 266.7 → 181.8 MB.
+- **미측정.** GPU·플릿 — GLM 은 `probes/engine_full_check.py`(플릿)나 `boot.py --local --layers 0-4 --park`(실캐시 파킹·재개·4토큰 이어 쓰기
+  = 한 번에 돌린 것), Qwen 은 플릿 파킹 자체가 아직 GPU 미검증(#1298). 실제 시간·대화 수.
+  [상세·원시](measurements/park_live_state_20260919/README.md).
