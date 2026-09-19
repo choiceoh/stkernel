@@ -183,12 +183,11 @@ cat <<CONTROLLER
         IdentityFile ~/.ssh/id_ed25519
         IdentitiesOnly yes
 
-  then, for the queue:
+  then, for the queue: nothing to export. This box is the check lane's default host
+  (FLEET_CHECK_GPU_HOST=ost-97x, bench/fleet.sh), and its floor, budget, image and flashinfer
+  are facts in bench/fleet_single.py HOSTS. A check goes there with
 
-    export FLEET_SINGLE_GPU_HOST=$NODE
-    export FLEET_SINGLE_GPU_NAME=RTX5050
-    export FLEET_SINGLE_GPU_FLOOR_GIB=4   # a Spark's 16 guards one shared pool; this card is discrete
-    export ST_PROBE_GIB=4                 # this box is 31 GiB, not a Spark's 128: bench/OST_97X_LANE.md
+    bash bench/fleet.sh run --gpu --check <session> [est] [note] -- bash probes/run_engine_check.sh ...
 
   and check it:
 

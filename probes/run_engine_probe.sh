@@ -55,20 +55,38 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
     mounts+=(--mount "type=bind,src=$models,dst=$models,readonly")
   fi
   # The image production runs on that box, unless the caller named one: the check then
-  # judges the deployed build, and a box that serves has it by construction.
+  # judges the deployed build, and a box that serves has it by construction. A box of its own
+  # serves nothing: its check image is a fact about it (fleet_single.py HOSTS; ost-97x's is the
+  # x86_64 sm_120 build, never the production tag).
   if [ -z "${ST_IMAGE:-}" ]; then
+    # neither found is an answer, not a failure: under pipefail the bare assignment ended the script
+    # silently on a box that serves nothing (ost-97x, 2026-09-19)
     image=$(ssh $SSHOPT "$probe_host" "docker inspect st-glm53 --format '{{.Config.Image}}' 2>/dev/null \
-              || docker image inspect st-engine:glm53 --format '{{index .RepoTags 0}}' 2>/dev/null" | tail -1)
+              || docker image inspect st-engine:glm53 --format '{{index .RepoTags 0}}' 2>/dev/null" | tail -1) || image=
+    [ -n "$image" ] || image=$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")
     [ -n "$image" ] || { echo "ABORT: no ST image on $probe_host (no st-glm53 container, no st-engine:glm53); name one with ST_IMAGE" >&2; exit 1; }
   fi
+  # That check image's flashinfer is pip's, and the b12x path imports a staticmethod only the Sparks'
+  # vendored build carries (bench/compile_sm121a.sh): where the box keeps that build unpacked, it is
+  # mounted over the image's site-packages -- which shadow dist-packages, so that is the place.
+  read -r vendored site <<< "$(python3 "$repo/bench/fleet_single.py" vendored --host "$probe_host")" || true
+  if [ -n "${vendored:-}" ] && [ "$image" = "$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")" ]; then
+    for entry in $(ssh $SSHOPT "$probe_host" "ls -1 '$vendored' 2>/dev/null"); do
+      mounts+=(--mount "type=bind,src=$home/$vendored/$entry,dst=$site/$entry,readonly")
+    done
+  fi
+  # What this check takes of that box: ST_PROBE_GIB, else what the box says a check takes, else a kernel check's.
+  budget=${ST_PROBE_GIB:-$(python3 "$repo/bench/fleet_single.py" budget --host "$probe_host")}
+  where="beside production"
+  python3 "$repo/bench/fleet_single.py" on-fleet --host "$probe_host" || where="on $probe_host, a box of its own"
   # Room beside production, right before taking it, and then IMMEDIATELY FREE pages for it:
   # MemAvailable counts cache a device allocation cannot use on this UMA box (the lane's first
   # ticket OOMed on its first tensor with 26 GiB "available", right after another session's
   # boot), so the budget is faulted and released on that box the way the engine's arena does
   # it (fleet_single.py RECLAIM). Bounded wait, then refuse (D3).
   deadline=$(( $(date +%s) + 60 * ${ST_PROBE_WAIT_MINUTES:-10} ))
-  until room=$(python3 "$repo/bench/fleet_single.py" evidence --host "$probe_host" --gib "${ST_PROBE_GIB:-8}") \
-     && room=$(python3 "$repo/bench/fleet_single.py" reclaim --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"); do
+  until room=$(python3 "$repo/bench/fleet_single.py" evidence --host "$probe_host" --gib "$budget") \
+     && room=$(python3 "$repo/bench/fleet_single.py" reclaim --host "$probe_host" --gib "$budget"); do
     [ "$(date +%s)" -lt "$deadline" ] \
       || { echo "ABORT: no room on $probe_host for ${ST_PROBE_WAIT_MINUTES:-10} min: $room" >&2; exit 1; }
     echo "  waiting for room on $probe_host: $room" >&2
@@ -80,7 +98,7 @@ if [ -n "$probe_host" ] && [ "${probe_host#*@}" != "$(hostname -s)" ] && [ "${pr
   trap 'ssh $SSHOPT "$probe_host" "docker rm -f $NAME" >/dev/null 2>&1 || true' EXIT INT TERM
   printf -v remote '%q ' docker run --rm --name "$NAME" "${gpu[@]}" "${mounts[@]}" "${envs[@]}" \
     --entrypoint python3 "$image" -u "/repo/$probe" "$@"
-  echo "  single GPU: $probe on $probe_host (tree ~/$tree, image $image, budget ${ST_PROBE_GIB:-8} GiB beside production, no fleet lease)" >&2
+  echo "  single GPU: $probe on $probe_host (tree ~/$tree, image $image, budget $budget GiB $where, no fleet lease)" >&2
   rc=0; ssh $SSHOPT "$probe_host" "$remote" || rc=$?
   exit $rc
 fi

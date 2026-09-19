@@ -19,11 +19,15 @@ from fleet_prepare import command_environment
 
 POLICY = 'GPU work is onepass-only; use fleet.sh onepass or the st-* lanes'
 # The queue's GPU lanes. boot and probe take the fleet (four Sparks); single takes ONE GPU
-# on another host (fleet_single.py: the 5050 on ost-97x). A command's lane follows from how
-# many GPUs its entry needs -- `gpus` in the contract -- and the single lane refuses
-# anything that needs four, so a boot can never be sent to one card by naming the lane.
+# beside production (fleet_single.py: srv4), check ONE GPU on a box of its own (the RTX 5050 on
+# ost-97x, checks only -- CHARTER D5). A command's lane follows from how many GPUs its entry
+# needs -- `gpus` in the contract -- and both one-GPU lanes refuse anything that needs four, so
+# a boot can never be sent to one card by naming the lane. The check lane's card is a discrete
+# 8 GiB one, so it also refuses a probe that asks more than a kernel check's budget.
 SINGLE = 'single'
-KINDS = ('boot', 'probe', SINGLE)
+CHECK = 'check'
+KINDS = ('boot', 'probe', SINGLE, CHECK)
+CHECK_MAX_BUDGET_GIB = 8.0      # a kernel check's (probe_budget_gib's default); a full-model probe asks 64
 SHELL_ENTRIES = ('probes/run_engine_probe.sh', 'probes/run_engine_check.sh',
                  'bench/st_bracket.sh')
 PYTHON_ENTRIES = ('bench/onepass.py',)
@@ -284,18 +288,21 @@ def validate(command, cwd, repo, environment=None, *, kind='boot', rehearsal_onl
     if rehearsal_only and relative != ST_BRACKET:
         raise ValueError('CPU rehearsal supports only the ST bracket')
     gpus = gpus_needed(relative, args)
-    if kind == SINGLE and gpus != 1:
-        raise ValueError(POLICY + '; the single-GPU lane takes only an ST check without --distributed, and '
-                         + relative + ' needs the four Sparks')
+    if kind in (SINGLE, CHECK) and gpus != 1:
+        raise ValueError(POLICY + f'; the {"single-GPU" if kind == SINGLE else "check"} lane takes only an ST check '
+                         'without --distributed, and ' + relative + ' needs the four Sparks')
     if relative in ST_ENTRIES and effective.get('ST_PROBE_HOST'):
         # Where a check runs is the lane's decision (the supervisor sets ST_PROBE_HOST for
-        # the single lane), never the command's: an env prefix naming a host would move a
+        # the one-GPU lanes), never the command's: an env prefix naming a host would move a
         # fleet-lane check onto a GPU the queue did not reserve.
-        raise ValueError(POLICY + '; ST_PROBE_HOST is set by the single-GPU lane, not by the command')
+        raise ValueError(POLICY + '; ST_PROBE_HOST is set by the single-GPU lane (or the check lane), not by the command')
     contract = dict(policy='onepass-only', entry=relative, kind=kind, gpus=gpus)
     if relative in ST_ENTRIES:
         # what the check takes beside production: the named probe's own budget, a kernel check's for the rest
         contract['budget_gib'] = probe_budget_gib(args[0] if relative == 'probes/run_engine_probe.sh' and args else '')
+        if kind == CHECK and contract['budget_gib'] > CHECK_MAX_BUDGET_GIB:
+            raise ValueError(POLICY + f'; the check lane is a discrete 8 GiB card for kernel checks, and this probe asks '
+                             f'{contract["budget_gib"]:g} GiB -- run it in the single lane (drop --check)')
     return contract
 
 

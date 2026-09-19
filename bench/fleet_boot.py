@@ -300,13 +300,18 @@ class Supervisor:
             environment['FLEET_PREPARE_MANIFEST'] = accepted['prepare_manifest']
         else:
             environment.pop('FLEET_PREPARE_MANIFEST', None)
-        if getattr(self, 'kind', 'boot') == handoff.SINGLE:
+        kind = getattr(self, 'kind', 'boot')
+        if kind in handoff.ONE_GPU:
             # The lane's decision, applied after the payload's own env prefix so nothing in
             # the command can move the check elsewhere: the ST runner takes ST_PROBE_HOST to
-            # mean "run the container on that host's GPU and take no fleet lease".
+            # mean "run the container on that host's GPU and take no fleet lease". Each one-GPU
+            # lane has its own host: single's beside production, check's a box of its own.
             import fleet_single
-            host = fleet_single.host(self.env)
+            host = fleet_single.host(self.env, lane=kind)
             if not host:
+                if kind == handoff.CHECK:
+                    raise ValueError('the check lane has no host (FLEET_CHECK_GPU_HOST is empty); '
+                                     'resubmit without --check to take the single-GPU lane')
                 raise ValueError('the single-GPU lane has no host (FLEET_SINGLE_GPU_HOST is empty); '
                                  'resubmit with --fleet to take the four Sparks')
             environment['ST_PROBE_HOST'] = host

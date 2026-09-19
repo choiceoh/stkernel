@@ -16,27 +16,30 @@ import time
 
 PROTOCOL = 2
 SINGLE = 'single'   # the lane for a check that needs one GPU, not four (fleet_single.py says where)
+CHECK = 'check'     # the second one-GPU lane: a box of its own, checks only (fleet_single.py, CHARTER D5)
+ONE_GPU = (SINGLE, CHECK)
 
 
 def lane(kind):
-    """'single' for the one-GPU lane; 'fleet' for boot and probe, which take the four Sparks."""
-    return SINGLE if kind == SINGLE else 'fleet'
+    """'single' and 'check' for the one-GPU lanes; 'fleet' for boot and probe, which take the four Sparks."""
+    return kind if kind in ONE_GPU else 'fleet'
 
 
 def holder_path(directory, kind='boot'):
-    """Each lane owns one holder file: `holder` (the fleet) and `holder-single` (the one GPU).
+    """Each lane owns one holder file: `holder` (the fleet), `holder-single` and `holder-check` (one GPU each).
 
-    Two files, not one file with a lane column: everything that already reads `holder` --
+    Separate files, not one file with a lane column: everything that already reads `holder` --
     the ST launcher, the idle controller, restore debt, the AR campaign -- means the FLEET
     by it, and a single-GPU check must never look like the fleet being held to them.
     """
-    return Path(directory) / ('holder-single' if lane(kind) == SINGLE else 'holder')
+    one = lane(kind)
+    return Path(directory) / ('holder-' + one if one in ONE_GPU else 'holder')
 
 
 def holders(directory):
     """{lane: row} for every lane whose holder file names a session."""
     found = {}
-    for name in ('fleet', SINGLE):
+    for name in ('fleet', *ONE_GPU):
         try:
             row = holder_path(directory, name).read_text().strip().split('|')
         except FileNotFoundError:
@@ -145,7 +148,7 @@ def admit(directory, session, pid, kind, estimate='30', note=''):
         stream.flush()
         os.fsync(stream.fileno())
     temporary.replace(holder)
-    if lane(kind) == SINGLE:
+    if lane(kind) in ONE_GPU:
         return True
     if managed:
         claim_held(directory, session, pid)

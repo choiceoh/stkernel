@@ -74,7 +74,7 @@ retain their accepted payloads.
 Bare `request`/`wait` and unvalidated `adopt` cannot create new GPU holds; the
 registered supervisor owns admission for every new GPU command.
 
-The queue has two GPU lanes. A boot or a live onepass takes the
+The queue has three GPU lanes. A boot or a live onepass takes the
 fleet: four Sparks, one holder. An ST check that needs **one** GPU
 (`probes/run_engine_check.sh`, or `run_engine_probe.sh` without `--distributed`)
 takes the single-GPU lane instead: **one Spark beside production**, srv4 by
@@ -95,6 +95,16 @@ tailnet, once it has sshd in WSL2 and an x86_64 image) works the same way throug
 an ssh alias in the controller's `~/.ssh/config`, which owns address, user and
 port. `status` shows the lane beside the fleet, and `kick [--force] single`
 clears its holder.
+
+The third lane is the **check lane** (operator, 2026-09-19: two one-GPU lanes at once):
+`run --gpu --check` sends a one-GPU check to the RTX 5050 on ost-97x
+(`FLEET_CHECK_GPU_HOST`; empty turns it off), with its own holder (`holder-check`), so it
+never waits for the single lane or the fleet and they never wait for it. Its card is sm_120,
+not a GB10: a verdict there is a compile, correctness or shape verdict, never a number for
+`MEASUREMENTS.md` (CHARTER D5) -- a GB10 number stays in the single lane. The box's floor,
+budget, check image and vendored flashinfer are facts in `bench/fleet_single.py` `HOSTS`
+(`bench/OST_97X_LANE.md`), a probe that asks more than a kernel check's budget is refused
+there, and `kick [--force] check` clears its holder.
 
 What a single-GPU check measured comes back as a report, not only as an exit
 code. The supervisor gives the ticket `ST_PROBE_REPORT` (a file under the

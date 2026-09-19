@@ -21,6 +21,12 @@ Spark's: 16 GiB of a GB10's one pool, held for an engine earlyoom would otherwis
 A box of its own owes production nothing and may not even have one pool -- ost-97x has
 31 GiB of host RAM beside a discrete 8 GiB card -- so FLEET_SINGLE_GPU_FLOOR_GIB says
 what that box owes itself instead (bench/OST_97X_LANE.md).
+
+A third lane, `check`, runs beside both on such a box (operator, 2026-09-19: two one-GPU lanes
+at once). It is the same rule with its own holder (`holder-check`) and its own host,
+FLEET_CHECK_GPU_HOST: by default ost-97x, the RTX 5050 in WSL2 -- sm_120, not a GB10, so a
+verdict there is that card's and never a number (CHARTER D5). What a box of its own owes
+itself, and which image and flashinfer it runs, are facts about that box: HOSTS, below.
 """
 from __future__ import annotations
 
@@ -36,6 +42,21 @@ import time
 KIND = 'single'
 DEFAULT_HOST = 'srv4'           # bench/fleet.sh carries the same default; tests/test_fleet_single.py pins that
 DEFAULT_GPU = 'GB10'
+CHECK_KIND = 'check'            # the second one-GPU lane: a box of its own, checks only (D5)
+CHECK_DEFAULT_HOST = 'ost-97x'  # bench/fleet.sh carries the same default; tests/test_fleet_single.py pins that
+CHECK_DEFAULT_GPU = 'RTX5050'
+# lane -> (the host's variable, its default, the card's variable, its default); empty host turns a lane off
+LANES = {KIND: ('FLEET_SINGLE_GPU_HOST', DEFAULT_HOST, 'FLEET_SINGLE_GPU_NAME', DEFAULT_GPU),
+         CHECK_KIND: ('FLEET_CHECK_GPU_HOST', CHECK_DEFAULT_HOST, 'FLEET_CHECK_GPU_NAME', CHECK_DEFAULT_GPU)}
+# What a box of its own owes itself and what it runs -- by its ssh alias (bench/OST_97X_LANE.md). A Spark
+# has no entry: its floor is FLOOR_GIB and its image is the one production runs there.
+#   floor_gib   the room a check leaves the box: host RAM beside a discrete card, not a GB10's one pool
+#   budget_gib  what a check takes of that RAM when the submitter names none: the card's memory is its own
+#   image       the check image (never the production tag -- that one is ARM64, sm_121a)
+#   vendored    under the box's home: the Sparks' flashinfer unpacked, mounted over `site` (the b12x path
+#               imports a staticmethod only the vendored build has; bench/compile_sm121a.sh)
+HOSTS = {'ost-97x': dict(floor_gib=4.0, budget_gib=4.0, image='st-engine:glm53-sm120-x86',
+                         vendored='st-x86-flashinfer/vendored', site='/usr/local/lib/python3.12/site-packages')}
 FLOOR_GIB = 16.0                # = engine/profiles/glm53/boot.py TEST_FLOOR_GIB, what a --test boot leaves the box
 FLOOR_ENV = 'FLEET_SINGLE_GPU_FLOOR_GIB'
 DEFAULT_BUDGET_GIB = 8.0        # what one ST check may take beside production; ST_PROBE_GIB raises or lowers it
@@ -49,28 +70,42 @@ FLEET_HOST = re.compile(r'^(srv[1-4]|spark[a-z0-9]*|10\.10\.(?:0|1|10|11)\.[1-4]
 GIB = 2 ** 20                   # /proc/meminfo counts kB
 
 
-def host(environ=None) -> str:
-    """The lane's host; '' when the lane is off (FLEET_SINGLE_GPU_HOST set to nothing)."""
+def host(environ=None, lane=KIND) -> str:
+    """The lane's host; '' when the lane is off (its FLEET_*_GPU_HOST set to nothing)."""
     env = os.environ if environ is None else environ
-    return env.get('FLEET_SINGLE_GPU_HOST', DEFAULT_HOST).strip()
+    variable, default, _, _ = LANES[lane]
+    return env.get(variable, default).strip()
 
 
-def gpu(environ=None) -> str:
+def gpu(environ=None, lane=KIND) -> str:
     env = os.environ if environ is None else environ
-    return env.get('FLEET_SINGLE_GPU_NAME', DEFAULT_GPU).strip() or DEFAULT_GPU
+    _, _, variable, default = LANES[lane]
+    return env.get(variable, default).strip() or default
 
 
-def budget_gib(environ=None) -> float:
-    """This check's memory budget beside production, in GiB (ST_PROBE_GIB; the default is a kernel check's)."""
+def facts(name: str) -> dict:
+    """HOSTS' entry for that box, by its alias (a `user@` prefix is not part of the name); {} for a Spark."""
+    return HOSTS.get((name or '').rpartition('@')[2].strip().lower(), {})
+
+
+def image(name: str) -> str:
+    """The check image a box of its own runs; '' where production's image is the one (a Spark)."""
+    return facts(name).get('image', '')
+
+
+def budget_gib(environ=None, name=None) -> float:
+    """This check's memory budget beside production, in GiB: ST_PROBE_GIB, else what that box says a check
+    takes (HOSTS), else a kernel check's."""
     env = os.environ if environ is None else environ
+    default = float(facts(name).get('budget_gib', DEFAULT_BUDGET_GIB))
     try:
-        value = float(env.get(BUDGET_ENV, DEFAULT_BUDGET_GIB))
+        value = float(env.get(BUDGET_ENV, default))
     except (TypeError, ValueError):
-        return DEFAULT_BUDGET_GIB
-    return value if value > 0 else DEFAULT_BUDGET_GIB
+        return default
+    return value if value > 0 else default
 
 
-def floor_gib(environ=None) -> float:
+def floor_gib(environ=None, name=None) -> float:
     """The room a check must leave that box, in GiB (FLEET_SINGLE_GPU_FLOOR_GIB).
 
     The default is a Spark's, and it is a Spark's for a reason: 16 GiB is what a --test
@@ -79,14 +114,16 @@ def floor_gib(environ=None) -> float:
     be one -- ost-97x has 31 GiB of host RAM and a discrete 8 GiB card, so a check's
     device memory is not drawn from what this floor guards and 16 GiB of host RAM refuses
     every check the box could otherwise run (2026-09-15: MemAvailable 13.6 GiB, so even a
-    zero budget was refused). What such a box owes itself instead is this.
+    zero budget was refused). What such a box owes itself instead is this: the variable when
+    it is set, else that box's own entry in HOSTS.
     """
     env = os.environ if environ is None else environ
+    default = float(facts(name).get('floor_gib', FLOOR_GIB))
     try:
-        value = float(env.get(FLOOR_ENV, FLOOR_GIB))
+        value = float(env.get(FLOOR_ENV, default))
     except (TypeError, ValueError):
-        return FLOOR_GIB
-    return value if value >= 0 else FLOOR_GIB
+        return default
+    return value if value >= 0 else default
 
 
 def on_fleet(name: str, environ=None) -> bool:
@@ -102,11 +139,11 @@ def on_fleet(name: str, environ=None) -> bool:
     return bool(FLEET_HOST.match(name.rpartition('@')[2].strip().lower()))
 
 
-def label(environ=None) -> str:
-    name = host(environ)
+def label(environ=None, lane=KIND) -> str:
+    name = host(environ, lane)
     if not name:
         return 'off'
-    return f'{gpu(environ)} on {name}' + (' beside production' if on_fleet(name, environ) else '')
+    return f'{gpu(environ, lane)} on {name}' + (' beside production' if on_fleet(name, environ) else '')
 
 
 def target(name: str) -> str:
@@ -174,8 +211,8 @@ def reclaim(name: str, budget: float = None, *, run=subprocess.run, timeout: flo
     """Make `budget` GiB immediately free on that box, or say why not; [] means it is free now."""
     if not name:
         return ['the single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)']
-    budget = budget_gib() if budget is None else float(budget)
-    floor = floor_gib() if floor is None else float(floor)
+    budget = budget_gib(name=name) if budget is None else float(budget)
+    floor = floor_gib(name=name) if floor is None else float(floor)
     import base64
     code = base64.b64encode(RECLAIM.encode()).decode()
     command = f'python3 -c "import base64,sys;exec(base64.b64decode(\'{code}\'))" {budget} {floor}'
@@ -202,8 +239,8 @@ def evidence(name: str, budget: float = None, *, run=subprocess.run, timeout: fl
     """Every reason to believe that box has no room for this check; [] means it has. Not knowing is a reason."""
     if not name:
         return ['the single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)']
-    budget = budget_gib() if budget is None else float(budget)
-    floor = floor_gib() if floor is None else float(floor)
+    budget = budget_gib(name=name) if budget is None else float(budget)
+    floor = floor_gib(name=name) if floor is None else float(floor)
     try:
         done = run([*SSH, target(name), QUERY], capture_output=True, text=True, timeout=timeout)
     except (OSError, subprocess.SubprocessError) as exc:
@@ -226,10 +263,11 @@ def evidence(name: str, budget: float = None, *, run=subprocess.run, timeout: fl
 
 def cached_evidence(name: str, directory, budget: float = None, *, ttl: float = TTL_S, now=time.time,
                     run=subprocess.run, floor: float = None) -> list:
-    """`evidence`, remembered for `ttl` seconds under the fleet directory (one ssh per TTL)."""
-    budget = budget_gib() if budget is None else float(budget)
-    floor = floor_gib() if floor is None else float(floor)   # part of the key: a changed floor must not read an answer computed under the old one
-    path = Path(directory) / CACHE
+    """`evidence`, remembered for `ttl` seconds under the fleet directory (one ssh per TTL), one file a host:
+    two lanes asking about two boxes must not overwrite each other's answer every poll."""
+    budget = budget_gib(name=name) if budget is None else float(budget)
+    floor = floor_gib(name=name) if floor is None else float(floor)   # part of the key: a changed floor must not read an answer computed under the old one
+    path = Path(directory) / cache_name(name)
     try:
         value = json.loads(path.read_text())
         if (isinstance(value, dict) and value.get('host') == name and value.get('budget') == budget
@@ -247,6 +285,12 @@ def cached_evidence(name: str, directory, budget: float = None, *, ttl: float = 
     except OSError:
         pass
     return reasons
+
+
+def cache_name(name: str) -> str:
+    """The evidence cache for one host: `.single-gpu-evidence` for the single lane's default host (as before),
+    `.single-gpu-evidence.<host>` for any other."""
+    return CACHE if name == DEFAULT_HOST else CACHE + '.' + re.sub(r'[^A-Za-z0-9_.=-]', '_', name)
 
 
 def report_name(session: str) -> str:
@@ -309,8 +353,11 @@ def collect(name: str, since: float, into, run=subprocess.run):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('evidence', 'reclaim', 'host', 'label', 'on-fleet', 'budget', 'floor', 'collect'))
-    parser.add_argument('--host', default=None, help='defaults to FLEET_SINGLE_GPU_HOST, then ' + DEFAULT_HOST)
+    parser.add_argument('action', choices=('evidence', 'reclaim', 'host', 'label', 'on-fleet', 'budget', 'floor', 'collect',
+                                           'image', 'vendored'))
+    parser.add_argument('--lane', choices=tuple(LANES), default=KIND,
+                        help='whose host --host defaults to: single (FLEET_SINGLE_GPU_HOST) or check (FLEET_CHECK_GPU_HOST)')
+    parser.add_argument('--host', default=None, help='defaults to the lane\'s host: ' + DEFAULT_HOST + ' or ' + CHECK_DEFAULT_HOST)
     parser.add_argument('--gib', type=float, default=None, help=f'this check\'s budget; defaults to {BUDGET_ENV}, then {DEFAULT_BUDGET_GIB}')
     parser.add_argument('--floor', type=float, default=None,
                         help=f'the room a check must leave that box; defaults to {FLOOR_ENV}, then {FLOOR_GIB} (a Spark\'s)')
@@ -320,9 +367,16 @@ def main(argv=None):
     parser.add_argument('--into', default=None, help='collect: the controller directory the files go to')
     parser.add_argument('--session', default=None, help='collect: the ticket, to read the report its check left')
     args = parser.parse_args(argv)
-    name = host() if args.host is None else args.host.strip()
+    name = host(lane=args.lane) if args.host is None else args.host.strip()
     if args.action == 'host':
         print(name)
+        return 0
+    if args.action == 'image':
+        print(image(name))
+        return 0
+    if args.action == 'vendored':
+        entry = facts(name)
+        print(f"{entry['vendored']} {entry['site']}" if entry.get('vendored') else '')
         return 0
     if args.action == 'collect':
         if args.since is None or not args.into or not name:
@@ -339,13 +393,13 @@ def main(argv=None):
         print(line)
         return 0
     if args.action == 'label':
-        print(label())
+        print(label(lane=args.lane))
         return 0
     if args.action == 'budget':
-        print(budget_gib() if args.gib is None else args.gib)
+        print(budget_gib(name=name) if args.gib is None else args.gib)
         return 0
     if args.action == 'floor':
-        print(floor_gib() if args.floor is None else args.floor)
+        print(floor_gib(name=name) if args.floor is None else args.floor)
         return 0
     if args.action == 'on-fleet':
         return 0 if on_fleet(name) else 1
