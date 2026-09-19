@@ -200,6 +200,50 @@ class CreateTests(unittest.TestCase):
                 self.assertIn('prepared', printed)
 
 
+class PreparedSTAdmissionTests(unittest.TestCase):
+    def value(self, command=None):
+        return dict(session='qwen-test', cwd=str(ROOT), arms=[CAND],
+                    command=command or ['env', 'ST_BRACKET_PROFILE=qwen38',
+                                        'bash', 'bench/st_bracket.sh', 'pair', CAND])
+
+    def test_boot_boundary_checks_receipt_inputs_and_canonical_policy(self):
+        from unittest import mock
+        for verify_only in (False, True):
+            value = self.value()
+            with mock.patch.object(fleet_prepare.fleet_prepared, 'read', return_value=value) as read, \
+                    mock.patch.object(fleet_prepare, 'validate') as validate:
+                result = fleet_prepare.validate_targets('/fleet', '/receipt', verify_only=verify_only)
+            read.assert_called_once_with('/fleet', '/receipt')
+            validate.assert_called_once_with(value, directory='/fleet')
+            self.assertEqual(result['contract']['entry'], 'bench/st_bracket.sh')
+            self.assertEqual(result['contract']['gpus'], 4)
+            self.assertEqual(result['arms'], [CAND])
+            self.assertEqual(result['evidence'], 'authenticated ST preparation')
+
+    def test_bad_receipts_changed_inputs_and_custom_gpu_commands_are_refused(self):
+        from unittest import mock
+        with mock.patch.object(fleet_prepare.fleet_prepared, 'read', side_effect=ValueError('bad receipt')):
+            with self.assertRaisesRegex(ValueError, 'bad receipt'):
+                fleet_prepare.validate_targets('/fleet', '/receipt')
+        with mock.patch.object(fleet_prepare.fleet_prepared, 'read', return_value=self.value()), \
+                mock.patch.object(fleet_prepare, 'validate', side_effect=ValueError('queued input changed')):
+            with self.assertRaisesRegex(ValueError, 'queued input changed'):
+                fleet_prepare.validate_targets('/fleet', '/receipt')
+        with mock.patch.object(fleet_prepare.fleet_prepared, 'read', return_value=self.value(['bash', '-c', 'true'])), \
+                mock.patch.object(fleet_prepare, 'validate'):
+            with self.assertRaisesRegex(ValueError, 'custom commands'):
+                fleet_prepare.validate_targets('/fleet', '/receipt')
+
+    def test_validate_targets_cli_reports_admission_without_the_retired_function(self):
+        from unittest import mock
+        with mock.patch.dict(os.environ, {'FLEET_DIR': '/fleet'}), \
+                mock.patch.object(fleet_prepare.fleet_prepared, 'read', return_value=self.value()), \
+                mock.patch.object(fleet_prepare, 'validate'), contextlib.redirect_stdout(io.StringIO()) as output:
+            code = fleet_prepare.main(['validate-targets', 'qwen-test', '--prepared', '/receipt'])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())['contract']['kind'], 'boot')
+
+
 class ReleaseCutTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

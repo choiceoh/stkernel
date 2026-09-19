@@ -670,6 +670,30 @@ def repin(directory, session, record, value):
     return fleet_prepared.read(directory, fresh['prepare_manifest'])
 
 
+def validate_targets(directory, prepared, *, verify_only=False, _validated_value=None, controller=None):
+    """Check the authenticated ST preparation, without the retired vLLM approval store.
+
+    Boot submission and queued revalidation still call this boundary. The
+    release's canonical ST runner and signed inputs are the contract now;
+    this is admission evidence, never a GPU or output-quality verdict.
+    """
+    from fleet_onepass import validate as validate_onepass
+    value = _validated_value
+    if value is None:
+        value = fleet_prepared.read(directory, prepared)
+        validate(value, directory=directory)
+    if controller is None:
+        repo = Path(__file__).resolve().parent.parent
+        environment = fleet_prepared.request_environment(value['cwd'], value['session'])
+    else:
+        import fleet_pending
+        repo = Path(controller['fleet']).resolve().parent.parent
+        environment = fleet_pending.supervisor_environment(controller, Path(directory))
+    contract = validate_onepass(value['command'], value['cwd'], repo, environment=environment, kind='boot')
+    return dict(session=value['session'], evidence='authenticated ST preparation',
+                contract=contract, arms=value.get('arms', []))
+
+
 def check_pending(directory, session, *, refresh=False, external=True, withdraw_failed=False):
     import fleet_pending
     record = fleet_pending.read_record(Path(directory), session)
