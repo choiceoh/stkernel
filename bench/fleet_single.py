@@ -249,6 +249,37 @@ def cached_evidence(name: str, directory, budget: float = None, *, ttl: float = 
     return reasons
 
 
+def report_name(session: str) -> str:
+    """The file a ticket's check writes what it measured to (probes/probe_report.py), under the lane host's
+    ~/.cache/st -- the container's /cache. One name a ticket, in the characters `collect` copies back."""
+    return 'probe-report-' + re.sub(r'[^A-Za-z0-9_.=-]', '_', session) + '.json'
+
+
+def read_report(path, session: str):
+    """(state, detail) for the report a ticket's check left: passed | failed | unreadable.
+
+    Read here, on the controller, from what `collect` copied back. `passed` is recomputed from the proof
+    markers rather than believed, and a report written for another ticket is unreadable, not evidence:
+    the lane host's ~/.cache/st outlives every ticket.
+    """
+    try:
+        report = json.loads(Path(path).read_text())
+        if not isinstance(report, dict) or report.get('schema') != 2:
+            raise ValueError('not a schema-2 probe report')
+        if report.get('session') != session:
+            raise ValueError(f"written for ticket {report.get('session')!r}, not {session!r}")
+        proof, metrics, samples, device = (report.get(k) for k in ('proof', 'metrics', 'samples', 'device'))
+        if (not isinstance(proof, dict) or not proof or any(type(v) is not bool for v in proof.values())
+                or not isinstance(metrics, dict) or not metrics or type(samples) is not int or samples < 1
+                or not isinstance(device, str) or not device.strip()):
+            raise ValueError('proof, metrics, samples or device missing')
+    except (OSError, ValueError) as exc:
+        return 'unreadable', str(exc)
+    what = f'{samples} sample(s) on {device.strip()}, {len(metrics)} metric(s)'
+    failed = sorted(k for k, v in proof.items() if not v)
+    return ('failed', what + '; proof not held: ' + ', '.join(failed)) if failed else ('passed', what)
+
+
 RESULT_FIND = ("find .cache/st -maxdepth 1 -type f -newermt @{since} "
                "\\( -name '*.json' -o -name '*.jsonl' -o -name '*.log' -o -name '*.tsv' \\) -print")
 
@@ -287,6 +318,7 @@ def main(argv=None):
     parser.add_argument('--ttl', type=float, default=TTL_S)
     parser.add_argument('--since', type=float, default=None, help='collect: files the lane host wrote after this epoch second')
     parser.add_argument('--into', default=None, help='collect: the controller directory the files go to')
+    parser.add_argument('--session', default=None, help='collect: the ticket, to read the report its check left')
     args = parser.parse_args(argv)
     name = host() if args.host is None else args.host.strip()
     if args.action == 'host':
@@ -296,7 +328,15 @@ def main(argv=None):
         if args.since is None or not args.into or not name:
             parser.error('collect needs --since, --into and a lane host')
         copied = collect(name, args.since, args.into)
-        print(len(copied))
+        if args.session is None:
+            print(len(copied))
+            return 0
+        # the queue's log line: how many files came back, and what the check's own report says
+        line = f'{len(copied)} file(s)'
+        if report_name(args.session) in copied:
+            state, detail = read_report(Path(args.into) / report_name(args.session), args.session)
+            line += f', report {state} ({detail})'
+        print(line)
         return 0
     if args.action == 'label':
         print(label())

@@ -635,7 +635,8 @@ class Qwen38Net:
         host); a captured step keeps every route, another rank's on local expert 0 at weight 0 (lanes.local_routes)."""
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix + "moe."
-        scores = torch.mm(x, p[n + "gates"].t())                     # [N, experts + 1]: the router, then the shared gate
+        gates = p[n + "gates"]                                       # [experts + 1, H]: the router, then the shared gate
+        scores = lanes.rows_linear(x, gates) if lanes.rows_linear is not None else torch.mm(x, gates.t())
         if compact or lanes.route_local is None:
             ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
             routed = self._experts[prefix](x, ids, weights, compact=compact)

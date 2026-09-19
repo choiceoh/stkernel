@@ -202,8 +202,16 @@ class Residual(Protocol):
 
 class Feature(Protocol):
     """A sublayer (a mixer, a channel mixer) or an injection: (layer, input, step, state) -> output. An injection's input
-    is the residual state and its output is added to it."""
+    is the residual state and its output is added to it.
+
+    Optional, and the reason it exists: `rows_at(layer) -> int` names the model layer a layer's cached rows LIVE on,
+    when that is not the layer itself. A feature that declares it is kept once per distinct owner instead of once per
+    layer it runs on (`_specs`), and its reads and writes address the owner (`state.rows(owner, ...)`) -- so several
+    layers share one lane rather than each holding a copy. DeepSeek-V4.1 is why: its compressed KV is produced by the
+    layers `kv_source_layer_ids` names and attended by the layers after them. A feature without it is kept once per
+    layer it runs on, which is every feature GLM-5.3 and Qwen3.8 have."""
     def __call__(self, layer: int, x: torch.Tensor, step: Step, state: State) -> torch.Tensor: ...
+    def rows_at(self, layer: int) -> int: ...
 
 
 @dataclass(frozen=True)
@@ -296,6 +304,7 @@ class Composition:
             layers = [self.offset + i for i in self.plan.layers_of(name)]
             if declare is None or not layers:
                 continue
+            layers = self._owners(name, feature, layers)
             for spec in declare(layers):
                 yield name, layers, spec
         declare = getattr(self.residual, "cache_specs", None)       # the residual form's own state, on every layer
@@ -303,6 +312,23 @@ class Composition:
             layers = [self.offset + i for i in range(len(self.plan.layers))]
             for spec in declare(layers):
                 yield "residual", layers, spec
+
+    @staticmethod
+    def _owners(name: str, feature, layers: "list[int]") -> "list[int]":
+        """The layers a feature is KEPT for: the layers it runs on, or -- with `rows_at` -- the distinct layers its
+        rows live on (engine/base/composition.Feature). The store gives one region per entry and refuses any other
+        layer by name, so a consumer that forgot to address the owner fails where it reads, not in silence."""
+        rows_at = getattr(feature, "rows_at", None)
+        if rows_at is None:
+            return layers
+        owners = []
+        for layer in layers:
+            owner = rows_at(layer)
+            if type(owner) is not int:
+                raise ValueError(f"{name}.rows_at({layer}) is {owner!r}: a feature's rows live on a model layer")
+            if owner not in owners:
+                owners.append(owner)
+        return sorted(owners)
 
 
 __all__ = ["SITES", "Segment", "Step", "State", "put_state", "Residual", "Feature", "Layer", "Plan", "Composition"]

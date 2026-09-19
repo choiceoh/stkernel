@@ -600,7 +600,9 @@ def _serve_mhc_variant(shape, lane):
     """The fastest kernel for a hyper-connection form the MK segment and the TileLang mixes do not compute."""
     if shape.hc_variant == GATED_RESIDUAL_VARIANT:
         return _serve(SPECIALIZED, "engine/kernels/gated_residual (the gated residual in five launches a site: the previous "
-                      "leave joined to the stream norm, down and inject in one BF16 GEMM, the gates, up, the stream mean)",
+                      "leave joined to the stream norm, down and inject in one BF16 GEMM, the gates, up, the stream mean; "
+                      "a decode step's 1-16 rows in three: the leave with the norm, down with the gates, up with the "
+                      "mean)",
                       False, "gated_residual.qualify holds it to engine/modules/hyper_connection.gated_residual at the "
                       "model's widths before a boot serves; unjudged on a GPU")
     why = mhc_v41_refusal(shape)

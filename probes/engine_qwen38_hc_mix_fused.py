@@ -30,6 +30,13 @@ any kind could recover. If a GB10 reports tens of microseconds there, the fold i
 GLM's MK_SEG_MHC is, not a Triton launch. Run it through the single-GPU lane:
 
     bash probes/run_engine_probe.sh probes/engine_qwen38_hc_mix_fused.py
+
+What the GB10 said (2026-09-19, measurements/qwen38_hc_headroom_20260919): headroom 2.0-2.8 us at 1..8 rows -- the
+ledger's fixed cost is not at this site, and folding launches alone is worth 0.2-0.3 ms a step. READ ONLY THE HEADROOM:
+this probe replays ONE 13.2 MB weight pair, so its GEMMs come out at 423 GB/s, above the card's 273 -- cache reads,
+where a served step reads a hundred sites' distinct weights (the same two products are 61-66 us with the weights
+rotated past 64 MB). And "a fold written in Triton loses on any card" above is true of this prototype's shape only: a
+GEMV that reads each weight tile once for all rows beats cuBLAS on a GB10 and carries the fold (the skinny-GEMV work).
 """
 from __future__ import annotations
 
@@ -45,12 +52,10 @@ import triton.language as tl
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from engine.kernels import gated_residual as hcr  # noqa: E402
-
-try:                                                # the single-GPU lane ships engine/ and probes/ to its box, not bench/
-    from bench.probe_report import write_report     # noqa: E402
-except ModuleNotFoundError:
-    def write_report(metrics, proof, samples, device):
-        """No queue contract to report through here: the printed table and the JSON line are the record."""
+# The report's writer lives under probes/ because that is what the single-GPU lane ships to its box (engine/, probes/,
+# tests/ -- not bench/). Imported from bench/ this probe died there on this line (2026-09-19), and behind a guard its
+# report was silently dropped on the one lane it is for.
+from probes.probe_report import write_report  # noqa: E402
 
 HC, HIDDEN, RANK = 4, 2560, 320                     # Qwen3.8's streams, hidden width and mixer rank (hc_lowrank)
 ROWS = (1, 2, 4, 6, 8)                              # a captured step's token rows: max_seqs 4 x (SPEC_K + 1)

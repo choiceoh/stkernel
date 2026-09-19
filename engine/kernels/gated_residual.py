@@ -1,4 +1,4 @@
-"""The gated residual hyper-connection in five launches a site (Qwen3.8's residual form).
+"""The gated residual hyper-connection in five launches a site, three for a decode step's rows (Qwen3.8's residual form).
 
 engine/modules/hyper_connection.gated_residual is the oracle: the hc streams laid end to end [N, hc*H] are RMS
 normalised one by one (unit-offset weight), a low-rank mixer weights every channel of every stream --
@@ -13,6 +13,22 @@ closing mixer), over rows 10,240 wide. Here a site is:
     gates        silu(x / hc) on the mixer rows, 2*sigmoid(z / hc) on the injection rows              one launch
     GEMM         up                                                                                    one launch
     mix_mean     sigmoid(up) * normed, averaged over the streams                                       one launch
+
+A decode step's rows (1..16, `DECODE_ROWS`) take `mix_rows` instead: the two products on the skinny GEMV
+(engine/kernels/common/skinny_gemv -- one read of each weight tile for every row), each with the elementwise launch
+after it folded into its store -- carry H2's two launches a site (the gates ride the down launch rather than the up
+one), three launches a site:
+
+    leave_norm   as above                                                                              one launch
+    down_gates   down(+inject) for the rows, split over K; the last program of a column block sums     one launch
+                 the split, rounds the product to BF16 where the GEMM's output did, and stores the gates
+    up_mean      up for one block of hidden channels in each stream, sigmoid, times the streams, the   one launch
+                 mean over them -- the up product never leaves the program
+
+The arithmetic after each product is `_gates`' and `_mix_mean`'s, on the same BF16 product, so the site's outputs are
+byte for byte the five-launch site's with the same products (probes/engine_qwen38_gemv, q38site-0919a). On a GB10 at
+Qwen3.8's widths the mixer went from 66.5-70.5 us (its four launches on cuBLAS, plus an output copy the probe added)
+to 60.3-61.8 us for 1-16 rows, 16 sites a graph over rotated weights: 13.2 MB of weights at about 218 GB/s.
 
 `norm_streams` opens the first site (no output to add yet) and follows an injection feature that reads the
 streams between two sites (Qwen3.8's PLE before layer 1, the config's one-indexed 2); `leave` adds an output without the norm for the same
@@ -34,6 +50,12 @@ from __future__ import annotations
 import torch
 import triton
 import triton.language as tl
+
+from engine.kernels.common import skinny_gemv
+from engine.kernels.common.skinny_gemv import rows_dot, split_span, split_sum
+
+DECODE_ROWS = skinny_gemv.MAX_ROWS          # rows up to this take `mix_rows`
+UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
 
 @triton.jit
@@ -101,6 +123,53 @@ def _mix_mean(UP, NORMED, OUT, sU, sN, sO, HC_F, HID: tl.constexpr, BD: tl.const
         n = tl.load(NORMED + r * sN + off, mask=m, other=0.0).to(tl.float32)
         acc += (g * n).to(u.dtype).to(tl.float32)
     tl.store(OUT + r * sO + d, (acc / HC_F).to(OUT.dtype.element_ty), mask=m)
+
+
+@triton.jit
+def _gate_store(total, rows, cols, M, MIX, INJ, sM, sI, HC_F, R: tl.constexpr, HC: tl.constexpr,
+                WITH_INJECT: tl.constexpr):
+    # `_gates` over the product's columns: the product rounds to BF16 first, as the GEMM's output does
+    x = total.to(MIX.dtype.element_ty)
+    q = (x.to(tl.float32) / HC_F).to(x.dtype).to(tl.float32)
+    live = rows[:, None] < M
+    tl.store(MIX + rows[:, None] * sM + cols[None, :], (q * tl.sigmoid(q)).to(x.dtype), mask=live & (cols[None, :] < R))
+    if WITH_INJECT:
+        g = tl.sigmoid(q).to(x.dtype).to(tl.float32)
+        tl.store(INJ + rows[:, None] * sI + (cols - R)[None, :], (2.0 * g).to(x.dtype),
+                 mask=live & (cols[None, :] >= R) & (cols[None, :] < R + HC))
+
+
+@triton.jit
+def _down_gates(X, W, MIX, INJ, PART, LOCKS, M, N, K, sX, sW, sM, sI, HC_F, R: tl.constexpr, HC: tl.constexpr,
+                WITH_INJECT: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, SPLIT: tl.constexpr,
+                FP32_DOT: tl.constexpr):
+    pid_n, pid_k = tl.program_id(0), tl.program_id(1)
+    rows = tl.arange(0, 16)
+    cols = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    k0, k1 = split_span(K, pid_k, SPLIT, BLOCK_K)
+    acc = rows_dot(X, W, sX, sW, rows, cols, M, N, k0, k1, BLOCK_N, BLOCK_K, FP32_DOT)
+    if SPLIT == 1:
+        _gate_store(acc, rows, cols, M, MIX, INJ, sM, sI, HC_F, R, HC, WITH_INJECT)
+    else:
+        total, last = split_sum(acc, PART, LOCKS, pid_n, pid_k, rows, cols, M, N, SPLIT)
+        if last:
+            _gate_store(total, rows, cols, M, MIX, INJ, sM, sI, HC_F, R, HC, WITH_INJECT)
+
+
+@triton.jit
+def _up_mean(G, W, NORMED, OUT, M, sG, sW, sN, sO, HC_F, HID: tl.constexpr, R: tl.constexpr, HC: tl.constexpr,
+             BLOCK_D: tl.constexpr, BLOCK_K: tl.constexpr, FP32_DOT: tl.constexpr):
+    # `_mix_mean` over one block of hidden channels, the up product's four streams computed here
+    rows = tl.arange(0, 16)
+    d = tl.program_id(0) * BLOCK_D + tl.arange(0, BLOCK_D)
+    live = (rows[:, None] < M) & (d[None, :] < HID)
+    acc = tl.zeros((16, BLOCK_D), dtype=tl.float32)
+    for s in tl.static_range(HC):
+        u = rows_dot(G, W, sG, sW, rows, s * HID + d, M, s * HID + HID, 0, R, BLOCK_D, BLOCK_K, FP32_DOT)
+        g = tl.sigmoid(u.to(OUT.dtype.element_ty).to(tl.float32)).to(OUT.dtype.element_ty).to(tl.float32)
+        n = tl.load(NORMED + rows[:, None] * sN + (s * HID + d)[None, :], mask=live, other=0.0).to(tl.float32)
+        acc += (g * n).to(OUT.dtype.element_ty).to(tl.float32)
+    tl.store(OUT + rows[:, None] * sO + d[None, :], (acc / HC_F).to(OUT.dtype.element_ty), mask=live)
 
 
 def _warps(width: int) -> int:
@@ -197,6 +266,8 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
         mixed = (weights * normed.unflatten(-1, (hc, hid))).mean(dim=-2)
         return mixed, (2 * torch.sigmoid(di[:, rank:] / hc) if inject else None)
     rows = normed.shape[0]
+    if project_down is None and project_up is None and folds(normed, down_inject, up):
+        return mix_rows(normed, down_inject, up, hc, inject=inject)
     di = torch.mm(normed, down_inject.t()) if project_down is None else project_down(normed)
     if di.shape != (rows, down_inject.shape[0]) or di.dtype != normed.dtype or di.stride(1) != 1:
         raise ValueError("the down projection returns packed [N, r(+hc)] rows in the streams' dtype")
@@ -214,6 +285,51 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
     if rows:
         _mix_mean[(rows,)](weights, normed, mixed, weights.stride(0), normed.stride(0), mixed.stride(0), float(hc),
                            HID=hid, BD=triton.next_power_of_2(hid), HC=hc, num_warps=_warps(hid))
+    return mixed, injection
+
+
+def folds(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> bool:
+    """Whether `mix_rows` serves this site: 1..DECODE_ROWS rows in BF16, a down projection the skinny GEMV has a
+    tile for, each operand packed along its last dimension."""
+    return (1 <= normed.shape[0] <= DECODE_ROWS and tuple(down_inject.shape) in skinny_gemv.CONFIGS
+            and normed.dtype == down_inject.dtype == up.dtype == torch.bfloat16
+            and normed.stride(1) == 1 and down_inject.stride(1) == 1 and up.stride(1) == 1)
+
+
+def mix_rows(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
+             inject: bool = True) -> "tuple[torch.Tensor, torch.Tensor | None]":
+    """`mix` for a decode step's rows in two launches (the module's docstring: carry H2): (mixed [N, H],
+    injection [N, hc] or None). `mix` takes it on CUDA where `folds` says; the Triton interpreter runs it on the CPU."""
+    hid = _check_streams(normed, hc)
+    rank = up.shape[1]
+    if up.shape != (normed.shape[1], rank) or down_inject.shape != (rank + (hc if inject else 0), normed.shape[1]):
+        raise ValueError(f"a site mixes through down(+inject) [{rank}{' + ' + str(hc) if inject else ''}, "
+                         f"{normed.shape[1]}] and up [{normed.shape[1]}, {rank}]")
+    if not folds(normed, down_inject, up):
+        raise ValueError(f"mix_rows takes 1..{DECODE_ROWS} BF16 rows of a down projection skinny_gemv tiles; got "
+                         f"{tuple(normed.shape)} {normed.dtype} over {tuple(down_inject.shape)}")
+    rows, width = normed.shape
+    n = down_inject.shape[0]
+    block_n, block_k, split, warps, stages = skinny_gemv.CONFIGS[tuple(down_inject.shape)]
+    gates = torch.empty(rows, rank, device=normed.device, dtype=normed.dtype)
+    injection = torch.empty(rows, hc, device=normed.device, dtype=normed.dtype) if inject else None
+    inj = gates if injection is None else injection
+    if split > 1:
+        partial = torch.empty(split, rows, n, device=normed.device, dtype=torch.float32)
+        locks = skinny_gemv.prepare(normed.device)
+    else:
+        partial = locks = gates
+    interpreted = not normed.is_cuda
+    _down_gates[(triton.cdiv(n, block_n), split)](
+        normed, down_inject, gates, inj, partial, locks, rows, n, width, normed.stride(0), down_inject.stride(0),
+        gates.stride(0), inj.stride(0), float(hc), R=rank, HC=hc, WITH_INJECT=inject, BLOCK_N=block_n,
+        BLOCK_K=block_k, SPLIT=split, FP32_DOT=interpreted, num_warps=warps, num_stages=stages)
+    mixed = torch.empty(rows, hid, device=normed.device, dtype=normed.dtype)
+    block_d, block_k, warps, stages = UP_TILE
+    _up_mean[(triton.cdiv(hid, block_d),)](
+        gates, up, normed, mixed, rows, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0), float(hc),
+        HID=hid, R=rank, HC=hc, BLOCK_D=block_d, BLOCK_K=block_k, FP32_DOT=interpreted, num_warps=warps,
+        num_stages=stages)
     return mixed, injection
 
 
@@ -270,4 +386,5 @@ def qualify(device, *, hc: int, hidden: int, rank: int, eps: float, dtype=torch.
     return worst
 
 
-__all__ = ["pack_down_inject", "norm_streams", "leave", "leave_norm", "mix", "drift", "qualify"]
+__all__ = ["DECODE_ROWS", "pack_down_inject", "norm_streams", "leave", "leave_norm", "mix", "folds", "mix_rows", "drift",
+           "qualify"]

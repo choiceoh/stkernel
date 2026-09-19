@@ -1,0 +1,982 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 9,
+ "calls_a_graph": 16,
+ "shapes": {
+  "router": {
+   "weight_MB": 2.63,
+   "rows": {
+    "1": {
+     "cublas": {
+      "us": 13.78,
+      "GBps": 190.6
+     },
+     "(32, 256, 1, 4, 3)": {
+      "us": 14.37,
+      "GBps": 182.7,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(16, 256, 1, 4, 3)": {
+      "us": 13.98,
+      "GBps": 187.8,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 2)": {
+      "us": 16.92,
+      "GBps": 155.2,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(32, 256, 2, 4, 3)": {
+      "us": 14.68,
+      "GBps": 178.9,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(16, 256, 2, 4, 3)": {
+      "us": 14.8,
+      "GBps": 177.5,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(16, 256, 5, 4, 2)": {
+      "us": 14.85,
+      "GBps": 176.8,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(32, 256, 5, 4, 2)": {
+      "us": 14.85,
+      "GBps": 176.9,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 1)": {
+      "us": 15.51,
+      "GBps": 169.3,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(32, 128, 4, 4, 3)": {
+      "us": 14.45,
+      "GBps": 181.8,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(64, 256, 5, 4, 2)": {
+      "us": 15.26,
+      "GBps": 172.1,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(16, 256, 5, 2, 2)": {
+      "us": 14.86,
+      "GBps": 176.7,
+      "rel_err": 0.00228,
+      "repeatable": true
+     },
+     "(32, 256, 5, 8, 2)": {
+      "us": 14.74,
+      "GBps": 178.1,
+      "rel_err": 0.00228,
+      "repeatable": true
+     }
+    },
+    "4": {
+     "cublas": {
+      "us": 27.95,
+      "GBps": 94.0
+     },
+     "(32, 256, 1, 4, 3)": {
+      "us": 14.71,
+      "GBps": 178.6,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(16, 256, 1, 4, 3)": {
+      "us": 14.26,
+      "GBps": 184.2,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 2)": {
+      "us": 17.35,
+      "GBps": 151.4,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(32, 256, 2, 4, 3)": {
+      "us": 14.87,
+      "GBps": 176.6,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(16, 256, 2, 4, 3)": {
+      "us": 14.97,
+      "GBps": 175.4,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(16, 256, 5, 4, 2)": {
+      "us": 15.02,
+      "GBps": 174.8,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(32, 256, 5, 4, 2)": {
+      "us": 15.03,
+      "GBps": 174.8,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 1)": {
+      "us": 15.92,
+      "GBps": 164.9,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(32, 128, 4, 4, 3)": {
+      "us": 14.74,
+      "GBps": 178.2,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(64, 256, 5, 4, 2)": {
+      "us": 15.74,
+      "GBps": 166.9,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(16, 256, 5, 2, 2)": {
+      "us": 15.27,
+      "GBps": 172.0,
+      "rel_err": 0.002207,
+      "repeatable": true
+     },
+     "(32, 256, 5, 8, 2)": {
+      "us": 14.95,
+      "GBps": 175.7,
+      "rel_err": 0.002207,
+      "repeatable": true
+     }
+    },
+    "8": {
+     "cublas": {
+      "us": 33.59,
+      "GBps": 78.2
+     },
+     "(32, 256, 1, 4, 3)": {
+      "us": 14.71,
+      "GBps": 178.5,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(16, 256, 1, 4, 3)": {
+      "us": 14.18,
+      "GBps": 185.3,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 2)": {
+      "us": 17.5,
+      "GBps": 150.1,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(32, 256, 2, 4, 3)": {
+      "us": 14.88,
+      "GBps": 176.5,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(16, 256, 2, 4, 3)": {
+      "us": 15.13,
+      "GBps": 173.6,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(16, 256, 5, 4, 2)": {
+      "us": 15.22,
+      "GBps": 172.6,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(32, 256, 5, 4, 2)": {
+      "us": 15.29,
+      "GBps": 171.8,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 1)": {
+      "us": 16.15,
+      "GBps": 162.6,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(32, 128, 4, 4, 3)": {
+      "us": 14.91,
+      "GBps": 176.1,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(64, 256, 5, 4, 2)": {
+      "us": 15.81,
+      "GBps": 166.1,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(16, 256, 5, 2, 2)": {
+      "us": 15.41,
+      "GBps": 170.5,
+      "rel_err": 0.00185,
+      "repeatable": true
+     },
+     "(32, 256, 5, 8, 2)": {
+      "us": 14.99,
+      "GBps": 175.2,
+      "rel_err": 0.00185,
+      "repeatable": true
+     }
+    },
+    "16": {
+     "cublas": {
+      "us": 35.74,
+      "GBps": 73.5
+     },
+     "(32, 256, 1, 4, 3)": {
+      "us": 14.66,
+      "GBps": 179.2,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(16, 256, 1, 4, 3)": {
+      "us": 14.13,
+      "GBps": 185.8,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 2)": {
+      "us": 17.34,
+      "GBps": 151.5,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(32, 256, 2, 4, 3)": {
+      "us": 15.04,
+      "GBps": 174.6,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(16, 256, 2, 4, 3)": {
+      "us": 15.2,
+      "GBps": 172.8,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(16, 256, 5, 4, 2)": {
+      "us": 15.44,
+      "GBps": 170.1,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(32, 256, 5, 4, 2)": {
+      "us": 15.57,
+      "GBps": 168.7,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 1)": {
+      "us": 16.38,
+      "GBps": 160.3,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(32, 128, 4, 4, 3)": {
+      "us": 15.12,
+      "GBps": 173.8,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(64, 256, 5, 4, 2)": {
+      "us": 16.02,
+      "GBps": 163.9,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(16, 256, 5, 2, 2)": {
+      "us": 15.52,
+      "GBps": 169.3,
+      "rel_err": 0.00199,
+      "repeatable": true
+     },
+     "(32, 256, 5, 8, 2)": {
+      "us": 15.31,
+      "GBps": 171.6,
+      "rel_err": 0.00199,
+      "repeatable": true
+     }
+    }
+   },
+   "chosen": "(16, 256, 1, 4, 3)",
+   "speedup": {
+    "1": 0.986,
+    "4": 1.96,
+    "8": 2.369,
+    "16": 2.529
+   },
+   "module_config": "(32, 256, 1, 4, 3)"
+  },
+  "hc down": {
+   "weight_MB": 6.64,
+   "rows": {
+    "1": {
+     "cublas": {
+      "us": 31.04,
+      "GBps": 213.7
+     },
+     "(16, 256, 8, 4, 3)": {
+      "us": 32.17,
+      "GBps": 206.3,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 3)": {
+      "us": 31.83,
+      "GBps": 208.5,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(16, 256, 20, 4, 2)": {
+      "us": 31.79,
+      "GBps": 208.7,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(16, 256, 40, 4, 1)": {
+      "us": 32.65,
+      "GBps": 203.2,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(32, 256, 10, 4, 3)": {
+      "us": 31.93,
+      "GBps": 207.8,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(32, 256, 20, 4, 2)": {
+      "us": 32.14,
+      "GBps": 206.5,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(16, 512, 10, 4, 2)": {
+      "us": 31.93,
+      "GBps": 207.8,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(32, 128, 20, 4, 3)": {
+      "us": 31.83,
+      "GBps": 208.4,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(64, 256, 20, 4, 2)": {
+      "us": 32.36,
+      "GBps": 205.1,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(16, 256, 10, 2, 3)": {
+      "us": 31.76,
+      "GBps": 208.9,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(32, 256, 10, 8, 3)": {
+      "us": 32.44,
+      "GBps": 204.5,
+      "rel_err": 0.002549,
+      "repeatable": true
+     },
+     "(16, 256, 4, 4, 3)": {
+      "us": 31.14,
+      "GBps": 213.1,
+      "rel_err": 0.002549,
+      "repeatable": true
+     }
+    },
+    "4": {
+     "cublas": {
+      "us": 34.47,
+      "GBps": 192.5
+     },
+     "(16, 256, 8, 4, 3)": {
+      "us": 32.48,
+      "GBps": 204.3,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 3)": {
+      "us": 31.87,
+      "GBps": 208.2,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(16, 256, 20, 4, 2)": {
+      "us": 31.85,
+      "GBps": 208.4,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(16, 256, 40, 4, 1)": {
+      "us": 32.78,
+      "GBps": 202.5,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(32, 256, 10, 4, 3)": {
+      "us": 32.27,
+      "GBps": 205.6,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(32, 256, 20, 4, 2)": {
+      "us": 32.9,
+      "GBps": 201.7,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(16, 512, 10, 4, 2)": {
+      "us": 32.3,
+      "GBps": 205.4,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(32, 128, 20, 4, 3)": {
+      "us": 32.66,
+      "GBps": 203.2,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(64, 256, 20, 4, 2)": {
+      "us": 36.6,
+      "GBps": 181.3,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(16, 256, 10, 2, 3)": {
+      "us": 32.08,
+      "GBps": 206.9,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(32, 256, 10, 8, 3)": {
+      "us": 32.45,
+      "GBps": 204.5,
+      "rel_err": 0.002257,
+      "repeatable": true
+     },
+     "(16, 256, 4, 4, 3)": {
+      "us": 31.06,
+      "GBps": 213.6,
+      "rel_err": 0.002257,
+      "repeatable": true
+     }
+    },
+    "8": {
+     "cublas": {
+      "us": 34.75,
+      "GBps": 190.9
+     },
+     "(16, 256, 8, 4, 3)": {
+      "us": 32.74,
+      "GBps": 202.6,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 3)": {
+      "us": 32.26,
+      "GBps": 205.7,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(16, 256, 20, 4, 2)": {
+      "us": 32.1,
+      "GBps": 206.7,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(16, 256, 40, 4, 1)": {
+      "us": 32.94,
+      "GBps": 201.4,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(32, 256, 10, 4, 3)": {
+      "us": 32.47,
+      "GBps": 204.3,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(32, 256, 20, 4, 2)": {
+      "us": 33.19,
+      "GBps": 199.9,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(16, 512, 10, 4, 2)": {
+      "us": 32.54,
+      "GBps": 203.9,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(32, 128, 20, 4, 3)": {
+      "us": 33.02,
+      "GBps": 200.9,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(64, 256, 20, 4, 2)": {
+      "us": 36.93,
+      "GBps": 179.7,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(16, 256, 10, 2, 3)": {
+      "us": 32.2,
+      "GBps": 206.1,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(32, 256, 10, 8, 3)": {
+      "us": 32.69,
+      "GBps": 203.0,
+      "rel_err": 0.002247,
+      "repeatable": true
+     },
+     "(16, 256, 4, 4, 3)": {
+      "us": 31.19,
+      "GBps": 212.7,
+      "rel_err": 0.002247,
+      "repeatable": true
+     }
+    },
+    "16": {
+     "cublas": {
+      "us": 35.08,
+      "GBps": 189.2
+     },
+     "(16, 256, 8, 4, 3)": {
+      "us": 32.91,
+      "GBps": 201.6,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(16, 256, 10, 4, 3)": {
+      "us": 32.52,
+      "GBps": 204.0,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(16, 256, 20, 4, 2)": {
+      "us": 33.16,
+      "GBps": 200.1,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(16, 256, 40, 4, 1)": {
+      "us": 34.81,
+      "GBps": 190.6,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(32, 256, 10, 4, 3)": {
+      "us": 33.06,
+      "GBps": 200.7,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(32, 256, 20, 4, 2)": {
+      "us": 33.68,
+      "GBps": 197.0,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(16, 512, 10, 4, 2)": {
+      "us": 33.14,
+      "GBps": 200.2,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(32, 128, 20, 4, 3)": {
+      "us": 33.62,
+      "GBps": 197.4,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(64, 256, 20, 4, 2)": {
+      "us": 37.82,
+      "GBps": 175.4,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(16, 256, 10, 2, 3)": {
+      "us": 32.28,
+      "GBps": 205.6,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(32, 256, 10, 8, 3)": {
+      "us": 33.5,
+      "GBps": 198.0,
+      "rel_err": 0.00205,
+      "repeatable": true
+     },
+     "(16, 256, 4, 4, 3)": {
+      "us": 31.7,
+      "GBps": 209.3,
+      "rel_err": 0.00205,
+      "repeatable": true
+     }
+    }
+   },
+   "chosen": "(16, 256, 4, 4, 3)",
+   "speedup": {
+    "1": 0.997,
+    "4": 1.11,
+    "8": 1.114,
+    "16": 1.107
+   },
+   "module_config": "(16, 256, 8, 4, 3)"
+  },
+  "hc up": {
+   "weight_MB": 6.55,
+   "rows": {
+    "1": {
+     "cublas": {
+      "us": 30.33,
+      "GBps": 216.0
+     },
+     "(64, 128, 1, 4, 3)": {
+      "us": 29.38,
+      "GBps": 223.0,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(32, 64, 1, 4, 3)": {
+      "us": 29.32,
+      "GBps": 223.5,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(64, 64, 1, 4, 3)": {
+      "us": 29.71,
+      "GBps": 220.6,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(128, 64, 1, 4, 3)": {
+      "us": 29.98,
+      "GBps": 218.6,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 1)": {
+      "us": 33.76,
+      "GBps": 194.1,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(32, 512, 1, 4, 1)": {
+      "us": 33.77,
+      "GBps": 194.1,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(64, 512, 1, 4, 1)": {
+      "us": 30.91,
+      "GBps": 212.0,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(128, 512, 1, 8, 1)": {
+      "us": 34.7,
+      "GBps": 188.8,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(32, 64, 1, 2, 3)": {
+      "us": 29.65,
+      "GBps": 221.0,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(16, 64, 1, 2, 3)": {
+      "us": 29.13,
+      "GBps": 224.9,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(64, 64, 1, 8, 3)": {
+      "us": 29.46,
+      "GBps": 222.5,
+      "rel_err": 0.002843,
+      "repeatable": true
+     },
+     "(32, 128, 1, 4, 2)": {
+      "us": 29.16,
+      "GBps": 224.8,
+      "rel_err": 0.002843,
+      "repeatable": true
+     }
+    },
+    "4": {
+     "cublas": {
+      "us": 30.49,
+      "GBps": 215.0
+     },
+     "(64, 128, 1, 4, 3)": {
+      "us": 29.58,
+      "GBps": 221.6,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(32, 64, 1, 4, 3)": {
+      "us": 29.52,
+      "GBps": 222.0,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(64, 64, 1, 4, 3)": {
+      "us": 30.03,
+      "GBps": 218.3,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(128, 64, 1, 4, 3)": {
+      "us": 30.11,
+      "GBps": 217.7,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 1)": {
+      "us": 30.83,
+      "GBps": 212.5,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(32, 512, 1, 4, 1)": {
+      "us": 29.74,
+      "GBps": 220.3,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(64, 512, 1, 4, 1)": {
+      "us": 31.96,
+      "GBps": 205.0,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(128, 512, 1, 8, 1)": {
+      "us": 34.94,
+      "GBps": 187.6,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(32, 64, 1, 2, 3)": {
+      "us": 29.99,
+      "GBps": 218.6,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(16, 64, 1, 2, 3)": {
+      "us": 29.64,
+      "GBps": 221.1,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(64, 64, 1, 8, 3)": {
+      "us": 30.05,
+      "GBps": 218.1,
+      "rel_err": 0.002484,
+      "repeatable": true
+     },
+     "(32, 128, 1, 4, 2)": {
+      "us": 29.63,
+      "GBps": 221.1,
+      "rel_err": 0.002484,
+      "repeatable": true
+     }
+    },
+    "8": {
+     "cublas": {
+      "us": 30.67,
+      "GBps": 213.7
+     },
+     "(64, 128, 1, 4, 3)": {
+      "us": 30.23,
+      "GBps": 216.8,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(32, 64, 1, 4, 3)": {
+      "us": 30.35,
+      "GBps": 215.9,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(64, 64, 1, 4, 3)": {
+      "us": 30.45,
+      "GBps": 215.2,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(128, 64, 1, 4, 3)": {
+      "us": 30.54,
+      "GBps": 214.6,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 1)": {
+      "us": 30.4,
+      "GBps": 215.6,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(32, 512, 1, 4, 1)": {
+      "us": 30.44,
+      "GBps": 215.3,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(64, 512, 1, 4, 1)": {
+      "us": 32.39,
+      "GBps": 202.4,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(128, 512, 1, 8, 1)": {
+      "us": 35.31,
+      "GBps": 185.6,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(32, 64, 1, 2, 3)": {
+      "us": 30.8,
+      "GBps": 212.8,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(16, 64, 1, 2, 3)": {
+      "us": 30.23,
+      "GBps": 216.8,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(64, 64, 1, 8, 3)": {
+      "us": 30.53,
+      "GBps": 214.6,
+      "rel_err": 0.002579,
+      "repeatable": true
+     },
+     "(32, 128, 1, 4, 2)": {
+      "us": 30.5,
+      "GBps": 214.9,
+      "rel_err": 0.002579,
+      "repeatable": true
+     }
+    },
+    "16": {
+     "cublas": {
+      "us": 31.34,
+      "GBps": 209.1
+     },
+     "(64, 128, 1, 4, 3)": {
+      "us": 31.14,
+      "GBps": 210.4,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(32, 64, 1, 4, 3)": {
+      "us": 31.0,
+      "GBps": 211.4,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(64, 64, 1, 4, 3)": {
+      "us": 31.49,
+      "GBps": 208.1,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(128, 64, 1, 4, 3)": {
+      "us": 31.4,
+      "GBps": 208.7,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(16, 512, 1, 4, 1)": {
+      "us": 31.36,
+      "GBps": 209.0,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(32, 512, 1, 4, 1)": {
+      "us": 31.37,
+      "GBps": 208.9,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(64, 512, 1, 4, 1)": {
+      "us": 33.65,
+      "GBps": 194.8,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(128, 512, 1, 8, 1)": {
+      "us": 35.99,
+      "GBps": 182.1,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(32, 64, 1, 2, 3)": {
+      "us": 31.09,
+      "GBps": 210.8,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(16, 64, 1, 2, 3)": {
+      "us": 30.76,
+      "GBps": 213.0,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(64, 64, 1, 8, 3)": {
+      "us": 31.15,
+      "GBps": 210.4,
+      "rel_err": 0.002306,
+      "repeatable": true
+     },
+     "(32, 128, 1, 4, 2)": {
+      "us": 30.92,
+      "GBps": 212.0,
+      "rel_err": 0.002306,
+      "repeatable": true
+     }
+    }
+   },
+   "chosen": "(16, 64, 1, 2, 3)",
+   "speedup": {
+    "1": 1.041,
+    "4": 1.029,
+    "8": 1.015,
+    "16": 1.019
+   },
+   "module_config": "None"
+  }
+ }
+}

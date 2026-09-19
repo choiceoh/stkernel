@@ -1,0 +1,184 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 9,
+ "sites_a_graph": 16,
+ "pair_MB": 13.19,
+ "rows": {
+  "1": {
+   "us_a_site": {
+    "lane cublas (+copy)": 66.54,
+    "lane skinny down (+copy)": 66.53,
+    "H1 only": 64.6,
+    "H1+H2 (16, 64, 4, 3)": 60.5,
+    "H1+H2 (32, 64, 4, 3)": 60.51,
+    "H1+H2 (16, 128, 4, 3)": 60.89,
+    "H1+H2 (16, 64, 2, 3)": 60.3,
+    "H1+H2 (32, 128, 4, 2)": 61.46
+   },
+   "checks": {
+    "(16, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.00211,
+     "vs_cublas_inject": 0.0
+    },
+    "(32, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.00211,
+     "vs_cublas_inject": 0.0
+    },
+    "(16, 128, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.00211,
+     "vs_cublas_inject": 0.0
+    },
+    "(16, 64, 2, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.00211,
+     "vs_cublas_inject": 0.0
+    },
+    "(32, 128, 4, 2)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.00211,
+     "vs_cublas_inject": 0.0
+    }
+   }
+  },
+  "4": {
+   "us_a_site": {
+    "lane cublas (+copy)": 69.85,
+    "lane skinny down (+copy)": 66.96,
+    "H1 only": 64.83,
+    "H1+H2 (16, 64, 4, 3)": 61.01,
+    "H1+H2 (32, 64, 4, 3)": 60.77,
+    "H1+H2 (16, 128, 4, 3)": 61.06,
+    "H1+H2 (16, 64, 2, 3)": 60.83,
+    "H1+H2 (32, 128, 4, 2)": 61.59
+   },
+   "checks": {
+    "(16, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.004098,
+     "vs_cublas_inject": 0.005495
+    },
+    "(32, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.004098,
+     "vs_cublas_inject": 0.005495
+    },
+    "(16, 128, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.004098,
+     "vs_cublas_inject": 0.005495
+    },
+    "(16, 64, 2, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.004098,
+     "vs_cublas_inject": 0.005495
+    },
+    "(32, 128, 4, 2)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.004098,
+     "vs_cublas_inject": 0.005495
+    }
+   }
+  },
+  "8": {
+   "us_a_site": {
+    "lane cublas (+copy)": 69.91,
+    "lane skinny down (+copy)": 66.85,
+    "H1 only": 64.48,
+    "H1+H2 (16, 64, 4, 3)": 61.48,
+    "H1+H2 (32, 64, 4, 3)": 61.0,
+    "H1+H2 (16, 128, 4, 3)": 61.37,
+    "H1+H2 (16, 64, 2, 3)": 61.09,
+    "H1+H2 (32, 128, 4, 2)": 62.07
+   },
+   "checks": {
+    "(16, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003876,
+     "vs_cublas_inject": 0.005348
+    },
+    "(32, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003876,
+     "vs_cublas_inject": 0.005348
+    },
+    "(16, 128, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003876,
+     "vs_cublas_inject": 0.005348
+    },
+    "(16, 64, 2, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003876,
+     "vs_cublas_inject": 0.005348
+    },
+    "(32, 128, 4, 2)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003876,
+     "vs_cublas_inject": 0.005348
+    }
+   }
+  },
+  "16": {
+   "us_a_site": {
+    "lane cublas (+copy)": 70.54,
+    "lane skinny down (+copy)": 67.35,
+    "H1 only": 64.99,
+    "H1+H2 (16, 64, 4, 3)": 62.03,
+    "H1+H2 (32, 64, 4, 3)": 61.83,
+    "H1+H2 (16, 128, 4, 3)": 61.89,
+    "H1+H2 (16, 64, 2, 3)": 61.67,
+    "H1+H2 (32, 128, 4, 2)": 62.73
+   },
+   "checks": {
+    "(16, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003623,
+     "vs_cublas_inject": 0.005
+    },
+    "(32, 64, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003623,
+     "vs_cublas_inject": 0.005
+    },
+    "(16, 128, 4, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003623,
+     "vs_cublas_inject": 0.005
+    },
+    "(16, 64, 2, 3)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003623,
+     "vs_cublas_inject": 0.005
+    },
+    "(32, 128, 4, 2)": {
+     "byte_equal_mixed": true,
+     "byte_equal_inject": true,
+     "vs_cublas_mixed": 0.003623,
+     "vs_cublas_inject": 0.005
+    }
+   }
+  }
+ }
+}

@@ -310,6 +310,11 @@ class Supervisor:
                 raise ValueError('the single-GPU lane has no host (FLEET_SINGLE_GPU_HOST is empty); '
                                  'resubmit with --fleet to take the four Sparks')
             environment['ST_PROBE_HOST'] = host
+            # Where the check leaves what it measured (probes/probe_report.py): a file under the
+            # container's /cache, which is that host's ~/.cache/st, which the lane copies back to
+            # results/<session>/ on release. ST_* is what the runner carries into the container.
+            environment['ST_PROBE_SESSION'] = self.session
+            environment['ST_PROBE_REPORT'] = '/cache/' + fleet_single.report_name(self.session)
         return payload, payload_environment(environment)
 
     def run(self):
