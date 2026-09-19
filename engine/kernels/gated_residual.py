@@ -710,7 +710,7 @@ def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor,
     `block_tiles`' form, for a probe or a test; the table's for the rows otherwise. `norm`: (scale [N, hc] FP32 from
     `stream_scales`, the norm's weight [hc*H]) -- `normed` is then the streams themselves, and both launches normalise
     what they read with the stream norm's arithmetic: the same bytes, and the normalised streams never written."""
-    rows = normed.shape[0]
+    rows, rank = normed.shape[0], up.shape[1]
     tiles = block_tiles(rows) if tiles is None else tiles
     gates, injection, inj, mixed = _mix_block_buffers(normed, down_inject, up, hc, inject)
     if not rows:

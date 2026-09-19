@@ -154,7 +154,7 @@ class TableTests(unittest.TestCase):
             calls.append((h.shape[0], tiles["leave_down"], pdl))
             return torch.empty(h.shape[0], h.shape[1] // hc, dtype=h.dtype), torch.empty(h.shape[0], hc, dtype=h.dtype)
 
-        o = operands(hcr.PREFILL_ROWS, 16, "cpu")
+        o = operands(hcr.PREFILL_ROWS, 16, "cpu", hidden=2560)              # the model's width: the table's K tile divides it
         with patch.object(hcr, "leave_mix_block", fused), \
                 patch.object(torch.Tensor, "is_cuda", property(lambda tensor: True)):
             hcr.site(o["h"].clone(), o["out"], o["injection"], o["w"], EPS, HC, o["di"], o["up"], pdl=True)
