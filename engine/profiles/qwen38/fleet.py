@@ -793,7 +793,11 @@ def main(argv=None) -> int:
                     help="rank 0 records what the MTP head observes -- the target's streams and the next token at every "
                          "kept position -- under --dump-dir/mtp-inputs (the head's fine-tuning data, mtp_tune.py); "
                          f"20 KB a position, the host copying each after its verify step's read, {TAP_CAP_GIB:.0f} GiB "
-                         "at most. On by default")
+                         "at most (--tap-mtp-inputs-cap-gib). On by default")
+    ap.add_argument("--tap-mtp-inputs-cap-gib", type=float, default=TAP_CAP_GIB,
+                    help="the tap directory's cap, earlier boots' shards counted: a data window that prefills more than "
+                         f"the default {TAP_CAP_GIB:.0f} GiB (every prefilled position is recorded, the prompt's too) "
+                         "raises it for its own boots")
     ap.add_argument("--draft-ahead", action=argparse.BooleanOptionalAction, default=True,
                     help="behind a verify step whose rows are all greedy and plain, the next draft step runs on the device "
                          "before the host reads the picks (adapter.ServedModel._verify_ahead): the host's read, commit and "
@@ -913,7 +917,8 @@ def main(argv=None) -> int:
                                               lease_owner=os.environ.get("ST_LEASE_OWNER") or None,
                                               mapped_staging=a.nvme_mapped_staging, draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
-            model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
+            model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs",
+                                                   cap_bytes=int(a.tap_mtp_inputs_cap_gib * 2**30))
             closers.append(model.drafter.inputs_tap.close)
         if isinstance(getattr(model.drafter, "ledger", None), DraftLedger):
             closers.append(model.drafter.ledger.close)

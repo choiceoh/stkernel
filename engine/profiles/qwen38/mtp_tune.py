@@ -375,20 +375,47 @@ def load_meta(files) -> list:
     return runs
 
 
-def build_runs(files, out: Path, *, holdout: float = 0.1, min_length: int = 32, seed: int = 0) -> dict:
+def answer_start(tokens, marker) -> "int | None":
+    """The index of the first record after the last `marker` among a run's next tokens, or None. The record there is
+    the position the served model samples its answer's first token from -- where the head's live drafts start."""
+    m = len(marker)
+    for j in range(len(tokens) - m, -1, -1):
+        if tokens[j] == marker[0] and list(tokens[j:j + m]) == list(marker):
+            return j + m
+    return None
+
+
+def build_runs(files, out: Path, *, holdout: float = 0.1, min_length: int = 32, seed: int = 0,
+               answer_after: "tuple[int, ...] | None" = None, eval_boots: "tuple[str, ...]" = ()) -> dict:
     """Each run of contiguous positions (`load_meta`) as a file (streams BF16 as int16 bits, the next tokens, decoded
     flags); a run goes to evaluation with probability `holdout`. The shards' streams are read one shard at a time and
-    each run is written when its last row is in. -> the index, written to runs.json."""
+    each run is written when its last row is in. -> the index, written to runs.json.
+
+    `answer_after` (token ids): keep each run's positions from its last occurrence on -- a prefilled conversation's
+    final answer (its thinking included), the only positions the head drafts at in serving; a run without it (a raw
+    document) is dropped. Prefilled text is mostly prompt -- user turns, tool results, a system prompt, another model's
+    answers -- and the 2026-09-19 windows trained on it: +20% held-out on Deneb's text, +0.5% live.
+    `eval_boots` (boot prefixes): those boots' runs are the held-out set and every other run trains, instead of a
+    `holdout` draw per run -- windows cut from one session landed on both sides of the draw and shared its turns."""
     import numpy as np
     out.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
-    runs, waiting = [], {}                                  # shard index -> [(run, slot, row)]
+    runs, waiting, dropped = [], {}, 0                      # shard index -> [(run, slot, row)]
     for boot, seq, records in load_meta(files):
+        if answer_after:
+            cut = answer_start([r[3] for r in records], answer_after)
+            if cut is None:
+                dropped += 1
+                continue
+            records = records[cut:]
         if len(records) < min_length:
             continue
+        if eval_boots:
+            split = "eval" if any(boot.startswith(b) for b in eval_boots) else "train"
+        else:
+            split = "eval" if rng.random() < holdout else "train"
         run = {"file": f"run-{len(runs):06d}.npz", "boot": boot, "seq": seq, "start": records[0][0],
-               "length": len(records), "decoded": sum(r[4] for r in records),
-               "split": "eval" if rng.random() < holdout else "train",
+               "length": len(records), "decoded": sum(r[4] for r in records), "split": split,
                "_tokens": [r[3] for r in records], "_flags": [r[4] for r in records],
                "_rows": [None] * len(records), "_left": len(records)}
         runs.append(run)
@@ -408,6 +435,10 @@ def build_runs(files, out: Path, *, holdout: float = 0.1, min_length: int = 32, 
              "train": sum(r["length"] for r in runs if r["split"] == "train"),
              "eval": sum(r["length"] for r in runs if r["split"] == "eval"),
              "decoded": sum(r["decoded"] for r in runs)}
+    if answer_after:
+        index["answer_after"], index["dropped_without_answer"] = list(answer_after), dropped
+    if eval_boots:
+        index["eval_boots"] = list(eval_boots)
     (out / "runs.json").write_text(json.dumps(index, indent=1) + "\n")
     return index
 
@@ -722,6 +753,13 @@ def main(argv=None) -> int:
     d.add_argument("--out", required=True)
     d.add_argument("--holdout", type=float, default=0.1)
     d.add_argument("--min-length", type=int, default=32)
+    d.add_argument("--answer-after", default=None,
+                   help="token ids, comma separated: keep each run's positions after their last occurrence, the served "
+                        "model's own answer (Qwen3.8's '<|im_start|>assistant\\n' is 248045,74455,198); runs without "
+                        "it are dropped")
+    d.add_argument("--eval-boots", default="",
+                   help="boot prefixes (the taps' YYYYMMDD-HHMMSS), comma separated: their runs are the held-out set "
+                        "and every other run trains, instead of --holdout")
     for name in ("train", "eval"):
         p = sub.add_parser(name)
         p.add_argument("--data", required=True)
@@ -761,7 +799,9 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     if a.command == "data":
         index = build_runs(shards([Path(p) for p in a.taps.split(",")]), Path(a.out), holdout=a.holdout,
-                           min_length=a.min_length)
+                           min_length=a.min_length,
+                           answer_after=tuple(int(t) for t in a.answer_after.split(",")) if a.answer_after else None,
+                           eval_boots=tuple(b for b in a.eval_boots.split(",") if b))
         print(json.dumps({k: v for k, v in index.items() if k != "runs"}), flush=True)
     elif a.command == "extract":
         extract(a)

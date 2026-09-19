@@ -337,6 +337,48 @@ class DataTests(unittest.TestCase):
             third = np.load(Path(d) / "data" / index["runs"][2]["file"])
             self.assertEqual(third["tokens"].tolist()[:2], [2000, 2001])
 
+    def test_answer_after_keeps_the_final_answer_and_drops_a_document(self):
+        """A prefilled conversation keeps its positions from the last '<|im_start|>assistant\\n' on (an earlier
+        assistant turn is prompt), the first of them the position the answer's first token is sampled from; a raw
+        document, which has no such marker, is dropped."""
+        import numpy as np
+        from engine.profiles.qwen38.mtp_tune import answer_start, build_runs, main
+        marker = (248045, 74455, 198)
+        tokens = [1000 + i for i in range(60)]
+        tokens[10:13] = marker                                   # an earlier assistant turn
+        tokens[30:33] = marker                                   # the final answer's header
+        self.assertEqual(answer_start(tokens, marker), 33)
+        self.assertIsNone(answer_start([5, 6, 248045, 74455], marker))
+        with tempfile.TemporaryDirectory() as d:
+            meta = [[0, p, tokens[p], 0] for p in range(60)] + [[1, p, 3000 + p, 0] for p in range(40)]
+            np.savez(Path(d) / "mtp-inputs-20260920-030000-00000.npz", streams=np.zeros((len(meta), 4), np.int16),
+                     meta=np.array(meta, dtype=np.int64))
+            index = build_runs(sorted(Path(d).glob("*.npz")), Path(d) / "data", holdout=0.0, min_length=8,
+                               answer_after=marker)
+            self.assertEqual([(r["seq"], r["start"], r["length"]) for r in index["runs"]], [(0, 33, 27)])
+            self.assertEqual((index["answer_after"], index["dropped_without_answer"]), (list(marker), 1))
+            run = np.load(Path(d) / "data" / index["runs"][0]["file"])
+            self.assertEqual(run["tokens"].tolist()[:2], [1033, 1034])
+            self.assertEqual(main(["data", "--taps", d, "--out", str(Path(d) / "cli"), "--min-length", "8",
+                                   "--answer-after", "248045,74455,198"]), 0)
+            self.assertEqual(json.loads((Path(d) / "cli" / "runs.json").read_text())["positions"], 27)
+
+    def test_eval_boots_hold_out_whole_boots(self):
+        """--eval-boots: the named boots are the held-out set whole and the rest trains -- no draw per run, so a
+        session's turns cannot sit on both sides."""
+        import numpy as np
+        from engine.profiles.qwen38.mtp_tune import build_runs
+        with tempfile.TemporaryDirectory() as d:
+            for boot in ("20260920-020000", "20260920-030000"):
+                meta = [[s, p, 1000 + p, 0] for s in (0, 1) for p in range(40)]
+                np.savez(Path(d) / f"mtp-inputs-{boot}-00000.npz", streams=np.zeros((len(meta), 4), np.int16),
+                         meta=np.array(meta, dtype=np.int64))
+            index = build_runs(sorted(Path(d).glob("*.npz")), Path(d) / "data", holdout=0.5, min_length=8,
+                               eval_boots=("20260920-03",))
+            self.assertEqual(sorted((r["boot"], r["split"]) for r in index["runs"]),
+                             [("20260920-020000", "train")] * 2 + [("20260920-030000", "eval")] * 2)
+            self.assertEqual((index["train"], index["eval"], index["eval_boots"]), (80, 80, ["20260920-03"]))
+
     def test_two_boots_keep_their_sequences_apart_and_a_sequence_is_held_out_whole(self):
         import numpy as np
         from engine.profiles.qwen38.mtp_tune import build_runs
@@ -444,12 +486,15 @@ class ServedTests(unittest.TestCase):
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text()
         self.assertIn("if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:", fleet)
         self.assertIn('ap.add_argument("--tap-mtp-inputs", action=argparse.BooleanOptionalAction, default=True,', fleet)
-        self.assertIn("cap_bytes=int(TAP_CAP_GIB * 2**30)", fleet)
+        # the cap is the default of --tap-mtp-inputs-cap-gib (ST_TAP_MTP_CAP_GIB): a data window raises it for its boots
+        self.assertIn('ap.add_argument("--tap-mtp-inputs-cap-gib", type=float, default=TAP_CAP_GIB,', fleet)
+        self.assertIn("cap_bytes=int(a.tap_mtp_inputs_cap_gib * 2**30))", fleet)
         adapter = (ROOT / "engine/profiles/qwen38/adapter.py").read_text()
         self.assertIn("self.inputs_tap = None", adapter)
         self.assertIn("hidden[segment.start:segment.start + fed], decoded=True)", adapter)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text()
         self.assertIn('0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;', launcher)
+        self.assertIn('ADAPT_ARG="$ADAPT_ARG --tap-mtp-inputs-cap-gib $ST_TAP_MTP_CAP_GIB"', launcher)
 
     def test_the_tap_stops_at_its_cap(self):
         import numpy as np
