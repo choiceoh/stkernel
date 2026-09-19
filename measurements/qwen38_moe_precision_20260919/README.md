@@ -56,6 +56,12 @@ graph owners and default declarations. An earlier stdin-based invocation
 could not spawn the MTP distributed-test children; rerunning the complete
 suite through `python -m unittest` passes. No kernel change was needed for it.
 
+After merging main `f6235dc8`, the measured MoE kernels, Qwen precision settings,
+calibration identity and numerical probe are unchanged. The kernel-check entry
+only gains main's independent QSA probe branch. A post-merge focused run passes
+**62 tests (53 passed, 9 CUDA-only skips)**, including the new covered-attention
+integration (`merge-cpu.log`).
+
 ## Channel smoothing: reviewed, not enabled
 
 `probes/qwen38_smoothing_review.py` reproduces `smoothing-review.json` on CPU.
