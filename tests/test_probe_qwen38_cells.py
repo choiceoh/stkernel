@@ -22,6 +22,19 @@ class Lane(unittest.TestCase):
         digest = hashlib.sha256((ROOT / 'probes' / 'qwen38_config.json').read_bytes()).hexdigest()
         self.assertIn(f"CONFIG_SHA256 = '{digest}'", source)
 
+    def test_the_qualify_report_takes_a_lane_of_pairs_and_a_lane_of_numbers(self):
+        # lanes.qualify: the gated residual, GDN and QSA give (max, rms) a key, the skinny GEMV one number a shape. The
+        # report line took every value for a pair and died on main before any GPU case ran, once that lane was added.
+        import json
+        from probes.engine_qwen38_cells import held
+        qualified = {'qsa_norm_rope': {'norm_rope_4x128': (0.0069, 0.0023)}, 'skinny_gemv': {'513x2560': 0.002814}}
+        self.assertEqual(held(qualified), {'qsa_norm_rope': {'norm_rope_4x128': [0.0069, 0.0023]},
+                                           'skinny_gemv': {'513x2560': 0.002814}})
+        json.dumps(held(qualified))
+        source = (ROOT / 'probes' / 'engine_qwen38_cells.py').read_text()
+        self.assertIn("**held(lanes.qualify(torch.device('cuda'), F))", source)
+        self.assertNotIn('list(v) for k, v in worst.items()', source)
+
 
 @unittest.skipUnless(torch is not None, "requires torch")
 class Facts(unittest.TestCase):
