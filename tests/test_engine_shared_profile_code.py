@@ -152,5 +152,55 @@ class SlotCachesTests(unittest.TestCase):
             c.prepare(Step(Seg(1, slot, 0, 1)))
 
 
+@unittest.skipUnless(torch, "the recurrence is torch")
+class DeltaRuleMarksTests(unittest.TestCase):
+    """The reference lanes' chunk-mark loop (glm53 lanes.kda_chunk, qwen38 lanes.gdn_chunk) is
+    modules/linear_attention.gated_delta_rule_marked. Each lane carried the loop; this is that loop, kept as the oracle,
+    against the shared function, in both delta-rule forms: KDA's per-channel decay and GDN's per-head one."""
+
+    @staticmethod
+    def oracle(q, k, v, g, beta, state0, states_at, per_channel):
+        from engine.modules.linear_attention import gated_delta_rule
+        if not states_at:
+            return gated_delta_rule(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5, qk_l2norm=True,
+                                    decay_per_channel=per_channel)
+        outs, states, state, lo = [], [], state0, 0
+        for hi in [c * 64 for c in states_at] + [q.shape[1]]:
+            if hi > lo:
+                o, state = gated_delta_rule(q[:, lo:hi], k[:, lo:hi], v[:, lo:hi], g[:, lo:hi], beta[:, lo:hi], state,
+                                            scale=q.shape[-1] ** -0.5, qk_l2norm=True, decay_per_channel=per_channel)
+                outs.append(o)
+            if len(states) < len(states_at):
+                states.append(state[0] if state is not None else
+                              torch.zeros(v.shape[2], k.shape[-1], v.shape[-1], device=q.device, dtype=torch.float32))
+            lo = hi
+        return torch.cat(outs, dim=1), state, torch.stack(states)
+
+    def test_the_shared_loop_is_the_lanes_loop_byte_for_byte(self):
+        from engine.modules.linear_attention import gated_delta_rule_marked
+        torch.manual_seed(0)
+        t, h, dk, dv = 200, 3, 16, 8
+        for per_channel in (True, False):
+            q, k = torch.randn(1, t, h, dk), torch.randn(1, t, h, dk)
+            v, beta = torch.randn(1, t, h, dv), torch.rand(1, t, h)
+            g = -torch.rand(1, t, h, dk) if per_channel else -torch.rand(1, t, h)
+            for state0 in (None, torch.randn(1, h, dk, dv)):
+                for marks in (None, (), (1, 2), (0, 1, 3), (3,)):
+                    want = self.oracle(q, k, v, g, beta, state0, marks, per_channel)
+                    got = gated_delta_rule_marked(q, k, v, g, beta, state0, scale=q.shape[-1] ** -0.5, qk_l2norm=True,
+                                                  decay_per_channel=per_channel, marks=marks)
+                    self.assertEqual(len(got), len(want), (per_channel, marks))
+                    for a, b in zip(got, want):
+                        self.assertTrue(torch.equal(a, b), (per_channel, state0 is None, marks))
+
+    def test_both_reference_lanes_take_it(self):
+        for path, lane in (("engine/profiles/glm53/lanes.py", "kda_chunk"), ("engine/profiles/qwen38/lanes.py", "gdn_chunk")):
+            tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+            fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == lane)
+            calls = {c.func.id for c in ast.walk(fn) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+            self.assertIn("gated_delta_rule_marked", calls, path)
+            self.assertFalse(any(isinstance(n, ast.For) for n in ast.walk(fn)), f"{path}: {lane} carries a loop again")
+
+
 if __name__ == "__main__":
     unittest.main()
