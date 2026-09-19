@@ -4757,7 +4757,7 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **안 잰 것.** 플릿 스텝·tok/s(창 금지), 품질 브래킷(라우터 점수·믹서 곱의 마지막 비트가 cuBLAS 와 다르다; 오라클 밴드만).
   [상세·원시 기록](measurements/qwen38_decode_gemv_20260919/README.md).
 
-### Qwen3.8 어휘 헤드 — 디코드 행을 deep_gemm 대신 한 발사 FP8 GEMV 로: 호출당 890~908 → 693~716 µs(순수 읽기 +3~7%), 스텝 약 −0.8 ms (2026-09-19, srv4 단일 GPU 레인 4회, 플릿 창 없음, PR #PRNUM)
+### Qwen3.8 어휘 헤드 — 디코드 행을 deep_gemm 대신 한 발사 FP8 GEMV 로: 호출당 890~908 → 693~716 µs(순수 읽기 +3~7%), 스텝 약 −0.8 ms (2026-09-19, srv4 단일 GPU 레인 4회, 플릿 창 없음, PR #1217)
 - **무엇.** `engine/kernels/dense/fp8_rows` — deep_gemm 의 레시피(행의 block-128 e4m3 양자화, 가중치 128×128 블록, 2 의 거듭제곱 스케일)를
   행 16 패딩 FP8 tensor-core dot 한 발사로. `FP8Linear(decode_rows=True)` 로 옵트인하고 Qwen3.8 의 헤드만 켠다(GLM 의 FP8 레인은 그대로).
 - **수치(`q38head-0919d`, 프로덕션 한가).** 1·2·4·8·16 행: deep_gemm 889.9~907.7 µs → **692.6~716.3**, 순수 읽기 667~672. deep_gemm 대비 최대 차
