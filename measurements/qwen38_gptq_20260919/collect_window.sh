@@ -4,7 +4,7 @@
 # on srv2; no private prompts or responses are written into this checkout.
 set -euo pipefail
 MODE=${1:-collect}
-case "$MODE" in collect|compare|serve|expanded) ;; *) echo 'usage: collect_window.sh collect|compare|serve|expanded' >&2; exit 2;; esac
+case "$MODE" in collect|compare|serve|expanded|collect330|serve330) ;; *) echo 'usage: collect_window.sh collect|compare|serve|expanded|collect330|serve330' >&2; exit 2;; esac
 case "${2:-}" in ''|--preflight) ;; *) echo 'only optional second argument is --preflight' >&2; exit 2;; esac
 TREE=$(cd "$(dirname "$0")/../.." && pwd)
 OWNER=session/q38gptq-0919
@@ -17,7 +17,11 @@ PRIVATE=/home/choiceoh/st-calibration-private/qwen38-gptq-20260919
 PACK=/cache/qwen38-gptq-20260919
 export PORT=8001 ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-4436
 export ST_IMAGE=st-engine:qwen38-gptq-4436 ST_TAP_MTP_INPUTS=0
-if [ "$MODE" = expanded ]; then
+EXPANDED=0
+FIRST_COLLECTION=fit131
+if [[ "$MODE" = expanded || "$MODE" = collect330 || "$MODE" = serve330 ]]; then
+  EXPANDED=1
+  [ "$MODE" = expanded ] || FIRST_COLLECTION=fit330
   OUT=/home/choiceoh/glm53-logs/qwen38-gptq-330k-20260919
   PRIVATE=/home/choiceoh/st-calibration-private/qwen38-gptq-330k-20260919
   PACK=/cache/qwen38-gptq-330k-20260919
@@ -30,8 +34,8 @@ unset ST_MTP_TUNED ST_DRAFT_INDEX
 URL=http://127.0.0.1:$PORT
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 cd "$TREE"
-if [ "$MODE" = expanded ]; then
-  python3 - "$PRIVATE" <<'PY'
+if [ "$EXPANDED" = 1 ]; then
+  python3 - "$PRIVATE" "$MODE" <<'PY'
 import json, pathlib, sys
 from probes.qwen38_gptq_feed import load_split
 root = pathlib.Path(sys.argv[1])
@@ -43,8 +47,14 @@ assert m['expansion']['original_snapshot_prefixes_verified']
 for split, expected in [('train', 330234), ('validation', 55441), ('test', 50512)]:
     rows = load_split(root / (split + '.jsonl'), m)
     assert sum(r['prompt_tokens'] for r in rows) == expected == m['prompt_tokens'][split]
-for label in ('fit131', 'fit240', 'fit330', 'validation', 'heldout'):
-    assert not (root / (label + '-collection')).exists(), 'collection evidence must not be overwritten'
+mode = sys.argv[2]
+labels = ('fit131', 'fit240', 'fit330', 'validation', 'heldout') if mode == 'expanded' else ('fit330',)
+if mode != 'serve330':
+    for label in labels:
+        assert not (root / (label + '-collection')).exists(), 'collection evidence must not be overwritten'
+else:
+    for rank in range(4):
+        assert pathlib.Path(f'/home/choiceoh/glm53-logs/qwen38-gptq-330k-20260919/offline-installed-rank{rank}.json').is_file(), '5050 packs not installed and verified'
 print('expanded private input hashes and token counts verified', flush=True)
 PY
 fi
@@ -94,7 +104,9 @@ if queue.is_file() and queue.read_text().strip():
     raise SystemExit('canonical fleet tickets already wait; do not pass them')
 PY
 kind=$(lease kind)
-if [ "$MODE" = expanded ]; then
+if [ "$MODE" = collect330 ]; then
+  estimate=20; note='Qwen 330K real-input statistics only; release fleet before RTX 5050 packing/scoring'
+elif [ "$MODE" = expanded ]; then
   estimate=180; note='Qwen GPTQ size comparison: 131K/240K/330K, fixed validation and canonical consumer controls'
 elif [ "$MODE" = collect ]; then
   estimate=50; note='Qwen real-input GPTQ collection: separate fit and held-out statistics'
@@ -133,13 +145,16 @@ for ip in "${NODES[@]}"; do
   if [ "$MODE" = expanded ]; then
     node "$ip" "test ! -e '$host_pack/fit131/mkcalib' && test ! -e '$host_pack/fit240/mkcalib' && test ! -e '$host_pack/fit330/mkcalib' && test ! -e '$host_pack/validation/mkcalib' && test ! -e '$host_pack/heldout/mkcalib'"
   fi
+  if [ "$MODE" = collect330 ]; then
+    node "$ip" "test ! -e '$host_pack/fit330/mkcalib'"
+  fi
   if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_audit.py "$OUT/audit-$MODE.py";
   else scp -q probes/qwen38_gptq_audit.py "choiceoh@$ip:$OUT/audit-$MODE.py"; fi
   if [ "$MODE" != collect ]; then
     node "$ip" "mkdir -p '$OUT/tools/probes'; touch '$OUT/tools/probes/__init__.py'"
     if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_{score,feed}.py "$OUT/tools/probes/";
     else scp -q probes/qwen38_gptq_{score,feed}.py "choiceoh@$ip:$OUT/tools/probes/"; fi
-    if [ "$MODE" = expanded ]; then
+    if [ "$EXPANDED" = 1 ]; then
       if [ "$ip" = 10.10.10.2 ]; then cp tests/test_engine_qwen38_precision_port.py "$OUT/tools/gptq_precision_test.py";
       else scp -q tests/test_engine_qwen38_precision_port.py "choiceoh@$ip:$OUT/tools/gptq_precision_test.py"; fi
     fi
@@ -170,13 +185,13 @@ receipts() {
     ip=${NODES[$r]}
     node "$ip" "mkdir -p '$OUT'; cp /home/choiceoh/glm53-logs/st-qwen38-dumps/boot-rank$r.json '$OUT/$label-boot-rank$r.json'"
     node "$ip" "docker inspect --format '{{.Image}}' st-qwen38" > "$OUT/$label-image-rank$r.txt"
-    if [ "$MODE" = expanded ] && [ "$label" = fit131 ]; then
+    if [ "$EXPANDED" = 1 ] && [ "$label" = "$FIRST_COLLECTION" ]; then
       node "$ip" "python3 -c 'import json,sys,runpy; counters=runpy.run_path(\"$OUT/audit-$MODE.py\")[\"counters\"]; old=json.load(open(sys.argv[1]))[\"weights_id\"]; new=counters(json.load(open(sys.argv[2]))[\"root\"])[\"calibration_weights_id\"]; assert old == new, \"checkpoint changed since the first calibration campaign\"' '/home/choiceoh/glm53-logs/qwen38-gptq-20260919/fit-audit-rank$r.json' '$OUT/$label-boot-rank$r.json'"
-      cmp "$OUT/fit131-image-rank0.txt" "$OUT/fit131-image-rank$r.txt"
+      cmp "$OUT/$FIRST_COLLECTION-image-rank0.txt" "$OUT/$FIRST_COLLECTION-image-rank$r.txt"
     fi
-    if [ "$MODE" = expanded ] && [ "$label" != fit131 ]; then
-      cmp "$OUT/fit131-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
-      node "$ip" "python3 -c 'import json,sys,runpy; counters=runpy.run_path(\"$OUT/audit-$MODE.py\")[\"counters\"]; a,b=[counters(json.load(open(p))[\"root\"])[\"calibration_weights_id\"] for p in sys.argv[1:]]; assert a == b, \"weight identity changed within size comparison\"' '$OUT/fit131-boot-rank$r.json' '$OUT/$label-boot-rank$r.json'"
+    if [ "$EXPANDED" = 1 ] && [ "$label" != "$FIRST_COLLECTION" ]; then
+      cmp "$OUT/$FIRST_COLLECTION-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
+      node "$ip" "python3 -c 'import json,sys,runpy; counters=runpy.run_path(\"$OUT/audit-$MODE.py\")[\"counters\"]; a,b=[counters(json.load(open(p))[\"root\"])[\"calibration_weights_id\"] for p in sys.argv[1:]]; assert a == b, \"weight identity changed within size comparison\"' '$OUT/$FIRST_COLLECTION-boot-rank$r.json' '$OUT/$label-boot-rank$r.json'"
     fi
   done
 }
@@ -192,7 +207,7 @@ collect() {
   export ST_PACK_ROOT=$PACK/$label ST_SELF_CALIBRATE=1 ST_CALIBRATION_ROWS=${4:-131072}
   boot "$label"
   receipts "$label"
-  if [ "$MODE" = expanded ] && [ "$label" = fit131 ]; then
+  if [ "$EXPANDED" = 1 ] && [ "$label" = "$FIRST_COLLECTION" ]; then
     for r in 0 1 2 3; do
       lease verify --owner "$OWNER" >/dev/null
       node "${NODES[$r]}" "docker exec -e PYTHONPATH=/repo:$OUT/tools st-qwen38 python3 -m unittest gptq_precision_test.GpuPrecisionPortTests.test_native_prefill_collection_at_hidden_and_padded_width" \
@@ -228,6 +243,10 @@ compare() {
   if [ "$MODE" = expanded ]; then
     labels=(B131pack B240pack B330pack A1 B131 B330 A2)
     first_pack=B131pack
+  fi
+  if [ "$MODE" = serve330 ]; then
+    labels=(A1 B330 A2)
+    first_pack=fit330
   fi
   if [ "$MODE" = serve ]; then
     # Resume consumer tests only after all four held-out scores succeeded.
@@ -321,7 +340,20 @@ PY
   done
 }
 
-if [ "$MODE" = expanded ]; then
+if [ "$MODE" = collect330 ]; then
+  collect fit330 train 330000 330000
+  gather_expanded
+  python3 - "$OUT" <<'PY'
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+audits = [json.loads((root / f'fit330-audit-rank{r}.json').read_bytes()) for r in range(4)]
+assert all(a['statistics_valid'] and a['minimum_rows'] >= 330000 and a['sites'] == 193 for a in audits)
+(root / 'collection-complete.json').write_text(json.dumps(dict(stage='statistics_ready', fit='fit330',
+    minimum_rows_by_rank=[a['minimum_rows'] for a in audits],
+    source_sha=(root / 'collect330-source.sha').read_text().strip()), indent=2) + '\n')
+PY
+  echo '330K statistics audited; releasing fleet before offline packing on RTX 5050'
+elif [ "$MODE" = expanded ]; then
   collect fit131 train 131072 131072
   collect fit240 train 240490 240490
   collect fit330 train 330000 330000

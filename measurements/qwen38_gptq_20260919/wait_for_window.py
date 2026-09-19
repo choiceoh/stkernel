@@ -38,7 +38,7 @@ def main():
     parser.add_argument("--sha", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--deadline-hours", type=float, default=8)
-    parser.add_argument("--mode", choices=("serve", "expanded"), default="serve")
+    parser.add_argument("--mode", choices=("serve", "expanded", "collect330", "serve330"), default="serve")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     lock = (args.out / "waiter.lock").open("w")
@@ -92,7 +92,7 @@ def main():
             except (OSError, ValueError):
                 owned = False
             if owned and observer is None:
-                output_root = ("qwen38-gptq-330k-20260919" if args.mode == "expanded"
+                output_root = ("qwen38-gptq-330k-20260919" if args.mode in ("expanded", "collect330", "serve330")
                                else "qwen38-gptq-20260919/serving")
                 observer = subprocess.Popen(["bash", str(driver.with_name("observe_fleet.sh")),
                                              str(args.tree), str(lease.parent / output_root / "occupancy")],
@@ -105,7 +105,9 @@ def main():
             observer.terminate()  # Read-only observer only; never a serving process.
             observer.wait()
     report("finished" if child.returncode == 0 else "failed", returncode=child.returncode,
-           note="See the experiment's onepass.jsonl and each run's rc; driver success does not imply quality passed.")
+           note=("330K collection only; RTX 5050 packing/scoring and serving validation remain."
+                 if args.mode == "collect330" else
+                 "See the experiment's onepass.jsonl and each run's rc; driver success does not imply quality passed."))
     return child.returncode
 
 
