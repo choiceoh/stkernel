@@ -140,21 +140,31 @@ class BudgetTests(unittest.TestCase):
             sizes[native] = line.gib
         self.assertLess(abs(sizes[True] - sizes[False]), 0.1, "the line is the budget, whatever the shape")
         self.assertLessEqual(max(sizes.values()), boot.PREFIX_SNAPSHOT_GIB)
-        # The hot pool shrinks; cold copies have their own bounded host budget.
+        # A tiered boot keeps the same 96 an untiered one does (#1044, 2026-09-16): production's counters said the
+        # resident checkpoints were the binding resource, so the tier and its compressed cache are cold copies
+        # beside the raw pool, not a substitute for half of it. The cold copies have their own bounded host budget.
         native = budget.budget(7.0, 4, box_gib=121.63, draft_tp=4, draft_native=True)
-        self.assertIn("(48 x ", next(l for l in native.lines if l.name.startswith("prefix snapshots")).name)
+        self.assertIn("(96 x ", next(l for l in native.lines if l.name.startswith("prefix snapshots")).name)
 
-    def test_compressed_cache_reduces_total_budget_without_spending_it_on_kv(self):
+    def test_the_tier_adds_a_compressed_cache_beside_the_same_raw_pool_without_spending_it_on_kv(self):
+        """Until 2026-09-16 a tiered boot halved the raw pool (48 of 96) and the compressed cache was to make up
+        for it. #1044 refused that assumption -- `prefix_snapshot_self_evicts_total` 258 against
+        `snapshot_denials_total` 0, `prefix_entries` 96/96 -- so the tier keeps every raw snapshot and pays for its
+        cold copies on top: the only difference between the two tables is the declared host line, and neither the
+        raw pool nor the paged KV moves. Whether tiered-48 would do is measured before it is cut again, not assumed."""
         from engine.profiles.glm53 import boot, budget
         args = dict(kv_gib=7.0, max_seqs=4, box_gib=121.63, draft_tp=4, draft_native=True)
-        cold, original = budget.budget(**args), budget.budget(**args, tier_enabled=False)
-        raw = lambda b: next(l.gib for l in b.lines if l.name.startswith('prefix snapshots'))
-        extra = next(l.gib for l in cold.lines if l.name == 'compressed prefix cache and codec')
-        self.assertEqual(extra, boot.prefix_host_bytes() / (1 << 30))
+        tiered, untiered = budget.budget(**args), budget.budget(**args, tier_enabled=False)
+        line = lambda b, prefix: next(l for l in b.lines if l.name.startswith(prefix))      # noqa: E731
+        extra = line(tiered, 'compressed prefix cache and codec')
+        self.assertEqual(extra.gib, boot.prefix_host_bytes() / (1 << 30))
         self.assertEqual(boot.prefix_host_bytes(False), 0)
-        self.assertGreater(raw(original) - raw(cold) - extra, 1.1)
-        self.assertEqual(cold.paged_gib, original.paged_gib)
-        self.assertIn('(96 x ', next(l.name for l in original.lines if l.name.startswith('prefix snapshots')))
+        self.assertEqual(line(untiered, 'compressed prefix cache and codec').gib, 0)
+        raw, raw_untiered = line(tiered, 'prefix snapshots'), line(untiered, 'prefix snapshots')
+        self.assertEqual((raw.name, raw.gib), (raw_untiered.name, raw_untiered.gib), "the tier does not shrink the raw pool")
+        self.assertIn('(96 x ', raw.name)
+        self.assertEqual(tiered.paged_gib, untiered.paged_gib)
+        self.assertAlmostEqual(untiered.kv_gib - tiered.kv_gib, extra.gib, places=9, msg="the cold copies are the whole cost")
 
     def test_a_snapshot_budget_always_leaves_a_chunk_worth_of_boundaries(self):
         """Nine blocks is one prefill chunk: below that a chunk cannot checkpoint itself at all."""
