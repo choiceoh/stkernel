@@ -63,6 +63,11 @@ def main():
         from probes.engine_vocab_selection import run as vocab_selection_check
         vocab_selection_check(args.output)
         return
+    if args.lanes == 'vocab_argmax':
+        # component timings: the greedy pick's two launches at 4, 2 and 1 warps, exact against the CPU key first (D5)
+        from probes.engine_vocab_selection import argmax_run as vocab_argmax_check
+        vocab_argmax_check(args.output)
+        return
     if args.lanes == 'mhc_c1_tails':
         from probes.engine_mhc_c1_tails import main as mhc_c1_tails_check
         mhc_c1_tails_check(args.ranks, samples=args.samples, output=args.output)

@@ -171,3 +171,110 @@ def run(output=None):
     if output is not None:
         Path(output).write_text(json.dumps(report, indent=2)+'\n')
     return report
+
+
+# -- the greedy pick's two launches (Qwen3.8 carry D5) ---------------------------------------------------------------------
+ARGMAX_WARPS = (4, 2, 1)                       # Triton's default -- every launch before D5 -- first
+# (shard width, rows): Qwen3.8's 248,320 tokens over four ranks at its decode ladder (C x (K+1) tokens: 2..32), and
+# GLM-5.3's shard at the rows its verify step picks
+ARGMAX_CASES = ((62080, (2, 4, 8, 16, 32)), (38720, (1, 7, 14, 28)))
+
+
+def argmax_launches(x, start, valid, warps):
+    """engine/kernels/common/vocab_candidates.argmax_key's two launches at `warps`."""
+    rows = x.shape[0]
+    parts = triton.cdiv(valid, 1024)
+    partials = torch.empty((rows, parts), dtype=torch.int64, device=x.device)
+    kernels._argmax_partials[(rows, parts)](x, partials, x.stride(0), x.stride(1), valid, start, parts, 1024,
+                                            num_warps=warps)
+    if parts == 1:
+        return partials.view(rows)
+    out = torch.empty(rows, dtype=torch.int64, device=x.device)
+    kernels._argmax_finish[(rows,)](partials, out, parts, triton.next_power_of_2(parts), num_warps=warps)
+    return out
+
+
+def argmax_reference(x, start, valid):
+    """The key engine/modules/vocab.argmax computes off the device, its CPU branch line for line and on the CPU (where
+    tests/test_engine_vocab.py holds it to torch.argmax): zeros and NaNs canonical, the lowest id of equal scores."""
+    value, index = x[..., :valid].float().cpu().max(dim=-1)
+    value = torch.where(value == 0, torch.zeros_like(value), value)
+    value = torch.where(torch.isnan(value), torch.full_like(value, float("nan")), value)
+    bits = value.contiguous().view(torch.int32).to(torch.int64)
+    ordered = torch.where(bits < 0, bits ^ 0x7fffffff, bits)
+    return ((ordered << 32) | (0xffffffff - (index + start))).to(x.device)
+
+
+def argmax_timings(graphs, copies, brackets=4, replays=32):
+    """{warps: median us a call}: every bracket runs the arms forward then backward."""
+    samples = {name: [] for name in graphs}
+    order = list(graphs)
+    for _ in range(brackets):
+        for name in order + order[::-1]:
+            graph = graphs[name][0]
+            for _ in range(4):
+                graph.replay()
+            begin, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+            begin.record()
+            for _ in range(replays):
+                graph.replay()
+            end.record()
+            end.synchronize()
+            samples[name].append(begin.elapsed_time(end)*1000/(replays*copies))
+    return {name: dict(median_us=round(statistics.median(values), 3), min_us=round(min(values), 3),
+                       samples=len(values)) for name, values in samples.items()}
+
+
+@torch.inference_mode()
+def argmax_run(output=None):
+    """argmax_key's launches at 4, 2 and 1 warps: the same packet (integer keys, exact at any warps), then the time of
+    a call inside a captured graph. A kernel component on one device; no engine speed is claimed from it."""
+    torch.set_num_threads(2)
+    torch.cuda.set_per_process_memory_fraction((512 << 20)/torch.cuda.mem_get_info()[1])
+    report = dict(scope=argmax_run.__doc__, device=torch.cuda.get_device_name(),
+                  capability=torch.cuda.get_device_capability(), host=platform.node(), torch=torch.__version__,
+                  cuda=torch.version.cuda, triton=triton.__version__, default_warps=kernels.ARGMAX_WARPS, cases=[])
+    generator = torch.Generator(device='cuda').manual_seed(919005)
+    copies = 16
+    for width, row_counts in ARGMAX_CASES:
+        decodable = width - 1000                                             # the last rank's cut: padded ids past it
+        for rows in row_counts:
+            full = torch.randn(rows, 2*width, generator=generator, device='cuda').bfloat16()
+            local = full[:, ::2]                                             # a strided shard, as a head's view can be
+            start = 3*width
+            graphs = {warps: capture(lambda warps=warps: argmax_launches(local, start, decodable, warps), copies)
+                      for warps in ARGMAX_WARPS}
+            graphs['served'] = capture(lambda: kernels.argmax_key(local, start, decodable), copies)
+            try:
+                for trial in range(4):
+                    full.normal_(generator=generator)
+                    local[:, decodable:] = 1000                              # never decodable, never chosen
+                    if trial == 1:
+                        local[:, 5:40] = 7                                   # a tie: the lowest id
+                    elif trial == 2:
+                        local[:, 1020:1030] = 8                              # a tie across two partials
+                    elif trial == 3:
+                        local[:, :6] = torch.tensor([0., -0., float('nan'), -float('nan'), float('inf'),
+                                                     -float('inf')], device='cuda')
+                    expected = argmax_reference(local, start, decodable)
+                    for name, (graph, actual) in graphs.items():
+                        graph.replay()
+                        if not torch.equal(actual, expected):
+                            raise AssertionError(f'argmax packet at {name} warps differs from the reference key')
+                full.normal_(generator=generator)
+                case = dict(rows=rows, shard_width=width, valid=decodable, parts=triton.cdiv(decodable, 1024),
+                            exact=True, graph_copies=copies, timings={str(k): v for k, v in
+                                                                      argmax_timings(graphs, copies).items()})
+                base = case['timings']['4']['median_us']
+                case['over_four_warps'] = {k: round(v['median_us']/base, 4) for k, v in case['timings'].items()}
+                report['cases'].append(case)
+                print(json.dumps(case), flush=True)
+            finally:
+                for graph, _ in graphs.values():
+                    graph.reset()
+            del graphs
+            torch.cuda.empty_cache()
+    report.update(passed=True, peak_reserved_bytes=torch.cuda.max_memory_reserved())
+    if output is not None:
+        Path(output).write_text(json.dumps(report, indent=2)+'\n')
+    return report
