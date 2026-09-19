@@ -23,6 +23,9 @@ _INPUT_WARPS_OVERRIDE, qsa_select._WARPS_OVERRIDE), which keep the rule when Non
                   scattered over its context, the output gate in the final store as served
   attend_prefill  eager, one request's 4,096 rows deep in a 32K context: the sparse launch
   covered         eager, a fresh prompt's 2,048 rows in runs of four: the covered launch
+  attend_mid / covered_mid   eager, 64 / 256 / 512 / 1,024 rows -- a short turn, a chunk's tail -- over the decode grid: where
+                  upstream's rule changes tiers (8, 32, 256 and 512 programs), and the two runs before this arm existed
+                  measured nothing between 32 rows and 2,048
   score           captured, N = 2 and 8 rows in runs of K+1 at the 4K / 32K / 256K context buckets
   score_prefill   eager, 2,048 rows in runs of four at the 32K bucket
   select          captured, 2 rows, k 512, every context bucket's columns: the one launch against the torch form it
@@ -102,6 +105,7 @@ WIDE_TILE = (128, 1, 4)                            # one arm past the widest til
 PREFILL_ROWS, PREFILL_CONTEXT = 4096, 28000        # a chunk's rows deep in the 32K bucket
 PREFILL_TILES, PREFILL_SPLITS, PREFILL_WARPS = (16, 32, 64), (1, 4), (1, 2, 4, 8)
 COVERED_ROWS = 2048                                # a fresh prompt the budget covers (facts.index_blocks groups)
+MID_ROWS = (64, 256, 512, 1024)                    # eager steps between the ladder and a chunk: the rule's tiers
 ORACLE_ROWS = 48                                   # the rows of an eager arm held to the fp32 oracle
 SCORE_STEPS = ((1, 2), (4, 2))
 SCORE_BUCKETS = (4096, 32768, 262144)              # context buckets (tokens) of the captured ladder
@@ -882,12 +886,18 @@ def run(output=None):
         prefill = eager_attention_arm(report, "attend_prefill", cell, PREFILL_ROWS, PREFILL_CONTEXT, prefill_grid,
                                       covered=False)
         covered = eager_attention_arm(report, "covered", cell, COVERED_ROWS, 0, prefill_grid, covered=True)
+        mid_grid = split_grid(cell, ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS)
+        mid = {rows: dict(sparse=eager_attention_arm(report, "attend_mid", cell, rows, ATTEND_CONTEXT, mid_grid,
+                                                     covered=False),
+                          covered=eager_attention_arm(report, "covered_mid", cell, rows, 0, mid_grid, covered=True))
+               for rows in MID_ROWS}
         score = score_arm(report)
         score_prefill = score_prefill_arm(report)
         select = select_arm(report)
         inputs = inputs_arm(report)
         records = records_arm(report)
     report("summary", attend={str(rows): v for rows, v in attend.items()}, attend_prefill=prefill, covered=covered,
+           mid={str(rows): v for rows, v in mid.items()},
            score=score, score_prefill=score_prefill, select={str(b): v for b, v in select.items()},
            inputs={str(rows): v for rows, v in inputs.items()}, records={str(rows): v for rows, v in records.items()})
     return events

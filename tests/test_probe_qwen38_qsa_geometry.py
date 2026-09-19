@@ -133,6 +133,9 @@ class CaseTable(unittest.TestCase):
         self.assertEqual([p.rule_profile(p.QWEN38, r * t) for r, t in p.DECODE_STEPS],
                          [(16, 64, 4), (16, 64, 4), (16, 64, 4), (16, 32, 4), (64, 8, 2)])
         self.assertEqual(p.rule_profile(p.QWEN38, p.PREFILL_ROWS), (64, 1, 2))
+        # the eager steps in between reach each of upstream's remaining tiers
+        self.assertEqual([p.rule_profile(p.QWEN38, rows) for rows in p.MID_ROWS],
+                         [(64, 8, 2), (64, 8, 2), (64, 4, 2), (64, 1, 2)])
         self.assertEqual(p.rule_profile(p.QWEN38, p.COVERED_ROWS), (64, 1, 2))
 
     def test_a_split_grid_clips_to_what_a_width_s_tiles_can_use(self):
