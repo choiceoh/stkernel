@@ -62,14 +62,42 @@ class DraftSampleTests(unittest.TestCase):
             self.assertAlmostEqual(float(dist[i].sum()), 1.0, places=5)
             at = int((cand[i] == picks[i]).nonzero()[0])
             self.assertGreater(float(dist[i, at]), 0.0)
-            self.assertEqual(float(p[i]), float(dist[i, at]))
+            if temps[i] > 0:                              # a greedy row reports the head's whole-row probability (below)
+                self.assertEqual(float(p[i]), float(dist[i, at]))
         # top-k no wider than the candidates: the candidates hold the whole nucleus, so it is the target's own law
         for i in (0, 3):
             full = distribution(logits[i], float(temps[i]), int(top_ks[i]), float(top_ps[i]))
             self.assertTrue(torch.allclose(full[cand[i]], dist[i], atol=1e-6))
             self.assertAlmostEqual(float(full[cand[i]].sum()), 1.0, places=5)
         self.assertEqual(int(picks[2]), int(logits[2].argmax()))            # temperature 0: the argmax, all its mass
-        self.assertEqual(float(p[2]), 1.0)
+        self.assertEqual(float(dist[2].max()), 1.0)
+        # ... and the head's probability of it over the whole vocabulary, not that distribution's 1: what the threshold
+        # cuts a greedy row on and the ledger records -- draft_tokens(probability=True)'s, to the bit, on every rank
+        self.assertAlmostEqual(float(p[2]), float(torch.softmax(logits[2], -1).max()), places=6)
+        self.assertLess(float(p[2]), 1.0)
+
+    def test_a_greedy_rows_probability_is_argmax_probabilitys(self):
+        from engine.base.comm import LocalTP
+        from engine.modules.vocab import argmax_probability
+        from engine.profiles.qwen38.net import Qwen38Net
+        gen = torch.Generator().manual_seed(5)
+        rows, vocab, C = 3, 64, 8
+        logits = (torch.randn(rows, vocab, generator=gen) * 2).to(torch.bfloat16).float()
+        logits[1] = 0.0                                                   # a flat row: 1/vocab
+        width = vocab // 4
+        zeros = torch.zeros(rows)
+
+        def rank(comm):
+            local = logits[:, comm.rank * width:(comm.rank + 1) * width].to(torch.bfloat16)
+            net = SimpleNamespace(draft_index=None, comm=comm, rank=comm.rank, vp=width, draft_logits=lambda h: local)
+            picks, p, _, _ = Qwen38Net.draft_sample(net, torch.zeros(rows, 2), zeros, zeros.to(torch.int32),
+                                                    torch.ones(rows), zeros, candidates=C)
+            return picks, p, argmax_probability(local, comm, comm.rank * width)
+
+        for picks, p, (want_ids, want) in LocalTP(4, timeout_s=20).run(rank):
+            self.assertTrue(torch.equal(p, want), "the same bits as the argmax drafts' probability")
+            self.assertTrue(torch.equal(picks[[0, 2]], want_ids[[0, 2]]))
+        self.assertAlmostEqual(float(p[1]), 1 / vocab, places=6)
 
     def test_a_draft_index_is_refused(self):
         from engine.profiles.qwen38.net import Qwen38Net
@@ -102,6 +130,43 @@ class ChainTests(unittest.TestCase):
         self.assertEqual((tuple(cand.shape), tuple(dist.shape)), ((1, 3, 2), (1, 3, 2)))
         self.assertEqual(cand[0, :, 0].tolist(), [142, 1423, 14234])
         self.assertTrue(torch.allclose(probs, torch.full((1, 3), 0.75)))
+
+    def test_a_greedy_chain_reports_what_the_argmax_chain_does(self):
+        """The served net's draft_sample and draft_tokens under the chain, four ranks: at temperature 0 the sampled
+        chain (the served default, --draft-candidates 20) picks and reports what the argmax chain (--draft-candidates
+        0) does -- so the draft threshold cuts a greedy row alike under both, and the ledger records the same."""
+        from engine.base.comm import LocalTP
+        from engine.profiles.qwen38.decode_graphs import draft_chain
+        from engine.profiles.qwen38.net import DeviceStep, Qwen38Net
+        vocab = 64
+        table = (torch.randn(vocab, vocab, generator=torch.Generator().manual_seed(9)) * 2).to(torch.bfloat16)
+
+        class HeadNet(FakeNet):
+            draft_index = draft_tap = None
+            draft_tokens, draft_sample = Qwen38Net.draft_tokens, Qwen38Net.draft_sample
+
+            def __init__(self, comm):
+                super().__init__()
+                self.comm, self.rank, self.vp = comm, comm.rank, vocab // 4
+
+            def draft_logits(self, h):                       # the head's rows: a fixed row a token, this rank's columns
+                return table[h[:, 0].long() % vocab, self.rank * self.vp:(self.rank + 1) * self.vp]
+
+        step = DeviceStep(torch.tensor([11, 12, 13, 14, 21, 22, 22, 22]), torch.tensor([10, 20]), torch.tensor([1, 2]),
+                          torch.tensor([0, 1]), 4, 4)
+        last, counts = torch.tensor([3, 5]), torch.tensor([4, 2])
+
+        def rank(comm):
+            net = HeadNet(comm)
+            argmax = draft_chain(net, None, step, torch.zeros(8, 2), last, counts, 3, probability=True)
+            greedy = (torch.zeros(2), torch.zeros(2, dtype=torch.int32), torch.ones(2), torch.zeros(2, 3), 20)
+            sampled = draft_chain(net, None, step, torch.zeros(8, 2), last, counts, 3, sampled=greedy)
+            return argmax, sampled[:2]
+
+        for (picks, probs), (drawn, reported) in LocalTP(4, timeout_s=20).run(rank):
+            self.assertTrue(torch.equal(drawn, picks))
+            self.assertTrue(torch.equal(reported, probs))
+            self.assertTrue(bool((probs < 1).all()))
 
 
 class SampleGraphs:

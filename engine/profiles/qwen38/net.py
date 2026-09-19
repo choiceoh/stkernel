@@ -481,16 +481,24 @@ class Qwen38Net:
         the target's picks use too), drawn with the row's keyed uniform (base/draws, DRAFT) -> (picks [rows], each
         pick's probability under that distribution [rows] fp32, the candidates' ids [rows, C] int64 and the distribution
         over them [rows, C] fp32). The draft is zero outside its candidates and the nucleus -- what the verification's
-        accept test divides by. A row at temperature 0 picks the head's argmax with all its mass there."""
+        accept test divides by. A row at temperature 0 picks the head's argmax with all its mass there, so its
+        probability is not that distribution's (1, whatever the head thought) but the head's softmax over the whole
+        vocabulary at its argmax -- `draft_tokens(probability=True)`'s, what the draft threshold cuts on and the ledger
+        records for a greedy row (modules/vocab.argmax_probability's sum: each rank's exp past the max, one all-gather
+        added in rank order, the same bits on every rank)."""
         if self.draft_index is not None:
             raise ValueError("the draft index reads a few clusters of the head, not the row a sampled draft needs")
         from engine.base.sampler import rows as sample_rows
         from engine.modules.vocab import topk
-        values, ids = topk(self.draft_logits(h), self.comm, self.rank * self.vp, candidates)
+        logits = self.draft_logits(h)
+        values, ids = topk(logits, self.comm, self.rank * self.vp, candidates)
         values = values.contiguous()
         probs = torch.empty(values.shape, dtype=torch.float32, device=values.device)
         at = sample_rows(values, temperature, top_k, top_p, uniform, None, probs).view(-1, 1)
-        return ids.gather(1, at).view(-1), probs.gather(1, at).view(-1), ids, probs
+        mass = torch.exp(logits.float() - values[:, :1]).sum(-1, keepdim=True)          # values[:, 0]: the row's max
+        whole = torch.nan_to_num(1.0 / self.comm.all_gather(mass, dim=-1).sum(-1), nan=0.0)
+        drawn = probs.gather(1, at).view(-1)
+        return ids.gather(1, at).view(-1), torch.where(temperature > 0, drawn, whole), ids, probs
 
     # -- the step's addressing -----------------------------------------------------------------------------------------
     def step_meta(self, step, caches) -> StepMeta:
@@ -611,7 +619,8 @@ class Qwen38Net:
                 out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
             x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
             out = self._moe(n, x, compact=not rows)
-        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc)
+        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
+                                        prefetch=self._mixer_weight("close.", "down"))
         hidden, _ = self._mix("close.", normed, "down", inject=False)
         if last_hidden_only:
             if rows:
@@ -620,15 +629,26 @@ class Qwen38Net:
             hidden = hidden.index_select(0, last)
         return (hidden, h) if streams else hidden
 
-    def _site(self, prefix, h, out, inject):
-        """Enter a sublayer: the previous one's output leaves into the streams and they are normalised in one pass."""
+    def _site(self, prefix, h, out, inject, rows=None):
+        """Enter a sublayer: the previous one's output leaves into the streams and they are normalised in one pass.
+        `rows` [R]: the only rows that go on into the mixer, selected after the leave (the MTP head's captured
+        observation), so that nothing stands between the sum and its leave."""
         F, p, lanes = self.F, self.p, self.lanes
         if out is None:
             normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
         else:
-            h, normed = lanes.hc_leave_norm(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc)
+            h, normed = lanes.hc_leave_norm(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc,
+                                            prefetch=self._mixer_weight(prefix, "down_inject"))
+        if rows is not None:
+            h, normed = h.index_select(0, rows), normed.index_select(0, rows)
         x, injection = self._mix(prefix, normed, "down_inject", inject=True)
         return x, injection, h
+
+    def _mixer_weight(self, prefix: str, down_name: str):
+        """The weight a site's mixer reads first, its BF16 down projection, for the leave before it to pull into L2 while
+        the sum it adds is still waiting for the other ranks (Lanes.hc_leave_norm's `prefetch`, carry H4); None where
+        the mixer reads another (hc_fp8's FP8 lanes)."""
+        return None if prefix in self._hc_projections else self.p[prefix + down_name]
 
     # -- GatedDeltaNet -------------------------------------------------------------------------------------------------
     def _gdn(self, L: int, x: torch.Tensor, step: Step, caches) -> torch.Tensor:
@@ -1077,7 +1097,9 @@ class Qwen38Net:
 
         The attention runs over every row -- it stores their keys and values, which the next steps attend -- and all
         that follows it is row by row, so only the rows read go on: a draft observation's MoE runs its rows' last
-        position, not the K+1 it observed, and a prompt's the segments' last rows, not the prompt."""
+        position, not the K+1 it observed, and a prompt's the segments' last rows, not the prompt. A captured
+        observation's few rows all take the MLP site's leave and are selected after it, which keeps the leave the
+        attention sum's programmatic dependent (carry H4); an eager step's rows, a prompt's many, are selected first."""
         F, p, lanes = self.F, self.p, self.lanes
         meta = self.step_meta(step, caches)
         e = lanes.hc_norm(self.embed(step.ids), p["mtp.pre_fc_norm_embedding"], F.rms_eps, 1)
@@ -1087,13 +1109,20 @@ class Qwen38Net:
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
         out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers,
                         window=self.mtp_window)
-        if last_hidden_only and rows is None:
-            rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
-        if rows is not None:
-            h, out, inject = h.index_select(0, rows), out.index_select(0, rows), inject.index_select(0, rows)
-        x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
-        out = self._moe("mtp.L0.", x, compact=not getattr(step, "captured", False))
-        streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc)
+        captured = getattr(step, "captured", False)
+        if rows is not None and captured:
+            # a draft observation (decode_graphs.draft_chain): the leave right behind the sum, over every observed row,
+            # prefetching while the sum waits; three selections before it would take the wait away from it
+            x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject, rows=rows)
+        else:
+            if last_hidden_only and rows is None:
+                rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
+            if rows is not None:
+                h, out, inject = h.index_select(0, rows), out.index_select(0, rows), inject.index_select(0, rows)
+            x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
+        out = self._moe("mtp.L0.", x, compact=not captured)
+        streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc,
+                                              prefetch=self._mixer_weight("mtp.close.", "down"))
         hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
         return hidden, streams
 
