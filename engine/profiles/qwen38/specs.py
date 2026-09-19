@@ -393,6 +393,46 @@ def mtp_specs(F: Facts, *, routed: bool = True) -> "list[Spec]":
     return out
 
 
+MTP_FP8 = ("mtp.L0.moe.fp8.w13", "mtp.L0.moe.fp8.s13", "mtp.L0.moe.fp8.w2", "mtp.L0.moe.fp8.s2")
+MTP_NVFP4 = tuple("mtp.L0.moe." + part for part in ("w13", "w13_sf", "w13_alpha", "a13_scale", "w2", "w2_sf", "w2_alpha",
+                                                   "a2_scale"))
+
+
+def mtp_fp8_specs(F: Facts) -> "list[Spec]":
+    """The MTP head's routed experts of a rank in the checkpoint's own FP8 (NVIDIA's export, Facts.mtp_experts
+    "fp8_block"): per expert its e4m3 gate, up and down under a BF16 `weight_scale_inv` a 128 x 128 tile, which
+    multiplies -- stacked as w13 [E, 2I, H] rows [gate; up] with s13 [E, 2I/128, H/128] FP32, and w2 [E, H, I] with
+    s2 [E, H/128, I/128] FP32 (the BF16 scales widened, exactly). The side file mtp_fp8.py writes beside the rank files;
+    kernels/moe_fp8_rows serves it."""
+    if F.mtp_experts != "fp8_block" or F.mtp_block != 128:
+        raise ValueError(f"the MTP head's FP8 experts need NVIDIA's FP8 export (block 128); this checkpoint keeps "
+                         f"{F.mtp_experts!r} (block {F.mtp_block})")
+    E, I, H = F.experts_local, F.moe_inter, F.hidden
+    m = "mtp.layers.0.mlp."
+
+    def stacked(s, r, part):
+        cache = s.setdefault(("_mtp_fp8", r), {})
+        if part not in cache:
+            w13, s13, w2, s2 = [], [], [], []
+            for e in _expert_ids(F, r):
+                base = m + f"experts.{e}."
+                w13.append(torch.cat([s[base + "gate_proj.weight"], s[base + "up_proj.weight"]], 0))
+                s13.append(torch.cat([s[base + "gate_proj.weight_scale_inv"], s[base + "up_proj.weight_scale_inv"]],
+                                     0).float())
+                w2.append(s[base + "down_proj.weight"])
+                s2.append(s[base + "down_proj.weight_scale_inv"].float())
+            cache.update(w13=torch.stack(w13).contiguous(), s13=torch.stack(s13).contiguous(),
+                         w2=torch.stack(w2).contiguous(), s2=torch.stack(s2).contiguous())
+        return cache[part]
+
+    src = tuple(sorted({k for rank in range(TP) for k in mtp_expert_keys(m, F, rank)}))
+    FP8 = torch.float8_e4m3fn
+    return [Spec(MTP_FP8[0], (E, 2 * I, H), FP8, src, lambda s, r, W: stacked(s, r, "w13")),
+            Spec(MTP_FP8[1], (E, 2 * I // 128, H // 128), F32, src, lambda s, r, W: stacked(s, r, "s13")),
+            Spec(MTP_FP8[2], (E, H, I), FP8, src, lambda s, r, W: stacked(s, r, "w2")),
+            Spec(MTP_FP8[3], (E, H // 128, I // 128), F32, src, lambda s, r, W: stacked(s, r, "s2"))]
+
+
 def all_specs(F: Facts, layers=None, *, mtp: bool = True) -> "list[Spec]":
     return [s for _, _, specs_of in groups(F, layers, mtp=mtp) for s in specs_of(0)]
 
@@ -426,4 +466,5 @@ def groups(F: Facts, layers=None, *, mtp: bool = True):
 
 
 __all__ = ["CK", "top_specs", "layer_specs", "routed_specs", "ple_specs", "ple_shards", "ple_table_name", "mtp_specs",
-           "all_specs", "groups", "nvfp4_from_bf16", "dequant_fp8_block", "routed_expert_keys", "mtp_expert_keys"]
+           "all_specs", "groups", "nvfp4_from_bf16", "dequant_fp8_block", "routed_expert_keys", "mtp_expert_keys",
+           "MTP_FP8", "MTP_NVFP4", "mtp_fp8_specs"]

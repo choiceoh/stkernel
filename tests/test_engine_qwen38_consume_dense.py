@@ -27,6 +27,7 @@ def recording_lanes(consumed):
     class Recorder:
         def __init__(self, weight, **options):
             self.shape = tuple(weight.shape)
+            self.options = options
 
         def consume_weight(self, storage):
             consumed.append((self.label, tuple(storage.shape)))
@@ -60,20 +61,54 @@ class ConsumeDenseTests(unittest.TestCase):
         kept = [key for key in lanes if net.p[key] is not None]
         self.assertTrue(kept)
         self.assertEqual(sorted(kept), sorted(net.retained_sources))
-        self.assertEqual({key.split(".", 1)[1] if key.startswith("L") else key.split(".", 2)[2] for key in kept},
-                         {"moe.sh_down"})                                          # the target's and the MTP head's
+        # the target's shared-expert down projection: its W4 packs at 256 columns outgrow the 160-column source; the
+        # MTP head's projections have no lane at all (mtp_precision "bf16", the default: torch's matmul over the source)
+        self.assertEqual({key.split(".", 1)[1] for key in kept}, {"moe.sh_down"})
+        self.assertTrue(all(key.startswith("L") for key in kept))
+        self.assertFalse(any(key.startswith("mtp.") for key in net.dense))
+        self.assertTrue(all(net.p[key] is not None for key in net.dense_names(net.p) if key.startswith("mtp.")))
         self.assertEqual(len(consumed), len(lanes) - len(kept))
         for key, lane in lanes.items():
             with self.subTest(key=key):
                 rows, cols = lane.shape
+                w4 = lane.options.get("decode_precision", "w4") == "w4"
+                self.assertEqual(w4, not key.startswith("mtp."))
                 if key in kept:
                     self.assertEqual(lane.label, "PaddedDenseLinear")
                     self.assertGreater(packed_nbytes(rows, 256), rows * cols * 2)     # 1,034,496 > 819,200
                 else:
                     self.assertIsNone(net.p[key])
-                    self.assertLessEqual(packed_nbytes(rows, cols), rows * cols * 2)
+                    padded = cols if cols % 128 == 0 else 256
+                    self.assertLessEqual(packed_nbytes(rows, padded, decode_w4=w4), rows * cols * 2)
         self.assertIn(("DenseLinear", (320, 2560)), consumed)                           # the tightest fit
         self.assertIsNotNone(net.p["head"])                                             # the head is not a dense lane here
+
+    def test_the_mtp_head_s_precision(self):
+        """fp8 (default): FP8 lanes whose decode rows take fp8_rows; bf16: no lane, torch's matmul over the kept
+        source; w4: the target layers' lanes."""
+        from engine.profiles.qwen38 import specs
+        from engine.profiles.qwen38.net import Qwen38Net
+        from probes.engine_qwen38_cells import facts
+        for precision in ("fp8", "bf16", "w4"):
+            net = object.__new__(Qwen38Net)
+            net.p = {s.name: torch.empty(s.shape, dtype=s.dtype, device="meta") for s in specs.all_specs(facts(), mtp=True)}
+            net.hc_fp8, net.mtp_precision = False, precision
+            with recording_lanes([]):
+                net.prepare_dense(None, consume_weights=True)
+            mtp = {key: lane for key, lane in net.dense.items() if key.startswith("mtp.")}
+            with self.subTest(precision=precision):
+                if precision == "bf16":
+                    self.assertEqual(mtp, {})
+                    self.assertTrue(all(net.p[key] is not None for key in net.dense_names(net.p) if key.startswith("mtp.")))
+                else:
+                    self.assertEqual(len(mtp), 4)
+                    want = dict(decode_precision="fp8", fp8_decode_rows=True) if precision == "fp8" else {}
+                    self.assertTrue(all({k: v for k, v in lane.options.items() if k in want} == want for lane in mtp.values()))
+                    if precision == "w4":
+                        self.assertTrue(all("decode_precision" not in lane.options for lane in mtp.values()))
+        with self.assertRaises(ValueError):
+            Qwen38Net.__init__(object.__new__(Qwen38Net), facts(), type("C", (), {"world_size": 4, "rank": 0})(), None,
+                               mtp_precision="fp4")
 
     def test_without_consume_every_source_stays(self):
         net, consumed = self.prepared(False)

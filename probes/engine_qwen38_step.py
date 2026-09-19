@@ -49,6 +49,8 @@ SPEC_K = 3                                # the operator's K (#1182: fleet --spe
 MAX_GIB = 4.0                             # this process's own device-memory ceiling: the lane's budget beside production
 FULL = {"fixed": 1, "gdn": 36, "qsa": 12, "ple": 1}
 ARMS = ("served", "mm")                   # qwen38_step_ab: the served lanes, and the lanes before the skinny GEMV
+MTP_ARMS = ("served", "mtp-w4", "mtp-fp8", "experts-fp8")   # qwen38_step_mtp: MTP dense BF16 (served), W4A8, FP8; experts FP8
+MTP_FP8_DIR = Path("/home/choiceoh/models/st-qwen38-mtp-fp8")  # mtp_fp8.py's side files (srv4)
 
 FAMILIES = (
     ("moe b12x", r"[Mm]oe|[Mm]icro|[Ss]tatic|[Dd]ynamic|b12x|kernel_cutlass"),
@@ -128,7 +130,8 @@ def extrapolate(parts: dict, full=FULL) -> float:
     return sum(parts[u] * n for u, n in full.items())
 
 
-def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K):
+def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K,
+          mtp_precision: str = "bf16", mtp_experts_dir: "Path | None" = None):
     """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft), at
     `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them)."""
     import dataclasses
@@ -144,14 +147,21 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     F = facts.load(meta)
     if spec_k != F.spec_k:
         F = dataclasses.replace(F, spec_k=spec_k)
-    net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True)
+    net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True,
+                    mtp_precision=mtp_precision, mtp_experts="fp8" if mtp_experts_dir else "nvfp4")
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, 0.05, mtp=True)
     snapshots = min(snapshots, 9)           # a net with no GDN layer has empty snapshots, and the count would run away
     arena = Arena(total_bytes(specs) + 256 * (len(specs) + 64) + layout(F, net.layers, mtp=True).nbytes(nb, max_seqs)
                   + snapshots * snapshot_layout(F, net.layers)[0])
     loader = rank_loader(ranks / f"rank{rank}of{facts.TP}.safetensors", expected_layout=F.weight_layout)
-    net.bind(loader.load([s.name for s in specs], arena=arena))
+    side = {s.name for s in net.side_specs()}
+    views = loader.load([s.name for s in specs if s.name not in side], arena=arena)
+    if side:
+        from engine.profiles.qwen38 import mtp_fp8
+        views.update(rank_loader(mtp_fp8.path(mtp_experts_dir, rank), expected_layout=mtp_fp8.LAYOUT)
+                     .load(sorted(side), arena=arena))
+    net.bind(views)
     if net._ple is not None:
         net.attach_ple(ZeroPLETable(F.ple_rows_per_rank, F.ple_head_dim, float(net._ple_scale)),
                        max_rows=max_seqs * (F.spec_k + 1))
@@ -353,10 +363,11 @@ def calls(fn, *, top: int = 40) -> list:
 def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REPLAYS, kv_gib: float = KV_GIB,
             max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False, arm: str = "served") -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row.
-    `arm` "mm": the skinny GEMV's table emptied first -- the router on torch.mm, the mixers in five launches on cuBLAS."""
+    `arm` "mm": the skinny GEMV's table emptied first -- the router on torch.mm, the mixers in five launches on cuBLAS;
+    "mtp-w4" / "mtp-fp8": the MTP head's dense projections at that precision instead of the served BF16."""
     import torch
-    if arm not in ARMS:
-        raise ValueError(f"arm {arm!r}: one of {ARMS}")
+    if arm not in ARMS + MTP_ARMS:
+        raise ValueError(f"arm {arm!r}: one of {ARMS + MTP_ARMS}")
     if arm == "mm":
         from engine.kernels.common import skinny_gemv
         skinny_gemv.CONFIGS.clear()
@@ -368,7 +379,9 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     from engine.profiles.qwen38 import facts
     _, shape_source = kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
     began = time.perf_counter()
-    F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib)
+    F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib,
+                                          mtp_precision=arm[4:] if arm.startswith("mtp-") else "bf16",
+                                          mtp_experts_dir=MTP_FP8_DIR if arm == "experts-fp8" else None)
     built = time.perf_counter() - began
     graphs = {}
     for n, blocks in shapes:
@@ -398,6 +411,17 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                            "index_select", "arange", "sigmoid", "bitwise_and", "__and__", "sub", "__rsub__", "__sub__"}
                 where[label + " calls"] = [c for c in calls(lambda: fn(inputs), top=200) if c["func"] in watched]
                 print(json.dumps({"arm": arm, "calls": label, "top": where[label + " calls"][:30]}), flush=True)
+        if shape in draft.graphs.inputs:
+            # net.mtp_forward `rows`: the rows past the attention alone against every row and then the same rows
+            step, given, last, _ = draft.graphs.inputs[shape]
+            seat(draft, caches, F, shape)
+            full, full_streams = net.mtp_forward(step, given, caches, last_hidden_only=False)
+            part, part_streams = net.mtp_forward(step, given, caches, last_hidden_only=False, rows=last)
+            a, b = full.index_select(0, last).float(), part.float()
+            where["mtp_rows"] = {"hidden_max_err": float((a - b).abs().max() / a.abs().max().clamp_min(1e-30)),
+                                 "hidden_equal": bool(torch.equal(a, b)),
+                                 "streams_equal": bool(torch.equal(full_streams.index_select(0, last), part_streams))}
+            print(json.dumps({"arm": arm, "mtp_rows": where["mtp_rows"]}), flush=True)
         caches.reset()
         served = served_loop(F, net, caches, target, draft)
         one = shapes[0]
@@ -489,7 +513,7 @@ if __name__ == "__main__":
     ap.add_argument("--one", default=None, help="one layer set (comma separated), measured in this process")
     ap.add_argument("--rank", type=int, default=None)
     ap.add_argument("--loop", action="store_true", help="with --one: also decode one request through the served model")
-    ap.add_argument("--arm", default="served", choices=ARMS, help="with --one: the lanes it builds under")
+    ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:], help="with --one: the lanes it builds under")
     a = ap.parse_args()
     if a.one is not None:
         row = measure(Path(a.ranks), a.rank, tuple(int(x) for x in a.one.split(",")), loop=a.loop, arm=a.arm)

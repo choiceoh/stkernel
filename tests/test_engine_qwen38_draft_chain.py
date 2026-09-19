@@ -21,7 +21,7 @@ class FakeNet:
     def __init__(self):
         self.steps = []
 
-    def mtp_forward(self, step, given, caches, *, last_hidden_only=True):
+    def mtp_forward(self, step, given, caches, *, last_hidden_only=True, rows=None):
         ids = step.ids
         if getattr(step, "captured", False):
             positions = (step.contexts[:, None] + torch.arange(step.tokens)).reshape(-1)
@@ -31,6 +31,8 @@ class FakeNet:
                            step.tokens if getattr(step, "captured", False) else None))
         hidden = torch.stack([ids.to(torch.float32), positions.to(torch.float32)], dim=1)
         streams = hidden * 2
+        if rows is not None:                     # the net's rule: only the rows a caller reads go past the attention
+            return hidden.index_select(0, rows), streams.index_select(0, rows)
         if last_hidden_only:
             last = torch.tensor([s.start + s.length - 1 for s in step.segments])
             return hidden.index_select(0, last), streams.index_select(0, last)
@@ -38,6 +40,9 @@ class FakeNet:
 
     def head_tokens(self, h, decodable=None):
         return (h[:, 0] * 10 + 1).to(torch.int64)
+
+    def draft_tokens(self, h):                   # the drafter's picks (net.draft_tokens: the head's, or its index's)
+        return self.head_tokens(h)
 
 
 def fake_caches(reserved, owners):
@@ -218,6 +223,17 @@ class LauncherTests(unittest.TestCase):
         self.assertIn('SPEC_ARG="--spec-k $ST_SPEC_K"', text)
         exec_line = next(l for l in text.splitlines() if "-m engine.profiles.qwen38.fleet " in l)
         self.assertLess(exec_line.index("$HC_ARG $SPEC_ARG"), exec_line.index("--port"))
+
+    def test_st_mtp_precision_reaches_the_fleet_command(self):
+        from pathlib import Path
+        text = Path(__file__).resolve().parents[1].joinpath("launchers", "start-st-qwen38.sh").read_text()
+        self.assertIn('bf16|fp8|w4) MTP_ARG="--mtp-precision $ST_MTP_PRECISION" ;;', text)
+        exec_line = next(l for l in text.splitlines() if "-m engine.profiles.qwen38.fleet " in l)
+        self.assertLess(exec_line.index("$MTP_ARG"), exec_line.index("--port"))
+        fleet = Path(__file__).resolve().parents[1].joinpath("engine", "profiles", "qwen38", "fleet.py").read_text()
+        self.assertIn('ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",', fleet)
+        self.assertIn("mtp_precision=a.mtp_precision,", fleet)
+        self.assertIn("draft_index=draft_index(a.draft_index), mtp_experts_dir=a.mtp_experts_dir)", fleet)
 
 
 if __name__ == "__main__":

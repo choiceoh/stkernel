@@ -174,6 +174,17 @@ def main():
         from probes.engine_qwen38_step import LAYER_SETS, run as qwen38_step
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[:1])
         return
+    if args.lanes == 'qwen38_draft_head':
+        # the draft argmax from an inverted-file index over the rank's real head: agreement with the full head on three
+        # stand-in query sets at each (clusters, probes), the index's build time, and its cost against the full head's
+        from probes.engine_qwen38_draft_head import run as qwen38_draft_head
+        qwen38_draft_head(args.output, args.ranks)
+        return
+    if args.lanes == 'qwen38_step_mtp':
+        # the draft graph under the MTP head's dense projections in BF16 (served), W4A8 and FP8, one layer set each
+        from probes.engine_qwen38_step import LAYER_SETS, MTP_ARMS, run as qwen38_step
+        qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=MTP_ARMS)
+        return
     if args.lanes == 'qwen38_step_ab':
         # the same step, each layer set built under the served lanes and again with the skinny GEMV's shapes on
         # torch.mm -- what the router's and the mixers' down projections on it change in a replayed step

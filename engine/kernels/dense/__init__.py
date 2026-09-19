@@ -296,9 +296,10 @@ class DenseLinear:
     input_dtype = torch.bfloat16  # __call__ enforces this before invoking its calibration observer
 
     def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None,
-                 decode_precision='w4', decode_name=None):
+                 decode_precision='w4', decode_name=None, fp8_decode_rows=False):
         """`smooth` [K]: the factor `weight` was multiplied by, its input divided by (kernels/dense/smoothing) -- the
-        store scales the calibration Hessian alike; the calibration files its sums in the unsmoothed domain."""
+        store scales the calibration Hessian alike; the calibration files its sums in the unsmoothed domain.
+        `fp8_decode_rows`: the FP8 lane's 1..16 rows on fp8_rows' one launch (FP8Linear `decode_rows`)."""
         if (weight.ndim != 2 or not weight.is_cuda or weight.dtype != torch.bfloat16
                 or weight.shape[1] % 128):
             raise ValueError("dense weights must be CUDA BF16 with K aligned to 128")
@@ -345,7 +346,7 @@ class DenseLinear:
             # the FP8 lane's weights: GPTQ on the fp8 grid from the same calibration, else round-to-nearest
             fp8 = (store.pack_fp8(weight, name, smooth=smooth, digest=digest)
                    if (store is not None and store.calibrated(name)) else None)
-            self.fp8 = FP8Linear(weight, quantized=fp8, name=name)
+            self.fp8 = FP8Linear(weight, quantized=fp8, name=name, decode_rows=fp8_decode_rows)
         else:
             self.fp8 = None
         self.decode_fp8 = None
@@ -504,7 +505,8 @@ class PaddedDenseLinear(DenseLinear):
     padded_columns(cols))` wide. The direct producers (the packet projector, the slot writer) read an input the caller
     has not widened, so they are not offered."""
 
-    def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
+    def __init__(self, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None,
+                 decode_precision='w4', fp8_decode_rows=False):
         if weight.ndim != 2:
             raise ValueError("PaddedDenseLinear: a dense weight is [N, K]")
         if hessians is not None:
@@ -516,7 +518,8 @@ class PaddedDenseLinear(DenseLinear):
             weight = torch.nn.functional.pad(weight, (0, self.pad))
             if smooth is not None:
                 smooth = torch.nn.functional.pad(smooth, (0, self.pad), value=1.0)
-        super().__init__(weight, prefill=prefill, store=store, name=name, smooth=smooth)
+        super().__init__(weight, prefill=prefill, store=store, name=name, smooth=smooth,
+                         decode_precision=decode_precision, fp8_decode_rows=fp8_decode_rows)
 
     def __call__(self, x, rows_ok=None, *, observe=True):
         """x at the weight's width, or already at the padded width with zero columns (common.swiglu's `pad_to` writes

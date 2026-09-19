@@ -59,6 +59,7 @@ from engine.profiles.qwen38.ple_table import PLEStaging, local_rows
 BF16, F32 = torch.bfloat16, torch.float32
 HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
 HC_NAME = "Qwen4ExpForCausalLM/hyper_connection"    # the FP8 mixer lanes' names (hc_fp8; no calibration yet)
+MTP_PRECISIONS = ("bf16", "fp8", "w4")                 # the MTP head's dense projections (Qwen38Net mtp_precision)
 FIRST_BUCKET = 4096                                # tokens of the smallest context bucket; each next one doubles
 
 
@@ -169,7 +170,7 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = True):
+                 query_shards: bool = True, mtp_precision: str = "bf16", mtp_experts: str = "nvfp4"):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
@@ -180,13 +181,29 @@ class Qwen38Net:
         quarters of each QSA layer's scoring for one all-gather of ids. On by the operator's decision of 2026-09-18
         with the fleet unmeasured (CHARTER D17): until an onepass record says which side of that trade a fleet lands
         on, a boot can decline it (fleet.py --no-query-shards, the launcher's ST_QUERY_SHARDS=0) and every rank
-        scores every row as before."""
+        scores every row as before.
+
+        `mtp_precision`: the MTP head's dense projections (its attention's two, its shared expert's two), which the
+        checkpoint keeps in BF16. "bf16" (the default, the operator's decision of 2026-09-19): the checkpoint's weights
+        through torch's matmul, no quantisation -- a K=3 draft graph 4.39 ms against W4A8's 3.97 (q38mtp-0919a). "fp8":
+        block-scaled FP8, decode rows on dense/fp8_rows, 4.10 ms. "w4": the target layers' W4A8 at decode rows, as
+        before. A drafter's numbers change how many tokens a step yields, never which (verification picks them).
+
+        `mtp_experts`: the MTP head's routed experts as the rank file keeps them ("nvfp4": re-encoded from the export's
+        FP8, on b12x) or in the export's own FP8 ("fp8": the side file mtp_fp8.py writes, on kernels/moe_fp8_rows --
+        `side_specs` names what a boot loads from it)."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
             raise ValueError("query_shards is a declared boolean")
         self.F, self.comm, self.lanes, self.mtp, self.hc_fp8 = F, comm, lanes, mtp, hc_fp8
         self.query_shards = query_shards
+        if mtp_precision not in MTP_PRECISIONS:
+            raise ValueError(f"mtp_precision {mtp_precision!r}: one of {MTP_PRECISIONS}")
+        self.mtp_precision = mtp_precision
+        if mtp_experts not in ("nvfp4", "fp8"):
+            raise ValueError(f"mtp_experts {mtp_experts!r}: nvfp4 or fp8")
+        self.mtp_experts = mtp_experts if mtp else "nvfp4"
         self._hc_projections = {}
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
@@ -198,13 +215,23 @@ class Qwen38Net:
         self.rec_ring = F.spec_k + 1                   # GDN states kept per slot: one per verify position
         self.p = None
         self.dense = {}
+        self.draft_index = None                         # dense/ivf_head over the head's rows (prepare_draft_head)
         self._experts = {}
         self._ple = self._ple_hash = self._ple_scale = None
         self.ple_table = self.ple_stage = None          # attach_ple: the rank's SSD table and the staged rows
 
     # -- binding ---------------------------------------------------------------------------------------------------
     def specs(self):
-        return specs.all_specs(self.F, self.layers, mtp=self.mtp)
+        """Every tensor the net binds: the rank file's, and with FP8 MTP experts the side file's in place of the rank
+        file's NVFP4 ones (`side_specs`)."""
+        out = specs.all_specs(self.F, self.layers, mtp=self.mtp)
+        if getattr(self, "mtp_experts", "nvfp4") == "fp8":
+            out = [s for s in out if s.name not in specs.MTP_NVFP4] + specs.mtp_fp8_specs(self.F)
+        return out
+
+    def side_specs(self):
+        """The tensors a boot loads from the MTP side file (mtp_fp8.path), not the rank file."""
+        return specs.mtp_fp8_specs(self.F) if getattr(self, "mtp_experts", "nvfp4") == "fp8" else []
 
     def bind(self, views: dict) -> None:
         from engine.base.params import bind
@@ -213,6 +240,10 @@ class Qwen38Net:
         F, p = self.F, self.p
         for prefix in [f"L{L}." for L in self.layers] + (["mtp.L0."] if self.mtp else []):
             n = prefix + "moe."
+            if prefix == "mtp.L0." and self.mtp_experts == "fp8":
+                self._experts[prefix] = partial(self._moe_fp8, w13=p[n + "fp8.w13"], s13=p[n + "fp8.s13"],
+                                                w2=p[n + "fp8.w2"], s2=p[n + "fp8.s2"])
+                continue
             scales = ModelOptScales.bind(*(p[n + s] for s in ("w13_alpha", "a13_scale", "w2_alpha", "a2_scale")),
                                          experts=p[n + "w13"].shape[0], device=p[n + "w13"].device)
             if self.lanes.moe_prepare is not None:
@@ -263,12 +294,17 @@ class Qwen38Net:
         for key, name in self.dense_names(self.p).items():
             weight = self.p[key]
             aligned = weight.shape[1] % 128 == 0
-            lane = DenseLinear(weight, store=store, name=name) if aligned else \
-                PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None)
+            mtp = key.startswith("mtp.")
+            if mtp and getattr(self, "mtp_precision", "bf16") == "bf16":
+                continue                                             # self.linear: torch's BF16 matmul over p[key]
+            precision = "fp8" if mtp and getattr(self, "mtp_precision", "bf16") == "fp8" else "w4"
+            options = dict(decode_precision="fp8", fp8_decode_rows=True) if precision == "fp8" else {}
+            lane = DenseLinear(weight, store=store, name=name, **options) if aligned else \
+                PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None, **options)
             self.dense[key] = lane
             if consume_weights and hasattr(lane, "consume_weight"):
                 cols = weight.shape[1] if aligned else padded_columns(weight.shape[1])
-                if packed_nbytes(weight.shape[0], cols) <= weight.numel() * weight.element_size():
+                if packed_nbytes(weight.shape[0], cols, decode_w4=precision == "w4") <= weight.numel() * weight.element_size():
                     lane.consume_weight(weight)
                     self.p[key] = None
                 else:
@@ -314,8 +350,19 @@ class Qwen38Net:
                             project_down=proj[0], project_up=proj[1])
 
     def linear(self, x, name):
+        """x @ W.T through the weight's dense lane, or -- a BF16 weight with no lane (the MTP head's at its default
+        precision) -- the lanes' rows_linear: the skinny GEMV for a decode step's rows where it has a tile, else
+        torch's matmul."""
         lane = self.dense.get(name)
-        return lane(x) if lane is not None else torch.nn.functional.linear(x, self.p[name])
+        if lane is not None:
+            return lane(x)
+        return self._bf16(x, self.p[name])
+
+    def _bf16(self, x, w):
+        rows_linear = getattr(self.lanes, "rows_linear", None)
+        if rows_linear is None:
+            return torch.nn.functional.linear(x, w)
+        return rows_linear(x.reshape(-1, x.shape[-1]), w).reshape(*x.shape[:-1], w.shape[0])
 
     # -- embed / head -----------------------------------------------------------------------------------------------
     def embed(self, ids: torch.Tensor) -> torch.Tensor:
@@ -331,6 +378,26 @@ class Qwen38Net:
     def head_tokens(self, h: torch.Tensor, decodable=None) -> torch.Tensor:
         from engine.modules.vocab import argmax
         return argmax(self.head_local(h)[:, :self.vp], self.comm, self.rank * self.vp, decodable)
+
+    def prepare_draft_head(self, clusters: int, probes: int) -> dict:
+        """After prepare_dense: the MTP head's argmax from an inverted-file index over this rank's head rows
+        (dense/ivf_head) instead of the whole head -- a few MB a draft instead of 159. The verify step's head is
+        untouched: a draft the index gets wrong is rejected, never emitted. -> the index's shape, for the boot's gauges."""
+        from engine.kernels.dense import ivf_head
+        self.draft_index = ivf_head.build(self.dense["head"].weight, clusters=clusters, probes=probes, rows=self.vp)
+        return {"clusters": clusters, "probes": probes, "cap": self.draft_index.cap,
+                "read_MB": round(self.draft_index.read_bytes() / 1e6, 2)}
+
+    def draft_tokens(self, h: torch.Tensor) -> torch.Tensor:
+        """The drafter's greedy picks: `head_tokens` over the whole head, or the index's argmax where one is prepared
+        (the same key, all-reduced the same way)."""
+        index = self.draft_index
+        if index is None or not h.is_cuda or not 1 <= h.shape[0] <= 16:
+            return self.head_tokens(h)
+        from engine.kernels.dense import ivf_head
+        key = ivf_head.argmax_key(index, h, self.rank * self.vp, self.vp)
+        key = self.comm.all_reduce_max(key)
+        return 0xffffffff - (key & 0xffffffff)
 
     # -- the step's addressing -----------------------------------------------------------------------------------------
     def step_meta(self, step, caches) -> StepMeta:
@@ -644,8 +711,9 @@ class Qwen38Net:
             routed = self._experts[prefix](x, ids, weights, compact=compact)
         else:
             # a captured step's router and EP remap are one launch over the scores row (kernels/moe_route)
+            w13 = p[n + "fp8.w13"] if n + "fp8.w13" in p else p[n + "w13"]      # the route's shape: E, I
             ids, weights = lanes.route_local(scores, F.topk_experts, experts=F.experts, first_expert=self.first_expert,
-                                             w13=p[n + "w13"], hidden=x.shape[1])
+                                             w13=w13, hidden=x.shape[1])
             routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
         # the down projection's 160 columns pad to 256 (PaddedDenseLinear): the activation's launch writes the zeros
         down = getattr(self, "dense", {}).get(n + "sh_down")
@@ -654,6 +722,19 @@ class Qwen38Net:
         # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
         gate = torch.sigmoid(scores[:, F.experts:].float())
         return self.comm.all_reduce(lanes.moe_finish(routed, shared, gate))
+
+    def _moe_fp8(self, x, ids, weights, *, w13, s13, w2, s2, compact=False, local=False):
+        """The MTP head's experts on their FP8 side-file weights (lanes.moe_fp8): global routes (an eager step) are
+        made this rank's first -- another rank's at weight 0 -- and more rows than the kernel takes go 16 at a time
+        (rows are independent; the MTP head runs past its attention only the rows a caller reads)."""
+        from engine.profiles.qwen38.lanes import local_routes
+        if not local:
+            ids, weights = local_routes(ids, weights, self.first_expert, w13.shape[0])
+        run = self.lanes.moe_fp8
+        if x.shape[0] <= 16:
+            return run(x, ids, weights, w13, s13, w2, s2)
+        return torch.cat([run(x[a:a + 16], ids[a:a + 16], weights[a:a + 16], w13, s13, w2, s2)
+                          for a in range(0, x.shape[0], 16)])
 
     # -- PLE -----------------------------------------------------------------------------------------------------------
     def _ple_feature(self, L: int):
@@ -811,26 +892,31 @@ class Qwen38Net:
         return gated + local.reshape(n * t, width)
 
     # -- the MTP head --------------------------------------------------------------------------------------------------
-    def mtp_forward(self, step: Step, given: torch.Tensor, caches, *, last_hidden_only: bool = True):
+    def mtp_forward(self, step: Step, given: torch.Tensor, caches, *, last_hidden_only: bool = True, rows=None):
         """The MTP head over a step whose tokens are the target's next tokens and `given` the target's streams at the
         positions before them [N, hc*H]: fuse, one QSA + MoE layer (model layer F.layers, its rows in the target's
-        blocks), the head's closing mixer -> (hidden [N or segments, H], its streams for chaining)."""
+        blocks), the head's closing mixer -> (hidden, its streams for chaining), for the rows a caller reads: `rows`
+        [R] (device int64 indices), each segment's last with `last_hidden_only`, else every row.
+
+        The attention runs over every row -- it stores their keys and values, which the next steps attend -- and all
+        that follows it is row by row, so only the rows read go on: a draft observation's MoE runs its rows' last
+        position, not the K+1 it observed, and a prompt's the segments' last rows, not the prompt."""
         F, p, lanes = self.F, self.p, self.lanes
         meta = self.step_meta(step, caches)
         e = lanes.hc_norm(self.embed(step.ids), p["mtp.pre_fc_norm_embedding"], F.rms_eps, 1)
-        e = torch.nn.functional.linear(e, p["mtp.fc_embedding"])
+        e = self._bf16(e, p["mtp.fc_embedding"])
         g = lanes.hc_norm(given, p["mtp.pre_fc_norm_hidden"], F.rms_eps, 1).view(-1, F.hc, F.hidden)
-        h = (torch.nn.functional.linear(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
+        h = (self._bf16(g, p["mtp.fc_hidden"]) + e[:, None, :]).reshape(-1, F.hc * F.hidden)
         x, inject, h = self._site("mtp.L0.hc.attn.", h, None, None)
         out = self._qsa(F.layers, x, step, meta, caches, prefix="mtp.L0.attn.", cache_layer=F.layers)
+        if last_hidden_only and rows is None:
+            rows = torch.tensor([s.start + s.length - 1 for s in step.segments], device=out.device)
+        if rows is not None:
+            h, out, inject = h.index_select(0, rows), out.index_select(0, rows), inject.index_select(0, rows)
         x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
         out = self._moe("mtp.L0.", x, compact=not getattr(step, "captured", False))
         streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc)
         hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
-        if last_hidden_only:
-            last = torch.tensor([s.start + s.length - 1 for s in step.segments], device=hidden.device)
-            return hidden.index_select(0, last), streams.index_select(0, last)
         return hidden, streams
 
-
-__all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME"]
+__all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME", "MTP_PRECISIONS"]

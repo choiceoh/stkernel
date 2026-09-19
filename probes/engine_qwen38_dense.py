@@ -93,12 +93,15 @@ def projection(key: str) -> str:
 
 def qwen38_cases(F) -> "list[Case]":
     """One case per (lane, weight shape) among the projections Qwen38Net.prepare_dense builds for these facts, in model
-    order: the served specs' shapes (the MTP head included, as the fleet serves it) under Qwen38Net.dense_names."""
+    order: the served specs' shapes under Qwen38Net.dense_names -- the target layers' (the MTP head's are BF16 at the
+    fleet's default, mtp_precision "bf16", and get no dense lane)."""
     from engine.profiles.qwen38 import specs
     from engine.profiles.qwen38.net import Qwen38Net
     shapes = {s.name: tuple(s.shape) for s in specs.all_specs(F, mtp=True)}
     grouped = {}
     for key, name in Qwen38Net.dense_names(shapes).items():
+        if key.startswith("mtp."):
+            continue
         rows, cols = shapes[key]
         grouped.setdefault((lane_for(cols), rows, cols), []).append((key, name))
     return [Case('qwen38', lane, rows, cols, tuple(dict.fromkeys(projection(key) for key, _ in members)),
