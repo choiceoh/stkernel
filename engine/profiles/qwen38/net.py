@@ -411,22 +411,36 @@ class Qwen38Net:
         return {"clusters": clusters, "probes": probes, "cap": self.draft_index.cap,
                 "read_MB": round(self.draft_index.read_bytes() / 1e6, 2)}
 
+    def draft_logits(self, h: torch.Tensor) -> torch.Tensor:
+        """This rank's vocabulary logits [N, vp] for the drafter's argmax: the head's FP8 weight against the rows in BF16
+        (dense/fp8_rows.project_bf16) -- the verify step's head quantises its rows to FP8 as well, the draft's does not,
+        at the same bytes (the operator's rule of 2026-09-19: precision where it costs nothing and moves acceptance).
+        A head the FP8 decode-row kernel does not take (a cuBLAS reader, more than 16 rows, the CPU) is the verify step's."""
+        from engine.kernels.dense import FP8Linear, fp8_rows
+        head = self.dense.get("head")
+        if (isinstance(head, FP8Linear) and head.cublas is None and h.is_cuda and 1 <= h.shape[0] <= fp8_rows.MAX_ROWS
+                and h.dtype == torch.bfloat16):
+            return fp8_rows.project_bf16(h.contiguous(), head.weight)[:, :self.vp]
+        return self.head_local(h)[:, :self.vp]
+
     def draft_tokens(self, h: torch.Tensor, *, probability: bool = False):
-        """The drafter's greedy picks: `head_tokens` over the whole head, or the index's argmax where one is prepared
-        (the same key, all-reduced the same way). `probability`: (picks, the head's softmax probability of each)
-        -- modules/vocab.argmax_probability, identical on every rank; the index reads no whole row, so it has none."""
+        """The drafter's greedy picks: the argmax of `draft_logits` over the whole head, or the index's argmax where one
+        is prepared (the same key, all-reduced the same way). `probability`: (picks, the head's softmax probability of
+        each) -- modules/vocab.argmax_probability over the same `draft_logits`, so a pick is the same with it or without,
+        identical on every rank; the index reads no whole row, so it has none."""
         index = self.draft_index
         if probability:
             if index is not None:
                 raise ValueError("the draft index reads a few clusters of the head, not the row a probability sums")
             from engine.modules.vocab import argmax_probability
-            picks, probs = argmax_probability(self.head_local(h)[:, :self.vp], self.comm, self.rank * self.vp)
+            picks, probs = argmax_probability(self.draft_logits(h), self.comm, self.rank * self.vp)
             tap = getattr(self, "draft_tap", None)
             if tap is not None:
                 tap(h, picks)
             return picks, probs
         if index is None or not h.is_cuda or not 1 <= h.shape[0] <= 16:
-            picks = self.head_tokens(h)
+            from engine.modules.vocab import argmax
+            picks = argmax(self.draft_logits(h), self.comm, self.rank * self.vp)
         else:
             from engine.kernels.dense import ivf_head
             key = ivf_head.argmax_key(index, h, self.rank * self.vp, self.vp)

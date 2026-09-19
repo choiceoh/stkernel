@@ -49,9 +49,12 @@ class RowTapTests(unittest.TestCase):
         from unittest import mock
         from engine.profiles.qwen38.net import Qwen38Net
         net = object.__new__(Qwen38Net)
-        net.draft_index, seen = None, []
+        net.draft_index, seen, net.rank, net.vp = None, [], 0, 8
+        net.comm = mock.Mock(all_reduce_max=lambda t: t)
         net.draft_tap = lambda h, picks: seen.append((h.shape[0], picks.tolist()))
-        with mock.patch.object(Qwen38Net, "head_tokens", return_value=torch.tensor([3, 4])):
+        logits = torch.zeros(2, 8)
+        logits[0, 3] = logits[1, 4] = 1.0
+        with mock.patch.object(Qwen38Net, "draft_logits", return_value=logits):
             self.assertEqual(net.draft_tokens(torch.zeros(2, 4)).tolist(), [3, 4])
         self.assertEqual(seen, [(2, [3, 4])])
 

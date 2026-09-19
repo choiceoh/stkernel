@@ -82,6 +82,62 @@ def gated_sum(routed, shared, gate, *, out=None):
     return out
 
 
+@tr.jit
+def _lower_bound(Token, P, key):
+    """The first index of `Token` [P] (ascending) not below `key`: a branchless binary search, 32 halvings."""
+    lo = P * 0
+    hi = P + 0
+    for _ in tl.static_range(32):
+        live = lo < hi
+        mid = (lo + hi) // 2
+        t = tl.load(Token + mid, mask=live, other=0)
+        lo = tl.where(live & (t < key), mid + 1, lo)
+        hi = tl.where(live & (t >= key), mid, hi)
+    return lo
+
+
+@tr.jit
+def _pair_sum(Pairs, Token, Out, P, sP, sO, H: tl.constexpr, BLOCK: tl.constexpr):
+    r = tl.program_id(0)
+    c = tl.program_id(1) * BLOCK + tl.arange(0, BLOCK)
+    m = c < H
+    lo = _lower_bound(Token, P, r)
+    hi = _lower_bound(Token, P, r + 1)
+    acc = tl.zeros([BLOCK], dtype=tl.float32)
+    for p in range(lo, hi):                                       # the row's pairs in their order: one fp32 sum
+        acc += tl.load(Pairs + p * sP + c, mask=m, other=0.0).to(tl.float32)   # 32-bit offsets: the entry bounds them
+    tl.store(Out + r * sO + c, acc.to(Out.dtype.element_ty), mask=m)
+
+
+def pair_sum(pairs, token, rows: int, *, out=None):
+    """Each row's pairs summed in FP32 in their order and rounded once: out[r] = BF16(sum of pairs[p] with token[p] == r)
+    -- the compact MoE's combine (engine/profiles/qwen38/lanes: an eager step dispatches only this rank's (token,
+    route) pairs, one route a pair), in one launch instead of an FP32 zero fill, the pairs widened to FP32, an atomic
+    `index_add_` and the rounding. `token` is ascending int64 [P] (torch.nonzero's row-major order), `pairs` BF16 [P, H]
+    with packed columns; a row without pairs is zeros. The order is the pairs' own, so the result is one value
+    whatever the scheduling -- the atomic sum it replaces could differ in its last place from run to run -- and it is
+    the sequential `index_add_` of the CPU's. An FP32 `out` keeps the sum unrounded (the tests hold the arithmetic
+    apart: Triton's CPU interpreter does not round BF16 the way a GPU does)."""
+    if (pairs.ndim != 2 or token.ndim != 1 or token.shape[0] != pairs.shape[0] or token.dtype != torch.int64
+            or pairs.dtype != torch.bfloat16 or pairs.device != token.device or not pairs.is_cuda
+            or pairs.stride(1) != 1 or not token.is_contiguous() or type(rows) is not int or rows < 0
+            or max(pairs.shape[0] * pairs.stride(0), rows * pairs.shape[1]) >= 2 ** 31):
+        raise ValueError('the pair sum takes BF16 pairs [P, H] with packed columns, their ascending int64 rows [P] '
+                         'on the same CUDA device, and a row count, every offset within 32 bits (a 32K-token chunk, '
+                         'ten routes a token at hidden 2560, is 0.84e9)')
+    hidden = pairs.shape[1]
+    if out is None:
+        out = torch.empty(rows, hidden, device=pairs.device, dtype=pairs.dtype)
+    if (out.shape != (rows, hidden) or out.dtype not in (torch.bfloat16, torch.float32) or out.device != pairs.device
+            or out.stride(1) != 1 or torch._C._overlaps(out, pairs)):
+        raise ValueError('the pair sum needs a distinct BF16 (or FP32) [rows, H] destination with packed columns')
+    if rows and hidden:
+        block = 512
+        _pair_sum[(rows, tr.cdiv(hidden, block))](pairs, token, out, pairs.shape[0], pairs.stride(0), out.stride(0),
+                                                 H=hidden, BLOCK=block, num_warps=4)
+    return out
+
+
 def validate_finalizer(finalize, *, rows, experts, local_experts, hidden,
                        intermediate, topk, quant_mode, activation, limit,
                        alpha, beta, tiled):

@@ -222,8 +222,8 @@ class DataTests(unittest.TestCase):
             tap(1, 42, [142], rows(1, 5), True)
             import numpy as np
             written = lambda: sum(np.load(f)["meta"].shape[0] for f in shards([taps]))
-            deadline = time.time() + 5
-            while time.time() < deadline and written() < 49:                  # the last rows: the writer's timer
+            deadline = time.time() + 30          # the timer is 0.2 s; the budget is for a loaded box (check.py
+            while time.time() < deadline and written() < 49:   # runs four of these at once, and a daemon thread waits)
                 time.sleep(0.1)
             files = shards([taps])
             self.assertEqual(written(), 49)
@@ -250,6 +250,49 @@ class DataTests(unittest.TestCase):
             self.assertEqual(len(index["runs"]), 2)
             self.assertEqual({r["boot"] for r in index["runs"]}, {"20260919-100000", "20260919-110000"})
             self.assertEqual(index["train"] + index["eval"], 80)
+
+    def test_a_reader_never_sees_a_half_written_shard(self):
+        """The trainer reads the tap's directory WHILE the fleet writes it (`shards()` globs it, `data` loads what it
+        returns). A `np.savez` straight to the final name is a zip a reader can catch half-written -- an EOFError in
+        the middle of a data window. Here the shard's bytes are handed over in two halves with the writer stopped in
+        between: what the glob returns while it is stopped must be nothing, and what it returns after must load."""
+        import io
+        import threading
+        from unittest.mock import patch
+        import numpy as np
+        from engine.profiles.qwen38.fleet import MTPInputTap
+        from engine.profiles.qwen38.mtp_tune import shards
+
+        inside, release, real = threading.Event(), threading.Event(), np.savez
+
+        def halfway(file, **arrays):
+            """The real bytes, written half now and half after the test looks -- a write caught in the middle."""
+            buffer = io.BytesIO()
+            real(buffer, **arrays)
+            data = buffer.getvalue()
+            handle = file if hasattr(file, "write") else open(file, "wb")
+            handle.write(data[:len(data) // 2]); handle.flush()
+            inside.set()
+            release.wait(10)
+            handle.write(data[len(data) // 2:]); handle.flush()
+            if handle is not file:
+                handle.close()
+
+        with tempfile.TemporaryDirectory() as d, patch("numpy.savez", halfway):
+            taps = Path(d) / "taps"
+            tap = MTPInputTap(taps, rows=2, every_s=0.2)
+            tap(7, 0, [11, 12], torch.zeros(2, 8, dtype=torch.bfloat16), True)
+            self.assertTrue(inside.wait(10), "the writer never reached the shard")
+            self.assertEqual([f.name for f in shards([taps])], [])        # half of a zip is not a shard
+            self.assertTrue([f for f in taps.iterdir() if f.name.endswith(".part")])
+            release.set()
+            deadline = time.time() + 30
+            while time.time() < deadline and not shards([taps]):
+                time.sleep(0.05)
+            files = shards([taps])
+            self.assertEqual(len(files), 1)
+            self.assertEqual(np.load(files[0])["meta"].shape[0], 2)       # complete the moment it is visible
+            self.assertEqual([f for f in taps.iterdir() if f.name.endswith(".part")], [])
 
 
 @unittest.skipUnless(torch is not None, "requires torch")

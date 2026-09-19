@@ -422,12 +422,15 @@ class MTPInputTap:
                     if time.monotonic() - self._last >= self.every_s:
                         self._flush()
                 continue
-            path = self.directory / f"{self.prefix}-{part:05d}.npz"
-            partial = path.with_name(path.name + ".part")      # a reader never sees a shard half written
-            with open(partial, "wb") as fh:
-                np.savez(fh, streams=rows.view(torch.int16).numpy(), meta=meta.numpy())
-            os.replace(partial, path)
-            self.written += path.stat().st_size
+            # Written under a name `mtp_tune.shards` cannot glob, then renamed into place. The trainer reads this
+            # directory while the fleet is still writing it, and `np.savez` straight to the final name means a
+            # reader sooner or later loads a truncated zip -- EOFError, in the middle of a data window.
+            final = self.directory / f"{self.prefix}-{part:05d}.npz"
+            partial = self.directory / f".{final.name}.part"
+            with open(partial, "wb") as handle:
+                np.savez(handle, streams=rows.view(torch.int16).numpy(), meta=meta.numpy())
+            os.replace(partial, final)
+            self.written += final.stat().st_size
             if self.cap_bytes is not None and self.written >= self.cap_bytes and not self.full:
                 self.full = True
                 print(f"  mtp inputs: {self.directory} holds {self.written / 2**30:.1f} GiB, the cap -- recording stops",
@@ -507,13 +510,18 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-drafter", action="store_true", help="serve without the MTP head")
     ap.add_argument("--hc-fp8", action="store_true",
-                    help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them; the mixer's numbers change, so a quality bracket judges it)")
+                    help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them). Off: "
+                         "at decode it is slower (C=1 +9.6%% a step on the fleet, 2026-09-19, K=1), and it changes the "
+                         "mixer's NUMBERS with no quality bracket to judge them (D4) -- the one lever here that moves "
+                         "the output")
     ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",
                     help="the MTP head's dense projections: the checkpoint's BF16 (default), block-scaled FP8, or the "
                          "target layers' W4A8 at decode rows (before 2026-09-19); acceptance moves, output does not")
     ap.add_argument("--draft-index", default=None, metavar="CLUSTERS/PROBES",
                     help="the drafter's argmax from an inverted-file index over the head's rows (e.g. 1024/32): a few MB "
-                         "a draft instead of the head's 159; unset, the whole head. Acceptance moves, output does not")
+                         "a draft instead of the head's 159; unset, the whole head. Acceptance moves, output does not. "
+                         "Off by default: its acceptance is unmeasured (PR #1226/#1232) and the drafter is where this "
+                         "engine spends precision rather than bytes (the operator's rule, PR #1235)")
     ap.add_argument("--mtp-experts", choices=("bf16", "fp8", "nvfp4"), default="bf16",
                     help="the MTP head's routed experts: the checkpoint's original BF16 (default; the operator's rule of "
                          "2026-09-19) or the export's FP8 from side files (engine/profiles/qwen38/mtp_side.py), or the "
@@ -558,8 +566,9 @@ def main(argv=None) -> int:
                          "qwen38_shared_overlap_20260919), 'all' (every captured step: C=4 +6%%), 'off' (the rollback)")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     ap.add_argument("--spec-k", type=int, default=None,
-                    help="drafts a step from the MTP head (the checkpoint's 1): K > 1 chains the head K-1 times inside "
-                         "the draft replay and the verify step is K+1 tokens wide")
+                    help=f"drafts a step from the MTP head (this profile serves {facts.SPEC_K}; the checkpoint has one "
+                         "MTP layer and K > 1 chains it K-1 times inside the draft replay, the verify step K+1 tokens "
+                         "wide). --spec-k 1 is the rollback")
     a = ap.parse_args(argv)
     if (draft_threshold(a.draft_threshold) is not None or a.draft_ledger) and a.draft_index is not None:
         raise SystemExit("--draft-threshold and --draft-ledger (both on by default) read the head's whole row; "

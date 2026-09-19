@@ -45,18 +45,23 @@ SHAPES = {
 }
 
 
-def run(output=None) -> dict:
+def run(output=None, *, shapes=None, rows=None) -> dict:
+    """`shapes` ({label: ((outputs, K), configurations)}) and `rows` default to this model's; another profile's lane
+    passes its own (probes/engine_glm53_decode_rows)."""
     import torch
     from engine.kernels.common import skinny_gemv
+    shapes = SHAPES if shapes is None else shapes
+    rows = ROWS if rows is None else tuple(rows)
     torch.manual_seed(0)
     skinny_gemv.prepare("cuda")
-    report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "calls_a_graph": CALLS, "shapes": {}}
-    for label, ((n, k), configs) in SHAPES.items():
+    report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "calls_a_graph": CALLS, "rows": list(rows),
+              "shapes": {}}
+    for label, ((n, k), configs) in shapes.items():
         nbytes = n * k * 2
         copies = max(CALLS, -(-COPIES_BYTES // nbytes))
         weights = [torch.randn(n, k, device="cuda", dtype=torch.bfloat16) * 0.02 for _ in range(copies)]
         shape = {"weight_MB": round(nbytes / 1e6, 2), "rows": {}}
-        for m in ROWS:
+        for m in rows:
             x = torch.randn(m, k, device="cuda", dtype=torch.bfloat16)
             ref = (x.float() @ weights[0].float().t())
             keep = []                                     # a graph writes its outputs' addresses: they live with it
@@ -103,9 +108,9 @@ def run(output=None) -> dict:
                                                      "speedup": round(row["cublas"]["us"] / row[best]["us"], 3)}}),
                   flush=True)
         names = [str(c) for c in configs]
-        chosen = min(names, key=lambda c: sum(shape["rows"][m][c]["us"] for m in ROWS))
+        chosen = min(names, key=lambda c: sum(shape["rows"][m][c]["us"] for m in rows))
         shape["chosen"] = chosen
-        shape["speedup"] = {m: round(shape["rows"][m]["cublas"]["us"] / shape["rows"][m][chosen]["us"], 3) for m in ROWS}
+        shape["speedup"] = {m: round(shape["rows"][m]["cublas"]["us"] / shape["rows"][m][chosen]["us"], 3) for m in rows}
         shape["module_config"] = str(skinny_gemv.CONFIGS.get((n, k)))
         print(json.dumps({label: {"chosen": chosen, "speedup": shape["speedup"],
                                   "module_config": shape["module_config"]}}), flush=True)

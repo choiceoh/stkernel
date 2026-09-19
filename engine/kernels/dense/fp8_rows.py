@@ -43,6 +43,46 @@ def _fp8_rows(XQ, XS, WQ, WS, OUT, M, N, so, K: tl.constexpr, BLOCK_N: tl.conste
     tl.store(OUT + rows[:, None] * so + cols[None, :], acc.to(OUT.dtype.element_ty), mask=live[:, None] & cm[None, :])
 
 
+@triton.jit
+def _w8a16_rows(X, WQ, WS, OUT, M, N, so, K: tl.constexpr, BLOCK_N: tl.constexpr, FP32_DOT: tl.constexpr):
+    rows = tl.arange(0, 16)
+    cols = tl.program_id(0) * BLOCK_N + tl.arange(0, BLOCK_N)
+    live, cm = rows < M, cols < N
+    acc = tl.zeros((16, BLOCK_N), dtype=tl.float32)
+    for kb in range(K // 128):
+        ks = kb * 128 + tl.arange(0, 128)
+        x = tl.load(X + rows[:, None] * K + ks[None, :], mask=live[:, None], other=0.0)
+        w = tl.load(WQ + cols[:, None] * K + ks[None, :], mask=cm[:, None], other=0.0).to(tl.bfloat16)
+        if FP32_DOT:                                             # the interpreter reads a BF16 dot's bits as integers
+            x, w = x.to(tl.float32), w.to(tl.float32)
+        ws = tl.load(WS + (cols // 128) * (K // 128) + kb, mask=cm, other=0.0)
+        acc += tl.dot(x, tl.trans(w)) * ws[None, :]
+    tl.store(OUT + rows[:, None] * so + cols[None, :], acc.to(OUT.dtype.element_ty), mask=live[:, None] & cm[None, :])
+
+
+def project_bf16(x: torch.Tensor, weight: "tuple[torch.Tensor, torch.Tensor]", *,
+                 out: "torch.Tensor | None" = None) -> torch.Tensor:
+    """x [M <= 16, K] BF16 by weight (wq [N, K] e4m3, ws [N/128, K/128] fp32) -> [M, N] BF16, the rows NOT quantised: the
+    e4m3 weight widened to BF16 exactly, a BF16 tensor-core dot a 128-wide K block, times the weight block's scale.
+    The same bytes as `project` (the weight is the read) and one launch fewer (no activation quantisation); the product
+    is the weight's alone, not the weight's and a block-128 FP8 rounding of the rows'. What a drafter's argmax reads
+    (net.draft_tokens): the operator's rule of 2026-09-19 -- precision where it costs nothing and moves acceptance."""
+    wq, ws = weight
+    m, k = x.shape
+    n = wq.shape[0]
+    if (not 1 <= m <= MAX_ROWS or k % 128 or wq.shape[1] != k or n % 128 or tuple(ws.shape) != (n // 128, k // 128)
+            or x.dtype != torch.bfloat16 or wq.dtype != torch.float8_e4m3fn or not x.is_contiguous()
+            or not wq.is_contiguous() or not ws.is_contiguous()):
+        raise ValueError(f"fp8_rows.project_bf16 takes 1..{MAX_ROWS} contiguous BF16 rows of the weight's K: x "
+                         f"{tuple(x.shape)}, weight {tuple(wq.shape)}")
+    if out is None:
+        out = torch.empty(m, n, dtype=torch.bfloat16, device=x.device)
+    block_n, warps, stages = tile(m)
+    _w8a16_rows[(triton.cdiv(n, block_n),)](x, wq, ws, out, m, n, out.stride(0), K=k, BLOCK_N=block_n,
+                                            FP32_DOT=not x.is_cuda, num_warps=warps, num_stages=stages)
+    return out
+
+
 def project(q: torch.Tensor, scale: torch.Tensor, weight: "tuple[torch.Tensor, torch.Tensor]", *,
             out: "torch.Tensor | None" = None) -> torch.Tensor:
     """(q [M <= 16, K] e4m3, scale [M, K/128] fp32) by weight (wq [N, K] e4m3, ws [N/128, K/128] fp32) -> [M, N] BF16."""
@@ -87,4 +127,4 @@ def qualify(device, *, n: int = 1024, k: int = 2560, rows=(1, 4, 16)) -> dict:
     return out
 
 
-__all__ = ["MAX_ROWS", "tile", "project", "qualify"]
+__all__ = ["MAX_ROWS", "tile", "project", "project_bf16", "qualify"]
