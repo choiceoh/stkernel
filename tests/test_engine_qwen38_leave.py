@@ -169,15 +169,18 @@ class LanesTests(unittest.TestCase):
 
 @unittest.skipUnless(READY, "torch and triton required")
 class NetTests(unittest.TestCase):
-    def net(self, hc_fp8=False):
+    def net(self, hc_fp8=False, whole=False):
         from engine.profiles.qwen38.net import Qwen38Net
         calls = []
         p = {"L0.hc.mlp.norm": "norm", "L0.hc.mlp.down_inject": "down_inject", "L0.hc.mlp.up": "up"}
         lanes = SimpleNamespace(hc_leave_norm=lambda *a, **k: calls.append(k) or ("h", "normed"))
+        if whole:
+            lanes.hc_site = lambda *a, **k: calls.append(("site", a, k)) or ("x whole", "injection whole")
         net = SimpleNamespace(F=SimpleNamespace(rms_eps=EPS, hc=HC), p=p, lanes=lanes,
                               _hc_projections={"L0.hc.mlp.": object()} if hc_fp8 else {},
                               _mix=lambda prefix, normed, down, inject: ("x", "injection"))
         net._mixer_weight = lambda prefix, down: Qwen38Net._mixer_weight(net, prefix, down)
+        net._whole_site = lambda *a, **k: Qwen38Net._whole_site(net, *a, **k)
         return net, calls, Qwen38Net
 
     def test_a_site_prefetches_its_own_down_projection(self):
@@ -189,6 +192,25 @@ class NetTests(unittest.TestCase):
         net, calls, Qwen38Net = self.net(hc_fp8=True)
         Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject")
         self.assertEqual(calls, [{"prefetch": None}])
+
+    def test_a_lane_with_the_whole_site_takes_it(self):
+        """Lanes.hc_site: the leave, the norm and the mixer in one call (gated_residual.site) with the site's weights and
+        its prefetch; the FP8 mixer lanes read the normalised streams, so their sites keep the two calls."""
+        net, calls, Qwen38Net = self.net(whole=True)
+        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject"), ("x whole", "injection whole", "h"))
+        self.assertEqual(calls, [("site", ("h", "out", "inject", "norm", EPS, HC, "down_inject", "up"),
+                                  {"inject": True, "prefetch": "down_inject"})])
+        net, calls, Qwen38Net = self.net(hc_fp8=True, whole=True)
+        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject"), ("x", "injection", "h"))
+        self.assertEqual(calls, [{"prefetch": None}])
+
+    def test_the_served_table_binds_the_whole_site(self):
+        from engine.profiles.qwen38 import lanes
+        source = inspect.getsource(lanes.served)
+        self.assertIn("return hcr.site(h, out, injection, w, eps, hc, down_inject, up, inject=inject, pdl=pdl,", source)
+        self.assertIn('prefetch=prefetch if leave == "prefetch" else None)', source)
+        self.assertIn("hc_site=on_main(hc_site)", source)
+        self.assertIsNone(lanes.reference().hc_site)
 
     def test_the_closing_mixers_prefetch_their_down_projection(self):
         source = (ROOT / "engine/profiles/qwen38/net.py").read_text(encoding="utf-8")

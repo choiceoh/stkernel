@@ -1,0 +1,347 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 9,
+ "sites_a_graph": 8,
+ "table": {
+  "down": [
+   [
+    512,
+    [
+     64,
+     128,
+     64,
+     4,
+     3,
+     2
+    ]
+   ],
+   [
+    1024,
+    [
+     128,
+     64,
+     64,
+     4,
+     3,
+     1
+    ]
+   ],
+   [
+    2048,
+    [
+     128,
+     128,
+     64,
+     8,
+     3,
+     1
+    ]
+   ]
+  ],
+  "up": [
+   64,
+   64,
+   32,
+   4,
+   4
+  ]
+ },
+ "rows": {
+  "512": {
+   "us_a_site": {
+    "main: leave_norm + five launches": {
+     "median": 551.9,
+     "min": 394.8
+    },
+    "leave_norm alone": {
+     "median": 122.0,
+     "min": 121.4
+    },
+    "stream_scales alone": {
+     "median": 48.3,
+     "min": 47.8
+    },
+    "site (table)": {
+     "median": 345.0,
+     "min": 343.8
+    },
+    "written (64, 128, 64, 4, 3, 2)": {
+     "median": 684.4,
+     "min": 417.1
+    },
+    "scaled (64, 128, 64, 4, 3, 2)": {
+     "median": 953.1,
+     "min": 400.3
+    },
+    "written (128, 64, 64, 4, 3, 1)": {
+     "median": 1020.6,
+     "min": 1013.5
+    },
+    "scaled (128, 64, 64, 4, 3, 1)": {
+     "median": 1041.7,
+     "min": 967.6
+    },
+    "written (128, 128, 64, 8, 3, 1)": {
+     "median": 521.9,
+     "min": 519.2
+    },
+    "scaled (128, 128, 64, 8, 3, 1)": {
+     "median": 1099.7,
+     "min": 817.9
+    },
+    "written (128, 128, 32, 8, 3, 1)": {
+     "median": 1442.1,
+     "min": 556.0
+    },
+    "scaled (128, 128, 32, 8, 3, 1)": {
+     "median": 1545.1,
+     "min": 1474.8
+    }
+   },
+   "checks": {
+    "(64, 128, 64, 4, 3, 2)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005208,
+     "vs_main_inject": 0.004695
+    },
+    "(128, 64, 64, 4, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005208,
+     "vs_main_inject": 0.004695
+    },
+    "(128, 128, 64, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005208,
+     "vs_main_inject": 0.004695
+    },
+    "(128, 128, 32, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005208,
+     "vs_main_inject": 0.004695
+    }
+   }
+  },
+  "1024": {
+   "us_a_site": {
+    "main: leave_norm + five launches": {
+     "median": 1533.1,
+     "min": 883.7
+    },
+    "leave_norm alone": {
+     "median": 378.1,
+     "min": 321.1
+    },
+    "stream_scales alone": {
+     "median": 165.6,
+     "min": 138.9
+    },
+    "site (table)": {
+     "median": 1315.2,
+     "min": 905.0
+    },
+    "written (128, 64, 64, 4, 3, 1)": {
+     "median": 1635.9,
+     "min": 727.3
+    },
+    "scaled (128, 64, 64, 4, 3, 1)": {
+     "median": 1340.0,
+     "min": 660.7
+    },
+    "written (128, 128, 64, 8, 3, 1)": {
+     "median": 1397.9,
+     "min": 824.2
+    },
+    "scaled (128, 128, 64, 8, 3, 1)": {
+     "median": 2012.6,
+     "min": 1340.3
+    },
+    "written (128, 128, 32, 8, 3, 1)": {
+     "median": 1423.8,
+     "min": 828.4
+    },
+    "scaled (128, 128, 32, 8, 3, 1)": {
+     "median": 1570.1,
+     "min": 868.9
+    },
+    "written (64, 128, 64, 4, 3, 2)": {
+     "median": 1375.1,
+     "min": 824.1
+    },
+    "scaled (64, 128, 64, 4, 3, 2)": {
+     "median": 1550.6,
+     "min": 635.2
+    }
+   },
+   "checks": {
+    "(128, 64, 64, 4, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005952,
+     "vs_main_inject": 0.004425
+    },
+    "(128, 128, 64, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005952,
+     "vs_main_inject": 0.004425
+    },
+    "(128, 128, 32, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005952,
+     "vs_main_inject": 0.004425
+    },
+    "(64, 128, 64, 4, 3, 2)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005952,
+     "vs_main_inject": 0.004425
+    }
+   }
+  },
+  "2048": {
+   "us_a_site": {
+    "main: leave_norm + five launches": {
+     "median": 2996.2,
+     "min": 2049.6
+    },
+    "leave_norm alone": {
+     "median": 1398.4,
+     "min": 916.4
+    },
+    "stream_scales alone": {
+     "median": 590.8,
+     "min": 531.5
+    },
+    "site (table)": {
+     "median": 2942.8,
+     "min": 2323.4
+    },
+    "written (128, 128, 64, 8, 3, 1)": {
+     "median": 2057.7,
+     "min": 1514.7
+    },
+    "scaled (128, 128, 64, 8, 3, 1)": {
+     "median": 3278.2,
+     "min": 2262.4
+    },
+    "written (128, 64, 64, 4, 3, 1)": {
+     "median": 1835.9,
+     "min": 1545.6
+    },
+    "scaled (128, 64, 64, 4, 3, 1)": {
+     "median": 2366.7,
+     "min": 1567.6
+    },
+    "written (128, 128, 32, 8, 3, 1)": {
+     "median": 2722.5,
+     "min": 1959.5
+    },
+    "scaled (128, 128, 32, 8, 3, 1)": {
+     "median": 3293.8,
+     "min": 1702.9
+    },
+    "written (64, 128, 64, 4, 3, 2)": {
+     "median": 2426.0,
+     "min": 1710.6
+    },
+    "scaled (64, 128, 64, 4, 3, 2)": {
+     "median": 2152.1,
+     "min": 1676.4
+    }
+   },
+   "checks": {
+    "(128, 128, 64, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.0,
+     "vs_main_inject": 0.0
+    },
+    "(128, 64, 64, 4, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.0,
+     "vs_main_inject": 0.0
+    },
+    "(128, 128, 32, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.0,
+     "vs_main_inject": 0.0
+    },
+    "(64, 128, 64, 4, 3, 2)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.002551,
+     "vs_main_inject": 0.0
+    }
+   }
+  },
+  "4096": {
+   "us_a_site": {
+    "main: leave_norm + five launches": {
+     "median": 6811.4,
+     "min": 4826.0
+    },
+    "leave_norm alone": {
+     "median": 1822.1,
+     "min": 1646.3
+    },
+    "stream_scales alone": {
+     "median": 1623.5,
+     "min": 1247.5
+    },
+    "site (table)": {
+     "median": 4490.8,
+     "min": 3298.0
+    },
+    "written (128, 128, 64, 8, 3, 1)": {
+     "median": 6096.6,
+     "min": 5112.7
+    },
+    "scaled (128, 128, 64, 8, 3, 1)": {
+     "median": 4150.9,
+     "min": 3251.4
+    },
+    "written (128, 64, 64, 4, 3, 1)": {
+     "median": 3579.6,
+     "min": 3334.9
+    },
+    "scaled (128, 64, 64, 4, 3, 1)": {
+     "median": 5424.1,
+     "min": 3904.6
+    },
+    "written (128, 128, 32, 8, 3, 1)": {
+     "median": 5153.7,
+     "min": 3954.1
+    },
+    "scaled (128, 128, 32, 8, 3, 1)": {
+     "median": 3576.3,
+     "min": 3266.2
+    },
+    "written (64, 128, 64, 4, 3, 2)": {
+     "median": 5203.2,
+     "min": 3428.7
+    },
+    "scaled (64, 128, 64, 4, 3, 2)": {
+     "median": 5543.4,
+     "min": 4348.8
+    }
+   },
+   "checks": {
+    "(128, 128, 64, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.0,
+     "vs_main_inject": 0.0
+    },
+    "(128, 64, 64, 4, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.0,
+     "vs_main_inject": 0.0
+    },
+    "(128, 128, 32, 8, 3, 1)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.0,
+     "vs_main_inject": 0.0
+    },
+    "(64, 128, 64, 4, 3, 2)": {
+     "scaled_is_written_bytes": true,
+     "vs_main_mixed": 0.005682,
+     "vs_main_inject": 0.004525
+    }
+   }
+  }
+ }
+}

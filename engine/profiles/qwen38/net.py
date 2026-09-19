@@ -637,9 +637,13 @@ class Qwen38Net:
                 out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
             x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
             out = self._moe(n, x, compact=not rows)
-        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
-                                        prefetch=self._mixer_weight("close.", "down"))
-        hidden, _ = self._mix("close.", normed, "down", inject=False)
+        whole = self._whole_site("close.", h, out, inject, "down", injects=False)
+        if whole is None:
+            h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
+                                            prefetch=self._mixer_weight("close.", "down"))
+            hidden, _ = self._mix("close.", normed, "down", inject=False)
+        else:
+            hidden = whole[0]
         observer = getattr(self, "head_observer", None)
         if observer is not None and not rows:
             observer(hidden, None)
@@ -655,6 +659,9 @@ class Qwen38Net:
         `rows` [R]: the only rows that go on into the mixer, selected after the leave (the MTP head's captured
         observation), so that nothing stands between the sum and its leave."""
         F, p, lanes = self.F, self.p, self.lanes
+        whole = None if rows is not None else self._whole_site(prefix, h, out, inject, "down_inject", injects=True)
+        if whole is not None:
+            return whole[0], whole[1], h
         if out is None:
             normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
         else:
@@ -664,6 +671,16 @@ class Qwen38Net:
             h, normed = h.index_select(0, rows), normed.index_select(0, rows)
         x, injection = self._mix(prefix, normed, "down_inject", inject=True)
         return x, injection, h
+
+    def _whole_site(self, prefix: str, h, out, inject, down_name: str, *, injects: bool):
+        """(x, injection) from Lanes.hc_site -- the leave, the norm and the mixer in one call, so that a prefill step's
+        rows never write the normalised streams (h is left into in place) -- or None where it does not serve: a lane
+        without it, or a mixer on the FP8 lanes (hc_fp8), whose projections read the normalised streams."""
+        lanes, F, p = self.lanes, self.F, self.p
+        if getattr(lanes, "hc_site", None) is None or prefix in self._hc_projections:
+            return None
+        return lanes.hc_site(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc, p[prefix + down_name],
+                             p[prefix + "up"], inject=injects, prefetch=self._mixer_weight(prefix, down_name))
 
     def _mixer_weight(self, prefix: str, down_name: str):
         """The weight a site's mixer reads first, its BF16 down projection, for the leave before it to pull into L2 while
