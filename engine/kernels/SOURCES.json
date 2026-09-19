@@ -439,7 +439,7 @@
       "source": "overlay/modules/qwen38_qsa/ops_qsa.py",
       "sha256": "8c99d362ec6c168f83a1f7f55a2834b495fb417a9fea983dee1e5d8d4c241dd0",
       "origin": "repository",
-      "local_sha256": "9fd339ff9e3e40b0ba278eb32ca4bf1feadf1a32565cd5cd7febb32281ab3c96",
+      "local_sha256": "4b7780ebf26859af0d39131e759710c4068574910ece9bdbd076305ce4df067e",
       "local_modifications": [
         "2026-09-15 engine port: Triton kernel bodies unchanged; imports are triton's own (no vllm.triton_utils, no vllm.platforms)",
         "2026-09-15 block selection: engine/kernels/prefill_topk where it admits the shape, torch.topk over masked logits otherwise, instead of vLLM's persistent_topk/cooperative_topk C++ ops",
@@ -456,7 +456,8 @@
         "2026-09-19 decode selection (Qwen3.8 carry Q7): select_blocks hands any device step the prefill radix select does not admit -- every captured one, up to 32,768 columns -- to engine/kernels/qsa_select's one launch (ties to the lower block, ids ascending); torch.topk stays for wider tables and the CPU.",
         "2026-09-19 geometry probe hooks (Qwen3.8 carry Q9): _SPLIT_PROFILE_OVERRIDE, _SCORE_PROFILE_OVERRIDE and _INPUT_WARPS_OVERRIDE force a launch's tile width, splits / tiles a program and warps for probes/engine_qwen38_qsa_geometry.py; None (the default, and all a served process ever holds) keeps upstream's rule, now read through _split_profile / _score_profile / _input_warps. Kernel bodies unchanged.",
         "2026-09-19 qualify says whose (Qwen3.8 lane finding, measurements/qwen38_lane_20260919): a (cell, rows) that leaves the band carries gated_residual.blame in the error -- where the elements past the band sit, whether the kernel and the torch reference each repeat themselves, and which leaves the CPU's reference; the holding path and the bands are unchanged",
-        "2026-09-19 split profile (Qwen3.8 carry Q9): _split_profile is a GB10's table, not upstream's GB300 one -- 16-wide tiles at 4 warps, 64 splits to two programs, 16 to eight, 4 to 256, one launch without a merge above (measurements/qwen38_qsa_geometry_20260919; every geometry inside the oracle band there); _score_profile keeps upstream's 64-wide tile a program for a decode step and gives prefill 32 tiles of 128 columns a program at 4 warps (the same score bytes at every geometry of that record). Kernel bodies unchanged."
+        "2026-09-19 split profile (Qwen3.8 carry Q9): _split_profile is a GB10's table, not upstream's GB300 one -- 16-wide tiles at 4 warps, 64 splits to two programs, 16 to eight, 4 to 256, one launch without a merge above (measurements/qwen38_qsa_geometry_20260919; every geometry inside the oracle band there); _score_profile keeps upstream's 64-wide tile a program for a decode step and gives prefill 32 tiles of 128 columns a program at 4 warps (the same score bytes at every geometry of that record). Kernel bodies unchanged.",
+        "2026-09-19 one store an address (GB10 soak, measurements/qwen38_qualify_soak_20260919): _norm_rope_partial and _norm_rope_into stored a head's norm over the whole head and then its rotation over the first rotary channels -- a write-write race at D 128 under four warps (channels 32..63 are different threads' in the two stores) that lost 7 of 2000 boot qualifies; the norm's store now leaves the rotated channels out, byte for byte the same output"
       ]
     }
   }
