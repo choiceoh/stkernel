@@ -208,7 +208,8 @@ class ContractTests(unittest.TestCase):
     def test_both_boot_checks_reconcile_and_neither_kills(self):
         serve = (ROOT / "engine/base/serve.py").read_text()
         ctor = serve[serve.index("parked = sorted(runner.parked_keys())"):serve.index("self.next_seq, self.served")]
-        self.assertIn('self._reconcile_parked(comm, self._parked_entries(getattr(runner, "tiered", None), parked, comm.rank),', ctor)
+        self.assertIn('self._reconcile_parked(comm, self._parked_entries(getattr(runner, "tiered", None), parked, comm.rank,', ctor)
+        self.assertIn('keep=getattr(runner, "hold_parked", None)', ctor, "the boot's one read of a record leaves its digest")
         self.assertIn("forget=runner.forget_parked", ctor)
         self.assertIn('forget=self._forget_prefix_boundary(runner), what="prefix boundaries"', ctor)
         self.assertNotIn("_agree_on_parked", serve)

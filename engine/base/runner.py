@@ -43,6 +43,18 @@ STEP_RECORD = struct.Struct("<QdBIIi")     # count, wall, kind, n_seqs, tokens, 
 KIND = {sched.PREFILL: 1, sched.DECODE: 2}
 
 
+def history_head(tokens) -> int:
+    """The identity of a token history, for comparing one this rank does not hold (`Runner.parked_digest`).
+
+    Python's hash of the token tuple: an int hashes to itself mod 2**61 - 1 and a tuple combines them with fixed
+    constants (PYTHONHASHSEED salts only str and bytes), so a history hashes alike in every process and on every rank.
+    0.6 ms per 100K tokens; parsing the same record's JSON is 7.2 ms (measurements/parked_record_bound_20260919).
+    64 bits is enough for what it is asked:
+    the continuation scan compared the whole history already, and the loop asks only whether the conversation has
+    been parked since with a different one of the same length -- and a conversation's history only grows."""
+    return hash(tuple(tokens))
+
+
 class Pending(Protocol):
     """A decode step launched ahead of its result (45차 §23 B3): `resolve` waits for the device, applies the tokens to the
     model's host view and says which sequences finished. Rows the runner finished meanwhile (from an earlier step's
@@ -87,7 +99,7 @@ class Runner:
         self._chain = {}                                    # seq -> boundary tokens -> hash (live prompts with a cache)
         self.idle = {}                                      # seq -> True: finished, not released, parkable
         self.parked = OrderedDict()                         # key -> record, MRU last and bounded (PARKED_RECORDS_KEPT)
-        self.digests = {}                                   # key -> the three numbers a continuation scan actually needs
+        self.digests = {}                                   # key -> the record without its token list, for every parked one
         # The two above are also filled from requests' threads (serve.py `_continuation`, off the server's lock) while
         # the loop parks, resumes and forgets: `_book` guards them, and a record read that the loop overtook is not
         # kept (`_reads`, see `_parked`).
@@ -95,6 +107,8 @@ class Runner:
         self._reads = {}                                    # key -> the record reads of it now out on the tier
         self.retiring = {}                                  # row -> (key, record, slot): its park is on the tier's thread
         self.resuming = {}                                  # row -> (key, record, slot): its resume is on the tier's thread
+        self._resume_reads = {}                             # row -> Future: that resume's record, read on the tier's thread
+                                                            # when it was not one of the few held (record None until then)
         self.state = sched.State()
         self.slot_of = {}
         self.rec = recorder or Recorder("runner")
@@ -521,7 +535,10 @@ class Runner:
 
     def resume_begin(self, seq: int, key: "int | None" = None) -> None:
         """A parked conversation starts coming back into the free row `seq`: blocks reserved, a slot
-        taken, the read handed to the tier's thread. The row is `resuming` until `resume_finish`."""
+        taken, the read handed to the tier's thread. The row is `resuming` until `resume_finish`.
+
+        The host record comes from the few held (PARKED_RECORDS_KEPT) or is read on the tier's thread
+        beside the blocks: the loop does not parse a whole history off the disk (D10)."""
         if self.tiered is None:
             raise ValueError("this runner has no tier to resume from")
         key = seq if key is None else key
@@ -534,23 +551,35 @@ class Runner:
             raise ValueError(f"row {seq} is not free")
         with self._book:
             record = self.parked.get(key)
-        if record is None:
-            record = self.tiered.record(key)
-        if record is None:
-            raise ValueError(f"conversation {key} has no record on the tier: it cannot be reopened")
         slot = self.slots.take(seq)
+        read = None
         try:
+            if record is None:
+                read = self.tiered.read_record(key)
             self.tiered.resume_begin(seq, key, extra=self.model.state_bytes(slot))
         except BaseException:
             self.slots.give(slot)
             raise
         self.slot_of[seq] = slot
         self.resuming[seq] = (key, record, slot)
+        if read is not None:
+            self._resume_reads[seq] = read
 
     def resume_finish(self, seq: int) -> int:
-        """The read is done: the row is idle with the conversation's state. A failed read frees
-        the row, the slot and the blocks it took, keeps the disk copy, and raises."""
+        """The read is done: the row is idle with the conversation's state. A failed read -- of the
+        blocks, or of a record that was not held -- frees the row, the slot and the blocks it took,
+        keeps the disk copy, and raises."""
         key, record, slot = self.resuming.pop(seq)
+        read = self._resume_reads.pop(seq, None)
+        if read is not None:
+            try:
+                record = read.result()
+                if record is None:
+                    raise ValueError(f"conversation {key} has no record on the tier: it cannot be reopened")
+            except BaseException:
+                self.tiered.resume_cancel(seq)
+                self.slots.give(self.slot_of.pop(seq))
+                raise
         try:
             got = self.tiered.resume_finish(seq)
         except BaseException:
@@ -569,7 +598,8 @@ class Runner:
         """Whether the row's park/resume/restore has finished on the tier's thread (never blocks)."""
         if seq in self._restores:
             return self._restores[seq][3].done()
-        return self.tiered.done(seq)
+        read = self._resume_reads.get(seq)
+        return self.tiered.done(seq) and (read is None or read.done())
 
     def _settle_row(self, seq: int) -> None:
         """Wait for the row's transfer and finish it, swallowing its failure (shutdown only)."""
@@ -685,14 +715,26 @@ class Runner:
     So the records are an LRU and the three numbers are `parked_digest`, kept for everybody.
     Eight is the rows this engine can hold plus slack: a record is read when a candidate
     actually passes the cheap test, or when a conversation resumes, and both are rare.
+
+    Only a read from the tier trimmed it, though, until 2026-09-19: a park put its record in
+    untrimmed, on every rank, so the dict held every conversation parked since the last such read
+    and not resumed since -- 40 of 40 in a server test, and up to ~380 MiB a rank for long histories
+    under the 64 GiB conversation tier (36 B a token beside 6,160 B of KV and 286 MiB of slot on the
+    disk). Every way in trims it now. What the loop needs from a conversation whose record went is
+    its digest -- context and pending for admission, the history's hash for re-checking a hint --
+    kept for every parked conversation on every rank (`parked_summary`), and a resume reads a record
+    it does not hold on the tier's thread (`resume_begin`). The loop reads no record off the disk.
     """
 
     def parked_record(self, key: int) -> "dict | None":
-        """The whole record, read from the tier when it is not one of the few held; None when it is not parked."""
+        """The whole record, read from the tier when it is not one of the few held; None when it is not parked.
+        The continuation scan's, on a request's thread: the loop reads `parked_summary` instead."""
         return self._parked(key, digest=False)
 
     def parked_digest(self, key: int) -> "dict | None":
-        """What a continuation scan needs to reject a candidate: its length, its last two ids, its pictures.
+        """What a continuation scan needs to reject a candidate: its length, its last two ids, its pictures -- and the
+        hash of the history before its last id (`head`, `history_head`), which lets the loop re-check a hint on every
+        rank without the history (serve.py `_offer_digest`). None for a record without a history of two tokens.
 
         Kept for every parked conversation because it is a handful of bytes; the token list behind
         it is read only when these three say the candidate could match.
@@ -702,13 +744,38 @@ class Runner:
         A digest is kept only for a parked conversation and dropped when it moves, so one read here is
         at worst a moment stale -- and the record read it can lead to is `_book`'s, and says so.
         """
-        digest = self.digests.get(key)
-        if digest is not None:
-            return digest
+        summary = self.digests.get(key)
+        if summary is not None:
+            return self._history(summary)
         return self._parked(key, digest=True)
 
+    def parked_summary(self, key: int) -> "dict | None":
+        """A parked record without its token list: "context" and "pending", which admission sizes the next turn by, and
+        the history's digest when it has one (`parked_digest`). None when the conversation is not parked.
+
+        Held for every parked conversation on every rank -- its park leaves it (`_moved`), and so does the boot's one
+        read of a conversation an earlier process parked (`hold_parked`) -- so admission reads no record on the loop:
+        ranks 1-3 never scan, and a record gone from the few held would be a disk read there (D10). A runner nobody
+        read for at boot (a bare one) reads the record here, as it used to."""
+        summary = self.digests.get(key)
+        if summary is None:
+            record = self._parked(key, digest=False)
+            summary = self._summary(record) if isinstance(record, dict) else None
+        return summary
+
+    def hold_parked(self, key: int, record: dict) -> None:
+        """Keep the digest of a conversation an earlier process parked, read at boot.
+
+        serve.py reads every parked record once when it starts, to reconcile the ranks (`Server._parked_entries`), and
+        hands each here: nothing reads it again on the loop, nor on the first request's scan. Not the record itself --
+        the few held are the most recently parked."""
+        summary = self._summary(record)
+        with self._book:
+            self.digests[key] = summary
+
     def _parked(self, key: int, digest: bool) -> "dict | None":
-        """`parked_record` / `parked_digest`, for the loop and for the continuation scan on requests' threads alike.
+        """`parked_record` / `parked_digest` when the answer is not held: the continuation scan on requests' threads,
+        and a bare runner's loop.
 
         The tier is read outside `_book` -- the loop parks and resumes under it and must not wait on a disk (D10) --
         so the loop can resume, forget or re-park the conversation while the read is out. What such a read brings back
@@ -717,19 +784,25 @@ class Runner:
         with self._book:
             if not self.is_parked(key):
                 return None
-            if digest and key in self.digests:
-                return self.digests[key]
+            summary = self.digests.get(key)
+            if digest and summary is not None:
+                return self._history(summary)
             record = self.parked.get(key)
             if record is not None:
                 self.parked.move_to_end(key)
-                return self._digest(key, record) if digest else record
+                if not digest:
+                    return record
+                self.digests[key] = summary = self._summary(record)    # held without one: a runner filled by hand
+                return self._history(summary)
             read = object()
             self._reads.setdefault(key, set()).add(read)
+            summarize = summary is None
         record = error = None
         try:
             record = self.tiered.record(key)
         except Exception as exc:                            # noqa: BLE001 -- judged below: a file gone with its conversation is a miss
             error = exc
+        summary = self._summary(record) if summarize and isinstance(record, dict) else None   # off `_book`: it hashes
         with self._book:
             reads = self._reads.get(key, set())
             current = read in reads
@@ -743,36 +816,53 @@ class Runner:
             if record is None:
                 return None
             self._hold_record(key, record)
-            return self._digest(key, record) if digest else record
+            if summary is not None:
+                self.digests[key] = summary
+            return self._history(self.digests.get(key)) if digest else record
 
     def _hold_record(self, key: int, record: dict) -> None:
-        """Under `_book`."""
+        """Under `_book`: the record is the most recent of the few held (PARKED_RECORDS_KEPT)."""
         self.parked[key] = record
         self.parked.move_to_end(key)
         while len(self.parked) > self.PARKED_RECORDS_KEPT:
             self.parked.popitem(last=False)
 
-    def _digest(self, key: int, record: dict) -> "dict | None":
-        """The record's digest, kept (under `_book`). None for a record without a history of two tokens."""
+    @staticmethod
+    def _history(summary: "dict | None") -> "dict | None":
+        """The digest a scan compares against: a summary with a history of two tokens or more, else None."""
+        return summary if summary is not None and "head" in summary else None
+
+    @staticmethod
+    def _summary(record: dict) -> dict:
+        """`record` without its token list (`parked_summary`): "context" and "pending", and the history's fields --
+        "tokens", "last", "prev", "media", "head" -- for a history of two tokens or more. What the record does not
+        carry readably is left out; it never raises, since a park calls it after the tier has the conversation."""
+        summary = {name: record[name] for name in ("context", "pending") if isinstance(record.get(name), int)}
         tokens = record.get("tokens")
-        if tokens is None or len(tokens) < 2:
-            return None
-        digest = {"tokens": len(tokens), "last": tokens[-1], "prev": tokens[-2],
-                  "media": [(r[2], r[1]) for r in record.get("media", [])]}
-        self.digests[key] = digest
-        return digest
+        try:
+            if tokens is not None and len(tokens) >= 2:
+                summary.update(tokens=len(tokens), last=tokens[-1], prev=tokens[-2],
+                               media=[(r[2], r[1]) for r in record.get("media", [])], head=history_head(tokens[:-1]))
+        except (KeyError, TypeError, IndexError):
+            pass                                            # a history it cannot read: nothing continues it
+        return summary
 
     def _moved(self, key: int, record: "dict | None" = None) -> None:
         """The loop parked conversation `key` with `record`, or resumed or forgot it (None) -- after the tier did, so a
         read that starts from here on finds the tier's new answer. A digest from before is not this record's, and a
-        read of it still out brought back what the conversation no longer is: neither is kept."""
+        read of it still out brought back what the conversation no longer is: neither is kept.
+
+        A park keeps its digest -- what every rank's loop reads about the conversation from here on -- and its record,
+        as the most recent of the few held (the likeliest to be continued next), trimming the oldest."""
+        summary = self._summary(record) if record is not None else None     # off `_book`: it hashes the history
         with self._book:
             self._reads.pop(key, None)
             self.digests.pop(key, None)
             if record is None:
                 self.parked.pop(key, None)
             else:
-                self.parked[key] = record
+                self.digests[key] = summary
+                self._hold_record(key, record)
 
     def parked_blocks(self, key: int) -> int:
         return self.tiered.blocks(key)

@@ -480,6 +480,16 @@ class ParkedRecordMemory(unittest.TestCase):
         self.assertEqual(len(r.parked), r.PARKED_RECORDS_KEPT)
         self.assertEqual(sorted(r.parked)[-1], 39, "the most recent are the ones kept")
 
+    def test_a_park_holds_its_record_among_the_few_and_keeps_a_digest(self):
+        """A park used to put its record in untrimmed, so the dict held every conversation parked since the last read."""
+        r, records = self.runner()
+        for key, record in records.items():
+            r._moved(key, dict(record, context=len(record["tokens"]) - 1, pending=1))
+        self.assertEqual(list(r.parked), list(records)[-r.PARKED_RECORDS_KEPT:])
+        self.assertEqual(len(r.digests), len(records))
+        self.assertEqual((r.parked_summary(0)["context"], r.parked_summary(0)["pending"]), (49, 1))
+        self.assertEqual(r.reads, [], "nothing read back: the park had the record in hand")
+
     def test_a_digest_is_kept_for_everybody_and_is_read_once(self):
         r, records = self.runner()
         for key in records:
