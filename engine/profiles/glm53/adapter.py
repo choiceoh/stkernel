@@ -877,6 +877,17 @@ class Glm53Engine:
     def state_bytes(self, slot: int):
         return self.caches.slot_bytes(slot)
 
+    def park_bytes(self, slot: int, context: int):
+        """What the tier keeps of a conversation parked after `context` tokens: its slot's live state, 48 of 286 MiB --
+        each KDA layer's ring keeps K+1 states for rolling back drafts, and a continuation reads one."""
+        return self.caches.live_bytes(slot, context)
+
+    def resume_bytes(self, slot: int, context: int):
+        """Where that live state reads back: the slot cleared first, as `open` leaves a new row's -- the cells the tier
+        does not carry hold zeros, not the slot's last conversation, as after a restored prefix boundary."""
+        self.caches.reset_slot(slot)
+        return self.caches.live_bytes(slot, context)
+
     def snapshot_bytes(self, snap: int):
         """A prefix snapshot's bytes (base/runner spills and restores them through the prefix tier)."""
         return self.caches.snapshot_bytes(snap)
