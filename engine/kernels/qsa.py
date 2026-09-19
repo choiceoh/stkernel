@@ -11,9 +11,10 @@ are unchanged. What changed around them (engine/kernels/SOURCES.json lists it):
   select over the valid prefix, ties to the lower block) where it admits the shape, engine/kernels/qsa_select (one
   launch a step, the same rule) for every other device step -- decode and capture -- and torch.topk on the CPU. Columns
   past a row's visible blocks are never written by the scorer; every selector reads a row's visible prefix only;
-- the split-K profile of the sparse attention is upstream's, without the DENEB_QSA_MAX_SPLITS environment cap (D11:
-  the kernel package reads no knobs). Whether GB10 wants fewer splits is a measurement, not a default: the lane probe
-  probes/engine_qwen38_qsa_geometry.py forces a launch's geometry through the `_OVERRIDE` probe hooks below (carry Q9);
+- the split-K profile of the sparse attention is a GB10's, not upstream's GB300 one, and there is no
+  DENEB_QSA_MAX_SPLITS environment cap (D11: the kernel package reads no knobs): the lane probe
+  probes/engine_qwen38_qsa_geometry.py forces a launch's geometry through the `_OVERRIDE` probe hooks below and its
+  record (carry Q9, measurements/qwen38_qsa_geometry_20260919) is `_split_profile`'s table;
 - `norm_rope_partial` is new: Qwen3.8 normalises query and key heads with a unit-offset weight and rotates only the
   first `rotary_dim` channels (64 of 256, 64 of the indexer's 128) as neox halves -- engine/kernels/common/norm_rope
   rotates the whole head and weights plainly;
@@ -1719,23 +1720,21 @@ def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_
 
 
 def _split_profile(rows: int, kv_heads: int, block_m: int, width: int):
-    """(tile width, tiles, splits, warps of a split launch) of a sparse attention over `width` columns: upstream's
-    split-K profile (tuned on GB300 for the Qwen-Air TP1/2/4 attention shapes) -- narrow tiles for decode, wide tiles
-    for prefill. The covered launch takes it from the same rows, so its tiles and splits are the sparse launch's."""
+    """(tile width, tiles, splits, warps of a split launch) of a sparse attention over `width` columns, as a GB10
+    measured it at Qwen3.8's per-rank cell (carry Q9, measurements/qwen38_qsa_geometry_20260919): 16-wide tiles at 4
+    warps throughout, and the splits fall as the programs (rows x KV heads) rise -- 64 for a step of one or two rows,
+    16 to eight, 4 to 256, and one launch without a merge above. Upstream's profile (tuned on GB300 for the Qwen-Air
+    attention shapes) kept 64 and 32 splits to 31 programs and went to 64-wide tiles at 2 warps above: on a GB10 that
+    was 3-9% slower from four rows to sixteen, 18-29% at an eager step's 64 to 1,024 rows, 25% over a 4,096-row chunk,
+    and half the covered launch's time. Every geometry held the oracle band there; the bytes of a step change with its
+    tier, as they always have with its rows. The covered launch takes the profile from the same rows, so its tiles
+    and splits are the sparse launch's. `block_m` is kept for the callers: the tiers were measured at one group width."""
     base_programs = rows * kv_heads
-    small_profile_limit = 8 if block_m <= 8 else 4
     if _SPLIT_PROFILE_OVERRIDE is not None:
         block_n, target_splits, partial_warps = _forced_geometry("_SPLIT_PROFILE_OVERRIDE", _SPLIT_PROFILE_OVERRIDE, 3)
-    elif base_programs <= small_profile_limit:
-        block_n, target_splits, partial_warps = 16, 64, 4
-    elif base_programs < 32:
-        block_n, target_splits, partial_warps = 16, 32, 4
-    elif base_programs <= 256:
-        block_n, target_splits, partial_warps = 64, 8, 2
-    elif base_programs <= 512:
-        block_n, target_splits, partial_warps = 64, 4, 2
     else:
-        block_n, target_splits, partial_warps = 64, 1, 2
+        block_n, partial_warps = 16, 4
+        target_splits = 64 if base_programs <= 2 else 16 if base_programs <= 8 else 4 if base_programs <= 256 else 1
     num_tiles = triton.cdiv(width, block_n)
     max_useful_splits = 1 << (num_tiles.bit_length() - 1)
     return block_n, num_tiles, min(max_useful_splits, target_splits), partial_warps

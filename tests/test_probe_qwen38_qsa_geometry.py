@@ -132,15 +132,16 @@ class CaseTable(unittest.TestCase):
         self.assertIn("bf.storage_offset() + (offset + F.block * kv_row) // 2)", source)
         self.assertIn("paged += 2 * F.block * kv_row", source)
 
-    def test_the_rule_s_profiles_are_upstream_s(self):
+    def test_the_rule_s_profiles_are_the_record_s(self):
+        """What the sweep calls today's rule is the table its own record set (qsa._split_profile): every tier is
+        reached by a step of the ladder or an eager arm, so a later run re-judges each against the grid."""
         p = probe()
         self.assertEqual([p.rule_profile(p.QWEN38, r * t) for r, t in p.DECODE_STEPS],
-                         [(16, 64, 4), (16, 64, 4), (16, 64, 4), (16, 64, 4), (16, 32, 4), (64, 8, 2)])
-        self.assertEqual(p.rule_profile(p.QWEN38, p.PREFILL_ROWS), (64, 1, 2))
-        # the eager steps in between reach each of upstream's remaining tiers
+                         [(16, 64, 4), (16, 64, 4), (16, 16, 4), (16, 16, 4), (16, 4, 4), (16, 4, 4)])
         self.assertEqual([p.rule_profile(p.QWEN38, rows) for rows in p.MID_ROWS],
-                         [(64, 8, 2), (64, 8, 2), (64, 4, 2), (64, 1, 2)])
-        self.assertEqual(p.rule_profile(p.QWEN38, p.COVERED_ROWS), (64, 1, 2))
+                         [(16, 4, 4), (16, 4, 4), (16, 1, 4), (16, 1, 4)])
+        self.assertEqual(p.rule_profile(p.QWEN38, p.PREFILL_ROWS), (16, 1, 4))
+        self.assertEqual(p.rule_profile(p.QWEN38, p.COVERED_ROWS), (16, 1, 4))
 
     def test_a_split_grid_clips_to_what_a_width_s_tiles_can_use(self):
         p = probe()
@@ -355,6 +356,7 @@ class GateTests(unittest.TestCase):
             with self.subTest(arm=arm):
                 self.assertTrue(row["passed"] and row["launched"], row)
                 self.assertEqual(row["largest_difference"], 0.0)
+
 
 class LaneRoutingTests(unittest.TestCase):
     def test_kernel_check_routes_the_lane_to_the_probe(self):

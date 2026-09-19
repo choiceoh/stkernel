@@ -82,12 +82,12 @@ class CoveredAttentionTests(unittest.TestCase):
                 self.assertSparseBytes(gen, ((0, 1, 0, 1), (1, 2, 3, 6), (2, 3, edge - 5, 5)), budget, kv_heads, (1,))
 
     def test_a_prefill_segment_through_every_split_profile(self):
-        """Row counts on both sides of the profile's steps (8, 32, 256, 512 programs), the last run short."""
+        """Row counts on both sides of the profile's steps (2, 8 and 256 programs), the last run short."""
         gen = generator(1011)
         budget = 64 if INTERPRET else W.budget
         edge = reach(budget)
         splits = set()
-        for rows in ((3, 9, 33, edge) if INTERPRET else (3, 9, 33, 257, 515, edge)):
+        for rows in ((2, 3, 9, 33, edge) if INTERPRET else (2, 3, 9, 33, 257, 515, edge)):
             splits |= self.assertSparseBytes(gen, ((0, 1, edge - rows, rows),), budget, W.kv_heads, (1, 2, 3, 4))
         # several splits ran, and at the model's widths one too (the interpreter's 67 columns always split here; its
         # one-split launches are the 12-position budget's, in the other cases)
@@ -132,14 +132,16 @@ class WrapperTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "output gate is BF16"):
             run(gate=q.float())
 
-    def test_the_profile_is_the_sparse_launchs(self):
-        """`_split_profile` is the rule `_sparse_paged_attention` always used, step for step."""
+    def test_the_profile_is_the_gb10_s_table(self):
+        """`_split_profile`, the one rule of both launches, step for step: 16-wide tiles at 4 warps, the splits by the
+        programs (carry Q9, measurements/qwen38_qsa_geometry_20260919)."""
         from engine.kernels import qsa
-        for rows, want in ((8, (16, 129, 64)), (9, (16, 129, 32)), (31, (16, 129, 32)), (32, (64, 33, 8)),
-                           (256, (64, 33, 8)), (257, (64, 33, 4)), (512, (64, 33, 4)), (513, (64, 33, 1))):
-            block_n, tiles, splits, _ = qsa._split_profile(rows, 1, 8, 2051)
-            self.assertEqual((block_n, tiles, splits), want, rows)
-        self.assertEqual(qsa._split_profile(4, 1, 8, 15)[:3], (16, 1, 1))     # one tile cannot split
+        for rows, splits in ((1, 64), (2, 64), (3, 16), (8, 16), (9, 4), (32, 4), (256, 4), (257, 1), (4096, 1)):
+            self.assertEqual(qsa._split_profile(rows, 1, 8, 2051), (16, 129, splits, 4), rows)
+        self.assertEqual(qsa._split_profile(4, 2, 4, 2051), (16, 129, 16, 4))   # programs are rows x KV heads
+        self.assertEqual(qsa._split_profile(5, 2, 4, 2051), (16, 129, 4, 4))
+        self.assertEqual(qsa._split_profile(4, 1, 8, 15)[:3], (16, 1, 1))       # one tile cannot split
+        self.assertEqual(qsa._split_profile(4, 1, 8, 67)[:3], (16, 5, 4))       # nor five into more than four
 
 
 if __name__ == "__main__":
