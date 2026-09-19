@@ -57,6 +57,13 @@ def facts():
         return qwen38.load(ckpt)
 
 
+def held(qualified: dict) -> dict:
+    """What lanes.qualify returned, as JSON: a lane's worst a key is a (max, rms) pair -- a list here -- or, the skinny
+    GEMV's, one number. (Taking every value for a pair killed this lane at its first line when that lane was added.)"""
+    return {name: {key: list(worst) if isinstance(worst, (tuple, list)) else worst for key, worst in lane.items()}
+            for name, lane in qualified.items()}
+
+
 def run(output=None):
     import unittest
     import torch
@@ -69,8 +76,7 @@ def run(output=None):
 
     from engine.profiles.qwen38 import lanes
     F = facts()
-    report('qwen38_qualify', config_sha256=CONFIG_SHA256,
-           **{name: {k: list(v) for k, v in worst.items()} for name, worst in lanes.qualify(torch.device('cuda'), F).items()})
+    report('qwen38_qualify', config_sha256=CONFIG_SHA256, **held(lanes.qualify(torch.device('cuda'), F)))
     suite = unittest.defaultTestLoader.loadTestsFromNames(GLUE_CASES)
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     if not result.wasSuccessful() or result.skipped:
