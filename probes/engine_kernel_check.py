@@ -242,6 +242,11 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes in ('sm121_fp4_gemm', 'sm121_fp4_moe'):
+        # the image's block-scaled FP4 GEMMs (U5) and its MXFP4 MoEs (U3) against dequantized references
+        from probes.engine_sm121_fp4 import run_gemm, run_moe
+        (run_gemm if args.lanes == 'sm121_fp4_gemm' else run_moe)(args.output)
+        return
     if args.lanes == 'sm121_attention':
         # the image's paged GQA with window, sinks, soft cap and FP8/NVFP4 KV against a torch reference (U7, U8)
         from probes.engine_sm121_attention import run as sm121_attention
