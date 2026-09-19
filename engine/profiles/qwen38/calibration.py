@@ -30,7 +30,7 @@ def identity(metadata, files, config, *, hc_fp8: bool) -> str:
         manifest = file.parent / "preshard-manifest.json"
         if manifest.is_file():
             manifests[str(manifest)] = hashlib.sha256(manifest.read_bytes()).hexdigest()
-    payload = dict(version="qwen38-fp32-router-w8a16-v1", metadata=metadata, sources=sources,
+    payload = dict(version="qwen38-fp32-router-w8a16-moe-fp32-as2-v2", metadata=metadata, sources=sources,
                    manifests=sorted(manifests.values()), config=config, hc_fp8=hc_fp8)
     return "qwen38:" + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 

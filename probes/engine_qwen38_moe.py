@@ -879,8 +879,8 @@ def run(output=None):
     c = cell_of(shape)
     from engine.kernels.b12x import moe_dispatch as md
     from engine.profiles.qwen38 import lanes
-    from probes.engine_moe_real_check import hardware_quant
-    probe = _Probe(report, md, lanes, c, bucketed(hardware_quant))
+    from probes.engine_qwen38_moe_precision import Quant
+    probe = _Probe(report, md, lanes, c, Quant(lanes.MOE_ACTIVATION_SCALE_SEARCH))
     tf32 = torch.backends.cuda.matmul.allow_tf32
     torch.backends.cuda.matmul.allow_tf32 = False          # the oracles' GEMMs in exact FP32
     try:

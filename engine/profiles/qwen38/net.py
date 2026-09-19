@@ -326,7 +326,10 @@ class Qwen38Net:
         return out
 
     def router_nbytes(self):
-        """The target and MTP expert selectors, widened once in the admitted arena (GLM's IEEE FP32 router)."""
+        """The target and MTP expert selectors, widened once in the admitted arena (GLM's IEEE FP32 router); none where
+        the lanes' router reads the BF16 gates themselves (Lanes.router_bf16)."""
+        if getattr(getattr(self, "lanes", None), "router_bf16", False):
+            return 0
         return (len(self.layers) + int(self.mtp)) * self.F.experts * self.F.hidden * 4
 
     def prepare_routers(self, arena):
@@ -339,6 +342,9 @@ class Qwen38Net:
                 raise ValueError("Qwen router requires BF16 [experts + shared gate, hidden] weights")
         for prefix in prefixes:
             weight = self.p[prefix + "moe.gates"][:self.F.experts]
+            if getattr(getattr(self, "lanes", None), "router_bf16", False):
+                self._router_weights[prefix] = weight                  # the gates' own rows: exact in the MMA router
+                continue
             resident = arena.carve(weight.numel() * 4, f"router/{prefix}").view(F32).view_as(weight)
             resident.copy_(weight)
             self._router_weights[prefix] = resident
@@ -637,9 +643,13 @@ class Qwen38Net:
                 out = self._gdn_rows(L, x, step, caches) if rows else self._gdn(L, x, step, caches)
             x, inject, h = self._site(n + "hc.mlp.", h, out, inject)
             out = self._moe(n, x, compact=not rows)
-        h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
-                                        prefetch=self._mixer_weight("close.", "down"))
-        hidden, _ = self._mix("close.", normed, "down", inject=False)
+        whole = self._whole_site("close.", h, out, inject, "down", injects=False)
+        if whole is None:
+            h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
+                                            prefetch=self._mixer_weight("close.", "down"))
+            hidden, _ = self._mix("close.", normed, "down", inject=False)
+        else:
+            hidden = whole[0]
         observer = getattr(self, "head_observer", None)
         if observer is not None and not rows:
             observer(hidden, None)
@@ -655,6 +665,9 @@ class Qwen38Net:
         `rows` [R]: the only rows that go on into the mixer, selected after the leave (the MTP head's captured
         observation), so that nothing stands between the sum and its leave."""
         F, p, lanes = self.F, self.p, self.lanes
+        whole = None if rows is not None else self._whole_site(prefix, h, out, inject, "down_inject", injects=True)
+        if whole is not None:
+            return whole[0], whole[1], h
         if out is None:
             normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
         else:
@@ -664,6 +677,16 @@ class Qwen38Net:
             h, normed = h.index_select(0, rows), normed.index_select(0, rows)
         x, injection = self._mix(prefix, normed, "down_inject", inject=True)
         return x, injection, h
+
+    def _whole_site(self, prefix: str, h, out, inject, down_name: str, *, injects: bool):
+        """(x, injection) from Lanes.hc_site -- the leave, the norm and the mixer in one call, so that a prefill step's
+        rows never write the normalised streams (h is left into in place) -- or None where it does not serve: a lane
+        without it, or a mixer on the FP8 lanes (hc_fp8), whose projections read the normalised streams."""
+        lanes, F, p = self.lanes, self.F, self.p
+        if getattr(lanes, "hc_site", None) is None or prefix in self._hc_projections:
+            return None
+        return lanes.hc_site(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc, p[prefix + down_name],
+                             p[prefix + "up"], inject=injects, prefetch=self._mixer_weight(prefix, down_name))
 
     def _mixer_weight(self, prefix: str, down_name: str):
         """The weight a site's mixer reads first, its BF16 down projection, for the leave before it to pull into L2 while
@@ -752,6 +775,24 @@ class Qwen38Net:
         if getattr(step, "captured", False):
             return False
         return max(s.ctx + s.length for s in step.segments) // F.idx_ratio <= F.index_blocks
+
+    @staticmethod
+    def _covered_rows(F, step) -> int:
+        """The leading rows of a host step the budget covers: every row where `_covers` says so; the rows before the
+        reach -- (index_blocks + 1) * ratio - 1 positions, 2,051 at the model's widths -- of one segment that crosses
+        it (a prompt's first chunk past 2,051 tokens); 0 otherwise (a captured step, several segments not all
+        covered). Host arithmetic."""
+        if Qwen38Net._covers(F, step):
+            return sum(s.length for s in step.segments)
+        if getattr(step, "captured", False) or len(step.segments) != 1:
+            return 0
+        segment = step.segments[0]
+        return max(0, min(segment.length, (F.index_blocks + 1) * F.idx_ratio - 1 - segment.ctx))
+
+    @staticmethod
+    def _one_request(step) -> bool:
+        """Whether every row of the step is one request's: a host step of one segment (a prompt's chunk)."""
+        return not getattr(step, "captured", False) and len(step.segments) == 1
 
     def _covered_blocks(self, step, meta: StepMeta):
         """Every row's chosen blocks when no score can decide them (carry Q11, the covered half; GLM's covered queries,
@@ -864,11 +905,13 @@ class Qwen38Net:
         attend_covered = getattr(lanes, "qsa_attend_covered", None)
         # a window narrower than the budget attends less than a covered step's every group
         whole = window is None or sum(window) == F.index_blocks
-        if attend_covered is not None and whole and Qwen38Net._covers(F, step):
+        covered = Qwen38Net._covered_rows(F, step) if attend_covered is not None and whole else 0
+        runs = dict(group=self._score_runs(step), one_request=Qwen38Net._one_request(step))
+        if covered == N:
             # a step the budget covers chooses nothing: one dense causal launch, a run of rows sharing each K/V tile,
-            # the sparse launch's bytes (carry Q10)
+            # the sparse launch's bytes (carry Q10) -- a prefill segment's runs stacked into one dot
             attended = attend_covered(q, K, V, meta.positions32, meta.lengths, F.idx_ratio, F.idx_budget,
-                                      meta.page_table, meta.rows_req, gate=gate, group=self._score_runs(step))
+                                      meta.page_table, meta.rows_req, gate=gate, **runs)
         else:
             # the chosen blocks, expanded to positions inside the attention's own tiles (no expanded buffer); a lane
             # table without the covered launch attends a covered step's unscored ids
@@ -880,8 +923,17 @@ class Qwen38Net:
                                           meta.positions32, meta.lengths, F.idx_budget, F.idx_ratio,
                                           group=self._score_runs(step))
             # the output gate in the attention's final store: BF16(attention * sigmoid(gate)) with no fp32 temporaries
-            attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
-                                        F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
+            if covered:
+                # a prompt's chunk across the reach: its rows before it chose every group they see, so the covered
+                # launch attends them (the same bytes) and the sparse launch the rest, into one output
+                c, attended = covered, torch.empty(q.shape, dtype=q.dtype, device=q.device)
+                attend_covered(q[:c], K, V, meta.positions32[:c], meta.lengths, F.idx_ratio, F.idx_budget,
+                               meta.page_table, meta.rows_req[:c], out=attended[:c], gate=gate[:c], **runs)
+                lanes.qsa_attend(q[c:], K, V, blocks[c:], meta.positions32[c:], meta.lengths, F.idx_ratio,
+                                 F.idx_budget, meta.page_table, meta.rows_req[c:], out=attended[c:], gate=gate[c:])
+            else:
+                attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
+                                            F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
         out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 
@@ -1079,8 +1131,12 @@ class Qwen38Net:
             taps = torch.arange(s.ctx - span, s.ctx, device=ids.device)
             held = torch.where((taps < 0)[None, :], torch.zeros((), dtype=conv_ring.dtype, device=ids.device),
                                conv_ring[:, taps.clamp_min(0) % r_conv])
-            local, _ = causal_conv1d(normed, w("conv"), None, held if s.ctx else None, "silu", dilation=F.ngram_size)
-            out[sl] = gated + local
+            conv = getattr(self.lanes, "ple_conv", None)
+            if conv is not None and normed.is_cuda:              # the conv, its silu and the add in one launch
+                conv(normed, gated, w("conv"), held, F.ngram_size, out=out[sl])
+            else:
+                local, _ = causal_conv1d(normed, w("conv"), None, held if s.ctx else None, "silu", dilation=F.ngram_size)
+                out[sl] = gated + local
             keep = min(s.length, r_conv)
             written = s.ctx + torch.arange(s.length - keep, s.length, device=ids.device)
             conv_ring[:, written % r_conv] = normed[-keep:].T.to(conv_ring.dtype)

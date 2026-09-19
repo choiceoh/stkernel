@@ -88,6 +88,8 @@ CACHE_DIR=${CACHE_DIR:-/home/choiceoh/glm53-cache}
 # `Server._reconcile_parked` (#837) -- is in, the four ranks' tier directories were left empty, and
 # production booted on it again 2026-09-16 (135 s, first attempt). ST_TIER_DIR=off turns it back off
 # for a boot; any other value is the tier root, under which boot.py claims one `rank<N>` per rank.
+# start-st-qwen38.sh uses the same root under the same caps (base/tiered_kv.TIER_ROOT): the two never
+# serve at once, and each layout's files are foreign to the other -- counted, forgotten first, replaced.
 #
 # Off is not free: with no tier a finished turn is never registered as a conversation
 # (base/serve, `if self.runner.tiered is None`), so its boundaries are dropped when its row is

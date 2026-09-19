@@ -11,13 +11,13 @@ TREE = ast.parse(SOURCE.read_text())
 
 
 def policy():
-    names = {'_parse_glm53_static_v2', '_activation_scale_search_for',
-             '_glm_tp_scatter_shape', '_glm_tp_scatter_fp32'}
+    names = {'_parse_glm53_static_v2', '_activation_scale_search_for', 'configure_activation_scale_search',
+             '_glm_tp_scatter_shape', '_glm_tp_scatter_fp32', '_bound_ep_prefill_fp32'}
     constants = {'_STATIC_V2_DEFAULT', '_STATIC_SUNSET_TOKENS', '_GLM53_B12X_STATIC_V2_ENV'}
     nodes = [copy.deepcopy(n) for n in TREE.body if
              isinstance(n, ast.FunctionDef) and n.name in names or
              isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id in constants for t in n.targets)]
-    ns = dict(_STATIC_V2_OVERRIDE=None, _GLM53_B12X_STATIC_V2=None,
+    ns = dict(_STATIC_V2_OVERRIDE=None, _GLM53_B12X_STATIC_V2=None, _ACTIVATION_SCALE_SEARCH_RADIUS=None,
               _admitted_moe=lambda: SimpleNamespace(experts_local=288, hidden=4096,
                 inter_local=512, dense_inter_local=3072, topk=8, quant='nvfp4',
                 activation='swigluoai_uninterleave', swiglu_limit=10.))
@@ -26,6 +26,36 @@ def policy():
 
 
 class ActivationSearchTests(unittest.TestCase):
+    def test_profile_declaration_cannot_change_prepared_weights(self):
+        ns = policy(); ns.update(_WEIGHT_CACHE={}, _REFORM_SF_CACHE={})
+        configure = ns['configure_activation_scale_search']
+        for invalid in (-1, 3, True, 1.5):
+            with self.assertRaises(ValueError): configure(invalid)
+        configure(2)
+        ns['_WEIGHT_CACHE']['live'] = object()
+        configure(2)
+        with self.assertRaises(RuntimeError): configure(0)
+        self.assertEqual(ns['_ACTIVATION_SCALE_SEARCH_RADIUS'], 2)
+
+    def test_ep_compact_pairs_keep_the_bound_precision_and_explicit_control(self):
+        ns = policy()
+        ns['_admitted_moe'] = lambda: SimpleNamespace(experts=512, experts_local=128, hidden=2560,
+            inter_local=640, dense_inter_local=160, topk=10, quant='nvfp4', activation='silu', swiglu_limit=None)
+        ns['_ACTIVATION_SCALE_SEARCH_RADIUS'] = 2
+        geom = dict(state_E=128, weight_E=128, k=2560, n=640, num_topk=10, quant_mode='nvfp4',
+                    activation='silu', swiglu_alpha=1., swiglu_beta=0., swiglu_limit=None)
+        for topk in (1, 10):
+            row = geom | dict(num_topk=topk)
+            self.assertTrue(ns['_glm_tp_scatter_fp32'](**row))
+            self.assertEqual(ns['_activation_scale_search_for'](**row), 2)
+            dynamic = {k:v for k,v in row.items() if k not in ('state_E','weight_E')}
+            self.assertTrue(ns['_bound_ep_prefill_fp32'](E=128, tiled=False, **dynamic))
+            self.assertFalse(ns['_bound_ep_prefill_fp32'](E=128, tiled=True, **dynamic))
+        for change in (dict(num_topk=2), dict(n=512), dict(k=4096), dict(activation='relu2'), dict(state_E=512)):
+            self.assertEqual(ns['_activation_scale_search_for'](**(geom | change)), 0)
+        ns['_STATIC_V2_OVERRIDE'] = dict(activation_scale_search=0)
+        self.assertEqual(ns['_activation_scale_search_for'](**geom), 0)
+
     def test_old_recipe_is_static_fc2_only_and_all_recipe_covers_dense(self):
         ns = policy()
         geometry = dict(state_E=288, weight_E=288, k=4096, n=512, num_topk=8,

@@ -9,6 +9,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from engine.base.kv import BlockPool
@@ -154,6 +155,21 @@ class TierOwnershipTests(unittest.TestCase):
         self.assertEqual(b"".join(kv.pool.blocks_of(0)), saved)
         self.assertEqual(kv.pool.tokens[0], 17)
         self.assertFalse(kv.is_parked(0))
+
+    def test_a_resume_given_up_after_its_read_returns_the_blocks_and_keeps_the_disk_copy(self):
+        """The runner gives a resume up when the blocks came back but its record did not (`Runner.resume_finish`)."""
+        kv = make_tier()
+        kv.pool.reserve(0, 17)
+        kv.park(0, key=5, record={"context": 16, "pending": 1})
+        self.assertEqual(kv.read_record(5).result(), {"context": 16, "pending": 1})
+        kv.resume_begin(1, key=5)
+        self.assertEqual(kv.pool.available, 2)
+        kv.resume_cancel(1)
+        self.assertEqual((kv.pool.available, kv.pool.tokens[1], kv.inflight), (4, 0, {}))
+        self.assertTrue(kv.is_parked(5))
+        kv.resume(2, key=5)                                   # and it still comes back
+        self.assertEqual(kv.pool.tokens[2], 17)
+        self.assertFalse(kv.is_parked(5))
 
     def test_exhaustion_preserves_parked_state_for_retry(self):
         kv = make_tier()
@@ -306,7 +322,7 @@ class NvmeControlTests(unittest.TestCase):
             self.assertTrue(unrelated.exists())
             self.assertEqual(tier._path(0).read_bytes(), b'original')
 
-    def test_foreign_layout_cannot_be_replaced_and_cleanup_preserves_its_files(self):
+    def test_cleanup_preserves_a_foreign_layouts_files(self):
         with tempfile.TemporaryDirectory() as d:
             tier = self.tier(d)
             active = tier.dir / ('seq-0-' + 'a' * 32 + '.kv')
@@ -315,11 +331,43 @@ class NvmeControlTests(unittest.TestCase):
             tier._save_manifest({'0': {'file': active.name, 'retired': [retired.name], 'block_bytes': 2 * SECTOR}})
             self.assertFalse(tier.has(0))
             self.assertEqual(tier.stale(), ['0'])
-            with self.assertRaisesRegex(ValueError, 'different block layout'):
-                tier.demote(0, None, [], 1)
             tier.cleanup()
             self.assertEqual(active.read_bytes(), b'active')
             self.assertEqual(retired.read_bytes(), b'retired')
+
+    def test_a_write_under_a_foreign_layouts_key_replaces_it(self):
+        """GLM-5.3 and Qwen3.8 park in one directory (tiered_kv.TIER_ROOT), each numbering its conversations from its
+        own parked set, so a key both used is expected. This write used to be refused -- dropping the live
+        conversation to keep one no boot of this layout can read."""
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier.capacity_bytes, tier.reserve_bytes = None, 0
+            theirs = tier.dir / ('seq-0-' + 'a' * 32 + '.kv')
+            record = tier.dir / ('seq-0-' + 'a' * 32 + '.json')
+            theirs.write_bytes(b'theirs'); record.write_text('{}')
+            tier._save_manifest({'0': {'file': theirs.name, 'record': record.name, 'bytes': 6,
+                                       'block_bytes': 2 * SECTOR}})
+            with patch.object(tier, '_room', side_effect=TierFull('stopped before the device')):
+                with self.assertRaises(TierFull):             # the room check is where this CPU test stops the write
+                    tier.demote(0, None, [], 1)
+            self.assertNotIn('0', tier.index, "the foreign conversation is forgotten before this one is written")
+            self.assertFalse(theirs.exists() or record.exists())
+            self.assertEqual(json.loads(tier.manifest.read_text()), {})
+
+    def test_the_reserve_holds_under_a_declared_cap(self):
+        """45차 §53 gave both tiers a cap, and from then on the reserve was not checked at all: a tier under its cap
+        wrote on into a disk the checkpoints, images, dumps and logs were filling too. Both hold now."""
+        with tempfile.TemporaryDirectory() as d:
+            tier = self.tier(d)
+            tier.capacity_bytes, tier.reserve_bytes = 64 << 30, 16 << 30
+            with patch('engine.base.kv_tier.shutil.disk_usage', return_value=SimpleNamespace(free=20 << 30)):
+                tier._room(3 << 30, 0)                             # leaves 17 GiB free: under the cap and the reserve
+                with self.assertRaisesRegex(TierFull, 'reserve'):
+                    tier._room(5 << 30, 0)                         # would leave 15 GiB, under the 16 kept free
+            tier.capacity_bytes = 1 << 30
+            with patch('engine.base.kv_tier.shutil.disk_usage', return_value=SimpleNamespace(free=1 << 40)):
+                with self.assertRaisesRegex(TierFull, 'declared'):
+                    tier._room(2 << 30, 0)                         # a roomy disk does not lift the cap
 
     def test_a_foreign_layout_is_forgotten_before_a_conversation_that_can_still_be_promoted(self):
         # It occupies the disk and counts against the cap, and no boot of this layout can ever
@@ -594,6 +642,92 @@ class TierBudgetTests(unittest.TestCase):
         self.assertNotIn("another layout", boot.tier_line(tier, boot.PREFIX_TIER_GIB, "prefix boundaries"))
 
 
+class FakeNvme:
+    """What `open_tiers` hands a tier class, kept: an NvmeTier allocates CUDA staging."""
+
+    def __init__(self, directory, **kwargs):
+        self.dir, self.kwargs, self.swept = Path(directory), kwargs, 0
+        self.block_bytes = kwargs["block_bytes"]
+        self.fail = None
+
+    def cleanup(self):
+        self.swept += 1
+        if self.fail is not None:
+            raise self.fail
+
+
+class FleetTierTests(unittest.TestCase):
+    """base/tiered_kv.open_tiers: a rank's two tiers in the directory every profile on the fleet shares."""
+
+    def pool(self):
+        pool = BlockPool(4, 16, 4, 4)
+        pool.attach_storage(Storage(range(16)), 4)
+        return pool
+
+    def test_a_rank_gets_its_conversations_and_its_prefix_boundaries_under_the_fleets_caps(self):
+        from engine.base import tenancy
+        from engine.base.tiered_kv import open_tiers
+        with tempfile.TemporaryDirectory() as d:
+            conversations, prefix, left = open_tiers(self.pool(), 4, d, 2, state_format="fmt", mapped_staging=True,
+                                                     prefix_cache_bytes=7, background=False, make=FakeNvme)
+            self.assertIsNone(left)
+            self.assertFalse((Path(d) / "rank2" / tenancy.MARKER).exists(), "no owner claims nothing")
+            c, p = conversations.tier, prefix.tier
+            self.assertEqual((c.dir, p.dir), (Path(d) / "rank2", Path(d) / "rank2" / "prefix"))
+            self.assertEqual((c.kwargs["capacity_bytes"], c.kwargs["reserve_bytes"]), (64 << 30, 16 << 30))
+            self.assertEqual((p.kwargs["capacity_bytes"], p.kwargs["reserve_bytes"], p.kwargs["stage_bytes"],
+                              p.kwargs["snapshot_cache_bytes"]), (16 << 30, 16 << 30, 32 << 20, 7))
+            self.assertTrue(all(t.kwargs["state_format"] == "fmt" and t.kwargs["mapped_staging"] and t.kwargs["block_bytes"] == 4
+                                for t in (c, p)))
+            self.assertEqual((c.swept, p.swept), (1, 1), "each swept of what a killed write left, once a boot")
+
+    def test_an_owner_keeps_its_own_directory_and_a_change_of_hands_empties_it(self):
+        from engine.base import tenancy
+        from engine.base.tiered_kv import open_tiers
+        with tempfile.TemporaryDirectory() as d:
+            rank = Path(d) / "rank0"
+            (rank / "prefix").mkdir(parents=True)
+            (rank / "manifest.json").write_text("{}")
+            tenancy.claim(rank, "production/srv2/4242")                   # what production parked here
+            _, _, left = open_tiers(self.pool(), 4, d, 0, state_format="qwen38", owner="production/srv2/4242",
+                                    background=False, make=FakeNvme)
+            self.assertIsNone(left)
+            self.assertTrue((rank / "manifest.json").exists(), "the same owner switching models keeps the directory")
+            _, _, left = open_tiers(self.pool(), 4, d, 0, state_format="qwen38", owner="session/qwen38-window",
+                                    background=False, make=FakeNvme)
+            self.assertEqual(left, "production/srv2/4242")
+            self.assertEqual(tenancy.held_by(rank), "session/qwen38-window")
+            self.assertFalse((rank / "manifest.json").exists(), "a window does not inherit what production parked")
+
+    def test_a_sweep_that_fails_does_not_fail_the_boot(self):
+        from engine.base.tiered_kv import open_tiers
+
+        class Refusing(FakeNvme):
+            def cleanup(self):
+                super().cleanup()
+                raise OSError("read-only file system")
+
+        with tempfile.TemporaryDirectory() as d:
+            conversations, prefix, _ = open_tiers(self.pool(), 4, d, 1, state_format="fmt", background=False,
+                                                  make=Refusing)
+            self.assertEqual((conversations.tier.swept, prefix.tier.swept), (1, 1))
+
+    def test_every_profile_parks_under_the_same_root_and_caps(self):
+        """GLM-5.3 and Qwen3.8 share one tier root: the one root both launchers default to, which is the one under
+        the directory their rank containers bind."""
+        from engine.base import tiered_kv
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(tiered_kv.TIER_ROOT, "/home/choiceoh/glm53-logs/st-tier")
+        self.assertEqual((tiered_kv.TIER_GIB, tiered_kv.PREFIX_TIER_GIB, tiered_kv.TIER_RESERVE_GIB), (64.0, 16.0, 16.0))
+        for launcher in ("start-st-glm53.sh", "start-st-qwen38.sh"):
+            text = (root / "launchers" / launcher).read_text()
+            self.assertIn("MOUNTED_ROOT=/home/choiceoh/glm53-logs\n", text, launcher)
+            self.assertIn("TIER_DIR=${ST_TIER_DIR:-$MOUNTED_ROOT/st-tier}", text, launcher)
+            self.assertIn("-v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs ", text, launcher)
+        for boot in ("engine/profiles/glm53/boot.py", "engine/profiles/qwen38/fleet.py"):
+            self.assertIn('"--tier-dir", default=TIER_ROOT', (root / boot).read_text(), boot)
+
+
 def _serve():
     """test_engine_serve's fake engine and `server()`: the real scheduler, runner and door over this file's tier."""
     here = str(Path(__file__).resolve().parent)
@@ -686,12 +820,15 @@ class ParkedRecordRaceTests(unittest.TestCase):
 
     def parked(self, s):
         """A conversation that finished its turn and parked, its record no longer one of the few held (this fleet parks
-        about 280 and keeps 8): a scan reads it from the tier."""
+        about 280 and keeps 8): a scan reads it from the tier. Its digest is dropped too, so that is read from the tier
+        as well: a park and the boot's read leave a digest for every parked conversation, and this is the read a bare
+        runner still makes. It keeps the same rule."""
         first, _ = s.submit([3, 4, 5], 2, 0)
         quiet(s)
         self.assertEqual(s.take_result(first), [5, 5])
         self.assertTrue(s.runner.is_parked(first))
         s.runner.parked.pop(first)
+        s.runner.digests.pop(first)
         return first
 
     def test_a_record_that_lands_after_its_conversation_resumed_is_not_kept(self):
@@ -758,12 +895,16 @@ class ParkedRecordRaceTests(unittest.TestCase):
         is parked decides admission and the park/resume guards on every rank, so it is what every rank knows alike."""
         s, tier = self.served()
         first = self.parked(s)
-        self.assertIsNotNone(s.runner.parked_record(first))
+        prompt = s.runner.parked_record(first)["tokens"] + [7]
         self.assertIn(first, s.runner.parked)
+        self.assertIsNotNone(s.runner.parked_digest(first))
         s.runner.tiered.forget(first)                              # gone from the tier, still in this rank's cache
         self.assertFalse(s.runner.is_parked(first))
         self.assertIsNone(s.runner.parked_record(first))
-        self.assertIsNone(s.runner.parked_digest(first))
+        # Its digest is read lock-free and can answer until the runner's own half of the move: a scan that listed the
+        # conversation just before offers nothing on it, since the record behind the digest is the tier's word.
+        with patch.object(s.runner, "parked_keys", return_value=[first]):
+            self.assertIsNone(s._continuation(prompt))
 
     def test_a_read_is_not_kept_when_the_tier_let_its_conversation_go_meanwhile(self):
         s, tier = self.served()
@@ -834,6 +975,262 @@ class ParkedRecordRaceTests(unittest.TestCase):
         self.assertEqual(out[0], ([0], [3, 4, 5, 5, 5, 6, 6, 6, 7], 3))
         self.assertEqual((seen["first"], seen["turn"], seen["third"]), ([5, 5], [6, 6], [7]))
         self.assertIsNone(seen["scan"])
+
+
+class WatchedRecords(MemoryTier):
+    """A tier that tells the record reads apart: on the tier's thread (a job `run_async` runs -- inline here, as
+    MemoryTier's are without a gate), by the step loop itself (`in_loop`, set while `once()` runs), or by anybody else
+    (the continuation scan in `submit`, the boot's reconciliation, the test)."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.reads, self.tier_reads, self.loop_reads = [], [], []
+        self.in_loop = False
+        self._tier_thread = threading.local()
+        self.slow = None                            # an Event a read on the tier's thread waits for
+
+    def run_async(self, fn, *args):
+        def on_the_tier(*a):
+            self._tier_thread.yes = True
+            try:
+                return fn(*a)
+            finally:
+                self._tier_thread.yes = False
+        return super().run_async(on_the_tier, *args)
+
+    def record(self, seq):
+        self.reads.append(seq)
+        if getattr(self._tier_thread, "yes", False):
+            self.tier_reads.append(seq)
+            if self.slow is not None and not self.slow.wait(5):
+                raise TimeoutError("the test never let the record read go")
+        elif self.in_loop:
+            self.loop_reads.append(seq)
+        return super().record(seq)
+
+
+def looped(s, tier, steps=300):
+    """`quiet`, with the loop's own record reads watched."""
+    tier.in_loop = True
+    try:
+        quiet(s, steps)
+    finally:
+        tier.in_loop = False
+
+
+class ParkedRecordBoundTests(unittest.TestCase):
+    """`Runner.parked` holds a few whole records (PARKED_RECORDS_KEPT) -- a record is the conversation's whole token list,
+    36 B a token -- and a digest for every parked conversation. Until 2026-09-19 a park put its record in untrimmed, so
+    every rank held every conversation this process parked. The bound is only worth having if the loop never reads a
+    record off the disk instead (D10): admission and the hint's re-check read the digest, a resume reads a record it
+    does not hold on the tier's thread, and the boot's one read of each record leaves its digest behind."""
+
+    def served(self, **kwargs):
+        tier = WatchedRecords(**kwargs)
+        return _serve().server(rows=2, keep_idle=True, tier=tier), tier
+
+    def park(self, s, tier, prompt):
+        request, _ = s.submit(prompt, 2, 0)
+        looped(s, tier)
+        self.assertEqual(s.take_result(request), prompt[-1:] * 2)
+        self.assertTrue(s.runner.is_parked(request))
+        return request
+
+    def test_a_park_keeps_a_few_records_and_a_digest_for_every_conversation(self):
+        s, tier = self.served()
+        kept = s.runner.PARKED_RECORDS_KEPT
+        keys = [self.park(s, tier, [3 + i, 4, 5]) for i in range(3 * kept)]
+        self.assertEqual(s.runner.parked_keys(), keys)
+        self.assertEqual(list(s.runner.parked), keys[-kept:], "the most recently parked, the oldest first to go")
+        self.assertEqual(sorted(s.runner.digests), keys)
+        for key in keys:
+            record, summary = tier.records[key], s.runner.parked_summary(key)
+            self.assertEqual((summary["context"], summary["pending"]), (record["context"], record["pending"]))
+            self.assertEqual((summary["tokens"], summary["last"], summary["prev"]),
+                             (len(record["tokens"]), record["tokens"][-1], record["tokens"][-2]))
+        self.assertEqual(tier.reads, [], "a park reads nothing back")
+
+    def test_a_conversation_whose_record_went_comes_back_without_the_loop_reading_the_disk(self):
+        s, tier = self.served()
+        first = self.park(s, tier, [3, 4, 5])
+        for i in range(s.runner.PARKED_RECORDS_KEPT):
+            self.park(s, tier, [9, 10 + i])
+        self.assertNotIn(first, s.runner.parked)
+        turn, _ = s.submit([6], 2, 0, conversation=first)                  # named: no scan read it for the loop
+        looped(s, tier)
+        self.assertEqual(s.take_result(turn), [6, 6])
+        self.assertEqual(tier.loop_reads, [], "admission sized it from the digest")
+        self.assertEqual(tier.tier_reads, [first], "the resume read its record beside the blocks")
+        self.assertEqual(s.runner.parked_record(first)["tokens"], [3, 4, 5, 5, 5, 6])
+
+    def test_a_hint_on_a_conversation_whose_record_went_is_checked_against_its_digest(self):
+        s, tier = self.served()
+        first = self.park(s, tier, [3, 4, 5])
+        for i in range(s.runner.PARKED_RECORDS_KEPT):
+            self.park(s, tier, [9, 10 + i])
+        prompt = tier.records[first]["tokens"] + [7]
+        again, _ = s.submit(prompt, 2, 0, continue_history=True)          # rank 0's scan reads the record on this thread
+        self.assertEqual(tier.reads, [first])
+        s.runner.parked.pop(first)                                         # as if eight more parks came first
+        looped(s, tier)
+        self.assertEqual(s.take_result(again), [7, 7])
+        self.assertEqual(s.continuation_fallbacks, {}, "the hint held")
+        self.assertFalse(s.runner.is_parked(again), "it continued `first` rather than starting its own")
+        self.assertEqual(tier.loop_reads, [])
+        self.assertEqual(tier.tier_reads, [first])
+        history = s.runner.parked_record(first)["tokens"]                  # the second turn's, parked again
+        self.assertEqual(history, [3, 4, 5, 5, 5, 7])
+        s.runner.parked.pop(first)
+        self.assertIsNone(s._stale_hint(first, history + [8], [], 6, False))
+        other = [3, 9, 5, 5, 5, 7, 8]                                      # the same length and last two ids, another history
+        self.assertEqual(s._stale_hint(first, other, [], 6, False), "changed")
+        self.assertEqual(tier.reads, [first, first], "the re-checks read no record")
+
+    def test_conversations_an_earlier_process_parked_are_read_once_at_boot_and_never_on_the_loop(self):
+        s, tier = self.served()
+        keys = [self.park(s, tier, [3 + i, 4, 5]) for i in range(3)]
+        seen = len(tier.reads)
+        s = _serve().server(rows=2, keep_idle=True, tier=tier)            # the next process, over the same tier
+        self.assertEqual(sorted(tier.reads[seen:]), keys, "the reconciliation's read, once each")
+        self.assertEqual(sorted(s.runner.digests), keys)
+        self.assertEqual(len(s.runner.parked), 0, "no record held: the few are the most recently parked")
+        seen = len(tier.reads)
+        self.assertIsNone(s._continuation([99, 98, 97, 96]))
+        self.assertEqual(tier.reads[seen:], [], "the first scan reads no record to build digests")
+        turn, _ = s.submit([6], 2, 0, conversation=keys[0])
+        looped(s, tier)
+        self.assertEqual(s.take_result(turn), [6, 6])
+        self.assertEqual(tier.loop_reads, [])
+        self.assertEqual(tier.tier_reads, [keys[0]])
+
+    def test_a_resume_whose_record_cannot_be_read_gives_everything_back(self):
+        s, tier = self.served()
+        first = self.park(s, tier, [3, 4, 5])
+        for i in range(s.runner.PARKED_RECORDS_KEPT):
+            self.park(s, tier, [9, 10 + i])
+        free = (s.runner.kv.available, s.runner.slots.available, sorted(s._free_rows))
+        tier.records.pop(first)                                            # the record file went, the blocks did not
+        turn, _ = s.submit([6], 2, 0, conversation=first)
+        looped(s, tier)
+        with self.assertRaises(_serve().RequestError) as refused:
+            s.take_result(turn)
+        self.assertEqual(refused.exception.status, 503)
+        self.assertFalse(s.runner.is_parked(first), "dropped everywhere: a rank could not read it back")
+        self.assertNotIn(first, s.runner.digests)
+        self.assertEqual((s.runner.kv.available, s.runner.slots.available, sorted(s._free_rows)), free)
+        self.assertFalse(s.runner.resuming or s.runner._resume_reads or s.runner.tiered.inflight)
+
+    def test_a_resume_is_not_done_before_its_record_is_read(self):
+        """The loop does not wait for the read (D10): it votes the transfer not done and looks again next step."""
+        opened = threading.Event()
+        opened.set()
+        s, tier = self.served(gate=opened)                                 # every tier job on a thread of its own
+
+        def meanwhile(done, seconds=10):
+            deadline = time.monotonic() + seconds
+            while not done():
+                if time.monotonic() > deadline:
+                    raise AssertionError("the loop never got there")
+                s.once()
+                time.sleep(0.0005)
+
+        first, _ = s.submit([3, 4, 5], 2, 0)
+        meanwhile(lambda: first in s.results and not s._retiring)
+        self.assertEqual(s.take_result(first), [5, 5])
+        s.runner.parked.pop(first)
+        tier.slow = threading.Event()
+        turn, _ = s.submit([6], 2, 0, conversation=first)
+        meanwhile(lambda: s._resuming and s.runner.tiered.done(next(iter(s._resuming))))
+        row = next(iter(s._resuming))
+        for _ in range(20):
+            s.once()
+        self.assertEqual(list(s._resuming), [row], "the blocks are back, the record is not: still resuming")
+        self.assertFalse(s.runner.transfer_done(row))
+        tier.slow.set()
+        meanwhile(lambda: turn in s.results and not s._resuming and not s._retiring)
+        self.assertEqual(s.take_result(turn), [6, 6])
+        self.assertEqual(tier.tier_reads, [first])
+
+    def test_the_digest_answers_a_hint_as_the_history_does(self):
+        """`_offer_digest` is `_offer` with the history before its last token compared by its hash: the same answer for
+        every prompt -- a proper prefix, one short of an end token, a changed middle token, pictures on either side of
+        the cut."""
+        import random
+        from engine.base.runner import Runner
+        Server = _serve().Server
+        rng = random.Random(7)
+        ends = {0}
+        for _ in range(4000):
+            history = [rng.randrange(4) for _ in range(rng.randrange(9))]
+            tail = [rng.randrange(4) for _ in range(rng.randrange(4))]
+            kind = rng.randrange(4)
+            if kind == 0:
+                ids = history + tail
+            elif kind == 1:
+                ids = history[:-1] + tail
+            elif kind == 2 and history:
+                ids = list(history) + tail
+                ids[rng.randrange(len(history))] = rng.randrange(4)
+            else:
+                ids = [rng.randrange(4) for _ in range(rng.randrange(10))]
+            held = [["image", rng.choice("ab"), p, 1, [1, 2, 2]] for p in sorted(rng.sample(range(9), rng.randrange(3)))
+                    if p < len(history)]
+            marks = sorted((p, rng.choice("ab")) for p in rng.sample(range(12), rng.randrange(3)))
+            if rng.randrange(2):
+                marks = sorted(set(marks) | {(r[2], r[1]) for r in held})
+            record = {"context": len(history), "pending": 0, "tokens": history, "media": held}
+            want = Server._offer(ids, marks, history, [(r[2], r[1]) for r in held], ends)
+            digest = Runner._history(Runner._summary(record))
+            got = None if digest is None else Server._offer_digest(ids, marks, digest, ends)
+            self.assertEqual(got, want, (history, ids, marks, held))
+
+    @unittest.skipUnless(importlib.util.find_spec("torch") is not None, "requires PyTorch for LocalTP")
+    def test_four_ranks_continue_a_conversation_whose_record_went_and_no_loop_reads_the_disk(self):
+        """Ranks 1-3 never scan, so nothing ever put the record back in their memory: before, they read it on the loop."""
+        from engine.base.comm import LocalTP
+        T = _serve()
+        from engine.base.runner import Runner
+        kept = Runner.PARKED_RECORDS_KEPT
+        seen = {}
+
+        def rank_main(comm, _):
+            tier = WatchedRecords()
+            s = T.server(comm=comm, rows=2, keep_idle=True, tier=tier)
+            first = again = None
+            for i in range(kept + 1):
+                if comm.rank == 0:
+                    request, _ = s.submit([3, 4, 5] if i == 0 else [9, 10 + i], 2, 0)
+                    first = request if i == 0 else first
+                tier.in_loop = True
+                for _ in range(20):
+                    s.once()
+                tier.in_loop = False
+            if comm.rank == 0:
+                again, _ = s.submit([3, 4, 5, 7], 2, 0, continue_history=True)
+                seen["scan"] = list(tier.reads)
+                s.runner.parked.pop(0)                                    # as if more parks came first
+            tier.in_loop = True
+            for _ in range(30):
+                s.once()
+            tier.in_loop = False
+            if comm.rank == 0:
+                seen["again"] = s.take_result(again)
+                seen["fallbacks"] = dict(s.continuation_fallbacks)
+                s.alive = False
+            s.once()
+            return (s.runner.parked_keys(), len(s.runner.parked) <= kept, sorted(s.runner.digests),
+                    s.runner.digests[0]["tokens"], tier.loop_reads, tier.tier_reads)
+
+        out = LocalTP(4, timeout_s=30).run(rank_main, None)
+        self.assertEqual(seen["scan"], [0], "rank 0's scan read the record, on the request's thread")
+        self.assertEqual((seen["again"], seen["fallbacks"]), ([7, 7], {}))
+        self.assertTrue(all(row == out[0] for row in out), out)
+        keys, bounded, digests, tokens, loop_reads, tier_reads = out[0]
+        self.assertEqual(keys, list(range(kept + 1)), "conversation 0 continued and parked again, nothing new")
+        self.assertTrue(bounded)
+        self.assertEqual(digests, keys)
+        self.assertEqual(tokens, 6, "the digest of the history the second turn left")
+        self.assertEqual((loop_reads, tier_reads), ([], [0]), "every rank read the record on the tier's thread")
 
 
 if __name__ == "__main__":

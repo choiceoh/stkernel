@@ -1,0 +1,35 @@
+78 modules, python -m unittest (spawn-safe runner)
+......s...  b12x requests: recording stopped at _get_static_kernel (FileExistsError: [Errno 17] File exists: '/tmp/tmp5dcxuvs3/file')
+..........................s.sss........sss.............sssss...................ss.....................................ss.......  rank 0: no boot dump under /tmp/tmp755qdvyy/file/dumps: NotADirectoryError: [Errno 20] Not a directory: '/tmp/tmp755qdvyy/file/dumps'
+...........  mtp inputs: mtp-inputs-20260919-114319-00000.npz not written: OSError: [Errno 28] No space left on device
+........sss............s.............ssssssss....................................................................sss.ssssssssssss................sssss..ssss..sssssssssssss......s..............{"event": "start", "args": {"ckpt": "/tmp/tmpiongnb2k", "data": "/tmp/tmpiongnb2k/data", "out": "/tmp/tmpiongnb2k/run", "depth": "3", "window": "12", "eval_windows": "4", "seed": "0", "steps": "0", "accumulate": "1", "lr": "0.001", "warmup": "1", "beta": "0.6", "auf": "False", "clip": "1.0", "log_every": "1", "eval_every": "1", "init": "/tmp/tmpiongnb2k/run1/head.safetensors"}, "world": 1, "trained_parameters": 75456, "t": 1789818211.1}
+{"event": "eval", "step": 0, "agree_1": 0.0, "agree_2": 0.0, "agree_3": 0.0, "chain_1": 0.0, "chain_2": 0.0, "chain_3": 0.0, "loss_1": 0.14928, "loss_2": 0.15396, "loss_3": 0.15238, "text_chain_1": 0.0, "text_chain_2": 0.0, "text_chain_3": 0.0, "tokens_a_step": 1.0, "positions": 48, "by_boot": {"20260919-150000": 1.0}, "t": 1789818211.8}
+{"event": "end", "best_tokens_a_step": 1.0, "base_tokens_a_step": 1.0, "t": 1789818211.8}
+/tmp/qwen38-moe-4436/tests/test_engine_qwen38_mtp_tune.py:240: ResourceWarning: unclosed file <_io.TextIOWrapper name='/tmp/tmpiongnb2k/run/log.jsonl' mode='a' encoding='UTF-8'>
+  mt.train(args)
+ResourceWarning: Enable tracemalloc to get the object allocation traceback
+./usr/local/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=275789) is multi-threaded, use of fork() may lead to deadlocks in the child.
+  self.pid = os.fork()
+{"event": "start", "args": {"ckpt": "/tmp/tmpesggz21s/data", "data": "/tmp/tmpesggz21s/data", "out": "/tmp/tmpesggz21s/run", "depth": "3", "window": "12", "eval_windows": "4", "seed": "0", "steps": "3", "accumulate": "2", "lr": "0.001", "warmup": "1", "beta": "0.6", "auf": "False", "clip": "1.0", "log_every": "1", "eval_every": "3", "init": "None"}, "world": 2, "trained_parameters": 75456, "t": 1789818214.4}
+{"event": "eval", "step": 0, "agree_1": 0.0, "agree_2": 0.0, "agree_3": 0.0, "chain_1": 0.0, "chain_2": 0.0, "chain_3": 0.0, "loss_1": 0.14928, "loss_2": 0.15396, "loss_3": 0.15238, "text_chain_1": 0.0, "text_chain_2": 0.0, "text_chain_3": 0.0, "tokens_a_step": 1.0, "positions": 48, "by_boot": {"20260919-150000": 1.0}, "t": 1789818216.4}
+{"event": "train", "step": 1, "lr": 0.00075, "grad_norm": 0.0328, "loss_1": 0.14729, "agree_1": 0.0, "chain_1": 0.0, "text_chain_1": 0.0, "loss_2": 0.14514, "agree_2": 0.0, "chain_2": 0.0, "text_chain_2": 0.0, "loss_3": 0.15016, "agree_3": 0.0, "chain_3": 0.0, "text_chain_3": 0.0, "tokens_a_step": 1.0, "t": 1789818217.3}
+{"event": "train", "step": 2, "lr": 0.0002500000000000001, "grad_norm": 0.036, "loss_1": 0.1402, "agree_1": 0.0, "chain_1": 0.0, "text_chain_1": 0.0, "loss_2": 0.14356, "agree_2": 0.0, "chain_2": 0.0, "text_chain_2": 0.0, "loss_3": 0.145, "agree_3": 0.0, "chain_3": 0.0, "text_chain_3": 0.0, "tokens_a_step": 1.0, "t": 1789818218.5}
+{"event": "train", "step": 3, "lr": 0.0, "grad_norm": 0.0277, "loss_1": 0.14087, "agree_1": 0.0, "chain_1": 0.0, "text_chain_1": 0.0, "loss_2": 0.14072, "agree_2": 0.0, "chain_2": 0.0, "text_chain_2": 0.0, "loss_3": 0.14785, "agree_3": 0.0, "chain_3": 0.0, "text_chain_3": 0.0, "tokens_a_step": 1.0, "t": 1789818219.4}
+{"event": "eval", "step": 3, "agree_1": 0.0, "agree_2": 0.0, "agree_3": 0.0, "chain_1": 0.0, "chain_2": 0.0, "chain_3": 0.0, "loss_1": 0.14879, "loss_2": 0.15338, "loss_3": 0.15187, "text_chain_1": 0.0, "text_chain_2": 0.0, "text_chain_3": 0.0, "tokens_a_step": 1.0, "positions": 48, "by_boot": {"20260919-150000": 1.0}, "t": 1789818220.2}
+{"event": "end", "best_tokens_a_step": 1.0, "base_tokens_a_step": 1.0, "t": 1789818220.2}
+.{"tensors": 33, "bytes": 401768}
+.........  mtp inputs: /tmp/tmpi2nk97zp holds 0.0 GiB, the cap -- recording stops
+..........ss....................ssss  Qwen calibration: filed 1 blobs (filed 4096/131072 rows over 1 blobs); next boot packs GPTQ
+....................{"weight_layout": "st-qwen38-tep4-modelopt-v3", "world": 4, "tensors_per_rank": 136, "payload_bytes_per_rank": 1212876, "source_tensors": 573, "ple": {"layer": 1, "shards_per_rank": 2, "rows_per_shard": 208, "width": 8, "rows_per_rank": 416, "bytes_per_rank": 3328, "scale_name": "model.language_model.layers.1.ple.ple_embedding.ngram_embedding.weight_scale"}, "mtp_experts": "fp8_block", "layers": "all", "unread_text_tensors": [], "unread_text_count": 0, "source_config_sha256": "12ac7e3152ef12aaa7c4b0807f9a26e54668b292b8d64ae4e87aaeb64ad0e082", "source_index_sha256": "a724f80d72438119205a677e23dac1e93d7bb9ec2792bc00fda16e00eeadd977", "source_revision": "test"}
+......ssss.ssss..sss.sssssssssssss............s.......ss.........sss..ssss.......  qwen38 preshard: vision tower -> /tmp/tmpntopk_p6/ranks/vision.safetensors
+  vision            33 sources ->  33 tensors/rank     0.0 s
+  read 0.00 GiB, wrote 1 x 0.00 GiB in 0 s
+  done: 0.00 GiB
+.ss...................................................................................sss.ss....................................................ssss................needs a CUDA device: the question is a device's time inside a captured graph
+{"request": "a", "prompt": 5, "generated": 3, "steps": 5, "decode_steps": 3, "decode_s": 0.0, "slowest_decode_s": 0.0, "prefill_s": 0.0, "compiled": [{"kernel": "triton:_qsa_x", "key": "k1", "step": 3, "kind": "decode", "s": 0.0}]}
+{"request": "b", "prompt": 7, "generated": 4, "steps": 6, "decode_steps": 4, "decode_s": 0.0, "slowest_decode_s": 0.0, "prefill_s": 0.0, "compiled": [{"kernel": "triton:_qsa_x", "key": "k2", "step": 3, "kind": "decode", "s": 0.0}]}
+............
+----------------------------------------------------------------------
+Ran 664 tests in 110.165s
+
+OK (skipped=118)

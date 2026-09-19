@@ -248,6 +248,30 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes == 'qwen38_site_components':
+        # mix_block's two launches one at a time against the cuBLAS product + elementwise launch each replaces, a tile
+        # sweep each -- which tiles the table takes, and from how many rows the fold wins
+        from probes.engine_qwen38_gemv import run_site_components
+        run_site_components(args.output)
+        return
+    if args.lanes == 'qwen38_site_norm_in':
+        # mix_block's two launches over the normalised streams and over the streams normalised as read (site's way),
+        # the down fold at several tiles, many interleaved rounds -- the tiles the served table takes for site
+        from probes.engine_qwen38_gemv import run_site_norm_in
+        run_site_norm_in(args.output)
+        return
+    if args.lanes == 'qwen38_site_whole':
+        # a whole site at a prefill step's rows -- leave, norm, mixer -- as main served it, with the normalised streams
+        # written for mix_block, and as gated_residual.site serves it (stream scales kept, the tiles normalised as read)
+        from probes.engine_qwen38_gemv import run_site_whole
+        run_site_whole(args.output)
+        return
+    if args.lanes == 'qwen38_site_prefill':
+        # the mixer at a prefill step's rows: the five launches it served before against gated_residual.mix_block's two
+        # (the up product never written), with a tile sweep -- what the fold is worth where the chunk spends 43%
+        from probes.engine_qwen38_gemv import run_site_prefill
+        run_site_prefill(args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10
@@ -260,6 +284,10 @@ def main():
         from probes.engine_qwen38_leave import run as qwen38_leave
         qwen38_leave(args.output)
         return
+    if args.lanes == 'qwen38_moe_precision':
+        from probes.engine_qwen38_moe_precision import run
+        run(args.output)
+        return
     if args.lanes == 'qwen38_moe':
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe
@@ -269,6 +297,12 @@ def main():
         # component timings: the mixer mean's hidden axis in tiles, every tile the one-block launch's bytes first (H3)
         from probes.engine_qwen38_mix_tiles import run as qwen38_mix_tiles
         qwen38_mix_tiles(args.output)
+        return
+    if args.lanes == 'qwen38_qsa_stacked':
+        # the covered attention's stacked launch against the run launch, and a first chunk across the reach split
+        # between the covered and the sparse launch (probes/engine_qwen38_qsa_geometry.run_stacked)
+        from probes.engine_qwen38_qsa_geometry import run_stacked
+        run_stacked(args.output)
         return
     if args.lanes == 'qwen38_qsa_geometry':
         # component timings: the QSA launches' geometry at Qwen3.8's cell -- the attention's split profile, the scorer's
@@ -281,6 +315,16 @@ def main():
         # failure it is (gated_residual.blame); `:N` sets the repeats
         from probes.engine_qwen38_qualify_soak import REPEATS, run as qwen38_qualify_soak
         qwen38_qualify_soak(args.output, repeats=int((args.lanes.split(':')[1:] or [REPEATS])[0]))
+        return
+    if args.lanes == 'qwen38_ple_conv':
+        # the PLE conv, its silu and the gated add: the torch form against ngram_gate.conv_add, many rounds
+        from probes.engine_qwen38_ple import run as qwen38_ple_conv
+        qwen38_ple_conv(args.output)
+        return
+    if args.lanes == 'qwen38_router':
+        # the router projection: IEEE FP32 (router_fp32) against the BF16 matmul it replaced, decode and prefill rows
+        from probes.engine_qwen38_router import run as qwen38_router
+        qwen38_router(args.output)
         return
     if args.lanes == 'qwen38_prefill' or args.lanes.startswith('qwen38_prefill:'):
         # component census: a prefill chunk's wall, device and host time by kernel family, solved from four small

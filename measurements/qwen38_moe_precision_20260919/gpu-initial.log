@@ -1,0 +1,74 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-q38moeprecision-0919a-20260919-203505.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-q38moeprecision-0919a-20260919-203505.txt
+GO q38moeprecision-0919a 2026-09-19_20:35:06
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+{"event": "device", "name": "NVIDIA GB10", "torch": "2.13.0+cu132", "cuda": "13.2", "shape": [128, 2560, 640, 10], "default_search": 2}
+{"event": "quant_parity", "radius": -1, "mode": "normal", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 0, "mode": "normal", "blocks": 151594, "passed": true}
+{"event": "quant_numeric", "radius": 1, "checked_finite_blocks": 151322, "changed_scales": 11203, "synthetic_mse_reduction_pct": 3.1655268976932605, "worsened_blocks": 0}
+{"event": "quant_numeric", "radius": 2, "checked_finite_blocks": 151322, "changed_scales": 11732, "synthetic_mse_reduction_pct": 3.2272424582009074, "worsened_blocks": 0}
+{"event": "quant_parity", "radius": -1, "mode": "zero", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 0, "mode": "zero", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 1, "mode": "zero", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 2, "mode": "zero", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": -1, "mode": "negative", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 0, "mode": "negative", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 1, "mode": "negative", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 2, "mode": "negative", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": -1, "mode": "infinite", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 0, "mode": "infinite", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 1, "mode": "infinite", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 2, "mode": "infinite", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": -1, "mode": "nan", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 0, "mode": "nan", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 1, "mode": "nan", "blocks": 151594, "passed": true}
+{"event": "quant_parity", "radius": 2, "mode": "nan", "blocks": 151594, "passed": true}
+2026-09-19 11:35:17,475 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_d562e7cd5f3ee420
+2026-09-19 11:35:21,285 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_d562e7cd5f3ee420.o
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=64 -> rows 1072/1072 tiles 67/67 tasks 335/335
+2026-09-19 11:35:21,318 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_54db469c1fe84beb
+2026-09-19 11:35:24,456 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_54db469c1fe84beb.o
+{"event": "accumulation", "rows": 64, "slices": 5, "baseline_sse": 0.01628976815576942, "fp32_sse": 0.005194311418436709, "reduction_pct": 68.1130426856504, "exact_rounded_oracle": true}
+2026-09-19 11:35:24,469 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r1_87b5242655142fe7
+2026-09-19 11:35:27,276 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r1_87b5242655142fe7.o
+{"event": "projection", "rows": 1, "topk": 1, "radius": 0, "relative_error": 0.0058139534667134285}
+2026-09-19 11:35:27,742 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r1_bdc1760e95ed23f7
+2026-09-19 11:35:30,388 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r1_bdc1760e95ed23f7.o
+{"event": "projection", "rows": 1, "topk": 1, "radius": 2, "relative_error": 0.0062500000931322575}
+2026-09-19 11:35:31,440 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m8_k2560_n640_t1_r8_ad3cea21719d5b93
+2026-09-19 11:35:32,581 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m8_k2560_n640_t1_r8_ad3cea21719d5b93.o
+{"event": "projection", "rows": 8, "topk": 1, "radius": 0, "relative_error": 0.0036231884732842445}
+2026-09-19 11:35:32,802 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m8_k2560_n640_t1_r8_b274a61804019153
+2026-09-19 11:35:34,053 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m8_k2560_n640_t1_r8_b274a61804019153.o
+{"event": "projection", "rows": 8, "topk": 1, "radius": 2, "relative_error": 0.0036764706019312143}
+{"event": "projection", "rows": 64, "topk": 1, "radius": 0, "relative_error": 0.004999999888241291}
+2026-09-19 11:35:34,534 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_2838358fdbd3df7e
+2026-09-19 11:35:36,177 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_2838358fdbd3df7e.o
+{"event": "projection", "rows": 64, "topk": 1, "radius": 2, "relative_error": 0.005076142027974129}
+2026-09-19 11:35:36,749 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r40_a172716afd2a5977
+2026-09-19 11:35:39,228 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r40_a172716afd2a5977.o
+{"event": "projection", "rows": 4, "topk": 10, "radius": 0, "relative_error": 0.003496503457427025}
+2026-09-19 11:35:39,480 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r40_0c33f5a659cc6683
+2026-09-19 11:35:42,216 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r40_0c33f5a659cc6683.o
+{"event": "projection", "rows": 4, "topk": 10, "radius": 2, "relative_error": 0.0037878789007663727}
+2026-09-19 11:35:42,522 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_2897a1e8df411b6a
+2026-09-19 11:35:47,164 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_2897a1e8df411b6a.o
+{"event": "projection", "rows": 16, "topk": 10, "radius": 0, "relative_error": 0.004854368977248669}
+2026-09-19 11:35:47,402 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_109a3c77dc8949bb
+2026-09-19 11:35:51,884 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_109a3c77dc8949bb.o
+{"event": "projection", "rows": 16, "topk": 10, "radius": 2, "relative_error": 0.005154639016836882}
+2026-09-19 11:35:52,210 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_05c1dfb3cf784239
+2026-09-19 11:35:55,583 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_05c1dfb3cf784239.o
+[b12x-bounds] state_E=128 n=640 tile_m=32 routed_rows=129 -> rows 4224/4224 tiles 132/132 tasks 660/660
+{"event": "graph", "tile": 32, "rows": 129, "changed_inputs": true, "poisoned_accumulator": true, "zero_weights": true}
+2026-09-19 11:35:55,602 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_2fa9b746c7edf850
+2026-09-19 11:35:58,959 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_2fa9b746c7edf850.o
+[b12x-bounds] state_E=128 n=640 tile_m=64 routed_rows=129 -> rows 8320/8320 tiles 130/130 tasks 650/650
+{"event": "graph", "tile": 64, "rows": 129, "changed_inputs": true, "poisoned_accumulator": true, "zero_weights": true}
+2026-09-19 11:35:58,968 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_f0cccad7289d2aba
+2026-09-19 11:36:05,844 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_7394e3b717e4_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_f0cccad7289d2aba.o
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=129 -> rows 16512/16512 tiles 129/129 tasks 645/645
+{"event": "graph", "tile": 128, "rows": 129, "changed_inputs": true, "poisoned_accumulator": true, "zero_weights": true}
+[b12x-bounds] state_E=128 n=640 tile_m=32 routed_rows=4096 -> rows 8160/8160 tiles 255/255 tasks 1275/1275
+{"event": "served_prefill", "rows": 4096, "finite": true, "foreign_routes_zero": true}
+{"event": "passed", "passed": true, "peak_bytes": 1207115264, "not_measured": "real checkpoint, TP4 consumer output quality, acceptance and throughput"}

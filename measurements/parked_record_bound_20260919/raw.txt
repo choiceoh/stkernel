@@ -1,0 +1,55 @@
+# 2026-09-19, stk-test (Mac 의 docker, python 3.12.14, CPU).
+# 전 = 경합 수정 끝 54cc9d3f (engine/base·tests 는 main 9ed520fc 와 같음). 후 = 이 PR 의 트리(git archive).
+
+## probe_growth.py — 대화 40개를 파킹한 뒤 Runner.parked 의 크기
+[전]  parked on the tier: 40; records held in Runner.parked: 40 (PARKED_RECORDS_KEPT = 8); digests: 0
+[후]  parked on the tier: 40; records held in Runner.parked: 8 (PARKED_RECORDS_KEPT = 8); digests: 40
+
+## probe_loopreads.py — 네 랭크(LocalTP), 대화 9개 파킹 뒤 대화 0 을 이름으로 / 힌트로 잇는다
+[전 as-is]
+[as-is] continuation named:
+  rank 0: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []; by the scan: []; answer [6, 6], fallbacks {}
+  rank 1: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []
+  rank 2: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []
+  rank 3: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []
+[as-is] continuation hint:
+  rank 0: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []; by the scan: []; answer [7, 7], fallbacks {}
+  rank 1: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []
+  rank 2: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []
+  rank 3: conversation 0 held before: True; records held: 9; record reads on the loop: []; on the tier's thread: []
+[전 + 파킹 때 자르기만 (naive)]
+[naive] continuation named:
+  rank 0: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []; by the scan: []; answer [6, 6], fallbacks {}
+  rank 1: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []
+  rank 2: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []
+  rank 3: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []
+[naive] continuation hint:
+  rank 0: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []; by the scan: [0, 1, 2, 3, 4, 5, 6, 7, 8]; answer [7, 7], fallbacks {}
+  rank 1: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []
+  rank 2: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []
+  rank 3: conversation 0 held before: False; records held: 8; record reads on the loop: [0]; on the tier's thread: []
+[후 as-is]
+[as-is] continuation named:
+  rank 0: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: [0]; by the scan: []; answer [6, 6], fallbacks {}
+  rank 1: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: [0]
+  rank 2: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: [0]
+  rank 3: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: [0]
+[as-is] continuation hint:
+  rank 0: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: []; by the scan: [0]; answer [7, 7], fallbacks {}
+  rank 1: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: [0]
+  rank 2: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: [0]
+  rank 3: conversation 0 held before: False; records held: 8; record reads on the loop: []; on the tier's thread: [0]
+
+## record_cost.py — GLM 모양 기록 하나 (후 트리의 실제 함수)
+python 3.12.14
+    233 tokens: held   0.008 MiB (38.0 B/token), JSON  0.002 MiB, json.loads   0.018 ms | history_head  0.001 ms, _summary (park)  0.003 ms, _offer_digest  0.003 ms vs _offer  0.003 ms (hint re-check)
+ 43,318 tokens: held   1.490 MiB (36.1 B/token), JSON  0.259 MiB, json.loads   3.491 ms | history_head  0.234 ms, _summary (park)  0.385 ms, _offer_digest  0.389 ms vs _offer  0.299 ms (hint re-check)
+100,000 tokens: held   3.431 MiB (36.0 B/token), JSON  0.597 MiB, json.loads   7.222 ms | history_head  0.608 ms, _summary (park)  0.991 ms, _offer_digest  0.926 ms vs _offer  0.826 ms (hint re-check)
+
+## tier_manifest.py — 프로덕션 GLM-5.3 rank 0 (srv2 ~/glm53-logs/st-tier/rank0), 읽기 전용, 기록 파일은 열지 않음
+2026-09-19 20:30:20 +0900
+entries 223, live 223, with a record file 223
+KV tokens: sum 147775, mean 663, p50 233, p90 340, max 43318
+record JSON bytes: sum 816593, mean 3662, p50 1428, p90 2043, max 224702
+used 63.80 GiB; slot bytes [299932672]; block_bytes [4730880]; blocks 343
+state_format ['glm53-kda-fp32-moe-fp32-shared-smooth-v4']

@@ -71,6 +71,7 @@ class MoEDynamicKernel:
         input_scales_are_reciprocal: bool = False,
         fast_math: bool = False,
         activation_scale_search: int = 0,
+        scatter_fp32: bool = False,
         activation: str = "silu",
         swiglu_alpha: float = 1.702,
         swiglu_beta: float = 1.0,
@@ -86,7 +87,9 @@ class MoEDynamicKernel:
             share_input_across_experts
             and (num_topk is None or num_topk <= _MAX_SHARED_INPUT_TOPK)
         )
-        use_gated_optimized = _can_use_gated_optimized_kernel(
+        # The stock optimized body writes BF16 atomics. The generic body also
+        # accepts the explicit FP32 scatter ABI (its tensor pointer is typed).
+        use_gated_optimized = not scatter_fp32 and _can_use_gated_optimized_kernel(
             activation=activation,
             sf_vec_size=sf_vec_size,
             mma_tiler_mn=mma_tiler_mn,

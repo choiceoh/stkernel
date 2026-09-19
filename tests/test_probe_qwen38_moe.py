@@ -150,7 +150,7 @@ class DispatcherReadingTests(unittest.TestCase):
     def test_the_lanes_launch_misses_the_tp_gate_and_sums_decode_in_fp32(self):
         """lanes.served() passes the rank's 128 experts as num_experts, so the admitted-geometry gate (512 of 128) never
         opens for it: no static v2 lane, no _GLM53_B12X_* ladder. The top-10 decode launch accumulates its routes in FP32
-        (the bound cell's scatter plane); the eager step's one-route pairs keep BF16 scatter."""
+        (the bound cell's scatter plane); compact one-route pairs now retain that FP32 sum too."""
         p = probe()
         c = p.cell_of(p.kernel_shape())
         moe = qwen_shape().moe
@@ -164,7 +164,7 @@ class DispatcherReadingTests(unittest.TestCase):
                                                     num_topk=topk, quant_mode="nvfp4", activation="silu",
                                                     swiglu_alpha=1.0, swiglu_beta=0.0, swiglu_limit=None)
         self.assertTrue(fp32(c.topk))
-        self.assertFalse(fp32(1))
+        self.assertTrue(fp32(1))
 
     @needs_torch
     def test_prefill_tiles_follow_rows_per_expert(self):
