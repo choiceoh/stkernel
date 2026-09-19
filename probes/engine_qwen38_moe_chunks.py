@@ -2,9 +2,10 @@
 
 Above eight tokens the served lane uses the static kernel and maps foreign routes
 to expert zero at weight zero. The micro kernel skips these routes. Compare the
-served launch with balanced chunks of at most four/eight tokens, including their
-output concatenation, and with the existing M32 micro tile. No serving default
-changes here. Inputs, weights, activation scale search and route order are shared.
+served launch with two balanced micro chunks, including their output
+concatenation, through both a prototype and the opt-in serving lane. No serving
+default changes here. Inputs, weights, activation scale search and route order
+are shared.
 
 The router is excluded from both arms: local ids are staged before replay, exactly
 as one fused router would produce them (foreign id zero for static, E for micro).
@@ -133,25 +134,29 @@ def run(output=None):
                             nonzero.append(int(torch.count_nonzero(out)))
                         p.load(inputs, staged[0])
                     relative = max(p.relative(replay, oracles[0]), p.relative(replay_new, oracles[1]))
+                    control = (replay, replay_new) if name == "served" else arms[0]["control"]
+                    baseline_relative = max(p.relative(replay, control[0]), p.relative(replay_new, control[1]))
+                    baseline_equal = bool(torch.equal(replay, control[0]) and torch.equal(replay_new, control[1]))
                     valid = (bool(torch.isfinite(replay).all()) and bool(torch.isfinite(replay_new).all())
                              and relative <= p.ORACLE_RELATIVE and not any(nonzero)
                              and p.stable(replay, eager) and p.stable(replay_new, eager_new))
+                    if rows <= 8:
+                        valid = valid and baseline_equal  # unchanged C=1/C=2 arithmetic, byte for byte
                     expected = "micro" if sentinel is not None else "static"
                     valid = valid and len(launch_rows) == len(expected_ranges) and all(
                         row["kernel"] == expected and (sentinel is None or row.get("skip") == c.local)
                         and (tile is None or row.get("tile") == [tile, 128]) for row in launch_rows)
                     report("chunk_check", tokens=rows, arm=name, ranges=expected_ranges, launched=launch_rows,
                            oracle_relative=relative, zero_nonzero=nonzero,
+                           baseline_relative=baseline_relative, baseline_equal=baseline_equal, router_same=True,
                            replay_stable=p.stable(replay, eager), new_replay_stable=p.stable(replay_new, eager_new),
                            passed=valid)
                     if not valid:
                         graph.reset()
-                        if name == "served":
-                            raise AssertionError("the served control failed its correctness gate")
-                        continue
+                        raise AssertionError(f"{name} failed its correctness gate at {rows} tokens")
                     checks += 1
                     arms.append(dict(name=name, graph=graph, inputs=inputs, out=out, staged=staged,
-                                     expected=replay, cold=[], warm=[]))
+                                     expected=replay, control=(replay, replay_new), cold=[], warm=[]))
 
                 # Replaying another arm may share dispatcher scratch. Verify isolation before timing.
                 for arm in reversed(arms):
