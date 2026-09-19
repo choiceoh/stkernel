@@ -1,0 +1,176 @@
+[15:33:18] tree 1aec0aac fix(qwen38): the tuner's extract reads through the shard mapping -- a 6 GB cap killed the l
+[15:33:18] lease before: production production/srv2/1368796 on srv2 since 2026-09-19 15:07:12 (production st-glm53 on four Sparks): running=0, served=894, steps=1331, waiting=0
+[15:33:18] samples: 1470 -- prefill
+[15:33:18] yield asked
+[15:33:21] held: session session/q38mtp-tune-0919 on srv2 since 2026-09-19 15:33:19 (operator window: MTP head fine-tune -- data, four-node training, original and tuned head pai
+[15:34:23] == tuner smoke on the GPU (synthetic streams)
+{"window": 0, "s": 5.83, "loss": 4.1108, "chain_1": 0.001953125, "peak_GiB": 12.23}
+{"window": 1, "s": 3.09, "loss": 3.6461, "chain_1": 0.0009765625, "peak_GiB": 12.92}
+{"window": 2, "s": 3.06, "loss": 2.9394, "chain_1": 0.0009765625, "peak_GiB": 12.92}
+{"smoke": "ok"}
+[15:34:44] smoke: 3.06 s a window
+[15:34:44] waiting for srv4's probe to finish (1 up)
+[15:34:51] == boot data (ST_DRAFT_THRESHOLD=off)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "data", "final": {"next": 1445, "done": 1441, "prompt_tokens": 730739, "errors": 0}, "elapsed_s": 630}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger; mtp inputs recorded)
+  rank 0: ready in 81.5 s, door on port 8000
+10.10.10.4: stopped
+[15:47:00] tap: 133 shards, 12G
+[15:47:00] == runs
+{"positions": 10058, "train": 10058, "eval": 0, "decoded": 0}
+[15:47:04] == spread the runs and the base
+10.10.10.4 ready
+10.10.10.3 ready
+10.10.10.1 ready
+[15:54:25] == train on four nodes: 91 steps of 2 windows a rank
+rank 3 started
+rank 2 started
+rank 1 started
+rank 0 started
+[16:04:25] rank 0 exit 0
+[16:04:26] rank 1 exit 0
+[16:04:26] rank 2 exit 0
+[16:04:27] rank 3 exit 0
+{"event": "eval", "step": 0, "agree_1": 0.71311, "agree_2": 0.63038, "agree_3": 0.58426, "chain_1": 0.71311, "chain_2": 0.51305, "chain_3": 0.38179, "loss_1": 1.15384, "loss_2": 2.20867, "loss_3": 2.80226, "text_chain_1": 0.68362, "text_chain_2": 0.49553, "text_chain_3": 0.3693, "tokens_a_step": 2.6
+{"event": "eval", "step": 22, "agree_1": 0.82914, "agree_2": 0.75161, "agree_3": 0.70545, "chain_1": 0.82914, "chain_2": 0.6574, "chain_3": 0.52324, "loss_1": 0.43525, "loss_2": 0.78829, "loss_3": 1.03653, "text_chain_1": 0.6595, "text_chain_2": 0.47837, "text_chain_3": 0.35251, "tokens_a_step": 3.0
+{"event": "saved", "step": 22, "tokens_a_step": 3.00979, "t": 1789801064.5}
+{"event": "eval", "step": 44, "agree_1": 0.83752, "agree_2": 0.76317, "agree_3": 0.72434, "chain_1": 0.83752, "chain_2": 0.67194, "chain_3": 0.54612, "loss_1": 0.39134, "loss_2": 0.70876, "loss_3": 0.93137, "text_chain_1": 0.66353, "text_chain_2": 0.48981, "text_chain_3": 0.36825, "tokens_a_step": 3
+{"event": "saved", "step": 44, "tokens_a_step": 3.05558, "t": 1789801187.6}
+{"event": "eval", "step": 66, "agree_1": 0.8426, "agree_2": 0.77272, "agree_3": 0.7328, "chain_1": 0.8426, "chain_2": 0.68217, "chain_3": 0.55715, "loss_1": 0.37488, "loss_2": 0.67686, "loss_3": 0.87938, "text_chain_1": 0.66852, "text_chain_2": 0.49501, "text_chain_3": 0.37575, "tokens_a_step": 3.08
+{"event": "saved", "step": 66, "tokens_a_step": 3.08192, "t": 1789801315.3}
+{"event": "eval", "step": 88, "agree_1": 0.84453, "agree_2": 0.77505, "agree_3": 0.73651, "chain_1": 0.84453, "chain_2": 0.68632, "chain_3": 0.56211, "loss_1": 0.36978, "loss_2": 0.66505, "loss_3": 0.86196, "text_chain_1": 0.67077, "text_chain_2": 0.49799, "text_chain_3": 0.3805, "tokens_a_step": 3.
+{"event": "saved", "step": 88, "tokens_a_step": 3.09296, "t": 1789801425.1}
+{"event": "eval", "step": 91, "agree_1": 0.84393, "agree_2": 0.77445, "agree_3": 0.73647, "chain_1": 0.84393, "chain_2": 0.68515, "chain_3": 0.56138, "loss_1": 0.36981, "loss_2": 0.66544, "loss_3": 0.86174, "text_chain_1": 0.67082, "text_chain_2": 0.49754, "text_chain_3": 0.38022, "tokens_a_step": 3
+{"event": "end", "best_tokens_a_step": 3.09296, "base_tokens_a_step": 2.60794, "t": 1789801451.0}
+[16:04:28] == export
+{"0": {"file": "mtp-tuned-r0of4.safetensors", "tensors": 22, "bytes": 100365872}, "1": {"file": "mtp-tuned-r1of4.safetensors", "tensors": 22, "bytes": 100365872}, "2": {"file": "mtp-tuned-r2of4.safetensors", "tensors": 22, "bytes": 100365872}, "3": {"file": "mtp-tuned-r3of4.safetensors", "tensors": 
+[16:04:34] spread to four nodes: 1
+[16:04:34] == boot orig-off (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "orig-off", "summary": {"steps": 3162.0, "tokens": 8660.0, "ms_a_step": 38.06, "tokens_a_step": 2.739, "decode_tok_s": 72.0}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 65.8 s, door on port 8000
+10.10.10.4: stopped
+[16:08:33] == boot tuned-off (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "tuned-off", "summary": {"steps": 2968.0, "tokens": 8574.0, "ms_a_step": 44.62, "tokens_a_step": 2.889, "decode_tok_s": 64.7}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 63.7 s, door on port 8000
+10.10.10.4: stopped
+[16:12:43] == boot tuned-cut (ST_TAP_MTP_INPUTS=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[16:12:51] == 3b: took the window over during tuned-cut's requests (the operator asked for a second training)
+[16:12:54] takeover: mtp_window3.sh (874613) killed during tuned-cut's requests; mtp_window3b.sh runs the rest
+{"label": "tuned-cut", "summary": {"steps": 3024.0, "tokens": 8681.0, "ms_a_step": 38.17, "tokens_a_step": 2.871, "decode_tok_s": 75.2}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; drafts cut below p=0.1, narrow widths to 2 rows; draft ledger)
+  rank 0: ready in 85.0 s, door on port 8000
+10.10.10.4: stopped
+[16:16:50] == second training: 182 steps from the first run's head (step ?), peak 3e-5, eval every 26
+rank 3 started
+rank 2 started
+rank 1 started
+rank 0 started
+[16:33:00] rank 0 exit 0
+[16:33:01] rank 1 exit 0
+[16:33:01] rank 2 exit 0
+[16:33:02] rank 3 exit 0
+{"event": "eval", "step": 0, "agree_1": 0.84453, "agree_2": 0.77505, "agree_3": 0.73651, "chain_1": 0.84453, "chain_2": 0.68632, "chain_3": 0.56211, "loss_1": 0.36978, "loss_2": 0.66505, "loss_3": 0.86196, "text_chain_1": 0.67077, "text_chain_2": 0.49799, "text_chain_3": 0.3805, "tokens_a_step": 3.0
+{"event": "eval", "step": 26, "agree_1": 0.84558, "agree_2": 0.77646, "agree_3": 0.73546, "chain_1": 0.84558, "chain_2": 0.68705, "chain_3": 0.5634, "loss_1": 0.37499, "loss_2": 0.68387, "loss_3": 0.89943, "text_chain_1": 0.66981, "text_chain_2": 0.49936, "text_chain_3": 0.38062, "tokens_a_step": 3.
+{"event": "saved", "step": 26, "tokens_a_step": 3.09602, "t": 1789802373.5}
+{"event": "eval", "step": 52, "agree_1": 0.84586, "agree_2": 0.78069, "agree_3": 0.73925, "chain_1": 0.84586, "chain_2": 0.69192, "chain_3": 0.56738, "loss_1": 0.36071, "loss_2": 0.65579, "loss_3": 0.8563, "text_chain_1": 0.66908, "text_chain_2": 0.50125, "text_chain_3": 0.38175, "tokens_a_step": 3.
+{"event": "saved", "step": 52, "tokens_a_step": 3.10516, "t": 1789802513.5}
+{"event": "eval", "step": 78, "agree_1": 0.84695, "agree_2": 0.78158, "agree_3": 0.7438, "chain_1": 0.84695, "chain_2": 0.69236, "chain_3": 0.57024, "loss_1": 0.35031, "loss_2": 0.6348, "loss_3": 0.82549, "text_chain_1": 0.67392, "text_chain_2": 0.50439, "text_chain_3": 0.38706, "tokens_a_step": 3.1
+{"event": "saved", "step": 78, "tokens_a_step": 3.10955, "t": 1789802643.0}
+{"event": "eval", "step": 104, "agree_1": 0.84977, "agree_2": 0.78532, "agree_3": 0.74778, "chain_1": 0.84977, "chain_2": 0.69696, "chain_3": 0.57677, "loss_1": 0.34221, "loss_2": 0.61663, "loss_3": 0.8047, "text_chain_1": 0.67444, "text_chain_2": 0.50644, "text_chain_3": 0.38956, "tokens_a_step": 3
+{"event": "saved", "step": 104, "tokens_a_step": 3.12349, "t": 1789802772.7}
+{"event": "eval", "step": 130, "agree_1": 0.8515, "agree_2": 0.78762, "agree_3": 0.75153, "chain_1": 0.8515, "chain_2": 0.70026, "chain_3": 0.58068, "loss_1": 0.33723, "loss_2": 0.61011, "loss_3": 0.79195, "text_chain_1": 0.67396, "text_chain_2": 0.50628, "text_chain_3": 0.39077, "tokens_a_step": 3.
+{"event": "saved", "step": 130, "tokens_a_step": 3.13243, "t": 1789802907.2}
+{"event": "eval", "step": 156, "agree_1": 0.8517, "agree_2": 0.78911, "agree_3": 0.75302, "chain_1": 0.8517, "chain_2": 0.70135, "chain_3": 0.58184, "loss_1": 0.33519, "loss_2": 0.60437, "loss_3": 0.78342, "text_chain_1": 0.67416, "text_chain_2": 0.50785, "text_chain_3": 0.39282, "tokens_a_step": 3.
+{"event": "saved", "step": 156, "tokens_a_step": 3.13489, "t": 1789803038.1}
+{"event": "eval", "step": 182, "agree_1": 0.85178, "agree_2": 0.79052, "agree_3": 0.75314, "chain_1": 0.85178, "chain_2": 0.70167, "chain_3": 0.58261, "loss_1": 0.33573, "loss_2": 0.60382, "loss_3": 0.78399, "text_chain_1": 0.6746, "text_chain_2": 0.50822, "text_chain_3": 0.3921, "tokens_a_step": 3.
+{"event": "saved", "step": 182, "tokens_a_step": 3.13606, "t": 1789803168.2}
+{"event": "end", "best_tokens_a_step": 3.13606, "base_tokens_a_step": 3.09296, "t": 1789803168.2}
+[16:33:03] == export (second head)
+{"0": {"file": "mtp-tuned-r0of4.safetensors", "tensors": 22, "bytes": 100365872}, "1": {"file": "mtp-tuned-r1of4.safetensors", "tensors": 22, "bytes": 100365872}, "2": {"file": "mtp-tuned-r2of4.safetensors", "tensors": 22, "bytes": 100365872}, "3": {"file": "mtp-tuned-r3of4.safetensors", "tensors": 
+[16:33:08] spread to four nodes: 1
+[16:33:08] == boot tuned2-off (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned2)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[16:33:16] == 3c: took the window over during tuned2-off's requests (more data from the target's own decoding, a third training)
+[16:33:19] takeover2: mtp_window3b.sh killed during tuned2-off's requests; mtp_window3c.sh runs the rest
+{"label": "tuned2-off", "summary": {"steps": 2946.0, "tokens": 8587.0, "ms_a_step": 37.5, "tokens_a_step": 2.915, "decode_tok_s": 77.7}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 64.3 s, door on port 8000
+10.10.10.4: stopped
+[16:36:54] == boot data2 (ST_DRAFT_THRESHOLD=off ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned2)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "data2", "final": {"next": 313, "done": 313, "tokens": 107704, "errors": 0}, "elapsed_s": 930}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger; mtp inputs recorded)
+  rank 0: ready in 66.4 s, door on port 8000
+10.10.10.4: stopped
+[16:53:48] tap: 133 -> 169 shards, 14G
+[16:53:48] == runs (the prefilled text and the decoded)
+{"positions": 727015, "train": 650701, "eval": 76314, "decoded": 107348}
+[16:56:33] == third training: 130 steps from the second head, peak 3e-5, eval every 26 (spread ok=1)
+rank 3 started
+rank 2 started
+rank 1 started
+rank 0 started
+[17:08:16] rank 0 exit 0
+[17:08:16] rank 1 exit 0
+[17:08:17] rank 2 exit 0
+[17:08:18] rank 3 exit 0
+{"event": "eval", "step": 0, "agree_1": 0.85178, "agree_2": 0.79052, "agree_3": 0.75314, "chain_1": 0.85178, "chain_2": 0.70167, "chain_3": 0.58261, "loss_1": 0.33573, "loss_2": 0.60382, "loss_3": 0.78399, "text_chain_1": 0.6746, "text_chain_2": 0.50822, "text_chain_3": 0.3921, "tokens_a_step": 3.13
+{"event": "eval", "step": 26, "agree_1": 0.85182, "agree_2": 0.78693, "agree_3": 0.74871, "chain_1": 0.85182, "chain_2": 0.69917, "chain_3": 0.5781, "loss_1": 0.3368, "loss_2": 0.60967, "loss_3": 0.79868, "text_chain_1": 0.67496, "text_chain_2": 0.50942, "text_chain_3": 0.39125, "tokens_a_step": 3.1
+{"event": "eval", "step": 52, "agree_1": 0.85234, "agree_2": 0.78983, "agree_3": 0.75193, "chain_1": 0.85234, "chain_2": 0.70231, "chain_3": 0.58237, "loss_1": 0.33341, "loss_2": 0.60571, "loss_3": 0.7895, "text_chain_1": 0.67492, "text_chain_2": 0.51092, "text_chain_3": 0.39504, "tokens_a_step": 3.
+{"event": "saved", "step": 52, "tokens_a_step": 3.13702, "t": 1789804888.7}
+{"event": "eval", "step": 78, "agree_1": 0.85621, "agree_2": 0.79302, "agree_3": 0.75729, "chain_1": 0.85621, "chain_2": 0.70896, "chain_3": 0.58958, "loss_1": 0.32699, "loss_2": 0.5896, "loss_3": 0.76397, "text_chain_1": 0.6779, "text_chain_2": 0.51474, "text_chain_3": 0.39903, "tokens_a_step": 3.1
+{"event": "saved", "step": 78, "tokens_a_step": 3.15474, "t": 1789805018.5}
+{"event": "eval", "step": 104, "agree_1": 0.85686, "agree_2": 0.79455, "agree_3": 0.75955, "chain_1": 0.85686, "chain_2": 0.7096, "chain_3": 0.59107, "loss_1": 0.32455, "loss_2": 0.58477, "loss_3": 0.75694, "text_chain_1": 0.67782, "text_chain_2": 0.51454, "text_chain_3": 0.40019, "tokens_a_step": 3
+{"event": "saved", "step": 104, "tokens_a_step": 3.15752, "t": 1789805155.5}
+{"event": "eval", "step": 130, "agree_1": 0.85718, "agree_2": 0.79559, "agree_3": 0.76015, "chain_1": 0.85718, "chain_2": 0.71069, "chain_3": 0.59248, "loss_1": 0.3225, "loss_2": 0.58109, "loss_3": 0.75292, "text_chain_1": 0.67883, "text_chain_2": 0.51535, "text_chain_3": 0.40072, "tokens_a_step": 3
+{"event": "saved", "step": 130, "tokens_a_step": 3.16034, "t": 1789805291.1}
+{"event": "end", "best_tokens_a_step": 3.16034, "base_tokens_a_step": 3.13606, "t": 1789805291.1}
+[17:08:19] == export (third head)
+{"0": {"file": "mtp-tuned-r0of4.safetensors", "tensors": 22, "bytes": 100365872}, "1": {"file": "mtp-tuned-r1of4.safetensors", "tensors": 22, "bytes": 100365872}, "2": {"file": "mtp-tuned-r2of4.safetensors", "tensors": 22, "bytes": 100365872}, "3": {"file": "mtp-tuned-r3of4.safetensors", "tensors": 
+[17:08:25] spread to four nodes: 1
+[17:08:25] == boot tuned3-off (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned3)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[17:08:37] == 3d: took the window over (tuned3-off): the door held for a peer's C=1 profile, then the release
+[17:08:39] takeover3: mtp_window3c.sh killed (tuned3-off); mtp_window3d.sh holds the door, then releases
+{"label": "tuned3-off", "summary": {"steps": 2904.0, "tokens": 8604.0, "ms_a_step": 38.19, "tokens_a_step": 2.963, "decode_tok_s": 77.6}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 64.1 s, door on port 8000
+[17:12:09] profile window open on the tuned3-off boot: the door is idle for up to 10 min -- touch /home/choiceoh/glm53-logs/q38mtp-window-0919/profile.done to end it
+[17:16:44] profile window closed (done)
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 64.1 s, door on port 8000
+10.10.10.4: stopped
+[17:16:51] == estimates: the four heads' held-out rates at T=1, top-k 20, top-p 0.95 (exact match, drawn drafts, top-2)
+[17:18:14] estimate orig: {"agree_1": 0.71311, "agree_2": 0.63038, "agree_3": 0.58426, "chain_1": 0.71311, "chain_2": 0.51305, "chain_3": 0.38179, "exact_1": 0.6712, "exact_2": 0.60059, "exact_3": 0.56078, "exact_chain_1": 0.6712, "exact_chain_2": 0.46736, "exact_chain_3": 0.34344, "exact_tokens_a_step": 2.482, "loss_1": 1.15384, "loss_2": 2.20867, "loss_3": 2.80226, "spec_1": 0.70928, "spec_2": 0.62755, "spec_3": 0.58311, "spec_chain_1": 0.70928, "spec_chain_2": 0.50862, "spec_chain_3": 0.37808, "spec_tokens_a_step": 2.59597, "text_chain_1": 0.68362, "text_chain_2": 0.49553, "text_chain_3": 0.3693, "tokens_a_step": 2.60794, "top2_1": 0.82975, "positions": 24828}
+[17:18:14] estimate run1: {"agree_1": 0.84453, "agree_2": 0.77505, "agree_3": 0.73651, "chain_1": 0.84453, "chain_2": 0.68632, "chain_3": 0.56211, "exact_1": 0.78818, "exact_2": 0.73462, "exact_3": 0.70269, "exact_chain_1": 0.78818, "exact_chain_2": 0.61836, "exact_chain_3": 0.49857, "exact_tokens_a_step": 2.90512, "loss_1": 0.36978, "loss_2": 0.66505, "loss_3": 0.86196, "spec_1": 0.83973, "spec_2": 0.76428, "spec_3": 0.71903, "spec_chain_1": 0.83973, "spec_chain_2": 0.67076, "spec_chain_3": 0.5367, "spec_tokens_a_step": 3.04718, "text_chain_1": 0.67077, "text_chain_2": 0.49799, "text_chain_3": 0.3805, "tokens_a_step": 3.09296, "top2_1": 0.9215, "positions": 24828}
+[17:18:14] estimate run2: {"agree_1": 0.85178, "agree_2": 0.79052, "agree_3": 0.75314, "chain_1": 0.85178, "chain_2": 0.70167, "chain_3": 0.58261, "exact_1": 0.79264, "exact_2": 0.74605, "exact_3": 0.71623, "exact_chain_1": 0.79264, "exact_chain_2": 0.62864, "exact_chain_3": 0.51193, "exact_tokens_a_step": 2.93321, "loss_1": 0.33573, "loss_2": 0.60382, "loss_3": 0.78399, "spec_1": 0.84935, "spec_2": 0.78041, "spec_3": 0.7391, "spec_chain_1": 0.84935, "spec_chain_2": 0.69066, "spec_chain_3": 0.56369, "spec_tokens_a_step": 3.1037, "text_chain_1": 0.6746, "text_chain_2": 0.50822, "text_chain_3": 0.3921, "tokens_a_step": 3.13606, "top2_1": 0.92678, "positions": 24828}
+[17:18:14] estimate run: {"agree_1": 0.85718, "agree_2": 0.79559, "agree_3": 0.76015, "chain_1": 0.85718, "chain_2": 0.71069, "chain_3": 0.59248, "exact_1": 0.79604, "exact_2": 0.75103, "exact_3": 0.72247, "exact_chain_1": 0.79604, "exact_chain_2": 0.63465, "exact_chain_3": 0.51867, "exact_tokens_a_step": 2.94936, "loss_1": 0.3225, "loss_2": 0.58109, "loss_3": 0.75292, "spec_1": 0.85335, "spec_2": 0.78623, "spec_3": 0.74653, "spec_chain_1": 0.85335, "spec_chain_2": 0.69786, "spec_chain_3": 0.57266, "spec_tokens_a_step": 3.12386, "text_chain_1": 0.67883, "text_chain_2": 0.51535, "text_chain_3": 0.40072, "tokens_a_step": 3.16034, "top2_1": 0.92798, "positions": 24828}
+[17:18:14] stop + release
+10.10.10.4: stopped
+released
+[17:18:18] lease: free
+[17:18:18] production down since handover: 6297 s so far
+[17:21:53] production door answers
+[17:21:53] lease after: production production/srv2/1368796 on srv2 since 2026-09-19 17:19:50 (production st-glm53 on four Sparks): running=0, served=0, steps=0, waiting=0
+[17:21:53] production downtime: 6512 s

@@ -106,6 +106,28 @@ class CaseTable(unittest.TestCase):
         wide, _ = p.step_of(cell, 1, 2, 70, torch.device("cpu"), sets=1, table_blocks=p.bucket_pages(cell, 4096))
         self.assertEqual(wide.meta.page_table.shape, (1, 256))                          # the bucket's whole width
 
+    def test_a_prefill_selection_shares_most_of_a_tile_s_blocks(self):
+        """The tile-union lane's selections: each row's distinct blocks among those it sees, as many as the budget
+        keeps; the prefill-like one shares more of a tile's blocks than independent subsets do."""
+        p = probe()
+        cell = p.Cell(heads=6, kv_heads=1, head_dim=32, rotary=8, idx_heads=4, idx_dim=16, ratio=4, budget=48, block=16)
+        cpu = torch.device("cpu")
+        step, _ = p.step_of(cell, 1, 64, 300, cpu, sets=1)
+        seen = (step.meta.positions32 + 1) // cell.ratio
+        shapes = {}
+        for selection, noise in p.TILE_UNION_SELECTIONS.items():
+            generator = torch.Generator().manual_seed(15)
+            blocks = (p.chosen_blocks(cell, step, generator, cpu) if noise is None
+                      else p.overlapping_blocks(cell, step, generator, cpu, noise))
+            for row in range(step.rows):
+                ids = blocks[row][blocks[row] >= 0]
+                with self.subTest(selection=selection, row=row):
+                    self.assertEqual(len(set(ids.tolist())), min(int(seen[row]), cell.index_blocks))
+                    self.assertTrue(bool((ids < seen[row]).all()))
+            shapes[selection] = p.neighbours(blocks, step.meta.starts, 2)
+        self.assertGreater(shapes["prefill"]["jaccard"], shapes["independent"]["jaccard"])
+        self.assertLess(shapes["prefill"]["union_blocks"], shapes["independent"]["union_blocks"])
+
     def test_the_two_layouts_hold_the_same_values_at_their_strides(self):
         p = probe()
         cell = p.Cell(heads=6, kv_heads=1, head_dim=32, rotary=8, idx_heads=4, idx_dim=16, ratio=4, budget=48, block=16)
@@ -346,6 +368,20 @@ class GateTests(unittest.TestCase):
         self.assertTrue(torch.equal(block, records))
         self.assertTrue(bool(block.any()))
 
+    def test_the_tile_union_gate_holds_its_band_against_the_split_k_launch(self):
+        import dataclasses
+        from engine.kernels import qsa_tile_union
+        p, cell = self.p, self.cell
+        # the interpreter's rows: the tile's two row gates lowered, nothing else of it (tests/test_engine_qsa_tile_union)
+        lowered = dataclasses.replace(qsa_tile_union.TILE, min_rows=0, min_rows_per_request=0)
+        for selection in p.TILE_UNION_SELECTIONS:
+            case = p.tile_union_case(cell, 24, 150, self.cpu, torch.Generator().manual_seed(14), selection)
+            with self.served(), patch.object(qsa_tile_union, "TILE", lowered):
+                row = p.tile_union_gate(case)
+            with self.subTest(selection=selection):
+                self.assertTrue(row["passed"], row)
+                self.assertLessEqual(row["max_abs"], 2 ** -5)
+
     def test_the_scoring_gate_asks_for_the_rule_s_bytes(self):
         p, cell = self.p, self.cell
         case = p.scoring_case(cell, 2, 2, 4096, self.cpu, torch.Generator().manual_seed(13), sets=2)
@@ -363,6 +399,8 @@ class LaneRoutingTests(unittest.TestCase):
         text = (ROOT / "probes" / "engine_kernel_check.py").read_text()
         self.assertIn("args.lanes == 'qwen38_qsa_geometry'", text)
         self.assertIn("from probes.engine_qwen38_qsa_geometry import run as qwen38_qsa_geometry", text)
+        self.assertIn("args.lanes == 'qwen38_tile_union'", text)
+        self.assertIn("from probes.engine_qwen38_qsa_geometry import run_tile_union as qwen38_tile_union", text)
 
     def test_the_queue_admits_the_probe(self):
         self.assertIn("'probes/engine_qwen38_qsa_geometry.py'", (ROOT / "bench" / "fleet_onepass.py").read_text())

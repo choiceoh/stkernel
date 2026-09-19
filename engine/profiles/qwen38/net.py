@@ -188,7 +188,9 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = True, mtp_precision: str = "bf16", mtp_experts: str = "nvfp4",
+                 query_shards: bool = True, tile_union: bool = True, gdn_flashinfer: bool = True,
+                 mtp_precision: str = "bf16",
+                 mtp_experts: str = "nvfp4",
                  shared_overlap: "bool | str" = False):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
@@ -201,6 +203,22 @@ class Qwen38Net:
         with the fleet unmeasured (CHARTER D17): until an onepass record says which side of that trade a fleet lands
         on, a boot can decline it (fleet.py --no-query-shards, the launcher's ST_QUERY_SHARDS=0) and every rank
         scores every row as before.
+
+        `tile_union`: a prefill step's sparse QSA attention on the tile-union launch (engine/kernels/qsa_tile_union,
+        vLLM PR 55430; engine/SM121_INTAKE.md U12) when `qsa_tile_union.admits` takes the step -- two rows of a segment
+        walk the union of their chosen blocks once instead of each its own. Within the split-K launch's band, not its
+        bytes (the softmax steps through other chunks); on GB10 1.7-2.7x faster at 1,024 rows and 1.33-1.41x at 4,096
+        where a prefill's neighbouring rows choose alike (sm121-u12-0919c, minimum and median beside production), 14-26%
+        slower (median) where they do not. On by the operator's
+        decision of 2026-09-19 with the fleet unmeasured (CHARTER D17): a boot can decline it (fleet.py
+        --no-tile-union, the launcher's ST_QSA_TILE_UNION=0) and every step attends through the split-K launch.
+
+        `gdn_flashinfer`: a prefill segment's GDN chunk (1,024+ tokens, `gdn_prefill_sm120.admits`) on the image's
+        FlashInfer SM120 kernel with q/k normalised first (flashinfer#5255; engine/SM121_INTAKE.md U13) instead of the
+        served KDA chunk kernel -- within its band, not its bytes. On GB10 the whole lane 1.37x at 1,024 tokens, 2.03x at
+        4,096 and 2.50x at 8,192 (sm121-u13time-0919g, median beside production). On by the operator's decision of 2026-09-19 with the fleet
+        unmeasured (CHARTER D17): a boot can decline it (fleet.py --no-gdn-flashinfer, the launcher's
+        ST_GDN_FLASHINFER=0).
 
         `mtp_precision`: the MTP head's dense projections (its attention's two, its shared expert's two), which the
         checkpoint keeps in BF16. "bf16" (the default, the operator's decision of 2026-09-19): the checkpoint's weights
@@ -223,6 +241,12 @@ class Qwen38Net:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
             raise ValueError("query_shards is a declared boolean")
+        if type(tile_union) is not bool:
+            raise ValueError("tile_union is a declared boolean")
+        self.tile_union = tile_union
+        if type(gdn_flashinfer) is not bool:
+            raise ValueError("gdn_flashinfer is a declared boolean")
+        self.gdn_flashinfer = gdn_flashinfer
         self.F, self.comm, self.lanes, self.mtp, self.hc_fp8 = F, comm, lanes, mtp, hc_fp8
         self.query_shards = query_shards
         if mtp_precision not in MTP_PRECISIONS:
@@ -341,10 +365,11 @@ class Qwen38Net:
             if weight.dtype != BF16 or weight.shape != (self.F.experts + 1, self.F.hidden):
                 raise ValueError("Qwen router requires BF16 [experts + shared gate, hidden] weights")
         for prefix in prefixes:
-            weight = self.p[prefix + "moe.gates"][:self.F.experts]
             if getattr(getattr(self, "lanes", None), "router_bf16", False):
-                self._router_weights[prefix] = weight                  # the gates' own rows: exact in the MMA router
+                # the gates' own rows, the shared gate's with them: exact in the MMA router, one launch for both
+                self._router_weights[prefix] = self.p[prefix + "moe.gates"]
                 continue
+            weight = self.p[prefix + "moe.gates"][:self.F.experts]
             resident = arena.carve(weight.numel() * 4, f"router/{prefix}").view(F32).view_as(weight)
             resident.copy_(weight)
             self._router_weights[prefix] = resident
@@ -724,19 +749,29 @@ class Qwen38Net:
                 q, k, v = self._heads(y, s.length)
                 state0 = rec[(s.ctx - 1) % wr][None] if s.ctx > 0 else None
                 marks = [(m, snap) for m, snap in step.marks if 0 < m < s.length] if step.marks else []
+                # a long segment on FlashInfer's SM120 kernel, the rest on the served chunk kernel (U13)
+                chunk = lanes.gdn_chunk_long if Qwen38Net._gdn_long(self, s.length) else lanes.gdn_chunk
                 if marks:
                     if any(m % 64 for m, _ in marks):
                         raise ValueError("a mark inside a prefill chunk sits on a 64-token kernel chunk")
-                    o, state, states = lanes.gdn_chunk(q, k, v, decay[sl][None], beta[sl][None], state0,
-                                                       states_at=[m // 64 for m, _ in marks])
+                    o, state, states = chunk(q, k, v, decay[sl][None], beta[sl][None], state0,
+                                             states_at=[m // 64 for m, _ in marks])
                     for (m, snap), st in zip(marks, states.unbind(0)):
                         caches.mark_gdn(L, snap, st, qkv[sl][m - (F.conv - 1):m])
                 else:
-                    o, state = lanes.gdn_chunk(q, k, v, decay[sl][None], beta[sl][None], state0)
+                    o, state = chunk(q, k, v, decay[sl][None], beta[sl][None], state0)
                 rec[(s.ctx + s.length - 1) % wr] = state[0]
             core[sl] = o[0]
         out = lanes.gdn_norm(core, z.view(N, Hv, D), p[n + "norm"], F.rms_eps)
         return self.comm.all_reduce(self.linear(out, n + "out_proj"))
+
+    def _gdn_long(self, tokens: int) -> bool:
+        """Whether a prefill segment's GDN chunk takes FlashInfer's SM120 kernel: the lane is bound, the boot did not
+        decline it, and `gdn_prefill_sm120.admits` takes the segment -- host integers only (D3: the caller chooses)."""
+        if getattr(self.lanes, "gdn_chunk_long", None) is None or not getattr(self, "gdn_flashinfer", False):
+            return False
+        from engine.kernels import gdn_prefill_sm120
+        return gdn_prefill_sm120.admits(tokens, self.F.k_dim)
 
     def _gdn_rows(self, L: int, x: torch.Tensor, step: DeviceStep, caches) -> torch.Tensor:
         """`_gdn` for a captured decode step: the conv and the recurrence over every row in one launch each, each row's
@@ -931,11 +966,27 @@ class Qwen38Net:
                                meta.page_table, meta.rows_req[:c], out=attended[:c], gate=gate[:c], **runs)
                 lanes.qsa_attend(q[c:], K, V, blocks[c:], meta.positions32[c:], meta.lengths, F.idx_ratio,
                                  F.idx_budget, meta.page_table, meta.rows_req[c:], out=attended[c:], gate=gate[c:])
+            elif Qwen38Net._tile_union(self, step, meta, K, N):
+                # a prefill step whose neighbouring rows choose alike: two rows walk their blocks' union once
+                attended = lanes.qsa_attend_union(q, K, V, blocks, meta.positions32, meta.starts, F.idx_ratio,
+                                                  F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
             else:
                 attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
                                             F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
         out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
+
+    def _tile_union(self, step, meta, K, rows: int) -> bool:
+        """Whether a step's sparse QSA attention takes the tile-union launch: the lane is bound, the boot did not
+        decline it, the step is eager (a captured step's few rows never pass), and `qsa_tile_union.admits` takes its
+        shape -- host integers only, so every rank chooses alike without a device read (D3: the caller chooses)."""
+        if getattr(self.lanes, "qsa_attend_union", None) is None or not getattr(self, "tile_union", False)                 or getattr(step, "captured", False):
+            return False
+        from engine.kernels import qsa_tile_union
+        F = self.F
+        return qsa_tile_union.admits(rows, meta.page_table.shape[0], compress_ratio=F.idx_ratio,
+                                     token_topk=F.idx_budget, page_size=K.shape[1],
+                                     table_width=meta.page_table.shape[1], cache_pages=K.shape[0])
 
     # -- MoE ----------------------------------------------------------------------------------------------------------
     def _routed(self, prefix: str, x: torch.Tensor, *, compact: bool):
@@ -960,9 +1011,14 @@ class Qwen38Net:
                                              w13=w13, hidden=x.shape[1])
             routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
         # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
-        rows_linear = getattr(lanes, "rows_linear", None)
-        shared = gates[F.experts:]
-        shared_score = rows_linear(x, shared) if rows_linear is not None else torch.mm(x, shared.t())
+        if router.shape[0] == F.experts + 1:
+            # the MMA router's last column is the shared gate's product (Lanes.router_bf16), rounded to BF16 as the
+            # BF16 matmul's output it replaces is -- the same launch in a prefill chunk and a decode step
+            shared_score = scores[:, F.experts:].to(BF16)
+        else:
+            rows_linear = getattr(lanes, "rows_linear", None)
+            shared = gates[F.experts:]
+            shared_score = rows_linear(x, shared) if rows_linear is not None else torch.mm(x, shared.t())
         gate = torch.sigmoid(shared_score.float())
         return routed, gate
 

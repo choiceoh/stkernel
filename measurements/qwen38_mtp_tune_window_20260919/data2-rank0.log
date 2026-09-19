@@ -1,0 +1,68 @@
+  box: GB10 (DGX Spark): SM121, unified 120 GiB (104 free)
+  kernel shape (record): hidden 2560 hc 4 gated_residual tp 4 | gqa 6x256 no sink | linear 4/12x128x128 conv 4 decay/head | indexer qsa 4x128 pool 4 top 2048 | moe 512(128 local) I640/640 top10 nvfp4 silu | spec 1
+[W919 07:37:02.474305754 Utils.hpp:137] Warning: Environment variable NCCL_ASYNC_ERROR_HANDLING is deprecated; use TORCH_NCCL_ASYNC_ERROR_HANDLING instead (function operator())
+NCCL version 2.29.7+cuda13.2
+[oneshot] inline proxy serving peers=3 inline_bytes=8 wr_reuse=1
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+  collectives: one-shot RDMA (NCCL where ineligible)
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988, 0.0027172171976417303)}, 'gdn': {'decay': (1.8527525469380635e-07, 1.2093259726952965e-07), 'beta': (0.0, 0.0), 'raw_beta': (0.0, 0.0), 'norm': (7.038288458716124e-05, 2.438618139422033e-06)}, 'qsa_norm_rope': {'norm_rope_6x256': (0.006172839552164078, 0.0015349400928243995), 'norm_rope_4x128': (0.006896551698446274, 0.002324720611795783)}, 'skinny_gemv': {'513x2560': 0.002813, '324x10240': 0.002272, '320x10240': 0.002349}, 'fp8_rows': {1: 0.002073, 4: 0.001935, 16: 0.002006}}
+boot rendezvous arena-admission: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+[transformers] You are using a model of type `qwen4_exp` to instantiate a model of type ``. This may be expected if you are loading a checkpoint that shares a subset of the architecture (e.g., loading a `sam2_video` checkpoint into `Sam2Model`), but is otherwise not supported and can yield errors. Please verify that the checkpoint is compatible with the model you are instantiating.
+boot rendezvous weights-loaded: rank 0 prepared; waiting for 4 ranks (deadline 1800s)
+  warm eager moe: eager/8 0.539s, eager/1 0.006s, eager/2 0.009s, eager/3 0.009s, eager/4 0.005s, eager/5 0.005s, eager/6 0.005s, eager/7 0.005s
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=67179 -> rows 83456/83456 tiles 652/652 tasks 3260/3260
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=36066 -> rows 52352/83456 tiles 409/652 tasks 2045/3260
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=76164 -> rows 92544/92544 tiles 723/723 tasks 3615/3615
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=105956 -> rows 122240/122240 tiles 955/955 tasks 4775/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=77633 -> rows 93952/122240 tiles 734/955 tasks 3670/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=47168 -> rows 63488/122240 tiles 496/955 tasks 2480/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=78802 -> rows 95104/122240 tiles 743/955 tasks 3715/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=63553 -> rows 79872/122240 tiles 624/955 tasks 3120/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=42515 -> rows 58880/122240 tiles 460/955 tasks 2300/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=34568 -> rows 50944/122240 tiles 398/955 tasks 1990/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=104460 -> rows 120832/122240 tiles 944/955 tasks 4720/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=90554 -> rows 106880/122240 tiles 835/955 tasks 4175/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=86113 -> rows 102400/122240 tiles 800/955 tasks 4000/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=88110 -> rows 104448/122240 tiles 816/955 tasks 4080/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=105095 -> rows 121472/122240 tiles 949/955 tasks 4745/4775
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=110377 -> rows 126720/126720 tiles 990/990 tasks 4950/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=49286 -> rows 65664/126720 tiles 513/990 tasks 2565/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=94855 -> rows 111232/126720 tiles 869/990 tasks 4345/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=107084 -> rows 123392/126720 tiles 964/990 tasks 4820/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=90236 -> rows 106496/126720 tiles 832/990 tasks 4160/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=75208 -> rows 91520/126720 tiles 715/990 tasks 3575/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=72053 -> rows 88320/126720 tiles 690/990 tasks 3450/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=91674 -> rows 108032/126720 tiles 844/990 tasks 4220/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=83726 -> rows 100096/126720 tiles 782/990 tasks 3910/4950
+[b12x-bounds] state_E=128 n=640 tile_m=128 routed_rows=100566 -> rows 116864/126720 tiles 913/990 tasks 4565/4950
+  warm prefill: memory/32256/0 28.198s, kernels/1/0 0.22s, kernels/8/0 1.244s, kernels/64/0 0.31s, kernels/512/0 0.479s, kernels/4095/0 1.354s, kernels/64/8384 1.415s, kernels/64/16832 0.298s, kernels/64/32960 0.293s, kernels/64/65984 0.304s, kernels/64/131264 0.299s, kernels/64/262080 0.301s, head/1/0 0.039s, head/1/4607 0.02s, head/1/8447 0.02s, head/1/16895 0.019s, head/1/33023 0.019s, head/1/66047 0.019s, head/1/131327 0.019s, head/1/262143 0.017s, head/2/0 0.025s, head/2/4606 0.018s, head/2/8446 0.018s, head/2/16894 0.017s, head/2/33022 0.02s, head/2/66046 0.02s, head/2/131326 0.017s, head/2/262142 0.02s, head/3/0 0.008s, head/3/4605 0.018s, head/3/8445 0.018s, head/3/16893 0.02s, head/3/33021 0.016s, head/3/66045 0.018s, head/3/131325 0.021s, head/3/262141 0.02s, head/4/0 0.009s, head/4/4604 0.009s, head/4/8444 0.008s, head/4/16892 0.009s, head/4/33020 0.009s, head/4/66044 0.008s, head/4/131324 0.009s, head/4/262140 0.008s
+  shared expert: forked at one request's rows
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger; mtp inputs recorded)
+phase                                      seconds   dev GiB  counters
+front                                        3.533            import_s=2.415 box_s=0.438 shape_s=0.001
+comm                                         2.747     +0.35  
+prepare one-shot                             2.717     +1.39  
+lanes                                        0.011     +0.00  kernel_imports_s=3.036
+  wait for the imports                       0.000     +0.00  
+qualify lanes                                2.390     +1.42  
+arena                                        1.583    +39.26  
+load                                         3.857     +3.30  blocks=53 bytes=2.19704e+10 direct=1 stage_s=0.058 wait_s=0.012 copy_s=0.006 views_s=0.002 tensors=22 read_bytes=1.00372e+08
+ple table                                    0.008     +0.00  
+prepare dense                                7.066     +0.76  weight_digest_calls=192 weight_digest_s=2.696 pack_calls=192 pack_s=3.231 packs_cache=192 packs_rtn=192
+mtp experts                                  0.028     +0.00  mtp_experts_qualify=0
+caches                                       0.003     +0.00  
+engine                                       0.029     +0.00  
+wait for weight preparation                  0.622     -0.08  
+runner                                       0.000     +0.00  
+wait for the prelude                         0.000     +0.00  
+warm eager moe                               0.619     +0.12  
+warm prefill                                35.254     +1.08  
+capture decode                               8.172     +1.06  
+door                                         0.014     +0.00  
+total                                       68.652
+  rank 0: ready in 66.4 s, door on port 8000
+/usr/local/lib/python3.12/dist-packages/torch/distributed/c10d_logger.py:83: FutureWarning: `torch.distributed.all_gather_into_tensor` is deprecated. Please use `torch.distributed.all_gather_single` instead.
+  return func(*args, **kwargs)

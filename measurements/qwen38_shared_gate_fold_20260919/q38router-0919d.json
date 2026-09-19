@@ -1,0 +1,124 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 21,
+ "calls_a_graph": 8,
+ "rows": {
+  "16": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 37.2,
+     "min": 36.7
+    },
+    "bf16 mm [512] fp32 out": {
+     "median": 12.6,
+     "min": 12.4
+    },
+    "fp32 router (router_fp32)": {
+     "median": 41.1,
+     "min": 40.5
+    },
+    "mma router (router_logits_mma, bf16 gates)": {
+     "median": 18.2,
+     "min": 17.8
+    },
+    "widen only (x.float())": {
+     "median": 3.8,
+     "min": 3.6
+    }
+   },
+   "checks": {
+    "mma_vs_ieee_max": 1.430511474609375e-06,
+    "mma_vs_fp64_max": 1.1761439964175224e-06,
+    "ieee_vs_fp64_max": 6.239424692466855e-07,
+    "mma_rows_alike": true,
+    "ieee_rows_alike": false,
+    "mma_top8_is_ieee_top8": true,
+    "shared_folded_vs_cublas_differ": 0,
+    "shared_rows": 16,
+    "shared_folded_vs_rows_first16_differ": 0,
+    "shared_cublas_vs_rows_first16_differ": 0,
+    "shared_folded_err_vs_fp64_max": 0.003681509304442443,
+    "shared_cublas_err_vs_fp64_max": 0.003681509304442443,
+    "folded_rows_alike": true
+   }
+  },
+  "512": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 92.1,
+     "min": 91.5
+    },
+    "bf16 mm [512] fp32 out": {
+     "median": 39.6,
+     "min": 39.1
+    },
+    "fp32 router (router_fp32)": {
+     "median": 228.7,
+     "min": 227.6
+    },
+    "mma router (router_logits_mma, bf16 gates)": {
+     "median": 83.1,
+     "min": 82.6
+    },
+    "widen only (x.float())": {
+     "median": 31.1,
+     "min": 30.8
+    }
+   },
+   "checks": {
+    "mma_vs_ieee_max": 1.9073486328125e-06,
+    "mma_vs_fp64_max": 1.559070369694382e-06,
+    "ieee_vs_fp64_max": 1.1329539120197296e-06,
+    "mma_rows_alike": true,
+    "ieee_rows_alike": false,
+    "mma_top8_is_ieee_top8": true,
+    "shared_folded_vs_cublas_differ": 0,
+    "shared_rows": 512,
+    "shared_folded_vs_rows_first16_differ": 0,
+    "shared_cublas_vs_rows_first16_differ": 0,
+    "shared_folded_err_vs_fp64_max": 0.007052145199850202,
+    "shared_cublas_err_vs_fp64_max": 0.007052145199850202,
+    "folded_rows_alike": true
+   }
+  },
+  "4096": {
+   "us_a_call": {
+    "bf16 mm [513] (before #1286)": {
+     "median": 536.6,
+     "min": 534.6
+    },
+    "bf16 mm [512] fp32 out": {
+     "median": 183.6,
+     "min": 182.5
+    },
+    "fp32 router (router_fp32)": {
+     "median": 1447.8,
+     "min": 1444.2
+    },
+    "mma router (router_logits_mma, bf16 gates)": {
+     "median": 224.2,
+     "min": 223.0
+    },
+    "widen only (x.float())": {
+     "median": 294.3,
+     "min": 291.6
+    }
+   },
+   "checks": {
+    "mma_vs_ieee_max": 7.62939453125e-06,
+    "mma_vs_fp64_max": 1.8245773389935493e-06,
+    "ieee_vs_fp64_max": 7.775670383125544e-06,
+    "mma_rows_alike": true,
+    "ieee_rows_alike": false,
+    "mma_top8_is_ieee_top8": true,
+    "shared_folded_vs_cublas_differ": 1,
+    "shared_rows": 4096,
+    "shared_folded_vs_rows_first16_differ": 0,
+    "shared_cublas_vs_rows_first16_differ": 0,
+    "shared_folded_err_vs_fp64_max": 0.007802930078469217,
+    "shared_cublas_err_vs_fp64_max": 0.007802930078469217,
+    "folded_rows_alike": true
+   }
+  }
+ }
+}

@@ -104,7 +104,30 @@ class QwenRouterBindingTests(unittest.TestCase):
             for prefix, w in net._router_weights.items():
                 with self.subTest(bf16=bf16, prefix=prefix):
                     self.assertEqual(w.dtype, torch.bfloat16 if bf16 else torch.float32)
-                    self.assertTrue(torch.equal(w.float(), gates[prefix + "moe.gates"][:4].float()))
+                    rows = 5 if bf16 else 4                  # the bf16 router carries the shared gate's row too
+                    self.assertTrue(torch.equal(w.float(), gates[prefix + "moe.gates"][:rows].float()))
+
+    def test_the_shared_gate_comes_out_of_the_router_launch(self):
+        """With the gates' 513 rows bound, the router's last column is the shared gate's product: rounded to BF16 (a
+        BF16 matmul's output) before the sigmoid, and the route sees only the experts' columns."""
+        from engine.profiles.qwen38.net import Qwen38Net
+        F = NS(experts=4, topk_experts=2)
+        gates = torch.randn(5, 8).bfloat16()
+        x = torch.randn(3, 8).bfloat16()
+        seen = {}
+
+        def route(scores, k):
+            seen["columns"] = scores.shape[1]
+            return torch.zeros(3, k, dtype=torch.int32), torch.ones(3, k)
+
+        lanes = NS(router_logits=lambda x, w: x.double().matmul(w.double().t()).float(), route=route,
+                   route_local=None, router_bf16=True)
+        net = NS(F=F, p={"L0.moe.gates": gates}, lanes=lanes, _router_weights={"L0.": gates},
+                 _experts={"L0.": lambda x, ids, w, **kw: x})
+        _, gate = Qwen38Net._routed(net, "L0.", x, compact=True)
+        want = torch.sigmoid((x.double() @ gates[4:].double().t()).float().bfloat16().float())
+        self.assertEqual(seen["columns"], 4)
+        self.assertTrue(torch.equal(gate, want))
 
     def test_the_served_lane_binds_the_mma_router(self):
         import inspect

@@ -71,6 +71,18 @@ case "${ST_QUERY_SHARDS:-1}" in
   0) SHARDS_ARG="--no-query-shards" ;;
   *) echo "ST_QUERY_SHARDS must be 0 or 1" >&2; exit 2 ;;
 esac
+UNION_ARG=""                                                  # ST_QSA_TILE_UNION=0: every prefill step on the split-K launch (sm121 intake U12's rollback)
+case "${ST_QSA_TILE_UNION:-1}" in
+  1) ;;
+  0) UNION_ARG="--no-tile-union" ;;
+  *) echo "ST_QSA_TILE_UNION must be 0 or 1" >&2; exit 2 ;;
+esac
+GDN_ARG=""                                                    # ST_GDN_FLASHINFER=0: every prefill GDN on the served chunk kernel (sm121 intake U13's rollback)
+case "${ST_GDN_FLASHINFER:-1}" in
+  1) ;;
+  0) GDN_ARG="--no-gdn-flashinfer" ;;
+  *) echo "ST_GDN_FLASHINFER must be 0 or 1" >&2; exit 2 ;;
+esac
 OVERLAP_ARG=""                                                # ST_SHARED_OVERLAP=off|one|all: the shared expert beside the routed ones (carry M5; fleet default one)
 case "${ST_SHARED_OVERLAP:-one}" in
   one) ;;
@@ -138,6 +150,10 @@ case "${ST_TAP_MTP_INPUTS:-1}" in                            # ST_TAP_MTP_INPUTS
   0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;
   *) echo "ST_TAP_MTP_INPUTS must be 0 or 1" >&2; exit 2 ;;
 esac
+if [ -n "${ST_TAP_MTP_CAP_GIB:-}" ]; then                     # ST_TAP_MTP_CAP_GIB=G: the tap directory's cap (default 64)
+  [[ "$ST_TAP_MTP_CAP_GIB" =~ ^[0-9]+$ ]] || { echo "ST_TAP_MTP_CAP_GIB must be whole GiB" >&2; exit 2; }
+  ADAPT_ARG="$ADAPT_ARG --tap-mtp-inputs-cap-gib $ST_TAP_MTP_CAP_GIB"
+fi
 case "${ST_DRAFT_LEDGER:-1}" in                               # ST_DRAFT_LEDGER=0: no per-row draft ledger (on by default)
   1) ;;
   0) ADAPT_ARG="$ADAPT_ARG --no-draft-ledger" ;;
@@ -389,7 +405,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro $EXPERTS_MOUNT -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $LEAVE_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR $CALIB_ARG $TIER_ARG' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $LEAVE_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $WINDOW_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR $CALIB_ARG $UNION_ARG $GDN_ARG $TIER_ARG' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

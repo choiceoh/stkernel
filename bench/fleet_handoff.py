@@ -37,11 +37,15 @@ def holder_path(directory, kind='boot'):
 
 
 def holders(directory):
-    """{lane: row} for every lane whose holder file names a session."""
+    """{lane: row} for every lane whose holder file names a session; the single lane's other pool hosts
+    (`holder-single@<host>`, fleet_single.py) as `single@<host>`."""
     found = {}
-    for name in ('fleet', *ONE_GPU):
+    paths = [(name, holder_path(directory, name)) for name in ('fleet', *ONE_GPU)]
+    paths += [(SINGLE + '@' + path.name.partition('@')[2], path)
+              for path in sorted(Path(directory).glob('holder-single@*')) if not path.name.endswith('.tmp')]
+    for name, path in paths:
         try:
-            row = holder_path(directory, name).read_text().strip().split('|')
+            row = path.read_text().strip().split('|')
         except FileNotFoundError:
             continue
         if row and row[0]:
@@ -102,7 +106,10 @@ def successor(directory, session):
     from experiment_metrics import estimates
     db = Path(os.environ.get('FLEET_EXPERIMENT_ROOT', directory / 'experiments')) / 'experiments.sqlite3'
     from fleet_pause import paused
+    # The lease passes within the fleet's lane: a one-GPU check ranked ahead of a waiting boot is not the fleet's next
+    # holder, and ranking it here would let the lease go and production restart under that boot.
     lines = ['|'.join(row) for row in rows(directory) if row[1] != session and not paused(directory, row[1], row)
+             and (len(row) < 6 or lane(row[5]) == 'fleet')
              and (len(row) < 7 or not row[6] or identity(int(row[6])))]
     def marker(name):
         path = directory / name
@@ -125,12 +132,13 @@ def claim_held(directory, session, pid):
     (directory / 'restore-debt.json').unlink(missing_ok=True)
 
 
-def admit(directory, session, pid, kind, estimate='30', note=''):
+def admit(directory, session, pid, kind, estimate='30', note='', holder_file=None):
     """Commit ownership and reset the central idle clock without restore debt.
 
     The single-GPU lane writes its own holder and touches nothing of the fleet's: not the
     idle clock (that GPU is not one of the four, so its work is not fleet activity), not
-    restore debt, not the managed-handoff receipt.
+    restore debt, not the managed-handoff receipt. `holder_file` names which of the single
+    pool's holders (fleet_single.holder_name) the queue gave the ticket.
     """
     from fleet_pause import paused
     if paused(directory, session):
@@ -142,6 +150,10 @@ def admit(directory, session, pid, kind, estimate='30', note=''):
     if current:
         estimate, note = current
     holder = holder_path(directory, kind)
+    if holder_file:
+        if lane(kind) != SINGLE or not (holder_file == holder.name or holder_file.startswith(holder.name + '@')):
+            raise ValueError(f'{holder_file} is not a holder of the {lane(kind)} lane')
+        holder = holder.with_name(holder_file)
     temporary = holder.with_name(holder.name + '.tmp')
     with temporary.open('w') as stream:
         stream.write(f'{session}|{pid}|{socket.gethostname().split(".")[0]}|{int(time.time())}|{estimate}|{note}|{kind}\n')
@@ -187,9 +199,11 @@ def main():
     ap.add_argument('kind', nargs='?', default='boot')
     ap.add_argument('estimate', nargs='?', default='30')
     ap.add_argument('note', nargs='?', default='')
+    ap.add_argument('--holder', default=None, help='admit: which single-pool holder file (fleet_single.holder_name)')
     args = ap.parse_args()
     if args.action == 'admit':
-        return 0 if admit(args.directory, args.session, args.pid, args.kind, args.estimate, args.note) else 1
+        return 0 if admit(args.directory, args.session, args.pid, args.kind, args.estimate, args.note,
+                          holder_file=args.holder) else 1
     if args.action == 'ready':
         ready(args.directory, args.session, args.pid)
     elif args.action == 'next':

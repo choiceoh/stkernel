@@ -1,0 +1,147 @@
+{
+ "lane": "sm121_gdn",
+ "cell": [
+  4,
+  12,
+  128
+ ],
+ "unavailable": {},
+ "rows": {
+  "128": {
+   "served": {
+    "median_us": 121.8,
+    "best_us": 106.4
+   },
+   "flashinfer_first_call_s": 12.84,
+   "flashinfer": {
+    "median_us": 95.9,
+    "best_us": 89.2
+   },
+   "flashinfer_with_copies": {
+    "median_us": 507.9,
+    "best_us": 499.4
+   },
+   "flashinfer_vs_served": {
+    "o": NaN,
+    "state": NaN
+   },
+   "served_vs_oracle": {
+    "o": 0.007407,
+    "state": 0.002929
+   },
+   "flashinfer_vs_oracle": {
+    "o": NaN,
+    "state": NaN
+   },
+   "normalized_first": {
+    "median_us": 2520.6,
+    "best_us": 756.3
+   },
+   "normalized_first_kernel_only": {
+    "median_us": 322.0,
+    "best_us": 86.0
+   },
+   "normalized_vs_served": {
+    "o": 0.003676,
+    "state": 0.005354,
+    "nan": 0
+   },
+   "normalized_vs_oracle": {
+    "o": 0.007407,
+    "state": 0.003015
+   },
+   "normalized_speedup": 0.048,
+   "speedup": 1.27
+  },
+  "1024": {
+   "served": {
+    "median_us": 387.9,
+    "best_us": 365.1
+   },
+   "flashinfer_first_call_s": 0.0,
+   "flashinfer": {
+    "median_us": 385.5,
+    "best_us": 374.7
+   },
+   "flashinfer_with_copies": {
+    "median_us": 562.2,
+    "best_us": 553.0
+   },
+   "flashinfer_vs_served": {
+    "o": NaN,
+    "state": NaN
+   },
+   "served_vs_oracle": {
+    "o": 0.003639,
+    "state": 0.003914
+   },
+   "flashinfer_vs_oracle": {
+    "o": NaN,
+    "state": NaN
+   },
+   "normalized_first": {
+    "median_us": 2754.1,
+    "best_us": 1353.9
+   },
+   "normalized_first_kernel_only": {
+    "median_us": 231.5,
+    "best_us": 218.5
+   },
+   "normalized_vs_served": {
+    "o": 0.003597,
+    "state": 0.005591,
+    "nan": 0
+   },
+   "normalized_vs_oracle": {
+    "o": 0.003597,
+    "state": 0.003184
+   },
+   "normalized_speedup": 0.141,
+   "speedup": 1.006
+  },
+  "8192": {
+   "served": {
+    "median_us": 4245.0,
+    "best_us": 4001.2
+   },
+   "flashinfer_first_call_s": 0.0,
+   "flashinfer": {
+    "median_us": 876.4,
+    "best_us": 864.5
+   },
+   "flashinfer_with_copies": {
+    "median_us": 1445.2,
+    "best_us": 1418.3
+   },
+   "flashinfer_vs_served": {
+    "o": NaN,
+    "state": NaN
+   },
+   "normalized_first": {
+    "median_us": 3359.8,
+    "best_us": 2161.9
+   },
+   "normalized_first_kernel_only": {
+    "median_us": 993.7,
+    "best_us": 871.9
+   },
+   "normalized_vs_served": {
+    "o": 0.005282,
+    "state": 0.003814,
+    "nan": 0
+   },
+   "normalized_speedup": 1.263,
+   "speedup": 4.844
+  }
+ },
+ "device": {
+  "name": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "memory_cap_gib": 6
+ }
+}

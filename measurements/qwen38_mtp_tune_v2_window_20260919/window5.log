@@ -1,0 +1,123 @@
+[18:25:14] tree a8e3c4de feat(qwen38): sampled MTP drafts kept by block verification -- a sampled row draws its draf
+[18:25:14] lease before: free
+[18:25:14] boots: a 562+123 raw, b 261, c 229+300 raw
+[18:25:14] waiting for production to be up and quiet
+[18:27:14] waiting for production to be up and quiet
+[18:29:14] waiting for production to be up and quiet
+[18:30:55] stop + release
+10.10.10.4: stopped
+free
+[18:30:59] lease: free
+[18:30:59] tree a8e3c4de feat(qwen38): sampled MTP drafts kept by block verification -- a sampled row draws its draf
+[18:30:59] lease before: free
+[18:30:59] boots: a 562+123 raw, b 261, c 229+300 raw
+[18:30:59] acquired the free fleet: session session/q38mtp-tune5-0919 on srv2 since 2026-09-19 18:30:59 (operator window: MTP head -- the rest of window 4 (data3b, data3c with Deneb's text, a four
+[18:31:28] stop + release
+10.10.10.4: stopped
+released
+[18:31:31] lease: free
+[18:31:31] production down since handover: 32 s so far
+[18:31:33] tree a8e3c4de feat(qwen38): sampled MTP drafts kept by block verification -- a sampled row draws its draf
+[18:31:33] lease before: free
+[18:31:33] boots: a 562+123 raw, b 261, c 229+300 raw
+[18:31:33] acquired the free fleet: session session/q38mtp-tune5-0919 on srv2 since 2026-09-19 18:31:33 (operator window: MTP head -- the rest of window 4 (data3b, data3c with Deneb's text, a four
+[18:31:34] == boot data3b (ST_DRAFT_THRESHOLD=off ST_DRAFT_CANDIDATES=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned3)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "data3b", "final": {"next": 265, "done": 251, "prompt_tokens": 387988, "errors": 10, "chat": 251, "raw": 0}, "elapsed_s": 225}
+  request errors: 10
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger; mtp inputs recorded)
+  rank 0: ready in 63.5 s, door on port 8000
+10.10.10.4: stopped
+[18:36:38] == boot data3c (ST_DRAFT_THRESHOLD=off ST_DRAFT_CANDIDATES=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned3)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "data3c", "final": {"next": 533, "done": 415, "prompt_tokens": 920364, "errors": 114, "chat": 115, "raw": 300}, "elapsed_s": 690}
+  request errors: 114
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger; mtp inputs recorded)
+  rank 0: ready in 62.5 s, door on port 8000
+Traceback (most recent call last):
+KeyError: 3
+Traceback (most recent call last):
+KeyError: 1
+  mtp inputs: /home/choiceoh/glm53-logs/st-qwen38-dumps/mtp-inputs holds 64.1 GiB, the cap -- recording stops
+10.10.10.4: stopped
+[18:49:25] tap: 354 -> 605 shards, 65G
+[18:49:25] == runs (every tap: the prefilled v1 text, the decoded, the v2 greedy and the v2 sampled)
+{"positions": 3353624, "train": 3027214, "eval": 326410, "decoded": 107348}
+10.10.10.3 ready
+10.10.10.1 ready
+10.10.10.4 ready
+[18:55:24] == fourth training: 200 steps from the third head, peak 3e-5, eval every 40 on 96 windows (spread ok=1)
+rank 3 started
+[18:55:37] take600: 5c stopped at its fourth training (operator: "600스텝 해버려"), the lease held here
+[18:55:42] == fourth training: 600 steps from the third head, peak 3e-5, eval every 100 on 96 windows
+rank 3 started
+rank 2 started
+rank 1 started
+rank 0 started
+[20:03:30] rank 0 exit 0
+[20:03:30] rank 1 exit 0
+[20:03:31] rank 2 exit 0
+[20:03:32] rank 3 exit 0
+{"event": "eval", "step": 0, "agree_1": 0.77414, "agree_2": 0.69951, "agree_3": 0.65759, "chain_1": 0.77414, "chain_2": 0.58023, "chain_3": 0.4366, "loss_1": 0.64991, "loss_2": 1.03637, "loss_3": 1.2809, "text_chain_1": 0.66573, "text_chain_2": 0.47085, "text_chain_3": 0.34291, "tokens_a_step": 2.79097, "positions": 60002, "by_boot": {"20260919-063621": 3.16464, "20260919-073806": 3.09222, "202609
+{"event": "eval", "step": 100, "agree_1": 0.79389, "agree_2": 0.72198, "agree_3": 0.67813, "chain_1": 0.79389, "chain_2": 0.60361, "chain_3": 0.45773, "loss_1": 0.50838, "loss_2": 0.83856, "loss_3": 1.06394, "text_chain_1": 0.67604, "text_chain_2": 0.48003, "text_chain_3": 0.35014, "tokens_a_step": 2.85524, "positions": 60002, "by_boot": {"20260919-063621": 3.12839, "20260919-073806": 3.07382, "20
+{"event": "saved", "step": 100, "tokens_a_step": 2.85524, "t": 1789812485.9}
+{"event": "eval", "step": 200, "agree_1": 0.79832, "agree_2": 0.72936, "agree_3": 0.68969, "chain_1": 0.79832, "chain_2": 0.61256, "chain_3": 0.4699, "loss_1": 0.4824, "loss_2": 0.79592, "loss_3": 1.00536, "text_chain_1": 0.67134, "text_chain_2": 0.47998, "text_chain_3": 0.35212, "tokens_a_step": 2.88079, "positions": 60002, "by_boot": {"20260919-063621": 3.1397, "20260919-073806": 3.08949, "20260
+{"event": "saved", "step": 200, "tokens_a_step": 2.88079, "t": 1789813138.9}
+{"event": "eval", "step": 300, "agree_1": 0.80389, "agree_2": 0.73416, "agree_3": 0.69299, "chain_1": 0.80389, "chain_2": 0.61995, "chain_3": 0.47738, "loss_1": 0.46354, "loss_2": 0.76628, "loss_3": 0.97276, "text_chain_1": 0.67403, "text_chain_2": 0.48253, "text_chain_3": 0.35534, "tokens_a_step": 2.90122, "positions": 60002, "by_boot": {"20260919-063621": 3.15347, "20260919-073806": 3.09387, "20
+{"event": "saved", "step": 300, "tokens_a_step": 2.90122, "t": 1789813800.1}
+{"event": "eval", "step": 400, "agree_1": 0.80614, "agree_2": 0.74109, "agree_3": 0.70159, "chain_1": 0.80614, "chain_2": 0.62671, "chain_3": 0.4864, "loss_1": 0.45031, "loss_2": 0.7445, "loss_3": 0.94252, "text_chain_1": 0.67828, "text_chain_2": 0.48678, "text_chain_3": 0.35944, "tokens_a_step": 2.91925, "positions": 60002, "by_boot": {"20260919-063621": 3.16001, "20260919-073806": 3.09967, "2026
+{"event": "saved", "step": 400, "tokens_a_step": 2.91925, "t": 1789814446.8}
+{"event": "eval", "step": 500, "agree_1": 0.80737, "agree_2": 0.74178, "agree_3": 0.70279, "chain_1": 0.80737, "chain_2": 0.62801, "chain_3": 0.48777, "loss_1": 0.44799, "loss_2": 0.73964, "loss_3": 0.93602, "text_chain_1": 0.67871, "text_chain_2": 0.48777, "text_chain_3": 0.36022, "tokens_a_step": 2.92315, "positions": 60002, "by_boot": {"20260919-063621": 3.16587, "20260919-073806": 3.10022, "20
+{"event": "saved", "step": 500, "tokens_a_step": 2.92315, "t": 1789815105.9}
+{"event": "eval", "step": 600, "agree_1": 0.80811, "agree_2": 0.74231, "agree_3": 0.70404, "chain_1": 0.80811, "chain_2": 0.62861, "chain_3": 0.4889, "loss_1": 0.44657, "loss_2": 0.73604, "loss_3": 0.93132, "text_chain_1": 0.67834, "text_chain_2": 0.48825, "text_chain_3": 0.36092, "tokens_a_step": 2.92562, "positions": 60002, "by_boot": {"20260919-063621": 3.17105, "20260919-073806": 3.09452, "202
+{"event": "saved", "step": 600, "tokens_a_step": 2.92562, "t": 1789815787.6}
+{"event": "end", "best_tokens_a_step": 2.92562, "base_tokens_a_step": 2.79097, "t": 1789815787.6}
+[20:03:33] == export (fourth head)
+{"0": {"file": "mtp-tuned-r0of4.safetensors", "tensors": 22, "bytes": 100365872}, "1": {"file": "mtp-tuned-r1of4.safetensors", "tensors": 22, "bytes": 100365872}, "2": {"file": "mtp-tuned-r2of4.safetensors", "tensors": 22, "bytes": 100365872}, "3": {"file": "mtp-tuned-r3of4.safetensors", "tensors": 
+[20:03:38] spread to four nodes: 1
+[20:03:38] == boot tuned3-off (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0 ST_DRAFT_CANDIDATES=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned3)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "tuned3-off", "summary": {"steps": 22970.0, "tokens": 64791.0, "decoded_tokens": 64611.0, "ms_a_step": 39.15, "tokens_a_step": 2.813, "decode_tok_s": 71.9}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 68.6 s, door on port 8000
+10.10.10.4: stopped
+[20:24:15] == boot tuned4-off (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0 ST_DRAFT_CANDIDATES=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned4)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "tuned4-off", "summary": {"steps": 22081.0, "tokens": 62983.0, "decoded_tokens": 62803.0, "ms_a_step": 37.16, "tokens_a_step": 2.844, "decode_tok_s": 76.5}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 62.1 s, door on port 8000
+10.10.10.4: stopped
+[20:43:15] == boot best-t1-exact (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned4 ST_DRAFT_CANDIDATES=0)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+[20:46:40] take-orig: took the window during best-t1-exact's requests (the original head's greedy arm added)
+[20:57:36] take-release: took the window during best-t1-exact's requests (the original head's arm dropped: self-distribution data comes first)
+{"label": "best-t1-exact", "summary": {"steps": 19691.0, "tokens": 48805.0, "decoded_tokens": 48691.0, "ms_a_step": 40.15, "tokens_a_step": 2.473, "decode_tok_s": 61.6}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 61.8 s, door on port 8000
+10.10.10.4: stopped
+[21:01:00] == boot best-t1-block (ST_DRAFT_THRESHOLD=off ST_TAP_MTP_INPUTS=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned4 ST_DRAFT_CANDIDATES=20)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "best-t1-block", "summary": {"steps": 18583.0, "tokens": 48806.0, "decoded_tokens": 48692.0, "ms_a_step": 41.99, "tokens_a_step": 2.62, "decode_tok_s": 62.4}}
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger)
+  rank 0: ready in 63.5 s, door on port 8000
+10.10.10.4: stopped
+[21:18:33] stop + release
+10.10.10.4: stopped
+released
+[21:18:36] lease: free
+[21:18:36] production down since handover: 10023 s so far
+[21:22:12] production door answers
+[21:22:12] lease after: production production/srv2/1368796 on srv2 since 2026-09-19 21:19:56 (production st-glm53 on four Sparks): running=0, served=0, steps=0, waiting=0
+[21:22:12] production downtime: 10239 s

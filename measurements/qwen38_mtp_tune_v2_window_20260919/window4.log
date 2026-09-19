@@ -1,0 +1,20 @@
+[18:06:58] tree a8e3c4de feat(qwen38): sampled MTP drafts kept by block verification -- a sampled row draws its draf
+[18:06:58] lease before: production production/srv2/1368796 on srv2 since 2026-09-19 17:19:50 (production st-glm53 on four Sparks): running=0, served=90, steps=1696, waiting=0
+[18:06:58] boots: a 562+123 raw, b 261, c 229+300 raw
+[18:06:58] yield asked
+[18:07:02] held: session session/q38mtp-tune4-0919 on srv2 since 2026-09-19 18:07:00 (operator window: MTP head -- the v2 data (1.5M positions, greedy-heavy mix), a fourth train
+[18:07:15] == boot data3a (ST_DRAFT_THRESHOLD=off ST_DRAFT_CANDIDATES=0 ST_MTP_TUNED=/home/choiceoh/models/st-qwen38-mtp-tuned3)
+10.10.10.4: started
+head: http://10.10.10.2:8000/v1/chat/completions (OpenAI), GET / for status
+{"label": "data3a", "final": {"next": 689, "done": 657, "prompt_tokens": 1014131, "errors": 28, "chat": 534, "raw": 123}, "elapsed_s": 570}
+  request errors: 28
+  lanes qualified: {'gated_residual': {'enter': (0.0062500000931322575, 0.0010940515203401446), 'inject': (0.004854368977248669, 0.0013956144684925675), 'leave_norm': (0.004975124262273312, 0.0024845092557370663), 'leave': (0.004975124262273312, 0.0024845092557370663), 'close': (0.005586592014878988
+  drafter: MTP head, K=3 (verify step 4 tokens a row; draft ledger; mtp inputs recorded)
+  rank 0: ready in 74.1 s, door on port 8000
+10.10.10.4: stopped
+[18:18:19] waiting for srv4's probe to finish (1 up)
+[18:19:17] stop + release
+10.10.10.4: stopped
+released
+[18:19:20] lease: free
+[18:19:20] production down since handover: 738 s so far

@@ -28,7 +28,9 @@ GROUPS = ("hb.*", "launches/*", "preparations/*", "runners/*", "run-logs/*", "va
 def live_sessions(directory: Path) -> set:
     """Sessions the queue still knows about: the holder, the queue, and anything paused."""
     names = set()
-    for holder in (directory / "holder", directory / "holder-single", directory / "holder-check"):   # the fleet's, each one-GPU lane's
+    holders = [directory / "holder", directory / "holder-single", directory / "holder-check",   # the fleet's, each one-GPU lane's,
+               *sorted(directory.glob("holder-single@*"))]                                         # and the single pool's other hosts'
+    for holder in holders:
         if holder.is_file():
             line = holder.read_text().strip()
             if line:

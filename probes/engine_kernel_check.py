@@ -163,6 +163,12 @@ def main():
         from probes.engine_qwen38_kda import run as qwen38_kda
         qwen38_kda(args.output)
         return
+    if args.lanes == 'qwen38_gdn_flashinfer':
+        # component timings (U13): the long prefill's GDN lane on FlashInfer's SM120 kernel, whole, against the served
+        # chunk kernel, alternating inside each round
+        from probes.engine_qwen38_kda import run_flashinfer_prefill
+        run_flashinfer_prefill(args.output)
+        return
     if args.lanes == 'qwen38_step':
         # component timings: a captured Qwen3.8 decode step's kernels on one rank's own weights, solved from small nets
         # (fixed, GDN, QSA, PLE) and summed to 48 layers -- the decode levers ranked by the step, not by guesses
@@ -310,6 +316,12 @@ def main():
         from probes.engine_qwen38_qsa_geometry import run as qwen38_qsa_geometry
         qwen38_qsa_geometry(args.output)
         return
+    if args.lanes == 'qwen38_tile_union':
+        # component timings: the QSA tile-union prefill attention (sm_121a intake U12, not served) against the split-K
+        # launch over eager prefill steps, the served band on their drift first
+        from probes.engine_qwen38_qsa_geometry import run_tile_union as qwen38_tile_union
+        qwen38_tile_union(args.output)
+        return
     if args.lanes == 'qwen38_qualify_soak' or args.lanes.startswith('qwen38_qualify_soak:'):
         # correctness only: the boot's lane qualify again and again -- how often it fails on this card, and whose
         # failure it is (gated_residual.blame); `:N` sets the repeats
@@ -325,6 +337,11 @@ def main():
         # the router projection: IEEE FP32 (router_fp32) against the BF16 matmul it replaced, decode and prefill rows
         from probes.engine_qwen38_router import run as qwen38_router
         qwen38_router(args.output)
+        return
+    if args.lanes == 'qwen38_moe_glue':
+        # the prefill MoE layer's glue step by step: route, shared gate, this rank's pairs, gathers, pair sum
+        from probes.engine_qwen38_moe_glue import run as qwen38_moe_glue
+        qwen38_moe_glue(args.output)
         return
     if args.lanes == 'qwen38_prefill' or args.lanes.startswith('qwen38_prefill:'):
         # component census: a prefill chunk's wall, device and host time by kernel family, solved from four small

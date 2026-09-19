@@ -1,0 +1,5 @@
+{"load_s": 4.0, "trained": 88929792, "allocated_GiB": 7.4}
+{"window": 0, "s": 5.83, "loss": 4.1108, "chain_1": 0.001953125, "peak_GiB": 12.23}
+{"window": 1, "s": 3.09, "loss": 3.6461, "chain_1": 0.0009765625, "peak_GiB": 12.92}
+{"window": 2, "s": 3.06, "loss": 2.9394, "chain_1": 0.0009765625, "peak_GiB": 12.92}
+{"smoke": "ok"}
