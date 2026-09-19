@@ -71,7 +71,7 @@
 | U17 | PDL: wait 앞의 읽기가 부팅 상수뿐인가 | sglang#38290 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
 | U18 | 캡처 뒤 패딩·null 슬롯의 비유한 값(0×NaN)이 실제 행을 오염시키나 | vllm#57158 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
 | U19 | 드래프터 상태가 TP 랭크마다 어긋나는 자리 | sglang#33614 | audit | cpu | 감사 끝(아래) — GLM 안전, Qwen3.8 은 랭크 간 대조가 없다 |
-| U20 | DeepGEMM 스케일: FP32 스케일(2 의 거듭제곱 아님)을 받으면 부팅에서 거절 | sglang#39482, vllm#57512, #54600 | fix | cpu | PR (이 PR): 우리 스케일은 이미 UE8M0(`packing.fp8_block_scales`, `fp8.py:14`) — `FP8Linear` 이 받는 준비된 스케일이 2 의 거듭제곱이 아니면 바인드에서 거절 |
+| U20 | DeepGEMM 스케일: FP32 스케일(2 의 거듭제곱 아님)을 받으면 부팅에서 거절 | sglang#39482, vllm#57512, #54600 | fix | cpu | 브랜치 `sm121-u20-scale-guard`(PR 전: GLM 부팅이 지나는 `FP8Linear` 바인드를 바꾼다) — 우리 스케일은 이미 UE8M0(`packing.fp8_block_scales`, `fp8.py:14`) |
 
 ### D. 통합 메모리·플랫폼
 

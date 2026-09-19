@@ -564,11 +564,6 @@ class FP8Linear:
             q, scale = quantized
             if tuple(q.shape) != (padded_rows, self.cols) or tuple(scale.shape) != (padded_rows//128, self.cols//128):
                 raise ValueError("prepared FP8 weights do not match the bound weight")
-            # UE8M0: every reader takes these scales as powers of two (the MX32 weight's E8M0 exponents, DeepGEMM's
-            # packed scales). A checkpoint's own FP32 block scales are not, and on sm_121 DeepGEMM faults or asserts
-            # on them (vllm#54125, sglang#39482) -- requantize with packing.fp8_block_scales before binding.
-            if not bool((torch.frexp(scale.float()).mantissa == 0.5).all()):
-                raise ValueError(f"{name or 'FP8Linear'}: prepared FP8 block scales must be powers of two (UE8M0)")
             self.weight = q.to(weight.device), scale.to(weight.device)
             return
         from deep_gemm import per_block_cast_to_fp8
