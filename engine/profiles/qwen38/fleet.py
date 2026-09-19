@@ -257,21 +257,22 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             with recorder.phase("wait for the prelude"):
                 prelude.take()
             recorder.gauge("prelude_s", round(prelude.seconds, 3))
+        with recorder.phase("warm eager moe"):
+            # the eager MoE's decode-sized launches at the one capacity they will keep: the 2026-09-19 K=3 window's
+            # first requests compiled six of them mid-request (warmup.eager_moe). Before the prefill passes: their
+            # decode-sized widths route a few pairs to a rank too, and a smaller first capacity would build its own
+            from engine.profiles.qwen38.warmup import eager_moe
+            paid = eager_moe(net)
+            if comm.rank == 0:
+                print("  warm eager moe: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
         with recorder.phase("warm prefill"):
             # the largest chunk held to the memory ceiling, and every prefill kernel family compiled, before the door:
             # the first request used to pay both (warmup.py)
             from engine.profiles.qwen38.warmup import warmup
             paid = warmup(net, caches, memory=memory, chunk=sched.chunk_for(contract.chunk_align, contract.token_budget, k),
-                          max_context=model.max_context, mtp=model.drafter is not None)
+                          max_context=model.max_context, mtp=model.drafter is not None, head=k + 1)
             if comm.rank == 0:
                 print("  warm prefill: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
-        with recorder.phase("warm eager moe"):
-            # the eager MoE's decode-sized launches at the one capacity they will keep: the 2026-09-19 K=3 window's
-            # first requests compiled six of them mid-request (warmup.eager_moe)
-            from engine.profiles.qwen38.warmup import eager_moe
-            paid = eager_moe(net)
-            if comm.rank == 0:
-                print("  warm eager moe: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
         with recorder.phase("capture decode"):
             capture(model, max_seqs, memory=memory, narrow_rows=narrow_rows if draft_threshold else 0)
         if memory is not None:
