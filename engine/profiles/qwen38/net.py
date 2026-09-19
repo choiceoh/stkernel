@@ -924,10 +924,13 @@ class Qwen38Net:
                 attend_covered(q[:c], K, V, meta.positions32[:c], meta.lengths, F.idx_ratio, F.idx_budget,
                                meta.page_table, meta.rows_req[:c], out=attended[:c], gate=gate[:c], **runs)
                 lanes.qsa_attend(q[c:], K, V, blocks[c:], meta.positions32[c:], meta.lengths, F.idx_ratio,
-                                 F.idx_budget, meta.page_table, meta.rows_req[c:], out=attended[c:], gate=gate[c:])
+                                 F.idx_budget, meta.page_table, meta.rows_req[c:], out=attended[c:], gate=gate[c:],
+                                 one_request=True)
             else:
+                # a prefill segment's rows attend in runs over the union of their blocks (qsa's run launch)
                 attended = lanes.qsa_attend(q, K, V, blocks, meta.positions32, meta.lengths, F.idx_ratio,
-                                            F.idx_budget, meta.page_table, meta.rows_req, gate=gate)
+                                            F.idx_budget, meta.page_table, meta.rows_req,
+                                            one_request=runs["one_request"], gate=gate)
         out = attended.reshape(N, Hq * D)
         return self.comm.all_reduce(self.linear(out, n + "o_proj"))
 

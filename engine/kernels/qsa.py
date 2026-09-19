@@ -60,6 +60,13 @@ _STACK_OVERRIDE = None              # (tile width, stacked M, warps): qsa_covere
 # 1,024, 171 -> 124 at 512, the sparse launch's bytes at 16-wide tiles and 4 warps; 32-wide tiles were 20% faster
 # again (637 us) but round the softmax elsewhere, and 64-wide ones or M 128 at 32 ask more than the shared memory.
 STACK_M, STACK_WARPS, STACK_MIN_ROWS = 64, 4, 256
+_RUNS_OVERRIDE = None               # (run rows, warps): qsa_sparse_paged_attention_blocks' run launch
+
+# The sparse run launch (`_qsa_sparse_runs_kernel`): RUN consecutive rows of one request a program over the union of
+# their chosen blocks, from RUNS_MIN_ROWS rows (a prefill segment's; the split launch serves fewer). Two rows' six heads
+# are twelve of the MMA's sixteen rows that one row's six already pay for, so the pair's tiles cost what the two rows'
+# own cost and read each block the two share once.
+RUN_ROWS, RUN_WARPS, RUNS_MIN_ROWS = 2, 4, 256
 
 
 def _forced_geometry(name: str, value, fields: int) -> tuple:
@@ -1061,6 +1068,210 @@ def _qsa_covered_stacked_kernel(
 
 
 @triton.jit
+def _qsa_runs_tile(query, token, mine, request, safe_request, sequence_length, num_requests, num_cache_blocks,
+                   k_cache_ptr, v_cache_ptr, block_table_ptr, stride_k_block, stride_k_token, stride_k_head,
+                   stride_v_block, stride_v_token, stride_v_head, stride_table_req, kv_head, dim_offsets, max_value,
+                   normalizer, accumulator, PAGE_SIZE: tl.constexpr, PAGE_TABLE_WIDTH: tl.constexpr,
+                   HEAD_DIM: tl.constexpr):
+    """One tile of `_qsa_sparse_runs_kernel`: the positions `token` [BLOCK_N] (-1: none) gathered through the page
+    table, and each M row's softmax stepped over the columns `mine` [BLOCK_M, BLOCK_N] gives it -- the sparse kernel's
+    operations, a column that is not the row's scoring -1e20 and weighing an exact zero as a missing one does."""
+    safe_token = tl.maximum(token, 0)
+    logical_page = safe_token // PAGE_SIZE
+    page_offset = safe_token % PAGE_SIZE
+    valid = (
+        (request >= 0)
+        & (request < num_requests)
+        & (token >= 0)
+        & (token < sequence_length)
+        & (logical_page < PAGE_TABLE_WIDTH)
+    )
+    physical_page = tl.load(
+        block_table_ptr + safe_request * stride_table_req + tl.minimum(logical_page, PAGE_TABLE_WIDTH - 1),
+        mask=valid,
+        other=-1,
+    )
+    valid &= (physical_page >= 0) & (physical_page < num_cache_blocks)
+    # physical_page * block stride can overflow int32 for large caches.
+    safe_page = tl.maximum(physical_page, 0).to(tl.int64)
+    keys = tl.load(
+        k_cache_ptr
+        + safe_page[None, :] * stride_k_block
+        + page_offset[None, :] * stride_k_token
+        + kv_head * stride_k_head
+        + dim_offsets[:, None],
+        mask=valid[None, :],
+        other=0.0,
+    )
+    values = tl.load(
+        v_cache_ptr
+        + safe_page[:, None] * stride_v_block
+        + page_offset[:, None] * stride_v_token
+        + kv_head * stride_v_head
+        + dim_offsets[None, :],
+        mask=valid[:, None],
+        other=0.0,
+    )
+    take = valid[None, :] & mine
+    softmax_scale_log2: tl.constexpr = (HEAD_DIM**-0.5) * 1.4426950408889634
+    scores = tl.dot(query, keys)
+    # Scaling scores avoids re-quantizing a scaled query to BF16.
+    scores *= softmax_scale_log2
+    scores = tl.where(take, scores, -1.0e20)
+    next_max = tl.maximum(max_value, tl.max(scores, axis=1))
+    alpha = tl.math.exp2(max_value - next_max)
+    probabilities = tl.where(take, tl.math.exp2(scores - next_max[:, None]), 0.0)
+    accumulator = tl.dot(probabilities.to(values.dtype), values, acc=accumulator * alpha[:, None])
+    normalizer = normalizer * alpha + tl.sum(probabilities, axis=1)
+    return next_max, normalizer, accumulator
+
+
+@triton.jit
+def _qsa_sparse_runs_kernel(
+    q_ptr,
+    k_cache_ptr,
+    v_cache_ptr,
+    indices_ptr,
+    block_table_ptr,
+    token_to_req_ptr,
+    query_positions_ptr,
+    sequence_lengths_ptr,
+    output_ptr,
+    gate_ptr,
+    stride_q_row,
+    stride_q_head,
+    stride_k_block,
+    stride_k_token,
+    stride_k_head,
+    stride_v_block,
+    stride_v_token,
+    stride_v_head,
+    stride_indices_row,
+    stride_table_req,
+    stride_output_row,
+    stride_output_head,
+    stride_gate_row,
+    stride_gate_head,
+    num_rows,
+    num_cache_blocks,
+    num_requests,
+    num_lengths,
+    RUN: tl.constexpr,
+    PAGE_SIZE: tl.constexpr,
+    PAGE_TABLE_WIDTH: tl.constexpr,
+    GROUP_SIZE: tl.constexpr,
+    HEAD_DIM: tl.constexpr,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+    BLOCK_TOPK: tl.constexpr,
+    UNION: tl.constexpr,
+    COMPRESS_RATIO: tl.constexpr,
+    GATED: tl.constexpr,
+) -> None:
+    """`_qsa_sparse_paged_gqa_splitk_kernel` (FROM_BLOCKS, one split) for RUN consecutive rows of ONE request a program:
+    the rows' chosen blocks merged into one ascending union -- each block once, tagged with the rows that chose it --
+    read tile by tile, every row's heads stacked into the M rows of one dot (M row m: the run's row m // GROUP_SIZE, its
+    head m % GROUP_SIZE), a column weighing in only for the rows whose block it is; then the rows' open groups (the
+    positions after their complete ones, which no selection holds) in one last tile. Each M row steps the sparse
+    kernel's softmax over its own columns in ascending order, so it attends what the sparse launch attends; its sums
+    round at the union's tile boundaries, not its own, so its bytes are the band's. A selection holds complete groups
+    the row sees, as every selector's does (so the sparse kernel's first `complete` slots are all of its ids); the
+    caller answers for the run being one request's consecutive positions."""
+    first = tl.program_id(0) * RUN
+    kv_head = tl.program_id(1)
+    request = tl.load(token_to_req_ptr + first)
+    safe_request = tl.minimum(tl.maximum(request, 0), num_requests - 1)
+    sequence_length = tl.load(
+        sequence_lengths_ptr + tl.minimum(tl.maximum(request, 0), num_lengths - 1),
+        mask=(request >= 0) & (request < num_lengths),
+        other=0,
+    )
+    MAXI: tl.constexpr = 2147483647
+    OWN: tl.constexpr = 1 << RUN                                   # a union entry: block * OWN + the rows that chose it
+
+    # the run's selections, one row after another (row i's slot j at i * BLOCK_TOPK + j), keyed (block, row) so a
+    # block's choosers sort side by side
+    entry = tl.arange(0, UNION)
+    member = entry // BLOCK_TOPK
+    row_live = (first + member) < num_rows
+    position = tl.load(query_positions_ptr + first + member, mask=row_live, other=-1)
+    sees = tl.minimum((position + 1) // COMPRESS_RATIO, sequence_length // COMPRESS_RATIO)
+    chosen = tl.load(indices_ptr + (first + member) * stride_indices_row + entry % BLOCK_TOPK, mask=row_live, other=-1)
+    keyed = tl.sort(tl.where(row_live & (chosen >= 0) & (chosen < sees), chosen * RUN + member, MAXI), dim=0)
+    live = keyed != MAXI
+    block = keyed // RUN
+    owners = tl.where(live, 1 << (keyed % RUN), 0)
+    for step in tl.static_range(1, RUN):
+        ahead = tl.gather(keyed, tl.minimum(entry + step, UNION - 1), 0)
+        same = live & (entry + step < UNION) & (ahead != MAXI) & (ahead // RUN == block)
+        owners = owners | tl.where(same, 1 << (ahead % RUN), 0)
+    behind = tl.gather(keyed, tl.maximum(entry - 1, 0), 0)
+    repeat = (entry > 0) & (behind != MAXI) & (behind // RUN == block)
+    union = tl.sort(tl.where(live & ~repeat, block * OWN + owners, MAXI), dim=0)
+    in_union = tl.sum((union != MAXI).to(tl.int32), axis=0)
+
+    stacked = tl.arange(0, BLOCK_M)
+    row_of = stacked // GROUP_SIZE
+    head = kv_head * GROUP_SIZE + stacked % GROUP_SIZE
+    row = first + row_of
+    live_m = (row_of < RUN) & (row < num_rows)
+    row_position = tl.load(query_positions_ptr + row, mask=live_m, other=-1)
+    tail_start = ((row_position + 1) // COMPRESS_RATIO) * COMPRESS_RATIO
+    dim_offsets = tl.arange(0, HEAD_DIM)
+    column_offsets = tl.arange(0, BLOCK_N)
+    query = tl.load(
+        q_ptr + row[:, None] * stride_q_row + head[:, None] * stride_q_head + dim_offsets[None, :],
+        mask=live_m[:, None],
+        other=0.0,
+    )
+    max_value = tl.full((BLOCK_M,), -1.0e20, dtype=tl.float32)
+    normalizer = tl.zeros((BLOCK_M,), dtype=tl.float32)
+    accumulator = tl.zeros((BLOCK_M, HEAD_DIM), dtype=tl.float32)
+    for tile in range(0, tl.cdiv(in_union * COMPRESS_RATIO, BLOCK_N)):
+        columns = tile * BLOCK_N + column_offsets
+        picked = tl.gather(union, tl.minimum(columns // COMPRESS_RATIO, UNION - 1), 0)
+        present = (columns < in_union * COMPRESS_RATIO) & (picked != MAXI)
+        token = tl.where(present, (picked // OWN) * COMPRESS_RATIO + columns % COMPRESS_RATIO, -1)
+        mine = ((tl.where(present, picked % OWN, 0)[None, :] >> row_of[:, None]) & 1) == 1
+        max_value, normalizer, accumulator = _qsa_runs_tile(
+            query, token, mine & live_m[:, None], request, safe_request, sequence_length, num_requests,
+            num_cache_blocks, k_cache_ptr, v_cache_ptr, block_table_ptr, stride_k_block, stride_k_token, stride_k_head,
+            stride_v_block, stride_v_token, stride_v_head, stride_table_req, kv_head, dim_offsets, max_value, normalizer,
+            accumulator, PAGE_SIZE, PAGE_TABLE_WIDTH, HEAD_DIM)
+    # the open groups, one tile from the run's lowest tail start to its furthest row: a row's own from its tail start
+    # up to its position (the sparse kernel's tail columns)
+    lowest_tail = tl.min(tl.where(live_m, tail_start, MAXI), axis=0)
+    furthest = tl.max(tl.where(live_m, row_position, -1), axis=0)
+    token = tl.where(lowest_tail + column_offsets <= furthest, lowest_tail + column_offsets, -1)
+    mine = ((token[None, :] >= tail_start[:, None]) & (token[None, :] <= row_position[:, None])
+            & (token[None, :] - tail_start[:, None] < COMPRESS_RATIO - 1) & live_m[:, None])
+    max_value, normalizer, accumulator = _qsa_runs_tile(
+        query, token, mine, request, safe_request, sequence_length, num_requests, num_cache_blocks, k_cache_ptr,
+        v_cache_ptr, block_table_ptr, stride_k_block, stride_k_token, stride_k_head, stride_v_block, stride_v_token,
+        stride_v_head, stride_table_req, kv_head, dim_offsets, max_value, normalizer, accumulator, PAGE_SIZE,
+        PAGE_TABLE_WIDTH, HEAD_DIM)
+
+    normalized_output = tl.where(
+        (normalizer > 0)[:, None],
+        accumulator / tl.maximum(normalizer[:, None], 1.0e-20),
+        0.0,
+    )
+    value = normalized_output
+    if GATED:
+        gate = tl.load(
+            gate_ptr + row[:, None] * stride_gate_row + head[:, None] * stride_gate_head + dim_offsets[None, :],
+            mask=live_m[:, None],
+            other=0.0,
+        ).to(tl.float32)
+        value = normalized_output.to(output_ptr.dtype.element_ty).to(tl.float32) * tl.sigmoid(gate)
+    tl.store(
+        output_ptr + row[:, None] * stride_output_row + head[:, None] * stride_output_head + dim_offsets[None, :],
+        value,
+        mask=live_m[:, None],
+    )
+
+
+@triton.jit
 def _qsa_merge_splitk_kernel(
     partial_output_ptr,
     partial_lse_ptr,
@@ -1903,14 +2114,19 @@ def qsa_sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table
 
 
 def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_positions, sequence_lengths,
-                                      compress_ratio, token_topk, block_table, token_to_req, out=None, *, gate=None):
+                                      compress_ratio, token_topk, block_table, token_to_req, out=None, *, gate=None,
+                                      one_request: bool = False):
     """`qsa_sparse_paged_attention` at the positions `expand_qsa_block_indices_cuda` expands the chosen blocks to --
     int32 [rows, token_topk // compress_ratio] as `qsa_select_paged_blocks` writes them -- computed tile by tile in the
     attention's own launch (FROM_BLOCKS), without the expansion launch and its [rows, token_topk + compress_ratio - 1]
     buffer. The blocks are read in ascending order, -1 last, whatever order a row holds them in: the output is the
-    expanded attention over the row's blocks sorted so, and the same for every order of the same set."""
+    expanded attention over the row's blocks sorted so, and the same for every order of the same set. `one_request`:
+    every row is one request's, at consecutive positions (a prefill segment) -- from RUNS_MIN_ROWS rows the run launch
+    serves it, RUN_ROWS rows a program over the union of their blocks (`_qsa_sparse_runs_kernel`; the band's bytes)."""
     if token_topk <= 0 or compress_ratio <= 0 or token_topk % compress_ratio:
         raise ValueError("QSA token top-k must be divisible by compression ratio")
+    if type(one_request) is not bool:
+        raise ValueError("one_request is a declared boolean")
     block_topk = token_topk // compress_ratio
     rows = q.shape[0] if q.ndim == 3 else -1
     if block_indices.shape != (rows, block_topk):
@@ -1926,7 +2142,8 @@ def qsa_sparse_paged_attention_blocks(q, k_cache, v_cache, block_indices, query_
     _packed_rows("QSA sparse attention", query_positions, sequence_lengths)
     return _sparse_paged_attention(q, k_cache, v_cache, block_indices, block_table, token_to_req, out,
                                    token_topk + compress_ratio - 1,
-                                   blocks=(query_positions, sequence_lengths, compress_ratio, block_topk), gate=gate)
+                                   blocks=(query_positions, sequence_lengths, compress_ratio, block_topk), gate=gate,
+                                   runs=one_request and rows >= RUNS_MIN_ROWS)
 
 
 def _split_profile(rows: int, kv_heads: int, block_m: int, width: int):
@@ -2059,8 +2276,38 @@ def qsa_covered_paged_attention(q, k_cache, v_cache, query_positions, sequence_l
     return out
 
 
+def _sparse_runs(q, k_cache, v_cache, block_indices, block_table, token_to_req, out, gate, blocks, group_size,
+                 block_n):
+    """`_qsa_sparse_runs_kernel` over the rows (checked by qsa_sparse_paged_attention_blocks): RUN_ROWS rows a program
+    on the sparse launch's tile width (the split profile's) unless the probe hook forces (run rows, warps)."""
+    query_positions, sequence_lengths, compress_ratio, block_topk = blocks
+    run, warps = RUN_ROWS, RUN_WARPS
+    if _RUNS_OVERRIDE is not None:
+        forced = _RUNS_OVERRIDE
+        if (type(forced) is not tuple or len(forced) != 2
+                or not all(type(n) is int and n > 0 and not n & (n - 1) for n in forced) or forced[0] > 8):
+            raise ValueError("_RUNS_OVERRIDE is (run rows 1..8, warps), powers of two")
+        run, warps = forced
+    if block_topk & (block_topk - 1):
+        raise ValueError(f"the run launch merges power-of-two selections; this one holds {block_topk} blocks")
+    gated = gate is not None
+    gate_rows = gate if gated else out                                    # never read without GATED
+    _qsa_sparse_runs_kernel[(triton.cdiv(q.shape[0], run), k_cache.shape[2])](
+        q, k_cache, v_cache, block_indices, block_table, token_to_req, query_positions, sequence_lengths, out,
+        gate_rows, q.stride(0), q.stride(1), k_cache.stride(0), k_cache.stride(1), k_cache.stride(2), v_cache.stride(0),
+        v_cache.stride(1), v_cache.stride(2), block_indices.stride(0), block_table.stride(0), out.stride(0),
+        out.stride(1), gate_rows.stride(0), gate_rows.stride(1), q.shape[0], k_cache.shape[0], block_table.shape[0],
+        sequence_lengths.shape[0],
+        RUN=run, PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=block_table.shape[1], GROUP_SIZE=group_size,
+        HEAD_DIM=q.shape[2], BLOCK_M=max(16, triton.next_power_of_2(run * group_size)), BLOCK_N=block_n,
+        BLOCK_TOPK=block_topk, UNION=run * block_topk, COMPRESS_RATIO=compress_ratio, GATED=gated,
+        num_warps=warps, num_stages=2,
+    )
+    return out
+
+
 def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, width, blocks=None,
-                            gate=None):
+                            gate=None, runs=False):
     """The launch of both entries: `logical_indices` holds the positions at `width` columns, or (with `blocks` --
     query positions, sequence lengths, the compression ratio and the block top-k) the chosen blocks whose expansion
     is `width` columns wide. `gate`, when given, is applied in the final store (the one-split launch or the merge)."""
@@ -2106,6 +2353,9 @@ def _sparse_paged_attention(q, k_cache, v_cache, logical_indices, block_table, t
     group_size = q.shape[1] // k_cache.shape[2]
     block_m = triton.next_power_of_2(group_size)
     block_n, num_tiles, num_splits, partial_warps = _split_profile(q.shape[0], k_cache.shape[2], block_m, width)
+    if runs and blocks is not None:
+        return _sparse_runs(q, k_cache, v_cache, logical_indices, block_table, token_to_req, out, gate, blocks,
+                            group_size, block_n)
     if num_splits == 1:
         partial_output = out
         partial_lse = out

@@ -298,6 +298,12 @@ def main():
         from probes.engine_qwen38_mix_tiles import run as qwen38_mix_tiles
         qwen38_mix_tiles(args.output)
         return
+    if args.lanes == 'qwen38_qsa_runs':
+        # the sparse attention's run launch (a prefill segment's rows in runs over the union of their blocks) against
+        # the split launch, over selections whose neighbours share more or less (probes/engine_qwen38_qsa_geometry)
+        from probes.engine_qwen38_qsa_geometry import run_runs
+        run_runs(args.output)
+        return
     if args.lanes == 'qwen38_qsa_stacked':
         # the covered attention's stacked launch against the run launch, and a first chunk across the reach split
         # between the covered and the sparse launch (probes/engine_qwen38_qsa_geometry.run_stacked)

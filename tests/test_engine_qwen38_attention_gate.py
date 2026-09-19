@@ -79,7 +79,7 @@ class ServedLaneTests(unittest.TestCase):
     def test_the_layer_hands_the_gate_to_the_attention(self):
         source = (ROOT / "engine/profiles/qwen38/net.py").read_text()
         body = source[source.index("    def _qsa("):source.index("    # -- MoE")]
-        self.assertIn("meta.page_table, meta.rows_req, gate=gate)", body)
+        self.assertIn("one_request=runs[\"one_request\"], gate=gate)", body)
         self.assertNotIn("torch.sigmoid(gate", body)
         self.assertIn("out = attended.reshape(N, Hq * D)", body)
 

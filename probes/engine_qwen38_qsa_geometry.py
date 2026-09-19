@@ -1000,5 +1000,91 @@ def run_stacked(output=None):
     return events
 
 
+# the sparse run launch (qsa._qsa_sparse_runs_kernel): (run rows, warps) through _RUNS_OVERRIDE, the rule's first
+RUN_TRIES = ((2, 4), (1, 4), (2, 8), (4, 4), (4, 8))
+RUN_ALIKE = (0.0, 0.5, 0.8, 0.95)                  # of a row's choices, the share it keeps from the row before
+RUN_ROWS_EAGER, RUN_CONTEXT = 4096, 28000          # a later chunk of a long prompt: every row past the reach
+
+
+def correlated_blocks(cell: Cell, step: Step, generator, device, alike: float) -> torch.Tensor:
+    """int32 [rows, index_blocks]: `chosen_blocks`' random subsets, except that a row keeps `alike` of the row before's
+    choices (those it sees) and draws the rest -- consecutive tokens choosing alike, which random subsets never do."""
+    out = torch.full((step.rows, cell.index_blocks), -1, dtype=torch.int32)
+    positions, lengths, owners = (t.cpu() for t in (step.meta.positions32, step.meta.lengths, step.meta.rows_req))
+    before = None
+    for row in range(step.rows):
+        seen = int(min(positions[row] + 1, lengths[owners[row]]) // cell.ratio)
+        count = min(seen, cell.index_blocks)
+        score = torch.rand(seen, generator=generator)
+        if before is not None:
+            kept = before[before < seen][:int(alike * count)]
+            score[kept.long()] = 2.0                                     # kept first, the rest drawn
+        chosen = score.topk(count).indices.to(torch.int32)
+        out[row, :count] = chosen[torch.randperm(count, generator=generator)]
+        before = chosen[torch.randperm(count, generator=generator)]
+    return out.to(device)
+
+
+def run_runs(output=None):
+    """qsa_sparse_paged_attention_blocks' run launch (RUN rows of one request a program over the union of their chosen
+    blocks) against the split launch it replaces, eager, a later chunk's RUN_ROWS_EAGER rows at RUN_CONTEXT, over
+    selections whose neighbours keep RUN_ALIKE of each other's choices -- what the union saves depends on it, and no
+    record says what a trained indexer's neighbours share. Every arm held to the split launch in the oracle's band."""
+    events = []
+
+    def report(event, **values):
+        row = dict(event=event, **values)
+        events.append(row)
+        print(json.dumps(row), flush=True)
+        if output:
+            Path(output).write_text("".join(json.dumps(e) + "\n" for e in events))
+
+    qsa = _qsa()
+    assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
+    props = torch.cuda.get_device_properties(0)
+    torch.cuda.set_per_process_memory_fraction(min(1.0, MEMORY_CAP_GIB * 2 ** 30 / props.total_memory))
+    device, cell = torch.device("cuda"), QWEN38
+    report("device", name=props.name, torch=torch.__version__, run_rule=[qsa.RUN_ROWS, qsa.RUN_WARPS],
+           runs_min_rows=qsa.RUNS_MIN_ROWS)
+    with torch.inference_mode():
+        base = attention_case(cell, 1, RUN_ROWS_EAGER, RUN_CONTEXT, device, torch.Generator().manual_seed(SEED), sets=1)
+        m = base.step.meta
+        out = torch.empty_like(base.q)
+        for alike in RUN_ALIKE:
+            blocks = correlated_blocks(cell, base.step, torch.Generator().manual_seed(SEED + int(alike * 100)), device,
+                                       alike)
+            pairs = torch.stack([blocks[0::2].sort(1).values, blocks[1::2].sort(1).values])
+            union = torch.cat([pairs[0], pairs[1]], 1).sort(1).values
+            shared = float(((union[:, 1:] == union[:, :-1]) & (union[:, 1:] >= 0)).sum(1).float().mean() / cell.index_blocks)
+
+            def split():
+                qsa.qsa_sparse_paged_attention_blocks(base.q, base.K, base.V, blocks, m.positions32, m.lengths,
+                                                      cell.ratio, cell.budget, m.page_table, m.rows_req, out,
+                                                      gate=base.gate)
+
+            def runs(tile):
+                def launch():
+                    with forced(_RUNS_OVERRIDE=tile):
+                        qsa.qsa_sparse_paged_attention_blocks(base.q, base.K, base.V, blocks, m.positions32,
+                                                              m.lengths, cell.ratio, cell.budget, m.page_table,
+                                                              m.rows_req, out, gate=base.gate, one_request=True)
+                return launch
+
+            split()
+            want = out.clone()
+            gates, launches = {}, {"split (before)": split}
+            for tile in RUN_TRIES:
+                try:
+                    runs(tile)()
+                except Exception as error:                              # a geometry past the shared memory
+                    gates[str(tile)] = dict(refused=f"{type(error).__name__}: {str(error)[:200]}")
+                    continue
+                gates[str(tile)] = dict(drift=[round(x, 6) for x in drift(out, want)], steps=bf16_steps(out, want)[0])
+                launches[f"runs {tile}"] = runs(tile)
+            report("runs", rows=RUN_ROWS_EAGER, context=RUN_CONTEXT, alike=alike, pair_shared=round(shared, 4),
+                   gates=gates, timings=eager_timings(launches))
+    return events
+
+
 if __name__ == "__main__":
     run(sys.argv[1] if len(sys.argv) > 1 else None)

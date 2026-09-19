@@ -146,8 +146,8 @@ class LayerTests(unittest.TestCase):
             calls.append(("select", args, group))
             return scored
 
-        def attend(q, K, V, blocks, *args, gate, out=None):
-            calls.append(("attend", blocks, args))
+        def attend(q, K, V, blocks, *args, gate, out=None, one_request=False):
+            calls.append(("attend", blocks, args, one_request))
             return torch.zeros(q.shape[0], heads, D) if out is None else out
 
         lanes = SimpleNamespace(qsa_index_keys=lambda *a: None, qsa_select=select, qsa_attend=attend,
@@ -206,6 +206,14 @@ class LayerTests(unittest.TestCase):
         self.assertTrue(Qwen38Net._one_request(host_step((0, 16))[0]))
         self.assertFalse(Qwen38Net._one_request(host_step((1, 3), (4, 5))[0]))
         self.assertFalse(Qwen38Net._one_request(SimpleNamespace(captured=True)))
+
+    def test_a_prefill_segment_attends_in_runs(self):
+        """The sparse launch hears `one_request` for a host step of one segment -- its rows one request's consecutive
+        positions, which the run launch needs -- and not for several segments."""
+        _, calls, _ = self.layer([(0, 16)], facts(ratio=4, budget=12))
+        self.assertEqual([(c[0], c[3]) for c in calls if c[0] == "attend"], [("attend", True)])
+        _, calls, _ = self.layer([(0, 3), (0, 20)], facts(ratio=4, budget=12))
+        self.assertEqual([(c[0], c[3]) for c in calls if c[0] == "attend"], [("attend", False)])
 
     def test_a_covered_step_never_reaches_the_selection(self):
         meta, calls, _ = self.layer([(0, 9)], facts(ratio=4, budget=12))
