@@ -4865,3 +4865,7 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **곁가지:** #1230 의 `warm eager moe` 첫 GPU 실행 통과(콜드 19.1 s, 웜 0.005 s/발사). `off` 부팅의 첫 요청들 중 `micro_m3/m1_…_t10_r80` 컴파일(각 ~1 s)
   — 주인 세션에 전달.
 - 기록: `measurements/qwen38_shared_overlap_20260919/`, `measurements/qwen38_mix_tiles_20260919/`.
+
+### Qwen3.8 — 디코드 크기 워밍업(헤드 패스 · 폭 1 · 8) 뒤 문 뒤에서 처음 쓰는 커널 12 → 9, 첫 디코드 스텝의 1.1 s 컴파일이 사라짐 (2026-09-19, srv4 단일 GPU 레인)
+- `--lanes qwen38_serve_compiles` 를 브랜치 `decode-sized-warm`(main `048270ef` + 이 변경)에서: 문 뒤 **9** 개(main 12). 덮인 QSA 2 (짧은 프리필과 첫 디코드 스텝 1.10 s)와 GDN `_gates` 1 이 사라졌고, 모든 디코드 스텝이 16 ms 이하. 남은 9 는 conv 5(#1238), dynamic MoE 밴드 3, 점수 커널 G 1 변형 1.
+- 부팅의 값: MTP 헤드만 도는 패스 20 개 8.35 s, 폭 1 · 8 0.431 · 1.47 s — 대부분 첫 컴파일, 그 뒤 부팅은 디스크 읽기. 속도 주장 없음. [기록](measurements/qwen38_serve_compiles_20260919b/README.md).
