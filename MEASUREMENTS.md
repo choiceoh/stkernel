@@ -4943,3 +4943,11 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **무엇.** GLM-5.3 09-14 기록(`st_decode_profile_20260914`)과 같은 도구(`/v1/engine/profile` 32 스텝 + `/metrics`)로 Qwen3.8 C=1 · C=4 디코드 스텝을 잡았다. 부팅은 MTP 튜닝 창의 것: `1aec0aac` + mtp_tune, `--spec-k 3 --draft-threshold off`, 3차 튜닝 헤드 — 최신 main 아님(#1258 등 없음). 프로덕션을 따로 내리지 않았다.
 - **C=1(창 #1):** 스텝 36.9 ms(프로파일러 하 39.0), 커널 합 32.0 ms · 발사 1,566 — **커널 밖은 13%**. 믹서 사이트 7.1 ms(22%), **TP 통신 6.9 ms(21%**, GLM 8%), MoE 전문가 5.9 ms(19%), dense W4 3.6 ms, 어휘 헤드 2.8 ms, MTP BF16 투영 1.4 ms. 수용 0.656 → 스텝당 약 3.0 토큰(카운터). 첫 프로파일 창은 consumer 대기가 86.7 ms 로 부풀어 무효.
 - **읽기.** 통신이 GLM 보다 두 배 넘게 무겁다(작은 합의 지연) — 캐리 H4 · H5 · X1 · X2 의 자리. 믹서는 가중치 읽기 약 200 GB/s(대역폭의 70%). C=4: 스텝 61.8 ms, 커널 92%, MoE 가 가장 커진다. 속도 주장 없음. [표 · 원시](measurements/qwen38_decode_profile_20260919/README.md).
+### Qwen3.8 비전 타워 1단계 — 전처리기 pixel_values 비트 일치(9/9), mRoPE 위치 vLLM 과 일치, 실가중치 타워는 transformers bf16 과 같은 오차 (2026-09-19, srv2 CPU, PR #1267)
+체크포인트(`Qwen4ExpForConditionalGeneration`)의 Qwen3-VL 타워(27 블록, 1152 폭, 16 px 패치, 2×2 병합 → 2560)와 전처리기를 vLLM·transformers 없이
+`engine/profiles/qwen38/vision.py` 로. **서빙 전** — mRoPE 적용·프리필 행 교체·부팅 연결은 다음 단계.
+- **참조**: `probes/qwen38_vision_reference.py` 를 서빙 이미지 안에서 → `tests/fixtures/qwen38_vision_reference.json`(생성기 저장소에 둠). 합성 그림 아홉 가지의
+  pixel_values sha256 이 ST 이미지에서 전부 일치, vLLM 의 mRoPE 위치·delta 세 프롬프트 일치, 장난감 타워 vs transformers fp32 상대 0.0051.
+- **실가중치**: 우리 bf16 vs transformers fp32 5.6~5.8%(행 cos 최소 0.983) — transformers 를 bf16 으로 돌려도 5.4~5.9% 라 구현 차이가 아니라 bf16 몫.
+- **곁**: 그림 디코드(`engine/modules/pictures`)를 GLM 과 공유, 디코드 중 깨지는 그림이 GLM 에서도 500 대신 400. `preshard --vision` 이 `vision.safetensors`.
+  [상세·원시](measurements/qwen38_vision_tower_20260919/README.md).

@@ -208,11 +208,23 @@ def main(argv=None) -> int:
     ap.add_argument("--ckpt", type=Path, default=facts.CKPT)
     ap.add_argument("--out", type=Path, default=facts.RANKS)
     ap.add_argument("--plan", action="store_true", help="read the headers and print the plan; write nothing")
-    ap.add_argument("--source-revision", required=True)
+    ap.add_argument("--source-revision", help="the checkpoint's revision, recorded in the rank files (required but with --vision)")
     ap.add_argument("--layers", help="a-b: a development subset of the layers (no completeness check)")
     ap.add_argument("--ple-shards", type=int, help="development: only the first N shards of each rank's table range")
     ap.add_argument("--threads", type=int, default=4, help="torch threads while encoding")
+    ap.add_argument("--vision", action="store_true",
+                    help="write only vision.safetensors into the existing rank directory: the vision tower, whole, for every rank")
     a = ap.parse_args(argv)
+    if a.vision:
+        from engine.profiles.qwen38 import vision
+        if not a.out.is_dir():
+            raise ValueError(f"--vision writes next to existing rank files: {a.out} is not a directory")
+        print(f"  qwen38 preshard: vision tower -> {a.out / vision.FILE}", flush=True)
+        size = vision.write_file(a.ckpt, a.out)
+        print(f"  done: {size / 2**30:.2f} GiB", flush=True)
+        return 0
+    if not a.source_revision:
+        ap.error("--source-revision is required")
     if a.ple_shards is not None and (a.layers is None or a.ple_shards <= 0):
         raise ValueError("--ple-shards is a development option that goes with --layers, and needs at least one shard")
     layers = parse_layers(a.layers, facts.load(a.ckpt).layers)
