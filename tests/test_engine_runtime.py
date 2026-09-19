@@ -458,8 +458,10 @@ class ParkedRecordMemory(unittest.TestCase):
     def runner(self):
         from engine.base.runner import Runner
         r = Runner.__new__(Runner)
+        import threading
         from collections import OrderedDict
         r.parked, r.digests = OrderedDict(), {}
+        r._book, r._reads = threading.Lock(), {}
         records = {k: {"tokens": list(range(100, 100 + 50 + k)), "media": []} for k in range(40)}
         r.reads = []
 
