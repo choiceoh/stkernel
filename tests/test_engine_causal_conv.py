@@ -151,5 +151,36 @@ class SingleConvTests(unittest.TestCase):
                      (x.to(torch.int32),w,None),(x,w.to(torch.int32),None)):
             with self.assertRaises(ValueError):self.run(*args)
 
+    def test_a_new_prompt_length_reads_a_kernel_it_already_has(self):
+        # T was a constant: every prompt length a process saw compiled its own kernel before its first token (the
+        # served compile census, measurements/qwen38_serve_compiles_20260919). As an argument Triton keys it as 1, a
+        # multiple of 16, or neither -- so after 1, 16 and 17 tokens no length compiles again
+        from engine.kernels import causal_conv_single
+        fn = causal_conv_single._single_conv
+        while not hasattr(fn, "device_caches"):
+            fn = fn.fn
+
+        def compiled():
+            return sum(len(entry[0]) for entry in fn.device_caches.values())
+        x = torch.randn(4096, 4224, device="cuda", dtype=torch.bfloat16)[:, :4120]
+        w = torch.randn(4120, 4, device="cuda")
+        for t in (1, 16, 17):
+            self.run(x[:t], w, None)
+        before = compiled()
+        for t in (25, 27, 28, 30, 33, 64, 100, 3223, 4095, 4096):
+            self.run(x[:t], w, None)
+        self.assertEqual(compiled(), before)
+
+
+class TokensAreAnArgumentTests(unittest.TestCase):
+    def test_the_kernel_takes_its_token_count_as_an_argument(self):
+        import ast
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / "engine/kernels/causal_conv_single.py").read_text(encoding="utf-8")
+        kernel = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == "_single_conv")
+        annotation = {a.arg: ast.unparse(a.annotation) if a.annotation else None for a in kernel.args.args}
+        self.assertIsNone(annotation["T"])                     # an argument: one kernel for every prompt length
+        self.assertEqual(annotation["C"], "tl.constexpr")      # the channels stay the model's constant
+
 
 if __name__ == "__main__": unittest.main()
