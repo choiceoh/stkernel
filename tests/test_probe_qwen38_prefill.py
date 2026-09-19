@@ -135,9 +135,12 @@ class LaneTests(unittest.TestCase):
         finally:
             torch.cuda.synchronize = synchronize
             tp.profile = real
-        self.assertEqual(seen.count("forget"), 3)
-        self.assertEqual([s for s in seen if isinstance(s, tuple)], [("prefill", 0, 128), ("prefill", 128, 128)] * 3)
+        passes = 2 + probe.WALLS                                           # compile, the wall passes, profile
+        self.assertEqual(seen.count("forget"), passes)
+        self.assertEqual([s for s in seen if isinstance(s, tuple)], [("prefill", 0, 128), ("prefill", 128, 128)] * passes)
         self.assertEqual([r["context"] for r in rows], [0, 128])
+        self.assertTrue(all(len(r["walls_ms"]) == probe.WALLS and r["wall_ms"] == sorted(r["walls_ms"])[probe.WALLS // 2]
+                            for r in rows))                                # the median of the wall passes
 
     def test_the_memory_ceiling_is_the_tickets_budget(self):
         self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": "8"}), 7.0)      # less the context the allocator does not see

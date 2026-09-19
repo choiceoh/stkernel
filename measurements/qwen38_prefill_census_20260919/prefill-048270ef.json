@@ -1,0 +1,1608 @@
+{
+ "rank": 3,
+ "layer_sets": [
+  [
+   4,
+   5,
+   6,
+   7
+  ],
+  [
+   4,
+   5
+  ],
+  [
+   7
+  ],
+  [
+   1
+  ]
+ ],
+ "chunk": 4096,
+ "chunks": 2,
+ "full": {
+  "fixed": 1,
+  "gdn": 36,
+  "qsa": 12,
+  "ple": 1
+ },
+ "builds": {
+  "4,5,6,7": {
+   "counts": {
+    "fixed": 1,
+    "gdn": 3,
+    "qsa": 1,
+    "ple": 0
+   },
+   "kernel_shape": "record",
+   "free_GiB_at_start": 15.9,
+   "ceiling_GiB": 7.0,
+   "build_s": 3.4,
+   "peak_GiB": 3.48,
+   "chunks": [
+    {
+     "context": 0,
+     "tokens": 4096,
+     "wall_ms": 2448.12,
+     "device_ms": 102.97,
+     "launches": 692,
+     "families": {
+      "gemm (cublas/cutlass)": {
+       "launches": 79,
+       "ms": 25.908
+      },
+      "hc gated residual": {
+       "launches": 20,
+       "ms": 20.319
+      },
+      "qsa": {
+       "launches": 8,
+       "ms": 17.914
+      },
+      "moe b12x": {
+       "launches": 5,
+       "ms": 12.409
+      },
+      "elementwise (torch)": {
+       "launches": 323,
+       "ms": 11.993
+      },
+      "other": {
+       "launches": 121,
+       "ms": 3.778
+      },
+      "gdn / kda": {
+       "launches": 15,
+       "ms": 2.911
+      },
+      "norm / rope": {
+       "launches": 10,
+       "ms": 2.886
+      },
+      "dense w4/fp8": {
+       "launches": 20,
+       "ms": 2.595
+      },
+      "route / moe glue": {
+       "launches": 88,
+       "ms": 1.692
+      },
+      "conv": {
+       "launches": 3,
+       "ms": 0.561
+      }
+     },
+     "kernels": {
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 2,
+       "ms": 17.173
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 4,
+       "ms": 12.328
+      },
+      "_leave_norm": {
+       "launches": 10,
+       "ms": 12.085
+      },
+      "_mix_mean": {
+       "launches": 10,
+       "ms": 8.234
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 11,
+       "ms": 7.834
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 9,
+       "ms": 5.423
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 2,
+       "ms": 4.398
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 4,
+       "ms": 3.295
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 4224u, 2560u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 4,
+       "ms": 2.691
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.378
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 12,
+       "ms": 2.332
+      },
+      "void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1>(cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1::Params)": {
+       "launches": 4,
+       "ms": 2.127
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.409
+      },
+      "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)": {
+       "launches": 16,
+       "ms": 1.315
+      },
+      "_quantize": {
+       "launches": 18,
+       "ms": 1.185
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*": {
+       "launches": 16,
+       "ms": 1.151
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 2560u, 1536u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 4,
+       "ms": 1.103
+      },
+      "_gated": {
+       "launches": 5,
+       "ms": 1.09
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(in": {
+       "launches": 10,
+       "ms": 1.024
+      },
+      "chunk_gated_delta_rule_fwd_kernel_h_blockdim64": {
+       "launches": 3,
+       "ms": 1.009
+      },
+      "chunk_gla_fwd_kernel_o": {
+       "launches": 3,
+       "ms": 0.926
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::opera": {
+       "launches": 4,
+       "ms": 0.886
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.869
+      },
+      "recompute_w_u_fwd_kernel": {
+       "launches": 3,
+       "ms": 0.855
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 1,
+       "ms": 0.769
+      }
+     },
+     "host_ms": 2345.15
+    },
+    {
+     "context": 4096,
+     "tokens": 4096,
+     "wall_ms": 110.92,
+     "device_ms": 103.72,
+     "launches": 712,
+     "families": {
+      "gemm (cublas/cutlass)": {
+       "launches": 79,
+       "ms": 25.888
+      },
+      "hc gated residual": {
+       "launches": 20,
+       "ms": 20.444
+      },
+      "qsa": {
+       "launches": 8,
+       "ms": 18.134
+      },
+      "moe b12x": {
+       "launches": 5,
+       "ms": 12.757
+      },
+      "elementwise (torch)": {
+       "launches": 341,
+       "ms": 12.149
+      },
+      "other": {
+       "launches": 123,
+       "ms": 3.727
+      },
+      "gdn / kda": {
+       "launches": 15,
+       "ms": 2.908
+      },
+      "norm / rope": {
+       "launches": 10,
+       "ms": 2.897
+      },
+      "dense w4/fp8": {
+       "launches": 20,
+       "ms": 2.576
+      },
+      "route / moe glue": {
+       "launches": 88,
+       "ms": 1.683
+      },
+      "conv": {
+       "launches": 3,
+       "ms": 0.556
+      }
+     },
+     "kernels": {
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 2,
+       "ms": 17.215
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 4,
+       "ms": 12.696
+      },
+      "_leave_norm": {
+       "launches": 10,
+       "ms": 12.187
+      },
+      "_mix_mean": {
+       "launches": 10,
+       "ms": 8.257
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 11,
+       "ms": 7.863
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 9,
+       "ms": 5.425
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 2,
+       "ms": 4.388
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 4,
+       "ms": 3.48
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 4224u, 2560u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 4,
+       "ms": 2.685
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.378
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 12,
+       "ms": 2.309
+      },
+      "void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1>(cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1::Params)": {
+       "launches": 4,
+       "ms": 2.12
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.391
+      },
+      "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)": {
+       "launches": 16,
+       "ms": 1.306
+      },
+      "_quantize": {
+       "launches": 18,
+       "ms": 1.185
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*": {
+       "launches": 16,
+       "ms": 1.148
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 2560u, 1536u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 4,
+       "ms": 1.102
+      },
+      "_gated": {
+       "launches": 5,
+       "ms": 1.091
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(in": {
+       "launches": 10,
+       "ms": 1.033
+      },
+      "chunk_gated_delta_rule_fwd_kernel_h_blockdim64": {
+       "launches": 3,
+       "ms": 1.008
+      },
+      "chunk_gla_fwd_kernel_o": {
+       "launches": 3,
+       "ms": 0.928
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.87
+      },
+      "recompute_w_u_fwd_kernel": {
+       "launches": 3,
+       "ms": 0.859
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::opera": {
+       "launches": 4,
+       "ms": 0.848
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 1,
+       "ms": 0.772
+      }
+     },
+     "host_ms": 7.2
+    }
+   ]
+  },
+  "4,5": {
+   "counts": {
+    "fixed": 1,
+    "gdn": 2,
+    "qsa": 0,
+    "ple": 0
+   },
+   "kernel_shape": "record",
+   "free_GiB_at_start": 16.2,
+   "ceiling_GiB": 7.0,
+   "build_s": 2.3,
+   "peak_GiB": 2.88,
+   "chunks": [
+    {
+     "context": 0,
+     "tokens": 4096,
+     "wall_ms": 73.9,
+     "device_ms": 60.41,
+     "launches": 453,
+     "families": {
+      "gemm (cublas/cutlass)": {
+       "launches": 45,
+       "ms": 17.729
+      },
+      "hc gated residual": {
+       "launches": 12,
+       "ms": 10.926
+      },
+      "qsa": {
+       "launches": 4,
+       "ms": 8.814
+      },
+      "elementwise (torch)": {
+       "launches": 224,
+       "ms": 6.581
+      },
+      "moe b12x": {
+       "launches": 3,
+       "ms": 5.917
+      },
+      "norm / rope": {
+       "launches": 8,
+       "ms": 2.876
+      },
+      "other": {
+       "launches": 87,
+       "ms": 2.472
+      },
+      "dense w4/fp8": {
+       "launches": 12,
+       "ms": 1.963
+      },
+      "gdn / kda": {
+       "launches": 10,
+       "ms": 1.916
+      },
+      "route / moe glue": {
+       "launches": 46,
+       "ms": 0.851
+      },
+      "conv": {
+       "launches": 2,
+       "ms": 0.368
+      }
+     },
+     "kernels": {
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 1,
+       "ms": 8.452
+      },
+      "_leave_norm": {
+       "launches": 6,
+       "ms": 5.97
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 2,
+       "ms": 5.845
+      },
+      "_mix_mean": {
+       "launches": 6,
+       "ms": 4.956
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 7,
+       "ms": 4.896
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 2,
+       "ms": 4.762
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 5,
+       "ms": 3.019
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.547
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 2,
+       "ms": 1.484
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.381
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 4224u, 2560u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 2,
+       "ms": 1.34
+      },
+      "void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1>(cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1::Params)": {
+       "launches": 2,
+       "ms": 1.064
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 8,
+       "ms": 1.059
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 1.033
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 1,
+       "ms": 0.792
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::opera": {
+       "launches": 3,
+       "ms": 0.751
+      },
+      "chunk_gated_delta_rule_fwd_kernel_h_blockdim64": {
+       "launches": 2,
+       "ms": 0.653
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*": {
+       "launches": 10,
+       "ms": 0.645
+      },
+      "chunk_gla_fwd_kernel_o": {
+       "launches": 2,
+       "ms": 0.616
+      },
+      "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)": {
+       "launches": 8,
+       "ms": 0.587
+      },
+      "_quantize": {
+       "launches": 10,
+       "ms": 0.583
+      },
+      "recompute_w_u_fwd_kernel": {
+       "launches": 2,
+       "ms": 0.575
+      },
+      "nvjet_sm121_tst_mma_128x128x64_3_32x64x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.553
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 2560u, 1536u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 2,
+       "ms": 0.552
+      },
+      "_gated": {
+       "launches": 3,
+       "ms": 0.541
+      }
+     },
+     "host_ms": 13.49
+    },
+    {
+     "context": 4096,
+     "tokens": 4096,
+     "wall_ms": 2742.54,
+     "device_ms": 59.76,
+     "launches": 466,
+     "families": {
+      "gemm (cublas/cutlass)": {
+       "launches": 45,
+       "ms": 17.118
+      },
+      "hc gated residual": {
+       "launches": 12,
+       "ms": 10.97
+      },
+      "qsa": {
+       "launches": 4,
+       "ms": 9.051
+      },
+      "elementwise (torch)": {
+       "launches": 236,
+       "ms": 6.602
+      },
+      "moe b12x": {
+       "launches": 3,
+       "ms": 5.854
+      },
+      "norm / rope": {
+       "launches": 8,
+       "ms": 2.71
+      },
+      "other": {
+       "launches": 88,
+       "ms": 2.348
+      },
+      "dense w4/fp8": {
+       "launches": 12,
+       "ms": 1.968
+      },
+      "gdn / kda": {
+       "launches": 10,
+       "ms": 1.921
+      },
+      "route / moe glue": {
+       "launches": 46,
+       "ms": 0.849
+      },
+      "conv": {
+       "launches": 2,
+       "ms": 0.369
+      }
+     },
+     "kernels": {
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 1,
+       "ms": 8.599
+      },
+      "_leave_norm": {
+       "launches": 6,
+       "ms": 5.993
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 2,
+       "ms": 5.795
+      },
+      "_mix_mean": {
+       "launches": 6,
+       "ms": 4.977
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 7,
+       "ms": 4.949
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 2,
+       "ms": 4.375
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 5,
+       "ms": 3.014
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.373
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 2,
+       "ms": 1.468
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.393
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 4224u, 2560u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 2,
+       "ms": 1.341
+      },
+      "void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1>(cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1::Params)": {
+       "launches": 2,
+       "ms": 1.059
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 8,
+       "ms": 1.047
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.819
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 1,
+       "ms": 0.776
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::opera": {
+       "launches": 3,
+       "ms": 0.728
+      },
+      "chunk_gated_delta_rule_fwd_kernel_h_blockdim64": {
+       "launches": 2,
+       "ms": 0.661
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*": {
+       "launches": 10,
+       "ms": 0.645
+      },
+      "chunk_gla_fwd_kernel_o": {
+       "launches": 2,
+       "ms": 0.615
+      },
+      "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)": {
+       "launches": 8,
+       "ms": 0.593
+      },
+      "_quantize": {
+       "launches": 10,
+       "ms": 0.575
+      },
+      "recompute_w_u_fwd_kernel": {
+       "launches": 2,
+       "ms": 0.571
+      },
+      "nvjet_sm121_tst_mma_128x128x64_3_32x64x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.565
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 2560u, 1536u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 2,
+       "ms": 0.551
+      },
+      "_gated": {
+       "launches": 3,
+       "ms": 0.544
+      }
+     },
+     "host_ms": 2682.78
+    }
+   ]
+  },
+  "7": {
+   "counts": {
+    "fixed": 1,
+    "gdn": 0,
+    "qsa": 1,
+    "ple": 0
+   },
+   "kernel_shape": "record",
+   "free_GiB_at_start": 16.3,
+   "ceiling_GiB": 7.0,
+   "build_s": 2.5,
+   "peak_GiB": 2.14,
+   "chunks": [
+    {
+     "context": 0,
+     "tokens": 4096,
+     "wall_ms": 51.73,
+     "device_ms": 51.27,
+     "launches": 320,
+     "families": {
+      "qsa": {
+       "launches": 8,
+       "ms": 17.782
+      },
+      "gemm (cublas/cutlass)": {
+       "launches": 28,
+       "ms": 12.912
+      },
+      "hc gated residual": {
+       "launches": 8,
+       "ms": 6.33
+      },
+      "elementwise (torch)": {
+       "launches": 169,
+       "ms": 4.64
+      },
+      "moe b12x": {
+       "launches": 2,
+       "ms": 3.599
+      },
+      "norm / rope": {
+       "launches": 4,
+       "ms": 2.387
+      },
+      "dense w4/fp8": {
+       "launches": 8,
+       "ms": 1.847
+      },
+      "other": {
+       "launches": 69,
+       "ms": 1.328
+      },
+      "route / moe glue": {
+       "launches": 24,
+       "ms": 0.449
+      }
+     },
+     "kernels": {
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 2,
+       "ms": 17.046
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 2,
+       "ms": 4.379
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 1,
+       "ms": 3.54
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 5,
+       "ms": 3.394
+      },
+      "_mix_mean": {
+       "launches": 4,
+       "ms": 3.292
+      },
+      "_leave_norm": {
+       "launches": 4,
+       "ms": 3.038
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.387
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 3,
+       "ms": 1.827
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.526
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 1,
+       "ms": 1.142
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.878
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 1,
+       "ms": 0.768
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 4224u, 2560u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 1,
+       "ms": 0.674
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 6,
+       "ms": 0.656
+      },
+      "nvjet_sm121_tst_mma_128x128x64_3_32x64x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.571
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::opera": {
+       "launches": 1,
+       "ms": 0.534
+      },
+      "void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1>(cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1::Params)": {
+       "launches": 1,
+       "ms": 0.531
+      },
+      "_qsa_inputs_kernel": {
+       "launches": 2,
+       "ms": 0.488
+      },
+      "(anonymous namespace)::select_pools(float const*, long, int, int const*, int*)": {
+       "launches": 2,
+       "ms": 0.405
+      },
+      "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)": {
+       "launches": 4,
+       "ms": 0.356
+      },
+      "_quantize": {
+       "launches": 6,
+       "ms": 0.321
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 2560u, 1536u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 1,
+       "ms": 0.278
+      },
+      "_gated": {
+       "launches": 2,
+       "ms": 0.275
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(in": {
+       "launches": 4,
+       "ms": 0.271
+      },
+      "_lookup": {
+       "launches": 2,
+       "ms": 0.269
+      }
+     },
+     "host_ms": 0.46
+    },
+    {
+     "context": 4096,
+     "tokens": 4096,
+     "wall_ms": 51.72,
+     "device_ms": 51.44,
+     "launches": 319,
+     "families": {
+      "qsa": {
+       "launches": 8,
+       "ms": 18.407
+      },
+      "gemm (cublas/cutlass)": {
+       "launches": 28,
+       "ms": 12.958
+      },
+      "hc gated residual": {
+       "launches": 8,
+       "ms": 6.416
+      },
+      "elementwise (torch)": {
+       "launches": 169,
+       "ms": 4.279
+      },
+      "moe b12x": {
+       "launches": 2,
+       "ms": 3.389
+      },
+      "norm / rope": {
+       "launches": 4,
+       "ms": 2.599
+      },
+      "dense w4/fp8": {
+       "launches": 8,
+       "ms": 1.669
+      },
+      "other": {
+       "launches": 68,
+       "ms": 1.299
+      },
+      "route / moe glue": {
+       "launches": 24,
+       "ms": 0.426
+      }
+     },
+     "kernels": {
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 2,
+       "ms": 17.49
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 2,
+       "ms": 4.548
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 5,
+       "ms": 3.497
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 1,
+       "ms": 3.341
+      },
+      "_mix_mean": {
+       "launches": 4,
+       "ms": 3.298
+      },
+      "_leave_norm": {
+       "launches": 4,
+       "ms": 3.118
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.599
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 3,
+       "ms": 1.821
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.369
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 1,
+       "ms": 0.846
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.823
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 1,
+       "ms": 0.768
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 4224u, 2560u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 1,
+       "ms": 0.676
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 6,
+       "ms": 0.556
+      },
+      "nvjet_sm121_tst_mma_128x128x64_3_32x64x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.546
+      },
+      "void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1>(cutlass_75_tensorop_bf16_s1688gemm_bf16_128x128_tn_align1::Params)": {
+       "launches": 1,
+       "ms": 0.53
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::opera": {
+       "launches": 1,
+       "ms": 0.51
+      },
+      "(anonymous namespace)::select_pools(float const*, long, int, int const*, int*)": {
+       "launches": 2,
+       "ms": 0.495
+      },
+      "_qsa_inputs_kernel": {
+       "launches": 2,
+       "ms": 0.491
+      },
+      "_qsa_mqa_paged_group_kernel": {
+       "launches": 2,
+       "ms": 0.361
+      },
+      "void at::native::vectorized_gather_kernel<16, long>(char*, char*, long*, int, long, long, long, long, bool)": {
+       "launches": 4,
+       "ms": 0.327
+      },
+      "_quantize": {
+       "launches": 6,
+       "ms": 0.3
+      },
+      "void deep_gemm::sm120_fp8_fp4_gemm_1d1d_impl<0u, 2560u, 1536u, 128u, 128u, 1u, 128u, 128u, 64u, 64u, 64u, 128u, 4u, 128u, 256u, 48u, (deep_gemm::GemmType)0, fal": {
+       "launches": 1,
+       "ms": 0.275
+      },
+      "_gated": {
+       "launches": 2,
+       "ms": 0.274
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(in": {
+       "launches": 4,
+       "ms": 0.264
+      }
+     },
+     "host_ms": 0.28
+    }
+   ]
+  },
+  "1": {
+   "counts": {
+    "fixed": 1,
+    "gdn": 1,
+    "qsa": 0,
+    "ple": 1
+   },
+   "kernel_shape": "record",
+   "free_GiB_at_start": 16.4,
+   "ceiling_GiB": 7.0,
+   "build_s": 2.0,
+   "peak_GiB": 2.71,
+   "chunks": [
+    {
+     "context": 0,
+     "tokens": 4096,
+     "wall_ms": 107.54,
+     "device_ms": 97.62,
+     "launches": 424,
+     "families": {
+      "elementwise (torch)": {
+       "launches": 263,
+       "ms": 52.888
+      },
+      "gemm (cublas/cutlass)": {
+       "launches": 29,
+       "ms": 16.66
+      },
+      "qsa": {
+       "launches": 4,
+       "ms": 9.054
+      },
+      "hc gated residual": {
+       "launches": 8,
+       "ms": 6.306
+      },
+      "moe b12x": {
+       "launches": 2,
+       "ms": 2.987
+      },
+      "other": {
+       "launches": 72,
+       "ms": 2.536
+      },
+      "norm / rope": {
+       "launches": 6,
+       "ms": 2.514
+      },
+      "route / moe glue": {
+       "launches": 26,
+       "ms": 1.852
+      },
+      "dense w4/fp8": {
+       "launches": 8,
+       "ms": 1.674
+      },
+      "gdn / kda": {
+       "launches": 5,
+       "ms": 0.964
+      },
+      "conv": {
+       "launches": 1,
+       "ms": 0.187
+      }
+     },
+     "kernels": {
+      "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFu": {
+       "launches": 11,
+       "ms": 14.391
+      },
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 1,
+       "ms": 8.692
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<float>, std::arr": {
+       "launches": 4,
+       "ms": 8.52
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 3,
+       "ms": 8.248
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(in": {
+       "launches": 9,
+       "ms": 4.756
+      },
+      "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 2, 64, 64>(at::native::(anonymous n": {
+       "launches": 1,
+       "ms": 4.475
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)": {
+       "launches": 3,
+       "ms": 4.3
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 13,
+       "ms": 3.844
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 5,
+       "ms": 3.494
+      },
+      "_mix_mean": {
+       "launches": 4,
+       "ms": 3.276
+      },
+      "_leave_norm": {
+       "launches": 4,
+       "ms": 3.03
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 1,
+       "ms": 2.889
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 2,
+       "ms": 2.757
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.346
+      },
+      "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::Red": {
+       "launches": 3,
+       "ms": 2.255
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 3,
+       "ms": 1.826
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{la": {
+       "launches": 1,
+       "ms": 1.413
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.361
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*": {
+       "launches": 9,
+       "ms": 1.199
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()()": {
+       "launches": 3,
+       "ms": 1.167
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::BFl": {
+       "launches": 1,
+       "ms": 1.046
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor": {
+       "launches": 2,
+       "ms": 1.041
+      },
+      "Memcpy DtoD (Device -> Device)": {
+       "launches": 10,
+       "ms": 0.823
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.816
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 1,
+       "ms": 0.676
+      }
+     },
+     "host_ms": 9.92
+    },
+    {
+     "context": 4096,
+     "tokens": 4096,
+     "wall_ms": 110.67,
+     "device_ms": 97.57,
+     "launches": 421,
+     "families": {
+      "elementwise (torch)": {
+       "launches": 260,
+       "ms": 52.875
+      },
+      "gemm (cublas/cutlass)": {
+       "launches": 29,
+       "ms": 16.586
+      },
+      "qsa": {
+       "launches": 4,
+       "ms": 9.058
+      },
+      "hc gated residual": {
+       "launches": 8,
+       "ms": 6.303
+      },
+      "moe b12x": {
+       "launches": 2,
+       "ms": 2.983
+      },
+      "other": {
+       "launches": 72,
+       "ms": 2.579
+      },
+      "norm / rope": {
+       "launches": 6,
+       "ms": 2.519
+      },
+      "route / moe glue": {
+       "launches": 26,
+       "ms": 1.843
+      },
+      "dense w4/fp8": {
+       "launches": 8,
+       "ms": 1.675
+      },
+      "gdn / kda": {
+       "launches": 5,
+       "ms": 0.958
+      },
+      "conv": {
+       "launches": 1,
+       "ms": 0.19
+      }
+     },
+     "kernels": {
+      "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFu": {
+       "launches": 11,
+       "ms": 14.39
+      },
+      "_qsa_sparse_paged_gqa_splitk_kernel": {
+       "launches": 1,
+       "ms": 8.607
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<float>, std::arr": {
+       "launches": 4,
+       "ms": 8.52
+      },
+      "nvjet_sm121_tst_mma_128x208x64_2_32x104x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 3,
+       "ms": 8.25
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(in": {
+       "launches": 9,
+       "ms": 4.734
+      },
+      "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 2, 64, 64>(at::native::(anonymous n": {
+       "launches": 1,
+       "ms": 4.409
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)": {
+       "launches": 3,
+       "ms": 4.286
+      },
+      "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::opera": {
+       "launches": 14,
+       "ms": 3.87
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8>(cutlass_80_tensorop_bf16_s16816gemm_relu_bf16_128x256_32x3_tn_align8": {
+       "launches": 5,
+       "ms": 3.399
+      },
+      "_mix_mean": {
+       "launches": 4,
+       "ms": 3.275
+      },
+      "_leave_norm": {
+       "launches": 4,
+       "ms": 3.027
+      },
+      "kernel_cutlass_kernel_enginekernelsb12x_moe_dynamicgenericMoEDynamicKernel_object_at__tensorptrbf16gmemalign16o256025601_tensorptri32gmemo1_tensorptrf32gmemo1_t": {
+       "launches": 1,
+       "ms": 2.911
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native:": {
+       "launches": 2,
+       "ms": 2.77
+      },
+      "_norm_streams": {
+       "launches": 4,
+       "ms": 2.347
+      },
+      "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::Red": {
+       "launches": 3,
+       "ms": 2.268
+      },
+      "void cutlass::Kernel2<cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2>(cutlass_80_tensorop_bf16_s16816gemm_bf16_128x128_64x3_tn_align2::Params)": {
+       "launches": 3,
+       "ms": 1.846
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{la": {
+       "launches": 1,
+       "ms": 1.41
+      },
+      "_fp8_rows": {
+       "launches": 2,
+       "ms": 1.364
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*": {
+       "launches": 7,
+       "ms": 1.195
+      },
+      "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()()": {
+       "launches": 3,
+       "ms": 1.167
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor": {
+       "launches": 2,
+       "ms": 1.05
+      },
+      "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::BFl": {
+       "launches": 1,
+       "ms": 1.048
+      },
+      "Memcpy DtoD (Device -> Device)": {
+       "launches": 11,
+       "ms": 0.825
+      },
+      "nvjet_sm121_tst_mma_128x224x64_2_64x56x64_tmaAB_alignCD4_bz_TNNN": {
+       "launches": 1,
+       "ms": 0.817
+      },
+      "void at::native::indexFuncLargeIndex<float, long, unsigned int, 2, 2, -2, true, at::native::(anonymous namespace)::ReduceAdd>(at::cuda::detail::TensorInfo<float": {
+       "launches": 1,
+       "ms": 0.672
+      }
+     },
+     "host_ms": 13.1
+    }
+   ]
+  }
+ },
+ "failed": {},
+ "chunk_48": {
+  "context 0": {
+   "tokens": 4096,
+   "wall_ms": {
+    "parts": {
+     "fixed": -1523.69,
+     "gdn": 798.8,
+     "qsa": 1575.42,
+     "ple": 832.44
+    },
+    "chunk_48": 46970.5
+   },
+   "device_ms": {
+    "parts": {
+     "fixed": 25.94,
+     "gdn": 17.23,
+     "qsa": 25.33,
+     "ple": 54.44
+    },
+    "chunk_48": 1004.7
+   },
+   "host_ms": {
+    "parts": {
+     "fixed": -1549.64,
+     "gdn": 781.56,
+     "qsa": 1550.1,
+     "ple": 777.99
+    },
+    "chunk_48": 45965.8
+   },
+   "launches": {
+    "parts": {
+     "fixed": 205.0,
+     "gdn": 124.0,
+     "qsa": 115.0,
+     "ple": 95.0
+    },
+    "chunk_48": 6144.0
+   },
+   "families": {
+    "hc gated residual": {
+     "parts_ms": {
+      "fixed": 1.6,
+      "gdn": 4.663,
+      "qsa": 4.73,
+      "ple": 0.043
+     },
+     "chunk_48_ms": 226.3
+    },
+    "gemm (cublas/cutlass)": {
+     "parts_ms": {
+      "fixed": 9.065,
+      "gdn": 4.332,
+      "qsa": 3.847,
+      "ple": 3.263
+     },
+     "chunk_48_ms": 214.4
+    },
+    "elementwise (torch)": {
+     "parts_ms": {
+      "fixed": 1.679,
+      "gdn": 2.451,
+      "qsa": 2.961,
+      "ple": 48.758
+     },
+     "chunk_48_ms": 174.2
+    },
+    "moe b12x": {
+     "parts_ms": {
+      "fixed": 0.044,
+      "gdn": 2.937,
+      "qsa": 3.555,
+      "ple": 0.007
+     },
+     "chunk_48_ms": 148.4
+    },
+    "qsa": {
+     "parts_ms": {
+      "fixed": 8.726,
+      "gdn": 0.044,
+      "qsa": 9.056,
+      "ple": 0.284
+     },
+     "chunk_48_ms": 119.3
+    },
+    "other": {
+     "parts_ms": {
+      "fixed": 0.839,
+      "gdn": 0.817,
+      "qsa": 0.489,
+      "ple": 0.881
+     },
+     "chunk_48_ms": 37.0
+    },
+    "gdn / kda": {
+     "parts_ms": {
+      "fixed": -0.025,
+      "gdn": 0.97,
+      "qsa": 0.025,
+      "ple": 0.018
+     },
+     "chunk_48_ms": 35.2
+    },
+    "route / moe glue": {
+     "parts_ms": {
+      "fixed": 0.022,
+      "gdn": 0.414,
+      "qsa": 0.427,
+      "ple": 1.415
+     },
+     "chunk_48_ms": 21.5
+    },
+    "dense w4/fp8": {
+     "parts_ms": {
+      "fixed": 1.464,
+      "gdn": 0.249,
+      "qsa": 0.383,
+      "ple": -0.04
+     },
+     "chunk_48_ms": 15.0
+    },
+    "conv": {
+     "parts_ms": {
+      "fixed": -0.006,
+      "gdn": 0.187,
+      "qsa": 0.006,
+      "ple": 0.006
+     },
+     "chunk_48_ms": 6.8
+    },
+    "norm / rope": {
+     "parts_ms": {
+      "fixed": 2.543,
+      "gdn": 0.166,
+      "qsa": -0.156,
+      "ple": -0.196
+     },
+     "chunk_48_ms": 6.5
+    }
+   },
+   "tokens_a_second_one_rank": 87.2
+  },
+  "context 4096": {
+   "tokens": 4096,
+   "wall_ms": {
+    "parts": {
+     "fixed": 2703.07,
+     "gdn": 19.73,
+     "qsa": -2651.35,
+     "ple": -2612.14
+    },
+    "chunk_48": -31014.9
+   },
+   "device_ms": {
+    "parts": {
+     "fixed": 24.91,
+     "gdn": 17.43,
+     "qsa": 26.53,
+     "ple": 55.24
+    },
+    "chunk_48": 1025.9
+   },
+   "host_ms": {
+    "parts": {
+     "fixed": 2678.17,
+     "gdn": 2.31,
+     "qsa": -2677.89,
+     "ple": -2667.37
+    },
+    "chunk_48": -32040.8
+   },
+   "launches": {
+    "parts": {
+     "fixed": 204.0,
+     "gdn": 131.0,
+     "qsa": 115.0,
+     "ple": 86.0
+    },
+    "chunk_48": 6386.0
+   },
+   "families": {
+    "hc gated residual": {
+     "parts_ms": {
+      "fixed": 1.618,
+      "gdn": 4.676,
+      "qsa": 4.798,
+      "ple": 0.009
+     },
+     "chunk_48_ms": 227.5
+    },
+    "gemm (cublas/cutlass)": {
+     "parts_ms": {
+      "fixed": 8.498,
+      "gdn": 4.31,
+      "qsa": 4.46,
+      "ple": 3.778
+     },
+     "chunk_48_ms": 221.0
+    },
+    "elementwise (torch)": {
+     "parts_ms": {
+      "fixed": 1.355,
+      "gdn": 2.623,
+      "qsa": 2.924,
+      "ple": 48.896
+     },
+     "chunk_48_ms": 179.8
+    },
+    "moe b12x": {
+     "parts_ms": {
+      "fixed": -0.391,
+      "gdn": 3.123,
+      "qsa": 3.78,
+      "ple": 0.252
+     },
+     "chunk_48_ms": 157.6
+    },
+    "qsa": {
+     "parts_ms": {
+      "fixed": 9.233,
+      "gdn": -0.091,
+      "qsa": 9.174,
+      "ple": -0.084
+     },
+     "chunk_48_ms": 116.0
+    },
+    "other": {
+     "parts_ms": {
+      "fixed": 0.729,
+      "gdn": 0.809,
+      "qsa": 0.57,
+      "ple": 1.04
+     },
+     "chunk_48_ms": 37.7
+    },
+    "gdn / kda": {
+     "parts_ms": {
+      "fixed": -0.018,
+      "gdn": 0.969,
+      "qsa": 0.018,
+      "ple": 0.006
+     },
+     "chunk_48_ms": 35.1
+    },
+    "route / moe glue": {
+     "parts_ms": {
+      "fixed": 0.011,
+      "gdn": 0.419,
+      "qsa": 0.415,
+      "ple": 1.413
+     },
+     "chunk_48_ms": 21.5
+    },
+    "dense w4/fp8": {
+     "parts_ms": {
+      "fixed": 1.363,
+      "gdn": 0.302,
+      "qsa": 0.306,
+      "ple": 0.009
+     },
+     "chunk_48_ms": 15.9
+    },
+    "norm / rope": {
+     "parts_ms": {
+      "fixed": 2.511,
+      "gdn": 0.099,
+      "qsa": 0.088,
+      "ple": -0.092
+     },
+     "chunk_48_ms": 7.0
+    },
+    "conv": {
+     "parts_ms": {
+      "fixed": -0.002,
+      "gdn": 0.185,
+      "qsa": 0.002,
+      "ple": 0.006
+     },
+     "chunk_48_ms": 6.7
+    }
+   },
+   "tokens_a_second_one_rank": 4095999999999999.5
+  }
+ }
+}

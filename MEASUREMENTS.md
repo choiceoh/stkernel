@@ -4865,3 +4865,7 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **곁가지:** #1230 의 `warm eager moe` 첫 GPU 실행 통과(콜드 19.1 s, 웜 0.005 s/발사). `off` 부팅의 첫 요청들 중 `micro_m3/m1_…_t10_r80` 컴파일(각 ~1 s)
   — 주인 세션에 전달.
 - 기록: `measurements/qwen38_shared_overlap_20260919/`, `measurements/qwen38_mix_tiles_20260919/`.
+
+### Qwen3.8 — 프리필 청크 하나의 내역: 4,096 토큰이 랭크 하나에 디바이스 1005 ms, 43% 가 믹서 사이트 (2026-09-19, srv4 단일 GPU 레인)
+- `--lanes qwen38_prefill`(main `048270ef`): 서빙 `prefill` 을 실가중치 작은 net 넷에서 재고 48 층으로 풀었다. 디바이스 컨텍스트 0 1004.7 ms · 4,096 1025.9 ms. 게이트 잔차 Triton 226.3 + 믹서 GEMM 중심 cuBLAS 214.4 ms(약 43%), torch elementwise 174.2 ms(PLE 한 곳 49 ms), MoE 148.4 ms, QSA 119.3 ms.
+- 벽시계 · 호스트 몫은 쓸 수 없다: 두 칸에 2.3 – 2.7 s 가 한 번씩 끼었다(프로덕션 옆 레인, 한 번 잰 벽시계). 판정은 디바이스 표뿐. 속도 주장 없음. [표 · 원시](measurements/qwen38_prefill_census_20260919/README.md).

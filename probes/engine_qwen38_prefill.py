@@ -10,8 +10,8 @@ from the rank file's own weights, the collectives this rank's own contribution (
 What is measured is what the server runs: adapter.build_model's model, `model.prefill(seq, start, tokens, ...)` -- the
 target's uncut forward over the chunk (#1183) and the MTP head's observation of it -- for the prompt's first chunk
 (context 0) and its second (context `chunk`: QSA's scoring and selection read what the first one stored). Each chunk
-runs three times over fresh sequences: once to compile, once for the wall clock (host and device, no profiler), once
-under the CUDA profiler for the device time of each kernel family. Wall less device time is the host's share: the
+runs over fresh sequences: once to compile, WALLS times for the wall clock (host and device, no profiler; the median is
+kept -- the lane shares its GPU with production), once under the CUDA profiler for the device time of each kernel family. Wall less device time is the host's share: the
 eager step's launches and its reads of the device (the MoE's dynamic prefill reads its route counts a layer -- carry M4).
 
 Beside production the lane leaves a probe about 4 GiB, so as the step probe does, a chunk is solved from small nets:
@@ -53,6 +53,8 @@ MAX_GIB = 4.0                             # this process's device-memory ceiling
 CONTEXT_GIB = 1.0                         # of a ticket's budget: the CUDA context, cuBLAS, Triton and deep_gemm's modules
 TOP = 25                                  # kernels kept a chunk, by device time
 SLACK = 128                               # tokens of cache beyond the prompt (two blocks: the MTP head's reach)
+WALLS = 3                                 # wall-clock passes, the median kept: production shares the lane's GPU, and one
+                                          # pass took a 2.3-2.7 s stall in two layer sets' first run (the 2026-09-19 record)
 
 
 def build(ranks: Path, rank: int, layers, *, tokens: int):
@@ -103,7 +105,7 @@ def prompt_passes(model, caches, F, *, chunk: int, chunks: int, seed: int) -> "l
     total = chunk * chunks + F.block                         # longer than what is prefilled: no first token is sampled
     ids = torch.randint(0, F.vocab, (total,), generator=torch.Generator(device="cpu").manual_seed(seed)).tolist()
     rows = [{"context": i * chunk, "tokens": chunk} for i in range(chunks)]
-    for run in ("compile", "wall", "profile"):
+    for run in ("compile",) + ("wall",) * WALLS + ("profile",):
         seq = 0
         slot = caches.slots.take(seq)
         try:
@@ -128,7 +130,7 @@ def prompt_passes(model, caches, F, *, chunk: int, chunks: int, seed: int) -> "l
                     model.prefill(seq, row["context"], chunk, None, slot)
                     torch.cuda.synchronize()
                     if run == "wall":
-                        row["wall_ms"] = round((time.perf_counter() - began) * 1e3, 2)
+                        row.setdefault("walls_ms", []).append(round((time.perf_counter() - began) * 1e3, 2))
         finally:
             model.close(seq)                                 # the store lets the slot go ...
             model.forget(seq)                                # ... and the model its tokens: the next pass adds seq again
@@ -136,6 +138,7 @@ def prompt_passes(model, caches, F, *, chunk: int, chunks: int, seed: int) -> "l
             caches.slots.give(slot)
             caches.reset()
     for row in rows:
+        row["wall_ms"] = sorted(row["walls_ms"])[len(row["walls_ms"]) // 2]      # the median: the lane shares its GPU
         row["host_ms"] = round(row["wall_ms"] - row["device_ms"], 2)
     return rows
 
