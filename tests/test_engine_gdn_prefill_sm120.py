@@ -149,7 +149,7 @@ class ServedTests(unittest.TestCase):
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
         self.assertIn('case "${ST_GDN_FLASHINFER:-1}" in', launcher)
         self.assertIn('0) GDN_ARG="--no-gdn-flashinfer" ;;', launcher)
-        self.assertIn("$UNION_ARG $GDN_ARG'", launcher)
+        self.assertRegex(launcher, r"engine\.profiles\.qwen38\.fleet [^\n]*\$GDN_ARG")
         self.assertIn("`ST_GDN_FLASHINFER=1`", (ROOT / "engine/SERVING_DEFAULTS.md").read_text(encoding="utf-8"))
 
     def test_the_net_refuses_a_choice_that_is_not_a_boolean(self):
