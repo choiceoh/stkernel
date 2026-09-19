@@ -4149,7 +4149,7 @@ def select_sm120_moe_backend(
     # NVIDIA's first three dense GLM MLPs split FC2 over 24 slices. Their
     # BF16 atomic sum varies between replays; the static family supplies the
     # persistent FP32 sum plane for every batch size. The generic dynamic
-    # backend still has BF16 scatter and cannot serve this dense contract.
+    # FP32 extension is admitted for bound EP experts, not this dense cell.
     if (num_experts == num_local_experts == 1
             and (hidden_size, intermediate_size, num_topk) == (4096, 3072, 1)
             and mode == "nvfp4" and activation == "swigluoai_uninterleave"

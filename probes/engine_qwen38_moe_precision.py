@@ -114,7 +114,7 @@ def run(output=None):
            fp32_sse=after_sse, reduction_pct=100 * (1 - after_sse / before_sse), exact_rounded_oracle=True)
 
     quant = {radius: Quant(radius) for radius in (0, 2)}
-    for topk, rows in ((1, 1), (1, 8), (1, 64), (10, 4), (10, 16)):
+    for topk, rows in ((1, 1), (1, 8), (1, 64), (10, 4), (10, 16), (10, 129)):
         x, ids, w = inputs(rows, topk)
         for radius in (0, 2):
             with arm(md, radius):
@@ -123,6 +123,30 @@ def run(output=None):
             error = fixture.relative(got, expected)
             assert error < fixture.ORACLE_RELATIVE, (rows, topk, radius, error)
             report('projection', rows=rows, topk=topk, radius=radius, relative_error=error)
+
+    # Same dequantized checkpoint weights and BF16 boundaries, omitting only
+    # FP4 activation packing. This measures projection error, separately from
+    # local quantizer SSE; lower quantizer SSE does not imply lower MLP error.
+    for sample in range(3):
+        x, ids, w = inputs(64)
+        reference = torch.zeros_like(x, dtype=torch.float32)
+        for expert_id in ids.unique().tolist():
+            pick = (ids[:, 0] == expert_id).nonzero(as_tuple=True)[0]
+            up, gate, down = experts.dense(expert_id)
+            values = x[pick].float()
+            activated = (torch.nn.functional.silu(values @ gate.T) * (values @ up.T)).bfloat16().float()
+            acc = torch.zeros_like(values)
+            for start in range(0, c.inter, 128):
+                part = (activated[:, start:start+128] @ down[:, start:start+128].T).bfloat16().float()
+                acc += (part * w[pick]).bfloat16().float()
+            reference[pick] = acc.bfloat16().float()
+        errors = {}
+        for radius in (0, 2):
+            with arm(md, radius):
+                got = call(x, ids, w)
+            errors[radius] = float((got.double() - reference.double()).square().sum())
+        report('activation_projection_error', sample=sample, baseline_sse=errors[0], as2_sse=errors[2],
+               reduction_pct=100*(1-errors[2]/errors[0]), reference='same weights, no activation quantization')
 
     # Exercise each generic tile, every byte of its FP32 zero-fill, and graph
     # replay on changed inputs with the old accumulator deliberately poisoned.
