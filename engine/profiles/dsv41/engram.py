@@ -1,13 +1,23 @@
 """DSv4.1-Flash's engram tables on the reference module tree (profile).
+
+The rows come off a read-only mapping of the rank's shard file
+(modules/lookup_table), never out of the arena: the two tables are
+[384M x 256] fp8, which is what `prepare` keeps the model from allocating.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-from engine.modules.lookup_table import SSDEngramLookup, _io_module
+from engine.modules.lookup_table import SSDEngramLookup
 
 
 ENGRAM_DIR = Path("/home/choiceoh/models/DeepSeek-V4.1-Flash-engram")
+
+# One table row: engram_head_dim 256 stored F8_E4M3, so one byte an element.
+ROW_BYTES = 256
+# The scale row beside it, [.., 8] F8_E8M0 -- 256 elements in blocks of 32.
+# Scales are resident and read once (`_load_scale`), never per step.
+SCALE_ROW_BYTES = 8
 
 
 def prepare(ref):
@@ -77,15 +87,15 @@ def attach(model, rank: int, world: int, engram_dir: "str | Path" = ENGRAM_DIR):
         if not path.exists():
             raise FileNotFoundError(path)
         scale_path = path.with_suffix(".scale")
-        io = _io_module()
-        n_rows = path.stat().st_size // io.EMB_ROW_BYTES
-        scale = _load_scale(scale_path, n_rows, io.SCALE_ROW_BYTES,
+        n_rows = path.stat().st_size // ROW_BYTES
+        scale = _load_scale(scale_path, n_rows, SCALE_ROW_BYTES,
                             module.scale.device)
         module.scale = nn.Parameter(scale, requires_grad=False)
-        lookup = SSDEngramLookup(path, scale, module.block_size)
-        if lookup.reader.n_rows != module.part_num_embeddings:
+        lookup = SSDEngramLookup(path, scale, module.block_size,
+                                 row_bytes=ROW_BYTES)
+        if lookup.n_rows != module.part_num_embeddings:
             raise ValueError(
-                f"{path.name} holds {lookup.reader.n_rows:,} rows, the module "
+                f"{path.name} holds {lookup.n_rows:,} rows, the module "
                 f"wants {module.part_num_embeddings:,}")
 
         module.ssd = lookup
@@ -100,5 +110,5 @@ def attach(model, rank: int, world: int, engram_dir: "str | Path" = ENGRAM_DIR):
             return values
 
         module.forward = forward.__get__(module, type(module))
-        swapped.append((name, layer, lookup.reader.n_rows))
+        swapped.append((name, layer, lookup.n_rows))
     return swapped
