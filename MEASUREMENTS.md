@@ -4795,3 +4795,22 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
   `ARGMAX_WARPS = 4` 로 선언만. #1004 와 반대인 이유: 후보 선택은 MAX 축약을 16 번 연달아 돌려 매 단계 warp 간 교환을 냈고, greedy 는
   1,024 열의 MAX 한 번이다.
 - 기록: `measurements/vocab_argmax_warps_20260919/`.
+
+### Qwen3.8 QSA 발사 기하 — GB10 의 split 프로필: 프리필 어텐션 −26%, covered −52%, 디코드는 C=1 그대로; 레코드 배치 기각 (2026-09-19, srv4 단일 GPU 레인 4회, PR #1221)
+
+`engine/QWEN38_CARRY.md` Q9 · Q13. 프로브 `engine_kernel_check.py --lanes qwen38_qsa_geometry`(#1208), 티켓 `qwen38-qsa-geometry-0919`/`b`/`c`/`d`
+(트리 `066da5e9` → `fc00accd`), rank 당 셀(6/1 × 256, 2,051 열)·합성 K/V·서빙 stride, 프로덕션 옆·플릿 임대 없음.
+**발사 하나의 시간이다 — 엔진 tok/s 주장 없음.**
+- **split 프로필(`qsa._split_profile`)을 GB10 의 표로:** 16 폭 타일·4 warps, split 은 프로그램 수로 ≤2 → 64, ≤8 → 16, ≤256 → 4, 그 위 → 1(merge 없음).
+  상류(GB300 튜닝) 대비 eager sparse 4,096 행 11.9 → 8.9 ms(−26%), 256·512·1,024 행 −29·−27·−21%; covered 2,048 행 3.53 → 1.71 ms(−52%);
+  캡처 디코드 N=4·8·16 은 cold −9·−3·−3% / warm +3·−23·−10%, N=1·2(C=1)는 64 split 을 이기는 기하가 없어 그대로.
+- **cold / warm:** warm 은 같은 K/V 재생이라 캐시 값(N=8 에서 340 GB/s > LPDDR5X 273), 서빙은 cold 에 가깝다. cold 차이가 3~9% 로 작아서 두 지표
+  어느 쪽에서도 상류보다 나빠지지 않는 기하만 골랐다.
+- **게이트:** 1,926 팔 전부 fp32 오라클 밴드 안(최대 drift 0.0076 / 0.0156), covered 발사는 모든 강제 기하에서 sparse 발사와 바이트 동일 → 두 발사가
+  프로필을 계속 공유한다. 128 폭 타일은 GB10 에서도 컴파일 거부(`tl.dot` 의 shared memory 137,216 > 101,376).
+- **프리필 점수(`_score_profile`):** 128 폭 × 프로그램당 32 타일 × 4 warps 로 4K·32K·256K 버킷 −6·−12·−16%, 점수 바이트는 513 팔 전부 동일. 디코드 점수는 그대로.
+- **그대로 둔 것:** `qsa_select.WIDEST`(64K 버킷까지 한 발사 −26~−68%, 131K 부터 torch 형태가 5~9 배 빠름)와 warps 규칙, 입력 두 발사의 4 warps.
+- **Q13 기각:** K/V 를 블록 배치 vs 레코드 배치 — 같은 바이트, 디코드 ±1%, 프리필 +1%.
+- **프로브가 틀렸던 것:** gated store 의 바이트 게이트가 청크(6.3M 원소)에서 오늘 규칙을 떨어뜨림 — Triton exp 와 torch exp 의 마지막 비트, 1~5 원소,
+  1 BF16 스텝 → "인접 값 이내 + 개수 보고"로.
+- 기록: `measurements/qwen38_qsa_geometry_20260919/`.
