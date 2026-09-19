@@ -104,24 +104,28 @@ if [ -n "${ST_TAP_DRAFT_QUERIES:-}" ]; then
   [[ "$ST_TAP_DRAFT_QUERIES" =~ ^[1-9][0-9]*$ ]] || { echo "ST_TAP_DRAFT_QUERIES must be a row count" >&2; exit 2; }
   TAP_ARG="--tap-draft-queries $ST_TAP_DRAFT_QUERIES"
 fi
-ADAPT_ARG=""                                                  # ST_DRAFT_THRESHOLD=P: drafts end below the head's probability P;
-if [ -n "${ST_DRAFT_THRESHOLD:-}" ]; then                     # ST_NARROW_ROWS=N: rows with narrower verify graphs (default 2)
-  [[ "$ST_DRAFT_THRESHOLD" =~ ^0?\.[0-9]+$|^0$ ]] || { echo "ST_DRAFT_THRESHOLD must be a probability in [0, 1)" >&2; exit 2; }
-  ADAPT_ARG="--draft-threshold $ST_DRAFT_THRESHOLD --narrow-rows ${ST_NARROW_ROWS:-2}"
+ADAPT_ARG=""                                                  # ST_DRAFT_THRESHOLD=P|off: drafts end below the head's probability P
+if [ -n "${ST_DRAFT_THRESHOLD:-}" ]; then                     # (fleet default 0.1)
+  [[ "$ST_DRAFT_THRESHOLD" =~ ^0?\.[0-9]+$|^0$|^off$ ]] || { echo "ST_DRAFT_THRESHOLD must be a probability in [0, 1) or off" >&2; exit 2; }
+  ADAPT_ARG="--draft-threshold $ST_DRAFT_THRESHOLD"
 fi
-case "${ST_TAP_MTP_INPUTS:-0}" in                            # ST_TAP_MTP_INPUTS=1: rank 0 records the head's inputs (fine-tuning data)
-  0) ;;
-  1) ADAPT_ARG="$ADAPT_ARG --tap-mtp-inputs" ;;
+if [ -n "${ST_NARROW_ROWS:-}" ]; then                         # ST_NARROW_ROWS=N: rows with narrower verify graphs (fleet default 2)
+  [[ "$ST_NARROW_ROWS" =~ ^[0-9]+$ ]] || { echo "ST_NARROW_ROWS must be a row count" >&2; exit 2; }
+  ADAPT_ARG="$ADAPT_ARG --narrow-rows $ST_NARROW_ROWS"
+fi
+case "${ST_TAP_MTP_INPUTS:-1}" in                            # ST_TAP_MTP_INPUTS=0: rank 0 stops recording the head's inputs (on by default)
+  1) ;;
+  0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;
   *) echo "ST_TAP_MTP_INPUTS must be 0 or 1" >&2; exit 2 ;;
 esac
-case "${ST_DRAFT_LEDGER:-0}" in                               # ST_DRAFT_LEDGER=1: rank 0's per-row draft ledger under the dump dir
-  0) ;;
-  1) ADAPT_ARG="$ADAPT_ARG --draft-ledger" ;;
+case "${ST_DRAFT_LEDGER:-1}" in                               # ST_DRAFT_LEDGER=0: no per-row draft ledger (on by default)
+  1) ;;
+  0) ADAPT_ARG="$ADAPT_ARG --no-draft-ledger" ;;
   *) echo "ST_DRAFT_LEDGER must be 0 or 1" >&2; exit 2 ;;
 esac
-WINDOW_ARG=""                                                 # ST_MTP_WINDOW=SINK,RECENT: the MTP head attends a window of groups (Windowed-MTP)
+WINDOW_ARG=""                                                 # ST_MTP_WINDOW=SINK,RECENT|off: the MTP head's window (fleet default 1,511)
 if [ -n "${ST_MTP_WINDOW:-}" ]; then
-  [[ "$ST_MTP_WINDOW" =~ ^[0-9]+,[1-9][0-9]*$ ]] || { echo "ST_MTP_WINDOW must be SINK,RECENT groups" >&2; exit 2; }
+  [[ "$ST_MTP_WINDOW" =~ ^[0-9]+,[1-9][0-9]*$|^off$ ]] || { echo "ST_MTP_WINDOW must be SINK,RECENT groups or off" >&2; exit 2; }
   WINDOW_ARG="--mtp-window $ST_MTP_WINDOW"
 fi
 ONESHOT_ARG=""                                                # ST_ONESHOT=0: every collective on NCCL (the one-shot cell at hidden 2560 is unmeasured)
