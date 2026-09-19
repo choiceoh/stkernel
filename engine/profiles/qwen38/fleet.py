@@ -113,11 +113,12 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
           draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
-          shared_overlap: "bool | str" = False, tap_rows: int = 0,
-          mtp_window: "tuple[int, int] | None" = None):
+          shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
+          draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
-    thread still running there would take the GIL from it."""
+    thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
+    other ranks record to nothing, their draft graphs the same as its."""
     from engine.base import scheduler as sched
     from engine.base.arena import Arena, host_reclaim, prepare_allocation
     from engine.base.params import total_bytes
@@ -233,9 +234,12 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             caches = Qwen38Caches(arena, F, net.layers, nb, max_seqs, snapshots, mtp=drafter)
         with recorder.phase("engine"):
             gen = generation_defaults(Path(ckpt_meta))
+            # the ledger's rank writes it; the others hand theirs to a no-op, so every rank's draft graphs report the
+            # picks' probabilities (the collective that sums them runs on all four or none)
+            ledger = None if draft_ledger is None else (draft_ledger() if comm.rank == 0 else (lambda record: None))
             model, _store = build_model(net, caches, F, eos_ids=eos_ids(Path(ckpt_meta), F.config), max_new=max_new,
                                         temperature=temperature, top_p=float(gen.get("top_p", 1.0)), seed=seed,
-                                        drafter=drafter)
+                                        drafter=drafter, draft_threshold=draft_threshold, draft_ledger=ledger)
             k = model.k
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
@@ -269,7 +273,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             if comm.rank == 0:
                 print("  warm eager moe: " + ", ".join(f"{name} {seconds}s" for name, seconds in paid.items()), flush=True)
         with recorder.phase("capture decode"):
-            capture(model, max_seqs, memory=memory)
+            capture(model, max_seqs, memory=memory, narrow_rows=narrow_rows if draft_threshold else 0)
         if memory is not None:
             memory.checkpoint("ready")
             memory.ready = True
@@ -311,6 +315,40 @@ def drain_draft_tap(tap, directory, every_s: float = 30.0) -> None:
             part += 1
 
 
+class DraftLedger:
+    """Rank 0's draft ledger (adapter.ServedMTP.record): one JSON line a verified row -- every pick the head made and
+    its probability, how many were proposed, how many the target kept -- under `directory`, flushed every `every`
+    records or second, whichever first (a stopped container runs no `finally`)."""
+
+    def __init__(self, directory, every: int = 64):
+        directory = Path(directory)
+        directory.mkdir(parents=True, exist_ok=True)
+        self.path = directory / f"draft-ledger-{time.strftime('%Y%m%d-%H%M%S')}.jsonl"
+        self.file = open(self.path, "a", buffering=1 << 16)
+        self.every, self.count, self.flushed = every, 0, time.monotonic()
+
+    def __call__(self, record: dict) -> None:
+        import json
+        record["t"] = round(time.time(), 3)
+        self.file.write(json.dumps(record, separators=(",", ":")) + "\n")
+        self.count += 1
+        now = time.monotonic()
+        if self.count % self.every == 0 or now - self.flushed > 1.0:
+            self.file.flush()
+            self.flushed = now
+
+
+def draft_threshold(text: "str | None") -> "float | None":
+    """`--draft-threshold P` -> P in [0, 1), or None for every draft."""
+    if text is None:
+        return None
+    try:
+        value = float(text)
+    except ValueError:
+        raise SystemExit(f"--draft-threshold {text!r}: a probability, e.g. 0.3") from None
+    if not 0.0 <= value < 1.0:
+        raise SystemExit(f"--draft-threshold {text!r}: 0 <= P < 1")
+    return value
 def mtp_window(text: "str | None") -> "tuple[int, int] | None":
     """`--mtp-window SINK,RECENT` -> (sink, recent) groups of idx_ratio positions, or None for the scored selection."""
     if text is None:
@@ -386,6 +424,15 @@ def main(argv=None) -> int:
     ap.add_argument("--tap-draft-queries", type=int, default=0, metavar="ROWS",
                     help="rank 0 records the MTP head's draft queries and picks in a ring of ROWS inside the captured "
                          "graphs and writes them under --dump-dir/draft-queries every 30 s (the IVF head's real recall)")
+    ap.add_argument("--draft-threshold", default=None, metavar="P",
+                    help="a row's drafts end before the first pick the MTP head gives less than P (LibraSpec's rule): "
+                         "the verify step is as wide as what is proposed -- steps of up to --narrow-rows rows replay "
+                         "narrower graphs, captured at boot. Unset, every draft is verified")
+    ap.add_argument("--narrow-rows", type=int, default=2,
+                    help="with --draft-threshold: the row counts whose narrower verify widths are captured (1..N)")
+    ap.add_argument("--draft-ledger", action="store_true",
+                    help="rank 0 writes one JSON line a verified row under --dump-dir/draft-ledger: the head's picks, "
+                         "their probabilities, how many were proposed and kept (the threshold's curve)")
     ap.add_argument("--mtp-window", default=None, metavar="SINK,RECENT",
                     help="the MTP head attends its first SINK and last RECENT groups (4 positions each) instead of its "
                          "scored selection -- Windowed-MTP: no index scoring in the draft; acceptance moves, output does "
@@ -405,6 +452,9 @@ def main(argv=None) -> int:
                     help="drafts a step from the MTP head (the checkpoint's 1): K > 1 chains the head K-1 times inside "
                          "the draft replay and the verify step is K+1 tokens wide")
     a = ap.parse_args(argv)
+    if (a.draft_threshold is not None or a.draft_ledger) and a.draft_index is not None:
+        raise SystemExit("--draft-threshold and --draft-ledger read the head's whole row; --draft-index reads a few "
+                         "of its clusters")
 
     started = time.perf_counter()
     print(f"  box: {facts.check_box()}", flush=True)       # CUDA is initialised here, on this thread, before any other
@@ -453,7 +503,12 @@ def main(argv=None) -> int:
                                               shared_overlap={"off": False, "one": True, "all": "all"}[a.shared_overlap],
                                               draft_index=draft_index(a.draft_index), mtp_experts=a.mtp_experts,
                                               mtp_experts_dir=a.mtp_experts_dir,
-                                              tap_rows=a.tap_draft_queries, mtp_window=mtp_window(a.mtp_window))
+                                              tap_rows=a.tap_draft_queries,
+                                              draft_threshold=draft_threshold(a.draft_threshold),
+                                              draft_ledger=partial(DraftLedger, Path(a.dump_dir) / "draft-ledger")
+                                              if a.draft_ledger else None,
+                                              narrow_rows=a.narrow_rows,
+                                              mtp_window=mtp_window(a.mtp_window))
         if getattr(net, "draft_tap", None) is not None:
             import threading
             threading.Thread(target=drain_draft_tap, args=(net.draft_tap, Path(a.dump_dir) / "draft-queries"),
@@ -461,7 +516,10 @@ def main(argv=None) -> int:
         print("  shared expert: " + {False: "unforked", True: "forked at one request's rows", "all": "forked at every captured step"}
               [net.shared_overlap], flush=True)
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
-              f"(verify step {model.k + 1} tokens a row)", flush=True)
+              f"(verify step {model.k + 1} tokens a row"
+              + (f"; drafts cut below p={model.drafter.threshold}, narrow widths to {a.narrow_rows} rows"
+                 if model.drafter is not None and model.drafter.threshold is not None else "")
+              + ("; draft ledger" if a.draft_ledger else "") + ")", flush=True)
         with rec.phase("door"):
             door = prelude.take()
             tok, chat, tools, efforts = door["tok"], door["chat"], door["tools"], door["efforts"]

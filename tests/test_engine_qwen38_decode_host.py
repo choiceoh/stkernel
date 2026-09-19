@@ -28,11 +28,11 @@ class StagingInputsTests(unittest.TestCase):
                               stage_ple=lambda slots, contexts, ids, t, caches, carried=None: staged.append(
                                   (list(slots), list(contexts), list(ids), t, carried)))
         g = TargetGraphs.__new__(TargetGraphs)
-        g.net, g.caches, g.tokens, g.max_seqs = net, SimpleNamespace(), tokens, 4
+        g.net, g.caches, g.tokens, g.max_seqs, g.narrow_rows = net, SimpleNamespace(), tokens, 4, 0
         g._meta_host = torch.zeros(12, dtype=torch.int64)
         g._meta = g._meta_host.numpy()
         g.metadata = {}
-        g.shape = lambda rows, end: (rows, tokens, 1)
+        g.shape = lambda rows, end, t=None: (rows, tokens if t is None else t, 1)
         g.publish = lambda rows: None
         g.graphs = SimpleNamespace(run=lambda shape, fill: (torch.zeros(1), torch.zeros(1)))
         return g, staged
@@ -75,7 +75,7 @@ class StagingInputsTests(unittest.TestCase):
         comp.net = comp.caches = SimpleNamespace(pool=None)
         comp.graphs = SimpleNamespace(admits=lambda served, pool: True, tokens=1,
                                       run=lambda served, known=None: (seen.setdefault("host", known),
-                                                                     torch.zeros(1, 4), torch.zeros(1, 4), None)[1:])
+                                                                     torch.zeros(1, 4), torch.zeros(1, 4), None, 1)[1:])
         store = SimpleNamespace(check=lambda step: None, commit=lambda step: None, slot_of={0: 1})
         base = SimpleNamespace(ids=torch.zeros(1, dtype=torch.int64),
                                segments=(SimpleNamespace(seq=0, ctx=5, start=0, length=1),))

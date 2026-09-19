@@ -9,7 +9,8 @@ No random draws and no full-vocabulary communication are required.
 import torch
 
 
-def argmax(local_logits, comm, start: int, decodable: int | None = None):
+def _local_key(local_logits, start: int, decodable: "int | None"):
+    """(this rank's MAX packet a row, the columns it may pick from)."""
     if local_logits.dtype not in (torch.float32, torch.float16, torch.bfloat16):
         raise TypeError("vocabulary argmax requires BF16, FP16 or FP32 logits")
     width = local_logits.shape[-1]
@@ -28,8 +29,28 @@ def argmax(local_logits, comm, start: int, decodable: int | None = None):
         key = (ordered << 32) | (0xffffffff - (index + start))
     else:
         key = torch.full(local_logits.shape[:-1], -(2**63), dtype=torch.int64, device=local_logits.device)
+    return key, valid
+
+
+def argmax(local_logits, comm, start: int, decodable: int | None = None):
+    key, _ = _local_key(local_logits, start, decodable)
     comm.all_reduce_max(key)
     return 0xffffffff - (key & 0xffffffff)
+
+
+def argmax_probability(local_logits, comm, start: int, decodable: int | None = None):
+    """(`argmax`'s ids, the softmax probability each takes over the whole vocabulary). The MAX that picks an id carries
+    its logit in the packet's high word; each rank sums exp(logit - that max) over its own columns, and one all-gather
+    of those sums hands every rank the same partials, added in rank order -- so the probability is the same bits on
+    every rank, and a decision each rank's host takes on it agrees. A NaN maximum reads as probability 0."""
+    key, valid = _local_key(local_logits, start, decodable)
+    comm.all_reduce_max(key)
+    ids = 0xffffffff - (key & 0xffffffff)
+    ordered = key >> 32
+    top = torch.where(ordered < 0, ordered ^ 0x7fffffff, ordered).to(torch.int32).view(torch.float32)
+    mass = torch.exp(local_logits[..., :valid].float() - top.unsqueeze(-1)).sum(-1, keepdim=True)
+    total = comm.all_gather(mass, dim=-1).sum(-1)
+    return ids, torch.nan_to_num(1.0 / total, nan=0.0)
 
 
 def compact_supported(rows, vocab, count, k, device):

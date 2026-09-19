@@ -66,12 +66,12 @@ class _Rows:
         self.buckets = bucket_ladder(F.block, caches.block_table.shape[1], ceiling, reach)
         self.shapes = [(n, tokens, b) for n in range(max_seqs, 0, -1) for b in reversed(self.buckets)]
 
-    def shape(self, rows: int, end: int) -> "tuple[int, int, int]":
+    def shape(self, rows: int, end: int, tokens: "int | None" = None) -> "tuple[int, int, int]":
         if not 1 <= rows <= self.max_seqs:
             raise ValueError(f"no captured graph for {rows} rows (1..{self.max_seqs})")
         for blocks in self.buckets:
             if end <= blocks * self.F.block:
-                return rows, self.tokens, blocks
+                return rows, self.tokens if tokens is None else tokens, blocks
         raise ValueError(f"a decode row reaches position {end}, past the captured buckets")
 
     def publish(self, rows) -> None:
@@ -91,8 +91,18 @@ class _Rows:
 
 
 class TargetGraphs(_Rows):
-    def __init__(self, net, caches, max_seqs: int, tokens: int, *, ceiling: int, memory=None, detail: bool = False):
+    """`narrow_rows`: a step of that many rows or fewer whose longest row is shorter than the verify width replays a
+    graph as wide as that row (every width 1..tokens is captured for those row counts) -- a drafter that proposes
+    fewer than k drafts (adapter.ServedMTP `threshold`) then pays the verify step it asks for, not k+1 positions a row.
+    0 (the default): one width, as before."""
+
+    def __init__(self, net, caches, max_seqs: int, tokens: int, *, ceiling: int, memory=None, detail: bool = False,
+                 narrow_rows: int = 0):
         super().__init__(net, caches, max_seqs, tokens, ceiling)
+        if not 0 <= narrow_rows <= max_seqs:
+            raise ValueError(f"narrow widths serve 0..{max_seqs} rows, not {narrow_rows}")
+        self.narrow_rows = narrow_rows
+        self.shapes = [(n, t, b) for n in range(max_seqs, 0, -1) for t in self.widths(n) for b in reversed(self.buckets)]
         dev = caches.device
         self._meta_host = torch.empty(3 * max_seqs, dtype=torch.int64, pin_memory=True)
         self._meta = self._meta_host.numpy()
@@ -116,19 +126,32 @@ class TargetGraphs(_Rows):
         finally:
             caches.reset()                          # warmups and captures wrote real caches before any request
 
-    def admits(self, step, pool) -> bool:
-        """A step the graphs serve: 1..max_seqs rows of 1..tokens tokens, each reserved for the full width."""
-        return (len(step.segments) <= self.max_seqs
-                and all(1 <= s.length <= self.tokens and s.ctx + self.tokens <= pool.tokens[s.seq] for s in step.segments))
+    def widths(self, rows: int) -> "list[int]":
+        """The widths captured for a step of `rows` rows, widest first."""
+        return list(range(self.tokens, 0, -1)) if rows <= self.narrow_rows else [self.tokens]
 
-    def run(self, step, known=None) -> "tuple[torch.Tensor, torch.Tensor, list | None]":
-        """Replay for a served step (net.Step with state slots): (logits, streams, rows) -- the graph's own outputs,
-        [rows*t, ...], and `rows` the flat output row of each of the step's tokens, or None when they are the same.
-        `known`: (the step's ids as the host holds them, each row's ngram_size - 1 tokens before its context, DEAD before
-        the sequence) -- what the PLE staging hashes; without it both are read back off the device."""
-        segments, t = step.segments, self.tokens
+    def width(self, rows: int, longest: int) -> int:
+        """The narrowest captured width a step of `rows` rows whose longest row is `longest` tokens fits."""
+        return min(t for t in self.widths(rows) if t >= longest)
+
+    def admits(self, step, pool) -> bool:
+        """A step the graphs serve: 1..max_seqs rows of 1..tokens tokens, each reserved for the width it replays."""
+        n = len(step.segments)
+        if not 1 <= n <= self.max_seqs or not all(1 <= s.length <= self.tokens for s in step.segments):
+            return False
+        t = self.width(n, max(s.length for s in step.segments))
+        return all(s.ctx + t <= pool.tokens[s.seq] for s in step.segments)
+
+    def run(self, step, known=None) -> "tuple[torch.Tensor, torch.Tensor, list | None, int]":
+        """Replay for a served step (net.Step with state slots): (logits, streams, rows, t) -- the graph's own outputs,
+        [rows*t, ...], `rows` the flat output row of each of the step's tokens (None when they are the same) and `t`
+        the width replayed (`width`). `known`: (the step's ids as the host holds them, each row's ngram_size - 1 tokens
+        before its context, DEAD before the sequence) -- what the PLE staging hashes; without it both are read back off
+        the device."""
+        segments = step.segments
         n = len(segments)
-        shape = self.shape(n, max(s.ctx + t for s in segments))
+        t = self.width(n, max(s.length for s in segments))
+        shape = self.shape(n, max(s.ctx + t for s in segments), t)
         self.publish([(s.seq, s.slot, s.ctx, t) for s in segments])
         meta = self._meta
         for i, s in enumerate(segments):
@@ -159,25 +182,34 @@ class TargetGraphs(_Rows):
 
         logits, streams = self.graphs.run(shape, fill)
         rows = [i * t + j for i, s in enumerate(segments) for j in range(s.length)] if padded else None
-        return logits, streams, rows
+        return logits, streams, rows, t
 
 
-def draft_chain(net, caches, step, given, last, counts, k: int) -> torch.Tensor:
+def draft_chain(net, caches, step, given, last, counts, k: int, *, probability: bool = False):
     """The MTP head's picks for a draft step: the head over the observation step (`given` the target's streams at
     its rows, `last` each row's last observed row, `counts` each row's observed positions), its greedy pick at `last`,
     then k-1 chain steps of one position a row -- the head at the position after the row's last observed one, taking
     the row's pick as its token and the head's own streams there as its state (engine/modules/mtp.MTPDrafter's chain,
     run over every row at once) -- each step's pick: [rows, k] int64. The chain's rows sit in the target's blocks at
-    their positions like a padded row's: provisional, overwritten by the row's next step."""
+    their positions like a padded row's: provisional, overwritten by the row's next step. `probability`: (picks, the
+    head's probability of each pick [rows, k] fp32) -- net.draft_tokens', the same on every rank."""
+    def pick(hidden):
+        return net.draft_tokens(hidden, probability=True) if probability else (net.draft_tokens(hidden), None)
+
     # past its attention the observation runs each row's last observed position only (net.mtp_forward `rows`)
     hidden, given = net.mtp_forward(step, given, caches, last_hidden_only=False, rows=last)
-    picks = [net.draft_tokens(hidden)]
+    first, p = pick(hidden)
+    picks, probs = [first], [p]
     contexts = step.contexts + counts
     for _ in range(1, k):
         chain = DeviceStep(picks[-1], contexts, step.slots, step.seqs, 1, step.blocks)
         hidden, streams = net.mtp_forward(chain, given, caches, last_hidden_only=False)
-        picks.append(net.draft_tokens(hidden))
+        got, p = pick(hidden)
+        picks.append(got)
+        probs.append(p)
         given, contexts = streams, contexts + 1
+    if probability:
+        return torch.stack(picks, dim=1), torch.stack(probs, dim=1)
     return torch.stack(picks, dim=1)
 
 
@@ -187,11 +219,11 @@ class DraftGraphs(_Rows):
     from its context at most (`extent`), and `reach` sizes the buckets for it."""
 
     def __init__(self, net, caches, max_seqs: int, tokens: int, *, k: int, ceiling: int, memory=None,
-                 detail: bool = False):
+                 detail: bool = False, probability: bool = False):
         if not 1 <= k < tokens:
             raise ValueError("the draft graphs chain k >= 1 picks after an observation of up to k+1 positions")
         super().__init__(net, caches, max_seqs, tokens, ceiling, reach=tokens + k - 1)
-        self.k = k
+        self.k, self.probability = k, probability
         F, dev = net.F, caches.device
         width = F.hc * F.hidden
         self._meta_host = torch.empty(5 * max_seqs, dtype=torch.int64, pin_memory=True)
@@ -213,7 +245,7 @@ class DraftGraphs(_Rows):
 
         def forward(inputs):
             step, given, last, counts = inputs
-            return draft_chain(net, caches, step, given, last, counts, k)
+            return draft_chain(net, caches, step, given, last, counts, k, probability=probability)
 
         try:
             self.graphs = DecodeGraphs(forward, make_inputs, self.shapes, memory=memory, label="draft",
@@ -226,8 +258,9 @@ class DraftGraphs(_Rows):
         then the chain's k-1 positions after the observed ones."""
         return max(self.tokens, observed + self.k - 1)
 
-    def run(self, rows) -> "list[list[int]]":
-        """rows: (seq, slot, ctx, next ids [m], given streams [m, hc*H]) with 1 <= m <= tokens -> each row's k drafts."""
+    def run(self, rows):
+        """rows: (seq, slot, ctx, next ids [m], given streams [m, hc*H]) with 1 <= m <= tokens -> each row's k drafts,
+        and with `probability` (drafts, each draft's probability under the head) -- lists a row."""
         t = self.tokens
         n = len(rows)
         for _seq, _slot, _ctx, next_ids, streams in rows:
@@ -253,7 +286,11 @@ class DraftGraphs(_Rows):
             self.metadata[shape].copy_(host_meta, non_blocking=True)
             given_in.copy_(given)
 
-        return self.graphs.run(shape, fill).tolist()
+        out = self.graphs.run(shape, fill)
+        if self.probability:
+            picks, probs = out
+            return picks.tolist(), probs.tolist()
+        return out.tolist()
 
 
 __all__ = ["bucket_ladder", "draft_chain", "TargetGraphs", "DraftGraphs"]
