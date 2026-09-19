@@ -743,7 +743,7 @@ def ticket_open(session: str, fleet_dir: Path = FLEET) -> bool:
                 return True
     except OSError:
         pass
-    for name in ("holder", "holder-single"):
+    for name in ("holder", "holder-single", "holder-check"):
         try:
             if mine((fleet_dir / name).read_text().split("|")[0]):
                 return True

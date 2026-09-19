@@ -62,20 +62,29 @@ class EvidenceTests(unittest.TestCase):
 
     def test_the_floor_is_a_sparks_until_a_box_of_its_own_says_otherwise(self):
         """A discrete-card box does not owe production a GB10's 16 GiB of one shared pool."""
-        # ost-97x on 2026-09-15: 13.6 GiB available, so the Spark's floor refuses even a zero budget
+        # ost-97x on 2026-09-15: 13.6 GiB available, so the Spark's floor refuses even a zero budget --
+        # which is what a box with no HOSTS entry still gets
         OST = 'MemAvailable:   14305396 kB\n---\n'
-        self.assertIn('no room', single.evidence('ost-97x', 0, run=answering(OST))[0])
+        self.assertIn('no room', single.evidence('another-box', 0, run=answering(OST))[0])
         self.assertEqual(single.floor_gib(), single.FLOOR_GIB)
+        # ost-97x says what it owes itself (HOSTS), with or without a user in the alias
+        self.assertEqual(single.floor_gib(name='ost-97x'), 4.0)
+        self.assertEqual(single.floor_gib(name='choiceoh@ost-97x'), 4.0)
+        self.assertEqual(single.evidence('ost-97x', 0, run=answering(OST)), [])
         with patch.dict(os.environ, {single.FLOOR_ENV: '4'}):
             self.assertEqual(single.floor_gib(), 4.0)
-            self.assertEqual(single.evidence('ost-97x', 4, run=answering(OST)), [])
+            self.assertEqual(single.evidence('another-box', 4, run=answering(OST)), [])
             # the floor is what is left over, not a licence: a budget that eats past it still refuses
-            self.assertIn('floor 4.0', single.evidence('ost-97x', 12, run=answering(OST))[0])
-        # an explicit floor beats the environment, and nonsense falls back to the Spark's
-        self.assertEqual(single.evidence('ost-97x', 4, run=answering(OST), floor=4.0), [])
+            self.assertIn('floor 4.0', single.evidence('another-box', 12, run=answering(OST))[0])
+        with patch.dict(os.environ, {single.FLOOR_ENV: '16'}):                 # the variable beats the box's entry
+            self.assertEqual(single.floor_gib(name='ost-97x'), 16.0)
+            self.assertIn('floor 16.0', single.evidence('ost-97x', 4, run=answering(OST))[0])
+        # an explicit floor beats the environment, and nonsense falls back to the Spark's -- or the box's own
+        self.assertEqual(single.evidence('another-box', 4, run=answering(OST), floor=4.0), [])
         for bad in ('', 'lots', '-1'):
             with patch.dict(os.environ, {single.FLOOR_ENV: bad}):
                 self.assertEqual(single.floor_gib(), single.FLOOR_GIB)
+                self.assertEqual(single.floor_gib(name='ost-97x'), 4.0)
 
     def test_a_changed_floor_does_not_read_the_old_answer_back(self):
         """The cache key carries the floor: the same host and budget can flip on the floor alone."""
@@ -231,14 +240,70 @@ class ContractTests(unittest.TestCase):
         # a fleet BOOT and a single check never share a fleet box; beside serving they run at once
         self.assertIn('if [ "$kind" = boot ] && single_on_fleet && [ -s "$HS" ] && holder_alive "$HS"; then return 1; fi', self.fleet)
         self.assertIn('holds this box too', self.fleet)
-        self.assertIn('single_refused "$s" "$why"; return 1', self.fleet)
-        self.assertIn('FLEET_RULES=5', self.fleet)
+        self.assertIn('single_refused "$s" "$why" "$kind"; return 1', self.fleet)
+        self.assertIn('FLEET_RULES=6', self.fleet)
         # a single check's results come back to the controller when it releases -- off the queue lock
         self.assertIn('logit "release $1 [single]"; _collect_single "$1" "${t0:-0}"; return 0', self.fleet)
         self.assertIn('fi ) 9>&- >/dev/null 2>&1 &', self.fleet)
         # no estimate given: the ledger's history; no budget given: the probe's own
         self.assertIn('if [ -z "$est" ]; then est=$(expected_min "$s" 30)', self.fleet)
         self.assertIn('export ST_PROBE_GIB=$budget', self.fleet)
+
+    def test_the_check_lane_is_a_box_of_its_own_with_its_own_holder_and_facts(self):
+        """The second one-GPU lane (operator, 2026-09-19): the RTX 5050 on ost-97x, beside the single lane and the
+        fleet, with what that box owes itself and runs as facts rather than knobs."""
+        self.assertIn('FLEET_CHECK_GPU_HOST=${FLEET_CHECK_GPU_HOST-' + single.CHECK_DEFAULT_HOST + '}', self.fleet)
+        self.assertIn('FLEET_CHECK_GPU_NAME=${FLEET_CHECK_GPU_NAME:-' + single.CHECK_DEFAULT_GPU + '}', self.fleet)
+        self.assertIn('export FLEET_CHECK_GPU_HOST FLEET_CHECK_GPU_NAME', self.fleet)
+        self.assertEqual((single.CHECK_DEFAULT_HOST, single.CHECK_DEFAULT_GPU), ('ost-97x', 'RTX5050'))
+        self.assertEqual(single.host({}, lane='check'), 'ost-97x')
+        self.assertEqual(single.host({'FLEET_CHECK_GPU_HOST': ''}, lane='check'), '')         # empty turns it off
+        self.assertEqual(single.host({}), 'srv4')                                             # the single lane's, as before
+        self.assertEqual(single.label({}, lane='check'), 'RTX5050 on ost-97x')
+        self.assertFalse(single.on_fleet(single.CHECK_DEFAULT_HOST, {}))                     # a box of its own
+        self.assertIn('HC=$FLEET_DIR/holder-check', self.fleet)
+        self.assertEqual(handoff.holder_path('/f', 'check'), Path('/f/holder-check'))
+        self.assertEqual((handoff.lane('check'), handoff.lane('single'), handoff.lane('probe')), ('check', 'single', 'fleet'))
+        # what that box owes itself and runs (bench/OST_97X_LANE.md): facts, not exports
+        box = single.HOSTS['ost-97x']
+        self.assertEqual((box['floor_gib'], box['budget_gib'], box['image']), (4.0, 4.0, 'st-engine:glm53-sm120-x86'))
+        self.assertEqual(single.image('ost-97x'), 'st-engine:glm53-sm120-x86')
+        self.assertEqual(single.image('srv4'), '')                                           # a Spark runs production's
+        self.assertEqual(single.budget_gib({}, name='ost-97x'), 4.0)
+        self.assertEqual(single.budget_gib({'ST_PROBE_GIB': '6'}, name='ost-97x'), 6.0)       # the submitter's word wins
+        self.assertEqual(single.budget_gib({}, name='srv4'), single.DEFAULT_BUDGET_GIB)
+        # one evidence cache a host: two lanes asking about two boxes do not overwrite each other every poll
+        self.assertEqual(single.cache_name('srv4'), single.CACHE)
+        self.assertEqual(single.cache_name('ost-97x'), single.CACHE + '.ost-97x')
+        # the supervisor gives each one-GPU lane its own host, never the command
+        boot = (ROOT / 'bench/fleet_boot.py').read_text()
+        self.assertIn('host = fleet_single.host(self.env, lane=kind)', boot)
+        self.assertIn('FLEET_CHECK_GPU_HOST is empty', boot)
+        # the runner: a box of its own runs its check image, with the Sparks' flashinfer over its site-packages
+        remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
+        self.assertIn('[ -n "$image" ] || image=$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")', remote)
+        self.assertIn('mounts+=(--mount "type=bind,src=$home/$vendored/$entry,dst=$site/$entry,readonly")', remote)
+        # the lane's own admission: one GPU, and no more than a kernel check's budget of a discrete 8 GiB card
+        self.assertIn('check', policy.KINDS)
+        self.assertEqual(policy.CHECK_MAX_BUDGET_GIB, 8.0)
+        self.assertIn('--check) lane_force=check; shift;;', self.fleet)
+        self.assertIn('logit "release $1 [check]"; _collect_single "$1" "${t0:-0}" check; return 0', self.fleet)
+        self.assertIn('6  a second one-GPU lane', self.fleet)
+
+    def test_the_module_answers_for_either_lane(self):
+        out = io.StringIO()
+        with patch.dict(os.environ, {'FLEET_CHECK_GPU_HOST': 'ost-97x'}), contextlib.redirect_stdout(out):
+            for name in (single.BUDGET_ENV, single.FLOOR_ENV):
+                os.environ.pop(name, None)
+            self.assertEqual(single.main(['host', '--lane', 'check']), 0)
+            self.assertEqual(single.main(['image', '--lane', 'check']), 0)
+            self.assertEqual(single.main(['vendored', '--host', 'ost-97x']), 0)
+            self.assertEqual(single.main(['vendored', '--host', 'srv4']), 0)
+            self.assertEqual(single.main(['budget', '--host', 'ost-97x']), 0)
+            self.assertEqual(single.main(['floor', '--host', 'ost-97x']), 0)
+        self.assertEqual(out.getvalue().splitlines(),
+                         ['ost-97x', 'st-engine:glm53-sm120-x86',
+                          'st-x86-flashinfer/vendored /usr/local/lib/python3.12/site-packages', '', '4.0', '4.0'])
 
     def test_collect_copies_only_the_cache_files_find_listed(self):
         calls = []
@@ -266,8 +331,9 @@ class ContractTests(unittest.TestCase):
         self.assertIn('probe_host=${ST_PROBE_HOST:-}', self.runner)
         remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
         self.assertIn('rsync -a --delete --exclude __pycache__ -e "ssh $SSHOPT" "$repo/engine" "$repo/probes" "$repo/tests"', remote)
-        self.assertIn('fleet_single.py" evidence --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"', remote)
-        self.assertIn('fleet_single.py" reclaim --host "$probe_host" --gib "${ST_PROBE_GIB:-8}"', remote)
+        self.assertIn('budget=${ST_PROBE_GIB:-$(python3 "$repo/bench/fleet_single.py" budget --host "$probe_host")}', remote)
+        self.assertIn('fleet_single.py" evidence --host "$probe_host" --gib "$budget"', remote)
+        self.assertIn('fleet_single.py" reclaim --host "$probe_host" --gib "$budget"', remote)
         self.assertIn('waiting for room on $probe_host', remote)
         self.assertIn("docker inspect st-glm53 --format '{{.Config.Image}}'", remote)
         self.assertIn('''trap 'ssh $SSHOPT "$probe_host" "docker rm -f $NAME"''', remote)
@@ -393,15 +459,15 @@ with_lock _try_hold D $$ 5 "another check" single; echo "D=$?"
 echo "held: fleet=$(cut -d'|' -f1 "$H") single=$(cut -d'|' -f1 "$HS")"
 single_line
 with_lock _release B; echo "releaseB=$?"
-printf '0\\nMemAvailable:   20971520 kB\\n---\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR/.single-gpu-evidence"
+printf '0\\nMemAvailable:   6291456 kB\\n---\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR"/.single-gpu-evidence*
 with_lock _try_hold D $$ 5 "another check" single; echo "D2=$?"
 with_lock _try_hold D $$ 5 "another check" single; echo "D3=$?"
 single_line
-printf '255\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR/.single-gpu-evidence"
+printf '255\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR"/.single-gpu-evidence*
 with_lock _try_hold D $$ 5 "another check" single; echo "D4=$?"
-printf '0\\nMemAvailable:   41943040 kB\\n---\\nst-probe-elsewhere-1\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR/.single-gpu-evidence"
+printf '0\\nMemAvailable:   41943040 kB\\n---\\nst-probe-elsewhere-1\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR"/.single-gpu-evidence*
 with_lock _try_hold D $$ 5 "another check" single; echo "D5=$?"
-printf '0\\nMemAvailable:   41943040 kB\\n---\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR/.single-gpu-evidence"
+printf '0\\nMemAvailable:   41943040 kB\\n---\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR"/.single-gpu-evidence*
 with_lock _try_hold D $$ 5 "another check" single; echo "D6=$?"
 echo "held: fleet=$(cut -d'|' -f1 "$H") single=$(cut -d'|' -f1 "$HS")"
 with_lock _release A; echo "releaseA=$?"
@@ -415,8 +481,9 @@ echo "queue=$(grep -c . "$Q")"
         for expected in ('A=0', 'B=0', 'C=1', 'D=1', 'held: fleet=A single=B',
                          'single (5050 on ost-97x): HELD by B [single]', 'releaseB=0',
                          'D2=1', 'D3=1',
-                         "single (5050 on ost-97x): ost-97x: no room beside production -- MemAvailable 20.0 GiB, "
-                         "this check's budget 8.0 GiB, floor 16.0: 12.0 GiB would be left",
+                         # that box's own floor and budget (fleet_single.HOSTS), not a Spark's
+                         "single (5050 on ost-97x): ost-97x: no room beside production -- MemAvailable 6.0 GiB, "
+                         "this check's budget 4.0 GiB, floor 4.0: 2.0 GiB would be left",
                          'D4=1', 'D5=1', 'D6=0', 'held: fleet=A single=D', 'releaseA=0', 'C2=0', 'kicked', 'kick=0',
                          'held: fleet=C single=', 'queue=0'):
             self.assertIn(expected, out, out + result.stderr)
@@ -460,6 +527,67 @@ echo "held: fleet=$(cut -d'|' -f1 "$H") single=$(cat "$HS" 2>/dev/null | cut -d'
         log = (self.fleet / 'log').read_text()
         self.assertEqual(log.count('hold refused (single)'), 1, log)
         self.assertIn('the fleet boot A holds this box too; B waits', log)
+
+    def test_the_check_lane_waits_for_neither_the_single_lane_nor_the_fleet(self):
+        """Three lanes, three holders: a check on the 5050 is held beside a fleet boot, and beside a single check
+        once the box rule lets that one in; its own next ticket waits only for it."""
+        now, pid = int(time.time()), os.getpid()
+        self.queue((1, 'A', now, 30, 'a boot', 'boot', pid), (2, 'B', now, 5, 'a check', 'single', pid),
+                   (3, 'E', now, 5, 'a 5050 check', 'check', pid), (4, 'F', now, 5, 'another 5050 check', 'check', pid))
+        result = self.run_fleet('''
+with_lock _try_hold A $$ 30 "a boot" boot; echo "A=$?"
+with_lock _try_hold E $$ 5 "a 5050 check" check; echo "E=$?"
+with_lock _try_hold B $$ 5 "a check" single; echo "B=$?"
+echo "held1: fleet=$(cut -d'|' -f1 "$H") single=$(cat "$HS" 2>/dev/null | cut -d'|' -f1) check=$(cut -d'|' -f1 "$HC")"
+with_lock _release A; echo "releaseA=$?"
+with_lock _try_hold B $$ 5 "a check" single; echo "B2=$?"
+echo "held2: fleet=$(cat "$H" 2>/dev/null | cut -d'|' -f1) single=$(cut -d'|' -f1 "$HS") check=$(cut -d'|' -f1 "$HC")"
+with_lock _try_hold F $$ 5 "another 5050 check" check; echo "F=$?"
+check_line
+echo "of E: $(basename "$(holder_file_of E)")"
+with_lock _release E; echo "releaseE=$?"
+printf '0\\nMemAvailable:   6291456 kB\\n---\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR"/.single-gpu-evidence*
+with_lock _try_hold F $$ 5 "another 5050 check" check; echo "F2=$?"
+check_line
+printf '0\\nMemAvailable:   41943040 kB\\n---\\n' > "$SSH_ANSWER"; rm -f "$FLEET_DIR"/.single-gpu-evidence*
+with_lock _try_hold F $$ 5 "another 5050 check" check; echo "F3=$?"
+with_lock _kick --force check; echo "kick=$?"
+echo "held3: single=$(cut -d'|' -f1 "$HS") check=$(cat "$HC" 2>/dev/null | cut -d'|' -f1)"
+echo "queue=$(grep -c . "$Q")"
+''')
+        out = result.stdout
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for expected in ('A=0', 'E=0', 'B=1', 'held1: fleet=A single= check=E',       # srv4 is a fleet box: the box rule
+                         'releaseA=0', 'B2=0', 'held2: fleet= single=B check=E',
+                         'F=1', 'check (RTX5050 on ost-97x, checks not numbers): HELD by E [check]',
+                         'of E: holder-check', 'releaseE=0', 'F2=1',
+                         "check (RTX5050 on ost-97x, checks not numbers): ost-97x: no room beside production -- "
+                         "MemAvailable 6.0 GiB, this check's budget 4.0 GiB, floor 4.0: 2.0 GiB would be left",
+                         'F3=0', 'kicked', 'kick=0', 'held3: single=B check=', 'queue=0'):
+            self.assertIn(expected, out, out + result.stderr)
+        log = (self.fleet / 'log').read_text()
+        self.assertIn('GO E (pid', log)
+        self.assertIn('[check: RTX5050 on ost-97x]', log)
+        self.assertIn('release E [check]', log)
+        self.assertEqual(log.count('hold refused (check)'), 1, log)
+        self.assertIn('kick --force [check]', log)
+        ledger = [line.split('\t') for line in (self.fleet / 'ledger.tsv').read_text().splitlines()]
+        self.assertEqual([(row[1], row[2], row[5].strip()) for row in ledger], [('A', 'boot', '0'), ('E', 'check', '0')])
+
+    def test_a_check_lane_pointed_at_a_fleet_box_refuses(self):
+        """The check lane exists so a check never meets the Sparks: a fleet box named as its host is a reason."""
+        self.queue((1, 'E', int(time.time()), 5, 'a 5050 check', 'check', os.getpid()))
+        result = self.run_fleet('''
+with_lock _try_hold E $$ 5 "a 5050 check" check; echo "E=$?"
+check_line
+''', FLEET_CHECK_GPU_HOST='srv3')
+        self.assertIn('E=1', result.stdout)
+        self.assertIn("srv3 is one of the fleet's boxes -- the check lane is a box of its own", result.stdout)
+        self.assertFalse((self.fleet / 'holder-check').exists())
+        result = self.run_fleet('with_lock _try_hold E $$ 5 "a 5050 check" check; echo "E=$?"; check_line',
+                                FLEET_CHECK_GPU_HOST='')
+        self.assertIn('E=1', result.stdout)
+        self.assertIn('check: off (FLEET_CHECK_GPU_HOST is empty)', result.stdout)
 
     def test_the_lane_off_refuses_rather_than_answering_room(self):
         now = int(time.time())
@@ -544,6 +672,41 @@ class RunLaneDecisionTests(unittest.TestCase):
         self.assertNotIn(lane, result.stdout)
         self.assert_stopped_at_preparation(result)
 
+    def test_check_sends_a_one_gpu_check_to_its_own_lane_and_nothing_else(self):
+        check = ('bash', 'probes/run_engine_check.sh', '--layers', '0-4')
+        result = self.run_fleet('run', '--gpu', '--check', 'st', '5', 'kernel check', '--', *check)
+        self.assertIn('check lane (RTX5050 on ost-97x): a compile, correctness or shape verdict, never a number',
+                      result.stdout)
+        self.assertIn('budget: 4.0 GiB on ost-97x', result.stdout)                   # that box's, not a Spark's 8
+        self.assertNotIn('single-GPU lane', result.stdout)
+        self.assert_stopped_at_preparation(result)
+        self.assertFalse((self.directory / 'holder-check').exists())
+        for command in (('python3', 'bench/onepass.py'),
+                        ('bash', 'probes/run_engine_probe.sh', 'engine/profiles/glm53/check.py', '--distributed')):
+            result = self.run_fleet('run', '--gpu', '--check', 'st', '5', 'x', '--', *command)
+            self.assertEqual(result.returncode, 2, result.stdout)
+            self.assertIn('REFUSED: --check takes a one-GPU ST check', result.stdout)
+            self.assertFalse(self.prepared.exists())
+        result = self.run_fleet('run', '--gpu', '--check', 'st', '5', 'x', '--', *check, FLEET_CHECK_GPU_HOST='')
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn('the check lane is off', result.stdout)
+        self.assertFalse(self.prepared.exists())
+
+    def test_preflight_knows_the_check_lane_and_its_budget(self):
+        result = self.run_fleet('preflight', '--check', 'st', '--', 'bash', 'probes/run_engine_check.sh', '--layers', '0-4')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        self.assertIn('-> PASS', result.stdout)
+        result = self.run_fleet('preflight', '--check', 'st', '--', 'python3', 'bench/onepass.py')
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('the check lane takes only an ST check', result.stdout)
+        big = next(p for p in policy.ST_PROBES if policy.probe_budget_gib(p) > policy.CHECK_MAX_BUDGET_GIB)
+        result = self.run_fleet('preflight', '--check', 'st', '--', 'bash', 'probes/run_engine_probe.sh', big)
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn('the check lane is a discrete 8 GiB card for kernel checks', result.stdout)
+        result = self.run_fleet('preflight', '--single', 'st', '--', 'bash', 'probes/run_engine_probe.sh', big)
+        self.assertEqual(result.returncode, 0, result.stdout)                           # the single lane still takes it
+        self.assertFalse(self.prepared.exists())
+
     def test_preflight_knows_the_lane_and_refuses_a_boot_in_it(self):
         result = self.run_fleet('preflight', '--single', 'st', '--', 'bash', 'probes/run_engine_check.sh', '--layers', '0-4')
         self.assertEqual(result.returncode, 0, result.stdout)
@@ -552,6 +715,21 @@ class RunLaneDecisionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn('needs the four Sparks', result.stdout)
         self.assertFalse(self.prepared.exists())
+
+
+class PriorityLaneTests(unittest.TestCase):
+    """Each one-GPU lane is its own line: the check lane's small tickets batch and rank among themselves."""
+
+    def test_each_one_gpu_lane_ranks_its_own_head(self):
+        import fleet_priority
+        lines = ["1|boot|100|40|a boot|boot|", "2|s1|200|5|a GB10 check|single|", "3|c1|300|5|a 5050 check|check|",
+                 "4|c2|400|30|a long 5050 check|check|", "5|s2|500|30|a long GB10 check|single|"]
+        rows = fleet_priority.rank(lines, {}, 1000)
+        by_lane = {}
+        for row in rows:
+            by_lane.setdefault(row["lane"], []).append(row["session"])
+        self.assertEqual(by_lane, {'fleet': ['boot'], 'single': ['s1', 's2'], 'check': ['c1', 'c2']})
+        self.assertEqual({r["session"]: r["batch"] for r in rows if r["lane"] == "check"}, dict(c1=True, c2=False))
 
 
 if __name__ == '__main__':

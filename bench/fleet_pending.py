@@ -281,7 +281,7 @@ def validate(value, directory):
         raise ValueError('replacement executable does not exist or is not executable')
     # Use the same pinned controller as this waiter, including its preflight.
     args = ['bash', value['fleet'], 'preflight']
-    if value['kind'] in ('probe', 'single'):
+    if value['kind'] in ('probe', 'single', 'check'):
         args.append('--' + value['kind'])
     result = subprocess.run([*args, value['session'], '--', *command], cwd=cwd,
                             env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

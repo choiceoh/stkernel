@@ -50,8 +50,8 @@ def read_state(directory):
 def holder_for(holders, session, rows):
     """The holder that matters to one session: the one naming it, else its lane's.
 
-    A queued single-GPU check waits behind `holder-single`, not behind the fleet's holder,
-    and its `waiting_for` must say so.
+    A queued single-GPU check waits behind `holder-single` (a check-lane one behind `holder-check`),
+    not behind the fleet's holder, and its `waiting_for` must say so.
     """
     for row in holders.values():
         if row[0] == session:
@@ -138,6 +138,7 @@ def describe(directory, session, rows, holder, now=None, ticket=None):
         result['state'] = ('paused' if value and value['state'] == 'paused' else 'queued') if alive else 'interrupted'
         result['waiting_for'] = (('holder ' + holder[0]) if holder else
                                  'single-GPU admission checks' if handoff.lane(row[5]) == handoff.SINGLE
+                                 else 'check-lane admission checks' if handoff.lane(row[5]) == handoff.CHECK
                                  else 'fleet admission checks')
         result['ahead'] = [r[1] for r in rows[:rows.index(row)] if not paused(directory, r[1], r)]
         result['editable'] = bool(value and alive and value['state'] in ('queued','paused'))

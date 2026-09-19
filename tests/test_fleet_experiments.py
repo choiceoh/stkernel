@@ -182,9 +182,9 @@ class PriorityTests(unittest.TestCase):
         # the admission function's own one-line helpers: the kind, its lane, its holder, its head,
         # and whether the single-GPU lane's box is one of the fleet's
         helpers = [line for line in source.splitlines()
-                   if line.startswith(("kind_of() {", "lane_of() {", "holder_file() {", "lane_front() {",
+                   if line.startswith(("kind_of() {", "one_gpu() {", "lane_of() {", "holder_file() {", "lane_front() {",
                                        "single_on_fleet() {"))]
-        self.assertEqual(len(helpers), 5)
+        self.assertEqual(len(helpers), 6)
         function = "\n".join(helpers) + "\n" + function
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
