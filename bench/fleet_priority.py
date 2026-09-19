@@ -22,6 +22,7 @@ import statistics
 import time
 
 TERMINAL = {"succeeded", "failed", "blocked", "incomplete", "interrupted", "retired"}
+ONE_GPU_LANES = ("single", "check")                                  # each its own lane and head of line (fleet_handoff.ONE_GPU)
 SMALL_MAX_MIN = float(os.environ.get("FLEET_SMALL_MAX_MIN", 5))     # a small ticket: this many estimated minutes or fewer
 BATCH_CAP_MIN = float(os.environ.get("FLEET_BATCH_CAP_MIN", 15))    # small work that may pass the larger tickets per ranking
 AGED_S = 1800                                                        # oldest-first from here (the rule before the batch)
@@ -114,11 +115,11 @@ def rank(lines, counts, now, front="", yielded="", probes_ready=True, estimates=
         rows.append(dict(session=session, age_s=round(age), dependents=dependents,
                          estimate_min=estimate,estimate_source=prediction.get('source','declared'),
                          score=round(score, 4), line=line.rstrip("\n"), index=index, created=created,
-                         kind=cells[5], lane="single" if cells[5] == "single" else "fleet",
+                         kind=cells[5], lane=cells[5] if cells[5] in ONE_GPU_LANES else "fleet",
                          small=estimate <= SMALL_MAX_MIN))
     # the batch: each lane's small tickets, oldest first, as far as the cap lets them pass the larger ones
     batch = set()
-    for lane in ("single", "fleet"):
+    for lane in (*ONE_GPU_LANES, "fleet"):
         total = 0.0
         for r in sorted((r for r in rows if r["lane"] == lane and r["small"]), key=lambda r: (r["created"], r["index"])):
             if total + r["estimate_min"] > BATCH_CAP_MIN:

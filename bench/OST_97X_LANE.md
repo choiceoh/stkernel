@@ -85,15 +85,24 @@ Host ost-97x
     IdentitiesOnly yes
 ```
 
+The controller needs that alias too -- srv2, where the queue lives: its key was added to this
+box's `authorized_keys` on 2026-09-19.
+
+Since 2026-09-19 (operator: two one-GPU lanes at once) this box is **the check lane**, its own
+lane beside the single one on srv4 and the fleet -- nothing to export. `bench/fleet.sh` defaults
+`FLEET_CHECK_GPU_HOST=ost-97x` and `FLEET_CHECK_GPU_NAME=RTX5050` (empty host turns the lane off),
+the lane has its own holder (`holder-check`), and what this box owes itself and runs are facts
+in `bench/fleet_single.py` `HOSTS`: floor 4 GiB, a check's budget 4 GiB, the image
+`st-engine:glm53-sm120-x86`, and the Sparks' flashinfer under `~/st-x86-flashinfer/vendored`,
+which the runner mounts over the image's site-packages. A check goes there by saying so:
+
 ```bash
-export FLEET_SINGLE_GPU_HOST=ost-97x
-export FLEET_SINGLE_GPU_NAME=RTX5050
-export FLEET_SINGLE_GPU_FLOOR_GIB=4
-export ST_PROBE_GIB=4
+bash bench/fleet.sh run --gpu --check <session> [est] [note] -- bash probes/run_engine_check.sh ...
 ```
 
 `on_fleet()` reads false for this name, which is what we want: no fleet boot contends for
-this box, and the lane's holder is the only reservation.
+this box, and the lane's holder is the only reservation. A probe that asks more than a kernel
+check's budget (a full-model one asks 64 GiB) is refused for this lane at submission.
 
 ## The Windows side
 
@@ -157,12 +166,12 @@ not pick the engine, on a box with 128 GiB and one pool for host and device. Thi
 the floor guards, and the floor is simply the wrong size here -- it refused a zero-budget
 check on a box that had 13.6 GiB free and 8 GiB of idle VRAM.
 
-So the floor is now the box's to state: **`FLEET_SINGLE_GPU_FLOOR_GIB`** (or `--floor`),
-defaulting to `FLOOR_GIB` and therefore unchanged for every Spark. It is a floor, not a
-licence -- a budget that eats past it still refuses -- and it is part of the evidence
-cache's key, so lowering it cannot read back an answer computed under the old one. Set it
-to what *that* box owes itself: 4 GiB here, which leaves the distro its own working set
-and still admits a check the Spark's floor rejected outright.
+So the floor is now the box's to state: its entry in `bench/fleet_single.py` `HOSTS`, which
+**`FLEET_SINGLE_GPU_FLOOR_GIB`** (or `--floor`) still overrides, and `FLOOR_GIB` for a box
+with no entry -- unchanged for every Spark. It is a floor, not a licence -- a budget that eats
+past it still refuses -- and it is part of the evidence cache's key, so lowering it cannot read
+back an answer computed under the old one. This box's entry says 4 GiB, which leaves the distro
+its own working set and still admits a check the Spark's floor rejected outright.
 
 **The card is a different card.** An RTX 5050 is sm_120; the Sparks are sm_121a. A verdict
 from this lane is that card's verdict. It is a fine place to catch a compile error, a

@@ -7,14 +7,14 @@
 # missing, the daemon is down, or the box never answered. This walks the chain in order and
 # names the first link that does not hold, so the answer is the layer and not the symptom.
 #
-#   bash tools/ost-97x-selftest.sh                 # the lane's host, from FLEET_SINGLE_GPU_HOST
+#   bash tools/ost-97x-selftest.sh                 # the check lane's host, from FLEET_CHECK_GPU_HOST
 #   bash tools/ost-97x-selftest.sh ost-97x         # or an ssh alias, as ~/.ssh/config spells it
 #   ST_IMAGE=... bash tools/ost-97x-selftest.sh    # a tag other than the box's default
 #
 # Read-only: it starts one throwaway container and writes nothing on the box.
 set -uo pipefail
 
-host=${1:-${FLEET_SINGLE_GPU_HOST:-ost-97x}}
+host=${1:-${FLEET_CHECK_GPU_HOST:-ost-97x}}
 image=${ST_IMAGE:-st-engine:glm53-sm120-x86}
 budget=${ST_PROBE_GIB:-4}
 repo=$(cd "$(dirname "$0")/.." && pwd)
@@ -115,7 +115,7 @@ fi
 
 echo
 if [ "$failed" = 0 ]; then
-  echo "fit to run a check. Point the lane at it with FLEET_SINGLE_GPU_HOST=$host ST_IMAGE=$image"
+  echo "fit to run a check: bench/fleet.sh run --gpu --check <session> -- <one-GPU ST check> (FLEET_CHECK_GPU_HOST=$host)"
 else
   echo "$failed check(s) failed -- fix the FIRST one; the rest usually follow from it."
 fi

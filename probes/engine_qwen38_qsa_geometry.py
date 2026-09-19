@@ -71,6 +71,16 @@ by the served tests.
     bash bench/fleet.sh run --gpu qwen38-qsa-geometry 50 'Qwen3.8 QSA launch geometry: split profile, scorer, select' -- \\
       bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes qwen38_qsa_geometry
 
+A lane of its own, `qwen38_tile_union` (sm_121a intake U12, `run_tile_union`): the tile-union prefill attention
+(engine/kernels/qsa_tile_union.py, vLLM PR 55430 -- not served) against today's split-K launch over eager prefill steps
+of 1,024 and 4,096 rows at the 8K and 28K contexts, each over a prefill-like selection (neighbouring rows share most of
+their blocks) and independent ones (the union's worst case): the served band on their drift first, then medians of
+synchronised launches -- the tile-union launch with its row layout built in the call and shared (built once, as a
+step's QSA layers would share it). A kernel record for the operator's decision, not an engine speed claim (D17).
+
+    bash bench/fleet.sh run --gpu qwen38-tile-union 20 'Qwen3.8 QSA tile-union prefill attention vs split-K' -- \\
+      bash probes/run_engine_probe.sh probes/engine_kernel_check.py --lanes qwen38_tile_union
+
 Synthetic tensors at the served strides (the lane host has no Qwen3.8 checkpoint): the paged regions are strided views of
 block-major storage as caches.Qwen38Caches presents them, the step's addressing is Qwen38Net.step_meta's own.
 """
@@ -122,6 +132,11 @@ RECORD_STEPS = ((1, 2), (4, 2), (8, 4))            # the layout arm's captured s
 LAYOUTS = ("block", "records")
 HOOKS = ("_SPLIT_PROFILE_OVERRIDE", "_SCORE_PROFILE_OVERRIDE", "_INPUT_WARPS_OVERRIDE")     # engine/kernels/qsa's
 SELECT_HOOKS = ("_WIDEST_OVERRIDE", "_WARPS_OVERRIDE")                                       # engine/kernels/qsa_select's
+# the tile-union lane (sm_121a intake U12): (rows of one prefill segment, its first position) at the PR's 8k and ~30k
+# contexts, the tile's gate and a chunk; a selection's own noise over its segment's shared score ("prefill": neighbours
+# share most of their blocks) or None (chosen_blocks' independent subsets: the union's worst case)
+TILE_UNION_SHAPES = ((1024, 8192), (4096, 8192), (1024, 28000), (4096, 28000))
+TILE_UNION_SELECTIONS = {"prefill": 0.02, "independent": None}
 PAGE_SETS = 3                                      # disjoint page sets a captured arm's replays rotate through
 ITERATIONS = 24
 EAGER_WARMUP, EAGER_REPEATS = 2, 7
@@ -862,6 +877,111 @@ def inputs_arm(report, cell: Cell = QWEN38, steps=INPUT_STEPS, warps=INPUT_WARPS
     return verdicts
 
 
+# -- the tile-union prefill attention (sm_121a intake U12) ----------------------------------------------------------------
+def overlapping_blocks(cell: Cell, step: Step, generator, device, noise: float) -> torch.Tensor:
+    """int32 [rows, index_blocks]: each row's best min(seen, budget) blocks among those it sees by a score its segment
+    shares plus `noise` of its own, -1 after them -- neighbouring rows choose nearly the same blocks, as a prefill's do
+    (Jaccard ~0.9 at 8k context on Qwen3.8, vllm#55394), where `chosen_blocks`' independent subsets share few."""
+    meta = step.meta
+    seen = ((meta.positions32 + 1) // cell.ratio).long()
+    columns = int(seen.max())
+    owners = meta.rows_req.long()
+    base = torch.rand(int(owners.max()) + 1, columns, generator=generator).to(device)
+    scores = base[owners] + noise * torch.rand(step.rows, columns, generator=generator).to(device)
+    scores = scores.masked_fill(torch.arange(columns, device=device)[None, :] >= seen[:, None], float("-inf"))
+    values, ids = scores.topk(min(cell.index_blocks, columns), dim=1)
+    out = torch.full((step.rows, cell.index_blocks), -1, dtype=torch.int32, device=device)
+    out[:, :ids.shape[1]] = torch.where(values > float("-inf"), ids, -1).to(torch.int32)
+    return out
+
+
+def neighbours(blocks: torch.Tensor, starts: torch.Tensor, rows_a_tile: int) -> dict:
+    """The selection's shape the tile sees: the mean Jaccard of a tile's first two rows' sets and the mean union a
+    tile walks, over the tiles of whole pairs."""
+    firsts = [row for a, b in zip(starts[:-1].tolist(), starts[1:].tolist()) for row in range(a, b - 1, rows_a_tile)]
+    jaccard, union = [], []
+    for row in firsts:
+        sets = [set(blocks[r][blocks[r] >= 0].tolist()) for r in range(row, row + rows_a_tile)]
+        together = set().union(*sets)
+        jaccard.append(len(sets[0] & sets[1]) / max(1, len(sets[0] | sets[1])))
+        union.append(len(together))
+    return dict(jaccard=round(statistics.mean(jaccard), 4), union_blocks=round(statistics.mean(union), 1))
+
+
+def tile_union_case(cell: Cell, rows: int, context: int, device, generator, selection: str) -> Attention:
+    """One prefill segment of `rows` rows from position `context`, its blocks `selection`: "prefill" (neighbours
+    share most, `overlapping_blocks`) or "independent" (`chosen_blocks`, the union's worst case)."""
+    if selection not in TILE_UNION_SELECTIONS:
+        raise ValueError(f"a tile-union selection is one of {tuple(TILE_UNION_SELECTIONS)}")
+    step, pages = step_of(cell, 1, rows, context, device, sets=1)
+    K, _ = paged(generator, pages, cell.block, cell.kv_heads, cell.head_dim, device)
+    V, _ = paged(generator, pages, cell.block, cell.kv_heads, cell.head_dim, device)
+    q = torch.randn(rows, cell.heads, cell.head_dim, generator=generator).to(device=device, dtype=torch.bfloat16)
+    gate = torch.randn(rows, cell.heads, cell.head_dim, generator=generator).to(device=device, dtype=torch.bfloat16)
+    noise = TILE_UNION_SELECTIONS[selection]
+    blocks = (chosen_blocks(cell, step, generator, device) if noise is None
+              else overlapping_blocks(cell, step, generator, device, noise))
+    return Attention(cell, step, q, gate, K, V, blocks)
+
+
+def tile_union_gate(case: Attention) -> dict:
+    """The tile-union launch against today's split-K launch over the same step, both gated as served: the served
+    oracle band (ORACLE_BAND) on their drift -- the same rows attended, a summation order apart."""
+    from engine.kernels import qsa_tile_union
+    m, c = case.step.meta, case.cell
+    want = case.launch(gated=True)
+    got = qsa_tile_union.attention(case.q, case.K, case.V, case.blocks, m.positions32, m.starts, c.ratio, c.budget,
+                                   m.page_table, m.rows_req, gate=case.gate)
+    largest, rms = drift(got, want)
+    return dict(passed=largest <= ORACLE_BAND[0] and rms <= ORACLE_BAND[1], largest=round(largest, 6),
+                rms=round(rms, 6), max_abs=float((got.float() - want.float()).abs().max()))
+
+
+def tile_union_arm(report, cell: Cell = QWEN38, shapes=TILE_UNION_SHAPES,
+                   selections=tuple(TILE_UNION_SELECTIONS)) -> dict:
+    """Eager prefill steps of one segment: the served split-K launch (`qsa_sparse_paged_attention_blocks`, today's
+    rule) against engine/kernels/qsa_tile_union.attention with its layout built each call and shared (built once, as a
+    step's QSA layers would share it). The gate first; a tile-union launch outside the band is reported, not timed."""
+    from engine.kernels import qsa_tile_union
+    device = torch.device("cuda")
+    verdicts = {}
+    for rows, context in shapes:
+        for selection in selections:
+            generator = torch.Generator().manual_seed(SEED + rows + context)
+            case = tile_union_case(cell, rows, context, device, generator, selection)
+            m, c = case.step.meta, case.cell
+            if not qsa_tile_union.admits(rows, 1, compress_ratio=c.ratio, token_topk=c.budget, page_size=c.block,
+                                         table_width=m.page_table.shape[1], cache_pages=case.K.shape[0]):
+                raise RuntimeError(f"a {rows}-row prefill step is one the tile-union launch must take")
+            gate = tile_union_gate(case)
+            shape = neighbours(case.blocks.cpu(), m.starts.cpu(), qsa_tile_union.TILE.rows)
+            out = torch.empty_like(case.q)
+            layout = qsa_tile_union.tiles(m.starts, rows, 1)
+
+            def tile_union(shared):
+                return lambda: qsa_tile_union.attention(case.q, case.K, case.V, case.blocks, m.positions32, m.starts,
+                                                        c.ratio, c.budget, m.page_table, m.rows_req, out,
+                                                        gate=case.gate, layout=layout if shared else None)
+
+            launches = {"split_k": lambda: case.launch(out=out)}
+            if gate["passed"]:
+                launches.update(tile_union=tile_union(False), tile_union_shared_layout=tile_union(True))
+            timings = eager_timings(launches)
+            key = f"{rows}x{context}x{selection}"
+            verdicts[key] = dict(rows=rows, context=context, selection=selection, **shape, **gate,
+                                 **{f"{arm}_us": timing["median_us"] for arm, timing in timings.items()})
+            if gate["passed"]:
+                for arm in ("tile_union", "tile_union_shared_layout"):
+                    verdicts[key][f"{arm}_over_split_k"] = round(timings[arm]["median_us"]
+                                                                 / timings["split_k"]["median_us"], 4)
+            for arm, timing in timings.items():
+                report("tile_union", rows=rows, context=context, selection=selection, arm=arm, **timing)
+            report("tile_union_verdict", **verdicts[key])
+            del case, out, layout
+            torch.cuda.empty_cache()
+    return verdicts
+
+
 def run(output=None):
     events = []
 
@@ -997,6 +1117,35 @@ def run_stacked(output=None):
         report("split", rows=SPLIT_ROWS, covered_rows=c, sparse_bytes=bool(torch.equal(out, before)),
                steps=bf16_steps(out, before)[0], timings=eager_timings({"all sparse (before)": all_sparse,
                                                                          "split": split}))
+    return events
+
+
+def run_tile_union(output=None):
+    """The `qwen38_tile_union` lane: `tile_union_arm` alone, at Qwen3.8's per-rank cell."""
+    events = []
+
+    def report(event, **values):
+        row = dict(event=event, **values)
+        events.append(row)
+        print(json.dumps(row), flush=True)
+        if output:
+            Path(output).write_text("".join(json.dumps(e) + "\n" for e in events))
+
+    import triton
+    from engine.kernels import qsa_tile_union
+    assert torch.cuda.get_device_capability() == (12, 1), "requires GB10"
+    if any(getattr(_qsa(), hook) is not None for hook in HOOKS):
+        raise RuntimeError("the geometry hooks must start unset: today's rule is the reference")
+    props = torch.cuda.get_device_properties(0)
+    torch.cuda.set_per_process_memory_fraction(min(1.0, MEMORY_CAP_GIB * 2 ** 30 / props.total_memory))
+    tile = qsa_tile_union.TILE
+    report("device", name=props.name, torch=torch.__version__, cuda=torch.version.cuda, triton=triton.__version__,
+           memory_cap_gib=MEMORY_CAP_GIB)
+    report("tile", rows=tile.rows, blocks=tile.blocks, warps=tile.warps, min_rows=tile.min_rows,
+           min_rows_per_request=tile.min_rows_per_request, split_k_rule=list(rule_profile(QWEN38, 1024)))
+    with torch.inference_mode():
+        verdicts = tile_union_arm(report)
+    report("summary", tile_union=verdicts)
     return events
 
 
