@@ -135,7 +135,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
-          mtp_tuned_dir: "str | None" = None, draft_candidates: int = 0, vision: str = "auto"):
+          mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
+          vision: str = "auto"):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
@@ -296,7 +297,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             model, _store = build_model(net, caches, F, eos_ids=eos_ids(Path(ckpt_meta), F.config), max_new=max_new,
                                         temperature=temperature, top_p=float(gen.get("top_p", 1.0)), seed=seed,
                                         drafter=drafter, draft_threshold=draft_threshold, draft_ledger=ledger,
-                                        draft_candidates=draft_candidates)
+                                        draft_candidates=draft_candidates, draft_ahead=draft_ahead)
             k = model.k
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
@@ -593,6 +594,12 @@ def main(argv=None) -> int:
                          "kept position -- under --dump-dir/mtp-inputs (the head's fine-tuning data, mtp_tune.py); "
                          f"20 KB a position, the host copying each after its verify step's read, {TAP_CAP_GIB:.0f} GiB "
                          "at most. On by default")
+    ap.add_argument("--draft-ahead", action=argparse.BooleanOptionalAction, default=True,
+                    help="behind a verify step whose rows are all greedy and plain, the next draft step runs on the device "
+                         "before the host reads the picks (adapter.ServedModel._verify_ahead): the host's read, commit and "
+                         "scheduling beside the draft replay instead of between the replays. The same tokens; each row "
+                         "reserves 2K positions ahead instead of K+1. On by default (CHARTER D11), unmeasured on the "
+                         "fleet; --no-draft-ahead is the rollback")
     ap.add_argument("--draft-ledger", action=argparse.BooleanOptionalAction, default=True,
                     help="rank 0 writes one JSON line a verified row under --dump-dir/draft-ledger: the head's picks, "
                          "their probabilities, how many were proposed and kept (the threshold's curve). On by default")
@@ -685,7 +692,8 @@ def main(argv=None) -> int:
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
-                                              vision=a.vision, draft_candidates=a.draft_candidates)
+                                              vision=a.vision, draft_candidates=a.draft_candidates,
+                                              draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
         if getattr(net, "draft_tap", None) is not None:
@@ -705,6 +713,7 @@ def main(argv=None) -> int:
               + (f"; drafts cut below p={model.drafter.threshold}, narrow widths to {a.narrow_rows} rows"
                  if model.drafter is not None and model.drafter.threshold is not None else "")
               + ("; draft ledger" if a.draft_ledger else "")
+              + ("; draft step ahead of the host's read" if model.draft_ahead else "")
               + ("; mtp inputs recorded" if a.tap_mtp_inputs else "") + ")", flush=True)
         vision = model.composition.vision
         print("  pictures: " + ("served, the tower on every rank (--vision " + a.vision + ")" if vision is not None

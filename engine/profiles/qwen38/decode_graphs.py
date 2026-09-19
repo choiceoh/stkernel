@@ -19,6 +19,11 @@ no request live: warmups write the caches at slots 1..rows and every cache is re
 The two instances own separate memory pools (base/graphs' second rule). The target's outputs are the graph's own
 tensors: the caller consumes the logits before the next replay, and the drafter keeps its own copy of the streams rows it
 defers (adapter.ServedMTP), so no replay of either graph can overwrite what the other still reads.
+
+Behind a greedy verify step the draft step can also be fed from the device (adapter's draft-ahead): `greedy_verdict`
+counts each row's kept drafts from the picks and the ids the target graph was fed (TargetGraphs.replay), and
+DraftGraphs.run_after gathers the head's observation out of the target graph's outputs -- before the next target replay
+can touch them, and with nothing read back.
 """
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ from types import SimpleNamespace
 
 import torch
 
+from engine.base.constants import iota
 from engine.base.graphs import DecodeGraphs
 from engine.profiles.qwen38.net import FIRST_BUCKET, DeviceStep, Segment
 
@@ -164,6 +170,11 @@ class TargetGraphs(_Rows):
         the width replayed (`width`). `known`: (the step's ids as the host holds them, each row's ngram_size - 1 tokens
         before its context, DEAD before the sequence) -- what the PLE staging hashes; without it both are read back off
         the device."""
+        return self.replay(step, known)[:4]
+
+    def replay(self, step, known=None):
+        """`run`, and the ids the graph was fed [rows*t] -- its static input, a padded row's tail repeating its last id:
+        what a verdict on the device reads the drafts from (adapter.ServedModel's draft-ahead verify)."""
         segments = step.segments
         n = len(segments)
         t = self.width(n, max(s.length for s in segments))
@@ -192,15 +203,18 @@ class TargetGraphs(_Rows):
                 staged = [flat[i] for i in index] if padded else list(flat)
             net.stage_ple([s.slot for s in segments], [s.ctx for s in segments], staged, t, self.caches, carried=carried)
 
+        fed = {}
+
         def fill(inputs):
             inputs.ids.copy_(ids)
             self.metadata[shape].copy_(host, non_blocking=True)
             if net.ple_stage is not None:
                 net.ple_stage.upload()
+            fed["ids"] = inputs.ids
 
         logits, streams = self.graphs.run(shape, fill)
         rows = [i * t + j for i, s in enumerate(segments) for j in range(s.length)] if padded else None
-        return logits, streams, rows, t
+        return logits, streams, rows, t, fed.get("ids")
 
 
 def draft_chain(net, caches, step, given, last, counts, k: int, *, probability: bool = False, sampled=None):
@@ -246,6 +260,19 @@ def draft_chain(net, caches, step, given, last, counts, k: int, *, probability: 
     return torch.stack(picks, dim=1)
 
 
+def greedy_verdict(picks, drafts, lengths):
+    """The drafts a greedy verify step keeps, decided on the device: each row's leading drafts that equal the target's
+    pick at the position before them -> [rows] int64, 0..length. `picks` [rows, t] the target's argmax at each position,
+    `drafts` [rows, t-1] the ids fed after each row's anchor (a padded row's tail repeats its last id, so `lengths`, each
+    row's proposed count [rows] int64, bounds the run). A row that does not finish inside the step keeps as many on the
+    host (adapter.ServedModel._verify's loop), so the draft step can follow the verify step before anything is read."""
+    width = drafts.shape[1]
+    if not width:
+        return torch.zeros(picks.shape[0], dtype=torch.int64, device=picks.device)
+    live = iota(width, picks.device)[None, :] < lengths[:, None]
+    return ((picks[:, :width] == drafts) & live).to(torch.int64).cumprod(dim=1).sum(dim=1)
+
+
 class DraftGraphs(_Rows):
     """The head's draft step: each row's observed positions padded to the verify width `tokens` (k+1) in one launch,
     then the chain of k-1 single-position launches, in one replay (draft_chain). A row reaches tokens+k-1 positions
@@ -268,6 +295,7 @@ class DraftGraphs(_Rows):
         self._meta_host = torch.empty(rows * max_seqs, dtype=torch.int64, pin_memory=True)
         self._ids_host = torch.empty(max_seqs * tokens, dtype=torch.int64, pin_memory=True)
         self._meta, self._ids = self._meta_host.numpy(), self._ids_host.numpy()
+        self._landed = None                     # run_after: the event behind its upload of _meta_host
         self.metadata = {}
 
         def make_inputs(n, t, blocks):
@@ -318,6 +346,7 @@ class DraftGraphs(_Rows):
         widths = [self.extent(len(next_ids)) for _, _, _, next_ids, _ in rows]
         shape = self.shape(n, max(ctx + w for (_, _, ctx, _, _), w in zip(rows, widths)))
         self.publish([(seq, slot, ctx, w) for (seq, slot, ctx, _, _), w in zip(rows, widths)])
+        self._settle()
         meta, ids = self._meta, self._ids
         given = []
         for i, (seq, slot, ctx, next_ids, streams) in enumerate(rows):
@@ -364,5 +393,66 @@ class DraftGraphs(_Rows):
             return picks.tolist(), probs.tolist()
         return out.tolist()
 
+    def _settle(self) -> None:
+        """The host rows a replay uploads from are written again only once `run_after`'s last upload of them landed:
+        its copy is non-blocking and nothing has been read back since."""
+        if self._landed is not None:
+            self._landed.synchronize()
+            self._landed = None
 
-__all__ = ["bucket_ladder", "draft_chain", "TargetGraphs", "DraftGraphs"]
+    def run_after(self, rows, ids, given, fed, *, width: int):
+        """The draft step right behind a verify step, fed from the device (adapter.ServedModel's draft-ahead verify):
+        `rows` (seq, slot, ctx) a row, the verify step's; `ids` [n, width] int64 the target's picks at its positions
+        (each the token after its position); `given` [n*width, hc*H] the target's streams there; `fed` [n] int64 the
+        positions each row keeps, 1..width (greedy_verdict + 1). Each row observes its kept positions -- next ids and
+        streams, padded with the last as `run` pads them -- and the chain follows, nothing read back: -> the graph's own
+        outputs, (picks [n, k], probabilities [n, k]) with `probability`, else picks, valid until this shape replays
+        again. How many a row keeps is not known on the host, so each row must hold the reservation of the widest
+        observation, ctx + extent(width)."""
+        t, n = self.tokens, len(rows)
+        if (not 1 <= width <= t or tuple(ids.shape) != (n, width) or given.shape[0] != n * width
+                or tuple(fed.shape) != (n,)):
+            raise ValueError(f"a draft step after a verify step takes each row's {width} picks, streams and kept count")
+        reach = self.extent(width)
+        shape = self.shape(n, max(ctx for _, _, ctx in rows) + reach)
+        self.publish([(seq, slot, ctx, reach) for seq, slot, ctx in rows])
+        self._settle()
+        meta = self._meta
+        for i, (seq, slot, ctx) in enumerate(rows):
+            meta[i], meta[n + i], meta[2 * n + i] = ctx, seq, slot
+            if self.pictures is not None:
+                meta[3 * n + i] = self.delta(seq)
+        host_meta = self._meta_host[:(3 + self._meta_rows) * n].view(3 + self._meta_rows, n)
+        dev = ids.device
+        at = torch.minimum(iota(t, dev)[None, :], fed[:, None] - 1)     # [n, t]: the kept position each reads, the last again
+        flat = (iota(n, dev)[:, None] * width + at).reshape(-1)
+        landed = {}
+
+        def fill(inputs):
+            step, given_in, last, counts, sampler = inputs
+            self.metadata[shape][:3].copy_(host_meta[:3], non_blocking=True)
+            if self.pictures is not None:
+                # the rows' mRoPE deltas (`run`'s metadata row past last and counts, which come from the device here)
+                self.metadata[shape][5].copy_(host_meta[3], non_blocking=True)
+            if dev.type == "cuda":
+                landed["event"] = torch.cuda.Event()
+                landed["event"].record()
+            torch.gather(ids, 1, at, out=step.ids.view(n, t))
+            torch.index_select(given, 0, flat, out=given_in)
+            torch.add(fed, iota(n, dev) * t - 1, out=last)
+            counts.copy_(fed)
+            if sampler is not None:
+                # the sampled chain (`candidates`) behind a greedy step: every row at temperature 0 draws its argmax --
+                # a sampled step's `run` may have left its own settings in these inputs
+                temperature, top_k, top_p, uniforms = sampler
+                temperature.zero_()
+                top_k.zero_()
+                top_p.fill_(1.0)
+                uniforms.zero_()
+
+        out = self.graphs.run(shape, fill)
+        self._landed = landed.get("event")
+        return out[:2] if self.candidates else out
+
+
+__all__ = ["bucket_ladder", "draft_chain", "greedy_verdict", "TargetGraphs", "DraftGraphs"]

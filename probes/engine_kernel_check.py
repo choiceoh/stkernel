@@ -219,6 +219,12 @@ def main():
         from probes.engine_qwen38_step import ARMS, run as qwen38_step
         qwen38_step(args.output, args.ranks, arms=ARMS)
         return
+    if args.lanes == 'qwen38_step_ahead':
+        # the served model's decode loop on one rank, synchronous and with the draft step launched behind the verify
+        # step on the device (fleet --draft-ahead), six runs in turn: each run's wall a step, and the same tokens
+        from probes.engine_qwen38_step import ahead as qwen38_step_ahead
+        qwen38_step_ahead(args.output, args.ranks)
+        return
     if args.lanes == 'qwen38_gemv':
         # component timings: a skinny BF16 GEMV (one weight read for all rows) against cuBLAS at the decode step's mixer
         # and router shapes, interleaved in CUDA graphs -- whether the 11.2 ms of BF16 GEMM a step has a faster kernel

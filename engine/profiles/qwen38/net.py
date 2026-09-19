@@ -481,16 +481,24 @@ class Qwen38Net:
         the target's picks use too), drawn with the row's keyed uniform (base/draws, DRAFT) -> (picks [rows], each
         pick's probability under that distribution [rows] fp32, the candidates' ids [rows, C] int64 and the distribution
         over them [rows, C] fp32). The draft is zero outside its candidates and the nucleus -- what the verification's
-        accept test divides by. A row at temperature 0 picks the head's argmax with all its mass there."""
+        accept test divides by. A row at temperature 0 picks the head's argmax with all its mass there, so its
+        probability is not that distribution's (1, whatever the head thought) but the head's softmax over the whole
+        vocabulary at its argmax -- `draft_tokens(probability=True)`'s, what the draft threshold cuts on and the ledger
+        records for a greedy row (modules/vocab.argmax_probability's sum: each rank's exp past the max, one all-gather
+        added in rank order, the same bits on every rank)."""
         if self.draft_index is not None:
             raise ValueError("the draft index reads a few clusters of the head, not the row a sampled draft needs")
         from engine.base.sampler import rows as sample_rows
         from engine.modules.vocab import topk
-        values, ids = topk(self.draft_logits(h), self.comm, self.rank * self.vp, candidates)
+        logits = self.draft_logits(h)
+        values, ids = topk(logits, self.comm, self.rank * self.vp, candidates)
         values = values.contiguous()
         probs = torch.empty(values.shape, dtype=torch.float32, device=values.device)
         at = sample_rows(values, temperature, top_k, top_p, uniform, None, probs).view(-1, 1)
-        return ids.gather(1, at).view(-1), probs.gather(1, at).view(-1), ids, probs
+        mass = torch.exp(logits.float() - values[:, :1]).sum(-1, keepdim=True)          # values[:, 0]: the row's max
+        whole = torch.nan_to_num(1.0 / self.comm.all_gather(mass, dim=-1).sum(-1), nan=0.0)
+        drawn = probs.gather(1, at).view(-1)
+        return ids.gather(1, at).view(-1), torch.where(temperature > 0, drawn, whole), ids, probs
 
     # -- the step's addressing -----------------------------------------------------------------------------------------
     def step_meta(self, step, caches) -> StepMeta:
