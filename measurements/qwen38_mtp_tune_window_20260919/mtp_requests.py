@@ -65,7 +65,8 @@ model, waited = wait_door()
 print(json.dumps({"label": LABEL, "door_open_after_s": waited, "model": model}), flush=True)
 
 if MODE == "eval":
-    total_steps = total_seconds = total_tokens = 0.0
+    # the first completion token is the prefill step's; the decode steps and their seconds made the rest
+    total_steps = total_seconds = total_tokens = total_decoded = 0.0
     for p in (p for p in prompts if p["split"] == "eval"):
         before = metrics()
         t0 = time.time()
@@ -79,16 +80,18 @@ if MODE == "eval":
         steps = pick(after, "st:steps_decode_total") - pick(before, "st:steps_decode_total")
         seconds = pick(after, "st:step_seconds_sum", 'kind="decode"') - pick(before, "st:step_seconds_sum", 'kind="decode"')
         made = answer.get("usage", {}).get("completion_tokens", 0)
+        decoded = max(made - 1, 0)
         total_steps, total_seconds, total_tokens = total_steps + steps, total_seconds + seconds, total_tokens + made
+        total_decoded += decoded
         print(json.dumps({"label": LABEL, "id": p["id"], "completion_tokens": made, "wall_s": round(wall, 2),
                           "decode_steps": steps, "ms_a_step": round(seconds / steps * 1e3, 2) if steps else None,
-                          "tokens_a_step": round(made / steps, 3) if steps else None,
+                          "tokens_a_step": round(decoded / steps, 3) if steps else None,
                           "finish": answer["choices"][0].get("finish_reason"),
                           "text": (answer["choices"][0]["message"].get("content") or "")[:120]}, ensure_ascii=False), flush=True)
-    print(json.dumps({"label": LABEL, "summary": {"steps": total_steps, "tokens": total_tokens,
+    print(json.dumps({"label": LABEL, "summary": {"steps": total_steps, "tokens": total_tokens, "decoded_tokens": total_decoded,
                                                   "ms_a_step": round(total_seconds / total_steps * 1e3, 2) if total_steps else None,
-                                                  "tokens_a_step": round(total_tokens / total_steps, 3) if total_steps else None,
-                                                  "decode_tok_s": round(total_tokens / total_seconds, 1) if total_seconds else None}}),
+                                                  "tokens_a_step": round(total_decoded / total_steps, 3) if total_steps else None,
+                                                  "decode_tok_s": round(total_decoded / total_seconds, 1) if total_seconds else None}}),
           flush=True)
 elif MODE == "prefill":
     # PROMPTS is openrouter_gen.py's samples: each conversation prefilled whole (the answer continued, one token
