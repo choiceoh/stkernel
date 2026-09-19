@@ -70,6 +70,25 @@ def summary(log: str) -> dict:
     return {"errors": sum(counts) if counts else None, "first_errors": [b[:600] for b in blocks[:FIRST_ERRORS]]}
 
 
+def preflight(tool, work) -> dict:
+    """What the tool says about itself, and one CUDA allocation under it -- sm121-batchA-0919b's first run ended in 1.2 s
+    with "Target application terminated before first instrumented API call" and nothing on the child's stdout/stderr."""
+    rows = {}
+    for name, cmd in (("version", [tool, "--version"]),
+                      ("minimal", [tool, "--tool", TOOL, "--print-level", "info", "--log-file", str(work / "sm121-sanitizer-minimal.log"),
+                                   sys.executable, "-c", "import torch; torch.zeros(1, device='cuda'); print('cuda ok')"]),
+                      ("plain", [sys.executable, "-c", "import torch; torch.zeros(1, device='cuda'); print('cuda ok')"])):
+        try:
+            done = subprocess.run(cmd, cwd=str(ROOT), timeout=300, capture_output=True, text=True)
+            rows[name] = {"returncode": done.returncode, "stdout": done.stdout[-1500:], "stderr": done.stderr[-1500:]}
+        except Exception as exc:                                        # noqa: BLE001
+            rows[name] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+    log = work / "sm121-sanitizer-minimal.log"
+    if log.is_file():
+        rows["minimal"]["log"] = log.read_text(errors="replace")[-3000:]
+    return rows
+
+
 def run(output=None) -> dict:
     tool = sanitizer()
     report = {"lane": "sm121_sanitizer", "tool": TOOL, "sanitizer": tool, "cases": cases(), "left_out": list(LEFT_OUT)}
@@ -78,6 +97,7 @@ def run(output=None) -> dict:
     else:
         work = Path(output).parent if output else Path("/tmp")
         work.mkdir(parents=True, exist_ok=True)
+        report["preflight"] = preflight(tool, work)
         log, result = work / "sm121-sanitizer.log", work / "sm121-sanitizer-child.json"
         cmd = [tool, "--tool", TOOL, "--error-exitcode", "99", "--print-limit", "100", "--log-file", str(log),
                sys.executable, str(Path(__file__).resolve()), "child", str(result)]

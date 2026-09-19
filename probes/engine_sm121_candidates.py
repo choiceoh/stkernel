@@ -45,6 +45,7 @@ L2_SHAPES = {
     "inside the L2 4096x4096 (17 MB)": (4096, 4096),
 }
 L2_ROWS = (1024, 4096, 8192, 16384)
+L2_ROUNDS = 9                        # arms alternate inside a round: production's steps land on both (0919b was one-sided)
 L2_MAX_BYTES = 1 << 30               # activations and output of one call, whichever is larger
 
 
@@ -87,7 +88,8 @@ def _device(report, cap_gib):
 
 # -- U13: GDN prefill ------------------------------------------------------------------------------------------------------
 def flashinfer_gdn_args(args) -> dict:
-    """The served call's inputs as FlashInfer's chunk_gated_delta_rule takes them: [T, H, D] contiguous q/k/v, the
+    """The served call's inputs as FlashInfer's chunk_gated_delta_rule takes them (sm121-batchA-0919b: the image's
+    build refuses int32 cu_seqlens): [T, H, D] contiguous q/k/v, the
     forget gate as alpha = exp(log decay) and beta as probabilities, both fp32 [T, HV]; the carried state is already the
     kernel layout [1, HV, V, K] both kernels share."""
     import torch
@@ -96,7 +98,7 @@ def flashinfer_gdn_args(args) -> dict:
     return dict(q=args["q"][0].contiguous(), k=args["k"][0].contiguous(), v=args["v"][0].contiguous(),
                 g=args["decay"][0].exp().contiguous(), beta=args["beta"][0].float().contiguous(),
                 scale=args["scale"], initial_state=initial, output_final_state=True,
-                cu_seqlens=torch.tensor([0, t], dtype=torch.int32, device=initial.device),
+                cu_seqlens=torch.tensor([0, t], dtype=torch.int64, device=initial.device),   # the image's build: int64
                 use_qk_l2norm_in_kernel=True, output_state=torch.empty_like(initial))
 
 
@@ -186,16 +188,30 @@ def run_fp8_l2(output=None) -> dict:
                     continue
                 x = torch.randn(m, k, device="cuda").to(torch.bfloat16)
                 flops = 2 * m * n * k
+                arms = {arm: layer for arm, layer in (("deep_gemm", deep), ("cublaslt (served)", served)) if layer}
+                samples = {arm: [] for arm in arms}
+                start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+                try:
+                    for layer in arms.values():                    # compile, tune, first touch
+                        layer(x)
+                        layer(x)
+                    for r in range(L2_ROUNDS):
+                        for arm in (list(arms) if r % 2 == 0 else list(arms)[::-1]):
+                            torch.cuda.synchronize()
+                            start.record()
+                            arms[arm](x)
+                            end.record()
+                            end.synchronize()
+                            samples[arm].append(start.elapsed_time(end) * 1000)
+                except Exception as exc:                            # noqa: BLE001
+                    report["unavailable"][f"{label} M{m}"] = f"{type(exc).__name__}: {exc}"[:300]
                 row = {}
-                for arm, layer in (("deep_gemm", deep), ("cublaslt (served)", served)):
-                    if layer is None:
-                        continue
-                    try:
-                        timed = _time(lambda: layer(x), repeats=5, warmup=2)
-                        timed["TFLOPS"] = round(flops / timed["median_us"] / 1e6, 1)
-                        row[arm] = timed
-                    except Exception as exc:                        # noqa: BLE001
-                        report["unavailable"][f"{arm} {label} M{m}"] = f"{type(exc).__name__}: {exc}"[:300]
+                for arm, got in samples.items():
+                    if got:
+                        med = statistics.median(got)
+                        row[arm] = {"median_us": round(med, 1), "best_us": round(min(got), 1),
+                                    "spread": round(max(got) / min(got), 2), "TFLOPS": round(flops / med / 1e6, 1),
+                                    "best_TFLOPS": round(flops / min(got) / 1e6, 1)}
                 rows[m] = row
                 print(json.dumps({f"{label} M{m}": row}), flush=True)
                 del x
