@@ -151,7 +151,7 @@ def local_routes(ids: torch.Tensor, weights: torch.Tensor, first: int, local: in
 
 def reference() -> Lanes:
     from engine.modules.causal_conv import causal_conv1d
-    from engine.modules.linear_attention import gated_delta_rule, gdn_decay
+    from engine.modules.linear_attention import gated_delta_rule, gated_delta_rule_marked, gdn_decay
     from engine.modules.norm import rmsnorm_gated, rmsnorm_unit_offset
     from engine.modules.rotary import apply_rope, rope_tables
 
@@ -186,20 +186,8 @@ def reference() -> Lanes:
 
     def gdn_chunk(q, k, v, decay, beta, state0, states_at=None):
         q, k = value_heads(q, k, v)
-        scale = q.shape[-1] ** -0.5
-        if not states_at:
-            return gated_delta_rule(q, k, v, decay, beta, state0, scale=scale, qk_l2norm=True, decay_per_channel=False)
-        outs, states, state, lo = [], [], state0, 0
-        for hi in [c * 64 for c in states_at] + [q.shape[1]]:
-            if hi > lo:
-                o, state = gated_delta_rule(q[:, lo:hi], k[:, lo:hi], v[:, lo:hi], decay[:, lo:hi], beta[:, lo:hi], state,
-                                            scale=scale, qk_l2norm=True, decay_per_channel=False)
-                outs.append(o)
-            if len(states) < len(states_at):
-                states.append(state[0] if state is not None else
-                              torch.zeros(v.shape[2], k.shape[-1], v.shape[-1], device=q.device, dtype=torch.float32))
-            lo = hi
-        return torch.cat(outs, dim=1), state, torch.stack(states)
+        return gated_delta_rule_marked(q, k, v, decay, beta, state0, scale=q.shape[-1] ** -0.5, qk_l2norm=True,
+                                       decay_per_channel=False, marks=states_at)
 
     def gdn_ring(q, k, v, a, b_raw, A_log, dt_bias, ring, slot, context):
         q, k = value_heads(q, k, v)
