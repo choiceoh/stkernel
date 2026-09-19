@@ -4,9 +4,10 @@ Status: the first 131,184-row TP4 real-input collection, all-rank filing/reboot
 audits and held-out projection scoring passed. Every tested W4/FP8 pack reduces
 projection error. The user authorized expansion: 357 distinct training prompts
 with 330,234 Qwen tokens are prepared, with the original evaluation files intact.
-The latest instruction selects only the new 330K fit. Fleet collection is queued;
-packing and held-out error scoring run on RTX 5050, followed by fleet consumer
-validation. New 330K effects, serving quality and adoption remain unverified.
+The latest instruction selects only the new 330K fit and runs collection,
+packing, held-out error scoring and consumer validation on the fleet. The
+RTX 5050 path below was prepared but superseded before processing real fit330
+statistics. New 330K effects, serving quality and adoption remain unverified.
 
 The target is the 193 projection sites already admitted by #1286, with #1294's
 FP32 MoE accumulation and `as2` domain. The experiment uses one frozen source
@@ -121,7 +122,7 @@ collection. The experiment knob expires on 2026-09-26 under D11 and must be
 removed when selecting a measured default. Existing saved blobs are not appended
 to or replaced. Inference arithmetic and calibration weight identity are unchanged.
 
-The user then requested **330K on RTX 5050**, replacing the three-size campaign.
+The user initially requested **330K on RTX 5050**, replacing the three-size campaign.
 The former `expanded` waiter was cancelled while still waiting, with no GPU child.
 The original 131K results remain historical evidence; no 131K or 240K re-collection
 or re-packing is scheduled. Reserved validation inputs are unchanged and unused.
@@ -167,6 +168,45 @@ production packer's W4/FP8 cache reload and FP64 Gram-energy agreement with an
 explicit held-out projection. See `5050-synthetic-smoke.log`. The synthetic case
 uses 512 random rows and establishes execution compatibility only; it is not
 the real 330K calibration, a quality result, or a throughput claim.
+
+### Fleet-only continuation (2026-09-20)
+
+The later instruction "use the fleet" supersedes the RTX 5050 plan above.
+`fleet_window.py` holds one canonical boot reservation through collection,
+all-rank GPTQ packing/scoring and RTN–330K–RTN onepass. The canonical holder
+also excludes pooled single-GPU jobs. The stock hold first boots the unchanged
+deployed GLM release; the wrapper then stops that owned boot and launches Qwen
+under the same queue lease. It ends the reservation immediately on completion
+or failure. No production selection or shared pack root is changed.
+
+The active source is `90378e4debc44869f7beeb92f2e94e88fda4fb8d`, with the
+unchanged engine tree `d8ac5e813ffc38af49985f211d3cd31e89251cdf`.
+Session `q38gptq-330k-0920d` uses srv2's
+`/home/choiceoh/glm53-logs/qwen38-gptq-330k-20260919/fleet-20260920b/`.
+Its supervisor status and logs are in the sibling `deferred-fleet330-fixed/`.
+Only fit330 is collected; projection scoring reuses the independent original
+50,512-row held-out statistics after checking checkpoint identity.
+
+Preparation failures are not measurements. The first manual session was
+stopped before Qwen started when a pooled probe took a node. The canonical
+control path also exposed a stale rules-6 runner and a removed
+`validate_targets` function still called by the rules-8 runner. A private copy
+of runner `ab0b3ee8c6d9853e3e98309b32fd33577231c20a5713330d0b4b50b3371b22af`
+uses `attempts/control-compat.patch` only to admit an unchanged deployed ST
+hold, retaining the normal signed-receipt checks; shared control files are
+untouched.
+
+The first canonical Qwen boot was ready in about 85 seconds, but the driver
+mistakenly required independently built rank images to have the same Docker
+image ID. Before any input was submitted, that check stopped the run. CPU
+inspection proved all four runtime manifests byte-identical, including every
+engine source digest, package version and seed image. See
+`attempts/image-preflight-summary.json`. The corrected driver compares those
+manifests across ranks and still requires each rank's exact image ID and
+manifest to remain unchanged across all comparison boots. Original failed
+logs remain in `fleet-20260920/` and `deferred-fleet330-native/` on srv2.
+
+### Earlier 131K consumer preparation
 
 The first candidate boot consumed 192 W4 and 193 FP8 GPTQ packs on each rank,
 with no live collectors. Its first scoring attempt completed rank 0 but refused

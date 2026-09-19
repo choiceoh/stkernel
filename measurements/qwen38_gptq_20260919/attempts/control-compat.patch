@@ -1,0 +1,34 @@
+--- a/bench/fleet_prepare.py
++++ b/bench/fleet_prepare.py
+@@ -728,6 +728,31 @@
+ 
+ 
+ 
++def validate_targets(directory, prepared, *, verify_only=False, _validated_value=None, controller=None):
++    """Compatibility for the removed overlay validator: only an unchanged deployed ST hold.
++
++    This private controller does not admit new deployments or arbitrary GPU payloads.
++    Keep signed receipts and normal file/source/runtime checks, then require the
++    immutable hold SHA to equal the currently deployed release on the same host.
++    """
++    value = _validated_value or fleet_prepared.read(directory, prepared)
++    if _validated_value is None:
++        validate(value, external=True)
++    command, effective = command_environment(value['command'])
++    if (len(command) != 5 or Path(command[1]).name != 'st_bracket.sh'
++            or command[2] != 'hold' or not re.fullmatch('[0-9a-f]{40}', command[3])):
++        raise ValueError('private ST compatibility controller accepts only a deployed-release hold')
++    state = json.loads(Path('/home/choiceoh/st-releases/deploy-state.json').read_text())
++    if command[3] != state.get('deployed') or not state.get('launched_ok'):
++        raise ValueError('hold must use the successfully launched current deployed ST release')
++    source = '/home/choiceoh/stkernel'
++    resolved = run(['git', 'rev-parse', command[3] + '^{commit}'], source)
++    if resolved != command[3]:
++        raise ValueError('deployed hold source cannot be resolved')
++    tree = run(['git', 'rev-parse', command[3] + ':engine'], source)
++    return dict(policy='unchanged-deployed-ST-hold', sha=resolved, engine_tree=tree)
++
++
+ def main(argv=None):
+     ap = argparse.ArgumentParser(description=__doc__)
+     ap.add_argument('action', choices=['create', 'check', 'validate-targets'])

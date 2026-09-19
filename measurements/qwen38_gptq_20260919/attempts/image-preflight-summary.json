@@ -1,0 +1,35 @@
+{
+  "source_sha": "51d01ad2287e1f9aee641516f2ae816813a8f4e2",
+  "ranks": [
+    {
+      "rank": 0,
+      "manifest_sha256": "8ce235342dda2f96632102a7e4d95284e990d8efebfada24a911829a26864e49",
+      "engine_source_sha256": "488ec3d271def95cdd760f39ffae35b6823cfeeb6a2c9bd1faee4a658810cdcc",
+      "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+      "passed": true
+    },
+    {
+      "rank": 1,
+      "manifest_sha256": "8ce235342dda2f96632102a7e4d95284e990d8efebfada24a911829a26864e49",
+      "engine_source_sha256": "488ec3d271def95cdd760f39ffae35b6823cfeeb6a2c9bd1faee4a658810cdcc",
+      "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+      "passed": true
+    },
+    {
+      "rank": 2,
+      "manifest_sha256": "8ce235342dda2f96632102a7e4d95284e990d8efebfada24a911829a26864e49",
+      "engine_source_sha256": "488ec3d271def95cdd760f39ffae35b6823cfeeb6a2c9bd1faee4a658810cdcc",
+      "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+      "passed": true
+    },
+    {
+      "rank": 3,
+      "manifest_sha256": "8ce235342dda2f96632102a7e4d95284e990d8efebfada24a911829a26864e49",
+      "engine_source_sha256": "488ec3d271def95cdd760f39ffae35b6823cfeeb6a2c9bd1faee4a658810cdcc",
+      "seed_image": "sha256:a9b53fd066bb4fa0c4d12982f7c5dcdd5a2591900a0088c3ffeb41ba0868425c",
+      "passed": true
+    }
+  ],
+  "manifests_byte_identical": true,
+  "collection_started": false
+}
