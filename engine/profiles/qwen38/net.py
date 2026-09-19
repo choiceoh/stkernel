@@ -20,7 +20,7 @@ The launches a layer issues are the point of the file (the "cuts" of the Qwen3.8
                               one dense causal launch whose runs of rows share their K/V tiles -- `_covers`; past it each rank scores a quarter of a long prefill
                               step's index queries and the ids are gathered -- `_sharded_blocks`, unless the boot
                               declined `query_shards`)
-    MoE                      the router and the shared gate in one GEMM (merged at preshard), top-k, the rank's experts
+    MoE                      the IEEE FP32 router and the BF16 shared gate, top-k, the rank's experts
                               in one dispatcher launch (another rank's routes skip in the micro kernel on a captured
                               step), the shared expert's two GEMMs and activation, ONE all-reduce for routed and shared
 
@@ -256,6 +256,8 @@ class Qwen38Net:
         self.mtp_window = None                          # (sink, recent) groups the head attends instead of its scored
                                                         # selection (Windowed-MTP; fleet --mtp-window; `_qsa`)
         self._experts = {}
+        self._router_weights = {}
+        self.head_observer = None                     # real prefill rows, before last_hidden_only selects them
         self._ple = self._ple_hash = self._ple_scale = None
         self.ple_table = self.ple_stage = None          # attach_ple: the rank's SSD table and the staged rows
 
@@ -323,11 +325,29 @@ class Qwen38Net:
                 out[key] = f"Qwen4ExpForCausalLM/model.language_model.layers.{head[1:]}.{names[suffix]}"
         return out
 
+    def router_nbytes(self):
+        """The target and MTP expert selectors, widened once in the admitted arena (GLM's IEEE FP32 router)."""
+        return (len(self.layers) + int(self.mtp)) * self.F.experts * self.F.hidden * 4
+
+    def prepare_routers(self, arena):
+        if self._router_weights:
+            raise RuntimeError("router bindings were already prepared")
+        prefixes = [f"L{L}." for L in self.layers] + (["mtp.L0."] if self.mtp else [])
+        for prefix in prefixes:
+            weight = self.p[prefix + "moe.gates"]
+            if weight.dtype != BF16 or weight.shape != (self.F.experts + 1, self.F.hidden):
+                raise ValueError("Qwen router requires BF16 [experts + shared gate, hidden] weights")
+        for prefix in prefixes:
+            weight = self.p[prefix + "moe.gates"][:self.F.experts]
+            resident = arena.carve(weight.numel() * 4, f"router/{prefix}").view(F32).view_as(weight)
+            resident.copy_(weight)
+            self._router_weights[prefix] = resident
+
     def prepare_dense(self, store=None, *, consume_weights=False):
         """The dense lanes (engine/kernels/dense): W4A8 at decode rows, FP8 above; the shared expert's 160-column down
         projection through PaddedDenseLinear. No channel smoothing: its fold divides a plain norm weight, and every
         norm this model has is unit-offset. The hyper-connection mixers are BF16 matmuls inside their lane (10,240
-        wide, W4 packs do not tile) unless `hc_fp8` put them on FP8 (`_prepare_hc_fp8`); the router stays a BF16 GEMM.
+        wide, W4 packs do not tile) unless `hc_fp8` put them on FP8 (`_prepare_hc_fp8`). The router has its own FP32 lane.
 
         `consume_weights` moves a lane's W4 and FP8 packs into its BF16 source's arena region and drops the source, where
         the packs fit it (engine/kernels/dense.packed_nbytes, the resident bound, against the source's bytes): every
@@ -355,9 +375,8 @@ class Qwen38Net:
                 else:
                     self.retained_sources.append(key)
         head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
-        # a decode step's head rows on one launch over deep_gemm's own FP8 inputs (dense/fp8_rows: 688-709 against
-        # 873-893 us a read of the rank's 159 MB, q38head-0919c)
-        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME, decode_rows=True)
+        # GLM's W8A16 head: keep decode/verify activations in BF16 against the same block-scaled FP8 weight.
+        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME, decode_rows="w8a16")
         self._hc_projections = self._prepare_hc_fp8() if self.hc_fp8 else {}
 
     def _hc_sites(self):
@@ -435,8 +454,7 @@ class Qwen38Net:
 
     def draft_logits(self, h: torch.Tensor) -> torch.Tensor:
         """This rank's vocabulary logits [N, vp] for the drafter's argmax: the head's FP8 weight against the rows in BF16
-        (dense/fp8_rows.project_bf16) -- the verify step's head quantises its rows to FP8 as well, the draft's does not,
-        at the same bytes (the operator's rule of 2026-09-19: precision where it costs nothing and moves acceptance).
+        (dense/fp8_rows.project_bf16), as the verify step's W8A16 head does. Neither quantises its decode rows to FP8.
         A head the FP8 decode-row kernel does not take (a cuBLAS reader, more than 16 rows, the CPU) is the verify step's."""
         from engine.kernels.dense import FP8Linear, fp8_rows
         head = self.dense.get("head")
@@ -622,6 +640,9 @@ class Qwen38Net:
         h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
                                         prefetch=self._mixer_weight("close.", "down"))
         hidden, _ = self._mix("close.", normed, "down", inject=False)
+        observer = getattr(self, "head_observer", None)
+        if observer is not None and not rows:
+            observer(hidden, None)
         if last_hidden_only:
             if rows:
                 raise ValueError("a captured step keeps every row; its caller selects them")
@@ -872,8 +893,11 @@ class Qwen38Net:
         F, p, lanes = self.F, self.p, self.lanes
         n = prefix + "moe."
         gates = p[n + "gates"]                                       # [experts + 1, H]: the router, then the shared gate
-        rows_linear = getattr(lanes, "rows_linear", None)             # a lane table from before the skinny GEMV has none
-        scores = rows_linear(x, gates) if rows_linear is not None else torch.mm(x, gates.t())
+        router = getattr(self, "_router_weights", {}).get(prefix)
+        if router is None:                                         # reference nets/probes without a resident arena
+            router = gates[:F.experts].float()
+        project = getattr(lanes, "router_logits", None)
+        scores = project(x, router) if project is not None else torch.mm(x.float(), router.t())
         if compact or lanes.route_local is None:
             ids, weights = lanes.route(scores[:, :F.experts], F.topk_experts)
             routed = self._experts[prefix](x, ids, weights, compact=compact)
@@ -884,7 +908,10 @@ class Qwen38Net:
                                              w13=w13, hidden=x.shape[1])
             routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
         # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
-        gate = torch.sigmoid(scores[:, F.experts:].float())
+        rows_linear = getattr(lanes, "rows_linear", None)
+        shared = gates[F.experts:]
+        shared_score = rows_linear(x, shared) if rows_linear is not None else torch.mm(x, shared.t())
+        gate = torch.sigmoid(shared_score.float())
         return routed, gate
 
     def _shared(self, prefix: str, x: torch.Tensor) -> torch.Tensor:

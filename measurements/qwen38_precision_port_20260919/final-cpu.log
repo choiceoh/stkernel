@@ -1,0 +1,8 @@
+...........  Qwen calibration: filed 1 blobs (filed 4096/131072 rows over 1 blobs); next boot packs GPTQ
+...........  rank 0: no boot dump under /tmp/tmpxwpfap6a/file/dumps: NotADirectoryError: [Errno 20] Not a directory: '/tmp/tmpxwpfap6a/file/dumps'
+.........................
+----------------------------------------------------------------------
+Ran 47 tests in 16.506s
+
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK

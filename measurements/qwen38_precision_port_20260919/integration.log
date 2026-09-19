@@ -1,0 +1,7 @@
+......  rank 0: no boot dump under /tmp/tmpqt3z_9lh/file/dumps: NotADirectoryError: [Errno 20] Not a directory: '/tmp/tmpqt3z_9lh/file/dumps'
+......  Qwen calibration: filed 1 blobs (filed 4096/131072 rows over 1 blobs); next boot packs GPTQ
+...........................
+----------------------------------------------------------------------
+Ran 39 tests in 9.370s
+
+OK

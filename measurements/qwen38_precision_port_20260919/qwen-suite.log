@@ -1,0 +1,53 @@
+  ok          tests.test_engine_qwen38_attention_gate         3.5s  3 tests, 2 skipped
+  ok          tests.test_engine_qwen38_boot                   3.7s  12 tests
+  ok          tests.test_engine_qwen38_consume_dense          4.5s  4 tests
+  ok          tests.test_engine_qwen38_covered_attention      3.6s  5 tests, 3 skipped
+  ok          tests.test_engine_qwen38_covered_blocks         3.7s  11 tests, 1 skipped
+  ok          tests.test_engine_qwen38_decode_host            4.2s  5 tests
+  ok          tests.test_engine_qwen38_draft_ahead            3.9s  27 tests, 8 skipped
+  ok          tests.test_engine_qwen38_draft_chain            3.8s  16 tests
+  ok          tests.test_engine_qwen38_draft_sampling        12.0s  13 tests
+  ok          tests.test_engine_qwen38_draft_threshold        4.2s  16 tests
+  ok          tests.test_engine_qwen38_fleet_grammars         5.4s  12 tests
+  ok          tests.test_engine_qwen38_gdn_norm               3.6s  3 tests, 3 skipped
+  ok          tests.test_engine_qwen38_kernels                3.8s  12 tests, 11 skipped
+  ok          tests.test_engine_qwen38_leave                  4.3s  17 tests, 1 skipped
+  ok          tests.test_engine_qwen38_moe_finish             3.8s  7 tests, 5 skipped
+  ok          tests.test_engine_qwen38_moe_pairs              3.0s  5 tests, 4 skipped
+  ok          tests.test_engine_qwen38_moe_route              3.1s  11 tests, 10 skipped
+  ok          tests.test_engine_qwen38_mrope                  3.6s  9 tests, 3 skipped
+  ok          tests.test_engine_qwen38_mtp_experts            3.1s  8 tests, 1 skipped
+  ok          tests.test_engine_qwen38_mtp_tune              14.9s  19 tests
+  ok          tests.test_engine_qwen38_mtp_window             4.4s  14 tests, 2 skipped
+  ok          tests.test_engine_qwen38_pictures               5.9s  8 tests
+  ok          tests.test_engine_qwen38_ple_ssd                3.2s  9 tests
+  ok          tests.test_engine_qwen38_precision_port         6.4s  8 tests, 3 skipped
+  ok          tests.test_engine_qwen38_prefill_marks          4.8s  9 tests
+  ok          tests.test_engine_qwen38_preshard               5.0s  12 tests
+  ok          tests.test_engine_qwen38_qsa_blocks             2.9s  5 tests, 4 skipped
+  ok          tests.test_engine_qwen38_qsa_group_scores       4.5s  6 tests, 4 skipped
+  ok          tests.test_engine_qwen38_qsa_inputs             3.8s  4 tests, 3 skipped
+  ok          tests.test_engine_qwen38_qsa_select             3.6s  9 tests, 9 skipped
+  ok          tests.test_engine_qwen38_qsa_views              3.1s  4 tests, 4 skipped
+  ok          tests.test_engine_qwen38_query_shards           3.9s  13 tests, 1 skipped
+  ok          tests.test_engine_qwen38_rows                   4.0s  7 tests
+  ok          tests.test_engine_qwen38_shared_overlap         3.3s  7 tests, 2 skipped
+  ok          tests.test_engine_qwen38_static_pad             3.8s  4 tests
+  ok          tests.test_engine_qwen38_step_addresses         4.6s  5 tests, 3 skipped
+  ok          tests.test_engine_qwen38_store_once             3.8s  4 tests, 4 skipped
+  ok          tests.test_engine_qwen38_vision                 4.4s  15 tests, 2 skipped
+  ok          tests.test_engine_qwen38_warmup                 4.0s  22 tests
+  ok          tests.test_engine_qwen38_weights                4.8s  4 tests
+  ok          tests.test_probe_qwen38_cells                   3.8s  7 tests
+  ok          tests.test_probe_qwen38_dense                   4.7s  15 tests
+  ok          tests.test_probe_qwen38_eager_moe               0.1s  6 tests
+  ok          tests.test_probe_qwen38_hc_mix_fused            3.9s  5 tests
+  ok          tests.test_probe_qwen38_kda                     5.8s  23 tests, 3 skipped
+  ok          tests.test_probe_qwen38_mix_tiles               6.2s  8 tests, 2 skipped
+  ok          tests.test_probe_qwen38_moe                     4.5s  26 tests
+  ok          tests.test_probe_qwen38_prefill                 3.6s  10 tests
+  ok          tests.test_probe_qwen38_qsa_geometry            6.4s  21 tests, 4 skipped
+  ok          tests.test_probe_qwen38_qualify_soak            0.2s  6 tests
+  ok          tests.test_probe_qwen38_serve_compiles          3.0s  5 tests
+  ok          tests.test_probe_qwen38_step                    4.1s  10 tests
+  52 files, 526 tests: 52 ok, 0 failed, 0 cannot run, 102 skipped in 58s

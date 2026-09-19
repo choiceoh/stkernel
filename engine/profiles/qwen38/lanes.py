@@ -71,7 +71,7 @@ class Lanes:
                             #  first_expert, compact, local=False) -> [N, H] bf16: this rank's routed partial; `compact`
                             #  (an eager step) runs only this rank's pairs, reading their count on the host; `local`:
                             #  the routes are route_local's, already this rank's
-    route_local: object = None      # (scores [N, >= E] bf16, k, *, experts, first_expert, w13, hidden) -> (ids int32
+    route_local: object = None      # (scores [N, >= E] BF16/FP32, k, *, experts, first_expert, w13, hidden) -> (ids int32
                                     #  [N, k] local, weights f32 [N, k]): a captured step's router and its EP remap
                                     #  (local_routes, with the launch shape's sentinel) in one launch; None: the layer
                                     #  composes route and moe
@@ -102,6 +102,7 @@ class Lanes:
     rows_linear: object = None      # (x [N, K] bf16, w [M, K] bf16) -> x @ w.T: a decode step's handful of rows by
                                     #  a weight it reads once -- the router (engine/kernels/common/skinny_gemv,
                                     #  torch.mm past its shapes); None: torch.mm
+    router_logits: object = None   # (x BF16, w FP32) -> IEEE FP32 logits, including the top-k boundary's low bits
     leave: object = None            # how the served leaves meet the TP sum before them (served(leave=...), LEAVES);
                                     #  None: a table whose leaves are not the served kernel's
     ple_gate: object = None         # (h [N, hc*H], key [N, hc*H], value [N, H], q_norm, k_norm, conv_norm, eps, hc)
@@ -302,7 +303,8 @@ def reference() -> Lanes:
 
 
 KERNEL_MODULES = ("engine.kernels.gated_residual", "engine.kernels.gdn", "engine.kernels.moe_output",
-                  "engine.kernels.moe_route", "engine.kernels.moe_rows", "engine.kernels.ngram_gate", "engine.kernels.qsa",
+                  "engine.kernels.moe_route", "engine.kernels.moe_rows", "engine.kernels.ngram_gate",
+                  "engine.kernels.qsa", "engine.kernels.router_fp32",
                   "engine.kernels.causal_conv_ring", "engine.kernels.causal_conv_single", "engine.kernels.kda.chunk_decay",
                   "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.kernels.moe_route",
                   "engine.modules.nvfp4_sf", "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope",
@@ -340,7 +342,7 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
     from engine.kernels.b12x import b12x_fused_moe
     from engine.kernels.b12x import moe_dispatch as md
     from engine.kernels.common.skinny_gemv import linear_rows
-    from engine.kernels import moe_rows, ngram_gate
+    from engine.kernels import moe_rows, ngram_gate, router_fp32
     from engine.modules.nvfp4_sf import mma_sf_view
 
     def gdn_chunk(q, k, v, decay, beta, state0, states_at=None):
@@ -448,14 +450,15 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
     bound = [hcr.norm_streams, hc_leave, hc_leave_norm, hcr.mix, gdn.gates, gdn_chunk, recurrent_gdn_ring,
              recurrent_gdn_ring_rows, gdn.gated_norm, causal_conv1d_single, causal_conv1d_ring, causal_conv1d_ring_rows,
              qsa.norm_rope_partial, qsa.qsa_store_cache_rows, qsa.qsa_compress_groups_with_ratio,
-             qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, route_softmax_topk, moe]
+             # Eager and captured selection share arithmetic and the lowest-id tie rule.
+             qsa.qsa_select_paged_blocks, qsa.qsa_sparse_paged_attention_blocks, moe_route.softmax_topk, moe]
     return Lanes("served", *(on_main(f) for f in bound), moe_prepare=on_main(moe_prepare),
                  graph_resources=md.cached_workspace_owners, swiglu=on_main(common.swiglu),
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention), route_local=on_main(route_local),
-                 rows_linear=on_main(linear_rows), moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate),
-                 leave=leave)
+                 rows_linear=on_main(linear_rows), router_logits=on_main(router_fp32.router_logits),
+                 moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate), leave=leave)
 
 
 def qualify(device, F) -> dict:
