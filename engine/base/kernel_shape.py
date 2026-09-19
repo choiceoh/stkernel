@@ -319,8 +319,37 @@ def fields_of(shape) -> dict:
 
 RECORD = "kernel_shape.json"
 RECORD_VERSION = 2            # 2: the shape carries its operation variants (sink, compress, hc_variant)
-PROFILES = {"glm53": "engine.profiles.glm53.facts", "qwen38": "engine.profiles.qwen38.shapes",
-            "dsv41": "engine.profiles.dsv41.shapes"}                                             # kernel_shape_of(ckpt)
+def profiles() -> dict:
+    """{name: the module with `kernel_shape_of(ckpt)`} -- discovered, not listed. A profile package declares its own
+    entry (`SHAPES` in engine/profiles/<name>/__init__.py), so a model is attached by adding a directory and nothing
+    in base has to learn its name (CHARTER D5: the engine names no model)."""
+    import pkgutil
+
+    import engine.profiles as package
+    found = {}
+    for entry in pkgutil.iter_modules(package.__path__):
+        if not entry.ispkg:
+            continue
+        module = importlib.import_module(f"{package.__name__}.{entry.name}")
+        shapes = getattr(module, "SHAPES", None)
+        if shapes:
+            found[entry.name] = shapes
+    return found
+
+
+def claims(model_type: "str | None") -> "str | None":
+    """The profile that declares this checkpoint's `model_type` (`MODEL_TYPES` in its package), or None -- which is
+    not an error: engine/base/onboard reads a config no profile claims."""
+    if not model_type:
+        return None
+    for name in profiles():
+        module = importlib.import_module(f"engine.profiles.{name}")
+        if model_type in (getattr(module, "MODEL_TYPES", ()) or ()):
+            return name
+    return None
+
+
+PROFILES = profiles()                                                                            # kernel_shape_of(ckpt)
 
 
 def to_dict(shape: KernelShape) -> dict:
