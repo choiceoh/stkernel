@@ -1,0 +1,262 @@
+{
+ "device": "NVIDIA GB10",
+ "weight_MB": 159.0,
+ "rounds": 7,
+ "calls_a_graph": 8,
+ "algorithms": {
+  "direct": {
+   "1": {
+    "index": 0,
+    "workspace": 0,
+    "id": 70,
+    "tile": 20,
+    "stages": 36,
+    "split_k": 1,
+    "reduction": 0,
+    "swizzle": 0,
+    "custom": 0,
+    "alignment_a": 16,
+    "alignment_b": 16,
+    "alignment_c": 16,
+    "alignment_d": 16
+   }
+  }
+ },
+ "rows": {
+  "1": {
+   "read only": {
+    "us": 746.8,
+    "GBps": 212.9
+   },
+   "deep_gemm": {
+    "us": 1012.5,
+    "GBps": 157.0,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas direct": {
+    "us": 986.7,
+    "GBps": 161.1,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (32, 4, 3)": {
+    "us": 914.3,
+    "GBps": 173.9,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (64, 4, 3)": {
+    "us": 868.5,
+    "GBps": 183.0,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (128, 4, 3)": {
+    "us": 836.4,
+    "GBps": 190.0,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (64, 8, 4)": {
+    "us": 848.7,
+    "GBps": 187.3,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (128, 8, 4)": {
+    "us": 852.0,
+    "GBps": 186.6,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton w8a16 (64, 4, 3)": {
+    "us": 856.9,
+    "GBps": 185.5,
+    "rel_err": 0.027905,
+    "vs_deep_gemm": 0.027574,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton w8a16 (128, 8, 3)": {
+    "us": 873.8,
+    "GBps": 181.9,
+    "rel_err": 0.027905,
+    "vs_deep_gemm": 0.027574,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   }
+  },
+  "4": {
+   "read only": {
+    "us": 738.2,
+    "GBps": 215.3
+   },
+   "deep_gemm": {
+    "us": 949.1,
+    "GBps": 167.5,
+    "rel_err": 0.041392,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas direct": {
+    "us": 910.3,
+    "GBps": 174.6,
+    "rel_err": 0.041392,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (32, 4, 3)": {
+    "us": 741.6,
+    "GBps": 214.3,
+    "rel_err": 0.041392,
+    "vs_deep_gemm": 0.003425,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (64, 4, 3)": {
+    "us": 761.1,
+    "GBps": 208.9,
+    "rel_err": 0.041392,
+    "vs_deep_gemm": 0.003425,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (128, 4, 3)": {
+    "us": 774.6,
+    "GBps": 205.2,
+    "rel_err": 0.041392,
+    "vs_deep_gemm": 0.003425,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (64, 8, 4)": {
+    "us": 764.6,
+    "GBps": 207.9,
+    "rel_err": 0.041392,
+    "vs_deep_gemm": 0.003425,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (128, 8, 4)": {
+    "us": 782.0,
+    "GBps": 203.3,
+    "rel_err": 0.041392,
+    "vs_deep_gemm": 0.003425,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton w8a16 (64, 4, 3)": {
+    "us": 766.5,
+    "GBps": 207.4,
+    "rel_err": 0.027647,
+    "vs_deep_gemm": 0.032534,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton w8a16 (128, 8, 3)": {
+    "us": 783.4,
+    "GBps": 202.9,
+    "rel_err": 0.027647,
+    "vs_deep_gemm": 0.032534,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   }
+  },
+  "16": {
+   "read only": {
+    "us": 695.4,
+    "GBps": 228.6
+   },
+   "deep_gemm": {
+    "us": 987.7,
+    "GBps": 160.9,
+    "rel_err": 0.039238,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "cublas direct": {
+    "us": 968.2,
+    "GBps": 164.2,
+    "rel_err": 0.039238,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (32, 4, 3)": {
+    "us": 769.9,
+    "GBps": 206.5,
+    "rel_err": 0.039238,
+    "vs_deep_gemm": 0.003106,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (64, 4, 3)": {
+    "us": 776.8,
+    "GBps": 204.6,
+    "rel_err": 0.039238,
+    "vs_deep_gemm": 0.003106,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (128, 4, 3)": {
+    "us": 790.2,
+    "GBps": 201.2,
+    "rel_err": 0.039238,
+    "vs_deep_gemm": 0.003106,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (64, 8, 4)": {
+    "us": 785.1,
+    "GBps": 202.5,
+    "rel_err": 0.039238,
+    "vs_deep_gemm": 0.003106,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton fp8 (128, 8, 4)": {
+    "us": 781.8,
+    "GBps": 203.3,
+    "rel_err": 0.039238,
+    "vs_deep_gemm": 0.003106,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton w8a16 (64, 4, 3)": {
+    "us": 772.8,
+    "GBps": 205.7,
+    "rel_err": 0.025684,
+    "vs_deep_gemm": 0.026398,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "triton w8a16 (128, 8, 3)": {
+    "us": 761.6,
+    "GBps": 208.7,
+    "rel_err": 0.025684,
+    "vs_deep_gemm": 0.026398,
+    "argmax_as_bf16": 0.938,
+    "argmax_as_deep_gemm": 1.0
+   }
+  }
+ },
+ "read_programs": 2425
+}
