@@ -326,6 +326,30 @@ def stacks(fn, *, top: int = 30) -> list:
     return [{**g, "us": round(g["us"], 1), "kernels": sorted(g["kernels"])[:3]} for g in rows]
 
 
+def calls(fn, *, top: int = 40) -> list:
+    """The torch functions one eager call of `fn` makes, by name and the innermost engine/probe frame that made them
+    -> [{'func', 'where', 'count'}]: where `stacks`' torch ops come from (the profiler's stacks came back empty)."""
+    import traceback
+    import torch
+    seen = {}
+
+    class Where(torch.overrides.TorchFunctionMode):
+        def __torch_function__(self, func, types, args=(), kwargs=None):
+            name = getattr(func, "__name__", None) or str(func)
+            if not name.startswith("__get") and name not in ("size", "dim", "stride", "is_contiguous", "data_ptr",
+                                                             "numel", "element_size", "device", "dtype", "shape"):
+                frames = [f for f in traceback.extract_stack()[:-1] if "/engine/" in f.filename or "/probes/" in f.filename]
+                where = f"{frames[-1].filename.split('/repo/')[-1]}:{frames[-1].lineno}" if frames else "?"
+                seen[name, where] = seen.get((name, where), 0) + 1
+            return func(*args, **(kwargs or {}))
+
+    with Where():
+        fn()
+    torch.cuda.synchronize()
+    rows = sorted(({"func": k[0], "where": k[1], "count": v} for k, v in seen.items()), key=lambda r: -r["count"])
+    return rows[:top]
+
+
 def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REPLAYS, kv_gib: float = KV_GIB,
             max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False, arm: str = "served") -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row.
@@ -370,6 +394,10 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                 inputs = g.graphs.inputs[shape]
                 where[label] = stacks(lambda: fn(inputs))
                 print(json.dumps({"arm": arm, "stacks": label, "top": where[label][:12]}), flush=True)
+                watched = {"gather", "floor_divide", "__floordiv__", "__rfloordiv__", "mm", "linear", "matmul", "cat",
+                           "index_select", "arange", "sigmoid", "bitwise_and", "__and__", "sub", "__rsub__", "__sub__"}
+                where[label + " calls"] = [c for c in calls(lambda: fn(inputs), top=200) if c["func"] in watched]
+                print(json.dumps({"arm": arm, "calls": label, "top": where[label + " calls"][:30]}), flush=True)
         caches.reset()
         served = served_loop(F, net, caches, target, draft)
         one = shapes[0]
