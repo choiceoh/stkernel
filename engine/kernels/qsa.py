@@ -1212,9 +1212,12 @@ def norm_rope_partial(x: torch.Tensor, w: torch.Tensor, eps: float, positions: t
 
 @triton.jit
 def _norm_rope_into(base, W, pos, INV, out, live, EPS, D: tl.constexpr, R2: tl.constexpr, BD: tl.constexpr,
-                    BR: tl.constexpr):
+                    BR: tl.constexpr, pos_h=0, pos_w=0, MROPE: tl.constexpr = False):
     # _norm_rope_partial's program, line for line, for one head at `base` into `out` (both unit-stride along the head)
-    # when `live`: the fused QSA input launches below run it for several heads and caches in one program
+    # when `live`: the fused QSA input launches below run it for several heads and caches in one program. `MROPE`: the
+    # text model's interleaved multimodal rotary -- rotary pair i turns at the position on axis i % 3 (t, h, w: the
+    # sections 11/11/10 of 32 pairs are exactly that interleave), `pos` being the t axis; a text token's three axes are
+    # one position, and the text path compiles without this branch
     d = tl.arange(0, BD)
     m = (d < D) & live
     x = tl.load(base + d, mask=m, other=0.0).to(tl.float32)
@@ -1230,7 +1233,11 @@ def _norm_rope_into(base, W, pos, INV, out, live, EPS, D: tl.constexpr, R2: tl.c
     wh = tl.load(W + R2 + i, mask=mi, other=0.0).to(tl.float32)
     lo = ((xl * scale) * (1.0 + wl)).to(out.dtype.element_ty).to(tl.float32)
     hi = ((xh * scale) * (1.0 + wh)).to(out.dtype.element_ty).to(tl.float32)
-    angle = pos.to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
+    if MROPE:
+        axis = i % 3
+        angle = tl.where(axis == 0, pos, tl.where(axis == 1, pos_h, pos_w)).to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
+    else:
+        angle = pos.to(tl.float32) * tl.load(INV + i, mask=mi, other=0.0)
     cos, sin = tl.cos(angle), tl.sin(angle)
     tl.store(out + i, (lo * cos - hi * sin).to(out.dtype.element_ty), mask=mi)
     tl.store(out + R2 + i, (lo * sin + hi * cos).to(out.dtype.element_ty), mask=mi)
@@ -1238,25 +1245,31 @@ def _norm_rope_into(base, W, pos, INV, out, live, EPS, D: tl.constexpr, R2: tl.c
 
 @triton.jit
 def _qsa_inputs_kernel(QG, KX, VX, IQX, IKX, POS, INV, WQ, WK, WIQ, QOUT, IQOUT, KC, VC, RC, KV_SLOTS, RING_SLOTS,
-                       sQGr, sQGh, sKr, sVr, sIQr, sIQh, sIKr, sQOr, sIQOr, sP, sKCb, sKCt, sVCb, sVCt, sRCb, sRCt,
+                       sQGr, sQGh, sKr, sVr, sIQr, sIQh, sIKr, sQOr, sIQOr, sP, sPA, sKCb, sKCt, sVCb, sVCt, sRCb, sRCt,
                        kv_pages, ring_pages, EPS, HQ: tl.constexpr, HI: tl.constexpr, D: tl.constexpr,
                        DI: tl.constexpr, R2: tl.constexpr, KV_PAGE: tl.constexpr, RING_PAGE: tl.constexpr,
-                       BD: tl.constexpr, BDI: tl.constexpr, BR: tl.constexpr):
+                       BD: tl.constexpr, BDI: tl.constexpr, BR: tl.constexpr, MROPE: tl.constexpr = False):
     # One program a (row, query head): the query head's norm and rotation, the index query head's (h < HI), and at
     # h == 0 the key head's straight into the K cache, the value row into V and the raw index key into the key ring --
     # norm_rope_partial x 3 and qsa_store_cache_rows x 3, the same arithmetic and addresses (one KV head a rank)
     r = tl.program_id(0)
     h = tl.program_id(1)
     pos = tl.load(POS + r * sP)
-    _norm_rope_into(QG + r * sQGr + h * sQGh, WQ, pos, INV, QOUT + r * sQOr + h * D, h < HQ, EPS, D, R2, BD, BR)
+    pos_h, pos_w = pos, pos
+    if MROPE:                                        # positions [3, N]: the h and w axes a row below
+        pos_h = tl.load(POS + sPA + r * sP)
+        pos_w = tl.load(POS + 2 * sPA + r * sP)
+    _norm_rope_into(QG + r * sQGr + h * sQGh, WQ, pos, INV, QOUT + r * sQOr + h * D, h < HQ, EPS, D, R2, BD, BR,
+                    pos_h, pos_w, MROPE)
     _norm_rope_into(IQX + r * sIQr + h * sIQh, WIQ, pos, INV, IQOUT + r * sIQOr + h * DI, h < HI, EPS, DI, R2, BDI,
-                    BR)
+                    BR, pos_h, pos_w, MROPE)
     # qsa_store_cache_rows' address and validity: int64 before the page stride
     kv_slot = tl.load(KV_SLOTS + r)
     kv_live = (h == 0) & (kv_slot >= 0) & (kv_slot < kv_pages * KV_PAGE)
     kv_block = (tl.maximum(kv_slot, 0) // KV_PAGE).to(tl.int64)
     kv_token = tl.maximum(kv_slot, 0) % KV_PAGE
-    _norm_rope_into(KX + r * sKr, WK, pos, INV, KC + kv_block * sKCb + kv_token * sKCt, kv_live, EPS, D, R2, BD, BR)
+    _norm_rope_into(KX + r * sKr, WK, pos, INV, KC + kv_block * sKCb + kv_token * sKCt, kv_live, EPS, D, R2, BD, BR,
+                    pos_h, pos_w, MROPE)
     dims = tl.arange(0, BD)
     tl.store(VC + kv_block * sVCb + kv_token * sVCt + dims,
              tl.load(VX + r * sVr + dims, mask=kv_live & (dims < D), other=0), mask=kv_live & (dims < D))
@@ -1276,7 +1289,8 @@ def _qsa_index_keys_kernel(raw_keys_ptr, compressor_state_cache_ptr, compressor_
                            stride_compressor_state_table_req, stride_pooled_row, sKb, sKt, num_rows,
                            num_compressor_state_blocks, num_requests, key_pages, EPS,
                            COMPRESSOR_STATE_SIZE: tl.constexpr, COMPRESS_RATIO: tl.constexpr, HEAD_DIM: tl.constexpr,
-                           BLOCK_D: tl.constexpr, R2: tl.constexpr, BR: tl.constexpr, KEY_PAGE: tl.constexpr):
+                           BLOCK_D: tl.constexpr, R2: tl.constexpr, BR: tl.constexpr, KEY_PAGE: tl.constexpr,
+                           ROPE=None, sRR=0, sRA=0, HAS_ROPE: tl.constexpr = False, MROPE: tl.constexpr = False):
     # _compress_qsa_groups_kernel's program (the pooled mean of the group a row closes, from the ring and this step's
     # rows; unit strides along the head, no rope cache), then _norm_rope_partial's at the group's first position and
     # qsa_store_cache_rows' write of the key at the row's slot: the three launches of a QSA layer's index keys in one
@@ -1342,11 +1356,20 @@ def _qsa_index_keys_kernel(raw_keys_ptr, compressor_state_cache_ptr, compressor_
     pooled = pooled_ptr + row * stride_pooled_row
     tl.store(pooled + dims, accumulator / COMPRESS_RATIO, mask=(row < num_rows) & (dims < HEAD_DIM))
     first_position = tl.where(valid_row, end_position - COMPRESS_RATIO + 1, 0)
+    first_h, first_w = first_position, first_position
+    if HAS_ROPE:
+        # the rotary position of the group's first member, as the caller computed it (a picture's positions are not
+        # the cache's): [N] for text, [3, N] with MROPE
+        first_position = tl.where(valid_row, tl.load(ROPE + row * sRR, mask=valid_row, other=0), 0)
+        first_h, first_w = first_position, first_position
+        if MROPE:
+            first_h = tl.where(valid_row, tl.load(ROPE + sRA + row * sRR, mask=valid_row, other=0), 0)
+            first_w = tl.where(valid_row, tl.load(ROPE + 2 * sRA + row * sRR, mask=valid_row, other=0), 0)
     key_live = (compressed_slot >= 0) & (compressed_slot < key_pages * KEY_PAGE)
     key_block = (tl.maximum(compressed_slot, 0) // KEY_PAGE).to(tl.int64)
     key_token = tl.maximum(compressed_slot, 0) % KEY_PAGE
     _norm_rope_into(pooled, W, first_position, INV, KEYS + key_block * sKb + key_token * sKt, key_live, EPS,
-                    HEAD_DIM, R2, BLOCK_D, BR)
+                    HEAD_DIM, R2, BLOCK_D, BR, first_h, first_w, MROPE)
 
 
 def _paged_rows(cache: torch.Tensor, what: str, width: int) -> None:
@@ -1356,12 +1379,17 @@ def _paged_rows(cache: torch.Tensor, what: str, width: int) -> None:
 
 
 def qsa_index_keys(raw_keys, compressor_state_cache, compressor_state_block_table, token_to_req, query_start_loc,
-                   logical_positions, compressed_slots, compress_ratio, weight, eps, theta, rotary_dim, key_cache):
+                   logical_positions, compressed_slots, compress_ratio, weight, eps, theta, rotary_dim, key_cache,
+                   rope_first=None):
     """The index keys a step's rows close, in one launch: qsa_compress_groups_with_ratio (no rope cache), then
     norm_rope_partial at each group's first position, then qsa_store_cache_rows at `compressed_slots` (-1 skipped) --
     the same arithmetic and bytes. `raw_keys` is [rows, head_dim] with a unit stride along the head (the in_proj
     columns). Launch it before this step's raw keys go into the ring: the pooled groups read the ring's older members,
-    and a long prefill's ring writes cover every ring cell."""
+    and a long prefill's ring writes cover every ring cell.
+
+    `rope_first`: the rotary position of each row's group's first member when it is not the cache's -- int64 [rows],
+    or [3, rows] (t, h, w) for the text model's interleaved multimodal rotary; read on the rows that close a group.
+    None rotates at the cache position (`logical_positions` - ratio + 1), a text-only sequence's."""
     if not raw_keys.is_cuda:
         raise RuntimeError("QSA index keys run on CUDA")
     rows = token_to_req.numel()
@@ -1389,6 +1417,7 @@ def qsa_index_keys(raw_keys, compressor_state_cache, compressor_state_block_tabl
         raise ValueError("QSA compressor-state block table has too few request rows")
     if rotary_dim <= 0 or rotary_dim % 2 or rotary_dim > head_dim:
         raise ValueError("QSA index keys rotate an even width no wider than the head")
+    rope, s_rr, s_ra, mrope = _rope_axes(rope_first, rows, "QSA index keys' first-member positions")
     if not rows:
         return
     from engine.kernels.common.norm_rope import warm
@@ -1402,7 +1431,8 @@ def qsa_index_keys(raw_keys, compressor_state_cache, compressor_state_block_tabl
         rows, compressor_state_cache.shape[0], num_requests, key_cache.shape[0], eps,
         COMPRESSOR_STATE_SIZE=compressor_state_cache.shape[1], COMPRESS_RATIO=compress_ratio, HEAD_DIM=head_dim,
         BLOCK_D=triton.next_power_of_2(head_dim), R2=rotary_dim // 2, BR=triton.next_power_of_2(rotary_dim // 2),
-        KEY_PAGE=key_cache.shape[1], num_warps=_input_warps(),
+        KEY_PAGE=key_cache.shape[1], ROPE=rope, sRR=s_rr, sRA=s_ra, HAS_ROPE=rope is not None, MROPE=mrope,
+        num_warps=_input_warps(),
     )
 
 
@@ -1412,7 +1442,11 @@ def qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta, 
     heads iq [N, Hi, Di] (both returned), of the key head k [N, 1, D] straight into k_cache, and qsa_store_cache_rows of
     v [N, 1, D] into v_cache at `kv_slots` and of the raw index keys ik [N, Di] into the key ring at `ring_slots` (-1
     skipped) -- the same arithmetic and bytes as those six launches. Views are read through their strides, unit along
-    the head. The ring write belongs after qsa_index_keys, which reads the ring."""
+    the head. The ring write belongs after qsa_index_keys, which reads the ring.
+
+    `positions` are the rotary positions: int64 [N], or [3, N] (t, h, w) for a step whose rows include a picture's
+    (the text model's interleaved multimodal rotary; engine/profiles/qwen38/vision.rope_positions). The caches are
+    addressed by `kv_slots` and `ring_slots`, never by these."""
     if not q.is_cuda:
         raise RuntimeError("QSA inputs run on CUDA")
     if q.ndim != 3 or k.ndim != 3 or v.shape != k.shape or iq.ndim != 3 or ik.ndim != 2:
@@ -1423,8 +1457,8 @@ def qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta, 
         raise ValueError("QSA inputs: one KV head a rank, as many rows everywhere, no more index heads than query heads")
     if any(x.stride(-1) != 1 for x in (q, k, v, iq, ik)):
         raise ValueError("QSA inputs are read with a unit stride along the head")
-    if positions.shape != (rows,) or positions.dtype != torch.int64:
-        raise ValueError("QSA inputs take int64 positions [N]")
+    if positions.dtype != torch.int64 or positions.shape not in ((rows,), (3, rows)):
+        raise ValueError("QSA inputs take int64 positions [N] or [3, N]")
     if q_norm.shape != (dim,) or k_norm.shape != (dim,) or iq_norm.shape != (di,):
         raise ValueError("QSA input norm weights must match their heads")
     if rotary_dim <= 0 or rotary_dim % 2 or rotary_dim > di:
@@ -1436,7 +1470,8 @@ def qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta, 
         raise ValueError("QSA inputs: K and V pages match and every row has a K/V and a ring slot")
     if not (q.dtype == k.dtype == v.dtype == iq.dtype == ik.dtype == k_cache.dtype == v_cache.dtype == ring.dtype):
         raise ValueError("QSA inputs and caches share one dtype")
-    _packed_rows("QSA inputs", positions, kv_slots, ring_slots)
+    _, s_p, s_pa, mrope = _rope_axes(positions, rows, "QSA input positions")
+    _packed_rows("QSA inputs", positions if positions.ndim == 1 else positions[0], kv_slots, ring_slots)
     q_out = torch.empty(rows, hq, dim, device=q.device, dtype=q.dtype)
     iq_out = torch.empty(rows, hi, di, device=q.device, dtype=q.dtype)
     if not rows:
@@ -1446,13 +1481,25 @@ def qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta, 
     _qsa_inputs_kernel[(rows, hq)](
         q, k, v, iq, ik, positions, inv, q_norm, k_norm, iq_norm, q_out, iq_out, k_cache, v_cache, ring, kv_slots,
         ring_slots, q.stride(0), q.stride(1), k.stride(0), v.stride(0), iq.stride(0), iq.stride(1), ik.stride(0),
-        q_out.stride(0), iq_out.stride(0), positions.stride(0), k_cache.stride(0), k_cache.stride(1),
+        q_out.stride(0), iq_out.stride(0), s_p, s_pa, k_cache.stride(0), k_cache.stride(1),
         v_cache.stride(0), v_cache.stride(1), ring.stride(0), ring.stride(1), k_cache.shape[0], ring.shape[0], eps,
         HQ=hq, HI=hi, D=dim, DI=di, R2=rotary_dim // 2, KV_PAGE=k_cache.shape[1], RING_PAGE=ring.shape[1],
         BD=triton.next_power_of_2(dim), BDI=triton.next_power_of_2(di), BR=triton.next_power_of_2(rotary_dim // 2),
-        num_warps=_input_warps(),
+        MROPE=mrope, num_warps=_input_warps(),
     )
     return q_out, iq_out
+
+
+def _rope_axes(positions, rows: int, what: str):
+    """(tensor, row stride, axis stride, mrope) for rotary positions given as int64 [rows] or [3, rows] (t, h, w);
+    None passes through as (None, 0, 0, False). Rows are read at `ptr + row * stride`, the axes `axis_stride` apart."""
+    if positions is None:
+        return None, 0, 0, False
+    if positions.dtype != torch.int64 or positions.shape not in ((rows,), (3, rows)):
+        raise ValueError(f"{what} must be int64 [{rows}] or [3, {rows}]")
+    if positions.ndim == 1:
+        return positions, positions.stride(0), 0, False
+    return positions, positions.stride(1), positions.stride(0), True
 
 
 def _input_warps() -> int:

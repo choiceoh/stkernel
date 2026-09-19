@@ -92,6 +92,13 @@ class Step:
     ids: torch.Tensor           # [N] int64
     segments: "tuple[Segment, ...]"
     marks: tuple = ()           # ((position into ids, snapshot) ...): block boundaries inside a prefill segment
+    # a sequence whose prompt holds a picture turns at its mRoPE positions, not its cache positions
+    # (engine/profiles/qwen38/vision.rope_positions): int64 [N] or [3, N] (t, h, w) for every row, and each row's
+    # group-first member's (read on the rows that close an index-key group). None: the cache positions.
+    rope: "torch.Tensor | None" = None
+    rope_first: "torch.Tensor | None" = None
+    # a picture's rows in place of its placeholders' embeddings: ((row indices into ids [m] int64, rows [m, H]) ...)
+    patches: tuple = ()
 
     def __post_init__(self):
         if self.ids.ndim != 1 or self.ids.dtype != torch.int64 or not self.segments:
@@ -112,6 +119,12 @@ class Step:
             end += s.length
         if end != self.ids.numel():
             raise ValueError("segment lengths must cover every token exactly once")
+        for name in ("rope", "rope_first"):
+            t = getattr(self, name)
+            if t is not None and (t.dtype != torch.int64 or t.shape not in ((end,), (3, end))):
+                raise ValueError(f"a step's {name} positions are int64 [N] or [3, N]")
+        if (self.rope is None) != (self.rope_first is None):
+            raise ValueError("a step's rotary positions come with their group-first positions")
 
     @property
     def positions(self) -> torch.Tensor:
@@ -142,6 +155,7 @@ class DeviceStep:
     seqs: torch.Tensor          # [rows] int64: block-table rows
     tokens: int
     blocks: int
+    deltas: "torch.Tensor | None" = None     # [rows] int64: each row's mRoPE delta (a picture in its prompt), or None
     captured = True
     marks = ()
 
@@ -167,6 +181,9 @@ class StepMeta:
                                                    # row sees more groups than the budget holds (Qwen38Net._covered_blocks)
     groups_seen: "torch.Tensor | None" = None      # [N] int32: the complete groups each row sees, set by the first QSA
                                                    # layer that splits the step's index queries (Qwen38Net._sharded_blocks)
+    rope: "torch.Tensor | None" = None             # [N] or [3, N] int64: the rotary positions when they are not
+                                                   # `positions` (a sequence whose prompt held a picture); None: those
+    rope_first: "torch.Tensor | None" = None       # [N] or [3, N] int64: each row's group-first member's, with `rope`
 
 
 class Qwen38Net:
@@ -230,6 +247,11 @@ class Qwen38Net:
         self.p = None
         self.dense = {}
         self.draft_index = None                         # dense/ivf_head over the head's rows (prepare_draft_head)
+        # pictures (engine/profiles/qwen38/vision): a boot with the tower sets `serves_pictures` before any graph is
+        # captured (decode_graphs then carries each row's mRoPE delta); `pictures` is seq -> (its prompt's rotary
+        # positions [3, length] int64, delta, the last picture row) while the sequence lives (adapter.bind_media)
+        self.serves_pictures = False
+        self.pictures = {}
         self.draft_tap = None                           # kernels/common/row_tap: what draft_tokens saw (fleet --tap-draft-queries)
         self.mtp_window = None                          # (sink, recent) groups the head attends instead of its scored
                                                         # selection (Windowed-MTP; fleet --mtp-window; `_qsa`)
@@ -484,9 +506,14 @@ class Qwen38Net:
             # one launch for what the composition below spells in about forty (engine/kernels/step_addresses); the
             # composition stays the CPU's form and the reference the kernel is held to
             from engine.kernels import step_addresses
-            return StepMeta(*step_addresses.captured(step.contexts, step.slots, step.seqs, caches.block_table,
-                                                     tokens=step.tokens, blocks=step.blocks, block=F.block,
-                                                     ratio=F.idx_ratio, ring=QSA_KEY_RING))
+            deltas = getattr(step, "deltas", None)
+            out = step_addresses.captured(step.contexts, step.slots, step.seqs, caches.block_table, tokens=step.tokens,
+                                          blocks=step.blocks, block=F.block, ratio=F.idx_ratio, ring=QSA_KEY_RING,
+                                          deltas=deltas)
+            meta = StepMeta(*out[:10])
+            if deltas is not None:
+                meta.rope, meta.rope_first = out[10:]
+            return meta
         if getattr(step, "captured", False):
             n, t = step.rows, step.tokens
             positions = (step.contexts[:, None] + iota(t, dev)).reshape(-1)
@@ -521,8 +548,35 @@ class Qwen38Net:
         ring_slots = torch.where(positions >= lengths[rr] - QSA_KEY_RING,
                                  slot_table[rr, 0].long() * QSA_KEY_RING + positions % QSA_KEY_RING,
                                  torch.full_like(positions, -1)).to(torch.int32)
-        return StepMeta(positions, positions.to(torch.int32), rows_req, page_table, lengths, starts, slot_table,
+        meta = StepMeta(positions, positions.to(torch.int32), rows_req, page_table, lengths, starts, slot_table,
                         kv_slots, key_slots, ring_slots)
+        if getattr(step, "captured", False):
+            deltas = getattr(step, "deltas", None)
+            if deltas is not None:                       # step_addresses.captured's rope outputs, composed
+                meta.rope = positions + deltas[rr]
+                meta.rope_first = meta.rope - (F.idx_ratio - 1)
+        elif step.rope is not None:
+            meta.rope, meta.rope_first = step.rope, step.rope_first
+        return meta
+
+    def rope_rows(self, seq: int, start: int, count: int, device) -> "tuple[torch.Tensor, torch.Tensor] | None":
+        """(rope, rope_first) [3, count] int64 on the device for positions start.. of a sequence whose prompt held a
+        picture -- its prompt's rotary positions, and past the prompt the position plus its delta on all three axes --
+        or None for a text-only sequence (its rotary positions are the cache's)."""
+        layout = self.pictures.get(seq)
+        if layout is None:
+            return None
+        positions, delta = layout[0], layout[1]
+        length = positions.shape[1]
+
+        def at(q):
+            q = np.maximum(q, 0)
+            inside = positions[:, np.minimum(q, max(length - 1, 0))] if length else np.zeros((3, q.size), np.int64)
+            return np.where(q[None, :] < length, inside, q[None, :] + delta)
+
+        index = np.arange(start, start + count, dtype=np.int64)
+        return (torch.from_numpy(np.ascontiguousarray(at(index))).to(device),
+                torch.from_numpy(np.ascontiguousarray(at(index - (self.F.idx_ratio - 1)))).to(device))
 
     # -- the forward ---------------------------------------------------------------------------------------------------
     def takes_mark(self, offset: int) -> bool:
@@ -538,7 +592,10 @@ class Qwen38Net:
         F, p, lanes = self.F, self.p, self.lanes
         meta = self.step_meta(step, caches)
         rows = getattr(step, "captured", False)
-        h = self.embed(step.ids).repeat(1, F.hc)
+        x = self.embed(step.ids)
+        for rows_at, rows in getattr(step, "patches", ()):          # a picture's rows over its placeholders' embeddings
+            x.index_copy_(0, rows_at, rows.to(x.dtype))
+        h = x.repeat(1, F.hc)
         out = inject = None
         for L in self.layers:
             n = f"L{L}."
@@ -745,18 +802,22 @@ class Qwen38Net:
         K, V = caches.kv(cache_layer)
         ring = caches.key_ring(cache_layer)
         ik = idx[:, idx_q:]
+        rope = getattr(meta, "rope", None)
+        rope = meta.positions if rope is None else rope                     # a picture's sequence: its mRoPE positions
+        first = getattr(meta, "rope_first", None)
+        first = {} if first is None else {"rope_first": first}
         if window is None:
             # the indexer's keys first: each group this step closes pooled from the raw-key ring (members before the
             # step) and this step's rows, normalised and rotated at its first position and stored -- one launch, which
             # must read the ring before this step's raw keys overwrite it
             lanes.qsa_index_keys(ik, ring, meta.slot_table, meta.rows_req, meta.starts, meta.positions, meta.key_slots,
                                  F.idx_ratio, p[n + "idx_k_norm"], F.rms_eps, F.rope_theta, F.rotary_dim,
-                                 caches.index_keys(cache_layer))
+                                 caches.index_keys(cache_layer), **first)
         # then one launch for the rest, all read through their strides: the query and index query heads normalised and
         # rotated at their positions, the key head the same straight into K, the value rows into V and the raw keys
         # into the ring by position
         q, iq = lanes.qsa_inputs(qg[..., :D], k.view(N, Hkv, D), v.view(N, Hkv, D),
-                                 idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, meta.positions, p[n + "q_norm"],
+                                 idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, rope, p[n + "q_norm"],
                                  p[n + "k_norm"], p[n + "idx_q_norm"], F.rms_eps, F.rope_theta, F.rotary_dim, K, V,
                                  meta.kv_slots, ring, meta.ring_slots)
         attend_covered = getattr(lanes, "qsa_attend_covered", None)

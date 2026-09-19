@@ -39,16 +39,29 @@ class RotaryEmbedding(nn.Module):
 
 def rope_tables(positions: torch.Tensor, rotary_dim: int, theta: float, dtype=torch.float32,
                 mrope_section: "tuple[int, int, int] | None" = None, interleaved: bool = False):
-    """(cos, sin) [N, rotary_dim] for text positions [N]: the neox tables cat(freqs, freqs). A text token carries the
-    same position on the three mrope axes, so the interleaved mrope layout (transformers qwen4_exp
-    apply_interleaved_mrope) reorders nothing and the tables are the plain ones; `mrope_section` is checked, not
-    applied. Vision positions are not this function's."""
+    """(cos, sin) [N, rotary_dim]: the neox tables cat(freqs, freqs). Text positions [N]: a text token carries the same
+    position on the three mrope axes, so the interleaved mrope layout (transformers qwen4_exp apply_interleaved_mrope)
+    reorders nothing and the tables are the plain ones; `mrope_section` is checked, not applied. Positions [3, N]
+    (t, h, w -- a picture's tokens, engine/profiles/qwen38/vision.rope_positions) with `interleaved` and the sections:
+    each frequency takes its angle from one axis, vLLM's apply_interleaved_rope -- pair i from h where i % 3 == 1 and
+    i < 3 * sections[1], from w where i % 3 == 2 and i < 3 * sections[2], from t otherwise."""
     if rotary_dim <= 0 or rotary_dim % 2:
         raise ValueError(f"a rotary width is positive and even, not {rotary_dim}")
     if mrope_section is not None and 2 * sum(mrope_section) != rotary_dim:
         raise ValueError(f"mrope sections {tuple(mrope_section)} do not cover rotary_dim {rotary_dim}")
     inv = 1.0 / (theta ** (torch.arange(0, rotary_dim, 2, dtype=torch.float, device=positions.device) / rotary_dim))
-    freqs = positions.float()[:, None] * inv[None, :]
+    if positions.ndim == 2:
+        if positions.shape[0] != 3 or mrope_section is None or not interleaved:
+            raise ValueError("positions [3, N] are the interleaved mrope's: give its sections")
+        axes = positions.float()[:, :, None] * inv[None, None, :]              # [3, N, rotary_dim / 2]
+        freqs = axes[0].clone()
+        pair = torch.arange(rotary_dim // 2, device=positions.device)
+        h = (pair % 3 == 1) & (pair < 3 * mrope_section[1])
+        w = (pair % 3 == 2) & (pair < 3 * mrope_section[2])
+        freqs[:, h] = axes[1][:, h]
+        freqs[:, w] = axes[2][:, w]
+    else:
+        freqs = positions.float()[:, None] * inv[None, :]
     emb = torch.cat((freqs, freqs), dim=-1)
     return emb.cos().to(dtype), emb.sin().to(dtype)
 
