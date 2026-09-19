@@ -94,7 +94,9 @@ class QsaViewTests(unittest.TestCase):
         body = source[source.index("    def _qsa("):source.index("    # -- MoE")]
         self.assertIn("ik = idx[:, idx_q:]\n", body)
         self.assertIn("lanes.qsa_index_keys(ik, ring,", body)
-        self.assertIn("idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, meta.positions", body)
+        # the rotary positions: the cache's, or a picture's sequence's mRoPE positions (net.StepMeta.rope)
+        self.assertIn("idx[:, :idx_q].view(N, F.idx_heads, F.idx_dim), ik, rope,", body)
+        self.assertIn("rope = meta.positions if rope is None else rope", body)
         self.assertNotIn(".contiguous()", body)                  # q is qsa_inputs' own contiguous output
 
 

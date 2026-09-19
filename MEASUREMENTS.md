@@ -4991,3 +4991,15 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
   커널이 호출당 약 150 µs 인 인공물이다(프로덕션 moe_packets 는 대기 포함 36–44 µs, #967 의 "CTA 당 약 1.4 µs"). 유효한 근거가 없어
   옮기지 않는다. 재측정 길은 오라클 Ctrl 을 `cudaHostRegister` 로 두거나 GLM 플릿의 `direct_mhc` A/B.
   [상세·원시](measurements/qwen38_rank_packets_20260919/README.md).
+### Qwen3.8 비전 2·3단계 — 엔진이 그림을 받는다: mRoPE 커널(텍스트 경로 바이트 동일), 합성 엔진 미디어 훅, `--vision auto`; 타워 bf16 오차 분해 (2026-09-19, CPU·인터프리터, PR #1274)
+**GPU·플릿 판정 없음** — 네 노드에 `vision.safetensors` 를 깔고 창에서 부팅·그림 답을 볼 때까지 서빙되지 않는다(`auto`: 파일이 없으면 텍스트 전용 그대로).
+- **mRoPE**: `qsa_inputs` 가 [3, N] (t, h, w) 위치를, `qsa_index_keys` 가 그룹 첫 멤버의 회전 위치(`rope_first`)를 받는다. 짝 i 는 축 i % 3(구간 11/11/10 의
+  인터리브와 같음). 인터프리터: 같은 축 [3, N] = 1-D 발사 바이트 동일, 다른 축은 짝마다 그 축의 1-D 발사와 바이트 동일. 캡처 디코드는 그림을 서빙하는 넷에서만
+  행마다 delta 한 줄(`step_addresses` 한 발사 안), 그림 행이나 그 뒤 ratio-1 토큰 안의 스텝은 eager 에서 [3, N].
+- **연결**: `base/composed` 가 그림 기록을 행마다 절대 위치로(이어지는 턴은 재기준) 들고 `check_media`→`bind_media`→`forward(media=)`; park 는 표식·grid 만.
+  어댑터가 그림 행을 임베딩 자리에(처음 닿는 조각에서 한 번 인코딩), MTP 헤드도 같은 회전 위치. `--vision auto|on|off`(기본 auto: 네 랭크 모두 파일이
+  있을 때만, 일부면 부팅 거부). 스위트: 관련 모듈 전부 OK(main 의 `test_probe_qwen38_kda` 오류 2개 제외).
+- **bf16 오차 분해**(`--precision`): 서빙 그대로 5.6~5.7%, MLP 만 fp32 4.3~4.9%, 블록 연산 전부 fp32 3.6~4.8%, 스트림만 fp32 변화 없음 — 한 곳으로는
+  안 줄고 둘 다 fp32 여야 0. 원인은 거대 활성(마지막 블록 뒤 한 채널 ±8,209, 에너지 96%). bf16 유지(서빙 vLLM 과 같음).
+  [상세·원시](measurements/qwen38_vision_tower_20260919/README.md).
+

@@ -13,9 +13,12 @@
 # Before the first boot, once: the preshard on the node holding the checkpoint, then the fan-out --
 #   python3 -m engine.profiles.qwen38.preshard --ckpt /home/choiceoh/models/qwen38-flash-next-nvfp4 \
 #       --out /home/choiceoh/models/st-qwen38-tep4 --source-revision <revision>
-#   VISION=0 RANKS_DIR=/home/choiceoh/models/st-qwen38-tep4 bash launchers/fanout-st-ranks.sh
-# The rank directory carries the checkpoint's config, tokenizer, generation config and chat template beside the
-# ranks (preshard.py copies them), so a node needs nothing else of the checkpoint.
+#   python3 -m engine.profiles.qwen38.preshard --ckpt /home/choiceoh/models/qwen38-flash-next-nvfp4 \
+#       --out /home/choiceoh/models/st-qwen38-tep4 --vision        # the vision tower, whole: vision.safetensors
+#   RANKS_DIR=/home/choiceoh/models/st-qwen38-tep4 bash launchers/fanout-st-ranks.sh   # VISION=0: text only
+# The rank directory carries the checkpoint's config, tokenizer, generation config, chat template and processor
+# config beside the ranks (preshard.py copies them), so a node needs nothing else of the checkpoint. The fleet serves
+# pictures when every node has vision.safetensors (fleet --vision auto) and text only when none does.
 #
 # NOT BESIDE PRODUCTION. This script refuses while any glm53*/q38*/vllm*/st-* container is up on any node, and it
 # takes the fleet lease exactly as start-st-glm53.sh does -- a ticket's owner (ST_LEASE_OWNER, verified),
