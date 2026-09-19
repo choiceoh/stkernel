@@ -145,6 +145,8 @@ else
   stamp "the data boot failed"
 fi
 logs data
+# (review, PR #1275) the tap writes on 4,096 rows or its 30 s timer and a stopped container flushes nothing: this
+# immediate stop may have dropped the last < 4,096 positions of the boot -- the next windows wait 35 s first
 stop_fleet
 stamp "tap: $(ls $DUMPS/mtp-inputs 2>/dev/null | wc -l) shards, $(du -sh $DUMPS/mtp-inputs 2>/dev/null | cut -f1)"
 
