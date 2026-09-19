@@ -157,6 +157,8 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
     net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(), layers=list(layers), mtp=True,
                     mtp_precision=mtp_precision, mtp_experts=mtp_experts,
                     shared_overlap=shared_overlap)
+    from engine.profiles.qwen38.fleet import MTP_WINDOW
+    net.mtp_window = MTP_WINDOW                     # the head's window the fleet serves (fleet --mtp-window)
     specs = net.specs()
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, 0.05, mtp=True)
     snapshots = min(snapshots, 9)           # a net with no GDN layer has empty snapshots, and the count would run away

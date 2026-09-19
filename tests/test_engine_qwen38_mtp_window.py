@@ -137,17 +137,29 @@ class FleetFlagTests(unittest.TestCase):
     def test_the_flag_parses_and_refuses(self):
         from engine.profiles.qwen38.fleet import mtp_window
         self.assertIsNone(mtp_window(None))
+        self.assertIsNone(mtp_window("off"))
         self.assertEqual(mtp_window("1,511"), (1, 511))
         self.assertEqual(mtp_window("0,64"), (0, 64))
         for bad in ("1", "a,b", "1,0", "-1,4"):
             with self.subTest(bad=bad), self.assertRaises(SystemExit):
                 mtp_window(bad)
 
-    def test_the_net_serves_the_scored_selection_by_default(self):
+    def test_the_fleet_serves_the_window_by_default(self):
+        """The operator's decision of 2026-09-19 ("전부 켜"): the fleet's head attends 1,511; `off` scores. The net
+        itself (a probe's, a test's) scores unless told."""
         from pathlib import Path
-        source = (Path(__file__).resolve().parents[1] / "engine/profiles/qwen38/net.py").read_text()
-        self.assertIn("self.mtp_window = None", source)
-        self.assertIn("window=self.mtp_window", source)
+        from engine.profiles.qwen38.fleet import MTP_WINDOW
+        root = Path(__file__).resolve().parents[1]
+        self.assertEqual(MTP_WINDOW, (1, 511))
+        net = (root / "engine/profiles/qwen38/net.py").read_text()
+        self.assertIn("self.mtp_window = None", net)
+        self.assertIn("window=self.mtp_window", net)
+        fleet = (root / "engine/profiles/qwen38/fleet.py").read_text()
+        self.assertIn('ap.add_argument("--mtp-window", default=f"{MTP_WINDOW[0]},{MTP_WINDOW[1]}"', fleet)
+        launcher = (root / "launchers/start-st-qwen38.sh").read_text()
+        self.assertIn("^[0-9]+,[1-9][0-9]*$|^off$", launcher)
+        probe = (root / "probes/engine_qwen38_step.py").read_text()
+        self.assertIn("net.mtp_window = MTP_WINDOW", probe)
 
 
 class ProbeTests(unittest.TestCase):

@@ -99,9 +99,9 @@ case "${ST_DRAFT_LEDGER:-0}" in                               # ST_DRAFT_LEDGER=
   1) ADAPT_ARG="$ADAPT_ARG --draft-ledger" ;;
   *) echo "ST_DRAFT_LEDGER must be 0 or 1" >&2; exit 2 ;;
 esac
-WINDOW_ARG=""                                                 # ST_MTP_WINDOW=SINK,RECENT: the MTP head attends a window of groups (Windowed-MTP)
+WINDOW_ARG=""                                                 # ST_MTP_WINDOW=SINK,RECENT|off: the MTP head's window (fleet default 1,511)
 if [ -n "${ST_MTP_WINDOW:-}" ]; then
-  [[ "$ST_MTP_WINDOW" =~ ^[0-9]+,[1-9][0-9]*$ ]] || { echo "ST_MTP_WINDOW must be SINK,RECENT groups" >&2; exit 2; }
+  [[ "$ST_MTP_WINDOW" =~ ^[0-9]+,[1-9][0-9]*$|^off$ ]] || { echo "ST_MTP_WINDOW must be SINK,RECENT groups or off" >&2; exit 2; }
   WINDOW_ARG="--mtp-window $ST_MTP_WINDOW"
 fi
 ONESHOT_ARG=""                                                # ST_ONESHOT=0: every collective on NCCL (the one-shot cell at hidden 2560 is unmeasured)

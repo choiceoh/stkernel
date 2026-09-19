@@ -53,6 +53,10 @@ MAX_WAIT_S = 0.0
 WORKSPACE_GIB = 12.0        # everything outside the arena, base/runtime_memory's enforced ceiling (GLM-5.3's value)
 OS_RESERVE_GIB = 12.0       # twice earlyoom's 6 GiB floor
 SNAPSHOT_GIB = 2.0
+# the MTP head's window (Windowed-MTP): its first group and its last 511 -- the 2,048 positions it attends at most,
+# chosen by recency instead of scored. On by the operator's decision of 2026-09-19 ("전부 켜"), acceptance unmeasured;
+# fleet --mtp-window off (the launcher's ST_MTP_WINDOW=off) serves the scored selection
+MTP_WINDOW = (1, 511)
 MODEL_NAME = "qwen3.8-flash-next"
 DUMP_DIR = "/home/choiceoh/glm53-logs/st-qwen38-dumps"   # the launcher mounts /home/choiceoh/glm53-logs on every node
 
@@ -351,8 +355,9 @@ def draft_threshold(text: "str | None") -> "float | None":
         raise SystemExit(f"--draft-threshold {text!r}: 0 <= P < 1")
     return value
 def mtp_window(text: "str | None") -> "tuple[int, int] | None":
-    """`--mtp-window SINK,RECENT` -> (sink, recent) groups of idx_ratio positions, or None for the scored selection."""
-    if text is None:
+    """`--mtp-window SINK,RECENT` -> (sink, recent) groups of idx_ratio positions; `off` (or None) -> None, the scored
+    selection."""
+    if text is None or text == "off":
         return None
     try:
         sink, recent = (int(v) for v in text.split(","))
@@ -434,10 +439,10 @@ def main(argv=None) -> int:
     ap.add_argument("--draft-ledger", action="store_true",
                     help="rank 0 writes one JSON line a verified row under --dump-dir/draft-ledger: the head's picks, "
                          "their probabilities, how many were proposed and kept (the threshold's curve)")
-    ap.add_argument("--mtp-window", default=None, metavar="SINK,RECENT",
+    ap.add_argument("--mtp-window", default=f"{MTP_WINDOW[0]},{MTP_WINDOW[1]}", metavar="SINK,RECENT|off",
                     help="the MTP head attends its first SINK and last RECENT groups (4 positions each) instead of its "
                          "scored selection -- Windowed-MTP: no index scoring in the draft; acceptance moves, output does "
-                         "not. SINK + RECENT <= 512 (e.g. 1,511)")
+                         f"not. SINK + RECENT <= 512; default {MTP_WINDOW[0]},{MTP_WINDOW[1]}, `off` the scored selection")
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
                          "the first fleet boot, 2026-09-18, stalled in it at every sum)")
