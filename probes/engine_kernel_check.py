@@ -242,6 +242,11 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes.startswith('sm121_batch:'):
+        # several sm121 lanes in one ticket, each its own process with its own deadline and output
+        from probes.engine_sm121_batch import run as sm121_batch
+        sm121_batch(args.lanes.split(':', 1)[1].split(','), args.output)
+        return
     if args.lanes in ('sm121_fp4_gemm', 'sm121_fp4_moe'):
         # the image's block-scaled FP4 GEMMs (U5) and its MXFP4 MoEs (U3) against dequantized references
         from probes.engine_sm121_fp4 import run_gemm, run_moe
