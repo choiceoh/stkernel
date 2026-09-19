@@ -1,9 +1,10 @@
 """Qwen C=1 mixer hypothesis: FP8 weights with the two existing BF16-row folds.
 
 The previous hc_fp8 arm lost the folds and quantized activations. This prototype
-instead widens each block-scaled FP8 weight tile to BF16 inside the two kernels.
-Activations, gates, dot tiles, split order and intermediate roundings follow
-gated_residual.mix_rows. Weight quantization IS an arithmetic change: report its
+instead widens each FP8 weight tile to BF16 inside the two kernels and scales
+the dot's FP32 partial once per 128-wide block. Activations, gates and output
+roundings follow gated_residual.mix_rows; accumulation order differs. Weight
+quantization IS an arithmetic change: report its
 drift separately from kernel error against the dequantized weight recipe.
 
 Real rank-file mixers, rotated beyond L2; alternating CUDA graphs on one GB10.
@@ -33,13 +34,13 @@ def _dot(X, W, WS, sx, sw, ss, rows, cols, M, N, k0, k1,
         x = tl.load(X + rows[:, None] * sx + ks[None, :],
                     mask=(rows[:, None] < M) & km[None, :], other=0.0)
         w = tl.load(W + cols[:, None] * sw + ks[None, :],
-                    mask=(cols[:, None] < N) & km[None, :], other=0.0).to(tl.float32)
-        scale = tl.load(WS + (cols[:, None] // 128) * ss + ks[None, :] // 128,
-                        mask=(cols[:, None] < N) & km[None, :], other=0.0)
-        w = (w * scale).to(tl.bfloat16)
+                    mask=(cols[:, None] < N) & km[None, :], other=0.0).to(tl.bfloat16)
+        # BK=128 never crosses a scale block. Scale the dot, rather than each
+        # weight element: the first prototype's elementwise expansion was 2x slower.
+        scale = tl.load(WS + (cols // 128) * ss + k // 128, mask=cols < N, other=0.0)
         if FP32_DOT:
             x, w = x.to(tl.float32), w.to(tl.float32)
-        acc += tl.dot(x, tl.trans(w))
+        acc += tl.dot(x, tl.trans(w)) * scale[None, :]
     return acc
 
 
@@ -82,7 +83,7 @@ def mix(x, down, up, hc, rank, *, inject=True):
     if not 1 <= rows <= 16 or x.dtype != torch.bfloat16 or not x.is_contiguous():
         raise ValueError("requires 1..16 contiguous BF16 rows")
     n = rank + (hc if inject else 0)
-    bn, bk, split, warps, stages = sg.CONFIGS[(n, width)]
+    bn, bk, split, warps, stages = (16, 128, 8, 4, 3)
     w, ws = down
     gates = torch.empty(rows, rank, device=x.device, dtype=x.dtype)
     inj = torch.empty(rows, hc, device=x.device, dtype=x.dtype) if inject else gates
@@ -94,7 +95,7 @@ def mix(x, down, up, hc, rank, *, inject=True):
         BN=bn, BK=bk, SPLIT=split, FP32_DOT=not x.is_cuda, num_warps=warps, num_stages=stages)
     out = torch.empty(rows, width // hc, device=x.device, dtype=x.dtype)
     w, ws = up
-    bd, bk, warps, stages = hcr.UP_TILE
+    bd, bk, warps, stages = (32, 128, 4, 3)
     _up[(triton.cdiv(width // hc, bd),)](
         gates, w, ws, x, out, rows, gates.stride(0), w.stride(0), ws.stride(0), x.stride(0), out.stride(0),
         float(hc), HID=width // hc, R=rank, HC=hc, BD=bd, BK=bk, FP32_DOT=not x.is_cuda,
