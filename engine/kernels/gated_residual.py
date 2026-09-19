@@ -25,13 +25,22 @@ one), three launches a site:
     up_mean      up for one block of hidden channels in each stream, sigmoid, times the streams, the   one launch
                  mean over them -- the up product never leaves the program
 
-A prefill step's rows (more than PREFILL_ROWS) take `mix_block` -- the same two folds over row blocks, on tensor-core
-tiles instead of the skinny GEMV's padded 16 rows:
+A prefill step's rows (PREFILL_ROWS or more) take `mix_block`: the same two folds over row blocks, on tensor-core tiles
+instead of the skinny GEMV's padded 16 rows --
 
-    down_gates_rows   down(+inject) for a block of rows and a block of the mixer's columns, K walked whole, the
-                      gates stored from the product                                                          one launch
+    down_gates_rows   down(+inject) for a block of rows and a block of the mixer's columns, the gates stored   one launch
+                      from the product; the column blocks of a row block adjacent programs (the rows read from
+                      DRAM once, the other blocks' reads L2's), the injection's 4 columns a narrow last block
+                      rather than a padded one, and K split where the rows are too few to fill the device --
+                      the last program of a tile sums the split, as `_down_gates` does (DOWN_TILES; cuBLAS and
+                      `_gates` for rows short of the table)
     up_mean_rows      up for a block of rows and a block of hidden channels in each stream, sigmoid, times the
                       streams, the mean -- the [N, hc*H] up product (84 MB at 4,096 rows) never written      one launch
+
+On a GB10 (q38sitecmp-0919a, eight sites a graph, interleaved): up and the mean 1,703 -> 815 us a site at 4,096 rows
+(x2.09), x1.66 at 2,048, x1.65 at 1,024, x1.39 at 512 -- and the output byte for byte cuBLAS's up with `_mix_mean`.
+The down projection and the gates: 590 -> 557 us at 4,096 rows at 128 x 128 x 32 tiles (-5.7%); level with cuBLAS at
+1,024 and 2,048 rows (+1%) and behind it at 512 (+24%), so the fold takes it from DOWN_FOLD_ROWS rows.
 
 The arithmetic after each product is `_gates`' and `_mix_mean`'s, on the same BF16 product, so the site's outputs are
 byte for byte the five-launch site's with the same products (probes/engine_qwen38_gemv, q38site-0919a). On a GB10 at
@@ -70,8 +79,12 @@ from engine.kernels.common import skinny_gemv
 from engine.kernels.common.skinny_gemv import rows_dot, split_span, split_sum
 
 DECODE_ROWS = skinny_gemv.MAX_ROWS          # rows up to this take `mix_rows`
-PREFILL_ROWS = 64                           # rows past this take `mix_block` (a prefill step's)
-BLOCK_TILES = {"down": (64, 64, 64, 4, 3), "up": (64, 64, 64, 4, 3)}   # (BLOCK_M, BLOCK_N|D, BLOCK_K, warps, stages)
+PREFILL_ROWS = 512                          # rows from this take `mix_block` (a prefill step's; q38sitecmp-0919a)
+# mix_block's down tile (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages, split) by the rows it serves from, the last entry the
+# rows reach; rows short of every entry take cuBLAS and `_gates`. Its up tile (BLOCK_M, BLOCK_D, BLOCK_K, warps, stages)
+# at every row.
+DOWN_TILES = ((4096, (128, 128, 32, 8, 3, 1)),)
+UP_BLOCK_TILE = (64, 64, 32, 4, 4)
 UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
 
@@ -396,13 +409,14 @@ def folds(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> 
 
 
 @triton.jit
-def _tile_dot(X, W, sX, sW, rows, cols, M, N, K, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-              FP32_DOT: tl.constexpr):
-    """[BLOCK_M, BLOCK_N] FP32: X's rows `rows` (< M) times W's rows `cols` (< N) over K, BLOCK_K at a time."""
+def _tile_dot(X, W, sX, sW, rows, cols, M, N, k0, k1, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+              BLOCK_K: tl.constexpr, FP32_DOT: tl.constexpr):
+    """[BLOCK_M, BLOCK_N] FP32: X's rows `rows` (< M) times W's rows `cols` (< N) over K in [k0, k1), BLOCK_K at a
+    time."""
     acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-    for k in range(0, K, BLOCK_K):
+    for k in range(k0, k1, BLOCK_K):
         ks = k + tl.arange(0, BLOCK_K)
-        km = ks < K
+        km = ks < k1
         x = tl.load(X + rows[:, None] * sX + ks[None, :], mask=(rows[:, None] < M) & km[None, :], other=0.0)
         w = tl.load(W + cols[:, None] * sW + ks[None, :], mask=(cols[:, None] < N) & km[None, :], other=0.0)
         if FP32_DOT:                                              # the interpreter reads a BF16 dot's bits as integers
@@ -412,15 +426,40 @@ def _tile_dot(X, W, sX, sW, rows, cols, M, N, K, BLOCK_M: tl.constexpr, BLOCK_N:
 
 
 @triton.jit
-def _down_gates_rows(X, W, MIX, INJ, M, N, K, sX, sW, sM, sI, HC_F, R: tl.constexpr, HC: tl.constexpr,
+def _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, cols, pid_k, M, N, K, sX, sW, sM, sI, HC_F,
+                     R: tl.constexpr, HC: tl.constexpr, WITH_INJECT: tl.constexpr, BLOCK_M: tl.constexpr,
+                     WIDTH: tl.constexpr, BLOCK_K: tl.constexpr, SPLIT: tl.constexpr, FP32_DOT: tl.constexpr):
+    # one [BLOCK_M, WIDTH] tile's share of K, and the gates from the whole product where this program has it
+    k0, k1 = split_span(K, pid_k, SPLIT, BLOCK_K)
+    acc = _tile_dot(X, W, sX, sW, rows, cols, M, N, k0, k1, BLOCK_M, WIDTH, BLOCK_K, FP32_DOT)
+    if SPLIT == 1:
+        _gate_store(acc, rows, cols, M, MIX, INJ, sM, sI, HC_F, R, HC, WITH_INJECT)
+    else:
+        total, last = split_sum(acc, PART, LOCKS, tile, pid_k, rows, cols, M, N, SPLIT)
+        if last:
+            _gate_store(total, rows, cols, M, MIX, INJ, sM, sI, HC_F, R, HC, WITH_INJECT)
+
+
+@triton.jit
+def _down_gates_rows(X, W, MIX, INJ, PART, LOCKS, M, N, K, sX, sW, sM, sI, HC_F, R: tl.constexpr, HC: tl.constexpr,
                      WITH_INJECT: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-                     FP32_DOT: tl.constexpr):
-    # `_down_gates` over a block of rows: the whole K in one program (a prefill step has row blocks enough to fill
-    # the device without a split)
-    rows = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
-    cols = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
-    acc = _tile_dot(X, W, sX, sW, rows, cols, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, FP32_DOT)
-    _gate_store(acc, rows, cols, M, MIX, INJ, sM, sI, HC_F, R, HC, WITH_INJECT)
+                     TAIL: tl.constexpr, SPLIT: tl.constexpr, FP32_DOT: tl.constexpr):
+    # `_down_gates` over a block of rows. The column block is the fastest grid index, so the blocks of one row block run
+    # side by side and share its rows through L2; TAIL > 0 is the last column block's narrower width (its live columns
+    # rounded up to a dot's 16)
+    pid_n, pid_m, pid_k = tl.program_id(0), tl.program_id(1), tl.program_id(2)
+    tile = pid_m * tl.num_programs(0) + pid_n
+    rows = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    if TAIL > 0:
+        if pid_n == tl.num_programs(0) - 1:
+            _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, pid_n * BLOCK_N + tl.arange(0, TAIL), pid_k, M, N,
+                             K, sX, sW, sM, sI, HC_F, R, HC, WITH_INJECT, BLOCK_M, TAIL, BLOCK_K, SPLIT, FP32_DOT)
+        else:
+            _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, pid_n * BLOCK_N + tl.arange(0, BLOCK_N), pid_k, M,
+                             N, K, sX, sW, sM, sI, HC_F, R, HC, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K, SPLIT, FP32_DOT)
+    else:
+        _down_gates_tile(X, W, MIX, INJ, PART, LOCKS, tile, rows, pid_n * BLOCK_N + tl.arange(0, BLOCK_N), pid_k, M, N,
+                         K, sX, sW, sM, sI, HC_F, R, HC, WITH_INJECT, BLOCK_M, BLOCK_N, BLOCK_K, SPLIT, FP32_DOT)
 
 
 @triton.jit
@@ -433,7 +472,7 @@ def _up_mean_rows(G, W, NORMED, OUT, M, sG, sW, sN, sO, HC_F, HID: tl.constexpr,
     live = (rows[:, None] < M) & (d[None, :] < HID)
     acc = tl.zeros((BLOCK_M, BLOCK_D), dtype=tl.float32)
     for s in tl.static_range(HC):
-        u = _tile_dot(G, W, sG, sW, rows, s * HID + d, M, s * HID + HID, R, BLOCK_M, BLOCK_D, BLOCK_K, FP32_DOT)
+        u = _tile_dot(G, W, sG, sW, rows, s * HID + d, M, s * HID + HID, 0, R, BLOCK_M, BLOCK_D, BLOCK_K, FP32_DOT)
         g = tl.sigmoid(u.to(OUT.dtype.element_ty).to(tl.float32)).to(OUT.dtype.element_ty).to(tl.float32)
         n = tl.load(NORMED + rows[:, None] * sN + (s * HID + d)[None, :], mask=live, other=0.0).to(tl.float32)
         acc += (g * n).to(OUT.dtype.element_ty).to(tl.float32)
@@ -441,16 +480,53 @@ def _up_mean_rows(G, W, NORMED, OUT, M, sG, sW, sN, sO, HC_F, HID: tl.constexpr,
 
 
 def blocks_fold(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> bool:
-    """Whether `mix_block` serves this site: more than PREFILL_ROWS rows in BF16, each operand packed along its last
+    """Whether `mix_block` serves this site: PREFILL_ROWS rows or more in BF16, each operand packed along its last
     dimension."""
-    return (normed.shape[0] > PREFILL_ROWS and normed.dtype == down_inject.dtype == up.dtype == torch.bfloat16
+    return (normed.shape[0] >= PREFILL_ROWS and normed.dtype == down_inject.dtype == up.dtype == torch.bfloat16
             and normed.stride(1) == 1 and down_inject.stride(1) == 1 and up.stride(1) == 1)
+
+
+def block_tiles(rows: int) -> dict:
+    """mix_block's tiles for `rows` rows: {"down": DOWN_TILES' entry, or None for cuBLAS and `_gates`; "up": ...}."""
+    down = None
+    for least, tile in DOWN_TILES:
+        if rows >= least:
+            down = tile
+    return {"down": down, "up": UP_BLOCK_TILE}
+
+
+def narrow_tail(n: int, block_n: int) -> int:
+    """The last column block's width when it is narrower than `block_n` (its live columns rounded up to a power of two,
+    16 at least -- the injection's 4 past the mixer's 320 in 64-wide blocks: 16, not 64); 0 when it is not."""
+    tail = max(16, triton.next_power_of_2(n - (triton.cdiv(n, block_n) - 1) * block_n))
+    return tail if tail < block_n else 0
+
+
+def down_gates_block(normed, down_inject, gates, inj, hc: int, *, inject: bool, tile) -> None:
+    """`_down_gates_rows` at `tile` (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages, split): the gates [N, r] and, with
+    `inject`, the injection [N, hc] (`inj`; `gates` again without one) stored from down(+inject) of the rows."""
+    rows, width = normed.shape
+    n = down_inject.shape[0]
+    bm, bn, bk, warps, stages, split = tile
+    grid = (triton.cdiv(n, bn), triton.cdiv(rows, bm), split)
+    if split > 1:
+        if grid[0] * grid[1] > skinny_gemv.MAX_BLOCKS:
+            raise ValueError(f"a split down tile over {rows} rows needs {grid[0] * grid[1]} arrival words; a device has "
+                             f"{skinny_gemv.MAX_BLOCKS}")
+        part = torch.empty(split, rows, n, device=normed.device, dtype=torch.float32)
+        locks = skinny_gemv.prepare(normed.device)
+    else:
+        part = locks = gates
+    _down_gates_rows[grid](normed, down_inject, gates, inj, part, locks, rows, n, width, normed.stride(0),
+                           down_inject.stride(0), gates.stride(0), inj.stride(0), float(hc), R=gates.shape[1], HC=hc,
+                           WITH_INJECT=inject, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk, TAIL=narrow_tail(n, bn), SPLIT=split,
+                           FP32_DOT=not normed.is_cuda, num_warps=warps, num_stages=stages)
 
 
 def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
               inject: bool = True, tiles=None) -> "tuple[torch.Tensor, torch.Tensor | None]":
-    """`mix` for a prefill step's rows in two launches (the module docstring): (mixed [N, H], injection [N, hc] or
-    None). `tiles`: BLOCK_TILES' form, for a probe; the table otherwise."""
+    """`mix` for a prefill step's rows (the module docstring): (mixed [N, H], injection [N, hc] or None). `tiles`:
+    `block_tiles`' form, for a probe or a test; the table's for the rows otherwise."""
     hid = _check_streams(normed, hc)
     rank = up.shape[1]
     if up.shape != (normed.shape[1], rank) or down_inject.shape != (rank + (hc if inject else 0), normed.shape[1]):
@@ -458,9 +534,8 @@ def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor,
                          f"{normed.shape[1]}] and up [{normed.shape[1]}, {rank}]")
     if not (normed.dtype == down_inject.dtype == up.dtype == torch.bfloat16) or normed.stride(1) != 1:
         raise ValueError("mix_block takes BF16 streams and weights, packed along their channels")
-    tiles = BLOCK_TILES if tiles is None else tiles
-    rows, width = normed.shape
-    n = down_inject.shape[0]
+    rows = normed.shape[0]
+    tiles = block_tiles(rows) if tiles is None else tiles
     gates = torch.empty(rows, rank, device=normed.device, dtype=normed.dtype)
     injection = torch.empty(rows, hc, device=normed.device, dtype=normed.dtype) if inject else None
     mixed = torch.empty(rows, hid, device=normed.device, dtype=normed.dtype)
@@ -468,11 +543,13 @@ def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor,
         return mixed, injection
     inj = gates if injection is None else injection
     interpreted = not normed.is_cuda
-    bm, bn, bk, warps, stages = tiles["down"]
-    _down_gates_rows[(triton.cdiv(rows, bm), triton.cdiv(n, bn))](
-        normed, down_inject, gates, inj, rows, n, width, normed.stride(0), down_inject.stride(0), gates.stride(0),
-        inj.stride(0), float(hc), R=rank, HC=hc, WITH_INJECT=inject, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
-        FP32_DOT=interpreted, num_warps=warps, num_stages=stages)
+    if tiles["down"] is None:
+        di = torch.mm(normed, down_inject.t())
+        _gates[(rows,)](di, gates, inj, di.stride(0), gates.stride(0), inj.stride(0), float(hc), R=rank,
+                        BR=triton.next_power_of_2(rank), HC=hc, BH=triton.next_power_of_2(hc), WITH_INJECT=inject,
+                        num_warps=4)
+    else:
+        down_gates_block(normed, down_inject, gates, inj, hc, inject=inject, tile=tiles["down"])
     bm, bd, bk, warps, stages = tiles["up"]
     _up_mean_rows[(triton.cdiv(rows, bm), triton.cdiv(hid, bd))](
         gates, up, normed, mixed, rows, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0), float(hc),

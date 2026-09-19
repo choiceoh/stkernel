@@ -200,11 +200,10 @@ def run_site(output=None) -> dict:
 
 PREFILL_ROWS = (128, 512, 1024, 4096)
 PREFILL_SITES = 8                                  # sites a graph at prefill rows: the activations, not the weights, are the bytes
-# (BLOCK_M, BLOCK_N|D, BLOCK_K, warps, stages) for gated_residual.mix_block's two launches, the served table's first
-BLOCK_TRIES = {"down": ((64, 64, 64, 4, 3), (128, 64, 64, 4, 3), (64, 128, 64, 4, 3), (128, 128, 64, 8, 3),
-                        (64, 64, 128, 4, 3)),
-               "up": ((64, 64, 64, 4, 3), (128, 64, 64, 4, 3), (64, 128, 64, 4, 3), (128, 128, 64, 8, 3),
-                      (64, 64, 32, 4, 3))}
+# gated_residual.mix_block's two launches at other tiles than the table's, one launch at a time: down (BLOCK_M, BLOCK_N,
+# BLOCK_K, warps, stages, split), up (BLOCK_M, BLOCK_D, BLOCK_K, warps, stages)
+BLOCK_TRIES = {"down": ((128, 128, 32, 8, 3, 1), (128, 128, 32, 8, 3, 4), (128, 64, 64, 4, 3, 1)),
+               "up": ((64, 64, 64, 4, 3), (128, 64, 64, 4, 3))}
 
 
 def run_site_prefill(output=None) -> dict:
@@ -220,7 +219,7 @@ def run_site_prefill(output=None) -> dict:
     down = torch.randn(RANK + HC, width, device="cuda", dtype=torch.bfloat16) * 0.02
     up = torch.randn(width, RANK, device="cuda", dtype=torch.bfloat16) * 0.02
     report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "sites_a_graph": PREFILL_SITES,
-              "tiles": {k: list(v) for k, v in hcr.BLOCK_TILES.items()}, "rows": {}}
+              "tiles": {"down": [[r, list(t)] for r, t in hcr.DOWN_TILES], "up": list(hcr.UP_BLOCK_TILE)}, "rows": {}}
     for m in PREFILL_ROWS:
         normed = torch.randn(m, width, device="cuda", dtype=torch.bfloat16)
         keep = []
@@ -239,7 +238,7 @@ def run_site_prefill(output=None) -> dict:
                            project_up=lambda t: torch.mm(t, up.t()))
 
         def tiled(which, tile):
-            tiles = dict(hcr.BLOCK_TILES, **{which: tile})
+            tiles = dict(hcr.block_tiles(m), **{which: tile})
             return lambda: hcr.mix_block(normed, down, up, HC, tiles=tiles)
 
         got, ref = hcr.mix_block(normed, down, up, HC), five()
@@ -248,7 +247,7 @@ def run_site_prefill(output=None) -> dict:
                   "mix_routes_here": bool(torch.equal(hcr.mix(normed, down, up, HC)[0], got[0]))}
         arms = {"five launches (served before)": graph_of(five), "mix_block (table)": graph_of(lambda: hcr.mix_block(normed, down, up, HC))}
         for which, tries in BLOCK_TRIES.items():
-            for tile in tries[1:]:
+            for tile in tries:
                 arms[f"{which} {tile}"] = graph_of(tiled(which, tile))
         times = {name: [] for name in arms}
         for _ in range(ROUNDS):
@@ -272,10 +271,16 @@ def run_site_prefill(output=None) -> dict:
 
 
 COMPONENT_ROWS = (512, 1024, 2048, 4096)
-COMPONENT_TRIES = {"down": ((64, 64, 64, 4, 3), (128, 64, 64, 4, 3), (128, 64, 64, 8, 3), (128, 64, 32, 4, 4),
-                            (128, 32, 64, 4, 3), (256, 64, 64, 8, 3), (128, 128, 32, 8, 3)),
-                   "up": ((64, 64, 64, 4, 3), (64, 64, 32, 4, 3), (64, 64, 32, 4, 4), (64, 64, 32, 8, 3),
-                          (64, 32, 32, 4, 3), (32, 64, 32, 4, 3), (128, 64, 32, 8, 3), (64, 128, 32, 8, 3))}
+# down (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages, split): whole-K tiles for many rows (64-wide ones end in the 16-wide
+# injection block, 256-wide ones in a 128-wide block), split-K ones for few; up (BLOCK_M, BLOCK_D, BLOCK_K, warps,
+# stages). q38sitecmp-0919a measured the down tiles before the column blocks were adjacent programs (5-tuples then)
+COMPONENT_TRIES = {"down": ((128, 128, 32, 8, 3, 1), (128, 128, 64, 8, 3, 1), (128, 128, 32, 8, 4, 1),
+                            (256, 128, 32, 8, 3, 1), (128, 256, 32, 8, 3, 1), (64, 256, 32, 8, 4, 1),
+                            (128, 64, 64, 4, 3, 1), (256, 64, 64, 8, 3, 1), (128, 64, 32, 4, 4, 1),
+                            (64, 128, 64, 4, 3, 2), (64, 128, 64, 4, 3, 4), (128, 128, 32, 8, 3, 2),
+                            (128, 128, 32, 8, 3, 4), (128, 128, 32, 8, 3, 8), (64, 64, 64, 4, 3, 4),
+                            (128, 64, 64, 4, 3, 2), (128, 64, 64, 4, 3, 4)),
+                   "up": ((64, 64, 32, 4, 4),)}
 
 
 def run_site_components(output=None) -> dict:
@@ -318,11 +323,7 @@ def run_site_components(output=None) -> dict:
             def fn():
                 g = torch.empty(m, RANK, device="cuda", dtype=torch.bfloat16)
                 inj = torch.empty(m, HC, device="cuda", dtype=torch.bfloat16)
-                bm, bn, bk, warps, stages = tile
-                hcr._down_gates_rows[(triton.cdiv(m, bm), triton.cdiv(RANK + HC, bn))](
-                    normed, down, g, inj, m, RANK + HC, width, normed.stride(0), down.stride(0), g.stride(0),
-                    inj.stride(0), float(HC), R=RANK, HC=HC, WITH_INJECT=True, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
-                    FP32_DOT=False, num_warps=warps, num_stages=stages)
+                hcr.down_gates_block(normed, down, g, inj, HC, inject=True, tile=tile)
                 return g, inj
             return fn
 
@@ -348,13 +349,18 @@ def run_site_components(output=None) -> dict:
 
         checks = {}
         ref_g, ref_up = cublas_down()[0], cublas_up()
+        failed = {}
         for tile in COMPONENT_TRIES["down"]:
-            checks[f"down {tile}"] = round(hcr.drift(block_down(tile)()[0], ref_g)[0], 6)
+            try:                                          # a tile past the device's shared memory fails to compile
+                checks[f"down {tile}"] = round(hcr.drift(block_down(tile)()[0], ref_g)[0], 6)
+            except Exception as err:                      # noqa: BLE001 -- recorded, and the tile left out
+                failed[f"down {tile}"] = f"{type(err).__name__}: {str(err)[:200]}"
         for tile in COMPONENT_TRIES["up"]:
             checks[f"up {tile}"] = round(hcr.drift(block_up(tile)(), ref_up)[0], 6)
         arms = {"down: cublas + gates": graph_of(cublas_down), "up: cublas + mix_mean": graph_of(cublas_up)}
         for tile in COMPONENT_TRIES["down"]:
-            arms[f"down {tile}"] = graph_of(block_down(tile))
+            if f"down {tile}" not in failed:
+                arms[f"down {tile}"] = graph_of(block_down(tile))
         for tile in COMPONENT_TRIES["up"]:
             arms[f"up {tile}"] = graph_of(block_up(tile))
         times = {name: [] for name in arms}
@@ -368,7 +374,7 @@ def run_site_components(output=None) -> dict:
                 times[name].append((time.perf_counter() - began) / PREFILL_SITES * 1e6)
         del arms, keep
         row = {name: {"median": round(statistics.median(v), 1), "min": round(min(v), 1)} for name, v in times.items()}
-        report["rows"][m] = {"us_a_site": row, "drift_vs_cublas": checks}
+        report["rows"][m] = {"us_a_site": row, "drift_vs_cublas": checks, "failed": failed}
         print(json.dumps({f"components rows {m}": {k: v["median"] for k, v in row.items()}}), flush=True)
         del normed, gates
         torch.cuda.empty_cache()

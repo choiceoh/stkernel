@@ -1,6 +1,7 @@
 """engine/kernels/gated_residual.mix_block -- a prefill step's mixer in two launches over row blocks -- held byte for byte
 to the unfolded mixer (`_gates` and `_mix_mean`) on the same products (a plain block GEMM over `_tile_dot` at the
-same tiles), within the oracle's band of the torch form, and where `mix` takes it.
+same tiles, its narrow last column block and its split included), within the oracle's band of the torch form, and where
+`mix` takes it.
 
     TRITON_INTERPRET=1 CUDA_VISIBLE_DEVICES= python3 -m unittest tests.test_engine_gated_residual_blocks
 """
@@ -23,14 +24,13 @@ if READY:
     from engine.kernels import gated_residual as hcr
 
     @triton.jit
-    def _block_product(X, W, OUT, M, N, K, sX, sW, sO, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+    def _block_partial(X, W, OUT, M, N, k0, k1, col0, sX, sW, sO, BLOCK_M: tl.constexpr, WIDTH: tl.constexpr,
                        BLOCK_K: tl.constexpr, FP32_DOT: tl.constexpr):
-        # the plain GEMM on mix_block's own dot: the product rounded to BF16 and stored, as a GEMM's output is
+        # one column block of mix_block's own dot over [k0, k1), every row block, stored in FP32
         rows = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
-        cols = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
-        acc = hcr._tile_dot(X, W, sX, sW, rows, cols, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, FP32_DOT)
-        tl.store(OUT + rows[:, None] * sO + cols[None, :], acc.to(OUT.dtype.element_ty),
-                 mask=(rows[:, None] < M) & (cols[None, :] < N))
+        cols = col0 + tl.arange(0, WIDTH)
+        acc = hcr._tile_dot(X, W, sX, sW, rows, cols, M, N, k0, k1, BLOCK_M, WIDTH, BLOCK_K, FP32_DOT)
+        tl.store(OUT + rows[:, None] * sO + cols[None, :], acc, mask=(rows[:, None] < M) & (cols[None, :] < N))
 
 
 def site(inject: bool, rows: int, device="cpu", seed=0):
@@ -43,24 +43,41 @@ def site(inject: bool, rows: int, device="cpu", seed=0):
 
 
 def product(x, w, tile):
-    bm, bn, bk, warps, stages = tile
-    out = torch.empty(x.shape[0], w.shape[0], dtype=x.dtype, device=x.device)
-    _block_product[(triton.cdiv(x.shape[0], bm), triton.cdiv(w.shape[0], bn))](
-        x, w, out, x.shape[0], w.shape[0], x.shape[1], x.stride(0), w.stride(0), out.stride(0), BLOCK_M=bm, BLOCK_N=bn,
-        BLOCK_K=bk, FP32_DOT=not x.is_cuda, num_warps=warps, num_stages=stages)
-    return out
+    """The plain GEMM on the fold's dots at `tile` (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages[, split]): each column
+    block at the width the fold gives it (the narrow last one too), each split's FP32 partial summed in split order from
+    zero, as the fold's last program sums them, and the product rounded to BF16 once, as a GEMM's output is."""
+    bm, bn, bk, warps, stages, *split = tile
+    split = split[0] if split else 1
+    m, k = x.shape
+    n = w.shape[0]
+    blocks, tail = triton.cdiv(n, bn), hcr.narrow_tail(n, bn)
+    span = triton.cdiv(triton.cdiv(k, split), bk) * bk
+    total = torch.zeros(m, n, dtype=torch.float32, device=x.device)
+    for s in range(split):
+        part = torch.zeros(m, n, dtype=torch.float32, device=x.device)
+        for b in range(blocks):
+            _block_partial[(triton.cdiv(m, bm),)](
+                x, w, part, m, n, s * span, min(s * span + span, k), b * bn, x.stride(0), w.stride(0), part.stride(0),
+                BLOCK_M=bm, WIDTH=tail if tail and b == blocks - 1 else bn, BLOCK_K=bk, FP32_DOT=not x.is_cuda,
+                num_warps=warps, num_stages=stages)
+        if split == 1:
+            total = part
+        else:
+            total += part
+    return total.to(x.dtype)
 
 
-def unfolded(normed, down, up, inject):
-    """The five-launch site after the stream norm on mix_block's products: product, `_gates`, product, `_mix_mean`."""
+def unfolded(normed, down, up, inject, *, down_tile=None):
+    """The five-launch site after the stream norm on mix_block's products: the down product (cuBLAS's, or the fold's
+    own dots at `down_tile`), `_gates`, the up product at the fold's tile, `_mix_mean`."""
     rows = normed.shape[0]
-    di = product(normed, down, hcr.BLOCK_TILES["down"])
+    di = torch.mm(normed, down.t()) if down_tile is None else product(normed, down, down_tile)
     gates = torch.empty(rows, RANK, dtype=normed.dtype, device=normed.device)
     inj = torch.empty(rows, HC, dtype=normed.dtype, device=normed.device) if inject else gates
     hcr._gates[(rows,)](di, gates, inj, di.stride(0), gates.stride(0), inj.stride(0), float(HC), R=RANK,
                         BR=triton.next_power_of_2(RANK), HC=HC, BH=triton.next_power_of_2(HC), WITH_INJECT=inject,
                         num_warps=4)
-    weights = product(gates, up, hcr.BLOCK_TILES["up"])
+    weights = product(gates, up, hcr.UP_BLOCK_TILE)
     mixed = torch.empty(rows, HIDDEN, dtype=normed.dtype, device=normed.device)
     hcr._mix_mean[(rows, 1)](weights, normed, mixed, weights.stride(0), normed.stride(0), mixed.stride(0), float(HC),
                              HID=HIDDEN, BD=triton.next_power_of_2(HIDDEN), HC=HC, num_warps=8)
@@ -80,9 +97,9 @@ def torch_form(normed, down, up, inject):
 @unittest.skipUnless(READY, "torch and triton required")
 class BlocksFoldTests(unittest.TestCase):
     def test_only_prefill_rows_fold(self):
-        self.assertFalse(hcr.blocks_fold(*site(True, hcr.PREFILL_ROWS)))
-        self.assertTrue(hcr.blocks_fold(*site(True, hcr.PREFILL_ROWS + 1)))
-        normed, down, up = site(True, hcr.PREFILL_ROWS + 1)
+        self.assertFalse(hcr.blocks_fold(*site(True, hcr.PREFILL_ROWS - 1)))
+        self.assertTrue(hcr.blocks_fold(*site(True, hcr.PREFILL_ROWS)))
+        normed, down, up = site(True, hcr.PREFILL_ROWS)
         self.assertFalse(hcr.blocks_fold(normed.float(), down.float(), up.float()))
         self.assertFalse(hcr.blocks_fold(normed, down, up.t().contiguous().t()), "an up weight not packed along its rank")
 
@@ -101,12 +118,17 @@ class BlocksFoldTests(unittest.TestCase):
                      "CUDA or Triton interpreter required")
 class MixBlockTests(unittest.TestCase):
     def test_the_fold_is_the_unfolded_mixer_byte_for_byte(self):
+        """Every way the down projection runs, forced at a few rows: cuBLAS (rows short of DOWN_TILES), the table's
+        tiles, a narrow last column block (64-wide blocks: the injection's 4 columns in 16) and a split K (3 splits:
+        the last one shorter)."""
+        tiles = [None] + [tile for _, tile in hcr.DOWN_TILES] + [(64, 64, 32, 4, 2, 1), (64, 128, 64, 4, 2, 3)]
         for inject in (True, False):
-            for rows in (65, 130):                        # past PREFILL_ROWS; the second ends in a partial block
+            for rows, tile in [(65, None)] + [(130, t) for t in tiles]:        # 130: a partial last row block
                 normed, down, up = site(inject, rows, DEVICE, seed=rows + 7 * inject)
-                mixed, injection = hcr.mix_block(normed, down, up, HC, inject=inject)
-                want_mixed, want_injection = unfolded(normed, down, up, inject)
-                with self.subTest(inject=inject, rows=rows):
+                mixed, injection = hcr.mix_block(normed, down, up, HC, inject=inject,
+                                                 tiles={"down": tile, "up": hcr.UP_BLOCK_TILE})
+                want_mixed, want_injection = unfolded(normed, down, up, inject, down_tile=tile)
+                with self.subTest(inject=inject, rows=rows, tile=tile):
                     self.assertEqual((tuple(mixed.shape), mixed.dtype), ((rows, HIDDEN), torch.bfloat16))
                     self.assertTrue(torch.equal(mixed, want_mixed))
                     if inject:
@@ -121,6 +143,14 @@ class MixBlockTests(unittest.TestCase):
         for got, want in ((mixed, want_mixed), (injection, want_injection)):
             err = float((got.float().cpu() - want).abs().max() / want.abs().max())
             self.assertLess(err, 2.0 ** -6)             # a few BF16 steps: rounding order, not a wrong formula
+
+    def test_the_table_picks_by_rows(self):
+        least = min(r for r, _ in hcr.DOWN_TILES)
+        self.assertIsNone(hcr.block_tiles(least - 1)["down"])
+        for r, tile in hcr.DOWN_TILES:
+            self.assertEqual(hcr.block_tiles(r), {"down": tile, "up": hcr.UP_BLOCK_TILE})
+        self.assertEqual((hcr.narrow_tail(324, 64), hcr.narrow_tail(324, 128), hcr.narrow_tail(320, 64),
+                          hcr.narrow_tail(324, 256)), (16, 0, 0, 128))
 
     def test_mix_takes_it_on_cuda(self):
         if DEVICE != "cuda":
