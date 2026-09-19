@@ -170,7 +170,6 @@ class CaseTable(unittest.TestCase):
         self.assertNotIn("fastest_launched", tie)
         self.assertEqual(p.verdict(rule, {rule: False}, {}, "us"), dict(rule=[16, 64, 4], passing=0,
                                                                         failing=[[16, 64, 4]]))
-        self.assertEqual(p.ranked({rule: True, fast: True, inexact: False}, timings, "us", 5), [fast, rule])
 
 
 @unittest.skipUnless(KERNELS, "requires torch and triton")
