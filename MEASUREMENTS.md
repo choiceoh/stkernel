@@ -4964,3 +4964,17 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **실가중치**: 우리 bf16 vs transformers fp32 5.6~5.8%(행 cos 최소 0.983) — transformers 를 bf16 으로 돌려도 5.4~5.9% 라 구현 차이가 아니라 bf16 몫.
 - **곁**: 그림 디코드(`engine/modules/pictures`)를 GLM 과 공유, 디코드 중 깨지는 그림이 GLM 에서도 500 대신 400. `preshard --vision` 이 `vision.safetensors`.
   [상세·원시](measurements/qwen38_vision_tower_20260919/README.md).
+
+### Qwen3.8 leave 를 TP 합의 PDL 종속으로 + 대기 중 down projection L2 프리페치 (carry H4): 사이트당 −7~−17 µs, PDL 만은 −1 µs; X1 기각 (2026-09-19, srv4 단일 GPU 레인, PR #1270)
+- **무엇.** #1269 의 TP 통신 21%(합마다 약 20 µs 의 피어 대기, 메모리는 논다)에 GLM #473 의 "대기 동안 다음 MHC 불변 가중치 준비"를
+  옮겼다. Qwen 믹서는 `leave_norm` → `down_gates`(6.6 MB) → `up_mean` 으로 나뉘어 있다. 그래서 leave 를 합의 PDL 종속으로 띄우고
+  (norm 가중치만 대기 앞에서 읽음), 대기 동안 그 사이트의 down projection 을 `prefetch.global.L2` 로 미리 읽는다.
+  `lanes.served(leave=off|pdl|prefetch)`, 기본 `prefetch`, 롤백 `ST_LEAVE=off`.
+- **판정(`q38leave-0919b`).** 합을 흉내 낸 PDL 대역(WAIT µs) → leave → 믹서를 16 사이트 한 그래프에 넣고, 가중치는 L2 밖에서
+  돌렸다. 바이트: 다섯 팔 × 1–16 행 모두 `off` 와 같다(3 ms 늦은 합, NaN 위, eager·재생). 대기 20 µs 에서 사이트 µs `off` →
+  `pdl` → prefetch 전부: 1 행 86.5 → 85.4 → **69.1**, 4 행 87.2 → 86.2 → **80.0**, 16 행 91.1 → 90.1 → **80.7**. 대기 0 에서도 나쁘지
+  않다. 소스 계수 추정은 C=1 K=3 스텝당 약 −0.7~0.8 ms. **플릿 미실측**(운영자 결정 2026-09-19: 끝의 창). 첫 실행
+  `q38leave-0919a` 는 srv4 의 다른 세션 학습 부하(96%) 옆이라 시간이 무효다.
+- **X1 기각(측정 없이).** compact 12-CTA consumer 는 ST 엔진이 컴파일한 적이 없다(vLLM 선택 옵션). #967 의 이득은 48-CTA
+  consumer 의 빈 CTA 몫이고, Qwen 은 이미 그 경로다. 켜려면 빌드 전체의 발행 판정과 GLM C=1 경로가 바뀐다.
+  [상세·원시](measurements/qwen38_leave_pdl_20260919/README.md).
