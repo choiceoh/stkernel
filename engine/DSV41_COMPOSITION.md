@@ -36,7 +36,7 @@ CED — 인코더 20 층, 디코더 20 층. 경계(20)를 설정이 세 가지�
 | 6 | 어텐션 sink | `Attention(sink=True)` | `sparse_attention.sparse_attn` | **있다** |
 | 7 | MLA 폭들(latent·nope·v_dim) | `Attention(form="mla", latent=…, nope=…, v_dim=…)` | — | **빈칸** — 설정에 `head_dim 512`·`qk_rope_head_dim 64` 는 있으나 GLM 설정의 `kv_lora_rank`·`qk_nope_head_dim`·`v_head_dim` 에 해당하는 키가 없다. 벤더 `model.py` 가 정한다 |
 | 8 | 출력 저랭크 (`o_lora_rank` 1024, `o_groups` 8) | 없음 — MLA 이름표는 `o` 하나다 | — | **없다** — 가족의 축이 아니다 |
-| 9 | 선택: CED 키 압축 + 후보 블록 | 없음 — `QSA`·`DSAKpool`·`MSA`·`Window` 뿐 | — | **없다** — torch 형은 git history(`overlay/modules/dsv41_model/dsv41_compressor.py`·`dsv41_indexer.py`·`dsv41_packed_index.py`), Triton 둘이 그 옆에 있었다. `cells.py` 의 인덱서 레시피가 같은 자리를 가리킨다 |
+| 9 | 선택: CED 키 압축 + 후보 블록 | **참조는 있다**: `sparse_indexer.ced_compress`(그룹 풀링 + 노름) · `ced_candidate_blocks`(pad→amax→최신 블록 고정→top-k) · `indexer_logits`(공유 점수식) | 물러난 오버레이의 구현(`dsv41_compressor.py`·`dsv41_indexer.py`, git history 11c779a^)과 **바이트 동일** — `tests/test_engine_dsv41_ced.py`. 그 구현은 09-10 프로브가 벤더 클래스에 비트 동일로 붙잡아 뒀던 것이다 | **부분** — 참조는 있고 **선택 클래스와 레인은 없다**(아래 11 번이 걸린다) |
 | 10 | 라우터 점수 `sqrtsoftplus` | 없음 — `moe.route` 는 `softmax`\|`sigmoid` | — | **없다** — **수식이 이 트리에 없다.** 설정 문자열과 "MegaMoE 는 sqrtsoftplus 만"이라는 거절 메시지뿐(git history). 벤더 `model.py` 가 정한다 |
 | 11 | 층 간 KV·인덱스 소싱 | 없음 — `Layer` 는 (mixer, mlp, inject) 뿐 | — | **없다** — 계획은 `kv_source`·`indexer` 를 알지만 조합이 "이 층은 저 층의 KV 를 읽는다"를 표현하지 못한다 |
 | 12 | engram 이 층 안 **어디에** 쓰나 | — | — | **빈칸** — 어느 층이 표를 갖는지는 설정이 말하지만(1·14), 층 안의 자리를 이 트리의 어떤 파일도 말하지 않는다. 계획은 조합의 유일한 주입 자리(층 앞)에 뒀다 |
@@ -51,8 +51,10 @@ CED — 인코더 20 층, 디코더 20 층. 경계(20)를 설정이 세 가지�
 
 싼 것부터, 그리고 각 줄이 무엇으로 닫히는지:
 
-1. **9번(CED 선택)** — git history 의 torch 형을 `modules/attention` 의 선택으로 되살린다. 판정은 그 시절 프로브가
-   쓰던 기준(벤더 압축기와 비트 동일)이고, 오라클 사이트가 필요하다.
+1. ~~**9번(CED 선택)의 참조**~~ — 했다: `sparse_indexer.ced_compress`·`ced_candidate_blocks` 가 물러난 구현과
+   바이트 동일하다(CPU, 오라클 사이트 없이). **남은 것은 선택 클래스와 레인**인데, 그 앞에 11 번이 있다 —
+   `Attention` 의 행은 위치마다 하나이고 CED 의 키는 **그룹마다 하나**(그것도 다른 층이 만든다)라, 가족이
+   그 박자를 표현하기 전에는 `QSA`·`DSAKpool` 옆에 `CED` 를 놓을 자리가 없다.
 2. **10번(sqrtsoftplus)** — 벤더 `model.py` 한 줄을 읽어 `moe.route` 의 점수 축에 넣는다. 그 전에는 못 쓴다.
 3. **7·8번(MLA 폭·출력 저랭크)** — 같은 파일이 정한다. 8 번은 가족에 축을 하나 더 들이는 일이다.
 4. **11번(층 간 소싱)** — `base/composition` 의 계획 표현을 넓히는 일이라 가장 크다. GLM·Qwen 에는 없던 축이다.
