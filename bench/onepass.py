@@ -327,8 +327,10 @@ def _served_build(repo: str) -> dict:
     The engine's identity is the source the container runs (the runtime
     manifest's sha256 of the engine tree), the release the launcher stamped,
     and STK_* knobs. The retired vLLM overlay's stamp and knob parsing went
-    with the overlay stack (2026-09-18); a boot that is not st-glm53 reports
-    no build at all. Every failure degrades to a missing field: a bench must
+    with the overlay stack (2026-09-18). ONEPASS_ST_CONTAINER identifies a
+    non-GLM serving container; the default remains st-glm53. An explicitly
+    selected missing container never borrows another model's identity.
+    Every failure degrades to a missing field: a bench must
     never die over its own label.
     """
     import subprocess
@@ -338,8 +340,9 @@ def _served_build(repo: str) -> dict:
                                timeout=10).stdout.split()
     except Exception:
         names = []
-    if "st-glm53" in names:
-        return _st_build(names)
+    name = os.environ.get("ONEPASS_ST_CONTAINER", "st-glm53")
+    if name in names:
+        return _st_build(names, name=name)
     return {}
 
 

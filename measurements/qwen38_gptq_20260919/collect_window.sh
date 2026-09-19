@@ -4,13 +4,14 @@
 # on srv2; no private prompts or responses are written into this checkout.
 set -euo pipefail
 MODE=${1:-collect}
-case "$MODE" in collect|compare) ;; *) echo 'usage: collect_window.sh collect|compare' >&2; exit 2;; esac
+case "$MODE" in collect|compare|serve) ;; *) echo 'usage: collect_window.sh collect|compare|serve' >&2; exit 2;; esac
 TREE=$(cd "$(dirname "$0")/../.." && pwd)
 OWNER=session/q38gptq-0919
 LOCK=/home/choiceoh/glm53-logs/st-fleet.lock
 OUT=/home/choiceoh/glm53-logs/qwen38-gptq-20260919
 # Keep the failed first scoring attempt beside (not underneath) the final run.
 if [ "$MODE" = compare ]; then OUT=$OUT/compare; fi
+if [ "$MODE" = serve ]; then OUT=$OUT/serving; fi
 PRIVATE=/home/choiceoh/st-calibration-private/qwen38-gptq-20260919
 PACK=/cache/qwen38-gptq-20260919
 export PORT=8001 ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-4436
@@ -88,7 +89,7 @@ for ip in "${NODES[@]}"; do
   node "$ip" "install -d -m 700 /home/choiceoh/glm53-cache/qwen38-gptq-20260919; mkdir -p '$OUT'"
   if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_audit.py "$OUT/audit-$MODE.py";
   else scp -q probes/qwen38_gptq_audit.py "choiceoh@$ip:$OUT/audit-$MODE.py"; fi
-  if [ "$MODE" = compare ]; then
+  if [ "$MODE" != collect ]; then
     node "$ip" "mkdir -p '$OUT/tools/probes'; touch '$OUT/tools/probes/__init__.py'"
     if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_{score,feed}.py "$OUT/tools/probes/";
     else scp -q probes/qwen38_gptq_{score,feed}.py "choiceoh@$ip:$OUT/tools/probes/"; fi
@@ -148,10 +149,20 @@ collect() {
 
 compare() {
   export ST_SELF_CALIBRATE=0 GLM53_API_PORT=$PORT BENCH_MODEL=qwen3.8-flash-next SPEC_K=3
+  export ONEPASS_ST_CONTAINER=st-qwen38
   export ONEPASS_PROFILE=extended ONEPASS_JSONL=$OUT/onepass.jsonl
   export ST_BRACKET_SHA=$(git rev-parse HEAD) ST_BRACKET_TREE=$(git rev-parse HEAD:engine)
   export FLEET_SESSION=q38gptq-0919
-  for label in Bpack A1 B A2; do
+  local labels=(Bpack A1 B A2) pack_receipts=$OUT
+  if [ "$MODE" = serve ]; then
+    # Resume consumer tests only after all four held-out scores succeeded.
+    labels=(A1 B A2)
+    pack_receipts=/home/choiceoh/glm53-logs/qwen38-gptq-20260919/compare
+    for r in 0 1 2 3; do
+      node "${NODES[$r]}" "test -s '$pack_receipts/projection-rank$r.json'"
+    done
+  fi
+  for label in "${labels[@]}"; do
     if [[ "$label" == B* ]]; then export ST_PACK_ROOT=$PACK/fit; else export ST_PACK_ROOT=$PACK/rtn; fi
     boot "$label"
     receipts "$label"
@@ -161,7 +172,7 @@ compare() {
       node "$ip" "docker exec -e PYTHONPATH=/repo st-qwen38 python3 '$OUT/audit-$MODE.py' --root '$ST_PACK_ROOT' \
         --rank $r --ckpt /home/choiceoh/models/st-qwen38-tep4 --boot '$OUT/$label-boot-rank$r.json' \
         --out '$OUT/$label-audit-rank$r.json' $expected" > "$OUT/$label-audit-rank$r.log" 2>&1
-      if [ "$label" != Bpack ]; then cmp "$OUT/Bpack-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"; fi
+      if [ "$label" != Bpack ]; then cmp "$pack_receipts/Bpack-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"; fi
     done
     if [ "$label" = Bpack ]; then
       echo "== actual GPTQ packs verified; held-out projection scoring $(date -Is)"
