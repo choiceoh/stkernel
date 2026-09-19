@@ -13,7 +13,8 @@ from math import lcm, prod
 
 from engine.base.arena import ALIGN
 from engine.base.kv import BlockPool, SlotPool
-from engine.base.slot_caches import SlotCaches, StateField, aligned, typed_view
+from engine.base.slot_caches import SlotCaches, StateField, aligned, blocks_for, region_bytes, snapshots_for, typed_view
+from engine.modules.state_rings import StateRings
 
 
 def state_dtype(value: str) -> str:
@@ -36,9 +37,7 @@ class CacheLayout:
     fields: tuple
 
     def nbytes(self, num_blocks: int, max_seqs: int) -> int:
-        # The block table has one row per request id; state slot 0 is null.
-        return (num_blocks * self.block_bytes + (max_seqs + 1) * self.slot_bytes
-                + max_seqs * num_blocks * 4)
+        return region_bytes(num_blocks, max_seqs, self.block_bytes, self.slot_bytes)
 
 
 def layout(F, layers, draft=None, *, state_storage=None) -> CacheLayout:
@@ -116,10 +115,8 @@ def cache_capacity(F, layers, draft, kv_gib: float, max_seqs: int, snapshot_gib:
     layers = tuple(layers)
     baseline = layout(F, layers, draft, state_storage="fp32")
     reference_snapshot = snapshot_layout(F, layers, draft, state_storage="fp32")[0]
-    blocks = int((kv_gib * (1 << 30) - (max_seqs + 1) * baseline.slot_bytes)
-                 // (baseline.block_bytes + max_seqs * 4))
-    snapshots = max(9, int(snapshot_gib * (1 << 30)) // reference_snapshot)
-    return blocks, snapshots
+    return (blocks_for(kv_gib, max_seqs, baseline.block_bytes, baseline.slot_bytes),
+            snapshots_for(snapshot_gib, reference_snapshot))
 
 
 def draft_stash_cells(F) -> int:
@@ -145,7 +142,7 @@ def stage_bytes(F, layers, max_seqs: int, draft=None) -> int:
     return (max_seqs + 1) * stage_layout(F, layers, draft)[0]
 
 
-class Glm53Caches(SlotCaches):
+class Glm53Caches(SlotCaches, StateRings):
     def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, draft=None, snapshots: int = 0, stage: bool = False):
         import torch
 
@@ -194,19 +191,8 @@ class Glm53Caches(SlotCaches):
         """Copy the rings' state at chunk boundary `position` out of `slot` into snapshot `snap`. `past`: how many
         positions after the boundary the rings already hold -- a synchronous decode step that crossed it, whose
         drafter cells were put aside first (`stash_draft`)."""
+        self.save_rings(slot, position, snap)
         F = self.F
-        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
-            raise IndexError("checkpoint needs a real state slot and a declared snapshot")
-        if position <= 0 or position % F.block:
-            raise ValueError("a checkpoint sits at a block boundary")
-        conv_cells = self._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
-        rec_cell = (position - 1) % (F.spec_k + 1)
-        for L in self.layers:
-            if F.is_dsa(L):
-                continue
-            conv_ring, rec_ring = self.kda(L, slot)
-            self._snap["conv", L][snap].copy_(conv_ring.index_select(1, conv_cells))
-            self._snap["rec", L][snap].copy_(rec_ring[rec_cell])
         if ("draft", -1) in self._snap:
             self._snap["draft", -1][snap].copy_(self.draft_ring(slot))
             if past:
@@ -214,13 +200,11 @@ class Glm53Caches(SlotCaches):
                     raise ValueError("a checkpoint past its boundary takes one decode step's drafter cells from the stage")
                 self._put_back_draft(slot, position, snap)
 
-    def mark_kda(self, layer: int, snap: int, state, taps) -> None:
-        """A block boundary inside a prefill step: the layer's recurrent state there [H, K, V] and the conv inputs of the
-        conv-1 positions before it [conv-1, C], straight into snapshot `snap` (net._kda cuts the recurrence at the mark)."""
-        if not 0 <= snap < self.snapshots:
-            raise IndexError("a mark needs a declared snapshot")
-        self._snap["rec", layer][snap].copy_(state)
-        self._snap["conv", layer][snap].copy_(taps.T)
+    mark_kda = StateRings.mark_state
+
+    def ring_layers(self) -> tuple:
+        """The KDA layers: every layer that is not DSA."""
+        return tuple(L for L in self.layers if not self.F.is_dsa(L))
 
     def mark_draft(self, snap: int, slot: int) -> None:
         """Copy the drafter's current context ring into a block-boundary snapshot."""
@@ -304,24 +288,11 @@ class Glm53Caches(SlotCaches):
 
     def restore(self, slot: int, position: int, snap: int) -> None:
         """The inverse: `slot` continues from `position` with the snapshot's state."""
-        F = self.F
-        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
-            raise IndexError("restore needs a real state slot and a declared snapshot")
-        if position <= 0 or position % F.block:
-            raise ValueError("a restore sits at a block boundary")
-        conv_cells = self._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
-        rec_cell = (position - 1) % (F.spec_k + 1)
-        for L in self.layers:
-            if F.is_dsa(L):
-                continue
-            conv_ring, rec_ring = self.kda(L, slot)
-            conv_ring.index_copy_(1, conv_cells, self._snap["conv", L][snap])
-            rec_ring[rec_cell].copy_(self._snap["rec", L][snap])
+        self.load_rings(slot, position, snap)
         if ("draft", -1) in self._snap:
             self.draft_ring(slot).copy_(self._snap["draft", -1][snap])
 
-    def kda(self, layer, slot):
-        return self._fields["conv", layer][slot], self._fields["rec", layer][slot]
+    kda = StateRings.rings
 
     def tail(self, layer, slot):
         return self._fields["tail", layer][slot]

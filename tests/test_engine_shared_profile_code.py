@@ -202,5 +202,121 @@ class DeltaRuleMarksTests(unittest.TestCase):
             self.assertFalse(any(isinstance(n, ast.For) for n in ast.walk(fn)), f"{path}: {lane} carries a loop again")
 
 
+@unittest.skipUnless(torch, "the rings are torch tensors")
+class StateRingsTests(unittest.TestCase):
+    """modules/state_rings is what both caches' checkpoint/restore did to a delta-rule layer's rings. GLM's loops are
+    kept here as the oracle (the conv cells built once, the recurrent cell from the speculative width) and the shared
+    mixin is held to them byte for byte, on rings of GLM's form."""
+
+    def caches(self):
+        from types import SimpleNamespace
+        from engine.base.slot_caches import SlotCaches
+        from engine.modules.state_rings import StateRings
+
+        F = SimpleNamespace(conv=4, spec_k=7, block=64, is_dsa=lambda L: L % 4 == 3)
+        slots, snaps, C, H, K = 3, 2, 6, 2, 3
+
+        class Caches(SlotCaches, StateRings):
+            def __init__(self):
+                self.F, self.layers, self.snapshots = F, (0, 1, 2, 3, 4), snaps
+                self.slots = SimpleNamespace(num_slots=slots)
+                self.device = torch.device("cpu")
+                self._fields, self._snap = {}, {}
+                for L in self.layers:
+                    if F.is_dsa(L):
+                        continue
+                    self._fields["conv", L] = torch.randn(slots, C, F.conv - 1 + F.spec_k)
+                    self._fields["rec", L] = torch.randn(slots, F.spec_k + 1, H, K, K)
+                    self._snap["conv", L] = torch.zeros(snaps, C, F.conv - 1)
+                    self._snap["rec", L] = torch.zeros(snaps, H, K, K)
+
+            def ring_layers(self):
+                return tuple(L for L in self.layers if not self.F.is_dsa(L))
+        return Caches()
+
+    @staticmethod
+    def glm_checkpoint(c, slot, position, snap):
+        F = c.F
+        conv_cells = c._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
+        rec_cell = (position - 1) % (F.spec_k + 1)
+        for L in c.layers:
+            if F.is_dsa(L):
+                continue
+            conv_ring, rec_ring = c._fields["conv", L][slot], c._fields["rec", L][slot]
+            c._snap["conv", L][snap].copy_(conv_ring.index_select(1, conv_cells))
+            c._snap["rec", L][snap].copy_(rec_ring[rec_cell])
+
+    @staticmethod
+    def glm_restore(c, slot, position, snap):
+        F = c.F
+        conv_cells = c._ring_cells(position, F.conv - 1, F.conv - 1 + F.spec_k)
+        rec_cell = (position - 1) % (F.spec_k + 1)
+        for L in c.layers:
+            if F.is_dsa(L):
+                continue
+            conv_ring, rec_ring = c._fields["conv", L][slot], c._fields["rec", L][slot]
+            conv_ring.index_copy_(1, conv_cells, c._snap["conv", L][snap])
+            rec_ring[rec_cell].copy_(c._snap["rec", L][snap])
+
+    def test_save_and_load_are_the_loops_they_replaced(self):
+        torch.manual_seed(0)
+        for position in (64, 128, 640):
+            a, b = self.caches(), self.caches()
+            for key in a._fields:                               # the same rings in both
+                b._fields[key].copy_(a._fields[key])
+            self.glm_checkpoint(a, 1, position, 0)
+            b.save_rings(1, position, 0)
+            for key in a._snap:
+                self.assertTrue(torch.equal(a._snap[key], b._snap[key]), (position, key))
+            for c in (a, b):                                    # restore a snapshot into another slot
+                for key in c._snap:
+                    c._snap[key][1].normal_(generator=torch.Generator().manual_seed(position))
+            self.glm_restore(a, 2, position, 1)
+            b.load_rings(2, position, 1)
+            for key in a._fields:
+                self.assertTrue(torch.equal(a._fields[key], b._fields[key]), (position, key))
+
+    def test_a_boundary_is_checked_before_a_byte_moves(self):
+        c = self.caches()
+        before = {k: v.clone() for k, v in c._snap.items()}
+        with self.assertRaisesRegex(ValueError, "a checkpoint sits at a block boundary"):
+            c.save_rings(1, 65, 0)
+        with self.assertRaisesRegex(IndexError, "restore needs a real state slot"):
+            c.load_rings(0, 64, 0)
+        with self.assertRaisesRegex(IndexError, "a mark needs a declared snapshot"):
+            c.mark_state(0, 2, None, None)
+        self.assertTrue(all(torch.equal(before[k], c._snap[k]) for k in before))
+
+    def test_the_profiles_take_the_mixin(self):
+        from engine.modules.state_rings import StateRings
+        from engine.profiles.glm53.caches import Glm53Caches
+        from engine.profiles.qwen38.caches import Qwen38Caches
+        self.assertIs(Glm53Caches.kda, StateRings.rings)
+        self.assertIs(Qwen38Caches.gdn, StateRings.rings)
+        self.assertIs(Glm53Caches.mark_kda, StateRings.mark_state)
+        self.assertIs(Qwen38Caches.mark_gdn, StateRings.mark_state)
+        for path in ("engine/profiles/glm53/caches.py", "engine/profiles/qwen38/caches.py"):
+            tree = ast.parse((ROOT / path).read_text(encoding="utf-8"))
+            for name in ("checkpoint", "restore"):
+                fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
+                self.assertFalse(any(isinstance(n, ast.For) for n in ast.walk(fn)), f"{path}: {name} loops over rings again")
+
+
+class SizingTests(unittest.TestCase):
+    """base/slot_caches' sizing is the formula both profiles' cache_capacity and CacheLayout.nbytes wrote out, and GLM
+    boot's snapshot_count."""
+
+    def test_the_formulas_are_the_ones_they_replaced(self):
+        from engine.base.slot_caches import blocks_for, region_bytes, snapshots_for
+        for num_blocks, max_seqs, block_bytes, slot_bytes in ((1000, 4, 13 << 20, 247 << 20), (1, 1, 4096, 0), (37, 8, 777, 999)):
+            self.assertEqual(region_bytes(num_blocks, max_seqs, block_bytes, slot_bytes),
+                             num_blocks * block_bytes + (max_seqs + 1) * slot_bytes + max_seqs * num_blocks * 4)
+        for kv_gib, max_seqs, block_bytes, slot_bytes in ((60.0, 4, 13 << 20, 247 << 20), (1.5, 1, 4096, 1024), (0.25, 8, 777, 999)):
+            self.assertEqual(blocks_for(kv_gib, max_seqs, block_bytes, slot_bytes),
+                             int((kv_gib * (1 << 30) - (max_seqs + 1) * slot_bytes) // (block_bytes + max_seqs * 4)))
+        for gib, snapshot_bytes in ((4.0, 150 << 20), (0.001, 1 << 30), (2.5, 7)):
+            self.assertEqual(snapshots_for(gib, snapshot_bytes), max(9, int(gib * (1 << 30)) // snapshot_bytes))
+
+
 if __name__ == "__main__":
     unittest.main()

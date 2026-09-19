@@ -10,6 +10,11 @@ profile's layout and its checkpoint/restore. What does not differ is written her
     slot_bytes / snapshot_bytes   one contiguous uint8 view of a slot or a snapshot: what the tier parks and restores
     prepare                       publish a step's changed block-table rows, and only their new suffix
     typed_view                    a field of a slot-major (or snapshot-major) region as a strided tensor
+    region_bytes / blocks_for /   what those regions cost, and how many blocks and snapshots a budget buys
+      snapshots_for
+
+A delta-rule layer's rings and what a boundary keeps of them are a feature's, not every model's:
+engine/modules/state_rings.
 
 `prepare` uploads through a ring of pinned host buffers fenced by events, so the copy that reads a slot has landed
 before the slot is reused, and a step's table update does not wait for the device. It was one profile's until
@@ -27,6 +32,25 @@ from math import prod
 
 SIZES = {"f32": 4, "f16": 2, "bf16": 2, "i64": 8}
 ID_RING = 16                    # pinned upload buffers in flight before the oldest must have landed
+MIN_SNAPSHOTS = 9               # at least a chunk's worth of block boundaries, whatever the snapshot budget says
+GIB = 1 << 30
+
+
+def region_bytes(num_blocks: int, max_seqs: int, block_bytes: int, slot_bytes: int) -> int:
+    """What the arena carves for the paged blocks, the state slots (one per request id, and slot 0 the null slot)
+    and the int32 block table."""
+    return num_blocks * block_bytes + (max_seqs + 1) * slot_bytes + max_seqs * num_blocks * 4
+
+
+def blocks_for(kv_gib: float, max_seqs: int, block_bytes: int, slot_bytes: int) -> int:
+    """How many paged blocks a KV budget buys once the state slots are paid for: each block also costs every
+    request's block-table entry."""
+    return int((kv_gib * GIB - (max_seqs + 1) * slot_bytes) // (block_bytes + max_seqs * 4))
+
+
+def snapshots_for(snapshot_gib: float, snapshot_bytes: int) -> int:
+    """How many prefix snapshots a budget holds, and never fewer than MIN_SNAPSHOTS."""
+    return max(MIN_SNAPSHOTS, int(snapshot_gib * GIB) // max(1, int(snapshot_bytes)))
 
 
 def aligned(n: int, unit: int) -> int:

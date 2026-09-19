@@ -3,12 +3,12 @@
 This directory contains a portable code-graph snapshot for `engine/base`.
 
 - Source scope: `engine/base/`
-- Source revision: `8db25f6c`
-- Source digest: `d37edd7defb7a8fae59569d79e6a84831086fcb8e6e2cf217d066ad0f1ff5555`
+- Source revision: `1ea3f7fa`
+- Source digest: `2e02d6786564d3789b4ad8c008bbce9dd73b20dee495ac277a7ad20fecbcc627`
 - Generated: 2026-09-19
 - Extractor: `graphifyy 0.4.19`
 - Extraction mode: AST-only (code-only corpus)
-- Graph size: 1,568 nodes and 4,297 edges across 29 communities
+- Graph size: 1,574 nodes and 4,303 edges across 32 communities
 
 Files:
 
