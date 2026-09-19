@@ -36,16 +36,16 @@
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U0 | 이미지 인벤토리: 아래 항목의 후보 구현이 시드 이미지 안에 있는지(import·시그니처·sm_121a 컴파일) | — | measure | gpu | 열림 |
+| U0 | 이미지 인벤토리: 아래 항목의 후보 구현이 시드 이미지 안에 있는지(import·시그니처) | — | measure | gpu | 닫음: `sm121-inv-0919a`, [기록](../measurements/sm121_inventory_20260919/README.md) — U3·U5·U6·U7·U8·U9·U13 이 이미지 안에 있다 |
 
 ### A. 모델 범위 — 입구의 '거절'·'변환'을 줄인다
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U1 | 입구가 `hf_quant_config.json` 을 읽는다: quant_algo(NVFP4·W4A16_NVFP4·FP8·MXFP4·MIXED_PRECISION 층별), group_size, kv_cache_quant_algo, exclude_modules. 설정 읽기의 나머지 빈틈도(바깥 `mtp_config`, `dense_intermediate_size`, `local_layer_ids`/`sliding_window_size`, 바깥 `model_type`) | vllm#56050, #56535 | door | cpu | 열림 |
-| U2 | 모양(`kernel_shape.Attention`)이 윈도·상대 편향·k/v conv 를 말하고, `cells` 가 그런 어텐션을 평범한 GQA 로 통과시키지 않는다(D3) | 조사(Inkling) | door | cpu | 열림 |
+| U1 | 입구가 `hf_quant_config.json` 을 읽는다: quant_algo(NVFP4·W4A16_NVFP4·FP8·MXFP4·MIXED_PRECISION 층별), group_size, kv_cache_quant_algo, exclude_modules. 설정 읽기의 나머지 빈틈도(바깥 `mtp_config`, `dense_intermediate_size`, `local_layer_ids`/`sliding_window_size`, 바깥 `model_type`) | vllm#56050, #56535 | door | cpu | PR (이 PR) |
+| U2 | 모양(`kernel_shape.Attention`)이 윈도·상대 편향·k/v conv 를 말하고, `cells` 가 그런 어텐션을 평범한 GQA 로 통과시키지 않는다(D3) | 조사(Inkling) | door | cpu | PR (이 PR) |
 | U3 | MoE MXFP4 **W4A8** — b12x 의 MXFP4 전문가를 FP8 활성으로(cells 레시피 (c)) | sglang#34878 | kernel | gpu | 열림 |
-| U4 | MoE 활성 정밀도를 체크포인트가 정한다 — W4A16 체크포인트가 W4A4 로 돌지 않게(U1 이 읽은 값으로 셀 선택) | vllm#56535 | fix | cpu+gpu | 열림 |
+| U4 | MoE 활성 정밀도를 체크포인트가 정한다 — W4A16 체크포인트가 W4A4 로 돌지 않게(U1 이 읽은 값으로 셀 선택) | vllm#56535 | fix | cpu+gpu | PR (이 PR): 입구가 `nvfp4-a16` 으로 읽고 셀이 이름으로 거절 — A16 셀 자체는 다음 목록 |
 | U5 | dense NVFP4 GEMM 레인 — 어텐션 투영·공유 전문가까지 NVFP4 인 체크포인트를 변환 없이 | sglang#38685, #38170, vllm#54614 | kernel | gpu | 열림 |
 | U6 | sparse-MLA Triton 레인 — 메가커널 인스턴스가 없는 MLA/DSA 형상(DSv3.2·GLM-5.2 류)을 입구가 이 레인으로 판정 | vllm#54929 (대안 vllm#54976 B12X) | kernel | gpu | 열림 |
 | U7 | GQA 레인 — paged KV + 윈도 + sink(가장 넓은 가족: gpt-oss·Gemma·Mistral·Qwen3 류) | vllm#50022, #55078(재료) | kernel | gpu | 열림 |
@@ -66,12 +66,12 @@
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U15 | 로드된 id 로 주소를 만드는 gather 의 clamp·mask 감사, 단일 레인 compute-sanitizer 한 번 | vllm#49049 | audit | cpu+gpu | 열림 |
+| U15 | 로드된 id 로 주소를 만드는 gather 의 clamp·mask 감사, 단일 레인 compute-sanitizer 한 번 | vllm#49049 | audit | cpu+gpu | 감사 끝(아래) — 서빙 경로 버그 없음, 방어 빈틈 1, 죽은 커널 2. sanitizer 실행 남음 |
 | U16 | 긴 컨텍스트(≥120k) 디코드 정확성 검사 — SM121 에서만 토큰 0 을 내던 종류 | sglang#36845 | test | gpu | 열림 |
-| U17 | PDL: wait 앞의 읽기가 부팅 상수뿐인가 | sglang#38290 | audit | cpu | 열림 |
-| U18 | 캡처 뒤 패딩·null 슬롯의 비유한 값(0×NaN)이 실제 행을 오염시키나 | vllm#57158 | audit | cpu | 열림 |
-| U19 | 드래프터 상태가 TP 랭크마다 어긋나는 자리 | sglang#33614 | audit | cpu | 열림 |
-| U20 | DeepGEMM 스케일: FP32 스케일(2 의 거듭제곱 아님)을 받으면 부팅에서 거절 | sglang#39482, vllm#57512, #54600 | fix | cpu | 열림 |
+| U17 | PDL: wait 앞의 읽기가 부팅 상수뿐인가 | sglang#38290 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
+| U18 | 캡처 뒤 패딩·null 슬롯의 비유한 값(0×NaN)이 실제 행을 오염시키나 | vllm#57158 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
+| U19 | 드래프터 상태가 TP 랭크마다 어긋나는 자리 | sglang#33614 | audit | cpu | 감사 끝(아래) — GLM 안전, Qwen3.8 은 랭크 간 대조가 없다 |
+| U20 | DeepGEMM 스케일: FP32 스케일(2 의 거듭제곱 아님)을 받으면 부팅에서 거절 | sglang#39482, vllm#57512, #54600 | fix | cpu | PR (이 PR): 우리 스케일은 이미 UE8M0(`packing.fp8_block_scales`, `fp8.py:14`) — `FP8Linear` 이 받는 준비된 스케일이 2 의 거듭제곱이 아니면 바인드에서 거절 |
 
 ### D. 통합 메모리·플랫폼
 
@@ -79,6 +79,52 @@
 |---|---|---|---|---|---|
 | U21 | 통합 메모리 회계: NVML 이 장치 메모리를 못 읽을 때, 프로세스 자신의 사용량으로 KV 를 잰다 | vllm#57378, #49760, #55828 | audit | cpu | 열림 |
 | U22 | 가중치 스트리밍(O_DIRECT, 읽기 전용 매핑)을 `mapped_staging` 과 부팅 시간으로 대조 | sglang#37680, #38441 | measure | gpu | 열림 |
+
+## U0 이 정한 것 — 이미지에 있는 후보
+
+`sm121-inv-0919a`(시드 이미지 flashinfer 0.6.18.dev20260819, [기록](../measurements/sm121_inventory_20260919/README.md)):
+
+| 항목 | 이미지 안의 후보 | 그러므로 |
+|---|---|---|
+| U3 | `fused_moe/cute_dsl/fused_moe_mxfp8_mxfp4.py`(MXFP8 활성 × MXFP4 가중치), `b12x_moe.py` | 바인딩 |
+| U5 | `gemm/kernels/dense_blockscaled_gemm_sm120_b12x.py`, `gemm/gemm_mm_fp4_cute_dsl.py` | 바인딩 |
+| U6 | `mla/_sparse_mla_sm120.py` + `sparse_mla_sm120*.cu`(dsv3_2·dsv4 decode, prefill) | 바인딩 후보 — vllm#54929 는 이것이 부하에서 livelock 한다고 한다. 부하 판정이 먼저, Triton 레인은 그 대안 |
+| U7 | `decode.py`(`window_left`·`sinks`·`logits_soft_cap`), `cute_dsl/attention/gqa_decode_paged.py` | 바인딩 |
+| U8 | `decode.py` 의 FP8·NVFP4 KV(`kv_cache_sf`) | 바인딩 |
+| U9 | `kda_prefill.py` + `csrc/kda/flashkda_*.cu` | 바인딩(JIT, nvcc 는 이미지에 있다) |
+| U13 | `gdn_prefill.chunk_gated_delta_rule`, `delta_rule_dsl/delta_rule_sm120.py` | 바인딩 |
+
+엔진의 `engine/kernels/b12x` 는 이미지의 `blackwell_sm12x` 의 포크다(같은 바이트 9, 다름 9, 엔진에만 28, 이미지에만 0).
+
+## 감사 기록 (2026-09-19, 코드 읽기)
+
+**U15 — 로드된 id 로 만든 주소.** 서빙 경로에서 마스크·clamp 없이 주소가 되는 id 는 없다. `qsa.py` 는 요청·페이지를
+clamp 하고 모든 로드를 `physical_page >= 0 & < num_pages` 로 가린다. `decode_topk.cu:176-177`, `prefill_topk.cu:264` 는
+길이를 clamp 한다. 메가커널은 빈 레인이 자기 행의 유효 슬롯을 다시 읽고 `ok ? … : -INF` 로 버린다.
+- **방어 빈틈 하나:** 예약되지 않은 블록표 항목(-1)을 0 으로 clamp 한 사본으로 **쓴다** —
+  `engine/profiles/glm53/decode_graphs.py:105`(`clamp_min_(0)`) → `engine/kernels/mla/decode_inputs.py:21-24`의 저장,
+  Qwen 은 `engine/kernels/step_addresses.py:29,43,46`. 블록 0 은 널 블록이 아니라 살아 있는 요청의 것이다. 지키는 것은
+  호스트의 예약 검사(`engine/base/slot_caches.py` `prepare`, `qwen38/decode_graphs.py` `publish`)뿐이고, 그 검사가
+  틀리면 GB10 은 fault 없이 **남의 KV 를 덮는다.** 읽기 쪽은 선택이 버리므로 안전하다.
+- **죽은 커널 둘:** `causal_conv.py` 의 `_causal_conv1d_update_kernel`(PAD_SLOT_ID -1 을 주소로 읽는다),
+  `kpool.py` 의 쓰기 커널들(마스크가 없으면 loc -1 로 저장) — 엔진 어디서도 부르지 않는다.
+- `draft_attention.py:75` 의 값 로드는 창(`near`) 밖 컨텍스트 칸도 읽고 확률 0 을 곱한다(0 × 유한). 링이 부팅·캡처·입장
+  때 0 으로 채워지고 실제 출력만 쓰이므로 안전하다 — 불변식으로 지켜지는 자리다.
+
+**U17 — PDL wait 앞의 읽기.** PDL 은 `dense/kernels.cu`, `mla/glm53_megakernel.cu`, `mhc/tilelang_kernels.py`,
+`oneshot/dsv4_oneshot_ar.cu`, `causal_conv.py`(두 호출 모두 `launch_pdl=False`)에만 있다. wait 앞에서 읽는 것은
+부팅 때 한 번 채운 가중치(`wq4`·`ws4`)와 mHC 계수(`a.fn`)뿐이다. 라우터 커널에는 PDL 이 없다. 남은 것: `dense/kernels.cu:42`
+의 "No PDL is emitted" 는 낡은 주석이다(PDL 은 3337-3370 에서 켜져 있다) — 네이티브 빌드 해시를 바꾸므로 그 파일을 다음에
+고치는 PR 에서 같이 고친다.
+
+**U18 — 캡처 뒤 패딩·널 슬롯.** 모든 캡처 경로가 끝나고 캐시를 리셋한다(GLM `decode_graphs.py:393-395, 583-584`,
+`burst_decode.py:228-231`, Qwen `decode_graphs.py:126-127, 253-254`, `warmup.py:144`). 리셋은 페이지와 상태를 0 으로,
+블록표를 -1 로 채운다. GLM 은 행 수마다 캡처해 패딩 행이 없고, Qwen 의 패딩 행은 마지막 토큰의 복제(유한)다.
+
+**U19 — TP 랭크 간 드래프터 상태.** GLM: 드래프트 토큰은 랭크 0 방송(`agree_walk`), 샘플 판정도 방송(`agree_verdict`),
+greedy 는 int64 MAX all-reduce, 합은 랭크 순서 고정, 호스트가 결과를 랭크 간 대조(`_agree_outcome`). Qwen3.8: 픽과 확률은
+집합 통신으로 같고 샘플러는 결정적이지만, **랭크 간 대조(tripwire)가 없다** — GLM 은 torch cumsum 이 랭크를 갈라놓은 적이
+있다(`draft_agreement.py:37-45`). 빈틈이지 확인된 버그는 아니다.
 
 ## 이미 있는 것 — 가져오지 않는다
 
