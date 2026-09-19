@@ -98,7 +98,10 @@ class LaneTests(unittest.TestCase):
         differ in the host's order of work, not in what is built), the kernel shape bound first, the tokens compared."""
         from probes.engine_qwen38_step import AHEAD_ORDER
         self.assertEqual(AHEAD_ORDER.count(True), AHEAD_ORDER.count(False))
-        self.assertEqual(AHEAD_ORDER[:3], tuple(not on for on in AHEAD_ORDER[3:]))
+        pairs = list(zip(AHEAD_ORDER[::2], AHEAD_ORDER[1::2]))              # in turn: each pair runs both arms
+        self.assertTrue(all(a != b for a, b in pairs))
+        self.assertIn((False, True), pairs)
+        self.assertIn((True, False), pairs)                                  # and either arm leads a pair
         source = (ROOT / "probes/engine_qwen38_step.py").read_text(encoding="utf-8")
         body = source[source.index("def ahead("):source.index("def assemble(")]
         self.assertEqual(body.count("build(ranks, ranks, rank"), 1)

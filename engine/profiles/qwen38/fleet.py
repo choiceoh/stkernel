@@ -266,7 +266,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             model, _store = build_model(net, caches, F, eos_ids=eos_ids(Path(ckpt_meta), F.config), max_new=max_new,
                                         temperature=temperature, top_p=float(gen.get("top_p", 1.0)), seed=seed,
                                         drafter=drafter, draft_threshold=draft_threshold, draft_ledger=ledger,
-                                        draft_ahead=draft_ahead, draft_candidates=draft_candidates)
+                                        draft_candidates=draft_candidates, draft_ahead=draft_ahead)
             k = model.k
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
@@ -646,7 +646,7 @@ def main(argv=None) -> int:
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
-                                              draft_ahead=a.draft_ahead, draft_candidates=a.draft_candidates)
+                                              draft_candidates=a.draft_candidates, draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
         if getattr(net, "draft_tap", None) is not None:
