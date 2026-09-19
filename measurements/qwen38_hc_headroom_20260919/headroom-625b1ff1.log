@@ -1,0 +1,13 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-hc-headroom-0919b-20260919-094503.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-hc-headroom-0919b-20260919-094503.txt
+GO qwen38-hc-headroom-0919b 2026-09-19_09:45:03
+  single GPU: probes/engine_qwen38_hc_mix_fused.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 4 GiB beside production, no fleet lease)
+NVIDIA GB10: a site's mixer, microseconds a replay
+  rows   lane   its two GEMMs   headroom   fused prototype   byte-equal
+     1   43.0            40.4        2.6              37.2   True
+     2   34.0            31.2        2.8              38.4   True
+     4   34.6            31.9        2.8              54.9   True
+     6   36.9            34.7        2.2              64.8   True
+     8   36.9            34.8        2.0              80.6   True
+  the prototype beats the lane at no captured row count(s) (2..8)
+{"lane_us_rows1": 43.0, "fused_us_rows1": 37.2, "gemms_us_rows1": 40.4, "headroom_us_rows1": 2.61, "lane_us_rows2": 33.98, "fused_us_rows2": 38.43, "gemms_us_rows2": 31.22, "headroom_us_rows2": 2.77, "lane_us_rows4": 34.65, "fused_us_rows4": 54.88, "gemms_us_rows4": 31.86, "headroom_us_rows4": 2.78, "lane_us_rows6": 36.86, "fused_us_rows6": 64.81, "gemms_us_rows6": 34.7, "headroom_us_rows6": 2.15, "lane_us_rows8": 36.87, "fused_us_rows8": 80.61, "gemms_us_rows8": 34.85, "headroom_us_rows8": 2.03, "rows_where_fused_wins": 0}

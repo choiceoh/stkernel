@@ -30,6 +30,13 @@ any kind could recover. If a GB10 reports tens of microseconds there, the fold i
 GLM's MK_SEG_MHC is, not a Triton launch. Run it through the single-GPU lane:
 
     bash probes/run_engine_probe.sh probes/engine_qwen38_hc_mix_fused.py
+
+What the GB10 said (2026-09-19, measurements/qwen38_hc_headroom_20260919): headroom 2.0-2.8 us at 1..8 rows -- the
+ledger's fixed cost is not at this site, and folding launches alone is worth 0.2-0.3 ms a step. READ ONLY THE HEADROOM:
+this probe replays ONE 13.2 MB weight pair, so its GEMMs come out at 423 GB/s, above the card's 273 -- cache reads,
+where a served step reads a hundred sites' distinct weights (the same two products are 61-66 us with the weights
+rotated past 64 MB). And "a fold written in Triton loses on any card" above is true of this prototype's shape only: a
+GEMV that reads each weight tile once for all rows beats cuBLAS on a GB10 and carries the fold (the skinny-GEMV work).
 """
 from __future__ import annotations
 
