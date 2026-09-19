@@ -854,7 +854,8 @@ def admission(shape) -> "list[Verdict]":
     measured = replace(MEASURED.moe, dynamic_tile_m=None)
     b12x = "engine/kernels/b12x (the NVFP4 dispatcher)"
     if m.quant != measured.quant:
-        refuse("moe", f"the b12x lane is {measured.quant} only (D5); asked {m.quant}", _recipe_moe_quant(m, measured),
+        refuse("moe", f"the b12x lane is compiled for {measured.quant} only (D5's base form, not a model bound); "
+               f"asked {m.quant}", _recipe_moe_quant(m, measured),
                _serve(GENERIC, "b12x's MXFP4 kernels (engine/kernels/b12x/moe_dispatch.py: FP4 in groups of 32 with E8M0 "
                       "scales)", False, "they read MXFP4-layout weights as they are but quantize activations to FP4; the "
                       "quality gate decides") if m.quant.startswith("mxfp4")
