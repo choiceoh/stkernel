@@ -15,10 +15,47 @@
 #
 # The verdict is tools/dev_doctor.py --strict with the GPU hidden -- production or a training job may hold it, and the
 # doctor's probe would open a context beside them. --verify also runs a few CPU test files.
+#
+# A release archive is unpacked only when its SHA-256 is the one versions.env pins for this architecture: the timer
+# installs unattended on every node, and a release's files can be replaced under the same tag. After a version change,
+# `bash tools/devenv/node.sh --digests` (anywhere, nothing installed) prints the lines to pin, read off the archives.
 set -euo pipefail
 if [ -z "${DEVENV_MANIFEST:-}" ]; then
   . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/versions.env"
 fi
+sha256() { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi | cut -d' ' -f1; }
+
+# -- the releases -------------------------------------------------------------------------------------------------------
+names_for() {     # machine -> the release names: Rust target, Go arch, node's arch; and the digests' suffix in versions.env
+  case "$1" in
+    aarch64) TRIPLE=aarch64-unknown-linux GOARCH=arm64 NODEARCH=arm64 ARCH=AARCH64 ;;
+    x86_64) TRIPLE=x86_64-unknown-linux GOARCH=amd64 NODEARCH=x64 ARCH=X86_64 ;;
+    *) echo "tools/devenv: no releases named for $1" >&2; exit 1 ;;
+  esac
+}
+url_of() {        # release -> its archive, under the names above
+  case "$1" in
+    UV) echo "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$TRIPLE-gnu.tar.gz" ;;
+    GH) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_$GOARCH.tar.gz" ;;
+    MERGIRAF) echo "https://codeberg.org/mergiraf/mergiraf/releases/download/v$MERGIRAF_VERSION/mergiraf_$TRIPLE-gnu.tar.gz" ;;
+    WORKTRUNK) echo "https://github.com/max-sixty/worktrunk/releases/download/v$WORKTRUNK_VERSION/worktrunk-$TRIPLE-musl.tar.xz" ;;
+    NODE) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$NODEARCH.tar.xz" ;;
+  esac
+}
+digest_of() { local pin="${1}_SHA256_$ARCH"; echo "${!pin:-}"; }
+RELEASES="UV GH MERGIRAF WORKTRUNK NODE"
+if [ "${1:-}" = --digests ]; then
+  for machine in aarch64 x86_64; do
+    names_for "$machine"
+    for r in $RELEASES; do
+      d=$(curl -fsSL --retry 3 "$(url_of "$r")" | sha256)
+      echo "${r}_SHA256_$ARCH=$d"
+    done
+  done
+  exit 0
+fi
+names_for "$(uname -m)"
+
 VERIFY=0
 [ "${1:-}" = --verify ] && VERIFY=1
 log() { echo "[$(hostname -s) $(date +%H:%M:%S)] $*"; }
@@ -41,26 +78,34 @@ export PATH="$BIN:$PATH"
 hash -r
 
 # -- single binaries ----------------------------------------------------------------------------------------------------
-case "$(uname -m)" in                             # the release names: Rust target, Go arch, node's arch
-  aarch64) TRIPLE=aarch64-unknown-linux GOARCH=arm64 NODEARCH=arm64 ;;
-  x86_64) TRIPLE=x86_64-unknown-linux GOARCH=amd64 NODEARCH=x64 ;;
-  *) echo "tools/devenv: no releases named for $(uname -m)" >&2; exit 1 ;;
-esac
 version_of() {    # the first x.y.z a command prints for --version, or nothing
   "$@" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true
 }
 keep() {          # a file (not a link) at a path about to be replaced goes aside with its version, never away
-  local path=$1
+  local path=$1 aside
   if [ -e "$path" ] && [ ! -L "$path" ]; then
     mkdir -p "$BIN/.pre-devenv"
-    mv "$path" "$BIN/.pre-devenv/$(basename "$path")-$(version_of "$path")"
-    log "kept the previous $(basename "$path") in ~/.local/bin/.pre-devenv/"
+    aside="$BIN/.pre-devenv/$(basename "$path")-$(version_of "$path")"
+    [ -e "$aside" ] && aside="$aside.$(date +%Y%m%d-%H%M%S).$$"   # one kept earlier under that name stays too
+    mv "$path" "$aside"
+    log "kept the previous $(basename "$path") as ~/.local/bin/.pre-devenv/$(basename "$aside")"
   fi
 }
-fetch() {         # url -> a fresh directory holding the archive's contents
-  local url=$1 out
+fetch() {         # release -> a fresh directory holding its archive's contents, the archive checked against versions.env
+  local url want got out
+  url=$(url_of "$1")
+  want=$(digest_of "$1")
+  if [ -z "$want" ]; then
+    echo "tools/devenv: versions.env pins no ${1}_SHA256_$ARCH -- $url not installed" >&2
+    return 1
+  fi
   out=$(mktemp -d -p "$TMP")
   curl -fsSL --retry 3 "$url" -o "$out/archive"
+  got=$(sha256 < "$out/archive")
+  if [ "$got" != "$want" ]; then
+    echo "tools/devenv: $url has SHA-256 $got, versions.env pins $want -- not installed" >&2
+    return 1
+  fi
   case "$url" in
     *.tar.xz) tar -xJf "$out/archive" -C "$out" ;;
     *) tar -xzf "$out/archive" -C "$out" ;;
@@ -68,32 +113,37 @@ fetch() {         # url -> a fresh directory holding the archive's contents
   rm -f "$out/archive"
   echo "$out"
 }
-binary() {        # name version url [more names]: the archive's `name` (and the others) into ~/.local/bin at `version`
-  local name=$1 want=$2 url=$3 dir b whole=1
+binary() {        # release name version [more names]: the archive's `name` (and the others) into ~/.local/bin at `version`
+  local release=$1 name=$2 want=$3 dir b whole=1
   shift 3
   for b in "$@"; do [ -x "$BIN/$b" ] || whole=0; done
   [ "$(version_of "$BIN/$name")" = "$want" ] && [ "$whole" = 1 ] && return 0
-  dir=$(fetch "$url")
+  dir=$(fetch "$release")
   for b in "$name" "$@"; do
     keep "$BIN/$b"
     install -m 0755 "$(find "$dir" -type f -name "$b" | head -1)" "$BIN/$b"
   done
   log "$name: $want"
 }
-binary uv "$UV_VERSION" "https://github.com/astral-sh/uv/releases/download/$UV_VERSION/uv-$TRIPLE-gnu.tar.gz" uvx
-binary gh "$GH_VERSION" "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_$GOARCH.tar.gz"
-binary mergiraf "$MERGIRAF_VERSION" \
-  "https://codeberg.org/mergiraf/mergiraf/releases/download/v$MERGIRAF_VERSION/mergiraf_$TRIPLE-gnu.tar.gz"
-binary wt "$WORKTRUNK_VERSION" \
-  "https://github.com/max-sixty/worktrunk/releases/download/v$WORKTRUNK_VERSION/worktrunk-$TRIPLE-musl.tar.xz" git-wt
+binary UV uv "$UV_VERSION" uvx
+binary GH gh "$GH_VERSION"
+binary MERGIRAF mergiraf "$MERGIRAF_VERSION"
+binary WORKTRUNK wt "$WORKTRUNK_VERSION" git-wt
 
 # -- node and the agent CLIs --------------------------------------------------------------------------------------------
 NODE_DIR=$HOME/node-sdk/node-v$NODE_VERSION-linux-$NODEARCH
-if [ "$(version_of "$BIN/node")" != "$NODE_VERSION" ]; then
+node_linked() {   # node and its three companions are links into NODE_DIR, and node answers the pinned version
+  local b
+  for b in node npm npx corepack; do
+    [ "$(readlink "$BIN/$b" 2>/dev/null)" = "$NODE_DIR/bin/$b" ] && [ -x "$BIN/$b" ] || return 1
+  done
+  [ "$(version_of "$BIN/node")" = "$NODE_VERSION" ]
+}
+if ! node_linked; then
   if [ ! -x "$NODE_DIR/bin/node" ]; then
     mkdir -p "$HOME/node-sdk"
-    mv "$(fetch "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-$NODEARCH.tar.xz")/node-v$NODE_VERSION-linux-$NODEARCH" \
-      "$NODE_DIR"
+    unpacked=$(fetch NODE)
+    mv "$unpacked/node-v$NODE_VERSION-linux-$NODEARCH" "$NODE_DIR"
   fi
   for b in node npm npx corepack; do
     keep "$BIN/$b"
@@ -119,7 +169,8 @@ hash -r
 
 # -- Python -------------------------------------------------------------------------------------------------------------
 PIP=(python3 -m pip install --user --break-system-packages --disable-pip-version-check --no-warn-script-location -q)
-if ! python3 -c "import sys, torch, triton; sys.exit(torch.__version__.split('+')[0] != '$TORCH_VERSION' or triton.__version__ != '$TRITON_VERSION')" 2>/dev/null; then
+TORCH_BUILD=${TORCH_INDEX##*/}                    # cu130: the local label the index's wheels carry (a CPU wheel's is +cpu)
+if ! python3 -c "import sys, torch, triton; sys.exit(torch.__version__ != '$TORCH_VERSION+$TORCH_BUILD' or triton.__version__ != '$TRITON_VERSION')" 2>/dev/null; then
   "${PIP[@]}" --index-url "$TORCH_INDEX" --extra-index-url https://pypi.org/simple "torch==$TORCH_VERSION" "triton==$TRITON_VERSION"
   log "python: torch $TORCH_VERSION ($TORCH_INDEX), triton $TRITON_VERSION"
 fi
@@ -158,7 +209,7 @@ done
 
 # -- the checkout -------------------------------------------------------------------------------------------------------
 REPO=$HOME/stkernel
-if [ -d "$REPO/.git" ]; then
+if [ -e "$REPO/.git" ]; then                      # a directory, or the file a linked worktree has
   git -C "$REPO" fetch -q origin
   # untracked files (a worktree directory, say) do not stop a fast-forward; git refuses one it would overwrite
   if [ "$(git -C "$REPO" branch --show-current)" = main ] && [ -z "$(git -C "$REPO" status --porcelain --untracked-files=no)" ]; then

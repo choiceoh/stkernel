@@ -11,9 +11,18 @@ ROOT=${DIR:h:h}
 VENV=$HOME/.venvs/stkernel
 UVBIN=$(command -v uv || echo "$HOME/.local/bin/uv")
 
+if [ -x "$VENV/bin/python" ]; then              # a venv made with another Python is set aside (never deleted), then remade
+  have=$("$VENV/bin/python" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+  if [ "$have" != "$PYTHON_VERSION" ]; then
+    aside="$VENV.pre-devenv-$have"
+    [ -e "$aside" ] && aside="$aside.$(date +%Y%m%d-%H%M%S)"
+    mv "$VENV" "$aside"
+    echo "venv: Python $have, not $PYTHON_VERSION -- set aside as $aside"
+  fi
+fi
 if [ ! -x "$VENV/bin/python" ]; then
   mkdir -p "$HOME/.venvs"
-  "$UVBIN" venv -q --seed --python 3.12 --python-preference only-managed "$VENV"
+  "$UVBIN" venv -q --seed --python "$PYTHON_VERSION" --python-preference only-managed "$VENV"
   echo "venv: $("$VENV/bin/python" --version) at $VENV"
 fi
 "$UVBIN" pip install -q --python "$VENV/bin/python" "torch==$TORCH_VERSION" ${=PY_PACKAGES}
@@ -29,8 +38,13 @@ fi
 path=("$VENV/bin" $path)
 
 if ! command -v graphify >/dev/null; then
-  "$UVBIN" tool install -q "graphifyy==$GRAPHIFY_VERSION"
-  echo "graphify: graphifyy $GRAPHIFY_VERSION"
+  TOOLBIN=$("$UVBIN" tool dir --bin)
+  if [ ! -x "$TOOLBIN/graphify" ]; then
+    "$UVBIN" tool install -q "graphifyy==$GRAPHIFY_VERSION"
+    echo "graphify: graphifyy $GRAPHIFY_VERSION"
+  fi
+  ln -sfn "$TOOLBIN/graphify" "$VENV/bin/graphify"   # uv's tool bin may be off PATH; the venv's bin is on it
+  echo "graphify: linked into $VENV/bin"
 fi
 
 cd "$ROOT"
