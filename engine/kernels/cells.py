@@ -694,41 +694,45 @@ def admission(shape) -> "list[Verdict]":
 
     mk = "engine/kernels/dense/mhc.py (the MK mHC segment, run_mhc)"
     tilelang = "engine/kernels/mhc (TileLang mhc_pre and mhc_post)"
-    hc_unknown = _recipe_establish("hyper-connection form", "the profile's kernel_shape (hc_variant)",
-                                   "modules/hyper_connection: mhc_pre/mhc_post or hc_split_sinkhorn reproduces the reference")
-    hc_nothing = _nothing("the hyper-connection form decides which kernel mixes; establish it first")
-    if shape.hc_variant is None:
-        refuse("mhc_decode", "the hyper-connection form is not established; the segment's math depends on it", hc_unknown,
-               hc_nothing)
-    elif _v41_measured(shape):
-        admit("mhc_decode", f"the split-sinkhorn form on MHCV41 at hidden {shape.hidden}, judged and timed",
-              _judged(_serve_mhc_variant(shape, "mhc_decode")))
-    elif shape.hc_variant != MHC_VARIANT:
-        refuse("mhc_decode", f"the MK mHC segment computes {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
-               _recipe_mhc_variant(shape, "mhc_decode"), _serve_mhc_variant(shape, "mhc_decode"))
-    elif shape.hidden not in MHC_HIDDEN or shape.hc != MHC_HC:
-        refuse("mhc_decode", f"MK mHC is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC}; asked hidden {shape.hidden} "
-                             f"hc {shape.hc}", _recipe_mhc(shape),
-               _serve(GENERIC, tilelang, True, "the same mhc math, judged at hidden 4096 (the fork-differential probe retired with the overlay stack); "
-                      "shape-generic in hidden and hc, its timing unmeasured here"))
-    elif shape.hidden not in MHC_MEASURED_HIDDEN:
-        unmeasured("mhc_decode", f"the MK mHC instance for hidden {shape.hidden} is compiled; its GPU probe has not run",
-                   _recipe_mhc_measure(shape), _serve(SPECIALIZED, mk, False, f"the H{shape.hidden} instance's GPU probe has not run"))
-    else:
-        admit("mhc_decode", f"MK mHC instance for hidden {shape.hidden} at hc {shape.hc}",
-              _serve(SPECIALIZED, mk, True, "tests/test_engine_mk_mhc.py against modules/hyper_connection (rel < 0.006)"))
-    if shape.hc_variant is None:
-        refuse("mhc_prefill", "the hyper-connection form is not established; the mixes' math depends on it", hc_unknown,
-               hc_nothing)
-    elif _v41_measured(shape):
-        admit("mhc_prefill", f"the split-sinkhorn form on MHCV41.prefill at hidden {shape.hidden}, judged and timed",
-              _judged(_serve_mhc_variant(shape, "mhc_prefill")))
-    elif shape.hc_variant != MHC_VARIANT:
-        refuse("mhc_prefill", f"the TileLang mixes compute {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
-               _recipe_mhc_variant(shape, "mhc_prefill"), _serve_mhc_variant(shape, "mhc_prefill"))
-    else:
-        admit("mhc_prefill", "TileLang mixes take hidden and hc from the tensors",
-              _serve(SPECIALIZED, tilelang, True, "the fork-differential probe (retired with the overlay stack) against modules/hyper_connection"))
+    # hc 1 is a plain residual: no streams to mix, so there is no mHC lane to judge -- the rule the indexer
+    # and KDA lanes follow above. `hc_variant` None on a model that HAS streams is the other thing, and the
+    # refusal inside says so.
+    if shape.hc > 1:
+        hc_unknown = _recipe_establish("hyper-connection form", "the profile's kernel_shape (hc_variant)",
+                                       "modules/hyper_connection: mhc_pre/mhc_post or hc_split_sinkhorn reproduces the reference")
+        hc_nothing = _nothing("the hyper-connection form decides which kernel mixes; establish it first")
+        if shape.hc_variant is None:
+            refuse("mhc_decode", "the hyper-connection form is not established; the segment's math depends on it", hc_unknown,
+                   hc_nothing)
+        elif _v41_measured(shape):
+            admit("mhc_decode", f"the split-sinkhorn form on MHCV41 at hidden {shape.hidden}, judged and timed",
+                  _judged(_serve_mhc_variant(shape, "mhc_decode")))
+        elif shape.hc_variant != MHC_VARIANT:
+            refuse("mhc_decode", f"the MK mHC segment computes {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
+                   _recipe_mhc_variant(shape, "mhc_decode"), _serve_mhc_variant(shape, "mhc_decode"))
+        elif shape.hidden not in MHC_HIDDEN or shape.hc != MHC_HC:
+            refuse("mhc_decode", f"MK mHC is compiled for hidden {MHC_HIDDEN} at hc {MHC_HC}; asked hidden {shape.hidden} "
+                                 f"hc {shape.hc}", _recipe_mhc(shape),
+                   _serve(GENERIC, tilelang, True, "the same mhc math, judged at hidden 4096 (the fork-differential probe retired with the overlay stack); "
+                          "shape-generic in hidden and hc, its timing unmeasured here"))
+        elif shape.hidden not in MHC_MEASURED_HIDDEN:
+            unmeasured("mhc_decode", f"the MK mHC instance for hidden {shape.hidden} is compiled; its GPU probe has not run",
+                       _recipe_mhc_measure(shape), _serve(SPECIALIZED, mk, False, f"the H{shape.hidden} instance's GPU probe has not run"))
+        else:
+            admit("mhc_decode", f"MK mHC instance for hidden {shape.hidden} at hc {shape.hc}",
+                  _serve(SPECIALIZED, mk, True, "tests/test_engine_mk_mhc.py against modules/hyper_connection (rel < 0.006)"))
+        if shape.hc_variant is None:
+            refuse("mhc_prefill", "the hyper-connection form is not established; the mixes' math depends on it", hc_unknown,
+                   hc_nothing)
+        elif _v41_measured(shape):
+            admit("mhc_prefill", f"the split-sinkhorn form on MHCV41.prefill at hidden {shape.hidden}, judged and timed",
+                  _judged(_serve_mhc_variant(shape, "mhc_prefill")))
+        elif shape.hc_variant != MHC_VARIANT:
+            refuse("mhc_prefill", f"the TileLang mixes compute {MHC_VARIANT}; this model mixes by {shape.hc_variant}",
+                   _recipe_mhc_variant(shape, "mhc_prefill"), _serve_mhc_variant(shape, "mhc_prefill"))
+        else:
+            admit("mhc_prefill", "TileLang mixes take hidden and hc from the tensors",
+                  _serve(SPECIALIZED, tilelang, True, "the fork-differential probe (retired with the overlay stack) against modules/hyper_connection"))
 
     oneshot = "engine/kernels/oneshot (the one-shot RDMA all-reduce)"
     if c.world != ONESHOT_WORLD or c.hidden % 8 or c.hidden > ONESHOT_MAX_ELEMENTS:
