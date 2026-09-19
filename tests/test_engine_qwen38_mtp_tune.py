@@ -13,6 +13,7 @@ Held on the CPU over the small Qwen3.8-shaped composition with a random MTP head
 """
 import importlib.util
 import json
+import math
 import random
 import tempfile
 import time
@@ -158,6 +159,19 @@ def _float32_head_init(init):
 
 
 @unittest.skipUnless(torch is not None, "requires torch")
+class ScheduleTests(unittest.TestCase):
+    def test_a_short_run_still_reaches_its_peak_rate(self):
+        """The 2026-09-19 window: 91 steps under the default warmup of 100 peaked below a quarter of the rate."""
+        from engine.profiles.qwen38.mtp_tune import learning_rate
+        rates = [learning_rate(step, total=91, peak=5e-5, warmup=100) for step in range(1, 92)]
+        self.assertGreater(max(rates), 0.9 * 5e-5)
+        self.assertEqual(rates.index(max(rates)) + 1, 9)                 # a tenth of the run
+        self.assertLess(rates[-1], 1e-12)
+        long = [learning_rate(step, total=2000, peak=2e-5, warmup=100) for step in (50, 100, 1000)]
+        self.assertAlmostEqual(long[0], 2e-5 * 0.5 * 0.5 * (1 + math.cos(math.pi * 50 / 2000)))
+        self.assertAlmostEqual(long[2], 2e-5 * 0.5)
+
+
 class DistributedTests(unittest.TestCase):
     """`train` data parallel: each rank its own windows, the gradients averaged, the ranks' weights the same bits and
     moved; the evaluation split across ranks and summed back."""
