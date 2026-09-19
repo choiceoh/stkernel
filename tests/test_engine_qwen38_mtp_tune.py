@@ -139,7 +139,7 @@ def _ddp_rank(rank, world, port, data_dir, out_dir, results):
     _, _, cfg, weights = tiny()
     args = SimpleNamespace(ckpt=Path(data_dir), data=data_dir, out=out_dir, depth=3, window=12, eval_windows=4, seed=0,
                            steps=3, accumulate=2, lr=1e-3, warmup=1, beta=0.6, auf=False, clip=1.0, log_every=1,
-                           eval_every=3)
+                           eval_every=3, init=None)
     with mock.patch.object(mt, "config", lambda ckpt: (cfg, "model.")), \
             mock.patch.object(mt, "checkpoint_tensors", lambda ckpt, prefix, tuned=None: weights.__getitem__), \
             mock.patch.object(mt.Head, "__init__", _float32_head_init(mt.Head.__init__)):
@@ -190,6 +190,31 @@ class DistributedTests(unittest.TestCase):
             np.savez(Path(d) / f"mtp-inputs-20260919-150000-{seq:05d}.npz",
                      streams=streams.to(torch.bfloat16).view(torch.int16).numpy(), meta=meta)
         return build_runs(sorted(Path(d).glob("mtp-inputs-*.npz")), Path(d) / "data", holdout=0.34, min_length=16, seed=1)
+
+    def test_a_run_from_a_tuned_head_reads_it_over_the_checkpoint(self):
+        """`--init`: the 2026-09-19 window's second training started from the first one's head."""
+        from types import SimpleNamespace
+        from unittest import mock
+        from engine.profiles.qwen38 import mtp_tune as mt
+        _, _, cfg, weights = tiny()
+        asked = []
+
+        def tensors(ckpt, prefix, tuned=None):
+            asked.append(tuned)
+            return weights.__getitem__
+        with tempfile.TemporaryDirectory() as d:
+            self.data(d)
+            init = Path(d) / "run1" / "head.safetensors"
+            args = SimpleNamespace(ckpt=Path(d), data=str(Path(d) / "data"), out=str(Path(d) / "run"), depth=3, window=12,
+                                   eval_windows=4, seed=0, steps=0, accumulate=1, lr=1e-3, warmup=1, beta=0.6, auf=False,
+                                   clip=1.0, log_every=1, eval_every=1, init=init)
+            with mock.patch.object(mt, "config", lambda ckpt: (cfg, "model.")), \
+                    mock.patch.object(mt, "checkpoint_tensors", tensors), \
+                    mock.patch.object(mt.Head, "__init__", _float32_head_init(mt.Head.__init__)):
+                mt.train(args)
+            events = [json.loads(line)["event"] for line in (Path(d) / "run" / "log.jsonl").read_text().splitlines()]
+        self.assertEqual(asked, [init])
+        self.assertEqual(events, ["start", "eval", "end"])
 
     def test_two_ranks_end_on_the_same_weights(self):
         import socket

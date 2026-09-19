@@ -503,7 +503,7 @@ def train(args) -> None:
     rank, world = distributed()
     torch.manual_seed(args.seed)
     rng = random.Random(args.seed * 1000 + rank)                   # each rank its own windows
-    model = Head(cfg, checkpoint_tensors(args.ckpt, prefix), prefix=prefix, device=device)
+    model = Head(cfg, checkpoint_tensors(args.ckpt, prefix, tuned=args.init), prefix=prefix, device=device)
     train_runs = Runs(args.data, "train", window=args.window, depth=args.depth)
     eval_runs = Runs(args.data, "eval", window=args.window, depth=args.depth)
     out = Path(args.out)
@@ -657,6 +657,9 @@ def main(argv=None) -> int:
         p.add_argument("--seed", type=int, default=0)
         if name == "train":
             p.add_argument("--out", required=True)
+            p.add_argument("--init", type=Path, default=None,
+                           help="start from a tuned head (a run's head.safetensors) instead of the checkpoint's; "
+                                "step 0's evaluation is then that head's, and only a better one is saved")
             p.add_argument("--steps", type=int, default=2000)
             p.add_argument("--accumulate", type=int, default=4)
             p.add_argument("--lr", type=float, default=2e-5)
