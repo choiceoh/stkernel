@@ -192,9 +192,15 @@ def main():
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=MTP_ARMS)
         return
     if args.lanes == 'qwen38_step_mtp_gemv':
-        # the draft graph with the MTP head's BF16 projections on the skinny GEMV (served) and on torch.mm, one layer set
+        # the draft graph with the MTP head's BF16 projections on the skinny GEMV (served) and on torch.mm, one layer set,
+        # three rounds in alternating order: a production that comes or goes mid-ticket lands on both arms, and shows in
+        # each build's free memory (q38mtpgemv-0919a built its arms once each and production booted between them --
+        # 80.7 against 39.7 GiB free, the draft graph 4.6 against 10.2 ms: contention, not the kernels)
         from probes.engine_qwen38_step import GEMV_ARMS, LAYER_SETS, run as qwen38_step
-        qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=GEMV_ARMS)
+        rounds = [qwen38_step(None, args.ranks, layer_sets=LAYER_SETS[1:2], arms=arms)
+                  for arms in (GEMV_ARMS, GEMV_ARMS[::-1], GEMV_ARMS)]
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(json.dumps({"rounds": rounds}, indent=1) + "\n")
         return
     if args.lanes == 'qwen38_mtp_window':
         # the MTP head's draft graph at every context bucket, its QSA selection scored against a sink-and-recent window

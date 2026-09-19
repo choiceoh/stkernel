@@ -34,9 +34,14 @@ o_proj −11, fc_hidden −3, 공유 down −2 µs ≈ **−74 µs**. 관측은 
 
 ## 판정 티켓
 
-`q38mtpgemv-0919a` — `--lanes qwen38_step_mtp_gemv`: 같은 층 세트 [4,5] 를 served(이 표) 와 `mtp-mm`(MTP 모양을 표에서 빼 `torch.mm`) 으로
-차례로 빌드해 드래프트 그래프 1·4 행을 재생. 결과는 도착하는 대로 이 파일과 원장에 덧붙인다.
+**`q38mtpgemv-0919a` — 무효.** `--lanes qwen38_step_mtp_gemv` 가 층 세트 [4,5] 를 served 와 `mtp-mm`(MTP 모양을 표에서 빼 `torch.mm`) 으로
+한 번씩 차례로 빌드했는데, 두 빌드 사이에 프로덕션이 올라왔다: 시작 시 여유 메모리 served 80.7 GiB(프로덕션 내려가 있음) 대 `mtp-mm` 39.7 GiB.
+드래프트 그래프 1 행 4,595 대 10,207 µs, 4 행 5,401 대 11,664 µs — 차이의 대부분이 경합이라 판정에 쓰지 않는다. 쓸 수 있는 것은 served 팔 안의 셈:
+skinny GEMV 15 발사 833 µs(관측·체인 셋 × 다섯 투영; 스윕의 같은 행 수 합 753 µs 보다 11% 높음).
+
+레인을 고쳤다: served/mm, mm/served, served/mm 세 라운드를 번갈아 빌드하고 빌드마다 여유 메모리를 남긴다(`{"rounds": [...]}`). 재판정 `q38mtpgemv-0919b`.
 
 ## 원시
 
 - `q38gemv-0919e.json` — 다섯 모양의 스윕(`--lanes qwen38_gemv`)
+- `q38mtpgemv-0919a.json` — 무효 A/B(위), 기록으로 둔다
