@@ -57,6 +57,13 @@ case "${ST_HC_FP8:-0}" in
   1) HC_ARG="--hc-fp8" ;;
   *) echo "ST_HC_FP8 must be 0 or 1" >&2; exit 2 ;;
 esac
+MTP_ARG=""                                                    # ST_MTP_PRECISION=fp8|bf16|w4: the MTP head's dense projections (fleet default fp8)
+if [ -n "${ST_MTP_PRECISION:-}" ]; then
+  case "$ST_MTP_PRECISION" in
+    fp8|bf16|w4) MTP_ARG="--mtp-precision $ST_MTP_PRECISION" ;;
+    *) echo "ST_MTP_PRECISION must be fp8, bf16 or w4" >&2; exit 2 ;;
+  esac
+fi
 ONESHOT_ARG=""                                                # ST_ONESHOT=0: every collective on NCCL (the one-shot cell at hidden 2560 is unmeasured)
 case "${ST_ONESHOT:-1}" in
   1) ;;
@@ -242,7 +249,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $MTP_ARG $SPEC_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()

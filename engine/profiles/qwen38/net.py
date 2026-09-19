@@ -59,6 +59,7 @@ from engine.profiles.qwen38.ple_table import PLEStaging, local_rows
 BF16, F32 = torch.bfloat16, torch.float32
 HEAD_NAME = "Qwen4ExpForCausalLM/lm_head"          # the pack store's calibration name of the head's FP8 GPTQ
 HC_NAME = "Qwen4ExpForCausalLM/hyper_connection"    # the FP8 mixer lanes' names (hc_fp8; no calibration yet)
+MTP_PRECISIONS = ("fp8", "bf16", "w4")                 # the MTP head's dense projections (Qwen38Net mtp_precision)
 FIRST_BUCKET = 4096                                # tokens of the smallest context bucket; each next one doubles
 
 
@@ -169,7 +170,7 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
-                 query_shards: bool = True):
+                 query_shards: bool = True, mtp_precision: str = "fp8"):
         """`hc_fp8`: the hyper-connection mixers' two matmuls a site on block-scaled FP8 (engine/kernels/dense
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
@@ -180,13 +181,22 @@ class Qwen38Net:
         quarters of each QSA layer's scoring for one all-gather of ids. On by the operator's decision of 2026-09-18
         with the fleet unmeasured (CHARTER D17): until an onepass record says which side of that trade a fleet lands
         on, a boot can decline it (fleet.py --no-query-shards, the launcher's ST_QUERY_SHARDS=0) and every rank
-        scores every row as before."""
+        scores every row as before.
+
+        `mtp_precision`: the MTP head's dense projections (its attention's two, its shared expert's two), which the
+        checkpoint keeps in BF16. "fp8" (the default since the operator's 2026-09-19 "bf16이나 fp8로"): block-scaled
+        FP8 at every row count, decode rows on dense/fp8_rows -- about the bytes W4 read, at FP8's error. "bf16": the
+        checkpoint's weights through torch's matmul, no quantisation. "w4": the target layers' W4A8 at decode rows, as
+        before. A drafter's numbers change how many tokens a step yields, never which (verification picks them)."""
         if comm.world_size != TP:
             raise ValueError(f"qwen38 is written for TP={TP}; comm has world {comm.world_size}")
         if type(query_shards) is not bool:
             raise ValueError("query_shards is a declared boolean")
         self.F, self.comm, self.lanes, self.mtp, self.hc_fp8 = F, comm, lanes, mtp, hc_fp8
         self.query_shards = query_shards
+        if mtp_precision not in MTP_PRECISIONS:
+            raise ValueError(f"mtp_precision {mtp_precision!r}: one of {MTP_PRECISIONS}")
+        self.mtp_precision = mtp_precision
         self._hc_projections = {}
         self.rank = comm.rank
         self.layers = list(range(F.layers)) if layers is None else list(layers)
@@ -263,12 +273,17 @@ class Qwen38Net:
         for key, name in self.dense_names(self.p).items():
             weight = self.p[key]
             aligned = weight.shape[1] % 128 == 0
-            lane = DenseLinear(weight, store=store, name=name) if aligned else \
-                PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None)
+            mtp = key.startswith("mtp.")
+            if mtp and getattr(self, "mtp_precision", "fp8") == "bf16":
+                continue                                             # self.linear: torch's BF16 matmul over p[key]
+            precision = "fp8" if mtp and getattr(self, "mtp_precision", "fp8") == "fp8" else "w4"
+            options = dict(decode_precision="fp8", fp8_decode_rows=True) if precision == "fp8" else {}
+            lane = DenseLinear(weight, store=store, name=name, **options) if aligned else \
+                PaddedDenseLinear(weight, prefill=True, store=store, name=name, smooth=None, **options)
             self.dense[key] = lane
             if consume_weights and hasattr(lane, "consume_weight"):
                 cols = weight.shape[1] if aligned else padded_columns(weight.shape[1])
-                if packed_nbytes(weight.shape[0], cols) <= weight.numel() * weight.element_size():
+                if packed_nbytes(weight.shape[0], cols, decode_w4=precision == "w4") <= weight.numel() * weight.element_size():
                     lane.consume_weight(weight)
                     self.p[key] = None
                 else:
@@ -833,4 +848,4 @@ class Qwen38Net:
         return hidden, streams
 
 
-__all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME"]
+__all__ = ["Segment", "Step", "StepMeta", "Qwen38Net", "HEAD_NAME", "MTP_PRECISIONS"]

@@ -138,10 +138,10 @@ class DecisionTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         self.assertIs(inspect.signature(Qwen38Net.__init__).parameters["query_shards"].default, True)
         fleet = (root / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
-        self.assertIn("prelude=None, query_shards: bool = True):", fleet)
-        self.assertIn("hc_fp8=hc_fp8, query_shards=query_shards)", fleet)
+        self.assertIn("prelude=None, query_shards: bool = True,", fleet)
+        self.assertIn("hc_fp8=hc_fp8, query_shards=query_shards,", fleet)
         self.assertIn('ap.add_argument("--no-query-shards", action="store_true",', fleet)
-        self.assertIn("query_shards=not a.no_query_shards)", fleet)
+        self.assertIn("query_shards=not a.no_query_shards,", fleet)
         launcher = (root / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
         self.assertIn('case "${ST_QUERY_SHARDS:-1}" in', launcher)
         self.assertIn('0) SHARDS_ARG="--no-query-shards" ;;', launcher)
