@@ -178,6 +178,7 @@ def rank_loader(path, *, expected_layout: str):
 
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
+          hc_w8a16: bool = False,
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, tile_union: bool = True,
           gdn_flashinfer: bool = True,
           mtp_precision: str = "bf16", draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
@@ -215,6 +216,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, tile_union=tile_union,
+                    hc_w8a16=hc_w8a16,
                     gdn_flashinfer=gdn_flashinfer,
                     mtp_precision=mtp_precision, mtp_experts=mtp_experts, shared_overlap=shared_overlap)
     if mtp_window is not None:
@@ -271,7 +273,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         tuned = set(mtp_tune.served_names(F)) & {s.name for s in specs}
         files.append(tuned_path)
     calib_files = [*files, Path(ranks_dir) / facts.ple_file(comm.rank, facts.TP)]
-    weights_id = calibrate.identity(rank.metadata, calib_files, F.config, hc_fp8=hc_fp8)
+    weights_id = calibrate.identity(rank.metadata, calib_files, F.config, hc_fp8=hc_fp8, hc_w8a16=hc_w8a16)
     store = PackStore("/cache", comm.rank, weights_id=weights_id, require_identity=True)
     calib_plan, calib_bytes, deferred = calibrate.plan(net, specs, store) if self_calibrate else ([], 0, [])
     arena_bytes += calib_bytes
@@ -327,6 +329,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             # the packs move into their BF16 sources' arena regions (all but the shared expert's padded down projection)
             spent = timed_store(store)
             net.prepare_dense(store, consume_weights=True)
+            if hc_w8a16:
+                recorder.gauge("hc_w8a16_recipe_error", net.hc_w8a16_error)
             torch.cuda.synchronize()
             torch.cuda.empty_cache()
             store.release_pages()
@@ -756,6 +760,9 @@ def main(argv=None) -> int:
                          "at decode it is slower (C=1 +9.6%% a step on the fleet, 2026-09-19, K=1), and it changes the "
                          "mixer's NUMBERS with no quality bracket to judge them (D4) -- the one lever here that moves "
                          "the output")
+    ap.add_argument("--hc-w8a16", action="store_true",
+                    help="experimental two-launch mixer: FP8 weights, BF16 activations at 1..16 rows. "
+                         "Changes model arithmetic; TP4 quality and throughput remain unjudged. Default off")
     ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",
                     help="the MTP head's dense projections: the checkpoint's BF16 (default), block-scaled FP8, or the "
                          "target layers' W4A8 at decode rows (before 2026-09-19); acceptance moves, output does not")
@@ -911,6 +918,7 @@ def main(argv=None) -> int:
         F, net, caches, model, runner = build(comm, lanes, a.ranks, a.ckpt_meta, kv_gib=a.kv_gib, max_seqs=a.max_seqs,
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                               drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
+                                              hc_w8a16=a.hc_w8a16,
                                               query_shards=not a.no_query_shards, tile_union=not a.no_tile_union,
                                               gdn_flashinfer=not a.no_gdn_flashinfer,
                                               mtp_precision=a.mtp_precision,
@@ -938,6 +946,7 @@ def main(argv=None) -> int:
         print("  shared expert: " + {False: "unforked", True: "forked at one request's rows", "all": "forked at every captured step"}
               [net.shared_overlap], flush=True)
         print("  MoE decode chunks: " + ("two micro launches at 9..16 tokens" if a.moe_decode_chunks else "off"), flush=True)
+        print("  W8A16 mixer: " + ("experimental, 1..16 rows" if a.hc_w8a16 else "off"), flush=True)
         leave = {"off": "launched after its sum", "pdl": "its sum's programmatic dependent",
                  "prefetch": "its sum's programmatic dependent, the mixer's down projection prefetched"}[lanes.leave]
         if lanes.leave == "prefetch" and net.hc_fp8:

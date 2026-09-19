@@ -66,6 +66,7 @@ OVERLAP_ARMS = ("served", "overlap-one", "overlap-all")
 # (the lanes before q38gemv-0919e's shapes went into skinny_gemv.CONFIGS) -- what the draft graph gains from them
 GEMV_ARMS = ("served", "mtp-mm")
 CHUNK_ARMS = ("served", "moe-chunks")
+MIX_W8_ARMS = ("served", "mix-w8")
 MTP_GEMV = ((4224, 2560), (2560, 1536), (2560, 2560), (320, 2560), (2560, 160))   # in, o, fc (both), shared gate_up, down
 
 FAMILIES = (
@@ -148,7 +149,7 @@ def extrapolate(parts: dict, full=FULL) -> float:
 
 def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: float, spec_k: int = SPEC_K,
           mtp_precision: str = "bf16", mtp_experts: str = "bf16", shared_overlap: "bool | str" = False,
-          candidates: int = 0, moe_decode_chunks: bool = False):
+          candidates: int = 0, moe_decode_chunks: bool = False, hc_w8a16: bool = False):
     """The served net, caches and captured graphs for one rank over `layers` -> (F, net, caches, target, draft), at
     `spec_k` drafts a step as fleet.build takes it (the facts replaced before anything sizes from them); `candidates`:
     the draft graphs' sampled chain (fleet --draft-candidates)."""
@@ -167,7 +168,7 @@ def build(meta: Path, ranks: Path, rank: int, layers, *, max_seqs: int, kv_gib: 
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, OneRankComm(rank), lane_tables.served(moe_decode_chunks=moe_decode_chunks), layers=list(layers), mtp=True,
                     mtp_precision=mtp_precision, mtp_experts=mtp_experts,
-                    shared_overlap=shared_overlap)
+                    shared_overlap=shared_overlap, hc_w8a16=hc_w8a16)
     from engine.profiles.qwen38.fleet import MTP_WINDOW
     net.mtp_window = MTP_WINDOW                     # the head's window the fleet serves (fleet --mtp-window)
     specs = net.specs()
@@ -459,8 +460,8 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     "mtp-w4" / "mtp-fp8": the MTP head's dense projections at that precision instead of the served BF16; "mtp-mm": the
     MTP head's shapes taken out of the skinny GEMV's table (its BF16 projections on torch.mm, the rest as served)."""
     import torch
-    if arm not in ARMS + MTP_ARMS + OVERLAP_ARMS + GEMV_ARMS + CHUNK_ARMS:
-        raise ValueError(f"arm {arm!r}: one of {ARMS + MTP_ARMS + OVERLAP_ARMS + GEMV_ARMS + CHUNK_ARMS}")
+    if arm not in ARMS + MTP_ARMS + OVERLAP_ARMS + GEMV_ARMS + CHUNK_ARMS + MIX_W8_ARMS:
+        raise ValueError(f"unknown Qwen step probe arm {arm!r}")
     if arm == "mm":
         from engine.kernels.common import skinny_gemv
         skinny_gemv.CONFIGS.clear()
@@ -480,7 +481,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                                           mtp_precision=arm[4:] if arm in ("mtp-w4", "mtp-fp8") else "bf16",
                                           mtp_experts=arm[8:] if arm.startswith("experts-") else "bf16",
                                           shared_overlap={"overlap-one": True, "overlap-all": "all"}.get(arm, False),
-                                          moe_decode_chunks=arm == "moe-chunks")
+                                          moe_decode_chunks=arm == "moe-chunks", hc_w8a16=arm == "mix-w8")
     built = time.perf_counter() - began
     graphs = {}
     for n, blocks in shapes:
@@ -631,7 +632,7 @@ if __name__ == "__main__":
     ap.add_argument("--loop", action="store_true", help="with --one: also decode one request through the served model")
     ap.add_argument("--shapes", type=json.loads, default=SHAPES, help="JSON pairs of rows and context blocks")
     ap.add_argument("--max-gib", type=float, default=MAX_GIB, help="this process's CUDA memory ceiling, within the lane budget")
-    ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:] + OVERLAP_ARMS[1:] + GEMV_ARMS[1:] + CHUNK_ARMS[1:],
+    ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:] + OVERLAP_ARMS[1:] + GEMV_ARMS[1:] + CHUNK_ARMS[1:] + MIX_W8_ARMS[1:],
                     help="with --one: the lanes it builds under")
     a = ap.parse_args()
     if a.one is not None:

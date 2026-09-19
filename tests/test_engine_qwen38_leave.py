@@ -169,6 +169,7 @@ class LanesTests(unittest.TestCase):
 
 @unittest.skipUnless(READY, "torch and triton required")
 class NetTests(unittest.TestCase):
+    H = type("Rows", (str,), {"shape": (4, 10240)})("h")
     def net(self, hc_fp8=False, whole=False):
         from engine.profiles.qwen38.net import Qwen38Net
         calls = []
@@ -179,29 +180,29 @@ class NetTests(unittest.TestCase):
         net = SimpleNamespace(F=SimpleNamespace(rms_eps=EPS, hc=HC), p=p, lanes=lanes,
                               _hc_projections={"L0.hc.mlp.": object()} if hc_fp8 else {},
                               _mix=lambda prefix, normed, down, inject: ("x", "injection"))
-        net._mixer_weight = lambda prefix, down: Qwen38Net._mixer_weight(net, prefix, down)
+        net._mixer_weight = lambda prefix, down, rows=None: Qwen38Net._mixer_weight(net, prefix, down, rows)
         net._whole_site = lambda *a, **k: Qwen38Net._whole_site(net, *a, **k)
         return net, calls, Qwen38Net
 
     def test_a_site_prefetches_its_own_down_projection(self):
         net, calls, Qwen38Net = self.net()
-        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject"), ("x", "injection", "h"))
+        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", self.H, "out", "inject"), ("x", "injection", "h"))
         self.assertEqual(calls, [{"prefetch": "down_inject"}])
 
     def test_an_fp8_mixer_reads_another_weight(self):
         net, calls, Qwen38Net = self.net(hc_fp8=True)
-        Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject")
+        Qwen38Net._site(net, "L0.hc.mlp.", self.H, "out", "inject")
         self.assertEqual(calls, [{"prefetch": None}])
 
     def test_a_lane_with_the_whole_site_takes_it(self):
         """Lanes.hc_site: the leave, the norm and the mixer in one call (gated_residual.site) with the site's weights and
         its prefetch; the FP8 mixer lanes read the normalised streams, so their sites keep the two calls."""
         net, calls, Qwen38Net = self.net(whole=True)
-        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject"), ("x whole", "injection whole", "h"))
+        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", self.H, "out", "inject"), ("x whole", "injection whole", "h"))
         self.assertEqual(calls, [("site", ("h", "out", "inject", "norm", EPS, HC, "down_inject", "up"),
                                   {"inject": True, "prefetch": "down_inject"})])
         net, calls, Qwen38Net = self.net(hc_fp8=True, whole=True)
-        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", "h", "out", "inject"), ("x", "injection", "h"))
+        self.assertEqual(Qwen38Net._site(net, "L0.hc.mlp.", self.H, "out", "inject"), ("x", "injection", "h"))
         self.assertEqual(calls, [{"prefetch": None}])
 
     def test_the_served_table_binds_the_whole_site(self):
@@ -214,8 +215,8 @@ class NetTests(unittest.TestCase):
 
     def test_the_closing_mixers_prefetch_their_down_projection(self):
         source = (ROOT / "engine/profiles/qwen38/net.py").read_text(encoding="utf-8")
-        self.assertIn('prefetch=self._mixer_weight("close.", "down"))', source)
-        self.assertIn('prefetch=self._mixer_weight("mtp.close.", "down"))', source)
+        self.assertIn('prefetch=self._mixer_weight("close.", "down", h.shape[0]))', source)
+        self.assertIn('prefetch=self._mixer_weight("mtp.close.", "down", h.shape[0]))', source)
 
 
 @unittest.skipUnless(READY, "torch and triton required")
@@ -279,14 +280,14 @@ class KnobTests(unittest.TestCase):
     def test_the_knob_reaches_the_lanes_from_the_launcher(self):
         fleet = (ROOT / "engine/profiles/qwen38/fleet.py").read_text(encoding="utf-8")
         self.assertIn('ap.add_argument("--leave", choices=lane_tables.LEAVES, default=lane_tables.LEAVE,', fleet)
-        self.assertIn("lanes = lane_tables.served(leave=a.leave)", fleet)
+        self.assertIn("lanes = lane_tables.served(leave=a.leave,", fleet)
         self.assertIn('print("  leave: "', fleet)                               # a boot's log says which
         self.assertIn('if lanes.leave == "prefetch" and net.hc_fp8:', fleet)   # and that --hc-fp8 prefetches nothing
         self.assertIn("nothing prefetched (--hc-fp8: the mixers read FP8 weights)", fleet)
         launcher = (ROOT / "launchers/start-st-qwen38.sh").read_text(encoding="utf-8")
         self.assertIn('case "${ST_LEAVE:-prefetch}" in', launcher)
         self.assertIn('off|pdl) LEAVE_ARG="--leave $ST_LEAVE" ;;', launcher)   # off: the rollback
-        self.assertIn("$DRAFTER_ARG $LEAVE_ARG $HC_ARG", launcher)
+        self.assertIn("$DRAFTER_ARG $LEAVE_ARG $MOE_CHUNKS_ARG $HC_ARG", launcher)
 
     def test_the_lane_probe_is_admitted(self):
         check = (ROOT / "probes/engine_kernel_check.py").read_text(encoding="utf-8")

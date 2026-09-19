@@ -107,6 +107,12 @@ case "${ST_HC_FP8:-0}" in
   1) HC_ARG="--hc-fp8" ;;
   *) echo "ST_HC_FP8 must be 0 or 1" >&2; exit 2 ;;
 esac
+case "${ST_HC_W8A16:-0}" in
+  0) ;;
+  1) [ -z "$HC_ARG" ] || { echo "ST_HC_W8A16 and ST_HC_FP8 are mutually exclusive" >&2; exit 2; }
+     HC_ARG="--hc-w8a16" ;;
+  *) echo "ST_HC_W8A16 must be 0 or 1" >&2; exit 2 ;;
+esac
 MTP_ARG=""                                                    # ST_MTP_PRECISION=bf16|fp8|w4: the MTP head's dense projections (fleet default bf16)
 if [ -n "${ST_MTP_PRECISION:-}" ]; then
   case "$ST_MTP_PRECISION" in

@@ -223,6 +223,16 @@ def main():
         from probes.engine_qwen38_mix_w8 import run
         run(args.output, args.ranks)
         return
+    if args.lanes == 'qwen38_step_mix_w8':
+        from probes.engine_qwen38_step import MIX_W8_ARMS, LAYER_SETS, run
+        # Interleave build order across rounds: unchanged paths exposed drift in
+        # a single sequential pair. These remain single-rank component graphs.
+        rounds = [run(None, args.ranks, layer_sets=LAYER_SETS[:1], arms=arms,
+                      shapes=((1, 6), (2, 6), (3, 6), (4, 6)), max_gib=8.0)
+                  for arms in (MIX_W8_ARMS, MIX_W8_ARMS[::-1])]
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(json.dumps({"rounds": rounds}, indent=1) + "\n")
+        return
     if args.lanes == 'qwen38_step_overlap':
         # one rank's captured step with the shared expert forked beside the routed experts, against the served step (M5)
         from probes.engine_qwen38_step import LAYER_SETS, OVERLAP_ARMS, run as qwen38_step

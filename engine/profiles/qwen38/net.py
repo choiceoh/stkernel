@@ -188,6 +188,7 @@ class StepMeta:
 
 class Qwen38Net:
     def __init__(self, F: Facts, comm, lanes: Lanes, layers=None, *, mtp: bool = True, hc_fp8: bool = False,
+                 hc_w8a16: bool = False,
                  query_shards: bool = True, tile_union: bool = True, gdn_flashinfer: bool = True,
                  mtp_precision: str = "bf16",
                  mtp_experts: str = "nvfp4",
@@ -196,6 +197,10 @@ class Qwen38Net:
         FP8Linear) instead of BF16 -- half the bytes every step reads from the largest weights it reads. The mixer's
         numbers change (round-to-nearest FP8 weights and activations), so it is a declared choice a boot makes and a
         quality bracket judges, not a default.
+
+        `hc_w8a16`: experimental two-launch mixer with block-FP8 weights and BF16
+        rows at 1..16 rows, including short eager tails. Other widths keep BF16.
+        Incompatible with hc_fp8; output quality is still unjudged on TP4.
 
         `query_shards`: a long prefill step's index queries scored a quarter a rank and the chosen ids gathered
         (`_sharded_blocks`, carry Q11). The selection is the unsplit step's, row for row; what it trades is three
@@ -248,6 +253,10 @@ class Qwen38Net:
             raise ValueError("gdn_flashinfer is a declared boolean")
         self.gdn_flashinfer = gdn_flashinfer
         self.F, self.comm, self.lanes, self.mtp, self.hc_fp8 = F, comm, lanes, mtp, hc_fp8
+        if type(hc_w8a16) is not bool or (hc_w8a16 and hc_fp8):
+            raise ValueError("hc_w8a16 is a boolean and cannot be combined with hc_fp8")
+        self.hc_w8a16 = hc_w8a16
+        self._hc_w8 = {}
         self.query_shards = query_shards
         if mtp_precision not in MTP_PRECISIONS:
             raise ValueError(f"mtp_precision {mtp_precision!r}: one of {MTP_PRECISIONS}")
@@ -409,6 +418,11 @@ class Qwen38Net:
         # GLM's W8A16 head: keep decode/verify activations in BF16 against the same block-scaled FP8 weight.
         self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME, decode_rows="w8a16")
         self._hc_projections = self._prepare_hc_fp8() if self.hc_fp8 else {}
+        if getattr(self, "hc_w8a16", False):
+            from engine.kernels.gated_residual_w8 import pack, qualify
+            self._hc_w8 = {prefix: (pack(self.p[prefix + down]), pack(self.p[prefix + "up"]))
+                           for prefix, down in self._hc_sites()}
+            self.hc_w8a16_error = qualify(*next(iter(self._hc_w8.values())))
 
     def _hc_sites(self):
         """Every mixer the served step runs, as its weight-name prefix and down name: two a layer, the closing mixer,
@@ -438,6 +452,10 @@ class Qwen38Net:
 
     def _mix(self, prefix: str, normed, down_name: str, *, inject: bool):
         lanes, F, p = self.lanes, self.F, self.p
+        packed = getattr(self, "_hc_w8", {}).get(prefix)
+        if packed is not None and 1 <= normed.shape[0] <= 16:
+            from engine.kernels.gated_residual_w8 import mix
+            return mix(normed.contiguous(), *packed, F.hc, F.hc_rank, inject=inject)
         proj = self._hc_projections.get(prefix)
         if proj is None:
             return lanes.hc_mix(normed, p[prefix + down_name], p[prefix + "up"], F.hc, inject=inject)
@@ -671,7 +689,7 @@ class Qwen38Net:
         whole = self._whole_site("close.", h, out, inject, "down", injects=False)
         if whole is None:
             h, normed = lanes.hc_leave_norm(h, out, inject, p["close.norm"], F.rms_eps, F.hc,
-                                            prefetch=self._mixer_weight("close.", "down"))
+                                            prefetch=self._mixer_weight("close.", "down", h.shape[0]))
             hidden, _ = self._mix("close.", normed, "down", inject=False)
         else:
             hidden = whole[0]
@@ -697,7 +715,7 @@ class Qwen38Net:
             normed = lanes.hc_norm(h, p[prefix + "norm"], F.rms_eps, F.hc)
         else:
             h, normed = lanes.hc_leave_norm(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc,
-                                            prefetch=self._mixer_weight(prefix, "down_inject"))
+                                            prefetch=self._mixer_weight(prefix, "down_inject", h.shape[0]))
         if rows is not None:
             h, normed = h.index_select(0, rows), normed.index_select(0, rows)
         x, injection = self._mix(prefix, normed, "down_inject", inject=True)
@@ -710,13 +728,20 @@ class Qwen38Net:
         lanes, F, p = self.lanes, self.F, self.p
         if getattr(lanes, "hc_site", None) is None or prefix in self._hc_projections:
             return None
+        if prefix in getattr(self, "_hc_w8", {}) and 1 <= h.shape[0] <= 16:
+            return None
         return lanes.hc_site(h, out, inject, p[prefix + "norm"], F.rms_eps, F.hc, p[prefix + down_name],
-                             p[prefix + "up"], inject=injects, prefetch=self._mixer_weight(prefix, down_name))
+                             p[prefix + "up"], inject=injects, prefetch=self._mixer_weight(prefix, down_name, h.shape[0]))
 
-    def _mixer_weight(self, prefix: str, down_name: str):
+    def _mixer_weight(self, prefix: str, down_name: str, rows=None):
         """The weight a site's mixer reads first, its BF16 down projection, for the leave before it to pull into L2 while
         the sum it adds is still waiting for the other ranks (Lanes.hc_leave_norm's `prefetch`, carry H4); None where
         the mixer reads another (hc_fp8's FP8 lanes)."""
+        packed = getattr(self, "_hc_w8", {}).get(prefix)
+        if packed is not None and rows is not None and 1 <= rows <= 16:
+            # Prefetch consumes addresses only: its 16-BF16 stride is 32 bytes.
+            # This view covers the FP8 weight's bytes without reading BF16 sources.
+            return packed[0][0].view(torch.bfloat16)
         return None if prefix in self._hc_projections else self.p[prefix + down_name]
 
     # -- GatedDeltaNet -------------------------------------------------------------------------------------------------
@@ -1272,7 +1297,7 @@ class Qwen38Net:
             x, inject, h = self._site("mtp.L0.hc.mlp.", h, out, inject)
         out = self._moe("mtp.L0.", x, compact=not captured)
         streams, normed = lanes.hc_leave_norm(h, out, inject, p["mtp.close.norm"], F.rms_eps, F.hc,
-                                              prefetch=self._mixer_weight("mtp.close.", "down"))
+                                              prefetch=self._mixer_weight("mtp.close.", "down", h.shape[0]))
         hidden, _ = self._mix("mtp.close.", normed, "down", inject=False)
         return hidden, streams
 

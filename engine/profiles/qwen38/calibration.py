@@ -16,7 +16,7 @@ from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration, ROWS_FLO
 from engine.profiles.qwen38.net import HEAD_NAME
 
 
-def identity(metadata, files, config, *, hc_fp8: bool) -> str:
+def identity(metadata, files, config, *, hc_fp8: bool, hc_w8a16: bool = False) -> str:
     """Immutable export revision/config plus file fingerprints and the input arithmetic version.
 
     File size/mtime changes conservatively invalidate the sums, including a replaced PLE table. When present the
@@ -32,6 +32,8 @@ def identity(metadata, files, config, *, hc_fp8: bool) -> str:
             manifests[str(manifest)] = hashlib.sha256(manifest.read_bytes()).hexdigest()
     payload = dict(version="qwen38-fp32-router-w8a16-moe-fp32-as2-v2", metadata=metadata, sources=sources,
                    manifests=sorted(manifests.values()), config=config, hc_fp8=hc_fp8)
+    if hc_w8a16:
+        payload["hc_w8a16"] = True
     return "qwen38:" + hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
