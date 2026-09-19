@@ -18,7 +18,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 
 #: the lanes a batch may carry, and the deadline each gets (seconds)
-LANES = {"sm121_inventory": 600, "sm121_gdn": 1800, "sm121_fp8_l2": 1800, "sm121_sanitizer": 2400,
+LANES = {"sm121_inventory": 600, "sm121_gdn": 1800, "sm121_gdn_diag": 900, "sm121_fp8_l2": 1800, "sm121_sanitizer": 2400,
          "sm121_fp4_gemm": 3600, "sm121_fp4_moe": 3600, "sm121_attention": 5400, "sm121_sparse_mla": 3000}
 
 

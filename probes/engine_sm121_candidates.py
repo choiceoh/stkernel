@@ -165,6 +165,56 @@ def run_gdn(output=None) -> dict:
     return report
 
 
+def run_gdn_diag(output=None, tokens=1024) -> dict:
+    """sm121-batchC-0919c: FlashInfer's GDN prefill ran 1.2-6.9x faster than the served kernel but returned NaN. Which of
+    its inputs this probe hands it differently from what it expects -- the value heads grouped over fewer query heads
+    (4 / 12) against q and k widened to 12, the forget gate as alpha against log decay, the carried state against a
+    zero one, and the carried state's last two axes swapped -- each against the fp32 recurrence, with NaN counts."""
+    import itertools
+    import torch
+    from engine.base import kernel_shape as ks
+    from engine.profiles.qwen38 import shapes
+    from probes.engine_qwen38_kda import QWEN38, prefill_args
+    config = ROOT / "probes" / "qwen38_config.json"
+    ks.bind(shapes.kernel_shape(json.loads(config.read_text())["text_config"]))
+    report = {"lane": "sm121_gdn_diag", "tokens": tokens, "unavailable": {}, "variants": {}}
+    _device(report, MEMORY_CAP_GIB)
+    from flashinfer.gdn_prefill import chunk_gated_delta_rule
+    with torch.inference_mode():
+        args = prefill_args(QWEN38, tokens, torch.device("cuda"))
+        zero = dict(args, initial_state=torch.zeros_like(args["initial_state"]))
+        oracles = {"carried": gdn_oracle(args), "zero": gdn_oracle(zero)}
+        for heads, gate, state in itertools.product(("gva 4/12", "widened 12/12"), ("alpha", "log"),
+                                                    ("carried", "zero", "carried swapped")):
+            name = f"{heads} | gate {gate} | state {state}"
+            base = zero if state == "zero" else args
+            fa = flashinfer_gdn_args(base)
+            if heads.startswith("widened"):
+                g = fa["v"].shape[1] // fa["q"].shape[1]
+                fa["q"], fa["k"] = (fa[x].repeat_interleave(g, dim=1).contiguous() for x in ("q", "k"))
+            if gate == "log":
+                fa["g"] = base["decay"][0].float().contiguous()
+            if state == "carried swapped":
+                fa["initial_state"] = fa["initial_state"].transpose(-1, -2).contiguous()
+            fa["output_state"] = torch.empty_like(fa["initial_state"])
+            try:
+                o, st = chunk_gated_delta_rule(**fa)
+                torch.cuda.synchronize()
+                o_r, st_r = oracles["zero" if state == "zero" else "carried"]
+                st = st[0]
+                report["variants"][name] = {
+                    "o_nan": int(torch.isnan(o).sum()), "o_inf": int(torch.isinf(o).sum()), "o_numel": o.numel(),
+                    "state_nan": int(torch.isnan(st).sum()),
+                    "o_vs_oracle": _error(torch.nan_to_num(o), o_r), "state_vs_oracle": _error(torch.nan_to_num(st), st_r),
+                    "state_vs_oracle_swapped": _error(torch.nan_to_num(st), st_r.transpose(-1, -2)),
+                    "nan_heads": sorted({int(h) for h in torch.isnan(o).any(-1).nonzero()[:, 1].tolist()})[:16]}
+            except Exception as exc:                                    # noqa: BLE001
+                report["variants"][name] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
+            print(json.dumps({name: report["variants"][name]}), flush=True)
+    print(_write(output, report), flush=True)
+    return report
+
+
 # -- U11: the FP8 prefill GEMM past the L2 ------------------------------------------------------------------------------
 def run_fp8_l2(output=None) -> dict:
     import torch
