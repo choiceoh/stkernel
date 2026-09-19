@@ -19,15 +19,16 @@ launched by the served layer (carry Q1-Q5 folded them into the launches above), 
 
 Arms -- each geometry forced through the launchers' probe hooks (qsa._SPLIT_PROFILE_OVERRIDE, _SCORE_PROFILE_OVERRIDE,
 _INPUT_WARPS_OVERRIDE, qsa_select._WARPS_OVERRIDE), which keep the rule when None:
-  attend          captured, N = 2..32 rows (C requests x K+1 tokens), every request past the budget: 512 chosen blocks
-                  scattered over its context, the output gate in the final store as served
+  attend          captured, N = 1..32 rows (a draft step's one row; C requests x K+1 tokens), every request past the
+                  budget: 512 chosen blocks scattered over its context, the output gate in the final store as served
   attend_prefill  eager, one request's 4,096 rows deep in a 32K context: the sparse launch
   covered         eager, a fresh prompt's 2,048 rows in runs of four: the covered launch
   attend_mid / covered_mid   eager, 64 / 256 / 512 / 1,024 rows -- a short turn, a chunk's tail -- over the decode grid: where
                   upstream's rule changes tiers (8, 32, 256 and 512 programs), and the two runs before this arm existed
                   measured nothing between 32 rows and 2,048
-  score           captured, N = 2 and 8 rows in runs of K+1 at the 4K / 32K / 256K context buckets
-  score_prefill   eager, 2,048 rows in runs of four at the 32K bucket
+  score           captured, N = 1, 2 and 8 rows in runs of K+1 at the 4K / 32K / 256K context buckets
+  score_prefill   eager, a scoring call's rows in runs of four: 2,048 at the 4K and 32K buckets, 508 at the 256K one
+                  (what the 128 MiB logits workspace holds of its 65,664 columns, in whole runs)
   select          captured, 2 rows, k 512, every context bucket's columns: the one launch against the torch form it
                   replaced, and its warps -- where the two cross is qsa_select.WIDEST
   inputs          captured, N = 2, 8, 32: qsa_index_keys then qsa_inputs
@@ -98,7 +99,8 @@ FIRST_BUCKET, MAX_POSITION = 4096, 262144          # net.FIRST_BUCKET; the check
 BF16_STEP = 2 ** -7
 ORACLE_BAND = (2 * BF16_STEP, BF16_STEP)           # SparseAttentionTests' band: (largest / largest, rms / rms)
 
-DECODE_STEPS = ((1, 2), (2, 2), (4, 2), (8, 2), (8, 4))     # (requests, tokens a request): N = 2, 4, 8, 16, 32
+# (requests, tokens a request): N = 1 -- a draft step at C=1, three of them a step at K=3 -- then 2, 4, 8, 16, 32
+DECODE_STEPS = ((1, 1), (1, 2), (2, 2), (4, 2), (8, 2), (8, 4))
 ATTEND_CONTEXT = 12000                             # past the budget: every row chooses 512 of ~3,000 blocks
 ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS = (16, 32, 64), (1, 4, 16, 64), (1, 2, 4, 8)
 WIDE_TILE = (128, 1, 4)                            # one arm past the widest tile tl.dot compiles (see the docstring)
@@ -107,10 +109,10 @@ PREFILL_TILES, PREFILL_SPLITS, PREFILL_WARPS = (16, 32, 64), (1, 4), (1, 2, 4, 8
 COVERED_ROWS = 2048                                # a fresh prompt the budget covers (facts.index_blocks groups)
 MID_ROWS = (64, 256, 512, 1024)                    # eager steps between the ladder and a chunk: the rule's tiers
 ORACLE_ROWS = 48                                   # the rows of an eager arm held to the fp32 oracle
-SCORE_STEPS = ((1, 2), (4, 2))
+SCORE_STEPS = ((1, 1), (1, 2), (4, 2))             # a draft step's one row takes the row kernel, a run the run kernel
 SCORE_BUCKETS = (4096, 32768, 262144)              # context buckets (tokens) of the captured ladder
 SCORE_TILES, SCORE_PROGRAM_TILES, SCORE_WARPS = (64, 128, 256), (1, 4), (1, 2, 4)
-SCORE_PREFILL_ROWS, SCORE_PREFILL_BUCKET = 2048, 32768
+SCORE_PREFILL_SHAPES = ((2048, 4096), (2048, 32768), (508, 262144))   # (rows of a scoring call, context bucket)
 SCORE_PREFILL_TILES, SCORE_PREFILL_PROGRAM_TILES, SCORE_PREFILL_WARPS = (64, 128, 256), (2, 8, 32), (1, 2, 4)
 SELECT_ROWS, SELECT_WARPS = 2, (4, 8, 16)
 INPUT_STEPS, INPUT_WARPS, INPUT_RULE = ((1, 2), (4, 2), (8, 4)), ((1,), (2,), (4,), (8,)), (4,)
@@ -701,8 +703,11 @@ def score_arm(report, cell: Cell = QWEN38, steps=SCORE_STEPS, buckets=SCORE_BUCK
     return verdicts
 
 
-def score_prefill_arm(report, cell: Cell = QWEN38, rows: int = SCORE_PREFILL_ROWS, bucket: int = SCORE_PREFILL_BUCKET,
-                      grid=None) -> dict:
+def score_prefill_arm(report, cell: Cell = QWEN38, shapes=SCORE_PREFILL_SHAPES, grid=None) -> dict:
+    return {f"{bucket}x{rows}": score_prefill_case(report, cell, rows, bucket, grid) for rows, bucket in shapes}
+
+
+def score_prefill_case(report, cell: Cell, rows: int, bucket: int, grid=None) -> dict:
     device = torch.device("cuda")
     qsa = _qsa()
     generator = torch.Generator().manual_seed(SEED + rows + bucket)

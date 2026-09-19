@@ -68,8 +68,12 @@ class CaseTable(unittest.TestCase):
         self.assertEqual((p.FIRST_BUCKET, p.MAX_POSITION), (net.FIRST_BUCKET, F.max_position))
         cell = p.QWEN38
         self.assertEqual((cell.width, cell.index_blocks, cell.key_page), (2051, F.index_blocks, F.block // F.idx_ratio))
-        self.assertEqual([r * t for r, t in p.DECODE_STEPS], [2, 4, 8, 16, 32])        # K=1 rows 1..8, K=3 rows 8
-        self.assertTrue(all(t - 1 in (1, 3) for _, t in p.DECODE_STEPS + p.SCORE_STEPS + p.INPUT_STEPS))
+        self.assertEqual([r * t for r, t in p.DECODE_STEPS], [1, 2, 4, 8, 16, 32])    # a draft row; K=1 rows 1..8, K=3 rows 8
+        self.assertTrue(all(t - 1 in (0, 1, 3) for _, t in p.DECODE_STEPS + p.SCORE_STEPS + p.INPUT_STEPS))
+        from engine.kernels import qsa
+        for rows, bucket in p.SCORE_PREFILL_SHAPES:                                    # one scoring call's rows
+            columns = p.bucket_pages(cell, bucket) * cell.key_page
+            self.assertLessEqual(rows, qsa._rows_a_scoring_call(columns, 4))
         self.assertEqual(p.COVERED_ROWS // cell.ratio, cell.index_blocks)              # the longest covered prompt
         self.assertGreater(p.ATTEND_CONTEXT // cell.ratio, 4 * cell.index_blocks)      # a real choice among the blocks
 
@@ -131,7 +135,7 @@ class CaseTable(unittest.TestCase):
     def test_the_rule_s_profiles_are_upstream_s(self):
         p = probe()
         self.assertEqual([p.rule_profile(p.QWEN38, r * t) for r, t in p.DECODE_STEPS],
-                         [(16, 64, 4), (16, 64, 4), (16, 64, 4), (16, 32, 4), (64, 8, 2)])
+                         [(16, 64, 4), (16, 64, 4), (16, 64, 4), (16, 64, 4), (16, 32, 4), (64, 8, 2)])
         self.assertEqual(p.rule_profile(p.QWEN38, p.PREFILL_ROWS), (64, 1, 2))
         # the eager steps in between reach each of upstream's remaining tiers
         self.assertEqual([p.rule_profile(p.QWEN38, rows) for rows in p.MID_ROWS],
