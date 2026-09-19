@@ -191,6 +191,12 @@ def main():
         from probes.engine_qwen38_step import LAYER_SETS, MTP_ARMS, run as qwen38_step
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=MTP_ARMS)
         return
+    if args.lanes == 'qwen38_mtp_window':
+        # the MTP head's draft graph at every context bucket, its QSA selection scored against a sink-and-recent window
+        # of groups (fleet --mtp-window): what the draft's index scoring costs as the context grows
+        from probes.engine_qwen38_mtp_window import run as qwen38_mtp_window
+        qwen38_mtp_window(args.output, args.ranks)
+        return
     if args.lanes == 'qwen38_step_overlap':
         # one rank's captured step with the shared expert forked beside the routed experts, against the served step (M5)
         from probes.engine_qwen38_step import LAYER_SETS, OVERLAP_ARMS, run as qwen38_step
