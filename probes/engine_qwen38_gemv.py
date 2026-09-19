@@ -198,5 +198,78 @@ def run_site(output=None) -> dict:
     return report
 
 
+PREFILL_ROWS = (128, 512, 1024, 4096)
+PREFILL_SITES = 8                                  # sites a graph at prefill rows: the activations, not the weights, are the bytes
+# (BLOCK_M, BLOCK_N|D, BLOCK_K, warps, stages) for gated_residual.mix_block's two launches, the served table's first
+BLOCK_TRIES = {"down": ((64, 64, 64, 4, 3), (128, 64, 64, 4, 3), (64, 128, 64, 4, 3), (128, 128, 64, 8, 3),
+                        (64, 64, 128, 4, 3)),
+               "up": ((64, 64, 64, 4, 3), (128, 64, 64, 4, 3), (64, 128, 64, 4, 3), (128, 128, 64, 8, 3),
+                      (64, 64, 32, 4, 3))}
+
+
+def run_site_prefill(output=None) -> dict:
+    """A site's mixer at a prefill step's rows, `PREFILL_SITES` sites a graph, interleaved: the five launches it served
+    before (the stream-norm's output through cuBLAS down, `_gates`, cuBLAS up, `_mix_mean`) against
+    gated_residual.mix_block's two (down and the gates in one, up and the mean in one -- the [N, hc*H] up product never
+    written), at the table's tiles and at the others in BLOCK_TRIES one launch at a time. Held to the five-launch site
+    within two BF16 steps (the products are different GEMMs', so not byte for byte)."""
+    import torch
+    from engine.kernels import gated_residual as hcr
+    torch.manual_seed(0)
+    width = HC * HIDDEN
+    down = torch.randn(RANK + HC, width, device="cuda", dtype=torch.bfloat16) * 0.02
+    up = torch.randn(width, RANK, device="cuda", dtype=torch.bfloat16) * 0.02
+    report = {"device": torch.cuda.get_device_name(), "rounds": ROUNDS, "sites_a_graph": PREFILL_SITES,
+              "tiles": {k: list(v) for k, v in hcr.BLOCK_TILES.items()}, "rows": {}}
+    for m in PREFILL_ROWS:
+        normed = torch.randn(m, width, device="cuda", dtype=torch.bfloat16)
+        keep = []
+
+        def graph_of(fn):
+            keep.append(fn())
+            torch.cuda.synchronize()
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                for _ in range(PREFILL_SITES):
+                    keep.append(fn())
+            return g
+
+        def five():
+            return hcr.mix(normed, down, up, HC, project_down=lambda t: torch.mm(t, down.t()),
+                           project_up=lambda t: torch.mm(t, up.t()))
+
+        def tiled(which, tile):
+            tiles = dict(hcr.BLOCK_TILES, **{which: tile})
+            return lambda: hcr.mix_block(normed, down, up, HC, tiles=tiles)
+
+        got, ref = hcr.mix_block(normed, down, up, HC), five()
+        checks = {"vs_five_mixed": round(hcr.drift(got[0], ref[0])[0], 6),
+                  "vs_five_inject": round(hcr.drift(got[1], ref[1])[0], 6),
+                  "mix_routes_here": bool(torch.equal(hcr.mix(normed, down, up, HC)[0], got[0]))}
+        arms = {"five launches (served before)": graph_of(five), "mix_block (table)": graph_of(lambda: hcr.mix_block(normed, down, up, HC))}
+        for which, tries in BLOCK_TRIES.items():
+            for tile in tries[1:]:
+                arms[f"{which} {tile}"] = graph_of(tiled(which, tile))
+        times = {name: [] for name in arms}
+        for _ in range(ROUNDS):
+            for name, g in arms.items():
+                g.replay()
+                torch.cuda.synchronize()
+                began = time.perf_counter()
+                g.replay()
+                torch.cuda.synchronize()
+                times[name].append((time.perf_counter() - began) / PREFILL_SITES * 1e6)
+        del arms, keep
+        row = {name: round(statistics.median(v), 1) for name, v in times.items()}
+        report["rows"][m] = {"us_a_site": row, "checks": checks}
+        print(json.dumps({f"prefill site rows {m}": row, "checks": checks}), flush=True)
+        del normed
+        torch.cuda.empty_cache()
+    if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps(report, indent=1) + "\n")
+    return report
+
+
 if __name__ == "__main__":
     run(sys.argv[1] if len(sys.argv) > 1 else None)

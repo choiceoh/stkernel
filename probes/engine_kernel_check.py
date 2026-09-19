@@ -248,6 +248,12 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes == 'qwen38_site_prefill':
+        # the mixer at a prefill step's rows: the five launches it served before against gated_residual.mix_block's two
+        # (the up product never written), with a tile sweep -- what the fold is worth where the chunk spends 43%
+        from probes.engine_qwen38_gemv import run_site_prefill
+        run_site_prefill(args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10

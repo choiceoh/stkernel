@@ -25,6 +25,14 @@ one), three launches a site:
     up_mean      up for one block of hidden channels in each stream, sigmoid, times the streams, the   one launch
                  mean over them -- the up product never leaves the program
 
+A prefill step's rows (more than PREFILL_ROWS) take `mix_block` -- the same two folds over row blocks, on tensor-core
+tiles instead of the skinny GEMV's padded 16 rows:
+
+    down_gates_rows   down(+inject) for a block of rows and a block of the mixer's columns, K walked whole, the
+                      gates stored from the product                                                          one launch
+    up_mean_rows      up for a block of rows and a block of hidden channels in each stream, sigmoid, times the
+                      streams, the mean -- the [N, hc*H] up product (84 MB at 4,096 rows) never written      one launch
+
 The arithmetic after each product is `_gates`' and `_mix_mean`'s, on the same BF16 product, so the site's outputs are
 byte for byte the five-launch site's with the same products (probes/engine_qwen38_gemv, q38site-0919a). On a GB10 at
 Qwen3.8's widths the mixer went from 66.5-70.5 us (its four launches on cuBLAS, plus an output copy the probe added)
@@ -62,6 +70,8 @@ from engine.kernels.common import skinny_gemv
 from engine.kernels.common.skinny_gemv import rows_dot, split_span, split_sum
 
 DECODE_ROWS = skinny_gemv.MAX_ROWS          # rows up to this take `mix_rows`
+PREFILL_ROWS = 64                           # rows past this take `mix_block` (a prefill step's)
+BLOCK_TILES = {"down": (64, 64, 64, 4, 3), "up": (64, 64, 64, 4, 3)}   # (BLOCK_M, BLOCK_N|D, BLOCK_K, warps, stages)
 UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
 
@@ -354,6 +364,8 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
     rows = normed.shape[0]
     if project_down is None and project_up is None and folds(normed, down_inject, up):
         return mix_rows(normed, down_inject, up, hc, inject=inject)
+    if project_down is None and project_up is None and blocks_fold(normed, down_inject, up):
+        return mix_block(normed, down_inject, up, hc, inject=inject)
     di = torch.mm(normed, down_inject.t()) if project_down is None else project_down(normed)
     if di.shape != (rows, down_inject.shape[0]) or di.dtype != normed.dtype or di.stride(1) != 1:
         raise ValueError("the down projection returns packed [N, r(+hc)] rows in the streams' dtype")
@@ -381,6 +393,92 @@ def folds(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> 
     return (1 <= normed.shape[0] <= DECODE_ROWS and tuple(down_inject.shape) in skinny_gemv.CONFIGS
             and normed.dtype == down_inject.dtype == up.dtype == torch.bfloat16
             and normed.stride(1) == 1 and down_inject.stride(1) == 1 and up.stride(1) == 1)
+
+
+@triton.jit
+def _tile_dot(X, W, sX, sW, rows, cols, M, N, K, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+              FP32_DOT: tl.constexpr):
+    """[BLOCK_M, BLOCK_N] FP32: X's rows `rows` (< M) times W's rows `cols` (< N) over K, BLOCK_K at a time."""
+    acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
+    for k in range(0, K, BLOCK_K):
+        ks = k + tl.arange(0, BLOCK_K)
+        km = ks < K
+        x = tl.load(X + rows[:, None] * sX + ks[None, :], mask=(rows[:, None] < M) & km[None, :], other=0.0)
+        w = tl.load(W + cols[:, None] * sW + ks[None, :], mask=(cols[:, None] < N) & km[None, :], other=0.0)
+        if FP32_DOT:                                              # the interpreter reads a BF16 dot's bits as integers
+            x, w = x.to(tl.float32), w.to(tl.float32)
+        acc += tl.dot(x, tl.trans(w))
+    return acc
+
+
+@triton.jit
+def _down_gates_rows(X, W, MIX, INJ, M, N, K, sX, sW, sM, sI, HC_F, R: tl.constexpr, HC: tl.constexpr,
+                     WITH_INJECT: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
+                     FP32_DOT: tl.constexpr):
+    # `_down_gates` over a block of rows: the whole K in one program (a prefill step has row blocks enough to fill
+    # the device without a split)
+    rows = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
+    cols = tl.program_id(1) * BLOCK_N + tl.arange(0, BLOCK_N)
+    acc = _tile_dot(X, W, sX, sW, rows, cols, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, FP32_DOT)
+    _gate_store(acc, rows, cols, M, MIX, INJ, sM, sI, HC_F, R, HC, WITH_INJECT)
+
+
+@triton.jit
+def _up_mean_rows(G, W, NORMED, OUT, M, sG, sW, sN, sO, HC_F, HID: tl.constexpr, R: tl.constexpr, HC: tl.constexpr,
+                  BLOCK_M: tl.constexpr, BLOCK_D: tl.constexpr, BLOCK_K: tl.constexpr, FP32_DOT: tl.constexpr):
+    # `_up_mean` over a block of rows: each stream's up product for this block of channels, rounded to BF16 where the
+    # GEMM's output was, then `_mix_mean`'s arithmetic -- the product never leaves the program
+    rows = tl.program_id(0) * BLOCK_M + tl.arange(0, BLOCK_M)
+    d = tl.program_id(1) * BLOCK_D + tl.arange(0, BLOCK_D)
+    live = (rows[:, None] < M) & (d[None, :] < HID)
+    acc = tl.zeros((BLOCK_M, BLOCK_D), dtype=tl.float32)
+    for s in tl.static_range(HC):
+        u = _tile_dot(G, W, sG, sW, rows, s * HID + d, M, s * HID + HID, R, BLOCK_M, BLOCK_D, BLOCK_K, FP32_DOT)
+        g = tl.sigmoid(u.to(OUT.dtype.element_ty).to(tl.float32)).to(OUT.dtype.element_ty).to(tl.float32)
+        n = tl.load(NORMED + rows[:, None] * sN + (s * HID + d)[None, :], mask=live, other=0.0).to(tl.float32)
+        acc += (g * n).to(OUT.dtype.element_ty).to(tl.float32)
+    tl.store(OUT + rows[:, None] * sO + d[None, :], (acc / HC_F).to(OUT.dtype.element_ty), mask=live)
+
+
+def blocks_fold(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> bool:
+    """Whether `mix_block` serves this site: more than PREFILL_ROWS rows in BF16, each operand packed along its last
+    dimension."""
+    return (normed.shape[0] > PREFILL_ROWS and normed.dtype == down_inject.dtype == up.dtype == torch.bfloat16
+            and normed.stride(1) == 1 and down_inject.stride(1) == 1 and up.stride(1) == 1)
+
+
+def mix_block(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
+              inject: bool = True, tiles=None) -> "tuple[torch.Tensor, torch.Tensor | None]":
+    """`mix` for a prefill step's rows in two launches (the module docstring): (mixed [N, H], injection [N, hc] or
+    None). `tiles`: BLOCK_TILES' form, for a probe; the table otherwise."""
+    hid = _check_streams(normed, hc)
+    rank = up.shape[1]
+    if up.shape != (normed.shape[1], rank) or down_inject.shape != (rank + (hc if inject else 0), normed.shape[1]):
+        raise ValueError(f"a site mixes through down(+inject) [{rank}{' + ' + str(hc) if inject else ''}, "
+                         f"{normed.shape[1]}] and up [{normed.shape[1]}, {rank}]")
+    if not (normed.dtype == down_inject.dtype == up.dtype == torch.bfloat16) or normed.stride(1) != 1:
+        raise ValueError("mix_block takes BF16 streams and weights, packed along their channels")
+    tiles = BLOCK_TILES if tiles is None else tiles
+    rows, width = normed.shape
+    n = down_inject.shape[0]
+    gates = torch.empty(rows, rank, device=normed.device, dtype=normed.dtype)
+    injection = torch.empty(rows, hc, device=normed.device, dtype=normed.dtype) if inject else None
+    mixed = torch.empty(rows, hid, device=normed.device, dtype=normed.dtype)
+    if not rows:
+        return mixed, injection
+    inj = gates if injection is None else injection
+    interpreted = not normed.is_cuda
+    bm, bn, bk, warps, stages = tiles["down"]
+    _down_gates_rows[(triton.cdiv(rows, bm), triton.cdiv(n, bn))](
+        normed, down_inject, gates, inj, rows, n, width, normed.stride(0), down_inject.stride(0), gates.stride(0),
+        inj.stride(0), float(hc), R=rank, HC=hc, WITH_INJECT=inject, BLOCK_M=bm, BLOCK_N=bn, BLOCK_K=bk,
+        FP32_DOT=interpreted, num_warps=warps, num_stages=stages)
+    bm, bd, bk, warps, stages = tiles["up"]
+    _up_mean_rows[(triton.cdiv(rows, bm), triton.cdiv(hid, bd))](
+        gates, up, normed, mixed, rows, gates.stride(0), up.stride(0), normed.stride(0), mixed.stride(0), float(hc),
+        HID=hid, R=rank, HC=hc, BLOCK_M=bm, BLOCK_D=bd, BLOCK_K=bk, FP32_DOT=interpreted, num_warps=warps,
+        num_stages=stages)
+    return mixed, injection
 
 
 def mix_rows(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
