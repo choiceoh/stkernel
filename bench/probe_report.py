@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
-"""Structured numerical probe evidence; a pass is not a serving speed verdict."""
+"""Structured numerical probe evidence; a pass is not a serving speed verdict.
+
+An ST check imports probes/probe_report.py, not this module. bench/ is not shipped to the
+single-GPU lane's host, and the FLEET_PROBE_* variables `write_report` below waits for were
+set by the probe manifest kind, which experiments.py no longer accepts.
+"""
 import json
 import math
 import os

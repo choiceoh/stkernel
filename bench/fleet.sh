@@ -406,8 +406,8 @@ expected_min() {  # session est
 _collect_single() {  # session t0
   [ -n "$FLEET_SINGLE_GPU_HOST" ] || return 0
   local into="$LOGD/results/$1"
-  ( if n=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_single.py" collect --host "$FLEET_SINGLE_GPU_HOST" --since "$2" --into "$into" 2>/dev/null); then
-      logit "results of $1: $n file(s) in $into"
+  ( if n=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_single.py" collect --host "$FLEET_SINGLE_GPU_HOST" --since "$2" --into "$into" --session "$1" 2>/dev/null); then
+      logit "results of $1: $n in $into"
     else
       logit "results of $1: not collected from $FLEET_SINGLE_GPU_HOST"
     fi ) 9>&- >/dev/null 2>&1 &

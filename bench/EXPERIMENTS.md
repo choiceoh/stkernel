@@ -96,6 +96,24 @@ an ssh alias in the controller's `~/.ssh/config`, which owns address, user and
 port. `status` shows the lane beside the fleet, and `kick [--force] single`
 clears its holder.
 
+What a single-GPU check measured comes back as a report, not only as an exit
+code. The supervisor gives the ticket `ST_PROBE_REPORT` (a file under the
+container's `/cache`, which is that host's `~/.cache/st`) and
+`ST_PROBE_SESSION`; a check that calls `probes/probe_report.py`
+`write_report(metrics, proof, samples, device)` leaves its numbers there, the
+lane copies it to `results/<session>/` on release, and the queue's log says
+what it says (`results of s: 3 file(s), report passed (...)`). A report written
+for another ticket is unreadable, not evidence, and `passed` is recomputed from
+the proof markers on the controller. It is what the check saw on that device,
+never a speed verdict. The writer lives under `probes/` because the lane's host
+is sent `engine/`, `probes/` and `tests/` and nothing else: a check the lane
+admits may not import `bench/` at module level.
+
+`python3 bench/feedback.py --lane-audit` lists every runner command a probe's
+docstring tells a reader to run and whether the queue takes it;
+`tests/test_engine_lane_promises.py` holds both rules in CI, so a probe that
+names this lane without being in `ST_PROBES` fails there instead of on srv4.
+
 ## The fleet lease
 
 Every boot holds the fleet lease -- one record, `engine/base/fleet_lease.py`, one

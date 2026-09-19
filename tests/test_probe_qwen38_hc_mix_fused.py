@@ -47,13 +47,14 @@ class ProbeShapeTests(unittest.TestCase):
 
     def test_it_imports_only_what_the_lane_ships(self):
         """probes/run_engine_probe.sh rsyncs engine/ and probes/ to the lane's box: a probe that needs bench/ at import
-        dies there in seconds (the first headroom ticket did, 2026-09-19). The report contract is optional."""
+        dies there in seconds (the first headroom ticket did, 2026-09-19). The report's writer is under probes/ for
+        that reason, so it is imported plainly: behind a guard the report was dropped on the one lane it is for.
+        tests/test_engine_lane_promises.py holds the same rule for every check the lane admits."""
         tree = ast.parse(PROBE.read_text(encoding="utf-8"))
-        needed = [node.module for node in tree.body if isinstance(node, ast.ImportFrom)]
-        self.assertTrue(all(m.split(".")[0] in ("__future__", "engine", "pathlib") for m in needed), needed)
-        guarded = [n for n in tree.body if isinstance(n, ast.Try)]
-        self.assertEqual([h.type.id for n in guarded for h in n.handlers], ["ModuleNotFoundError"])
-        self.assertEqual(guarded[0].body[0].module, "bench.probe_report")
+        needed = [node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+        self.assertTrue(all(m.split(".")[0] in ("__future__", "engine", "probes", "pathlib") for m in needed), needed)
+        self.assertIn("probes.probe_report", needed)
+        self.assertEqual([n for n in tree.body if isinstance(n, ast.Try)], [], "no guard: what it imports is shipped")
 
     @unittest.skipUnless(TRITON, "the probe imports Triton")
     def test_without_a_device_it_refuses_rather_than_report(self):
