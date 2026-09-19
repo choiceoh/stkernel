@@ -1,0 +1,3 @@
+  kernel shape (record): hidden 2560 hc 4 gated_residual tp 4 | gqa 6x256 no sink | linear 4/12x128x128 conv 4 decay/head | indexer qsa 4x128 pool 4 top 2048 | moe 512(128 local) I640/640 top10 nvfp4 silu | spec 1
+mtp experts                                  0.029     +0.00  mtp_experts_qualify=0
+  rank 0: ready in 64.1 s, door on port 8000

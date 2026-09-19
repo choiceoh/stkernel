@@ -58,6 +58,10 @@ MTP_ARMS = ("served", "mtp-w4", "mtp-fp8", "experts-fp8", "experts-nvfp4")   # q
 # qwen38_step_overlap (carry M5): the shared expert forked beside the routed ones -- at one request's rows, at every
 # captured step. The launches and their bytes are the served arm's; what the arm moves is a replay's wall time
 OVERLAP_ARMS = ("served", "overlap-one", "overlap-all")
+# qwen38_step_mtp_gemv: the MTP head's BF16 projections through the skinny GEMV (served, one row included) against torch.mm
+# (the lanes before q38gemv-0919e's shapes went into skinny_gemv.CONFIGS) -- what the draft graph gains from them
+GEMV_ARMS = ("served", "mtp-mm")
+MTP_GEMV = ((4224, 2560), (2560, 1536), (2560, 2560), (320, 2560), (2560, 160))   # in, o, fc (both), shared gate_up, down
 
 FAMILIES = (
     ("moe b12x", r"[Mm]oe|[Mm]icro|[Ss]tatic|[Dd]ynamic|b12x|kernel_cutlass"),
@@ -374,13 +378,18 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
             max_gib: float = MAX_GIB, max_seqs: int = 4, loop: bool = False, arm: str = "served") -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, every shape replayed -> the build's row.
     `arm` "mm": the skinny GEMV's table emptied first -- the router on torch.mm, the mixers in five launches on cuBLAS;
-    "mtp-w4" / "mtp-fp8": the MTP head's dense projections at that precision instead of the served BF16."""
+    "mtp-w4" / "mtp-fp8": the MTP head's dense projections at that precision instead of the served BF16; "mtp-mm": the
+    MTP head's shapes taken out of the skinny GEMV's table (its BF16 projections on torch.mm, the rest as served)."""
     import torch
-    if arm not in ARMS + MTP_ARMS + OVERLAP_ARMS:
-        raise ValueError(f"arm {arm!r}: one of {ARMS + MTP_ARMS + OVERLAP_ARMS}")
+    if arm not in ARMS + MTP_ARMS + OVERLAP_ARMS + GEMV_ARMS:
+        raise ValueError(f"arm {arm!r}: one of {ARMS + MTP_ARMS + OVERLAP_ARMS + GEMV_ARMS}")
     if arm == "mm":
         from engine.kernels.common import skinny_gemv
         skinny_gemv.CONFIGS.clear()
+    if arm == "mtp-mm":
+        from engine.kernels.common import skinny_gemv
+        for shape in MTP_GEMV:
+            skinny_gemv.CONFIGS.pop(shape)                        # a KeyError: the table no longer names that shape
     free, total = torch.cuda.mem_get_info()
     torch.cuda.set_per_process_memory_fraction(min(1.0, max_gib * (1 << 30) / total))
     # the fleet boot's first act (fleet.main): the record the preshard wrote, bound before any lane reads it -- the
@@ -390,7 +399,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
     _, shape_source = kernel_shape.bind_recorded(ranks, ranks / "config.json", lambda: facts.load(ranks).kernel_shape())
     began = time.perf_counter()
     F, net, caches, target, draft = build(ranks, ranks, rank, layers, max_seqs=max_seqs, kv_gib=kv_gib,
-                                          mtp_precision=arm[4:] if arm.startswith("mtp-") else "bf16",
+                                          mtp_precision=arm[4:] if arm in ("mtp-w4", "mtp-fp8") else "bf16",
                                           mtp_experts=arm[8:] if arm.startswith("experts-") else "bf16",
                                           shared_overlap={"overlap-one": True, "overlap-all": "all"}.get(arm, False))
     built = time.perf_counter() - began
@@ -412,7 +421,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
         shape = (n, F.spec_k + 1, blocks)
         where = {}
         for label, g, fn in (("target", target, lambda i: net.forward(i, caches, streams=True)),
-                             ("draft", draft, lambda i: draft_chain(net, caches, *i, F.spec_k))):
+                             ("draft", draft, lambda i: draft_chain(net, caches, *i[:4], F.spec_k))):
             if shape in g.graphs.inputs:
                 seat(g, caches, F, shape)
                 inputs = g.graphs.inputs[shape]
@@ -424,7 +433,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                 print(json.dumps({"arm": arm, "calls": label, "top": where[label + " calls"][:30]}), flush=True)
         if shape in draft.graphs.inputs:
             # net.mtp_forward `rows`: the rows past the attention alone against every row and then the same rows
-            step, given, last, _ = draft.graphs.inputs[shape]
+            step, given, last, _counts, _sampler = draft.graphs.inputs[shape]
             seat(draft, caches, F, shape)
             full, full_streams = net.mtp_forward(step, given, caches, last_hidden_only=False)
             part, part_streams = net.mtp_forward(step, given, caches, last_hidden_only=False, rows=last)
@@ -527,7 +536,7 @@ if __name__ == "__main__":
     ap.add_argument("--one", default=None, help="one layer set (comma separated), measured in this process")
     ap.add_argument("--rank", type=int, default=None)
     ap.add_argument("--loop", action="store_true", help="with --one: also decode one request through the served model")
-    ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:] + OVERLAP_ARMS[1:],
+    ap.add_argument("--arm", default="served", choices=ARMS + MTP_ARMS[1:] + OVERLAP_ARMS[1:] + GEMV_ARMS[1:],
                     help="with --one: the lanes it builds under")
     a = ap.parse_args()
     if a.one is not None:

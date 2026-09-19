@@ -4866,6 +4866,9 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
   — 주인 세션에 전달.
 - 기록: `measurements/qwen38_shared_overlap_20260919/`, `measurements/qwen38_mix_tiles_20260919/`.
 
+### Qwen3.8 — 프리필 청크 하나의 내역: 4,096 토큰이 랭크 하나에 디바이스 1005 ms, 43% 가 믹서 사이트 (2026-09-19, srv4 단일 GPU 레인)
+- `--lanes qwen38_prefill`(main `048270ef`): 서빙 `prefill` 을 실가중치 작은 net 넷에서 재고 48 층으로 풀었다. 디바이스 컨텍스트 0 1004.7 ms · 4,096 1025.9 ms. 게이트 잔차 Triton 226.3 + 믹서 GEMM 중심 cuBLAS 214.4 ms(약 43%), torch elementwise 174.2 ms(PLE 한 곳 49 ms), MoE 148.4 ms, QSA 119.3 ms.
+- 벽시계 · 호스트 몫은 쓸 수 없다: 두 칸에 2.3 – 2.7 s 가 한 번씩 끼었다(프로덕션 옆 레인, 한 번 잰 벽시계). 판정은 디바이스 표뿐. 속도 주장 없음. [표 · 원시](measurements/qwen38_prefill_census_20260919/README.md).
 ### Qwen3.8 — 디코드 크기 워밍업(헤드 패스 · 폭 1 · 8) 뒤 문 뒤에서 처음 쓰는 커널 12 → 9, 첫 디코드 스텝의 1.1 s 컴파일이 사라짐 (2026-09-19, srv4 단일 GPU 레인)
 - `--lanes qwen38_serve_compiles` 를 브랜치 `decode-sized-warm`(main `048270ef` + 이 변경)에서: 문 뒤 **9** 개(main 12). 덮인 QSA 2 (짧은 프리필과 첫 디코드 스텝 1.10 s)와 GDN `_gates` 1 이 사라졌고, 모든 디코드 스텝이 16 ms 이하. 남은 9 는 conv 5(#1238), dynamic MoE 밴드 3, 점수 커널 G 1 변형 1.
 - 부팅의 값: MTP 헤드만 도는 패스 20 개 8.35 s, 폭 1 · 8 0.431 · 1.47 s — 대부분 첫 컴파일, 그 뒤 부팅은 디스크 읽기. 속도 주장 없음. [기록](measurements/qwen38_serve_compiles_20260919b/README.md).
@@ -4908,6 +4911,16 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **곁가지 하나.** 09-19 의 W8A16 항목(#1246)이 제목 줄을 두 번 들고 있었다(`PR #TBD` 와 `PR #1246`, 본문은 하나).
   `#TBD` 줄을 지웠다 — 본문은 손대지 않았다.
 
+### Qwen3.8 MTP BF16 투영 — skinny GEMV 표에 다섯 모양, 넷은 1 행도: 1 행 ×1.31~1.49, 4~16 행 ×1.03~1.31 (2026-09-19, srv4 단일 GPU 레인, PR #1258)
+MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS` 에 그 모양이 없어 전부 `torch.mm` 이었다. 목표 층의 같은 투영은 W4A8 레인 — 새 모양은 드래프터만 탄다.
+**발사 시간이다 — 드래프트 그래프는 아직 판정 없음.** `q38mtpgemv-0919b`(세 라운드 교대)는 프로덕션 서빙 중이라 그래프가 7.2~12.2 ms(조용할 때 4.3~4.6), 라운드 흔들림 ±30% 로 판정 불가 — 같은 트레이스 안의 GEMM 몫만 세 그래프 모두 served 가 낮다(−0.027~−0.043, 기울기). 첫 A/B `q38mtpgemv-0919a` 는 무효: 두 빌드 사이에 프로덕션이 올라와 여유 메모리 80.7 대 39.7 GiB, 드래프트 그래프 4.6 대 10.2 ms 는 경합이다 → 레인을 세 라운드 교대로 고쳐 다시 넣음.
+- **스윕(`q38gemv-0919e`, µs, cuBLAS → 고른 타일):** 1 행 in_proj 132.0 → 97.1, fc 81.5 → 58.2, o_proj 48.1 → 36.8, 공유 down 4.8 → 3.2(cuBLAS gemv 161~172 GB/s 대
+  213~257); 4~16 행은 ×1.03~1.07(공유 down ×1.26~1.31, 공유 gate_up ×1.16~1.19). 공유 gate_up 의 1 행은 cuBLAS 가 이김(8.7 대 9.6) → `ONE_ROW` 에서 뺌.
+  상대 오차 ≤ 0.0036, 반복 바이트 동일. 라우터의 `MIN_ROWS = 2`(1 행 비김, `q38gemv-0919c`)는 그대로.
+- **추정:** C=1 K=3 드래프트 그래프 체인 스텝마다 −74 µs, 관측 −13 µs → 스텝당 −0.15~−0.17 ms(창 K=3 스텝 35.5 ms 의 ~0.5%).
+- 프로브: `qwen38_step_mtp_gemv` 레인(`mtp-mm` 팔 = MTP 모양만 표에서 빼 `torch.mm`). [상세·원시](measurements/qwen38_mtp_gemv_20260919/README.md).
+### Qwen3.8 — dynamic MoE 타일 밴드를 eager 워밍업에 넣은 뒤 문 뒤에서 처음 쓰는 커널: K=1 8 · K=3 7, dynamic MoE 0 (2026-09-19, srv4 단일 GPU 레인 2회)
+- `--lanes qwen38_serve_compiles:K`(브랜치 `eager-moe-dynamic-bands` = main `b5613857` + 밴드 넷): b12x dynamic 커널이 요청 중 0(main 에서 3). 남은 것은 conv 5(#1238), `_mix_mean` 타일 1, QSA split-K merge 1(K=1), 점수 커널 G 1 변형 1 — 넷 모두 한 번 컴파일되면 디스크에 남는 유한 집합. 다른 세션 창의 `micro_m1/m3_…_t10_r80` 은 C=1 K=1 에서 재현되지 않음. 속도 주장 없음. [기록](measurements/qwen38_serve_compiles_20260919c/README.md).
 ### Qwen3.8 두 번째 운영자 창 — S2 입력 재사용 기각(o_proj +4.5~+13.6%, in_proj ±2%), H6 `--hc-fp8` 디코드 C=1 +9.6% 기각, M5 확인 쌍 무효 (2026-09-19 14:29~14:43, 네 Spark + srv4 단일 레인)
 
 운영자 "ㅇㅇ"(짧은 창 제안). main `4148c35f`(#1241·#1234·#1233), 런처 기본(K=1, one-shot, 4 행, `one`). prebuild 0 빌드, yield 14:29:02, 세 부팅(`off`·`one`·`fp8`)에
@@ -4925,3 +4938,16 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **12 개의 정체.** `_single_conv` 5(토큰 수 T 가 constexpr — 처음 보는 프롬프트 길이마다 컴파일: 실제 트래픽은 거의 모든 요청), b12x dynamic MoE 3(타일 밴드별; 워밍업 입력이 토큰 0 뿐이라 라우트가 한 곳에 몰림), 덮인 QSA 2(짧은 프리필과 첫 디코드 스텝 1.10 s), 점수 커널 G 1 변형 1(3,223 토큰), GDN `_gates` 1. 첫 디코드 스텝 말고 모든 디코드 스텝은 16 ms 이하 — 요청 중 느린 스텝은 전부 이 목록에서 나왔다.
 - **eager MoE 워밍업(#1230) 확인** — `--lanes qwen38_eager_moe`: 워밍업 뒤 요청이 더한 micro 커널 0, 용량 8 하나. 용량 대 바이트는 판정 못 함: 같은 용량(m 8)에서도 호출마다 마지막 자리가 달랐다(≤ 1.2e-4, 원자 누적 순서로 보인다).
 - **고침 하나(이 PR):** conv 의 T 를 인자로 — RTX 5050 에서 상수 형태와 바이트 동일(프리필 18 길이 × 초기 상태 유무, 링 16 모양), 컴파일 36 → 6. 나머지 넷(dynamic 밴드, 덮인 QSA, G 변형, `_gates`)은 열린 일. 속도 주장 없음. [표 · 원시](measurements/qwen38_serve_compiles_20260919/README.md).
+
+### Qwen3.8 디코드 스텝 커널 프로파일 — C=1 K=3: 스텝 36.9 ms 중 커널 87%, TP 통신 21% · 믹서 22% · MoE 19% (2026-09-19 17:12~17:16, 다른 세션 창의 슬롯)
+- **무엇.** GLM-5.3 09-14 기록(`st_decode_profile_20260914`)과 같은 도구(`/v1/engine/profile` 32 스텝 + `/metrics`)로 Qwen3.8 C=1 · C=4 디코드 스텝을 잡았다. 부팅은 MTP 튜닝 창의 것: `1aec0aac` + mtp_tune, `--spec-k 3 --draft-threshold off`, 3차 튜닝 헤드 — 최신 main 아님(#1258 등 없음). 프로덕션을 따로 내리지 않았다.
+- **C=1(창 #1):** 스텝 36.9 ms(프로파일러 하 39.0), 커널 합 32.0 ms · 발사 1,566 — **커널 밖은 13%**. 믹서 사이트 7.1 ms(22%), **TP 통신 6.9 ms(21%**, GLM 8%), MoE 전문가 5.9 ms(19%), dense W4 3.6 ms, 어휘 헤드 2.8 ms, MTP BF16 투영 1.4 ms. 수용 0.656 → 스텝당 약 3.0 토큰(카운터). 첫 프로파일 창은 consumer 대기가 86.7 ms 로 부풀어 무효.
+- **읽기.** 통신이 GLM 보다 두 배 넘게 무겁다(작은 합의 지연) — 캐리 H4 · H5 · X1 · X2 의 자리. 믹서는 가중치 읽기 약 200 GB/s(대역폭의 70%). C=4: 스텝 61.8 ms, 커널 92%, MoE 가 가장 커진다. 속도 주장 없음. [표 · 원시](measurements/qwen38_decode_profile_20260919/README.md).
+### Qwen3.8 비전 타워 1단계 — 전처리기 pixel_values 비트 일치(9/9), mRoPE 위치 vLLM 과 일치, 실가중치 타워는 transformers bf16 과 같은 오차 (2026-09-19, srv2 CPU, PR #1267)
+체크포인트(`Qwen4ExpForConditionalGeneration`)의 Qwen3-VL 타워(27 블록, 1152 폭, 16 px 패치, 2×2 병합 → 2560)와 전처리기를 vLLM·transformers 없이
+`engine/profiles/qwen38/vision.py` 로. **서빙 전** — mRoPE 적용·프리필 행 교체·부팅 연결은 다음 단계.
+- **참조**: `probes/qwen38_vision_reference.py` 를 서빙 이미지 안에서 → `tests/fixtures/qwen38_vision_reference.json`(생성기 저장소에 둠). 합성 그림 아홉 가지의
+  pixel_values sha256 이 ST 이미지에서 전부 일치, vLLM 의 mRoPE 위치·delta 세 프롬프트 일치, 장난감 타워 vs transformers fp32 상대 0.0051.
+- **실가중치**: 우리 bf16 vs transformers fp32 5.6~5.8%(행 cos 최소 0.983) — transformers 를 bf16 으로 돌려도 5.4~5.9% 라 구현 차이가 아니라 bf16 몫.
+- **곁**: 그림 디코드(`engine/modules/pictures`)를 GLM 과 공유, 디코드 중 깨지는 그림이 GLM 에서도 500 대신 400. `preshard --vision` 이 `vision.safetensors`.
+  [상세·원시](measurements/qwen38_vision_tower_20260919/README.md).

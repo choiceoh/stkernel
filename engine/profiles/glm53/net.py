@@ -504,7 +504,10 @@ class Glm53Net:
         from engine.kernels.dense import FP8Linear
         # the vocabulary head stays FP8 (45차: W4 there was folded); its fp8 rounding is GPTQ'd from its own calibration
         head_fp8 = store.pack_fp8(self.p["head"], HEAD_NAME) if (store is not None and store.calibrated(HEAD_NAME)) else None
-        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME)
+        # decode rows (<= 16: MAX_SEQS 2 x (SPEC_K + 1), and a draft pass's 7 a request) read the BF16 rows against
+        # the FP8 head in one launch: GB10 glm53-head-0919a, 731-743 us against the cuBLASLt reader's 850-929, and
+        # a third less error against the BF16 product. The reader keeps larger batches (glm53/cublas.qualify_head).
+        self.dense["head"] = FP8Linear(self.p["head"], quantized=head_fp8, name=HEAD_NAME, decode_rows="w8a16")
         if consume_weights:
             self.dense["head"].consume_weight(self.p["head"])
             self.p["head"]=None

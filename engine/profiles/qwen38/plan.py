@@ -54,7 +54,7 @@ RULES = [
     ("PLE n-gram table (vocab-parallel, on the SSD)", lambda n: ".ple.ple_embedding.ngram_embedding.shard_" in n, 0,
      "common/ple.py compute_ple_shard_overlap: one TP vocabulary range a rank, read by row off ple-r{r}of4.weight"),
     ("PLE other", lambda n: ".ple." in n, 1, "replicated, small"),
-    ("vision (dropped)", lambda n: ".visual." in n, 0, "this fleet serves text only"),
+    ("vision (its own file)", lambda n: ".visual." in n, 0, "vision.safetensors, whole on every rank: preshard --vision"),
     ("embed / lm_head (vocab-parallel)",
      lambda n: n.endswith(("embed_tokens.weight", "lm_head.weight")), 4,
      "VocabParallelEmbedding / ParallelLMHead"),

@@ -38,7 +38,10 @@ def prepare(net, drafter, arena, policy):
     actual = sum(layer.cublas.resident_bytes for layer in net.cublas_readers.values())
     if actual != expected:
         raise RuntimeError(f'cuBLAS resident declaration mismatch: {actual} != {expected}')
-    return dict(resident_bytes=actual, arena_growth=arena.used-start, readers=sorted(readers))
+    # The head's decode rows take the W8A16 lane (net.py); the reader keeps larger batches. Held here, on the head's
+    # own weight, before anything is captured -- and at MAX_SEQS 2 this is the only call the reader's paths get.
+    head_rows = net.dense['head'].qualify_decode_rows(producer=drafter is not None)
+    return dict(resident_bytes=actual, arena_growth=arena.used-start, readers=sorted(readers), head_rows=head_rows)
 
 
 def execution_report(net):
@@ -56,4 +59,9 @@ def execution_report(net):
         if reader is None or not required.issubset(reader.executed):
             raise RuntimeError(f'default cuBLAS reader was not executed: {name}, expected {sorted(required)}')
         result[name] = reader.report()
+        if getattr(layer, 'decode_rows', False) == 'w8a16':
+            # the lane the head declares for decode rows must have served them, not only been qualified
+            if not layer.decode_rows_executed:
+                raise RuntimeError(f'declared W8A16 decode-row lane was not executed: {name}')
+            result[name] = dict(result[name], decode_rows='w8a16')
     return result

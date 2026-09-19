@@ -283,7 +283,9 @@ class ServedModelsTests(unittest.TestCase):
         self.assertEqual(r.values["linear.decay"], "channel")
         self.assertIn("kda", r.sources["linear.decay"])
         self.assertEqual((r.values["hc_variant"], r.sources["hc_variant"]), ("mhc", "mhc"))
-        self.assertEqual(sorted(self.blanks(glm53_config(), "tp")), ["moe.activation", "moe.quant"])
+        self.assertEqual(sorted(self.blanks(glm53_config(), "tp")), ["moe.activation"])
+        self.assertEqual(r.values["moe.quant"], "nvfp4")                     # its config_groups name the experts' NVFP4
+        self.assertIn("config_groups", r.sources["moe.quant"])
 
     def test_qwen38_needs_its_indexer_compression_its_decay_and_its_expert_format(self):
         blanks = self.blanks(qwen38_config())
@@ -292,11 +294,14 @@ class ServedModelsTests(unittest.TestCase):
         self.assertIn("KDA", blanks["linear.decay"])
         self.assertIn("modelopt", blanks["moe.quant"])                         # what the config actually says
 
-    def test_dsv41_needs_its_attention_kind_indexer_gate_and_expert_format(self):
+    def test_dsv41_needs_its_attention_kind_indexer_and_gate(self):
         blanks = self.blanks(dsv41_config())
-        self.assertEqual(sorted(blanks), ["attention.kind", "indexer.compress", "moe.activation", "moe.quant"])
+        self.assertEqual(sorted(blanks), ["attention.kind", "indexer.compress", "moe.activation"])
         self.assertIn("kv_lora_rank", blanks["attention.kind"])                # one KV head and no latent key
-        self.assertIn("fp8", blanks["moe.quant"])                              # what the config actually says
+        r = self.reading(dsv41_config(), "ep")
+        self.assertEqual(r.values["moe.quant"], "mxfp4-a8")                  # FP4 experts, E8M0 scales, FP8 activations
+        self.assertIn("expert_dtype fp4", r.sources["moe.quant"])
+        self.assertEqual((r.values["attention.window"], r.values["attention.window_layers"]), (128, "every layer"))
 
     def test_the_clamped_gate_is_a_blank_because_two_checkpoints_write_it_the_same_and_differ(self):
         """GLM-5.3 and DSv4.1 both declare `hidden_act` silu with `swiglu_limit` 10.0, and are served with different
@@ -360,8 +365,7 @@ def dsv41_shape():
 #: cannot state at all because they are not the model's: the drafter is the operator's choice, not the checkpoint's.
 AGREEMENT = (
     ("glm53", glm53_config, "tp", glm53_shape,
-     {"moe.quant": "nvfp4",                          # quantization_config: nvfp4-pack-quantized, group 16
-      "moe.activation": "swigluoai_uninterleave",    # facts.kernel_shape: the clamped OpenAI gate, uninterleaved
+     {"moe.activation": "swigluoai_uninterleave",    # facts.kernel_shape: the clamped OpenAI gate, uninterleaved
       "attention.sink": False},                      # mla_sparse_mqa: "No sink"
      {"spec_k": "DFlash2 with 7 draft slots is the operator's (facts.SPEC_K, 2026-09-13); this config declares no "
                 "MTP head at all, and the one at layer 45 is not served"}),
@@ -374,8 +378,7 @@ AGREEMENT = (
      {"spec_k": "the served draft count is the operator's (facts.SPEC_K 3: the one MTP layer chained, the 09-18 "
                 "fleet pair); this config declares one MTP layer and the door reads one token a step"}),
     ("dsv41", dsv41_config, "ep", dsv41_shape,
-     {"moe.quant": "mxfp4-a8",                       # FP4 e2m1 in groups of 32 with E8M0 scales, FP8 activations
-      "moe.activation": "silu",
+     {"moe.activation": "silu",
       "indexer.compress": "ced",                     # the Compressor of inference/model.py
       "attention.kind": "mla",                       # one KV head over a compressed latent
       "attention.sink": True,                        # sparse_attn: attn_sink
@@ -420,6 +423,162 @@ class AgreementTests(unittest.TestCase):
             with self.subTest(model=name):
                 shape = read_config(config(), placement=placement, states=states).shape
                 self.assertEqual(cells.to_dicts(cells.admission(shape)), cells.to_dicts(cells.admission(profile())))
+
+
+class ReadTheEncodingTests(unittest.TestCase):
+    """engine/SM121_INTAKE.md U1: the experts' encoding is read where the keys state both the weights and the
+    activations -- ModelOpt's `quant_algo` in either file, compressed-tensors' groups, DeepSeek's FP4 experts -- and is a
+    blank that names what it saw everywhere else."""
+
+    def quant(self, **extra):
+        from engine.base.onboard import read_config
+        r = read_config(dict(PLAIN_MOE, **extra), placement="ep", states={"attention.sink": False})
+        return r.values.get("moe.quant"), r.sources.get("moe.quant", ""), {b.field: b.why for b in r.blanks}
+
+    def test_modelopt_states_its_algorithm_in_hf_quant_config(self):
+        hf = {"quantization": {"quant_algo": "NVFP4", "group_size": 16, "kv_cache_quant_algo": "FP8",
+                               "exclude_modules": ["lm_head", "*.self_attn.*"]}}
+        value, source, _ = self.quant(quantization_config={"quant_method": "modelopt"}, hf_quant_config=hf)
+        self.assertEqual((value, source), ("nvfp4", "hf_quant_config.json quant_algo NVFP4 group 16"))
+        from engine.base.onboard import read_config
+        r = read_config(dict(PLAIN_MOE, hf_quant_config=hf), placement="ep", states={"attention.sink": False})
+        self.assertEqual((r.values["kv.quant"], r.sources["kv.quant"]), ("FP8", "hf_quant_config.json kv_cache_quant_algo"))
+
+    def test_the_algorithm_names_the_cell_and_the_cells_judge_it(self):
+        from engine.kernels import cells
+        for algo, group, cell, moe in (("NVFP4", 16, "nvfp4", "admitted-or-unmeasured"), ("NVFP4", 32, "nvfp4-g32", "refused"),
+                                       ("W4A16_NVFP4", 16, "nvfp4-a16", "refused"), ("FP8_PB_WO", 128, "fp8-block", "refused")):
+            with self.subTest(algo=algo, group=group):
+                from engine.base.onboard import read_config
+                cfg = dict(PLAIN_MOE, hf_quant_config={"quantization": {"quant_algo": algo, "group_size": group}})
+                shape = read_config(cfg, placement="ep", states={"attention.sink": False}).shape
+                self.assertEqual(shape.moe.quant, cell)
+                status = {v.lane: v.status for v in cells.admission(shape)}["moe"]
+                self.assertEqual(status == cells.REFUSED, moe == "refused", status)
+
+    def test_experts_left_out_of_the_export_are_the_checkpoints_dtype(self):
+        hf = {"quantization": {"quant_algo": "NVFP4", "group_size": 16, "exclude_modules": ["*mlp.experts*"]}}
+        self.assertEqual(self.quant(hf_quant_config=hf)[0], "bf16")
+
+    def test_mixed_precision_reads_the_routed_experts_and_not_the_mtp_heads(self):
+        layers = {f"model.language_model.layers.{i}.mlp.experts": {"quant_algo": "NVFP4", "group_size": 16}
+                  for i in range(4)}
+        layers["mtp.layers.0.mlp.experts"] = {"quant_algo": "FP8_PB_WO", "group_size": 128}
+        layers["model.language_model.layers.0.ple.ple_embedding.ngram_embedding"] = {"quant_algo": "FP8"}
+        value, source, _ = self.quant(quantization_config={"quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+                                                           "quantized_layers": layers})
+        self.assertEqual(value, "nvfp4")
+        self.assertIn("quantized_layers", source)
+        layers["model.language_model.layers.3.mlp.experts"] = {"quant_algo": "FP8", "group_size": 0}
+        value, _, blanks = self.quant(quantization_config={"quant_method": "modelopt", "quant_algo": "MIXED_PRECISION",
+                                                           "quantized_layers": layers})
+        self.assertIsNone(value)
+        self.assertIn("2 encodings", blanks["moe.quant"])
+
+    def test_modelopt_without_its_algorithm_is_a_blank_not_an_nvfp4(self):
+        value, _, blanks = self.quant(quantization_config={"quant_method": "modelopt"})
+        self.assertIsNone(value)
+        self.assertIn("hf_quant_config.json", blanks["moe.quant"])
+
+    def test_the_other_spellings(self):
+        cases = (({"quant_method": "mxfp4", "modules_to_not_convert": ["lm_head"]}, "mxfp4-a16"),     # transformers'
+                 ({"quant_method": "fp8", "weight_block_size": [128, 128]}, "fp8-block128"),          # DeepSeek-V3's
+                 ({"quant_method": "fp8", "expert_dtype": "fp4", "scale_fmt": "ue8m0"}, "mxfp4-a8"),  # DSv4.1's
+                 ({"quant_method": "awq", "bits": 4}, None))
+        for q, cell in cases:
+            with self.subTest(q=q):
+                value, _, blanks = self.quant(quantization_config=q)
+                self.assertEqual(value, cell)
+                if cell is None:
+                    self.assertIn("awq", blanks["moe.quant"])
+
+    def test_the_config_now_settles_it_so_a_state_may_not(self):
+        with self.assertRaises(ValueError):
+            from engine.base.onboard import read_config
+            read_config(dict(PLAIN_MOE, quantization_config={"quant_method": "mxfp4"}), placement="ep",
+                        states={"moe.quant": "nvfp4"})
+
+
+class ReadTheRestTests(unittest.TestCase):
+    """engine/SM121_INTAKE.md U1 and U2: the MTP heads an outer config nests, the expert width a dense width key leaves
+    behind, and what an attention computes beyond softmax(q.k) -- so the cells refuse it by name."""
+
+    INKLING = dict(PLAIN_MOE, n_routed_experts=256, num_experts=None, num_experts_per_tok=6, moe_intermediate_size=None,
+                   intermediate_size=2048, dense_intermediate_size=16384, n_shared_experts=2,
+                   local_layer_ids=list(range(35)), num_hidden_layers=42, sliding_window_size=512, d_rel=16,
+                   rel_extent=1024, log_scaling_alpha=0.1, use_sconv=True, sconv_kernel_size=4,
+                   mtp_config={"num_nextn_predict_layers": 8})
+
+    def reading(self, cfg, **states):
+        from engine.base.onboard import read_config
+        return read_config(cfg, placement="ep", states=dict({"attention.sink": False}, **states))
+
+    def test_inklings_spelling_reads_whole(self):
+        r = self.reading(self.INKLING)
+        self.assertEqual([b.field for b in r.blanks], [])
+        s = r.shape
+        self.assertEqual((s.moe.experts, s.moe.inter, s.moe.dense_inter_local, s.spec_k), (256, 2048, 4096, 8))
+        self.assertEqual((r.sources["moe.inter"], r.sources["spec_k"]),
+                         ("intermediate_size", "mtp_config.num_nextn_predict_layers"))
+        a = s.attention
+        self.assertEqual((a.window, a.relative, a.kv_conv), (512, "learned d_rel 16 extent 1024 log-scaled", 4))
+        self.assertEqual(r.values["attention.window_layers"], "35/42")
+        self.assertIn("window 512", s.describe())
+
+    def test_a_relative_bias_is_refused_by_name_and_nothing_serves_it(self):
+        from engine.kernels import cells
+        verdicts = {v.lane: v for v in cells.admission(self.reading(self.INKLING).shape)}
+        self.assertEqual(verdicts["mla"].status, cells.REFUSED)
+        self.assertIn("relative-position bias", verdicts["mla"].why)
+        self.assertEqual(verdicts["mla"].serve.tier, cells.NONE)
+        self.assertIn("clamp", verdicts["mla"].recipe.how)                  # vllm#49049's lesson rides with the recipe
+        self.assertEqual(verdicts["kv_conv"].status, cells.UNMEASURED)
+
+    def test_a_window_without_an_indexer_is_other_math_for_the_lanes_and_flashinfer_takes_it(self):
+        from engine.kernels import cells
+        cfg = dict(PLAIN_MOE, sliding_window=128, layer_types=["sliding_attention", "full_attention"] * 16)
+        r = self.reading(cfg)
+        self.assertEqual((r.shape.attention.window, r.values["attention.window_layers"]), (128, "16/32"))
+        mla = {v.lane: v for v in cells.admission(r.shape)}["mla"]
+        self.assertEqual(mla.status, cells.REFUSED)
+        self.assertIn("sliding window", mla.why)
+        self.assertEqual(mla.serve.tier, cells.GENERIC)
+        self.assertIn("window_left=127", mla.serve.kernel)
+
+    def test_a_window_the_config_switches_off_is_none(self):
+        r = self.reading(dict(PLAIN_MOE, sliding_window=4096, use_sliding_window=False))
+        self.assertEqual(r.shape.attention.window, 0)
+        self.assertEqual(r.sources["attention.window"], "use_sliding_window: false")
+
+    def test_a_soft_cap_is_read(self):
+        r = self.reading(dict(PLAIN_MOE, attn_logit_softcapping=50.0))
+        self.assertEqual(r.shape.attention.softcap, 50.0)
+
+    def test_a_kpool_selection_does_not_add_a_window(self):
+        from engine.base.kernel_shape import MEASURED, Attention
+        from engine.kernels import cells
+        import dataclasses
+        windowed = dataclasses.replace(MEASURED, attention=dataclasses.replace(MEASURED.attention, window=128))
+        verdicts = {v.lane: v for v in cells.admission(windowed)}
+        self.assertEqual(verdicts["indexer"].status, cells.REFUSED)
+        self.assertIn("window", verdicts["indexer"].why)
+        self.assertEqual(verdicts["mla"].status, cells.ADMITTED)             # the selection hands it the positions
+        for bad in ({"window": -1}, {"kv_conv": 1.5}, {"relative": 1}, {"softcap": True}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                Attention(kind="gqa", heads=8, head_dim=128, kv_heads=2, sink=False, **bad)
+
+    def test_the_command_lifts_what_the_outer_config_and_the_directory_state(self):
+        import tempfile
+        module = cli()
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "config.json"
+            path.write_text(json.dumps({"model_type": "outer", "mtp_config": {"num_nextn_predict_layers": 8},
+                                        "text_config": {k: v for k, v in PLAIN_MOE.items() if k != "model_type"}}))
+            (Path(d) / "hf_quant_config.json").write_text(json.dumps({"quantization": {"quant_algo": "NVFP4",
+                                                                                       "group_size": 16}}))
+            cfg = module.text_config(path)
+        self.assertEqual((cfg["model_type"], cfg["mtp_config"]["num_nextn_predict_layers"]), ("outer", 8))
+        self.assertEqual(cfg["hf_quant_config"]["quantization"]["quant_algo"], "NVFP4")
 
 
 class CliTests(unittest.TestCase):

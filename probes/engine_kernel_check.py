@@ -191,6 +191,17 @@ def main():
         from probes.engine_qwen38_step import LAYER_SETS, MTP_ARMS, run as qwen38_step
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=MTP_ARMS)
         return
+    if args.lanes == 'qwen38_step_mtp_gemv':
+        # the draft graph with the MTP head's BF16 projections on the skinny GEMV (served) and on torch.mm, one layer set,
+        # three rounds in alternating order: a production that comes or goes mid-ticket lands on both arms, and shows in
+        # each build's free memory (q38mtpgemv-0919a built its arms once each and production booted between them --
+        # 80.7 against 39.7 GiB free, the draft graph 4.6 against 10.2 ms: contention, not the kernels)
+        from probes.engine_qwen38_step import GEMV_ARMS, LAYER_SETS, run as qwen38_step
+        rounds = [qwen38_step(None, args.ranks, layer_sets=LAYER_SETS[1:2], arms=arms)
+                  for arms in (GEMV_ARMS, GEMV_ARMS[::-1], GEMV_ARMS)]
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(json.dumps({"rounds": rounds}, indent=1) + "\n")
+        return
     if args.lanes == 'qwen38_mtp_window':
         # the MTP head's draft graph at every context bucket, its QSA selection scored against a sink-and-recent window
         # of groups (fleet --mtp-window): what the draft's index scoring costs as the context grows
@@ -226,6 +237,11 @@ def main():
         from probes.engine_glm53_decode_rows import run_gemv, run_head
         (run_head if args.lanes == 'glm53_head' else run_gemv)(args.output)
         return
+    if args.lanes == 'sm121_inventory':
+        # what the seed image carries for engine/SM121_INTAKE.md (U0): files, imports and signatures -- nothing compiled
+        from probes.engine_sm121_inventory import run as sm121_inventory
+        sm121_inventory(args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10
@@ -260,11 +276,12 @@ def main():
         from probes.engine_qwen38_prefill import CHUNK, run as qwen38_prefill
         qwen38_prefill(args.output, args.ranks, chunk=int((args.lanes.split(':')[1:] or [CHUNK])[0]))
         return
-    if args.lanes == 'qwen38_serve_compiles':
+    if args.lanes == 'qwen38_serve_compiles' or args.lanes.startswith('qwen38_serve_compiles:'):
         # compile census: the served model built in the fleet boot's order on one rank (--ranks), the serving window's
         # requests through the runner, and every kernel a step added after the door
-        from probes.engine_qwen38_serve_compiles import run as qwen38_serve_compiles
-        qwen38_serve_compiles(args.output, args.ranks)
+        # (`:K` sets the drafts a step: the census boots at the operator's K=3 unless told)
+        from probes.engine_qwen38_serve_compiles import SPEC_K, run as qwen38_serve_compiles
+        qwen38_serve_compiles(args.output, args.ranks, spec_k=int((args.lanes.split(':')[1:] or [SPEC_K])[0]))
         return
     if args.lanes == 'qwen38_eager_moe':
         # compile counts: the eager MoE's decode-sized launches after the boot's warm pass (warmup.eager_moe) --

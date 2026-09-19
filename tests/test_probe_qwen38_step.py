@@ -54,6 +54,20 @@ class LaneTests(unittest.TestCase):
         self.assertIn("if args.lanes == 'qwen38_step_ab':", source)
         self.assertIn("qwen38_step(args.output, args.ranks, arms=ARMS)", source)
 
+    def test_the_mtp_gemv_lane_takes_out_the_shapes_the_table_names(self):
+        """qwen38_step_mtp_gemv's second arm pops the MTP head's shapes from skinny_gemv.CONFIGS: each must be there
+        (a pop that raises is a table that moved), the one-row shapes among them, and the gemv lane's MTP sweep the same."""
+        from engine.kernels.common import skinny_gemv
+        from probes.engine_qwen38_gemv import SHAPES
+        from probes.engine_qwen38_step import GEMV_ARMS, MTP_GEMV
+        self.assertEqual(GEMV_ARMS[0], "served")
+        self.assertTrue(set(MTP_GEMV) <= set(skinny_gemv.CONFIGS))
+        self.assertTrue(skinny_gemv.ONE_ROW <= set(MTP_GEMV))
+        self.assertEqual({shape for label, (shape, _) in SHAPES.items() if label.startswith("mtp ")}, set(MTP_GEMV))
+        source = (ROOT / "probes/engine_kernel_check.py").read_text(encoding="utf-8")
+        self.assertIn("if args.lanes == 'qwen38_step_mtp_gemv':", source)
+        self.assertIn("for arms in (GEMV_ARMS, GEMV_ARMS[::-1], GEMV_ARMS)]", source)   # both orders, alternating
+
     def test_the_ab_lane_is_the_first_arm_less_the_second(self):
         from probes.engine_qwen38_step import ARMS, difference
 

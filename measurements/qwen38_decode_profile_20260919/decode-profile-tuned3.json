@@ -1,0 +1,1866 @@
+{
+ "label": "qwen38-mtpwin-tuned-slot",
+ "model": "qwen3.8-flash-next",
+ "runs": [
+  {
+   "concurrency": 1,
+   "repeat": 0,
+   "profiled": {
+    "vllm:generation_tokens_total": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 104.0,
+    "vllm:spec_decode_num_draft_tokens_total": 186.0,
+    "vllm:spec_decode_num_drafts_total": 62.0,
+    "st:steps_decode_total": 62.0,
+    "st:step_seconds_sum": 4.942571000000001,
+    "st:step_seconds_count": 62.0,
+    "step_ms": 79.71888709677421,
+    "acceptance": 0.5591397849462365,
+    "tokens_a_step": 0.0
+   },
+   "unprofiled": {
+    "vllm:generation_tokens_total": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 460.0,
+    "vllm:spec_decode_num_draft_tokens_total": 552.0,
+    "vllm:spec_decode_num_drafts_total": 184.0,
+    "st:steps_decode_total": 184.0,
+    "st:step_seconds_sum": 6.767167000000001,
+    "st:step_seconds_count": 184.0,
+    "step_ms": 36.77808152173913,
+    "acceptance": 0.8333333333333334,
+    "tokens_a_step": 0.0
+   },
+   "device_us_per_step": 112389.3,
+   "steps": 32,
+   "kernels": [
+    {
+     "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+     "calls": 3424,
+     "us_total": 2773221.0,
+     "us_per_step": 86663.2
+    },
+    {
+     "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0",
+     "calls": 1536,
+     "us_total": 186965.3,
+     "us_per_step": 5842.7
+    },
+    {
+     "kernel": "_down_gates",
+     "calls": 3392,
+     "us_total": 113876.6,
+     "us_per_step": 3558.6
+    },
+    {
+     "kernel": "_up_mean",
+     "calls": 3392,
+     "us_total": 104142.5,
+     "us_per_step": 3254.5
+    },
+    {
+     "kernel": "_fp8_rows",
+     "calls": 128,
+     "us_total": 89105.4,
+     "us_per_step": 2784.5
+    },
+    {
+     "kernel": "void (anonymous namespace)::mk_gemm_input_kernel<false>((anonymous namespace)::MKGemm2Ctx)",
+     "calls": 3072,
+     "us_total": 75311.0,
+     "us_per_step": 2353.5
+    },
+    {
+     "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)",
+     "calls": 3072,
+     "us_total": 36515.6,
+     "us_per_step": 1141.1
+    },
+    {
+     "kernel": "_skinny_gemv_kernel",
+     "calls": 1536,
+     "us_total": 31330.0,
+     "us_per_step": 979.1
+    },
+    {
+     "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+     "calls": 192,
+     "us_total": 19818.2,
+     "us_per_step": 619.3
+    },
+    {
+     "kernel": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+     "calls": 192,
+     "us_total": 16179.7,
+     "us_per_step": 505.6
+    },
+    {
+     "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+     "calls": 1152,
+     "us_total": 16087.2,
+     "us_per_step": 502.7
+    },
+    {
+     "kernel": "ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage<4096ul>)",
+     "calls": 128,
+     "us_total": 15974.3,
+     "us_per_step": 499.2
+    },
+    {
+     "kernel": "_gate_up",
+     "calls": 96,
+     "us_total": 12128.5,
+     "us_per_step": 379.0
+    },
+    {
+     "kernel": "_qsa_sparse_paged_gqa_splitk_kernel",
+     "calls": 480,
+     "us_total": 11910.2,
+     "us_per_step": 372.2
+    },
+    {
+     "kernel": "_softmax_topk",
+     "calls": 1632,
+     "us_total": 9873.9,
+     "us_per_step": 308.6
+    },
+    {
+     "kernel": "_compact_topk_ids_kernel",
+     "calls": 1536,
+     "us_total": 9209.7,
+     "us_per_step": 287.8
+    },
+    {
+     "kernel": "_leave_norm",
+     "calls": 3264,
+     "us_total": 8386.3,
+     "us_per_step": 262.1
+    },
+    {
+     "kernel": "_down",
+     "calls": 96,
+     "us_total": 5102.1,
+     "us_per_step": 159.4
+    },
+    {
+     "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+     "calls": 3072,
+     "us_total": 4733.7,
+     "us_per_step": 147.9
+    },
+    {
+     "kernel": "_single_conv",
+     "calls": 1152,
+     "us_total": 4123.5,
+     "us_per_step": 128.9
+    },
+    {
+     "kernel": "_select_rows",
+     "calls": 384,
+     "us_total": 4032.0,
+     "us_per_step": 126.0
+    },
+    {
+     "kernel": "_swiglu",
+     "calls": 1632,
+     "us_total": 3831.9,
+     "us_per_step": 119.7
+    },
+    {
+     "kernel": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+     "calls": 192,
+     "us_total": 3407.2,
+     "us_per_step": 106.5
+    },
+    {
+     "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)",
+     "calls": 32,
+     "us_total": 3085.3,
+     "us_per_step": 96.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 1632,
+     "us_total": 3073.8,
+     "us_per_step": 96.1
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1})",
+     "calls": 1568,
+     "us_total": 2939.3,
+     "us_per_step": 91.9
+    },
+    {
+     "kernel": "k_oneshot_max_int64(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+     "calls": 96,
+     "us_total": 2725.9,
+     "us_per_step": 85.2
+    },
+    {
+     "kernel": "_qsa_inputs_kernel",
+     "calls": 480,
+     "us_total": 2714.9,
+     "us_per_step": 84.8
+    },
+    {
+     "kernel": "_gated",
+     "calls": 1632,
+     "us_total": 2280.5,
+     "us_per_step": 71.3
+    },
+    {
+     "kernel": "_gated_norm",
+     "calls": 1152,
+     "us_total": 2108.4,
+     "us_per_step": 65.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 1696,
+     "us_total": 2105.8,
+     "us_per_step": 65.8
+    },
+    {
+     "kernel": "_qsa_mqa_paged_group_kernel",
+     "calls": 384,
+     "us_total": 1910.0,
+     "us_per_step": 59.7
+    },
+    {
+     "kernel": "_qsa_merge_splitk_kernel",
+     "calls": 480,
+     "us_total": 1751.3,
+     "us_per_step": 54.7
+    },
+    {
+     "kernel": "_qsa_index_keys_kernel",
+     "calls": 384,
+     "us_total": 1638.8,
+     "us_per_step": 51.2
+    },
+    {
+     "kernel": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+     "calls": 448,
+     "us_total": 1462.1,
+     "us_per_step": 45.7
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4>)",
+     "calls": 192,
+     "us_total": 1153.7,
+     "us_per_step": 36.1
+    },
+    {
+     "kernel": "_norm_streams",
+     "calls": 352,
+     "us_total": 1067.5,
+     "us_per_step": 33.4
+    },
+    {
+     "kernel": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+     "calls": 96,
+     "us_total": 807.6,
+     "us_per_step": 25.2
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+     "calls": 352,
+     "us_total": 695.0,
+     "us_per_step": 21.7
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4>)",
+     "calls": 96,
+     "us_total": 683.7,
+     "us_per_step": 21.4
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::BFloat16 const, unsigned int>, at::cuda::detail::TensorInfo<long const, unsigned int>, int, int, unsigned int, long)",
+     "calls": 128,
+     "us_total": 567.6,
+     "us_per_step": 17.7
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1})",
+     "calls": 64,
+     "us_total": 422.9,
+     "us_per_step": 13.2
+    },
+    {
+     "kernel": "_lookup",
+     "calls": 128,
+     "us_total": 407.6,
+     "us_per_step": 12.7
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::BFloat16, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<c10::BFloat16, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",
+     "calls": 32,
+     "us_total": 369.1,
+     "us_per_step": 11.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1})",
+     "calls": 128,
+     "us_total": 367.1,
+     "us_per_step": 11.5
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 314.3,
+     "us_per_step": 9.8
+    },
+    {
+     "kernel": "_addresses",
+     "calls": 128,
+     "us_total": 295.4,
+     "us_per_step": 9.2
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 276.4,
+     "us_per_step": 8.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul>)",
+     "calls": 192,
+     "us_total": 262.7,
+     "us_per_step": 8.2
+    },
+    {
+     "kernel": "_argmax_partials",
+     "calls": 96,
+     "us_total": 217.4,
+     "us_per_step": 6.8
+    },
+    {
+     "kernel": "Memcpy DtoD (Device -> Device)",
+     "calls": 128,
+     "us_total": 214.0,
+     "us_per_step": 6.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul> >(int, at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul>)",
+     "calls": 128,
+     "us_total": 209.6,
+     "us_per_step": 6.6
+    },
+    {
+     "kernel": "Memcpy DtoH (Device -> Pageable)",
+     "calls": 96,
+     "us_total": 207.3,
+     "us_per_step": 6.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<float> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<float> const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 196.5,
+     "us_per_step": 6.1
+    },
+    {
+     "kernel": "_quantize",
+     "calls": 128,
+     "us_total": 192.4,
+     "us_per_step": 6.0
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(bool, unsigned long, unsigned long)#1}, std::array<char*, 4ul> >(int, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(bool, unsigned long, unsigned long)#1}, std::array<char*, 4ul>)",
+     "calls": 96,
+     "us_total": 190.1,
+     "us_per_step": 5.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul>)",
+     "calls": 128,
+     "us_total": 189.9,
+     "us_per_step": 5.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::BUnaryFunctor<long, long, long, at::native::remainder_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<long, long, long, at::native::remainder_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 188.9,
+     "us_per_step": 5.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::exp_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::exp_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 180.6,
+     "us_per_step": 5.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 168.6,
+     "us_per_step": 5.3
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::BFloat16, at::native::func_wrapper_t<c10::BFloat16, at::native::sum_functor<c10::BFloat16, float, c10::BFloat16>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, c10::BFloat16, 4, 8> >(at::native::ReduceOp<c10::BFloat16, at::native::func_wrapper_t<c10::BFloat16, at::native::sum_functor<c10::BFloat16, float, c10::BFloat16>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, c10::BFloat16, 4, 8>)",
+     "calls": 32,
+     "us_total": 163.7,
+     "us_per_step": 5.1
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::nan_to_num_kernel_cuda(at::TensorIteratorBase&, std::optional<double>, std::optional<double>, std::optional<double>)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::nan_to_num_kernel_cuda(at::TensorIteratorBase&, std::optional<double>, std::optional<double>, std::optional<double>)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 161.5,
+     "us_per_step": 5.0
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 3, 64, 64>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 161.3,
+     "us_per_step": 5.0
+    },
+    {
+     "kernel": "_argmax_finish",
+     "calls": 96,
+     "us_total": 159.3,
+     "us_per_step": 5.0
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::reciprocal_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::reciprocal_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 152.1,
+     "us_per_step": 4.8
+    },
+    {
+     "kernel": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+     "calls": 96,
+     "us_total": 150.9,
+     "us_per_step": 4.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 145.4,
+     "us_per_step": 4.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::BUnaryFunctor<long, long, long, at::native::rshift_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<long, long, long, at::native::rshift_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 144.6,
+     "us_per_step": 4.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseXorFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseXorFunctor<long> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 141.7,
+     "us_per_step": 4.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 141.4,
+     "us_per_step": 4.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 139.2,
+     "us_per_step": 4.3
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 137.2,
+     "us_per_step": 4.3
+    },
+    {
+     "kernel": "_window_rows",
+     "calls": 96,
+     "us_total": 133.4,
+     "us_per_step": 4.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 131.3,
+     "us_per_step": 4.1
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 129.3,
+     "us_per_step": 4.0
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 112.4,
+     "us_per_step": 3.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<long> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<long> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<long> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<long> const&)::{lambda(int)#1})",
+     "calls": 64,
+     "us_total": 110.7,
+     "us_per_step": 3.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1} const&)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 101.8,
+     "us_per_step": 3.2
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 98.5,
+     "us_per_step": 3.1
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul>)",
+     "calls": 64,
+     "us_total": 91.3,
+     "us_per_step": 2.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 63.7,
+     "us_per_step": 2.0
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 59.6,
+     "us_per_step": 1.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 59.1,
+     "us_per_step": 1.8
+    },
+    {
+     "kernel": "Memcpy HtoD (Pinned -> Device)",
+     "calls": 128,
+     "us_total": 57.1,
+     "us_per_step": 1.8
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 56.1,
+     "us_per_step": 1.8
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 55.0,
+     "us_per_step": 1.7
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueType<8u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 53.9,
+     "us_per_step": 1.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)",
+     "calls": 32,
+     "us_total": 51.8,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sign_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sign_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 51.4,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 50.6,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul>)",
+     "calls": 32,
+     "us_total": 45.7,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::BUnaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 44.5,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::AbsFunctor<c10::BFloat16>, std::array<char*, 2ul> >(int, at::native::AbsFunctor<c10::BFloat16>, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 44.1,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 64, 64>(at::native::(anonymous namespace)::OpaqueType<2u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 16,
+     "us_total": 42.0,
+     "us_per_step": 1.3
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*, 1ul>)",
+     "calls": 32,
+     "us_total": 37.8,
+     "us_per_step": 1.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+     "calls": 32,
+     "us_total": 35.5,
+     "us_per_step": 1.1
+    },
+    {
+     "kernel": "Memcpy HtoD (Pageable -> Device)",
+     "calls": 64,
+     "us_total": 18.8,
+     "us_per_step": 0.6
+    },
+    {
+     "kernel": "Memset (Device)",
+     "calls": 32,
+     "us_total": 10.2,
+     "us_per_step": 0.3
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 1, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 5,
+     "us_total": 7.0,
+     "us_per_step": 0.2
+    }
+   ]
+  },
+  {
+   "concurrency": 1,
+   "repeat": 1,
+   "profiled": {
+    "vllm:generation_tokens_total": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 81.0,
+    "vllm:spec_decode_num_draft_tokens_total": 117.0,
+    "vllm:spec_decode_num_drafts_total": 39.0,
+    "st:steps_decode_total": 39.0,
+    "st:step_seconds_sum": 1.519202000000007,
+    "st:step_seconds_count": 39.0,
+    "step_ms": 38.953897435897616,
+    "acceptance": 0.6923076923076923,
+    "tokens_a_step": 0.0
+   },
+   "unprofiled": {
+    "vllm:generation_tokens_total": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 362.0,
+    "vllm:spec_decode_num_draft_tokens_total": 552.0,
+    "vllm:spec_decode_num_drafts_total": 184.0,
+    "st:steps_decode_total": 184.0,
+    "st:step_seconds_sum": 6.792498999999992,
+    "st:step_seconds_count": 184.0,
+    "step_ms": 36.91575543478257,
+    "acceptance": 0.6557971014492754,
+    "tokens_a_step": 0.0
+   },
+   "device_us_per_step": 32048.7,
+   "steps": 32,
+   "kernels": [
+    {
+     "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+     "calls": 3424,
+     "us_total": 199362.5,
+     "us_per_step": 6230.1
+    },
+    {
+     "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0",
+     "calls": 1536,
+     "us_total": 190367.2,
+     "us_per_step": 5949.0
+    },
+    {
+     "kernel": "_down_gates",
+     "calls": 3392,
+     "us_total": 113550.3,
+     "us_per_step": 3548.4
+    },
+    {
+     "kernel": "_up_mean",
+     "calls": 3392,
+     "us_total": 104097.9,
+     "us_per_step": 3253.1
+    },
+    {
+     "kernel": "_fp8_rows",
+     "calls": 128,
+     "us_total": 89246.1,
+     "us_per_step": 2788.9
+    },
+    {
+     "kernel": "void (anonymous namespace)::mk_gemm_input_kernel<false>((anonymous namespace)::MKGemm2Ctx)",
+     "calls": 3072,
+     "us_total": 75189.1,
+     "us_per_step": 2349.7
+    },
+    {
+     "kernel": "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)",
+     "calls": 3072,
+     "us_total": 36375.8,
+     "us_per_step": 1136.7
+    },
+    {
+     "kernel": "_skinny_gemv_kernel",
+     "calls": 1536,
+     "us_total": 31198.1,
+     "us_per_step": 974.9
+    },
+    {
+     "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+     "calls": 192,
+     "us_total": 19844.6,
+     "us_per_step": 620.1
+    },
+    {
+     "kernel": "ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage<4096ul>)",
+     "calls": 128,
+     "us_total": 17531.6,
+     "us_per_step": 547.9
+    },
+    {
+     "kernel": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+     "calls": 192,
+     "us_total": 16187.8,
+     "us_per_step": 505.9
+    },
+    {
+     "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+     "calls": 1152,
+     "us_total": 16010.7,
+     "us_per_step": 500.3
+    },
+    {
+     "kernel": "_qsa_sparse_paged_gqa_splitk_kernel",
+     "calls": 480,
+     "us_total": 13060.8,
+     "us_per_step": 408.2
+    },
+    {
+     "kernel": "_gate_up",
+     "calls": 96,
+     "us_total": 11170.8,
+     "us_per_step": 349.1
+    },
+    {
+     "kernel": "_softmax_topk",
+     "calls": 1632,
+     "us_total": 9792.7,
+     "us_per_step": 306.0
+    },
+    {
+     "kernel": "_compact_topk_ids_kernel",
+     "calls": 1536,
+     "us_total": 9196.4,
+     "us_per_step": 287.4
+    },
+    {
+     "kernel": "_leave_norm",
+     "calls": 3264,
+     "us_total": 8354.4,
+     "us_per_step": 261.1
+    },
+    {
+     "kernel": "(anonymous namespace)::mk_input_pack_kernel((anonymous namespace)::MKInputPackCtx)",
+     "calls": 3072,
+     "us_total": 4734.0,
+     "us_per_step": 147.9
+    },
+    {
+     "kernel": "_down",
+     "calls": 96,
+     "us_total": 4269.5,
+     "us_per_step": 133.4
+    },
+    {
+     "kernel": "_single_conv",
+     "calls": 1152,
+     "us_total": 4044.7,
+     "us_per_step": 126.4
+    },
+    {
+     "kernel": "_select_rows",
+     "calls": 384,
+     "us_total": 4025.6,
+     "us_per_step": 125.8
+    },
+    {
+     "kernel": "_swiglu",
+     "calls": 1632,
+     "us_total": 3826.3,
+     "us_per_step": 119.6
+    },
+    {
+     "kernel": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+     "calls": 192,
+     "us_total": 3419.6,
+     "us_per_step": 106.9
+    },
+    {
+     "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)",
+     "calls": 32,
+     "us_total": 3089.1,
+     "us_per_step": 96.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 1632,
+     "us_total": 3055.8,
+     "us_per_step": 95.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1})",
+     "calls": 1568,
+     "us_total": 2928.7,
+     "us_per_step": 91.5
+    },
+    {
+     "kernel": "_qsa_inputs_kernel",
+     "calls": 480,
+     "us_total": 2714.9,
+     "us_per_step": 84.8
+    },
+    {
+     "kernel": "k_oneshot_max_int64(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+     "calls": 96,
+     "us_total": 2388.4,
+     "us_per_step": 74.6
+    },
+    {
+     "kernel": "_gated",
+     "calls": 1632,
+     "us_total": 2272.6,
+     "us_per_step": 71.0
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 1696,
+     "us_total": 2112.9,
+     "us_per_step": 66.0
+    },
+    {
+     "kernel": "_gated_norm",
+     "calls": 1152,
+     "us_total": 2104.1,
+     "us_per_step": 65.8
+    },
+    {
+     "kernel": "_qsa_mqa_paged_group_kernel",
+     "calls": 384,
+     "us_total": 1983.8,
+     "us_per_step": 62.0
+    },
+    {
+     "kernel": "_qsa_merge_splitk_kernel",
+     "calls": 480,
+     "us_total": 1751.7,
+     "us_per_step": 54.7
+    },
+    {
+     "kernel": "_qsa_index_keys_kernel",
+     "calls": 384,
+     "us_total": 1601.8,
+     "us_per_step": 50.1
+    },
+    {
+     "kernel": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+     "calls": 448,
+     "us_total": 1462.1,
+     "us_per_step": 45.7
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4>)",
+     "calls": 192,
+     "us_total": 1154.5,
+     "us_per_step": 36.1
+    },
+    {
+     "kernel": "_norm_streams",
+     "calls": 352,
+     "us_total": 1064.0,
+     "us_per_step": 33.2
+    },
+    {
+     "kernel": "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float> >(cublasGemvParamsEx<int, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16 const>, cublasGemvTensorStridedBatched<__nv_bfloat16>, float>)",
+     "calls": 96,
+     "us_total": 791.2,
+     "us_per_step": 24.7
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+     "calls": 352,
+     "us_total": 694.3,
+     "us_per_step": 21.7
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4>)",
+     "calls": 96,
+     "us_total": 683.6,
+     "us_per_step": 21.4
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::BFloat16 const, unsigned int>, at::cuda::detail::TensorInfo<long const, unsigned int>, int, int, unsigned int, long)",
+     "calls": 128,
+     "us_total": 568.3,
+     "us_per_step": 17.8
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1})",
+     "calls": 64,
+     "us_total": 409.9,
+     "us_per_step": 12.8
+    },
+    {
+     "kernel": "_lookup",
+     "calls": 128,
+     "us_total": 402.4,
+     "us_per_step": 12.6
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1})",
+     "calls": 128,
+     "us_total": 366.7,
+     "us_per_step": 11.5
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::BFloat16, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<c10::BFloat16, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",
+     "calls": 32,
+     "us_total": 366.1,
+     "us_per_step": 11.4
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 310.9,
+     "us_per_step": 9.7
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 276.3,
+     "us_per_step": 8.6
+    },
+    {
+     "kernel": "_addresses",
+     "calls": 128,
+     "us_total": 269.5,
+     "us_per_step": 8.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul>)",
+     "calls": 192,
+     "us_total": 262.8,
+     "us_per_step": 8.2
+    },
+    {
+     "kernel": "_argmax_partials",
+     "calls": 96,
+     "us_total": 219.8,
+     "us_per_step": 6.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul> >(int, at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul>)",
+     "calls": 128,
+     "us_total": 209.0,
+     "us_per_step": 6.5
+    },
+    {
+     "kernel": "Memcpy DtoD (Device -> Device)",
+     "calls": 128,
+     "us_total": 202.3,
+     "us_per_step": 6.3
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<float> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<float> const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 197.2,
+     "us_per_step": 6.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(bool, unsigned long, unsigned long)#1}, std::array<char*, 4ul> >(int, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(bool, unsigned long, unsigned long)#1}, std::array<char*, 4ul>)",
+     "calls": 96,
+     "us_total": 190.4,
+     "us_per_step": 6.0
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul>)",
+     "calls": 128,
+     "us_total": 190.3,
+     "us_per_step": 5.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::BUnaryFunctor<long, long, long, at::native::remainder_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<long, long, long, at::native::remainder_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 189.5,
+     "us_per_step": 5.9
+    },
+    {
+     "kernel": "_quantize",
+     "calls": 128,
+     "us_total": 183.4,
+     "us_per_step": 5.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::exp_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::exp_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 180.5,
+     "us_per_step": 5.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 168.1,
+     "us_per_step": 5.3
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 3, 64, 64>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 161.9,
+     "us_per_step": 5.1
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::nan_to_num_kernel_cuda(at::TensorIteratorBase&, std::optional<double>, std::optional<double>, std::optional<double>)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::nan_to_num_kernel_cuda(at::TensorIteratorBase&, std::optional<double>, std::optional<double>, std::optional<double>)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 161.1,
+     "us_per_step": 5.0
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::BFloat16, at::native::func_wrapper_t<c10::BFloat16, at::native::sum_functor<c10::BFloat16, float, c10::BFloat16>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, c10::BFloat16, 4, 8> >(at::native::ReduceOp<c10::BFloat16, at::native::func_wrapper_t<c10::BFloat16, at::native::sum_functor<c10::BFloat16, float, c10::BFloat16>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, c10::BFloat16, 4, 8>)",
+     "calls": 32,
+     "us_total": 160.0,
+     "us_per_step": 5.0
+    },
+    {
+     "kernel": "Memcpy DtoH (Device -> Pageable)",
+     "calls": 96,
+     "us_total": 156.0,
+     "us_per_step": 4.9
+    },
+    {
+     "kernel": "_argmax_finish",
+     "calls": 96,
+     "us_total": 154.9,
+     "us_per_step": 4.8
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::reciprocal_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::reciprocal_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 152.3,
+     "us_per_step": 4.8
+    },
+    {
+     "kernel": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+     "calls": 96,
+     "us_total": 151.6,
+     "us_per_step": 4.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 145.7,
+     "us_per_step": 4.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::BUnaryFunctor<long, long, long, at::native::rshift_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<long, long, long, at::native::rshift_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 142.9,
+     "us_per_step": 4.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 141.6,
+     "us_per_step": 4.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseXorFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseXorFunctor<long> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 141.3,
+     "us_per_step": 4.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 139.2,
+     "us_per_step": 4.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 137.4,
+     "us_per_step": 4.3
+    },
+    {
+     "kernel": "_window_rows",
+     "calls": 96,
+     "us_total": 133.7,
+     "us_per_step": 4.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 129.9,
+     "us_per_step": 4.1
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 129.0,
+     "us_per_step": 4.0
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 112.7,
+     "us_per_step": 3.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<long> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<long> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<long> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<long> const&)::{lambda(int)#1})",
+     "calls": 64,
+     "us_total": 110.5,
+     "us_per_step": 3.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1} const&)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 101.6,
+     "us_per_step": 3.2
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 98.7,
+     "us_per_step": 3.1
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul>)",
+     "calls": 64,
+     "us_total": 91.2,
+     "us_per_step": 2.8
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 63.8,
+     "us_per_step": 2.0
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 60.2,
+     "us_per_step": 1.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 59.1,
+     "us_per_step": 1.8
+    },
+    {
+     "kernel": "Memcpy HtoD (Pinned -> Device)",
+     "calls": 128,
+     "us_total": 56.2,
+     "us_per_step": 1.8
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 56.1,
+     "us_per_step": 1.8
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 54.8,
+     "us_per_step": 1.7
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueType<8u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 54.3,
+     "us_per_step": 1.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)",
+     "calls": 32,
+     "us_total": 52.2,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 51.1,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sign_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sign_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 51.1,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul>)",
+     "calls": 32,
+     "us_total": 45.6,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::BUnaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 44.2,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::AbsFunctor<c10::BFloat16>, std::array<char*, 2ul> >(int, at::native::AbsFunctor<c10::BFloat16>, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 44.2,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*, 1ul>)",
+     "calls": 32,
+     "us_total": 37.9,
+     "us_per_step": 1.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+     "calls": 32,
+     "us_total": 35.4,
+     "us_per_step": 1.1
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 64, 64>(at::native::(anonymous namespace)::OpaqueType<2u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 10,
+     "us_total": 26.8,
+     "us_per_step": 0.8
+    },
+    {
+     "kernel": "Memcpy HtoD (Pageable -> Device)",
+     "calls": 64,
+     "us_total": 19.1,
+     "us_per_step": 0.6
+    },
+    {
+     "kernel": "Memset (Device)",
+     "calls": 32,
+     "us_total": 9.9,
+     "us_per_step": 0.3
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 1, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 7,
+     "us_total": 9.8,
+     "us_per_step": 0.3
+    }
+   ]
+  },
+  {
+   "concurrency": 4,
+   "repeat": 0,
+   "profiled": {
+    "vllm:generation_tokens_total": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 239.0,
+    "vllm:spec_decode_num_draft_tokens_total": 396.0,
+    "vllm:spec_decode_num_drafts_total": 132.0,
+    "st:steps_decode_total": 33.0,
+    "st:step_seconds_sum": 2.0325149999999894,
+    "st:step_seconds_count": 33.0,
+    "step_ms": 61.59136363636332,
+    "acceptance": 0.6035353535353535,
+    "tokens_a_step": 0.0
+   },
+   "unprofiled": {
+    "vllm:generation_tokens_total": 0.0,
+    "vllm:spec_decode_num_accepted_tokens_total": 721.0,
+    "vllm:spec_decode_num_draft_tokens_total": 1236.0,
+    "vllm:spec_decode_num_drafts_total": 412.0,
+    "st:steps_decode_total": 103.0,
+    "st:step_seconds_sum": 6.3649540000000115,
+    "st:step_seconds_count": 103.0,
+    "step_ms": 61.795669902912735,
+    "acceptance": 0.5833333333333334,
+    "tokens_a_step": 0.0
+   },
+   "device_us_per_step": 57074.0,
+   "steps": 32,
+   "kernels": [
+    {
+     "kernel": "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernelMoEStaticKernel_object_at__tensorptrbf16gmemalign16o16256025601_tensorptri32gmemo1601_tensorptrf32gmemo1601_tensorptri8gmemalign16o_0",
+     "calls": 1536,
+     "us_total": 735354.9,
+     "us_per_step": 22979.8
+    },
+    {
+     "kernel": "k_oneshot_consumer(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+     "calls": 3424,
+     "us_total": 297264.4,
+     "us_per_step": 9289.5
+    },
+    {
+     "kernel": "void (anonymous namespace)::mk_gemm2_kernel<2, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)",
+     "calls": 6144,
+     "us_total": 136017.8,
+     "us_per_step": 4250.6
+    },
+    {
+     "kernel": "_down_gates",
+     "calls": 3392,
+     "us_total": 129265.7,
+     "us_per_step": 4039.6
+    },
+    {
+     "kernel": "_up_mean",
+     "calls": 3392,
+     "us_total": 124833.5,
+     "us_per_step": 3901.0
+    },
+    {
+     "kernel": "_fp8_rows",
+     "calls": 128,
+     "us_total": 90435.0,
+     "us_per_step": 2826.1
+    },
+    {
+     "kernel": "fused_recurrent_gated_delta_rule_fwd_kernel",
+     "calls": 1152,
+     "us_total": 71470.8,
+     "us_per_step": 2233.5
+    },
+    {
+     "kernel": "_qsa_sparse_paged_gqa_splitk_kernel",
+     "calls": 480,
+     "us_total": 39057.5,
+     "us_per_step": 1220.5
+    },
+    {
+     "kernel": "_skinny_gemv_kernel",
+     "calls": 1632,
+     "us_total": 35069.4,
+     "us_per_step": 1095.9
+    },
+    {
+     "kernel": "_gate_up",
+     "calls": 96,
+     "us_total": 25087.4,
+     "us_per_step": 784.0
+    },
+    {
+     "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)",
+     "calls": 224,
+     "us_total": 20934.6,
+     "us_per_step": 654.2
+    },
+    {
+     "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)",
+     "calls": 352,
+     "us_total": 16429.4,
+     "us_per_step": 513.4
+    },
+    {
+     "kernel": "ncclDevKernel_AllGather_RING_LL(ncclDevKernelArgsStorage<4096ul>)",
+     "calls": 128,
+     "us_total": 12538.1,
+     "us_per_step": 391.8
+    },
+    {
+     "kernel": "_down",
+     "calls": 96,
+     "us_total": 12199.0,
+     "us_per_step": 381.2
+    },
+    {
+     "kernel": "_leave_norm",
+     "calls": 3264,
+     "us_total": 11499.1,
+     "us_per_step": 359.3
+    },
+    {
+     "kernel": "_softmax_topk",
+     "calls": 1632,
+     "us_total": 8537.2,
+     "us_per_step": 266.8
+    },
+    {
+     "kernel": "_single_conv",
+     "calls": 1152,
+     "us_total": 6145.9,
+     "us_per_step": 192.1
+    },
+    {
+     "kernel": "_select_rows",
+     "calls": 384,
+     "us_total": 4026.7,
+     "us_per_step": 125.8
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1} const&)::{lambda(int)#1})",
+     "calls": 1664,
+     "us_total": 3563.1,
+     "us_per_step": 111.3
+    },
+    {
+     "kernel": "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2::Params)",
+     "calls": 32,
+     "us_total": 3175.3,
+     "us_per_step": 99.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 1632,
+     "us_total": 2974.6,
+     "us_per_step": 93.0
+    },
+    {
+     "kernel": "_qsa_inputs_kernel",
+     "calls": 480,
+     "us_total": 2614.7,
+     "us_per_step": 81.7
+    },
+    {
+     "kernel": "_qsa_index_keys_kernel",
+     "calls": 384,
+     "us_total": 2530.5,
+     "us_per_step": 79.1
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 1696,
+     "us_total": 2509.4,
+     "us_per_step": 78.4
+    },
+    {
+     "kernel": "_gated",
+     "calls": 1632,
+     "us_total": 2301.9,
+     "us_per_step": 71.9
+    },
+    {
+     "kernel": "k_oneshot_max_int64(Ctrl*, __nv_bfloat16 const*, __nv_bfloat16*, int, int, HintArgs, int)",
+     "calls": 96,
+     "us_total": 2289.3,
+     "us_per_step": 71.5
+    },
+    {
+     "kernel": "_gated_norm",
+     "calls": 1152,
+     "us_total": 2247.2,
+     "us_per_step": 70.2
+    },
+    {
+     "kernel": "_swiglu",
+     "calls": 1632,
+     "us_total": 2109.5,
+     "us_per_step": 65.9
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::BFloat16 const, unsigned int>, at::cuda::detail::TensorInfo<long const, unsigned int>, int, int, unsigned int, long)",
+     "calls": 128,
+     "us_total": 2051.2,
+     "us_per_step": 64.1
+    },
+    {
+     "kernel": "_qsa_mqa_paged_group_kernel",
+     "calls": 384,
+     "us_total": 2006.2,
+     "us_per_step": 62.7
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()() const::{lambda(c10::BFloat16)#1} const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 1694.2,
+     "us_per_step": 52.9
+    },
+    {
+     "kernel": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+     "calls": 352,
+     "us_total": 1509.7,
+     "us_per_step": 47.2
+    },
+    {
+     "kernel": "_norm_streams",
+     "calls": 352,
+     "us_total": 1265.4,
+     "us_per_step": 39.5
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+     "calls": 352,
+     "us_total": 1145.5,
+     "us_per_step": 35.8
+    },
+    {
+     "kernel": "_qsa_merge_splitk_kernel",
+     "calls": 480,
+     "us_total": 1031.9,
+     "us_per_step": 32.2
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4>)",
+     "calls": 96,
+     "us_total": 985.0,
+     "us_per_step": 30.8
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::MeanOps<float, float, float, float>, unsigned int, float, 4, 4>)",
+     "calls": 96,
+     "us_total": 683.8,
+     "us_per_step": 21.4
+    },
+    {
+     "kernel": "_lookup",
+     "calls": 128,
+     "us_total": 649.0,
+     "us_per_step": 20.3
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::BFloat16, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4> >(at::native::ReduceOp<c10::BFloat16, at::native::ArgMaxOps<float>, unsigned int, long, 4, 4>)",
+     "calls": 32,
+     "us_total": 640.9,
+     "us_per_step": 20.0
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_kernel_impl<at::native::OpaqueType<2> >(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 511.4,
+     "us_per_step": 16.0
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<2> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 453.0,
+     "us_per_step": 14.2
+    },
+    {
+     "kernel": "_addresses",
+     "calls": 128,
+     "us_total": 441.6,
+     "us_per_step": 13.8
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 3, 64, 64>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 428.4,
+     "us_per_step": 13.4
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<128, 4, at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4> >(at::native::ReduceOp<float, at::native::func_wrapper_t<float, at::native::sum_functor<float, float, float>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, float, 4, 4>)",
+     "calls": 96,
+     "us_total": 416.5,
+     "us_per_step": 13.0
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 375.9,
+     "us_per_step": 11.7
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<float> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<float> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<float> const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 370.7,
+     "us_per_step": 11.6
+    },
+    {
+     "kernel": "_argmax_partials",
+     "calls": 96,
+     "us_total": 341.6,
+     "us_per_step": 10.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<float>, std::array<char*, 3ul>)",
+     "calls": 128,
+     "us_total": 313.3,
+     "us_per_step": 9.8
+    },
+    {
+     "kernel": "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplitKParams<float>, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, __nv_bfloat16*, float const*, float const*, __nv_bfloat16 const*, __nv_bfloat16 const*, __nv_bfloat16*, void*, long, float*, int*, float*, float*, float const*, float const*, float const*, float const*, float const*)",
+     "calls": 96,
+     "us_total": 302.3,
+     "us_per_step": 9.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::exp_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::exp_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 289.4,
+     "us_per_step": 9.0
+    },
+    {
+     "kernel": "Memcpy DtoD (Device -> Device)",
+     "calls": 96,
+     "us_total": 278.6,
+     "us_per_step": 8.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::pow_tensor_scalar_kernel_impl<float, float>(at::TensorIteratorBase&, float)::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 276.7,
+     "us_per_step": 8.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<float>, std::array<char*, 2ul>)",
+     "calls": 192,
+     "us_total": 253.0,
+     "us_per_step": 7.9
+    },
+    {
+     "kernel": "_quantize",
+     "calls": 128,
+     "us_total": 242.0,
+     "us_per_step": 7.6
+    },
+    {
+     "kernel": "Memcpy DtoH (Device -> Pageable)",
+     "calls": 96,
+     "us_total": 219.0,
+     "us_per_step": 6.8
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul> >(int, at::native::compare_scalar_kernel<long>(at::TensorIteratorBase&, at::native::(anonymous namespace)::OpType, long)::{lambda(long)#1}, std::array<char*, 2ul>)",
+     "calls": 128,
+     "us_total": 205.1,
+     "us_per_step": 6.4
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 64, 64>(at::native::(anonymous namespace)::OpaqueType<2u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 64, 64>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 49,
+     "us_total": 201.8,
+     "us_per_step": 6.3
+    },
+    {
+     "kernel": "Memcpy HtoD (Pinned -> Device)",
+     "calls": 128,
+     "us_total": 188.0,
+     "us_per_step": 5.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::BUnaryFunctor<long, long, long, at::native::remainder_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<long, long, long, at::native::remainder_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 182.0,
+     "us_per_step": 5.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(bool, unsigned long, unsigned long)#1}, std::array<char*, 4ul> >(int, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(bool, unsigned long, unsigned long)#1}, std::array<char*, 4ul>)",
+     "calls": 96,
+     "us_total": 181.0,
+     "us_per_step": 5.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::nan_to_num_kernel_cuda(at::TensorIteratorBase&, std::optional<double>, std::optional<double>, std::optional<double>)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::nan_to_num_kernel_cuda(at::TensorIteratorBase&, std::optional<double>, std::optional<double>, std::optional<double>)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 180.3,
+     "us_per_step": 5.6
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1}>(at::TensorIteratorBase&, at::native::(anonymous namespace)::where_kernel_impl(at::TensorIterator&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(bool, unsigned short, unsigned short)#1} const&)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 175.6,
+     "us_per_step": 5.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 169.0,
+     "us_per_step": 5.3
+    },
+    {
+     "kernel": "void at::native::reduce_kernel<512, 1, at::native::ReduceOp<c10::BFloat16, at::native::func_wrapper_t<c10::BFloat16, at::native::sum_functor<c10::BFloat16, float, c10::BFloat16>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, c10::BFloat16, 4, 8> >(at::native::ReduceOp<c10::BFloat16, at::native::func_wrapper_t<c10::BFloat16, at::native::sum_functor<c10::BFloat16, float, c10::BFloat16>::operator()(at::TensorIterator&)::{lambda(float, float)#1}>, unsigned int, c10::BFloat16, 4, 8>)",
+     "calls": 32,
+     "us_total": 167.7,
+     "us_per_step": 5.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::reciprocal_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::reciprocal_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 163.0,
+     "us_per_step": 5.1
+    },
+    {
+     "kernel": "_window_rows",
+     "calls": 96,
+     "us_total": 150.1,
+     "us_per_step": 4.7
+    },
+    {
+     "kernel": "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, 4, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1> >(int, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#3}::operator()() const::{lambda(int)#1}, std::array<char*, 2ul>, TrivialOffsetCalculator<1, unsigned int>, TrivialOffsetCalculator<1, unsigned int>, at::native::memory::LoadWithCast<1>, at::native::memory::StoreWithCast<1>)",
+     "calls": 96,
+     "us_total": 148.5,
+     "us_per_step": 4.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 148.4,
+     "us_per_step": 4.6
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}>(at::TensorIteratorBase&, at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1} const&)::{lambda(int)#1})",
+     "calls": 96,
+     "us_total": 145.9,
+     "us_per_step": 4.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::BUnaryFunctor<long, long, long, at::native::rshift_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<long, long, long, at::native::rshift_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long, long)#1}>, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 145.1,
+     "us_per_step": 4.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseXorFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseXorFunctor<long> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 144.9,
+     "us_per_step": 4.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 141.8,
+     "us_per_step": 4.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<float, float, float, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 141.4,
+     "us_per_step": 4.4
+    },
+    {
+     "kernel": "_argmax_finish",
+     "calls": 96,
+     "us_total": 137.8,
+     "us_per_step": 4.3
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::rsqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 96,
+     "us_total": 136.1,
+     "us_per_step": 4.3
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 1, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 60,
+     "us_total": 134.1,
+     "us_per_step": 4.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<c10::BFloat16>, std::array<char*, 3ul>)",
+     "calls": 64,
+     "us_total": 120.3,
+     "us_per_step": 3.8
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 2, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<long> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<long> const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<long> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<long> const&)::{lambda(int)#1})",
+     "calls": 64,
+     "us_total": 112.6,
+     "us_per_step": 3.5
+    },
+    {
+     "kernel": "void at::native::index_elementwise_kernel<128, 4, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1}>(long, at::native::gpu_index_kernel<at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1}>(at::TensorIteratorBase&, c10::ArrayRef<long>, c10::ArrayRef<long>, at::native::index_put_kernel_impl<at::native::OpaqueType<8> >(at::TensorIterator&, c10::ArrayRef<long>, c10::ArrayRef<long>)::{lambda(char*, char const*, long)#1} const&, bool)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 112.6,
+     "us_per_step": 3.5
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul> >(int, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 3ul>)",
+     "calls": 64,
+     "us_total": 107.2,
+     "us_per_step": 3.3
+    },
+    {
+     "kernel": "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1}>(int, at::native::gpu_kernel_impl_nocast<at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > >(at::TensorIteratorBase&, at::native::BinaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> > const&)::{lambda(int)#1})",
+     "calls": 32,
+     "us_total": 104.5,
+     "us_per_step": 3.3
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::silu_kernel(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 91.4,
+     "us_per_step": 2.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<float>, std::array<char*, 1ul> >(int, at::native::FillFunctor<float>, std::array<char*, 1ul>)",
+     "calls": 32,
+     "us_total": 63.2,
+     "us_per_step": 2.0
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueType<4u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<4u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 60.0,
+     "us_per_step": 1.9
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 55.4,
+     "us_per_step": 1.7
+    },
+    {
+     "kernel": "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueType<8u>*, at::native::(anonymous namespace)::CatArrInputTensorMetadata<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 128, 1>, at::native::(anonymous namespace)::TensorSizeStride<unsigned int, 4u>, int, unsigned int)",
+     "calls": 32,
+     "us_total": 53.2,
+     "us_per_step": 1.7
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sqrt_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#4}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 52.5,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::sign_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::sign_kernel_cuda(at::TensorIteratorBase&)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 51.7,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)",
+     "calls": 32,
+     "us_total": 51.4,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#9}::operator()() const::{lambda(c10::BFloat16)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 50.6,
+     "us_per_step": 1.6
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<2, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul> >(int, at::native::(anonymous namespace)::launch_clamp_scalar(at::TensorIteratorBase&, c10::Scalar, c10::Scalar, at::native::detail::ClampLimits)::{lambda()#1}::operator()() const::{lambda()#4}::operator()() const::{lambda(long)#1}, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 45.9,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::AbsFunctor<c10::BFloat16>, std::array<char*, 2ul> >(int, at::native::AbsFunctor<c10::BFloat16>, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 44.1,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::BUnaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul> >(int, at::native::BUnaryFunctor<c10::BFloat16, c10::BFloat16, c10::BFloat16, at::native::binary_internal::MulFunctor<float> >, std::array<char*, 2ul>)",
+     "calls": 32,
+     "us_total": 44.0,
+     "us_per_step": 1.4
+    },
+    {
+     "kernel": "Memset (Device)",
+     "calls": 64,
+     "us_total": 37.5,
+     "us_per_step": 1.2
+    },
+    {
+     "kernel": "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul> >(int, at::native::FillFunctor<c10::BFloat16>, std::array<char*, 1ul>)",
+     "calls": 32,
+     "us_total": 36.0,
+     "us_per_step": 1.1
+    },
+    {
+     "kernel": "Memcpy HtoD (Pageable -> Device)",
+     "calls": 64,
+     "us_total": 27.9,
+     "us_per_step": 0.9
+    }
+   ]
+  }
+ ]
+}

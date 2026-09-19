@@ -21,7 +21,6 @@ read in the ledger (45차 §23 A7) and are reproduced here without vLLM:
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import math
 import struct
@@ -37,6 +36,7 @@ import torch
 import torch.nn.functional as Fn
 
 from engine.base.params import Spec
+from engine.modules.pictures import MAX_IMAGE_PIXELS, decode as decode_picture, to_rgb  # noqa: F401 -- to_rgb: the door's loader, re-exported
 from engine.profiles.glm53.lanes import swiglu_clamped
 from engine.profiles.glm53.net import rmsnorm
 
@@ -47,7 +47,6 @@ LIMITS = {"image": 4, "video": 1}    # per prompt, as production serves (PR #431
 VIDEO_TOKEN_CAP = 30000              # production caps the checkpoint's 240,000-token video budget (_MAX_VIDEO_TOKENS)
 VIDEO_FRAMES_LOADED = 32             # production's loader samples this many frames uniformly before the processor (VideoMediaIO num_frames)
 VIDEO_MAX_FRAMES = 2048              # Glm5NextVideoProcessor.max_frame_count_dynamic (a class default: not in processor_config.json)
-MAX_IMAGE_PIXELS = 178_956_970       # vLLM refuses a larger decoded image (VLLM_MAX_IMAGE_PIXELS; PIL's decompression-bomb line)
 ROPE_BASE, ROPE_MAX = 10000.0, 8192  # get_rope(head_size, max_position=8192, partial_rotary_factor=0.5): a 2-D rope over (h, w)
 QK_NORM_EPS = 1e-5                   # the attention's q/k RMSNorm: hard-coded in the served tower, distinct from the block norms
 LAYERNORM_EPS = 1e-5                 # merger.post_projection_norm: nn.LayerNorm's default
@@ -269,20 +268,6 @@ def sample_frame_indices(total_frames: int, fps: float, duration: float, *, targ
     return uniq
 
 
-def to_rgb(image):
-    """PIL image -> RGB the way production loads it: transparency composited on white, everything else converted."""
-    from PIL import Image
-    if image.mode == "RGB":
-        return image
-    if image.mode in ("RGBA", "LA", "PA") or "transparency" in getattr(image, "info", {}):
-        if image.mode != "RGBA":
-            image = image.convert("RGBA")
-        out = Image.new("RGB", image.size, (255, 255, 255))
-        out.paste(image, mask=image.split()[3])
-        return out
-    return image.convert("RGB")
-
-
 # -- video frames, decoded in a child process ----------------------------------------------------------------------------
 # OpenCV runs in its own interpreter: its stream-buffered capture crashed on release inside the engine process (45차 §23
 # A7: SIGSEGV at cap.release() with torch loaded), and a decoder fed untrusted bytes must never take rank 0's door down --
@@ -363,22 +348,8 @@ class Door:
         raise ValueError(f"{kind} is not served")
 
     def prepare_image(self, data: bytes) -> dict:
-        from PIL import Image, ImageOps, UnidentifiedImageError
         V = self.V
-        try:
-            image = Image.open(io.BytesIO(data))
-        except (UnidentifiedImageError, OSError, ValueError) as exc:
-            raise ValueError(f"not a decodable image: {exc}") from exc
-        w, h = image.size
-        if w * h > MAX_IMAGE_PIXELS:
-            raise ValueError(f"image dimensions {w}x{h} exceed the served maximum of {MAX_IMAGE_PIXELS} pixels")
-        try:
-            image = ImageOps.exif_transpose(image)          # production normalises EXIF orientation at load
-        except Exception:                                   # noqa: BLE001 -- as production: a bad EXIF block is ignored
-            pass
-        image.load()
-        image = to_rgb(image)
-        frames = torch.from_numpy(np.array(image, dtype=np.uint8)).permute(2, 0, 1).contiguous()[None]     # [1, 3, h, w]
+        frames = decode_picture(data)[None]                  # [1, 3, h, w]: engine/modules/pictures, as production loads it
         h, w = frames.shape[-2:]
         lo, hi = V.pixels("image")
         H, W = smart_resize(V.temporal, h, w, V.temporal, V.factor, V.factor, lo, hi)
