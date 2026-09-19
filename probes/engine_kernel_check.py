@@ -242,6 +242,12 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes == 'sm121_sparse_mla':
+        # the image's SM120 sparse MLA at DeepSeek-V3.2's rank against the oracle, then under sustained load
+        # (vllm#54929's livelock) -- engine/SM121_INTAKE.md U6
+        from probes.engine_sm121_sparse_mla import run as sm121_sparse_mla
+        sm121_sparse_mla(args.output)
+        return
     if args.lanes == 'sm121_sanitizer':
         # correctness only: the served kernels' GPU cases under compute-sanitizer memcheck (engine/SM121_INTAKE.md U15)
         from probes.engine_sm121_sanitizer import run as sm121_sanitizer
