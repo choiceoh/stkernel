@@ -5016,4 +5016,10 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **미측정.** GPU 부팅(`qualify grammar`·`prelude_s`·`wait for the prelude` 행)과 `tools` 요청 끝까지 — 운영자의 다음 창. `tools` 요청은 첫 토큰부터
   rich 행이라 tok/s 가 문법 없는 요청보다 낮을 수 있다(미측정).
   [대조·로그](measurements/qwen38_fleet_grammars_20260919/README.md).
+### Qwen3.8 PLE 게이트 한 발사 — 4,096 토큰 청크의 PLE 57.6 → 34.7 ms(−40%), 청크의 약 2.4% (2026-09-19, srv4 단일 GPU 레인 2회, PR #1280)
+`engine/kernels/ngram_gate.gate`: PLE 주입의 게이트(스트림·키 unit-offset 정규화, 내적, 부호 제곱근, 시그모이드, 값 곱)와 conv 정규화를 torch 약 15 발사
+대신 한 발사로. torch 형태의 캐스트를 그대로 따라 인터프리터에서 바이트 동일, 부팅 qualify 에 넣음. 프리필(eager)과 캡처 디코드 둘 다.
+- `--lanes qwen38_prefill` 두 티켓(main `7dcc0f00` 대 `28cc6bbf`): PLE 몫 57.62 → 34.69 ms(컨텍스트 0), 58.89 → 35.99(4,096). `_gate` 1.92 ms.
+- **남은 PLE torch 26.5 ms** 는 dilated causal conv 의 torch 형태 — 다음 레버. **플릿 onepass 미측정**(창은 다른 세션 임대 중, D17 은 다음 창).
+  [상세·원시](measurements/qwen38_ple_gate_20260919/README.md).
 
