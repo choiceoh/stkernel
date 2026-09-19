@@ -4736,7 +4736,7 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
   one-shot·프리필 통신을 hidden 5120 에서 재측정), 일 단위 셋(CED 키 압축 레인, sink 를 받는 MLA softmax, MoE 양자화).
   그 전에 `net`·`lanes`·`adapter`·`decode_graphs` 가 없다는 것이 더 큰 항목이다. [상세](engine/DSV41_CARRY_20260919.md).
 
-### Qwen3.8 디코드 — 라우터를 skinny GEMV 로(4~16 행 1.96~2.53 배), 믹서 사이트 5→3 발사(carry H2, 바이트 동일, 66.5~70.5 → 60.3~62.7 µs), 스텝 약 −1.3 ms (2026-09-19, srv4 단일 GPU 레인 9회, 플릿 창 없음)
+### Qwen3.8 디코드 — 라우터를 skinny GEMV 로(4~16 행 1.96~2.53 배), 믹서 사이트 5→3 발사(carry H2, 바이트 동일, 66.5~70.5 → 60.3~62.7 µs), 스텝 약 −1.3 ms (2026-09-19, srv4 단일 GPU 레인 9회, 플릿 창 없음, PR #1207)
 - **skinny GEMV(`kernels/common/skinny_gemv`).** BF16 x@W.T 2..16 행, 한 발사: 행을 16 으로 패딩한 tensor-core dot, split-K 는 마지막 도착
   프로그램이 split 순서로 합산(도착 워드 장치당 한 버퍼, 캡처 전 `prepare`). 라우터 [513, 2560] cuBLAS 27.9/33.6/35.7 µs(4/8/16 행, 94→74
   GB/s) → 14.1~14.3(약 185 GB/s); 1 행은 cuBLAS gemv 와 비겨 torch.mm 에 남긴다; 믹서 up [10240, 320] 은 전 행 비김(`q38gemv-0919c`).
