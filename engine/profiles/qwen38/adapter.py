@@ -198,6 +198,9 @@ class ServedMTP:
         self._waiting: dict = {}                  # seq -> (slot, ctx, next ids, the target's streams rows [m, hc*H])
         self._probs: dict = {}                    # seq -> the head's probability of each of its picks (graph rows)
         self._proposed: dict = {}                 # seq -> (every pick, their probabilities) of its last proposal
+        # what the head observes, recorded where a boot asks (fleet --tap-mtp-inputs, rank 0): at every kept position
+        # the target's streams and the token after it -- the head's own fine-tuning data (mtp_tune.py)
+        self.inputs_tap = None
 
     @property
     def probability(self) -> bool:
@@ -246,10 +249,13 @@ class ServedMTP:
             self._next[seq] = ([token], head, ctx + len(ids))
             self._probs[seq] = None
 
-    def observe(self, seq: int, ctx: int, next_ids, hidden) -> None:
+    def observe(self, seq: int, ctx: int, next_ids, hidden, *, decoded: bool = False) -> None:
+        """`decoded`: the positions a verify step kept (ServedModel._verify), not a prompt's -- the tap's record."""
         n = min(len(next_ids), hidden.shape[0])
         if n == 0:
             return
+        if self.inputs_tap is not None:
+            self.inputs_tap(seq, ctx, next_ids[:n], hidden[:n], decoded)
         if seq in self._waiting:
             self._run_waiting([seq])              # its rows are positions before these
         self._next.pop(seq, None)
@@ -413,7 +419,7 @@ def _served_model_class():
                 if getattr(self.drafter, "ledger", None) is not None:
                     self.drafter.record(seq, segment.ctx, len(d), matched, fed)
                 self.drafter.observe(seq, segment.ctx, self.tokens[seq][segment.ctx + 1:segment.ctx + fed + 1],
-                                     hidden[segment.start:segment.start + fed])
+                                     hidden[segment.start:segment.start + fed], decoded=True)
                 finished.append(done)
             return finished
 
