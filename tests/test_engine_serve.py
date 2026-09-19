@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import concurrent.futures
+import functools
 import importlib.util
 import json
 import queue
 import socket
+import socketserver
 import sys
 import threading
 import unittest
@@ -27,6 +29,16 @@ if str(ROOT / "tests") not in sys.path:
 from engine.base.runner import Runner, STEP_RECORD
 from engine.base.scheduler import Contract
 from engine.base.serve import RequestError, Server
+
+
+def setUpModule():
+    # Every door these tests open ends in `httpd.shutdown()`, which returns once `serve_forever` polls again -- every
+    # half second by default. On 2026-09-19 this file spent 55 of its 58 s asleep there (1.8 s of CPU); polling every
+    # 10 ms, the same 200 tests take 3 s. Only the servers this file starts poll faster; the door's own default stays.
+    fast = patch.object(socketserver.BaseServer, "serve_forever",
+                        functools.partialmethod(socketserver.BaseServer.serve_forever, poll_interval=0.01))
+    fast.start()
+    unittest.addModuleCleanup(fast.stop)
 
 
 class Engine:
