@@ -18,42 +18,58 @@ on:
     paths: ["engine/**", "tests/**", "tools/**", "launchers/**", "probes/**", "bench/step_sim.py", "bench/storacle.py", "bench/oracle_records.py", ".github/workflows/engine-check.yml"]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# A new push makes the verdict on the old head worthless, and it holds four runners the new one is waiting for.
+concurrency:
+  group: engine-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
+    # Until 2026-09-19 this was one runner, about eight minutes, six and a half of them in the verdict. Most of that
+    # was torch's thread pool: a thread per core in each of four files at once, on a four-core runner, for tests that
+    # are thousands of tiny ops. One thread per file (check.py sets it; the env below covers the plain unittest steps)
+    # and the verdict cut into four parts, each on its own runner, longest files first (tools/check_durations.json).
+    name: check ${{ matrix.part }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false                                  # every part reports: a red part does not hide another one
+      matrix:
+        part: ["1/4", "2/4", "3/4", "4/4"]
+    env:
+      OMP_NUM_THREADS: "1"
     steps:
       - uses: actions/checkout@v4
-        with: {fetch-depth: 0}
       - uses: actions/setup-python@v5
-        # `cache: pip` keys on a dependency manifest, and this repo has none -- it ships an
-        # image, not a package -- so setup-python does not skip the cache, it FAILS the job
-        # before a line of the verdict runs. Both runs the workflow has ever had died here.
-        # The dependency list is the two pip lines below, so key on the file they live in:
-        # the cache is the torch CPU wheel, ~200 MB, and it changes when this file does.
+        # No `cache: pip`. It was saved under each pull request's own ref, which no other pull request can read, so
+        # every first run printed "pip cache is not found" -- and a hit would only have saved the download, about a
+        # second. The time was pip compiling torch's bytecode: 21 of the step's 32 seconds. uv does not.
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: .github/workflows/engine-check.yml
       - name: dependencies that exist on a CPU runner
         # numpy and torch are the floor. `safetensors` and `triton` are here because without them
         # eight tests do not skip, they ERROR: both are imported inside a test body rather than at
         # module scope, so the CANNOT RUN rule above never sees them and a missing wheel reads as
         # broken code. Both install on a CPU runner -- the tests only need the import.
         run: |
-          python -m pip install --upgrade pip
-          pip install numpy safetensors
-          pip install torch --index-url https://download.pytorch.org/whl/cpu || echo "no torch here: those files will report CANNOT RUN"
-          pip install triton || echo "no triton here: the graph-contract tests will report FAILED, not CANNOT RUN"
-      - name: the verdict
-        run: python3 tools/check.py --list
-      - name: the probes' own tests
+          python -m pip install --quiet uv
+          uv pip install --system numpy safetensors
+          uv pip install --system torch --index-url https://download.pytorch.org/whl/cpu || echo "no torch here: those files will report CANNOT RUN"
+          uv pip install --system triton || echo "no triton here: the graph-contract tests will report FAILED, not CANNOT RUN"
+      - name: the verdict, part ${{ matrix.part }}
         # `test_probe_*` is outside the verdict's default pattern (test_engine_*), so the CPU tests the probes do have
         # -- what they import, what their report lines take, their lanes in the kernel check -- never ran here.
-        run: python3 tools/check.py --pattern 'test_probe_*' --list
+        # `test_agent_tools` is check.py's own: how it reads a run and how it cuts the parts.
+        run: python3 tools/check.py --pattern 'test_engine_*' --pattern 'test_probe_*' --pattern test_agent_tools --shard ${{ matrix.part }} --list
       - name: onepass recording and consumer measurement contracts
+        if: matrix.part == '1/4'
         run: python3 -m unittest discover -s tests -p 'test_onepass*.py'
-      - name: CPU oracle replay and held-out validation contracts
-        run: python3 -m unittest tests.test_step_tools tests.test_oracle_accuracy
       - name: the single-GPU lane's admission and its floor
+        if: matrix.part == '2/4'
         run: python3 -m unittest tests.test_fleet_single
+      - name: CPU oracle replay and held-out validation contracts
+        if: matrix.part == '4/4'
+        run: python3 -m unittest tests.test_step_tools tests.test_oracle_accuracy
