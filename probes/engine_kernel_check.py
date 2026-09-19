@@ -203,6 +203,11 @@ def main():
         from probes.engine_qwen38_moe import run as qwen38_moe
         qwen38_moe(args.output)
         return
+    if args.lanes == 'qwen38_mix_tiles':
+        # component timings: the mixer mean's hidden axis in tiles, every tile the one-block launch's bytes first (H3)
+        from probes.engine_qwen38_mix_tiles import run as qwen38_mix_tiles
+        qwen38_mix_tiles(args.output)
+        return
     if args.lanes == 'qwen38_qsa_geometry':
         # component timings: the QSA launches' geometry at Qwen3.8's cell -- the attention's split profile, the scorer's
         # tiles, the decode selection against its torch form, the input launches' warps -- each gated first (Q9)
