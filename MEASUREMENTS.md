@@ -4920,3 +4920,5 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **M5 확인 쌍 무효:** `one` 첫 부팅이 이미 GO 해 있던 레인 프로브(`q38head-0919e`) 옆이라 런처가 거부 → 순서 off→one. `off` 요청 내내 다른 세션의 레인 티켓
   `q38win-0919a` 가 srv4 GPU 에서 돌았다(14:31:20–14:33:32; Qwen3.8 부팅 옆에서도 레인 방이 남는다). off 의 C=1 +12.6%·C=4 +23% 는 그 값이다. 깨끗한 `one`: C=1 28.35, C=4 45.25.
 - 기록: `measurements/qwen38_s2h6_window_20260919/`.
+### Qwen3.8 — dynamic MoE 타일 밴드를 eager 워밍업에 넣은 뒤 문 뒤에서 처음 쓰는 커널: K=1 8 · K=3 7, dynamic MoE 0 (2026-09-19, srv4 단일 GPU 레인 2회)
+- `--lanes qwen38_serve_compiles:K`(브랜치 `eager-moe-dynamic-bands` = main `b5613857` + 밴드 넷): b12x dynamic 커널이 요청 중 0(main 에서 3). 남은 것은 conv 5(#1238), `_mix_mean` 타일 1, QSA split-K merge 1(K=1), 점수 커널 G 1 변형 1 — 넷 모두 한 번 컴파일되면 디스크에 남는 유한 집합. 다른 세션 창의 `micro_m1/m3_…_t10_r80` 은 C=1 K=1 에서 재현되지 않음. 속도 주장 없음. [기록](measurements/qwen38_serve_compiles_20260919c/README.md).
