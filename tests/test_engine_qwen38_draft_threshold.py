@@ -143,7 +143,7 @@ class CutTests(unittest.TestCase):
         self.assertEqual(mtp.propose([7]), [[100]])
         mtp.record(7, 14, 1, 1, 2)
         self.assertEqual(records, [{"seq": 7, "ctx": 14, "picks": [100, 101, 102], "probs": [0.9, 0.4, 0.95],
-                                    "proposed": 1, "matched": 1, "committed": 2}])
+                                    "proposed": 1, "matched": 1, "committed": 2, "sampled": False}])
         mtp.record(7, 16, 0, 0, 1)                                              # nothing proposed since: no picks
         self.assertEqual(records[-1]["picks"], [])
 
@@ -288,7 +288,7 @@ class FleetTests(unittest.TestCase):
         self.assertIn('ap.add_argument("--draft-threshold", default=str(DRAFT_THRESHOLD), metavar="P|off",', fleet)
         self.assertIn('ap.add_argument("--narrow-rows", type=int, default=NARROW_ROWS,', fleet)
         self.assertIn('ap.add_argument("--draft-ledger", action=argparse.BooleanOptionalAction, default=True,', fleet)
-        self.assertIn("pass --draft-threshold off --no-draft-ledger with it", fleet)
+        self.assertIn('"--no-draft-ledger --draft-candidates 0 with it"', fleet)
         adapter = (ROOT / "engine/profiles/qwen38/adapter.py").read_text()
         self.assertIn("model.drafter.narrow_rows = model.composition.graphs.narrow_rows", adapter)
         for probe in ("probes/engine_qwen38_step.py", "probes/engine_qwen38_mtp_window.py"):

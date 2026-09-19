@@ -113,6 +113,10 @@ if [ -n "${ST_NARROW_ROWS:-}" ]; then                         # ST_NARROW_ROWS=N
   [[ "$ST_NARROW_ROWS" =~ ^[0-9]+$ ]] || { echo "ST_NARROW_ROWS must be a row count" >&2; exit 2; }
   ADAPT_ARG="$ADAPT_ARG --narrow-rows $ST_NARROW_ROWS"
 fi
+if [ -n "${ST_DRAFT_CANDIDATES:-}" ]; then                    # ST_DRAFT_CANDIDATES=C: sampled drafts over C candidates, kept by
+  [[ "$ST_DRAFT_CANDIDATES" =~ ^[0-9]+$ ]] || { echo "ST_DRAFT_CANDIDATES must be a candidate count (0: argmax drafts)" >&2; exit 2; }
+  ADAPT_ARG="$ADAPT_ARG --draft-candidates $ST_DRAFT_CANDIDATES"   # block verification (fleet default 20; 0: argmax + exact match)
+fi
 case "${ST_TAP_MTP_INPUTS:-1}" in                            # ST_TAP_MTP_INPUTS=0: rank 0 stops recording the head's inputs (on by default)
   1) ;;
   0) ADAPT_ARG="$ADAPT_ARG --no-tap-mtp-inputs" ;;
