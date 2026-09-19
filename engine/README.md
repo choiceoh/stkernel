@@ -6,7 +6,7 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
 
 - **TP=4** — 스파크 네 대가 유일한 world. 랭크-로컬 형상은 사실(`profiles/*/facts.py`)이고 코드에 `// world` 가 없다.
   한 노드 검증도 `base/comm.LocalTP` 로 네 랭크를 스레드로 돌려 진짜 all-reduce 의미를 쓴다.
-- **DGX Spark(GB10)** — 장치 하나, 통합 메모리, SM121. 부팅·검증 때 단언(`facts.check_box`).
+- **DGX Spark(GB10)** — 장치 하나, 통합 메모리, SM121. 부팅·검증 때 단언(`base/box.check_box`, 프로필마다 `facts.check_box` 로 부른다).
 - **NVFP4 가 기본형** — packed 바이트 그대로 상주, packed 위에서 TP, 전역 스케일은 곱셈자, 서빙 커널이 레인. 유일형은
   아니다: 체크포인트가 bf16 으로 가진 것은 bf16 으로 쥔다.
 - **ModelOpt dense 안전장치** — 엔비디아 체크포인트의 첫 3개 dense MLP는 긴 prefill(기본 4,096행)에서
