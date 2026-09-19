@@ -263,8 +263,11 @@ class ServedComposition:
         """A verify step through its captured graph with nothing read, gathered or copied after it (ServedModel's
         draft-ahead verify) -> (logits [rows*t, vocab] gathered, streams [rows*t, hc*H], t, the ids fed [rows*t]): the
         graph's own tensors, a padded row's tail included, valid until the shape replays again. None when the graphs do
-        not take the step; nothing has run then, and the caller runs `forward`."""
+        not take the step -- a row near its picture runs eagerly (`forward`), and so does the draft step behind it
+        (ServedMTP's) -- nothing has run then, and the caller runs `forward`."""
         store.check(step)
+        if getattr(self.net, "pictures", None) and any(self.near_picture(s.seq, s.ctx) for s in step.segments):
+            return None
         served = self.served_step(step, store)
         if self.graphs is None or not self.graphs.admits(served, self.caches.pool):
             return None

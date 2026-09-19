@@ -11,7 +11,8 @@ pick is the argmax (greedy and plain) nothing in the draft step's inputs needs t
                                     host's own count of kept positions agrees, and `propose` reads them
     ServedModel._verify_ahead       all of it launched before the host reads the picks
 
-Held here: the verdict; run_after feeds the draft graph what `run` feeds it for the same observation; and the served
+Held here: the verdict; run_after feeds the draft graph what `run` feeds it for the same observation (a row's mRoPE
+delta too, when the net serves pictures); a row near its picture keeps the synchronous step; and the served
 model decodes the same tokens, keeps the same drafts, records the same ledger and tap rows and hands the head the same
 inputs with draft-ahead as without -- one row and two, rows that finish inside a step, a sampled row (which keeps the
 synchronous step), and narrow verify widths under a draft threshold. The world is the real adapter and graph classes
@@ -201,7 +202,8 @@ class Snapshots:
         step, given, last, counts, sampler = self.inputs[shape]
         self.seen.append((shape, step.ids.tolist(), step.contexts.tolist(), step.seqs.tolist(), step.slots.tolist(),
                           given.float().tolist(), last.tolist(), counts.tolist(),
-                          None if sampler is None else [s.tolist() for s in sampler]))
+                          None if sampler is None else [s.tolist() for s in sampler],
+                          None if step.deltas is None else step.deltas.tolist()))
         n = shape[0]
         picks = torch.arange(n * 3).view(n, 3)
         if sampler is None:
@@ -215,10 +217,12 @@ class Snapshots:
 
 @unittest.skipUnless(torch is not None, "requires torch")
 class RunAfterTests(unittest.TestCase):
-    def draft_graphs(self, **kwargs):
+    def draft_graphs(self, pictures=None, **kwargs):
         from engine.profiles.qwen38 import decode_graphs
         net = SimpleNamespace(F=SimpleNamespace(block=16, spec_k=3, hc=1, hidden=2),
                               comm=SimpleNamespace(graph_capture_safe=True), lanes=SimpleNamespace(graph_resources=None))
+        if pictures is not None:                    # a net that serves pictures (#1274): seq -> (layout, delta, last row)
+            net.serves_pictures, net.pictures = True, pictures
         caches = SimpleNamespace(pool=SimpleNamespace(tokens=[64, 64]), slots=SimpleNamespace(owner=[-1, -1, -1]),
                                  block_table=torch.zeros(2, 8, dtype=torch.int32), device=torch.device("cpu"),
                                  reset=lambda: None, prepare=lambda step: None)
@@ -265,6 +269,43 @@ class RunAfterTests(unittest.TestCase):
         self.assertEqual(host[8], [[0.5, 0.5], [5, 5], [0.75, 0.75], [[0.25, 0.5, 0.75]] * 2])
         self.assertEqual(ahead[8], [[0.0, 0.0], [0, 0], [1.0, 1.0], [[0.0, 0.0, 0.0]] * 2])
         self.assertEqual(ahead[1:8], host[1:8])
+
+    def test_a_row_with_a_picture_is_fed_its_delta(self):
+        """A net that serves pictures (#1274): the draft graph turns each row at its sequence's mRoPE delta, a metadata
+        row run_after writes as `run` does -- not the one the shape's last replay left there."""
+        g = self.draft_graphs(pictures={0: (None, 7, 3)})                   # sequence 0's prompt held a picture
+        streams = torch.arange(16, dtype=torch.float32).view(8, 2).to(torch.bfloat16)
+        g.run([(1, 2, 20, [21, 22], streams[4:6]), (0, 1, 10, [11, 12, 13, 14], streams[0:4])])
+        g.run_after([(0, 1, 10), (1, 2, 20)], torch.tensor([[11, 12, 13, 14], [21, 22, 23, 24]]), streams,
+                    torch.tensor([4, 2]), width=4)
+        g.run([(0, 1, 10, [11, 12, 13, 14], streams[0:4]), (1, 2, 20, [21, 22], streams[4:6])])
+        swapped, ahead, host = g.graphs.seen
+        self.assertEqual(swapped[0], ahead[0])                              # the same shape, replayed in turn
+        self.assertEqual(swapped[9], [0, 7])
+        self.assertEqual(ahead[9], [7, 0])
+        self.assertEqual(ahead[1:], host[1:])
+
+    def test_a_row_near_its_picture_keeps_the_synchronous_step(self):
+        """ServedComposition.replay under pictures (#1274): a row whose group-first members reach back to its last
+        picture row runs eagerly, as `forward` runs it, so replay declines before anything runs; past that, and for a
+        text-only row, the graph replays."""
+        from engine.base.composition import Step
+        from engine.profiles.qwen38.adapter import ServedComposition
+        replayed = []
+
+        def replay(served, known=None):
+            replayed.append([(s.seq, s.ctx) for s in served.segments])
+            return None, None, None, 1, None
+        net = SimpleNamespace(pictures={0: (None, 7, 30)}, F=SimpleNamespace(idx_ratio=4))
+        comp = ServedComposition(net, SimpleNamespace(pool=None))
+        comp.graphs = SimpleNamespace(admits=lambda served, pool: True, replay=replay)
+        store = SimpleNamespace(check=lambda s: None, commit=lambda s: None, slot_of={0: 1, 1: 2})
+        step = lambda *rows: Step.of([(seq, ctx, torch.tensor([5], dtype=torch.int64)) for seq, ctx in rows])
+        self.assertIsNone(comp.replay(step((0, 33), (1, 40)), store))       # 33 - (4 - 1) reaches row 30
+        self.assertEqual(replayed, [])
+        self.assertIsNotNone(comp.replay(step((0, 34), (1, 40)), store))
+        self.assertIsNotNone(comp.replay(step((1, 12),), store))
+        self.assertEqual(replayed, [[(0, 34), (1, 40)], [(1, 12)]])
 
     def test_every_row_holds_the_widest_observation(self):
         g = self.draft_graphs()

@@ -420,7 +420,9 @@ class DraftGraphs(_Rows):
         meta = self._meta
         for i, (seq, slot, ctx) in enumerate(rows):
             meta[i], meta[n + i], meta[2 * n + i] = ctx, seq, slot
-        host_meta = self._meta_host[:3 * n].view(3, n)
+            if self.pictures is not None:
+                meta[3 * n + i] = self.delta(seq)
+        host_meta = self._meta_host[:(3 + self._meta_rows) * n].view(3 + self._meta_rows, n)
         dev = ids.device
         at = torch.minimum(iota(t, dev)[None, :], fed[:, None] - 1)     # [n, t]: the kept position each reads, the last again
         flat = (iota(n, dev)[:, None] * width + at).reshape(-1)
@@ -428,7 +430,10 @@ class DraftGraphs(_Rows):
 
         def fill(inputs):
             step, given_in, last, counts, sampler = inputs
-            self.metadata[shape][:3].copy_(host_meta, non_blocking=True)
+            self.metadata[shape][:3].copy_(host_meta[:3], non_blocking=True)
+            if self.pictures is not None:
+                # the rows' mRoPE deltas (`run`'s metadata row past last and counts, which come from the device here)
+                self.metadata[shape][5].copy_(host_meta[3], non_blocking=True)
             if dev.type == "cuda":
                 landed["event"] = torch.cuda.Event()
                 landed["event"].record()
