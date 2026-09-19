@@ -249,6 +249,12 @@ def main():
         from probes.engine_qwen38_leave import run as qwen38_leave
         qwen38_leave(args.output)
         return
+    if args.lanes == 'direct_producer_timing':
+        # the GPU side of a dense projection's packets: GEMM then the packet grid's copy, against the GEMM writing its
+        # reserved TX slot (GLM's #826), at GLM's direct shapes, peers landed ahead -- carry X2's gate for Qwen3.8
+        from probes.engine_direct_producer_timing import run as direct_producer_timing
+        direct_producer_timing(args.output)
+        return
     if args.lanes == 'qwen38_rank_packets':
         # the one-shot oracle's four ranks: the leave folding the ranks' packets against the consumer's sum and the
         # leave after it, byte for byte, eager and replayed, then the GPU side of both with peers landed ahead (H5).

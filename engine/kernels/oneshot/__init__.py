@@ -350,6 +350,22 @@ class OneShot:
             raise ValueError('MoE packets need matching FP32/BF16 [1..32,4096] on live TP4')
         return self._packet(shared, lambda: self.ext.moe_packets(routed, shared))
 
+    def exchange_moe_gated(self, routed, shared, gate):
+        """Qwen3.8's decode MoE output finalized inside the packet grid (carry X2): BF16(routed + shared * gate), the
+        product and the sum each rounded as engine/kernels/moe_output.gated_sum rounds them, written straight into the
+        TX slot the local descriptor names -- no finalizer launch, no BF16 output tensor. `routed`, `shared` BF16
+        [rows, hidden], `gate` FP32 one a row. The next same-stream leave consumes it before another exchange."""
+        self.assert_consumed()
+        import torch
+        if (self.closed or not self.eligible(shared) or shared.ndim != 2 or shared.shape[1] != self.hidden
+                or shared.shape[0] > PACKET_ROWS or routed.dtype != torch.bfloat16 or routed.shape != shared.shape
+                or routed.device != shared.device or not routed.is_contiguous() or routed.data_ptr() % 16
+                or gate.dtype != torch.float32 or gate.device != shared.device or not gate.is_contiguous()
+                or gate.numel() != shared.shape[0]):
+            raise ValueError(f'gated MoE packets need BF16 routed and shared [1..{PACKET_ROWS},{self.hidden}] and an '
+                             f'FP32 gate a row on live TP{self.world}')
+        return self._packet(shared, lambda: self.ext.moe_gated_packets(routed, shared, gate))
+
     @staticmethod
     def eligible_max(t):
         return (t.is_cuda and t.dtype == torch.int64 and t.is_contiguous()

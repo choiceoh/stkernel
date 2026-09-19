@@ -146,6 +146,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("staged_copy", &launch_staged_copy, pybind11::arg("src"), pybind11::arg("dst"), pybind11::arg("cycles"),
         pybind11::arg("stamps") = pybind11::none());
   m.def("moe_packets", &py_moe_packets);
+  m.def("moe_gated_packets", &py_moe_gated_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);
   m.def("oneshot_gather_int64", &py_oneshot_gather_int64);
   m.def("consume", [](at::Tensor addresses, at::Tensor out) {

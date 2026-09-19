@@ -282,12 +282,16 @@ __host__ __device__ constexpr int64_t osar_max_int64(int64_t a, int64_t b,
 
 template <bool CONSUMER_PDL, bool COMPACT = false, bool WRAP_SAFE = false,
           bool MAX_INT64 = false, bool PACKETS = false, bool GATHER_INT64 = false,
-          bool MOE_OUTPUT = false>
+          bool MOE_OUTPUT = false, bool MOE_GATED = false>
 __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
                                               bf16 *dst, int n, int nbytes,
                                               const HintArgs h, int rank,
-                                              const float *routed = nullptr) {
+                                              const float *routed = nullptr,
+                                              const bf16 *gated_routed = nullptr,
+                                              const float *gate = nullptr,
+                                              int width = 0) {
   static_assert(!MOE_OUTPUT || (PACKETS && !MAX_INT64 && !GATHER_INT64));
+  static_assert(!MOE_GATED || (PACKETS && !MOE_OUTPUT && !MAX_INT64 && !GATHER_INT64));
   // In a PDL chain this collective is also a consumer. Neither the input
   // nor the protocol's previous sequence may be read before its predecessor
   // has completed. No forward progress relies on concurrent residency.
@@ -375,6 +379,20 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
       }
       val = shared.vector;
     }
+    if constexpr (MOE_GATED) {
+      // Qwen3.8's MoE output, BF16(FP32(routed) + FP32(shared) * gate[row]): the product and the sum each rounded,
+      // as engine/kernels/moe_output.gated_sum computes it (no fused multiply-add). width % 8 == 0, so a 16B lane
+      // never spans two rows.
+      union { uint4 vector; bf16 values[8]; } shared, part;
+      shared.vector = val;
+      part.vector = __ldg(reinterpret_cast<const uint4 *>(gated_routed) + v);
+      const float g = __ldg(gate + (v << 3) / width);
+#pragma unroll
+      for (int j = 0; j < 8; ++j)
+        shared.values[j] = __float2bfloat16_rn(__fadd_rn(__bfloat162float(part.values[j]),
+                                                         __fmul_rn(__bfloat162float(shared.values[j]), g)));
+      val = shared.vector;
+    }
     __stwt(&tx4[v], val);
     mine[k] = val;
   }
@@ -383,6 +401,9 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
     if constexpr (MOE_OUTPUT) {
       const float a = __bfloat162float(__float2bfloat16_rn(routed[i]));
       c->tx[slot][i] = __float2bfloat16_rn(__fadd_rn(a, __bfloat162float(src[i])));
+    } else if constexpr (MOE_GATED) {
+      c->tx[slot][i] = __float2bfloat16_rn(__fadd_rn(__bfloat162float(gated_routed[i]),
+                                                     __fmul_rn(__bfloat162float(src[i]), gate[i / width])));
     } else {
       c->tx[slot][i] = src[i];
     }
@@ -496,7 +517,7 @@ __device__ __forceinline__ void k_oneshot_impl(Ctrl *c, const bf16 *src,
       auto **addresses = reinterpret_cast<const bf16 **>(dst);
       int peer = 0;
       for (int r = 0; r < 4; ++r)
-        addresses[r] = r == rank ? (MOE_OUTPUT ? c->tx[slot] : src) : c->rx[slot][peer++];
+        addresses[r] = r == rank ? (MOE_OUTPUT || MOE_GATED ? c->tx[slot] : src) : c->rx[slot][peer++];
     }
     return;
   }
@@ -590,6 +611,15 @@ __global__ void k_oneshot_moe_packets(Ctrl *c, const float *routed,
   const HintArgs hints{};
   k_oneshot_impl<true, false, true, false, true, false, true>(
       c, shared, addresses, n, n * 2, hints, rank, routed);
+}
+
+// Qwen3.8's MoE output finalized into TX by the packet grid (carry X2): `shared` rides the copy phase's source slot.
+__global__ void k_oneshot_moe_gated_packets(Ctrl *c, const bf16 *routed, const bf16 *shared,
+                                          const float *gate, bf16 *addresses, int n, int width,
+                                          int rank) {
+  const HintArgs hints{};
+  k_oneshot_impl<true, false, true, false, true, false, false, true>(
+      c, shared, addresses, n, n * 2, hints, rank, nullptr, routed, gate, width);
 }
 
 __global__ void k_oneshot_max_int64(Ctrl *c, const bf16 *src, bf16 *dst, int n,
@@ -1211,6 +1241,39 @@ static at::Tensor py_moe_packets(at::Tensor routed, at::Tensor shared) {
   return addresses;
 }
 
+// Qwen3.8's decode MoE output into the packet grid: BF16 routed and shared [1..64, width] rows of the bound width
+// (OneShot.exchange_moe_gated checks it), an FP32 gate a row. The local descriptor names TX; no BF16 output survives.
+static at::Tensor py_moe_gated_packets(at::Tensor routed, at::Tensor shared, at::Tensor gate) {
+  TORCH_CHECK(g_started && shared.is_cuda() && shared.scalar_type() == at::kBFloat16 && shared.is_contiguous() &&
+              shared.dim() == 2 && shared.size(1) > 0 && shared.size(1) % 8 == 0 && shared.size(0) > 0 &&
+              shared.size(0) <= 64 && shared.numel() <= MAXEL &&
+              (reinterpret_cast<uintptr_t>(shared.data_ptr()) & 15) == 0,
+              "gated MoE packets require a live TP4 transport and aligned BF16 [1..64, 8k] shared rows");
+  TORCH_CHECK(routed.is_cuda() && routed.scalar_type() == at::kBFloat16 && routed.device() == shared.device() &&
+              routed.sizes() == shared.sizes() && routed.is_contiguous() &&
+              (reinterpret_cast<uintptr_t>(routed.data_ptr()) & 15) == 0 &&
+              gate.is_cuda() && gate.scalar_type() == at::kFloat && gate.device() == shared.device() &&
+              gate.is_contiguous() && gate.numel() == shared.size(0),
+              "gated MoE packets require matching aligned BF16 routed rows and one FP32 gate a row");
+  auto addresses = torch::empty({4}, shared.options().dtype(at::kLong));
+  cudaLaunchConfig_t cfg{};
+  cfg.gridDim = dim3(ARGRID);
+  cfg.blockDim = dim3(ARTHREADS);
+  cfg.stream = c10::cuda::getCurrentCUDAStream();
+  cudaLaunchAttribute attr{};
+  attr.id = cudaLaunchAttributeProgrammaticStreamSerialization;
+  attr.val.programmaticStreamSerializationAllowed = 1;
+  cfg.attrs = &attr;
+  cfg.numAttrs = 1;
+  g_device_used = true;
+  auto err = cudaLaunchKernelEx(&cfg, k_oneshot_moe_gated_packets,
+      g_ctrl, reinterpret_cast<const bf16 *>(routed.data_ptr()), reinterpret_cast<const bf16 *>(shared.data_ptr()),
+      gate.data_ptr<float>(), reinterpret_cast<bf16 *>(addresses.data_ptr()), int(shared.numel()),
+      int(shared.size(1)), g_rank);
+  TORCH_CHECK(err == cudaSuccess, "one-shot gated MoE packet launch: ", cudaGetErrorString(err));
+  return addresses;
+}
+
 static at::Tensor py_publish_packets(at::Tensor input, at::Tensor reservation) {
   check_producer_template(input);
   TORCH_CHECK(reservation.device() == input.device() && reservation.scalar_type() == at::kLong &&
@@ -1300,6 +1363,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("oneshot_ar_consumer", &py_oneshot_consumer);
   m.def("oneshot_packets", &py_oneshot_packets);
   m.def("moe_packets", &py_moe_packets);
+  m.def("moe_gated_packets", &py_moe_gated_packets);
   m.def("reserve_packets", &py_reserve_packets);
   m.def("publish_packets", &py_publish_packets);
   m.def("oneshot_max_int64", &py_oneshot_max_int64);

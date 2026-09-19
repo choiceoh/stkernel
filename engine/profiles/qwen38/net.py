@@ -832,18 +832,29 @@ class Qwen38Net:
         """A layer's experts: the routed ones and the shared one, summed under the shared gate and reduced over the
         ranks. With `shared_overlap` a captured step's shared expert is forked around the router and the routed experts
         -- which launch no dense GEMM, whose scratch the fork owns until the join (SharedOverlap's rule)."""
-        lanes = self.lanes
         if not Qwen38Net._forks(self, x, compact):
             routed, gate = Qwen38Net._routed(self, prefix, x, compact=compact)
             shared = Qwen38Net._shared(self, prefix, x)
-            return Qwen38Net._sum(self, lanes.moe_finish(routed, shared, gate))
+            return Qwen38Net._finish(self, routed, shared, gate)
         if getattr(self, "_overlap", None) is None:
             from engine.kernels.dense.shared_mlp import SharedOverlap
             self._overlap = SharedOverlap(x.device)
-        out = self._overlap(lambda rows: Qwen38Net._shared(self, prefix, rows), x,
-                            lambda join: join(Qwen38Net._routed(self, prefix, x, compact=compact)),
-                            finish=lambda parts, shared: lanes.moe_finish(parts[0], shared, parts[1]))
-        return Qwen38Net._sum(self, out)
+        return self._overlap(lambda rows: Qwen38Net._shared(self, prefix, rows), x,
+                             lambda join: join(Qwen38Net._routed(self, prefix, x, compact=compact)),
+                             finish=lambda parts, shared: Qwen38Net._finish(self, parts[0], shared, parts[1]))
+
+    def _finish(self, routed, shared, gate):
+        """A MoE layer's output, summed over the ranks for the leave after it: the gated sum then the TP sum, or -- in a
+        step whose sums go out as packets (`_direct`) on a transport that finalizes MoE packets (carry X2) -- the gated
+        sum computed by the packet grid straight into its TX slot, the finalizer's launch and its tensor gone."""
+        transport = getattr(self.comm, "transport", None) if getattr(self, "_direct", False) else None
+        if transport is not None and hasattr(transport, "exchange_moe_gated"):
+            from engine.kernels.oneshot import PACKET_ROWS
+            rows = shared.shape[0]
+            if (shared.ndim == 2 and rows <= PACKET_ROWS and shared.shape[1] == self.F.hidden
+                    and shared.shape == routed.shape and transport.eligible(shared)):
+                return transport.exchange_moe_gated(routed.contiguous(), shared, gate.reshape(rows).contiguous())
+        return Qwen38Net._sum(self, self.lanes.moe_finish(routed, shared, gate))
 
     def _packets_live(self) -> bool:
         """Whether this net's sums may go out as rank packets: `rank_packets`, leaves that fold them (Lanes.packets) and
