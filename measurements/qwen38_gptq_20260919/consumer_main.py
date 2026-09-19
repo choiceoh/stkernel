@@ -37,12 +37,17 @@ def owned():
 
 
 def main():
+    global OWNER
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--tree', type=Path, required=True)
     p.add_argument('--sha', required=True)
     p.add_argument('--helpers', type=Path, required=True)
+    p.add_argument('--session', default=OWNER.removeprefix('queue/'))
+    p.add_argument('--standalone', action='store_true')
+    p.add_argument('--suffix', default='')
     args = p.parse_args()
-    out = BASE / ('main-' + args.sha[:12])
+    OWNER = 'queue/' + args.session
+    out = BASE / ('main-' + args.sha[:12] + args.suffix)
     out.mkdir(exist_ok=False)
     env = dict(os.environ, ST_LEASE_OWNER=OWNER, ST_WINDOW_PARENT='1', FLEET_SESSION=OWNER.removeprefix('queue/'),
                PORT='8001', GLM53_API_PORT='8001', BENCH_MODEL='qwen3.8-flash-next', SPEC_K='3', ST_SPEC_K='3',
@@ -102,7 +107,8 @@ def main():
                 ['git', 'rev-parse', 'HEAD'], cwd=args.helpers, text=True).strip(),
             helper_files={n: hashlib.sha256((helper / n).read_bytes()).hexdigest()
                           for n in ('consumer_main.py', 'run_main_onepass.py', 'audit_main.py')}), indent=2) + '\n')
-        (BASE / 'latest-origin-handoff/consumer-controller-started.json').write_text(json.dumps(dict(pid=os.getpid(), out=str(out))))
+        if not args.standalone:
+            (BASE / 'latest-origin-handoff/consumer-controller-started.json').write_text(json.dumps(dict(pid=os.getpid(), out=str(out))))
         report('waiting_for_projection_scores')
         for rank in range(4):
             node(rank, f'mkdir -p {out}/tools/probes')
@@ -112,29 +118,35 @@ def main():
                     dest.write_bytes(source.read_bytes())
                 else:
                     subprocess.run(['scp', '-q', str(source), f'choiceoh@{NODES[rank]}:{dest}'], check=True)
-        deadline = time.monotonic() + 1500
-        while True:
-            owned()
-            if (BASE / 'latest-origin-handoff/paused.json').exists() and all(
-                    node(r, f'test -s {OLD}/projection-rank{r}.json', check=False).returncode == 0 for r in range(4)):
-                break
-            if time.monotonic() > deadline:
-                raise TimeoutError('projection scores did not complete')
-            time.sleep(2)
+        if not args.standalone:
+            deadline = time.monotonic() + 1500
+            while True:
+                owned()
+                if (BASE / 'latest-origin-handoff/paused.json').exists() and all(
+                        node(r, f'test -s {OLD}/projection-rank{r}.json', check=False).returncode == 0 for r in range(4)):
+                    break
+                if time.monotonic() > deadline:
+                    raise TimeoutError('projection scores did not complete')
+                time.sleep(2)
         for rank in range(1, 4):
             for name in (f'projection-rank{rank}.json', f'B330pack-audit-rank{rank}.json', f'B330pack-boot-rank{rank}.json'):
                 subprocess.run(['scp', '-q', f'choiceoh@{NODES[rank]}:{OLD}/{name}', str(OLD / name)], check=True)
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            list(pool.map(lambda r: audit_rank(r, 'evaluated', '/cache/qwen38-gptq-330k-20260919/fit330', snapshot=True), range(4)))
-        os.kill(266443, signal.SIGTERM)
-        os.kill(266443, signal.SIGCONT)
-        while Path('/proc/266443/cmdline').exists() and Path('/proc/266443/cmdline').read_bytes():
-            owned()
-            time.sleep(1)
+        if args.standalone:
+            previous = BASE / ('main-' + args.sha[:12])
+            for rank in range(4):
+                node(rank, f'cp {previous}/evaluated-audit-rank{rank}.json {out}/evaluated-audit-rank{rank}.json')
+        else:
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                list(pool.map(lambda r: audit_rank(r, 'evaluated', '/cache/qwen38-gptq-330k-20260919/fit330', snapshot=True), range(4)))
+            os.kill(266443, signal.SIGTERM)
+            os.kill(266443, signal.SIGCONT)
+            while Path('/proc/266443/cmdline').exists() and Path('/proc/266443/cmdline').read_bytes():
+                owned()
+                time.sleep(1)
         report('switching_to_latest_main')
         for rank in range(4):
             for cache in (FIT, RTN):
-                node(rank, f'mkdir -p {cache}/cu132; mountpoint -q {cache}/cu132 || sudo -n mount --bind /home/choiceoh/glm53-cache/cu132 {cache}/cu132')
+                node(rank, f'sudo -n install -d -m 755 {cache}/cu132; mountpoint -q {cache}/cu132 || sudo -n mount --bind /home/choiceoh/glm53-cache/cu132 {cache}/cu132')
         first_images = first_runtime = None
         for label, cache in (('A1', RTN), ('B330', FIT), ('A2', RTN)):
             env.update(CACHE_DIR=cache, ST_TIER_DIR=str(out / ('tier-' + label)))
@@ -202,11 +214,18 @@ def main():
                 for cache in (FIT, RTN):
                     node(rank, f'mountpoint -q {cache}/cu132 && sudo -n umount {cache}/cu132', check=False)
         finally:
-            for pid, sig in ((266443, signal.SIGTERM), (266443, signal.SIGCONT), (241445, signal.SIGCONT)):
+            if args.standalone:
                 try:
-                    os.kill(pid, sig)
-                except ProcessLookupError:
+                    owned()
+                    (Path('/home/choiceoh/glm53-logs/st-bracket') / args.session / 'stop').touch()
+                except (OSError, AssertionError):
                     pass
+            else:
+                for pid, sig in ((266443, signal.SIGTERM), (266443, signal.SIGCONT), (241445, signal.SIGCONT)):
+                    try:
+                        os.kill(pid, sig)
+                    except ProcessLookupError:
+                        pass
 
 
 if __name__ == '__main__':
