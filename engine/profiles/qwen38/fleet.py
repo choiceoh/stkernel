@@ -174,7 +174,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
           mtp_tuned_dir: "str | None" = None, draft_ahead: bool = False, draft_candidates: int = 0,
-          vision: str = "auto", self_calibrate: bool = True, pack_root: str = "/cache"):
+          vision: str = "auto", self_calibrate: bool = True, pack_root: str = "/cache",
+          calibration_rows: "int | None" = None):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background of `door_host_half`) is joined in its own row before the capture: the capture is Python
     dispatch, and a host thread still running there would take the GIL from it. Its grammar compiler is bound to the
@@ -194,6 +195,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     from engine.profiles.qwen38.net import Qwen38Net
     from engine.profiles.qwen38 import calibration as calibrate
 
+    calibration_rows = calibrate.rows_target(calibration_rows)
     F = facts.load(ckpt_meta)
     if spec_k is not None and spec_k != F.spec_k:
         if spec_k < 1:
@@ -261,6 +263,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     store = PackStore(pack_root, comm.rank, weights_id=weights_id, require_identity=True)
     recorder.gauge("dense_pack_root", str(store.root))
     recorder.gauge("calibration_weights_id", weights_id)
+    recorder.gauge("calibration_row_target", calibration_rows)
     calib_plan, calib_bytes, deferred = calibrate.plan(net, specs, store) if self_calibrate else ([], 0, [])
     arena_bytes += calib_bytes
     store.release_pages()
@@ -329,7 +332,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             from engine.kernels.router_fp32 import build as build_router
             build_router()
             calibration = calibrate.attach(net, calib_plan, arena,
-                                           max_decode_rows=max(32, max_seqs * (F.spec_k + 1)))
+                                           max_decode_rows=max(32, max_seqs * (F.spec_k + 1)),
+                                           row_target=calibration_rows)
         if side:
             with recorder.phase("mtp experts"):
                 # D3: the side-file experts' kernel held to its torch form before a draft reads it
@@ -801,6 +805,8 @@ def main(argv=None) -> int:
                     help="skip collecting missing target GPTQ Hessians (up to 8 GiB); existing matching blobs still pack")
     ap.add_argument("--pack-root", default="/cache",
                     help="Qwen calibration and dense packs; use a separate directory for a calibration comparison")
+    ap.add_argument("--calibration-rows", type=int, default=None,
+                    help="temporary GPTQ size experiment (expires 2026-09-26); default 131072, fresh stores only")
     ap.add_argument("--vision", choices=("auto", "on", "off"), default="auto",
                     help="pictures: auto serves them when every rank has vision.safetensors next to its rank file, on "
                          "requires it, off serves text only (module docstring)")
@@ -876,6 +882,7 @@ def main(argv=None) -> int:
                                               narrow_rows=a.narrow_rows,
                                               mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
                                               vision=a.vision, self_calibrate=not a.no_self_calibrate, pack_root=a.pack_root,
+                                              calibration_rows=a.calibration_rows,
                                               draft_candidates=a.draft_candidates,
                                               draft_ahead=a.draft_ahead)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:

@@ -84,6 +84,7 @@ def score(args):
             held = torch.load(held_path, map_location="cpu", mmap=True, weights_only=True)
             if held["weights_id"] != report["weights_id"] or int(held["ntok"]) < 4096:
                 raise ValueError("held-out statistics have the wrong model identity or too few rows")
+            held_sha = hashlib.sha256(held["H"].contiguous().numpy()).hexdigest()
             h = held["H"].to(args.device)
             weight = weight.to(args.device)
             for kind in (("fp8",) if name == HEAD_NAME else ("w4", "fp8")):
@@ -106,6 +107,8 @@ def score(args):
                     values[arm] = output_error(weight, dequant[:weight.shape[0], :weight.shape[1]], h)
                     del dequant
                 rows.append(dict(name=name, key=row["key"], lane=kind, heldout_rows=int(held["ntok"]),
+                                 heldout_hessian_sha256=held_sha, fit_rows=row["ntok"],
+                                 fit_hessian_sha256=row["hessian_sha256"],
                                  **values))
             print(json.dumps(dict(done=len(rows), site=row["key"])), flush=True)
     summary = {}

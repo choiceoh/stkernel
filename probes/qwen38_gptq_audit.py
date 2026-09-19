@@ -47,6 +47,8 @@ def audit(args):
     torch.set_num_threads(2)
     boot = json.loads(args.boot.read_bytes())
     seen = counters(boot["root"])
+    if args.expect_row_target is not None and seen.get("calibration_row_target") != args.expect_row_target:
+        raise ValueError("collector row target differs from the declared experiment")
     weights_id = seen["calibration_weights_id"]
     if seen["dense_pack_root"] != str(args.root):
         raise ValueError("audit root differs from the boot's declared pack store")
@@ -103,6 +105,7 @@ def audit(args):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--expect-row-target", type=int, default=None)
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--rank", type=int, choices=range(4), required=True)
     ap.add_argument("--ckpt", type=Path, required=True)

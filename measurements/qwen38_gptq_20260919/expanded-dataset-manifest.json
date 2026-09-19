@@ -1,0 +1,59 @@
+{
+  "version": 2,
+  "scope": "Extend the frozen Qwen fit with unused real inputs from its original training sessions.\n\nRead only the original transcript byte prefixes, verified against their saved\ndigests. Preserve every existing split byte and training prefix. Reconstruct and\nsanitize additional windows with the original extractor; never read a held-out\nsession, repeat a selected prompt, or move an evaluation group into training.\nPrivate input text and row-level provenance stay outside Git and stdout.\n",
+  "source_sha256": {
+    "conversations": "962b245efd178ff250b2bf69dff76d33e45e8041c8d076d03b415dcf0cc26af6",
+    "workloads": "c62a1f19ffb8a677585886f1234446f19731361f48f243644e41b5d7589de264"
+  },
+  "template_sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+  "tokenizer_sha256": "0997f410c57a1f4e53b09e4be8f4a172d90edd9564368fb0847030937229b9f3",
+  "script_sha256": "9694db2ff1ef3ba739a4b833c3149035416eb18c818c2951df45fa2ad2783532",
+  "chat_template_kwargs": {
+    "enable_thinking": true
+  },
+  "max_prompt_tokens": 8192,
+  "counts": {
+    "train/background": 6,
+    "train/conversation": 223,
+    "train/mail": 64,
+    "train/notification": 64,
+    "validation/conversation": 40,
+    "validation/mail": 16,
+    "validation/notification": 16,
+    "test/conversation": 37,
+    "test/mail": 16,
+    "test/notification": 16
+  },
+  "prompt_tokens": {
+    "train": 330234,
+    "validation": 55441,
+    "test": 50512
+  },
+  "excluded": {},
+  "splits_sha256": {
+    "train": "31cf4e428dd5d6fa752288f2dfc960c11858a91521ce2c7c01630ac59a3543a9",
+    "validation": "8151d8f4229a865751386d5db8c0e79d5598bf7a6449629919d74a3656a134fb",
+    "test": "b713ced48029ce19040b97c85abda23220d26015d0c1821f856e9dcb84fab000"
+  },
+  "source_groups_disjoint": true,
+  "exact_messages_disjoint": true,
+  "exact_tokens_disjoint": true,
+  "generated_labels": false,
+  "base_manifest_sha256": "bcefe35aa53e02675dbdefc496e812b60e21b3eceb722a0f6f14f63e5c3376c3",
+  "expansion": {
+    "target_tokens": 330000,
+    "added_prompts": 63,
+    "added_tokens": 89744,
+    "source_sessions": 22,
+    "added_session_groups": 5,
+    "candidates": 647,
+    "counters": {
+      "already_selected_or_duplicate": 160
+    },
+    "original_train_prefix_preserved": true,
+    "evaluation_bytes_preserved": true,
+    "original_snapshot_prefixes_verified": true,
+    "added_category": "conversation",
+    "sample_order": "original train prefix, then new windows round-robin by session"
+  }
+}

@@ -4,7 +4,8 @@
 # on srv2; no private prompts or responses are written into this checkout.
 set -euo pipefail
 MODE=${1:-collect}
-case "$MODE" in collect|compare|serve) ;; *) echo 'usage: collect_window.sh collect|compare|serve' >&2; exit 2;; esac
+case "$MODE" in collect|compare|serve|expanded) ;; *) echo 'usage: collect_window.sh collect|compare|serve|expanded' >&2; exit 2;; esac
+case "${2:-}" in ''|--preflight) ;; *) echo 'only optional second argument is --preflight' >&2; exit 2;; esac
 TREE=$(cd "$(dirname "$0")/../.." && pwd)
 OWNER=session/q38gptq-0919
 LOCK=/home/choiceoh/glm53-logs/st-fleet.lock
@@ -16,12 +17,37 @@ PRIVATE=/home/choiceoh/st-calibration-private/qwen38-gptq-20260919
 PACK=/cache/qwen38-gptq-20260919
 export PORT=8001 ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-4436
 export ST_IMAGE=st-engine:qwen38-gptq-4436 ST_TAP_MTP_INPUTS=0
+if [ "$MODE" = expanded ]; then
+  OUT=/home/choiceoh/glm53-logs/qwen38-gptq-330k-20260919
+  PRIVATE=/home/choiceoh/st-calibration-private/qwen38-gptq-330k-20260919
+  PACK=/cache/qwen38-gptq-330k-20260919
+  export ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-330k-4436
+  export ST_IMAGE=st-engine:qwen38-gptq-330k-4436
+fi
 export ST_SPEC_K=3 ST_HC_FP8=0 ST_MTP_PRECISION=bf16 ST_MTP_EXPERTS=bf16
 export ST_SHARED_OVERLAP=one ST_DRAFT_CANDIDATES=0 ST_DRAFT_THRESHOLD=0.1
 unset ST_MTP_TUNED ST_DRAFT_INDEX
 URL=http://127.0.0.1:$PORT
 NODES=(10.10.10.2 10.10.10.1 10.10.10.3 10.10.10.4)
 cd "$TREE"
+if [ "$MODE" = expanded ]; then
+  python3 - "$PRIVATE" <<'PY'
+import json, pathlib, sys
+from probes.qwen38_gptq_feed import load_split
+root = pathlib.Path(sys.argv[1])
+raw = (root / 'manifest.json').read_bytes()
+assert raw == pathlib.Path('measurements/qwen38_gptq_20260919/expanded-dataset-manifest.json').read_bytes(), 'private manifest changed'
+m = json.loads(raw)
+assert m['version'] == 2 and m['expansion']['evaluation_bytes_preserved']
+assert m['expansion']['original_snapshot_prefixes_verified']
+for split, expected in [('train', 330234), ('validation', 55441), ('test', 50512)]:
+    rows = load_split(root / (split + '.jsonl'), m)
+    assert sum(r['prompt_tokens'] for r in rows) == expected == m['prompt_tokens'][split]
+for label in ('fit131', 'fit240', 'fit330', 'validation', 'heldout'):
+    assert not (root / (label + '-collection')).exists(), 'collection evidence must not be overwritten'
+print('expanded private input hashes and token counts verified', flush=True)
+PY
+fi
 # Load real CPU dependencies before requesting any fleet downtime. --help exits
 # before these imports and the mocked request tests cannot detect missing files.
 if [ "$MODE" != collect ]; then
@@ -31,6 +57,10 @@ for filename in ('korean-corruption.py', 'check-quality.py', 'onepass_metrics.py
     onepass._load(filename, 'gptq_preflight_' + filename.replace('-', '_').replace('.', '_'))
 print('canonical onepass CPU dependencies loaded', flush=True)
 PY
+fi
+if [ "${2:-}" = --preflight ]; then
+  echo 'CPU preflight complete; no fleet lease or serving state changed'
+  exit 0
 fi
 mkdir -p "$OUT"
 lease() { python3 engine/base/fleet_lease.py "$@" --path "$LOCK"; }
@@ -64,7 +94,9 @@ if queue.is_file() and queue.read_text().strip():
     raise SystemExit('canonical fleet tickets already wait; do not pass them')
 PY
 kind=$(lease kind)
-if [ "$MODE" = collect ]; then
+if [ "$MODE" = expanded ]; then
+  estimate=180; note='Qwen GPTQ size comparison: 131K/240K/330K, fixed validation and canonical consumer controls'
+elif [ "$MODE" = collect ]; then
   estimate=50; note='Qwen real-input GPTQ collection: separate fit and held-out statistics'
 else
   estimate=90; note='Qwen GPTQ repack and held-out error, then RTN/GPTQ/RTN canonical onepass'
@@ -96,13 +128,21 @@ git rev-parse HEAD > "$OUT/$MODE-source.sha"
 git status --porcelain > "$OUT/$MODE-source-status.txt"
 [ ! -s "$OUT/$MODE-source-status.txt" ] || { echo 'the source snapshot is dirty' >&2; exit 5; }
 for ip in "${NODES[@]}"; do
-  node "$ip" "install -d -m 700 /home/choiceoh/glm53-cache/qwen38-gptq-20260919; mkdir -p '$OUT'"
+  host_pack=/home/choiceoh/glm53-cache/${PACK#/cache/}
+  node "$ip" "install -d -m 700 '$host_pack'; mkdir -p '$OUT'"
+  if [ "$MODE" = expanded ]; then
+    node "$ip" "test ! -e '$host_pack/fit131/mkcalib' && test ! -e '$host_pack/fit240/mkcalib' && test ! -e '$host_pack/fit330/mkcalib' && test ! -e '$host_pack/validation/mkcalib' && test ! -e '$host_pack/heldout/mkcalib'"
+  fi
   if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_audit.py "$OUT/audit-$MODE.py";
   else scp -q probes/qwen38_gptq_audit.py "choiceoh@$ip:$OUT/audit-$MODE.py"; fi
   if [ "$MODE" != collect ]; then
     node "$ip" "mkdir -p '$OUT/tools/probes'; touch '$OUT/tools/probes/__init__.py'"
     if [ "$ip" = 10.10.10.2 ]; then cp probes/qwen38_gptq_{score,feed}.py "$OUT/tools/probes/";
     else scp -q probes/qwen38_gptq_{score,feed}.py "choiceoh@$ip:$OUT/tools/probes/"; fi
+    if [ "$MODE" = expanded ]; then
+      if [ "$ip" = 10.10.10.2 ]; then cp tests/test_engine_qwen38_precision_port.py "$OUT/tools/gptq_precision_test.py";
+      else scp -q tests/test_engine_qwen38_precision_port.py "choiceoh@$ip:$OUT/tools/gptq_precision_test.py"; fi
+    fi
   fi
 done
 
@@ -130,24 +170,45 @@ receipts() {
     ip=${NODES[$r]}
     node "$ip" "mkdir -p '$OUT'; cp /home/choiceoh/glm53-logs/st-qwen38-dumps/boot-rank$r.json '$OUT/$label-boot-rank$r.json'"
     node "$ip" "docker inspect --format '{{.Image}}' st-qwen38" > "$OUT/$label-image-rank$r.txt"
+    if [ "$MODE" = expanded ] && [ "$label" = fit131 ]; then
+      node "$ip" "python3 -c 'import json,sys,runpy; counters=runpy.run_path(\"$OUT/audit-$MODE.py\")[\"counters\"]; old=json.load(open(sys.argv[1]))[\"weights_id\"]; new=counters(json.load(open(sys.argv[2]))[\"root\"])[\"calibration_weights_id\"]; assert old == new, \"checkpoint changed since the first calibration campaign\"' '/home/choiceoh/glm53-logs/qwen38-gptq-20260919/fit-audit-rank$r.json' '$OUT/$label-boot-rank$r.json'"
+      cmp "$OUT/fit131-image-rank0.txt" "$OUT/fit131-image-rank$r.txt"
+    fi
+    if [ "$MODE" = expanded ] && [ "$label" != fit131 ]; then
+      cmp "$OUT/fit131-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
+      node "$ip" "python3 -c 'import json,sys,runpy; counters=runpy.run_path(\"$OUT/audit-$MODE.py\")[\"counters\"]; a,b=[counters(json.load(open(p))[\"root\"])[\"calibration_weights_id\"] for p in sys.argv[1:]]; assert a == b, \"weight identity changed within size comparison\"' '$OUT/fit131-boot-rank$r.json' '$OUT/$label-boot-rank$r.json'"
+    fi
+  done
+}
+
+gather_expanded() {
+  for r in 1 2 3; do
+    scp -q "choiceoh@${NODES[$r]}:$OUT/*-rank$r.json" "$OUT/"
   done
 }
 
 collect() {
   local label=$1 split=$2 minimum=$3
-  export ST_PACK_ROOT=$PACK/$label ST_SELF_CALIBRATE=1
+  export ST_PACK_ROOT=$PACK/$label ST_SELF_CALIBRATE=1 ST_CALIBRATION_ROWS=${4:-131072}
   boot "$label"
+  receipts "$label"
+  if [ "$MODE" = expanded ] && [ "$label" = fit131 ]; then
+    for r in 0 1 2 3; do
+      lease verify --owner "$OWNER" >/dev/null
+      node "${NODES[$r]}" "docker exec -e PYTHONPATH=/repo:$OUT/tools st-qwen38 python3 -m unittest gptq_precision_test.GpuPrecisionPortTests.test_native_prefill_collection_at_hidden_and_padded_width" \
+        > "$OUT/row-target-native-rank$r.log" 2>&1
+    done
+  fi
   python3 -u probes/qwen38_gptq_feed.py --dataset "$PRIVATE/$split.jsonl" --out "$PRIVATE/$label-collection" \
     --url "$URL" --min-rows "$minimum" | tee "$OUT/$label-collection.log"
   # The save control is asynchronous. Each rank's complete audit is its receipt.
-  receipts "$label"
   for r in 0 1 2 3; do
     ip=${NODES[$r]}
     passed=0
     for ((attempt=0; attempt<12; attempt++)); do
       if node "$ip" "docker exec -e PYTHONPATH=/repo st-qwen38 python3 '$OUT/audit-$MODE.py' --root '$ST_PACK_ROOT' \
         --rank $r --ckpt /home/choiceoh/models/st-qwen38-tep4 --boot '$OUT/$label-boot-rank$r.json' \
-        --out '$OUT/$label-audit-rank$r.json' --min-rows $minimum" > "$OUT/$label-audit-rank$r.log" 2>&1; then passed=1; break; fi
+        --out '$OUT/$label-audit-rank$r.json' --min-rows $minimum --expect-row-target $ST_CALIBRATION_ROWS" > "$OUT/$label-audit-rank$r.log" 2>&1; then passed=1; break; fi
       sleep 5
     done
     [ "$passed" = 1 ] || { echo "$label rank $r filing audit failed" >&2; return 1; }
@@ -163,7 +224,11 @@ compare() {
   export ONEPASS_PROFILE=extended ONEPASS_JSONL=$OUT/onepass.jsonl
   export ST_BRACKET_SHA=$(git rev-parse HEAD) ST_BRACKET_TREE=$(git rev-parse HEAD:engine)
   export FLEET_SESSION=q38gptq-0919
-  local labels=(Bpack A1 B A2) pack_receipts=$OUT
+  local labels=(Bpack A1 B A2) pack_receipts=$OUT first_pack=Bpack
+  if [ "$MODE" = expanded ]; then
+    labels=(B131pack B240pack B330pack A1 B131 B330 A2)
+    first_pack=B131pack
+  fi
   if [ "$MODE" = serve ]; then
     # Resume consumer tests only after all four held-out scores succeeded.
     labels=(A1 B A2)
@@ -173,7 +238,13 @@ compare() {
     done
   fi
   for label in "${labels[@]}"; do
-    if [[ "$label" == B* ]]; then export ST_PACK_ROOT=$PACK/fit; else export ST_PACK_ROOT=$PACK/rtn; fi
+    case "$label" in
+      B131*) export ST_PACK_ROOT=$PACK/fit131 ;;
+      B240*) export ST_PACK_ROOT=$PACK/fit240 ;;
+      B330*) export ST_PACK_ROOT=$PACK/fit330 ;;
+      B*) export ST_PACK_ROOT=$PACK/fit ;;
+      *) export ST_PACK_ROOT=$PACK/rtn ;;
+    esac
     boot "$label"
     receipts "$label"
     for r in 0 1 2 3; do
@@ -182,27 +253,41 @@ compare() {
       node "$ip" "docker exec -e PYTHONPATH=/repo st-qwen38 python3 '$OUT/audit-$MODE.py' --root '$ST_PACK_ROOT' \
         --rank $r --ckpt /home/choiceoh/models/st-qwen38-tep4 --boot '$OUT/$label-boot-rank$r.json' \
         --out '$OUT/$label-audit-rank$r.json' $expected" > "$OUT/$label-audit-rank$r.log" 2>&1
-      if [ "$label" != Bpack ]; then
-        cmp "$pack_receipts/Bpack-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
-        node "$ip" "python3 -c 'import json,sys; a,b=map(lambda p: json.load(open(p)), sys.argv[1:]); assert a[\"weights_id\"] == b[\"weights_id\"], \"checkpoint identity changed since scoring\"' '$pack_receipts/Bpack-audit-rank$r.json' '$OUT/$label-audit-rank$r.json'"
+      if [ "$label" != "$first_pack" ]; then
+        cmp "$pack_receipts/$first_pack-image-rank$r.txt" "$OUT/$label-image-rank$r.txt"
+        node "$ip" "python3 -c 'import json,sys; a,b=map(lambda p: json.load(open(p)), sys.argv[1:]); assert a[\"weights_id\"] == b[\"weights_id\"], \"checkpoint identity changed since scoring\"' '$pack_receipts/$first_pack-audit-rank$r.json' '$OUT/$label-audit-rank$r.json'"
       fi
     done
-    if [ "$label" = Bpack ]; then
+    if [[ "$label" == *pack ]]; then
       echo "== actual GPTQ packs verified; held-out projection scoring $(date -Is)"
+      scores=(heldout)
+      if [ "$MODE" = expanded ]; then
+        scores=(validation)
+        [ "$label" != B330pack ] || scores+=(heldout)
+      fi
+      for split in "${scores[@]}"; do
+      score_prefix=projection
+      [ "$MODE" != expanded ] || score_prefix=$label-projection-$split
       jobs=()
       for r in 0 1 2 3; do
         lease verify --owner "$OWNER" >/dev/null
         ip=${NODES[$r]}
         node "$ip" "docker exec -e PYTHONPATH=/repo:$OUT/tools st-qwen38 python3 -m probes.qwen38_gptq_score \
-          --fit '$PACK/fit' --heldout '$PACK/heldout' --weights /home/choiceoh/models/st-qwen38-tep4/rank${r}of4.safetensors \
-          --audit '$OUT/Bpack-audit-rank$r.json' --out '$OUT/projection-rank$r.json' --device cuda --owner '$OWNER' --parent-verified" \
-          > "$OUT/projection-rank$r.log" 2>&1 &
+          --fit '$ST_PACK_ROOT' --heldout '$PACK/$split' --weights /home/choiceoh/models/st-qwen38-tep4/rank${r}of4.safetensors \
+          --audit '$OUT/$label-audit-rank$r.json' --out '$OUT/$score_prefix-rank$r.json' --device cuda --owner '$OWNER' --parent-verified" \
+          > "$OUT/$score_prefix-rank$r.log" 2>&1 &
         jobs+=("$!")
       done
       failed=0; for pid in "${jobs[@]}"; do wait "$pid" || failed=1; done
       lease verify --owner "$OWNER" >/dev/null
       [ "$failed" = 0 ] || { echo 'held-out projection scoring failed' >&2; return 1; }
+      done
       bash launchers/start-st-qwen38.sh stop >> "$OUT/stop.log" 2>&1
+      if [ "$MODE" = expanded ] && [ "$label" = B330pack ]; then
+        gather_expanded
+        python3 measurements/qwen38_gptq_20260919/summarize_expanded.py --root "$OUT" \
+          --out "$OUT/size-comparison.json" > "$OUT/size-comparison.log"
+      fi
       continue
     fi
     for run in 1 2; do
@@ -236,7 +321,15 @@ PY
   done
 }
 
-if [ "$MODE" = collect ]; then
+if [ "$MODE" = expanded ]; then
+  collect fit131 train 131072 131072
+  collect fit240 train 240490 240490
+  collect fit330 train 330000 330000
+  collect validation validation 55441 55441
+  collect heldout test 50512 50512
+  compare
+  gather_expanded
+elif [ "$MODE" = collect ]; then
   collect fit train 131072
   collect heldout test 4096
   echo 'Both real-input Hessian sets are filed. Repacking and the quality/speed bracket remain.'

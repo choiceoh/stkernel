@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--sha", required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--deadline-hours", type=float, default=8)
+    parser.add_argument("--mode", choices=("serve", "expanded"), default="serve")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     lock = (args.out / "waiter.lock").open("w")
@@ -48,7 +49,7 @@ def main():
     started = time.time()
     def report(state, **details):
         value = dict(state=state, t=time.time(), started=started, pid=os.getpid(),
-                     source_sha=args.sha, source_tree=str(args.tree), **details)
+                     source_sha=args.sha, source_tree=str(args.tree), mode=args.mode, **details)
         tmp = args.out / "waiter-status.tmp"
         tmp.write_text(json.dumps(value, indent=2) + "\n")
         tmp.replace(args.out / "waiter-status.json")
@@ -81,8 +82,8 @@ def main():
         report("refused", reason="frozen checkout is dirty")
         return 4
     driver = args.tree / "measurements/qwen38_gptq_20260919/collect_window.sh"
-    with (args.out / "consumer-window.log").open("x") as log:
-        child = subprocess.Popen(["bash", str(driver), "serve"], cwd=args.tree,
+    with (args.out / "experiment-window.log").open("x") as log:
+        child = subprocess.Popen(["bash", str(driver), args.mode], cwd=args.tree,
                                  stdout=log, stderr=subprocess.STDOUT)
         report("running", child_pid=child.pid)
         while child.poll() is None:
@@ -91,8 +92,10 @@ def main():
             except (OSError, ValueError):
                 owned = False
             if owned and observer is None:
+                output_root = ("qwen38-gptq-330k-20260919" if args.mode == "expanded"
+                               else "qwen38-gptq-20260919/serving")
                 observer = subprocess.Popen(["bash", str(driver.with_name("observe_fleet.sh")),
-                                             str(args.tree), str(lease.parent / "qwen38-gptq-20260919/serving/occupancy")],
+                                             str(args.tree), str(lease.parent / output_root / "occupancy")],
                                             stdout=log, stderr=subprocess.STDOUT)
             time.sleep(5)
     if observer is not None:
@@ -102,7 +105,7 @@ def main():
             observer.terminate()  # Read-only observer only; never a serving process.
             observer.wait()
     report("finished" if child.returncode == 0 else "failed", returncode=child.returncode,
-           note="See serving/onepass.jsonl and each run's rc; driver success does not imply quality passed.")
+           note="See the experiment's onepass.jsonl and each run's rc; driver success does not imply quality passed.")
     return child.returncode
 
 

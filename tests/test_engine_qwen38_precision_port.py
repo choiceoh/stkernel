@@ -17,6 +17,22 @@ if importlib.util.find_spec("torch"):
 
 @unittest.skipUnless(torch is not None, "requires torch")
 class PrecisionPortTests(unittest.TestCase):
+    def test_calibration_size_experiment_expires_and_reaches_attached_collector(self):
+        from datetime import date
+        from engine.base.config import ConfigError
+        from engine.profiles.qwen38 import calibration as qcal
+        from engine.profiles.qwen38.net import HEAD_NAME
+        self.assertEqual(qcal.rows_target(today=date(2026, 9, 19)), 131072)
+        self.assertEqual(qcal.rows_target(330000, today=date(2026, 9, 19)), 330000)
+        with self.assertRaises(ConfigError):
+            qcal.rows_target(330000, today=date(2026, 9, 27))
+        with self.assertRaises(ValueError):
+            qcal.rows_target(0, today=date(2026, 9, 19))
+        net = NS(p={"head": torch.empty(1, 256)}, dense={})
+        entries = [("head", HEAD_NAME, [(HEAD_NAME, 0, 256)])]
+        c = qcal.attach(net, entries, None, max_decode_rows=64, row_target=330000)
+        self.assertEqual(c.row_target, 330000)
+
     def test_router_preserves_a_boundary_that_bf16_collapses_and_shared_gate_rounding(self):
         from engine.profiles.qwen38.net import Qwen38Net
         from engine.profiles.qwen38.lanes import route_softmax_topk
@@ -238,7 +254,7 @@ class GpuPrecisionPortTests(unittest.TestCase):
                 ("L0.moe.sh_down", "shared-down", [Need("shared-down", 0, 256)])]
         net = NS(p={"head": torch.empty(0, device="cuda")}, dense={"L0.moe.sh_down": NS()})
         arena = Arena(sum(Calibration.nbytes(m) for _, _, m in keys))
-        c = qcal.attach(net, keys, arena, max_decode_rows=64)
+        c = qcal.attach(net, keys, arena, max_decode_rows=64, row_target=400)
         x = torch.randn(256, 2560, device="cuda").bfloat16()
         down = torch.nn.functional.pad(x[:, :160], (0, 96))
         observe = lambda: (net.head_observer(x, None), net.dense["L0.moe.sh_down"].observer(down, None))
@@ -250,3 +266,12 @@ class GpuPrecisionPortTests(unittest.TestCase):
             ref = value.double().T @ value.double()
             torch.testing.assert_close(c.H[name].double(), ref, atol=1e-4, rtol=1e-5)
             torch.testing.assert_close(c.amax[name], value.float().abs().amax(0), atol=0, rtol=0)
+        self.assertFalse(c.complete())
+        observe()
+        self.assertEqual(c.progress(), 512)  # Include the entire last admitted chunk.
+        self.assertTrue(c.complete())
+        saved = {name: value.clone() for name, value in c.H.items()}
+        observe()
+        self.assertEqual(c.progress(), 512)
+        for name, value in saved.items():
+            torch.testing.assert_close(c.H[name], value, atol=0, rtol=0)

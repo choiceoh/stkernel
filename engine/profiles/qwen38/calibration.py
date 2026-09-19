@@ -7,13 +7,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 
 import torch
 
-from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration, ROWS_FLOOR
+from engine.base.config import Config, Knob
+from engine.kernels.dense.calibration import BUDGET_BYTES, Calibration, ROWS_FLOOR, ROWS_TARGET
 from engine.profiles.qwen38.net import HEAD_NAME
+
+
+# D11: temporary size-comparison axis. The campaign must remove this knob when
+# choosing a measured default; changing it never appends to an existing blob.
+ROWS_EXPERIMENT = Knob("qwen38_calibration_rows", ROWS_TARGET, date(2026, 9, 26),
+                       "qwen38_gptq_20260919: 131K/240K/330K on separate validation inputs",
+                       "remove override; preserve existing packs and the shared 131072 default", int)
+
+
+def rows_target(value=None, *, today=None):
+    config = Config([], [ROWS_EXPERIMENT], env={}, today=today)
+    value = config[ROWS_EXPERIMENT.name] if value is None else value
+    if type(value) is not int or not 0 < value <= 1 << 24:
+        raise ValueError("calibration rows must be a positive integer no greater than 2**24")
+    return value
 
 
 def identity(metadata, files, config, *, hc_fp8: bool) -> str:
@@ -57,11 +74,12 @@ def plan(net, specs, store, *, budget=BUDGET_BYTES):
     return entries, used, deferred
 
 
-def attach(net, entries, arena, *, max_decode_rows, budget=BUDGET_BYTES):
+def attach(net, entries, arena, *, max_decode_rows, budget=BUDGET_BYTES, row_target=ROWS_TARGET):
     """Attach disarmed observers before warmup. Large captured batches are excluded by the full graph row ceiling."""
     if not entries:
         return None
-    c = Calibration(net.p["head"].device, budget, arena=arena, max_decode_rows=max_decode_rows)
+    c = Calibration(net.p["head"].device, budget, arena=arena, max_decode_rows=max_decode_rows,
+                    row_target=row_target)
     for key, name, missing in entries:
         # Head calls see only the final prompt row (or speculative verification rows). Observe the closing mixer
         # instead: all its real prefill rows, even when forward(last_hidden_only=True) later selects just one.

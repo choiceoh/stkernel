@@ -55,9 +55,13 @@ GRAM_ROWS = 256           # small calls share one Gram update; bounded staging i
 
 
 class Calibration:
-    def __init__(self, device, budget_bytes: int = BUDGET_BYTES, arena=None, max_decode_rows: int = 32):
+    def __init__(self, device, budget_bytes: int = BUDGET_BYTES, arena=None, max_decode_rows: int = 32,
+                 *, row_target: int = ROWS_TARGET):
         if type(max_decode_rows) is not int or max_decode_rows <= 0:
             raise ValueError('max_decode_rows must be a positive integer')
+        if type(row_target) is not int or not 0 < row_target <= 1 << 24:
+            raise ValueError('row_target must be a positive integer no greater than 2**24')
+        self.row_target = row_target
         self.max_decode_rows = max_decode_rows
         self.device = torch.device(device)
         self.budget, self.used = budget_bytes, 0
@@ -160,7 +164,7 @@ class Calibration:
             for key, _start, _width, hessian in self.tiles[name]:
                 if hessian:
                     self.flush(key)
-            observe(flat, self.armed, self.tiles[name], self.H, self.amax, self.rows, ROWS_TARGET)
+            observe(flat, self.armed, self.tiles[name], self.H, self.amax, self.rows, self.row_target)
             return
         xf = flat.float()
         # Multiplying rejected/warmup NaN or Inf by zero still produces NaN.
@@ -201,8 +205,8 @@ class Calibration:
         """The fewest rows any blob has (a device read: ask rarely)."""
         return int(min(float(r) for r in self.rows.values())) if self.rows else 0
 
-    def complete(self, target: int = ROWS_TARGET) -> bool:
-        return bool(self.rows) and self.progress() >= target
+    def complete(self, target: "int | None" = None) -> bool:
+        return bool(self.rows) and self.progress() >= (self.row_target if target is None else target)
 
     def save(self, root: "str | Path", rank: int, weights_id=None) -> "list[Path]":
         """One blob per tile under `<root>/mkcalib/rank<rank>/`, in the store's form. Overwrites what an older stack
@@ -264,6 +268,6 @@ class Calibration:
         if not self.rows:
             return "nothing to sum"
         peaks = len(self.rows) - len(self.H)
-        return (f"{'filed' if self.filed else 'collecting'} {self.progress()}/{ROWS_TARGET} rows over {len(self.rows)} blobs"
+        return (f"{'filed' if self.filed else 'collecting'} {self.progress()}/{self.row_target} rows over {len(self.rows)} blobs"
                 + (f" ({peaks} for their channel peaks alone)" if peaks else "")
                 + (f", {len(self.deferred)} tiles deferred to a later boot" if self.deferred else ""))

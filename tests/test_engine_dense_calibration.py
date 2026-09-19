@@ -326,6 +326,19 @@ class BudgetTests(unittest.TestCase):
 
 
 class ThicknessTests(unittest.TestCase):
+    def test_collection_target_is_per_instance_and_controls_completion(self):
+        c = Calibration('cpu', row_target=330000)
+        c.rows['site'] = torch.tensor(float(ROWS_TARGET))
+        self.assertFalse(c.complete())
+        self.assertTrue(c.complete(ROWS_TARGET))
+        self.assertIn('/330000 rows', c.status())
+        c.rows['site'].fill_(330000)
+        self.assertTrue(c.complete())
+        self.assertEqual(Calibration('cpu').row_target, ROWS_TARGET)
+        for bad in (0, -1, True, 1.5, 2 ** 24 + 1):
+            with self.assertRaises(ValueError):
+                Calibration('cpu', row_target=bad)
+
     def test_a_filed_blob_is_thick_enough_to_condition_the_widest_hessian(self):
         """ROWS_TARGET is the thickness a rank keeps, not a checkpoint interval.
 

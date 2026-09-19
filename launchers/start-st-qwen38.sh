@@ -66,6 +66,13 @@ case "${ST_SELF_CALIBRATE:-1}" in
   *) echo "ST_SELF_CALIBRATE must be 0 or 1" >&2; exit 2 ;;
 esac
 PACK_ARG=""
+if [ -n "${ST_CALIBRATION_ROWS:-}" ]; then
+  [[ "$ST_CALIBRATION_ROWS" =~ ^[1-9][0-9]{0,7}$ ]] && (( ST_CALIBRATION_ROWS <= 16777216 )) || {
+    echo "ST_CALIBRATION_ROWS must be a positive integer no greater than 16777216" >&2; exit 2;
+  }
+  # Temporary size comparison; engine enforces its 2026-09-26 expiry (D11).
+  CALIB_ARG="$CALIB_ARG --calibration-rows $ST_CALIBRATION_ROWS"
+fi
 if [ -n "${ST_PACK_ROOT:-}" ]; then
   [[ "$ST_PACK_ROOT" =~ ^/cache(/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*$ ]] || {
     echo "ST_PACK_ROOT must be /cache or a plain absolute path below /cache" >&2; exit 2;

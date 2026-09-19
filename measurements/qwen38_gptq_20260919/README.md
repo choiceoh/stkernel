@@ -2,9 +2,10 @@
 
 Status: the first 131,184-row TP4 real-input collection, all-rank filing/reboot
 audits and held-out projection scoring passed. Every tested W4/FP8 pack reduces
-projection error. Calibration-size convergence has not been measured on Qwen.
-The consumer waiter was cancelled while that coverage question is reviewed;
-this is not yet a completed-calibration, serving-quality or adoption verdict.
+projection error. The user authorized expansion: 357 distinct training prompts
+with 330,234 Qwen tokens are prepared, with the original evaluation files intact.
+The expanded GPU size/consumer comparison is pending an available fleet window;
+calibration-size convergence, serving quality and adoption remain unverified.
 
 The target is the 193 projection sites already admitted by #1286, with #1294's
 FP32 MoE accumulation and `as2` domain. The experiment uses one frozen source
@@ -89,6 +90,60 @@ the test split has already been inspected and is not a new blind final test.
 No larger fit or size-comparison result exists yet. The background waiter was
 confirmed cancelled before it had launched a consumer run; all first-fit packs
 and numerical evidence remain available.
+
+### Expanded comparison prepared after the user's request
+
+`probes/qwen38_gptq_expand.py` verifies the original byte prefixes of all 22
+training conversation files against their saved hashes. It reconstructs unused
+windows with the original sanitizer and bounded context, excludes original or
+duplicate prompts and substantial copies of evaluation text, and appends new
+windows round-robin by session. No new production tail or held-out session is
+read. 63 additional inputs from 5 training sessions add 89,744 tokens. These
+are conversations; the change from 240K to 330K increases their share of the mix,
+so that comparison measures the value of these additional inputs, not only count.
+
+| Split | Prompts | Qwen tokens | Change |
+|---|---:|---:|---|
+| train | 357 | 330,234 | Original 294-input prefix followed by 63 unused real inputs |
+| validation | 72 | 55,441 | Byte-identical to the first campaign; size comparison only |
+| test | 69 | 50,512 | Byte-identical; remains separate from calibration and size selection |
+
+`expanded-dataset-manifest.json` records hashes and aggregate provenance only.
+Private files are under `st-calibration-private/qwen38-gptq-330k-20260919` on
+srv4 and srv2. Exact token/message identities and source groups were independently
+checked across splits; the old training bytes remain the new file's exact prefix.
+
+The shared collector now accepts an instance-local row target without changing
+its 131,072 default. Qwen passes it through `ST_CALIBRATION_ROWS` /
+`--calibration-rows`, records it in the boot receipt, and checks it when auditing
+collection. The experiment knob expires on 2026-09-26 under D11 and must be
+removed when selecting a measured default. Existing saved blobs are not appended
+to or replaced. Inference arithmetic and calibration weight identity are unchanged.
+
+Run `collect_window.sh expanded` through the documented session window:
+
+1. On one frozen source/image, collect fresh `fit131`, `fit240`, `fit330`,
+   `validation`, and `heldout` stores. Fit targets are 131,072, 240,490 and
+   330,000 rows; the last admitted chunk determines the exact filed count. Before
+   feeding the first split, check the native CUDA collector's numerical result,
+   configured cap and unchanged statistics after the cap on all four ranks.
+2. Restart each fit and audit every rank's actual GPTQ packs. Score all three
+   against the same 55,441-row validation statistics; score 330K separately
+   against the 50,512-row test statistics. Require equal weights, validation
+   digests and RTN reference energies across the size comparison.
+3. Run the canonical extended consumer workload in RTN–131K–330K–RTN order,
+   with two C=1 passes and one C=4 pass per boot. Preserve failed quality checks
+   and all raw output records. This order includes a returning RTN control but
+   cannot by itself eliminate every order effect between the two GPTQ fits.
+
+All expanded artifacts use new `qwen38-gptq-330k-20260919` log/cache roots and a
+new `st-engine:qwen38-gptq-330k-4436` image tag. Engine changes require a new
+frozen image: the 131K control is recollected in that image too. Image and weight
+identities must agree from the first collection through the final consumer boot.
+`summarize_expanded.py` checks and compares all 1,540 projections per size.
+`wait_for_window.py --mode expanded` waits behind existing sessions, queued jobs
+and handovers; it then attempts this complete campaign once. It never promotes
+packs, overrides another owner or retries a failed experiment automatically.
 
 The first candidate boot consumed 192 W4 and 193 FP8 GPTQ packs on each rank,
 with no live collectors. Its first scoring attempt completed rank 0 but refused
@@ -207,3 +262,10 @@ pass. After adding the FP64 score equivalence, nested-owner and deferred-window
 checks, all 13 focused corpus/scoring tests pass with CPU PyTorch. The onepass
 identity/real-dependency/profile/recording/quality/measurement tests pass 68/68.
 These checks are not GPU collection, repacking or serving proof.
+
+The expansion changes pass 70 focused CPU checks (66 passed, 4 CUDA-only skips),
+including inherited-split protection, immutable transcript prefix/redaction,
+evaluation-copy rejection, per-instance row targets and expiry, and numerical
+summary refusal when validation statistics or RTN controls change. Bash syntax,
+ShellCheck error checks and `git diff --check` pass. Native cap checks and the
+expanded real-input runs are pending the fleet window.
