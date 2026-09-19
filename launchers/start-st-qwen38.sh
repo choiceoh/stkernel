@@ -51,10 +51,10 @@ case "${ST_QUERY_SHARDS:-1}" in
   0) SHARDS_ARG="--no-query-shards" ;;
   *) echo "ST_QUERY_SHARDS must be 0 or 1" >&2; exit 2 ;;
 esac
-OVERLAP_ARG=""                                                # ST_SHARED_OVERLAP=one|all: the shared expert beside the routed ones (carry M5; off by default)
-case "${ST_SHARED_OVERLAP:-off}" in
-  off) ;;
-  one|all) OVERLAP_ARG="--shared-overlap $ST_SHARED_OVERLAP" ;;
+OVERLAP_ARG=""                                                # ST_SHARED_OVERLAP=off|one|all: the shared expert beside the routed ones (carry M5; fleet default one)
+case "${ST_SHARED_OVERLAP:-one}" in
+  one) ;;
+  off|all) OVERLAP_ARG="--shared-overlap $ST_SHARED_OVERLAP" ;;
   *) echo "ST_SHARED_OVERLAP must be off, one or all" >&2; exit 2 ;;
 esac
 HC_ARG=""                                                     # ST_HC_FP8=1: the mixers on FP8 (a quality bracket judges it)
