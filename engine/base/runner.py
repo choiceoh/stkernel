@@ -82,6 +82,10 @@ class Model(Protocol):
                                                      # "context" (tokens computed) and "pending" (tokens held but not fed)
     def resume(self, seq: int, slot: int, record: dict) -> None: ...   # reopen the row in `slot` from a record; the slot's bytes are restored by the tier
     def state_bytes(self, slot: int): ...            # the slot's bytes as a contiguous uint8 device view (what a tier moves)
+    # optional: what a tier moves instead of the whole slot for a conversation stopped after `context` tokens -- the
+    # live state (kv_tier.Segments), and the same views to read it back into, the slot cleared first
+    def park_bytes(self, slot: int, context: int): ...
+    def resume_bytes(self, slot: int, context: int): ...
 
 
 class Runner:
@@ -506,12 +510,29 @@ class Runner:
             self.model.resume(seq, slot, record)
             raise ValueError("a park record must be a dict with integer 'context' and 'pending'")
         try:
-            self.tiered.park_begin(seq, key, extra=self.model.state_bytes(slot), record=record)
+            self.tiered.park_begin(seq, key, extra=self._park_bytes(slot, record["context"]), record=record)
         except BaseException:
             self.model.resume(seq, slot, record)           # nothing left the arena: the row stays idle and resident
             raise
         self.idle.pop(seq)
         self.retiring[seq] = (key, record, slot)
+
+    def _park_bytes(self, slot: int, context: int):
+        """The slot bytes a park writes: the model's live state when it names one (`park_bytes`: 48 of a GLM-5.3 slot's
+        286 MiB -- the rest are draft positions' states), else the slot whole."""
+        live = getattr(self.model, "park_bytes", None)
+        return self.model.state_bytes(slot) if live is None else live(slot, context)
+
+    def _resume_bytes(self, slot: int, key: int):
+        """Where a resume reads the slot bytes back, as they were parked: the live state, or the slot whole -- what a
+        process from before live-state parking wrote, told apart by the bytes the tier holds."""
+        live = getattr(self.model, "resume_bytes", None)
+        if live is None:
+            return self.model.state_bytes(slot)
+        whole = self.model.state_bytes(slot)
+        if self.tiered.extra_bytes(key) == whole.numel():
+            return whole
+        return live(slot, self.parked_summary(key)["context"])
 
     def park_finish(self, seq: int) -> int:
         """The write is done: the blocks, the slot and the row are free. A failed write (TierFull,
@@ -556,7 +577,7 @@ class Runner:
         try:
             if record is None:
                 read = self.tiered.read_record(key)
-            self.tiered.resume_begin(seq, key, extra=self.model.state_bytes(slot))
+            self.tiered.resume_begin(seq, key, extra=self._resume_bytes(slot, key))
         except BaseException:
             self.slots.give(slot)
             raise
