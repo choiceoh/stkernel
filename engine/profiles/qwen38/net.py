@@ -409,10 +409,20 @@ class Qwen38Net:
         return {"clusters": clusters, "probes": probes, "cap": self.draft_index.cap,
                 "read_MB": round(self.draft_index.read_bytes() / 1e6, 2)}
 
-    def draft_tokens(self, h: torch.Tensor) -> torch.Tensor:
+    def draft_tokens(self, h: torch.Tensor, *, probability: bool = False):
         """The drafter's greedy picks: `head_tokens` over the whole head, or the index's argmax where one is prepared
-        (the same key, all-reduced the same way)."""
+        (the same key, all-reduced the same way). `probability`: (picks, the head's softmax probability of each)
+        -- modules/vocab.argmax_probability, identical on every rank; the index reads no whole row, so it has none."""
         index = self.draft_index
+        if probability:
+            if index is not None:
+                raise ValueError("the draft index reads a few clusters of the head, not the row a probability sums")
+            from engine.modules.vocab import argmax_probability
+            picks, probs = argmax_probability(self.head_local(h)[:, :self.vp], self.comm, self.rank * self.vp)
+            tap = getattr(self, "draft_tap", None)
+            if tap is not None:
+                tap(h, picks)
+            return picks, probs
         if index is None or not h.is_cuda or not 1 <= h.shape[0] <= 16:
             picks = self.head_tokens(h)
         else:

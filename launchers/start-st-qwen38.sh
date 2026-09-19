@@ -89,6 +89,16 @@ if [ -n "${ST_TAP_DRAFT_QUERIES:-}" ]; then
   [[ "$ST_TAP_DRAFT_QUERIES" =~ ^[1-9][0-9]*$ ]] || { echo "ST_TAP_DRAFT_QUERIES must be a row count" >&2; exit 2; }
   TAP_ARG="--tap-draft-queries $ST_TAP_DRAFT_QUERIES"
 fi
+ADAPT_ARG=""                                                  # ST_DRAFT_THRESHOLD=P: drafts end below the head's probability P;
+if [ -n "${ST_DRAFT_THRESHOLD:-}" ]; then                     # ST_NARROW_ROWS=N: rows with narrower verify graphs (default 2)
+  [[ "$ST_DRAFT_THRESHOLD" =~ ^0?\.[0-9]+$|^0$ ]] || { echo "ST_DRAFT_THRESHOLD must be a probability in [0, 1)" >&2; exit 2; }
+  ADAPT_ARG="--draft-threshold $ST_DRAFT_THRESHOLD --narrow-rows ${ST_NARROW_ROWS:-2}"
+fi
+case "${ST_DRAFT_LEDGER:-0}" in                               # ST_DRAFT_LEDGER=1: rank 0's per-row draft ledger under the dump dir
+  0) ;;
+  1) ADAPT_ARG="$ADAPT_ARG --draft-ledger" ;;
+  *) echo "ST_DRAFT_LEDGER must be 0 or 1" >&2; exit 2 ;;
+esac
 ONESHOT_ARG=""                                                # ST_ONESHOT=0: every collective on NCCL (the one-shot cell at hidden 2560 is unmeasured)
 case "${ST_ONESHOT:-1}" in
   1) ;;
@@ -280,7 +290,7 @@ start_rank() {
     -v $ENGINE_DIR:/repo:ro -v $RANKS_DIR:$RANKS_DIR:ro $EXPERTS_MOUNT -v $CACHE_DIR:/cache \
     -v /home/choiceoh/glm53-logs:/home/choiceoh/glm53-logs \
     -e ST_LEASE_OWNER=\"$LEASE_OWNER\" -e ST_LEASE_PATH=\"$LOCK\" -e ST_RELEASE=\"$(basename "$ENGINE_DIR")\" $reclaim_env \
-    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
+    --entrypoint /bin/bash $IMAGE -lc 'source /repo/launchers/lib/common-tp4.sh; eval \"\$CT_GID_PRELUDE\"; cd /repo && PYTHONPATH=/repo exec python3 -u -m engine.profiles.qwen38.fleet $KV_ARG $SEQS_ARG $DRAFTER_ARG $HC_ARG $SPEC_ARG $MTP_ARG $INDEX_ARG $TAP_ARG $ADAPT_ARG $EXPERTS_ARG $OVERLAP_ARG $ONESHOT_ARG $SHARDS_ARG --port $PORT --ranks $RANKS_DIR --ckpt-meta $RANKS_DIR' >/dev/null && echo '$ip: started'"
 }
 
 pids=()
