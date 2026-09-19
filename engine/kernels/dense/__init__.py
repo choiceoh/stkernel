@@ -539,12 +539,22 @@ class PaddedDenseLinear(DenseLinear):
 class FP8Linear:
     """Block-scaled FP8 for prefill and the accuracy-sensitive vocabulary head. `quantized`: (q, scale) prepared by
     the store -- GPTQ on the fp8 grid from the weight's calibration (packing.fp8_gptq) -- instead of round-to-nearest.
-    `decode_rows`: 1..16 rows go to fp8_rows' one-launch kernel instead of deep_gemm (the same quantized inputs and
-    scales; a profile opts in where it measured the shape)."""
+
+    `decode_rows`, what 1..16 rows of a decode step take (a profile opts in where it measured the shape):
+      False      the reader: deep_gemm, or the cuBLASLt reader when one is prepared
+      True       fp8_rows.project: one launch over block-128 FP8 rows, the same quantized inputs as deep_gemm
+      "w8a16"    fp8_rows.project_bf16: one launch over the BF16 rows NOT quantised -- the weight's bytes, and the
+                 product the weight's alone (no activation rounding). It serves these rows ahead of a prepared
+                 cuBLASLt reader, which keeps every larger batch; `decode_rows_executed` records that it served."""
+    DECODE_ROWS = (False, True, "w8a16")
+
     def __init__(self, weight, *, quantized=None, name=None, decode_rows=False):
+        if decode_rows not in self.DECODE_ROWS:
+            raise ValueError(f"FP8Linear decode_rows is one of {self.DECODE_ROWS}, not {decode_rows!r}")
         self.rows, self.cols = weight.shape
         self.name = name
         self.decode_rows = decode_rows
+        self.decode_rows_executed = False
         self.observer = None  # calibration sums this layer's inputs through it when it stands alone (the head)
         self.executed = False
         self.calibrated = quantized is not None
@@ -585,6 +595,8 @@ class FP8Linear:
         flat = x.reshape(-1, self.cols).contiguous()
         if normalization is not None and (self.cublas is None or self.rows != self.weight[0].shape[0]):
             raise ValueError('fused FP8 normalization requires an unpadded cuBLAS reader')
+        if normalization is None and self.bf16_rows(flat):
+            return self.project_bf16(flat, out=out).reshape(*shape, self.rows)
         if self.cublas is not None:
             options = {} if normalization is None else dict(normalization=normalization)
             result = self.cublas(flat, out=out, decode=decode, **options)
@@ -593,8 +605,72 @@ class FP8Linear:
         q, scale = quantize(flat)
         return self.project_quantized(q, scale, out=out).reshape(*shape, self.rows)
 
+    def bf16_rows(self, x) -> bool:
+        """Do these rows take the W8A16 lane? `decode_rows="w8a16"`, 1..16 contiguous BF16 rows of the weight's width
+        on its device, and a weight fp8_rows can read (both dimensions whole 128-blocks)."""
+        if getattr(self, "decode_rows", False) != "w8a16" or x.ndim != 2 or x.dtype != torch.bfloat16                 or not x.is_contiguous():
+            return False
+        from . import fp8_rows
+        return (1 <= x.shape[0] <= fp8_rows.MAX_ROWS and x.shape[1] == self.cols and self.cols % 128 == 0
+                and self.weight[0].shape[0] % 128 == 0 and x.device == self.weight[0].device)
+
+    def project_bf16(self, x, *, out=None):
+        """The W8A16 lane: BF16 rows by the FP8 weight, one launch (`out` owns the full padded width, as the readers')."""
+        from . import fp8_rows
+        result = fp8_rows.project_bf16(x, self.weight, out=out)
+        self.executed = self.decode_rows_executed = True
+        return result[:, :self.rows]
+
+    def qualify_decode_rows(self, *, rows=(1, 7, 16), columns=1024, producer=False, reader_band=2.0 ** -3) -> dict:
+        """D3 for the W8A16 lane before a boot serves, on this layer's own weight -> {rows: {exact, reader[, mx]}}.
+
+        exact    the lane against the FP32 product of its dequantized weight on the first `columns` outputs, as a
+                 fraction of the largest magnitude; past 2^-7 (one BF16 step) raises -- a wrong scale, block or tile
+                 misses by orders
+        reader   against the prepared cuBLASLt reader on the same rows (and `mx`: its producer form, MX32 rows):
+                 the two lanes round the rows differently, so this is a sanity band (2^-3), not a tie; it is also
+                 what executes the reader's paths where the served batch never exceeds the lane's rows
+
+        The lane is called as the kernel, not through `project_bf16`, so `decode_rows_executed` still records
+        only what served."""
+        if getattr(self, "decode_rows", False) != "w8a16":
+            return {}
+        from . import fp8_rows, mxfp8
+        wq, ws = self.weight
+        n = min(columns, wq.shape[0]) // 128 * 128
+        exact_weight = wq[:n].float() * ws[:n // 128].repeat_interleave(128, 0).repeat_interleave(128, 1)
+        gen = torch.Generator(device="cpu").manual_seed(0)
+        report = {}
+        for m in rows:
+            x = torch.randn(m, self.cols, generator=gen).to(torch.bfloat16).to(wq.device)
+            got = fp8_rows.project_bf16(x, self.weight).float()
+            ref = x.float() @ exact_weight.t()
+            exact = float((got[:, :n] - ref).abs().max() / ref.abs().max().clamp_min(1e-30))
+            if not exact <= 2.0 ** -7:
+                raise RuntimeError(f"{self.name}: the W8A16 lane at {m} rows is {exact:.2e} of the largest magnitude "
+                                   f"from its exact product")
+            row = {"exact": round(exact, 6)}
+            if self.cublas is not None:
+                forms = {"reader": lambda: self.cublas(x)}
+                if producer:
+                    forms["mx"] = lambda: self.cublas.project_mx(*mxfp8.quantize(x, num_warps=1))
+                for form, run in forms.items():
+                    other = run().float()
+                    drift = float((got - other).abs().max() / other.abs().max().clamp_min(1e-30))
+                    if not drift <= reader_band:
+                        raise RuntimeError(f"{self.name}: the W8A16 lane at {m} rows is {drift:.2e} of the largest "
+                                           f"magnitude from the cuBLASLt {form} -- beyond rounding")
+                    row[form] = round(drift, 6)
+            report[m] = row
+        return report
+
     def project_mx(self, hidden, q, scale, *, out=None):
-        """Consume the head producer, retaining the BF16 calibration boundary."""
+        """Consume the head producer, retaining the BF16 calibration boundary. Rows the W8A16 lane takes read
+        `hidden` -- the producer's BF16 rows -- and leave its MX rows unread."""
+        if self.bf16_rows(hidden):
+            if self.observer is not None:
+                self.observer(hidden, None)
+            return self.project_bf16(hidden, out=out)
         if self.cublas is None:
             raise RuntimeError('native MX input requires a prepared cuBLAS reader')
         if (hidden.shape != q.shape or hidden.ndim != 2 or hidden.shape[1] != self.cols
