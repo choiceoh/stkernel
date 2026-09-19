@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+"""Agent entrypoint; discovery needs only the Python standard library."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+from dev import main  # noqa: E402 -- load this checkout's entrypoint, from any cwd
+
+if __name__ == "__main__":
+    raise SystemExit(main())

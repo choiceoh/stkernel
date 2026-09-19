@@ -37,6 +37,21 @@
 
 ## 개발환경 자가진단
 
+에이전트는 **`./dev` 한 명령에서 시작**한다. 도구 검색, 용도·인자 확인, 환경 관리,
+실행 결과가 JSON으로 연결된다. Python 셸 환경이 달라도 준비된 개발 Python을 선택한다.
+
+```bash
+./dev                         # 도구와 작업 순서
+./dev search '검사'            # 목적에 맞는 도구 + 새로 생긴 스크립트
+./dev status                  # 설치·버전·누락·복구 명령
+./dev describe feedback       # 실행 조건과 인자 예시
+./dev run feedback -- engine/kernels/mhc_contract.py
+./dev audit                   # 도구 경로와 문서가 아직 있는지
+```
+
+[에이전트 도구 계약](docs/DEVTOOLS.md) · [세션 시작 규칙](AGENTS.md).
+아래 기존 명령도 그대로 사용할 수 있다.
+
 설치나 GPU를 변경하지 않고 현재 checkout이 어떤 작업을 실행할 수 있는지
 확인한다. 기본 모드는 선택적 GPU 의존성 부족을 경고만 하고, CPU 기준 누락만
 `--strict`에서 실패한다.
