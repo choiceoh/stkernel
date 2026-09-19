@@ -43,7 +43,7 @@ Gates, before any timing; a geometry that fails one is reported and not timed, a
   oracle   attention outputs within the served band -- two BF16 steps at the largest element, one in rms
            (tests/test_engine_qwen38_kernels.SparseAttentionTests') -- of engine/modules/sparse_attention.gqa_sparse over
            the same positions in fp32. A split profile changes where the online softmax rounds, so bytes are not asked
-           of it; `ulps` reports the largest BF16 distance from today's rule.
+           of it; `from_rule` reports its drift from today's rule's output in the same two measures.
   gated    the gated store is BF16(attention * sigmoid(gate)) of the same geometry's ungated output, byte for byte.
   alike    the covered launch holds the sparse launch's bytes over the covered ids at the same forced profile (carry Q10's
            claim, which the rule's own profiles are tested for).
@@ -297,12 +297,6 @@ def drift(got, want) -> tuple:
     return tuple(float(x) for x in measure(got, want))
 
 
-def bf16_ulps(a, b) -> int:
-    """The largest distance between two BF16 tensors in representable values (finite, same-signed elements)."""
-    ia, ib = a.contiguous().view(torch.int16).int(), b.contiguous().view(torch.int16).int()
-    return int((ia - ib).abs().max()) if a.numel() else 0
-
-
 def oracle(cell: Cell, q, K, V, blocks, step: Step, rows=None) -> torch.Tensor:
     """engine/modules/sparse_attention.gqa_sparse over the positions the blocks expand to (ascending, the open group's
     tail after them), fp32 inside: the reference of the sparse launch, for `rows` (all of them when None)."""
@@ -477,7 +471,8 @@ def attention_gate(case: Attention, arms, rule, sample=None) -> dict:
         gated_exact = bool(torch.equal(gated, gated_reference(plain, case.gate)))
         passed = largest <= ORACLE_BAND[0] and rms <= ORACLE_BAND[1] and gated_exact and alike is not False
         rows[arm] = dict(row, passed=passed, largest=round(largest, 6), rms=round(rms, 6), gated_exact=gated_exact,
-                         ulps_from_rule=bf16_ulps(plain, rule_plain), **({} if alike is None else dict(alike=alike)))
+                         from_rule=[round(x, 6) for x in drift(plain, rule_plain)],
+                         **({} if alike is None else dict(alike=alike)))
         if arm == rule and not passed:
             raise RuntimeError(f"today's rule {rule} fails its own gate: {rows[arm]}")
     return rows

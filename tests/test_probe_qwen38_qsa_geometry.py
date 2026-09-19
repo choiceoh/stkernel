@@ -306,7 +306,8 @@ class GateTests(unittest.TestCase):
                 self.assertTrue(row["passed"], row)
                 self.assertTrue(row["gated_exact"])
                 self.assertNotIn("alike", row)
-        self.assertEqual(rows[rule]["ulps_from_rule"], 0)
+        self.assertEqual(rows[rule]["from_rule"], [0.0, 0.0])
+        self.assertTrue(all(0 <= x <= 2 ** -6 for row in rows.values() for x in row["from_rule"]))
 
     def test_the_covered_launch_holds_the_sparse_launch_s_bytes_at_a_forced_profile(self):
         p, cell = self.p, self.cell
