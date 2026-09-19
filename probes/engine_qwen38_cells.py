@@ -43,7 +43,10 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               # the decode step's selection in one launch (carry Q7): the rule, and torch.topk's set without ties
               'tests.test_engine_qwen38_qsa_select.SelectTests',
               # the compact MoE's combine in one launch: each row's pairs in their order, the CPU's sequential sum
-              'tests.test_engine_qwen38_moe_pairs.PairSumTests')
+              'tests.test_engine_qwen38_moe_pairs.PairSumTests',
+              # the short conv (GDN's, and GLM-5.3's KDA): byte for byte the frozen legacy adapter, prefill and ring,
+              # with its token count an argument -- one kernel for every prompt length
+              'tests.test_engine_causal_conv.SingleConvTests', 'tests.test_engine_conv_ring.ConvRingTests')
 
 
 def facts():
