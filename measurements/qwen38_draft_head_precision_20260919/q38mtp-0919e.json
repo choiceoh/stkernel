@@ -1,0 +1,5962 @@
+{
+ "rank": 3,
+ "layer_sets": [
+  [
+   4,
+   5
+  ]
+ ],
+ "shapes": [
+  [
+   1,
+   6
+  ],
+  [
+   1,
+   43
+  ],
+  [
+   4,
+   43
+  ]
+ ],
+ "replays": 50,
+ "arms": [
+  "served",
+  "mtp-w4",
+  "mtp-fp8",
+  "experts-fp8",
+  "experts-nvfp4"
+ ],
+ "builds": {
+  "served": {
+   "4,5": {
+    "arm": "served",
+    "counts": {
+     "fixed": 1,
+     "gdn": 2,
+     "qsa": 0,
+     "ple": 0
+    },
+    "kernel_shape": "record",
+    "free_GiB_at_start": 13.6,
+    "build_s": 6.8,
+    "peak_GiB": 3.68,
+    "graphs": {
+     "target rows 1 blocks 6": {
+      "wall_us": 1547.6,
+      "device_us": 1521.2,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 313.9
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 18.6
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 6.0
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 161.2
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.6
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 27.1
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.5
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.2
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 259.2
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 691.0
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 689.6
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 259.16
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 160.56
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 148.18
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 132.7
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 28.52
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 27.11
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.73
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.46
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.16
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.63
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.59
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 4.18
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.66
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.38
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.94
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.87
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.69
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.59
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.46
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.34
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.32
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.38
+       }
+      }
+     },
+     "draft rows 1 blocks 6": {
+      "wall_us": 4287.8,
+      "device_us": 4267.3,
+      "launches": 127.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.6
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 1028.1
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 29.6
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 971.6
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 42.2
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 118.8
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.5
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.3
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2035.6
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2031.47
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 499.47
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 287.02
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 284.11
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 282.9
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 269.05
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 135.57
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 1.0,
+        "us": 99.67
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 69.45
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 65.52
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 31.5
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 29.62
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 20.06
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.39
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.53
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.5
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 11.69
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 9.31
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.26
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.67
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 7.11
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.57
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.99
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 5.65
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.62
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.54
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.49
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.72
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.58
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.56
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.17
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.8
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.65
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.61
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.88
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.62
+       }
+      }
+     },
+     "target rows 1 blocks 43": {
+      "wall_us": 1529.3,
+      "device_us": 1525.1,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 313.2
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 19.7
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 163.0
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.8
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 27.0
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.4
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.5
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 258.0
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 693.8
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 692.44
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 258.05
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 159.17
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 148.8
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 134.79
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 28.16
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 27.01
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.76
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.37
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.24
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.77
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 6.64
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 4.23
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.6
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.39
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.91
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.89
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.82
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.53
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.47
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.41
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.3
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.38
+       }
+      }
+     },
+     "draft rows 1 blocks 43": {
+      "wall_us": 4431.7,
+      "device_us": 4329.0,
+      "launches": 127.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.6
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 1096.0
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 28.6
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 959.5
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 42.0
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 138.8
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.2
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.0
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2023.3
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2019.14
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 496.43
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 280.15
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 276.77
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 274.83
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 262.14
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 132.13
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 124.21
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 1.0,
+        "us": 99.64
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 68.84
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 63.4
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 28.55
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 24.22
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 19.79
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.28
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.31
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.22
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 13.87
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 10.96
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.09
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.61
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.61
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.15
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.69
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.63
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.2
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 5.01
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.8
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.58
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.16
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 4.03
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.7
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.57
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.78
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.64
+       }
+      }
+     },
+     "target rows 4 blocks 43": {
+      "wall_us": 2383.7,
+      "device_us": 2325.5,
+      "launches": 51.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.5
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 363.0
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 30.8
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 6.4
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 217.5
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 8.3
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 126.6
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 12.9
+       },
+       "route / moe glue": {
+        "launches": 4.0,
+        "us": 12.6
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 844.4
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 700.5
+       }
+      },
+      "kernels": {
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernelMoEStaticKernel_object_at__tensorptrbf16gmemalign16o16256025601_tensorptri32gmemo1601_tensorptrf32gmemo1601_tensorptri8gmemalign16o_0": {
+        "launches": 2.0,
+        "us": 844.42
+       },
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 699.09
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 183.05
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 174.91
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<2, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 172.03
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 126.59
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 45.47
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 17.75
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 12.9
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.15
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 8.28
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.74
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.72
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.64
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 3.03
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.7
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.58
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.57
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.48
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.46
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.46
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.44
+       }
+      }
+     },
+     "draft rows 4 blocks 43": {
+      "wall_us": 4930.3,
+      "device_us": 4858.1,
+      "launches": 131.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.1
+       },
+       "other": {
+        "launches": 40.0,
+        "us": 1580.3
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 30.2
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 24.0,
+        "us": 871.4
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 46.8
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 249.4
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 16.3
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.3
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2038.3
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2034.1
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 616.76
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 11.0,
+        "us": 434.93
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 6.0,
+        "us": 317.43
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 280.93
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 269.71
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 266.5
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 161.55
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 123.58
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2::Params)": {
+        "launches": 1.0,
+        "us": 71.16
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 3.0,
+        "us": 42.53
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 30.17
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 28.34
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 24.42
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 16.83
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 16.31
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.79
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 9.96
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.34
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 9.27
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 9.21
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 8.87
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.13
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.94
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 3.0,
+        "us": 5.63
+       },
+       "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplit": {
+        "launches": 3.0,
+        "us": 5.33
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.29
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.58
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.47
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.17
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 4.09
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 3.8
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.54
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.54
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.76
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.63
+       },
+       "Memset (Unknown)": {
+        "launches": 1.0,
+        "us": 0.49
+       }
+      }
+     }
+    },
+    "errors": {},
+    "served_loop": {
+     "steps": 64,
+     "wall_us": 6237.5,
+     "tokens_a_step": 1.0,
+     "spent_us_a_step": {
+      "stage_ple": 0.0,
+      "target_run": 26.3,
+      "draft_run": 4634.0,
+      "picks": 1546.1
+     },
+     "replays_us": 5835.4,
+     "host_us": 402.1
+    },
+    "stacks": {
+     "target": [
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 5,
+       "us": 9.7,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::nati",
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 2,
+       "us": 4.2,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      }
+     ],
+     "target calls": [
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 2
+      }
+     ],
+     "draft": [
+      {
+       "op": "aten::mm",
+       "where": "?",
+       "launches": 21,
+       "us": 966.8,
+       "kernels": [
+        "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2"
+       ]
+      },
+      {
+       "op": "aten::add",
+       "where": "?",
+       "launches": 6,
+       "us": 14.5,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"
+       ]
+      },
+      {
+       "op": "aten::index_select",
+       "where": "?",
+       "launches": 3,
+       "us": 6.4,
+       "kernels": [
+        "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 3,
+       "us": 6.3,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      },
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 3,
+       "us": 5.9,
+       "kernels": [
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"
+       ]
+      },
+      {
+       "op": "aten::bitwise_and",
+       "where": "?",
+       "launches": 3,
+       "us": 5.5,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"
+       ]
+      },
+      {
+       "op": "aten::sub",
+       "where": "?",
+       "launches": 3,
+       "us": 5.1,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"
+       ]
+      },
+      {
+       "op": "aten::cat",
+       "where": "?",
+       "launches": 1,
+       "us": 1.9,
+       "kernels": [
+        "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"
+       ]
+      }
+     ],
+     "draft calls": [
+      {
+       "func": "mm",
+       "where": "engine/kernels/common/skinny_gemv.py:146",
+       "count": 21
+      },
+      {
+       "func": "index_select",
+       "where": "engine/profiles/qwen38/net.py:972",
+       "count": 3
+      },
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 3
+      },
+      {
+       "func": "__and__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      },
+      {
+       "func": "__rsub__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      }
+     ],
+     "mtp_rows": {
+      "hidden_max_err": 0.0,
+      "hidden_equal": true,
+      "streams_equal": true
+     }
+    }
+   }
+  },
+  "mtp-w4": {
+   "4,5": {
+    "arm": "mtp-w4",
+    "counts": {
+     "fixed": 1,
+     "gdn": 2,
+     "qsa": 0,
+     "ple": 0
+    },
+    "kernel_shape": "record",
+    "free_GiB_at_start": 13.4,
+    "build_s": 5.8,
+    "peak_GiB": 3.7,
+    "graphs": {
+     "target rows 1 blocks 6": {
+      "wall_us": 1547.7,
+      "device_us": 1496.8,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 3.0
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 306.7
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 18.7
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 152.8
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.6
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 28.4
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 9.9
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.2
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 258.3
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 682.4
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 680.95
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 258.26
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 157.56
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 144.21
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 124.77
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 28.45
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 28.0
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.68
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.14
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 9.87
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.58
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.65
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 4.14
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.6
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.4
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.96
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.91
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.63
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.53
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.45
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.37
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.32
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.41
+       }
+      }
+     },
+     "draft rows 1 blocks 6": {
+      "wall_us": 3889.5,
+      "device_us": 3824.3,
+      "launches": 127.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.6
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 935.1
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 28.5
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 625.4
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 41.0
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 116.7
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.1
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 18.9
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2037.0
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2032.87
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 277.43
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 264.87
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 4.0,
+        "us": 241.76
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 239.69
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 12.0,
+        "us": 189.08
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 2.0,
+        "us": 153.08
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 101.65
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 64.54
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 41.44
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 31.53
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 28.48
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.19
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.28
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.14
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 10.87
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 9.26
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.12
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.57
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.56
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.17
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 5.74
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.61
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.52
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.43
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.21
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.72
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.57
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.55
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.16
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.66
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.56
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.56
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.79
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.62
+       }
+      }
+     },
+     "target rows 1 blocks 43": {
+      "wall_us": 1529.4,
+      "device_us": 1493.2,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 306.3
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 18.6
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 151.8
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.5
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 28.6
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.1
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.2
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 255.2
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 683.2
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 681.79
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 255.21
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 157.54
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 143.78
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 124.52
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 28.59
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 27.31
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.67
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.15
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.09
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.49
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.57
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 4.15
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.6
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.4
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.88
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.6
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.54
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.42
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.37
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.28
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.4
+       }
+      }
+     },
+     "draft rows 1 blocks 43": {
+      "wall_us": 3973.4,
+      "device_us": 3906.9,
+      "launches": 127.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.7
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 996.5
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 28.5
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 625.6
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 41.3
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 138.3
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.0
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.0
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2036.0
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2031.86
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 279.03
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 265.27
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 4.0,
+        "us": 241.37
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 223.16
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 12.0,
+        "us": 189.14
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 2.0,
+        "us": 153.11
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 124.48
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 84.06
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 63.11
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 41.95
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 28.49
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 23.91
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.19
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.27
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.05
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 13.76
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 11.24
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.09
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.61
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.68
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.14
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.8
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.52
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.41
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.21
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 5.0
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.8
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.58
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.16
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.78
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.68
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.56
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.77
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.63
+       }
+      }
+     },
+     "target rows 4 blocks 43": {
+      "wall_us": 2370.3,
+      "device_us": 2286.3,
+      "launches": 51.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.5
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 358.2
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 30.6
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 6.5
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 219.2
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 8.8
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 123.1
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 13.2
+       },
+       "route / moe glue": {
+        "launches": 4.0,
+        "us": 12.4
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 811.5
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 700.2
+       }
+      },
+      "kernels": {
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernelMoEStaticKernel_object_at__tensorptrbf16gmemalign16o16256025601_tensorptri32gmemo1601_tensorptrf32gmemo1601_tensorptri8gmemalign16o_0": {
+        "launches": 2.0,
+        "us": 811.49
+       },
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 698.79
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 181.07
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<2, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 174.1
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 172.21
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 123.14
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 45.07
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 17.81
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 13.24
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.07
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 8.75
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.78
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.61
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.58
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 3.04
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.74
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.58
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.56
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.47
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.37
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.34
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.44
+       }
+      }
+     },
+     "draft rows 4 blocks 43": {
+      "wall_us": 4581.1,
+      "device_us": 4537.3,
+      "launches": 128.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.4
+       },
+       "other": {
+        "launches": 40.0,
+        "us": 1473.4
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 30.7
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 618.7
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 47.3
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 246.8
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.7
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 18.7
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2079.6
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2075.4
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 523.65
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 307.31
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 282.36
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 267.77
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 252.82
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 161.21
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 10.0,
+        "us": 144.65
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 123.49
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2::Params)": {
+        "launches": 1.0,
+        "us": 71.47
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<2, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 2.0,
+        "us": 52.88
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 3.0,
+        "us": 42.4
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 30.72
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 27.83
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 23.49
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 16.64
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.7
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.13
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 9.97
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 9.33
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 9.28
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 8.94
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 8.72
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.36
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 6.0
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 3.0,
+        "us": 5.88
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.55
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.6
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.58
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.2
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 4.09
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 3.81
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.54
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.53
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.78
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.65
+       },
+       "Memset (Unknown)": {
+        "launches": 1.0,
+        "us": 0.56
+       }
+      }
+     }
+    },
+    "errors": {},
+    "served_loop": {
+     "steps": 64,
+     "wall_us": 6510.1,
+     "tokens_a_step": 1.0,
+     "spent_us_a_step": {
+      "stage_ple": 0.0,
+      "target_run": 131.1,
+      "draft_run": 4548.3,
+      "picks": 1635.8
+     },
+     "replays_us": 5437.2,
+     "host_us": 1072.9
+    },
+    "stacks": {
+     "target": [
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 5,
+       "us": 10.0,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::nati",
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 2,
+       "us": 4.5,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      }
+     ],
+     "target calls": [
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 2
+      }
+     ],
+     "draft": [
+      {
+       "op": "aten::mm",
+       "where": "?",
+       "launches": 9,
+       "us": 437.9,
+       "kernels": [
+        "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2"
+       ]
+      },
+      {
+       "op": "aten::add",
+       "where": "?",
+       "launches": 6,
+       "us": 14.5,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 3,
+       "us": 6.2,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      },
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 3,
+       "us": 5.9,
+       "kernels": [
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"
+       ]
+      },
+      {
+       "op": "aten::index_select",
+       "where": "?",
+       "launches": 3,
+       "us": 5.9,
+       "kernels": [
+        "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"
+       ]
+      },
+      {
+       "op": "aten::bitwise_and",
+       "where": "?",
+       "launches": 3,
+       "us": 5.6,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"
+       ]
+      },
+      {
+       "op": "aten::sub",
+       "where": "?",
+       "launches": 3,
+       "us": 5.1,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"
+       ]
+      },
+      {
+       "op": "aten::cat",
+       "where": "?",
+       "launches": 1,
+       "us": 1.9,
+       "kernels": [
+        "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"
+       ]
+      }
+     ],
+     "draft calls": [
+      {
+       "func": "mm",
+       "where": "engine/kernels/common/skinny_gemv.py:146",
+       "count": 9
+      },
+      {
+       "func": "index_select",
+       "where": "engine/profiles/qwen38/net.py:972",
+       "count": 3
+      },
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 3
+      },
+      {
+       "func": "__and__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      },
+      {
+       "func": "__rsub__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      }
+     ],
+     "mtp_rows": {
+      "hidden_max_err": 0.0,
+      "hidden_equal": true,
+      "streams_equal": true
+     }
+    }
+   }
+  },
+  "mtp-fp8": {
+   "4,5": {
+    "arm": "mtp-fp8",
+    "counts": {
+     "fixed": 1,
+     "gdn": 2,
+     "qsa": 0,
+     "ple": 0
+    },
+    "kernel_shape": "record",
+    "free_GiB_at_start": 13.4,
+    "build_s": 6.0,
+    "peak_GiB": 3.7,
+    "graphs": {
+     "target rows 1 blocks 6": {
+      "wall_us": 1558.8,
+      "device_us": 1520.5,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 312.7
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 18.9
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 155.5
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.6
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 30.9
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.0
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.3
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 254.0
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 699.0
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 697.57
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 253.98
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 160.31
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 147.49
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 125.59
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 30.9
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 29.87
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.76
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.16
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.01
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.57
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.58
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 4.18
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.61
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.44
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.93
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.86
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.85
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.53
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.35
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.32
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.31
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.39
+       }
+      }
+     },
+     "draft rows 1 blocks 6": {
+      "wall_us": 4088.9,
+      "device_us": 4041.0,
+      "launches": 139.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.6
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 1011.0
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 29.1
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 9.0,
+        "us": 436.9
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 41.5
+       },
+       "dense w4/fp8": {
+        "launches": 30.0,
+        "us": 2366.2
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 115.5
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.4
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 18.9
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 15.0,
+        "us": 2345.14
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 280.78
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 277.97
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 264.71
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 4.0,
+        "us": 237.21
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 2.0,
+        "us": 158.17
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 135.79
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 63.94
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 41.48
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 31.39
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 29.09
+       },
+       "_quantize": {
+        "launches": 15.0,
+        "us": 21.09
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.46
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.4
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.26
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 10.93
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.13
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.65
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 8.41
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.56
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.41
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 5.62
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.6
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.45
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.43
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.26
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.99
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.79
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.77
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.67
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.55
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.52
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.77
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.61
+       }
+      }
+     },
+     "target rows 1 blocks 43": {
+      "wall_us": 1567.0,
+      "device_us": 1559.3,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 321.7
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 19.2
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 6.0
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 158.2
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.6
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 28.2
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.1
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.3
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 261.1
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 721.1
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 719.69
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 261.08
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 165.51
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 151.17
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 128.84
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 29.32
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 28.25
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.7
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.18
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.11
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.56
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 6.02
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 4.2
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.64
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.53
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.95
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.88
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.6
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.59
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.44
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.39
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.31
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.38
+       }
+      }
+     },
+     "draft rows 1 blocks 43": {
+      "wall_us": 4226.3,
+      "device_us": 4159.9,
+      "launches": 139.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.6
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 1108.1
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 28.6
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 9.0,
+        "us": 433.0
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 42.2
+       },
+       "dense w4/fp8": {
+        "launches": 30.0,
+        "us": 2367.7
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 139.1
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.5
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.2
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 15.0,
+        "us": 2346.56
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 282.01
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 279.02
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 263.87
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 4.0,
+        "us": 234.29
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 2.0,
+        "us": 156.2
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 136.81
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 125.76
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 63.4
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 42.48
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 28.56
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 24.29
+       },
+       "_quantize": {
+        "launches": 15.0,
+        "us": 21.11
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.48
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.49
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.48
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 13.82
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 11.12
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.0
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.58
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.64
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.18
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.96
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.53
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 5.3
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.21
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.78
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.61
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.76
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.68
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.57
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.82
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.62
+       }
+      }
+     },
+     "target rows 4 blocks 43": {
+      "wall_us": 2420.6,
+      "device_us": 2337.7,
+      "launches": 51.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.4
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 366.6
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 31.2
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 6.5
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 219.4
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 8.7
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 122.0
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 13.8
+       },
+       "route / moe glue": {
+        "launches": 4.0,
+        "us": 12.5
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 825.4
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 729.1
+       }
+      },
+      "kernels": {
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernelMoEStaticKernel_object_at__tensorptrbf16gmemalign16o16256025601_tensorptri32gmemo1601_tensorptrf32gmemo1601_tensorptri8gmemalign16o_0": {
+        "launches": 2.0,
+        "us": 825.42
+       },
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 727.64
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 185.04
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 176.57
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<2, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 174.71
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 122.01
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 44.67
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 18.24
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 13.8
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.15
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 8.67
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.78
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.77
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.62
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 3.04
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.74
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.68
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.57
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.44
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.37
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.33
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.45
+       }
+      }
+     },
+     "draft rows 4 blocks 43": {
+      "wall_us": 4811.4,
+      "device_us": 4738.8,
+      "launches": 140.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.1
+       },
+       "other": {
+        "launches": 40.0,
+        "us": 1597.9
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 30.2
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 9.0,
+        "us": 407.6
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 47.2
+       },
+       "dense w4/fp8": {
+        "launches": 30.0,
+        "us": 2364.9
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 250.3
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.8
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 18.7
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 15.0,
+        "us": 2343.27
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 636.62
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 294.05
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 277.07
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 274.07
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 263.68
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 162.77
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 123.45
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2::Params)": {
+        "launches": 1.0,
+        "us": 71.52
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 3.0,
+        "us": 42.01
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 30.24
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 28.12
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 24.37
+       },
+       "_quantize": {
+        "launches": 15.0,
+        "us": 21.59
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 16.84
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.82
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.2
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 9.89
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 9.34
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.31
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 9.22
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 8.93
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 6.2
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.12
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 3.0,
+        "us": 5.66
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.39
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.75
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.44
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 4.04
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 3.8
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.54
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.54
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.79
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.63
+       },
+       "Memset (Unknown)": {
+        "launches": 1.0,
+        "us": 0.57
+       }
+      }
+     }
+    },
+    "errors": {},
+    "served_loop": {
+     "steps": 64,
+     "wall_us": 6585.4,
+     "tokens_a_step": 1.0,
+     "spent_us_a_step": {
+      "stage_ple": 0.0,
+      "target_run": 117.9,
+      "draft_run": 4623.7,
+      "picks": 1677.0
+     },
+     "replays_us": 5647.7,
+     "host_us": 937.7
+    },
+    "stacks": {
+     "target": [
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 5,
+       "us": 10.0,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::nati",
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 2,
+       "us": 4.2,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      }
+     ],
+     "target calls": [
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 2
+      }
+     ],
+     "draft": [
+      {
+       "op": "aten::mm",
+       "where": "?",
+       "launches": 9,
+       "us": 426.4,
+       "kernels": [
+        "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2"
+       ]
+      },
+      {
+       "op": "aten::add",
+       "where": "?",
+       "launches": 6,
+       "us": 14.6,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 3,
+       "us": 6.2,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      },
+      {
+       "op": "aten::index_select",
+       "where": "?",
+       "launches": 3,
+       "us": 6.0,
+       "kernels": [
+        "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"
+       ]
+      },
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 3,
+       "us": 5.9,
+       "kernels": [
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"
+       ]
+      },
+      {
+       "op": "aten::bitwise_and",
+       "where": "?",
+       "launches": 3,
+       "us": 5.5,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"
+       ]
+      },
+      {
+       "op": "aten::sub",
+       "where": "?",
+       "launches": 3,
+       "us": 5.1,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"
+       ]
+      },
+      {
+       "op": "aten::cat",
+       "where": "?",
+       "launches": 1,
+       "us": 1.9,
+       "kernels": [
+        "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"
+       ]
+      }
+     ],
+     "draft calls": [
+      {
+       "func": "mm",
+       "where": "engine/kernels/common/skinny_gemv.py:146",
+       "count": 9
+      },
+      {
+       "func": "index_select",
+       "where": "engine/profiles/qwen38/net.py:972",
+       "count": 3
+      },
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 3
+      },
+      {
+       "func": "__and__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      },
+      {
+       "func": "__rsub__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      }
+     ],
+     "mtp_rows": {
+      "hidden_max_err": 0.0,
+      "hidden_equal": true,
+      "streams_equal": true
+     }
+    }
+   }
+  },
+  "experts-fp8": {
+   "4,5": {
+    "arm": "experts-fp8",
+    "counts": {
+     "fixed": 1,
+     "gdn": 2,
+     "qsa": 0,
+     "ple": 0
+    },
+    "kernel_shape": "record",
+    "free_GiB_at_start": 13.5,
+    "build_s": 5.5,
+    "peak_GiB": 3.1,
+    "graphs": {
+     "target rows 1 blocks 6": {
+      "wall_us": 1543.4,
+      "device_us": 1521.2,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 310.5
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 18.5
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 154.2
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.5
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 28.8
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.2
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.0
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 254.0
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 705.5
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 704.06
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 254.04
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 159.19
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 146.67
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 125.84
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 28.78
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 28.33
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.61
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.25
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.07
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.53
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.64
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.91
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.63
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.39
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.95
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.91
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.68
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.38
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.36
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.31
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.29
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.4
+       }
+      }
+     },
+     "draft rows 1 blocks 6": {
+      "wall_us": 4272.3,
+      "device_us": 4227.9,
+      "launches": 127.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.9
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 894.6
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 29.3
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 989.2
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 42.1
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 119.3
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.4
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.1
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2111.9
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2107.55
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 508.47
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 288.97
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 283.88
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 269.34
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 194.85
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 1.0,
+        "us": 100.61
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 94.98
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 70.34
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 66.36
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 31.67
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 29.3
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 20.82
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.31
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.44
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.43
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 11.08
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 9.38
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.29
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.78
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.94
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.55
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 5.85
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.52
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.45
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.32
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.31
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.96
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.91
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.48
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.32
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.71
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.6
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.54
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.82
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.78
+       }
+      }
+     },
+     "target rows 1 blocks 43": {
+      "wall_us": 1563.1,
+      "device_us": 2262.2,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.8
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 322.9
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 19.4
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 304.7
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 7.0
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 29.3
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.4
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.2
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 498.6
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 1037.0
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 1035.62
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 498.6
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 226.27
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 168.55
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 149.7
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 78.39
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 29.27
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.7
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.44
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.11
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 7.0
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.99
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 4.17
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.62
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.57
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.9
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.84
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.82
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.41
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.36
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.28
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.21
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.4
+       }
+      }
+     },
+     "draft rows 1 blocks 43": {
+      "wall_us": 4279.0,
+      "device_us": 4301.1,
+      "launches": 127.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.8
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 975.4
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 28.6
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 973.7
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 41.7
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 139.8
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.1
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 18.9
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2101.0
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2096.79
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 500.06
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 284.35
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 281.83
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 262.99
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 191.13
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 124.26
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 1.0,
+        "us": 100.69
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 94.07
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 67.94
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 63.63
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 28.64
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 24.64
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 20.64
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.1
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.26
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.13
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 14.34
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 11.03
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.11
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.57
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 7.0
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.78
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.93
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.57
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.42
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.21
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.99
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.76
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.57
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.16
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.78
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.68
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.54
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.79
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.65
+       }
+      }
+     },
+     "target rows 4 blocks 43": {
+      "wall_us": 2325.0,
+      "device_us": 2313.2,
+      "launches": 51.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.6
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 351.2
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 31.9
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 6.7
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 223.0
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 8.4
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 116.4
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 14.5
+       },
+       "route / moe glue": {
+        "launches": 4.0,
+        "us": 12.4
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 830.5
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 715.6
+       }
+      },
+      "kernels": {
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernelMoEStaticKernel_object_at__tensorptrbf16gmemalign16o16256025601_tensorptri32gmemo1601_tensorptrf32gmemo1601_tensorptri8gmemalign16o_0": {
+        "launches": 2.0,
+        "us": 830.53
+       },
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 714.13
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<2, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 178.35
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 174.62
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 172.05
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 116.39
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 44.68
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 18.13
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 14.5
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.03
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 8.44
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.79
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.74
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.61
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 3.25
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 3.16
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.88
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.56
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.55
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.39
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 1.98
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.45
+       }
+      }
+     },
+     "draft rows 4 blocks 43": {
+      "wall_us": 4557.4,
+      "device_us": 4563.8,
+      "launches": 131.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.2
+       },
+       "other": {
+        "launches": 40.0,
+        "us": 1210.1
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 30.1
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 24.0,
+        "us": 888.6
+       },
+       "elementwise (torch)": {
+        "launches": 22.0,
+        "us": 46.8
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 249.0
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.1
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.3
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2098.6
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2094.48
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 11.0,
+        "us": 447.79
+       },
+       "_gate_up": {
+        "launches": 3.0,
+        "us": 346.15
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 6.0,
+        "us": 322.52
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 280.17
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 262.93
+       },
+       "_down": {
+        "launches": 3.0,
+        "us": 174.05
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 161.16
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 123.31
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2::Params)": {
+        "launches": 1.0,
+        "us": 71.16
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 3.0,
+        "us": 41.77
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 30.07
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 28.78
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 24.32
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 16.61
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.77
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.08
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 11.11
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 10.14
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.27
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 9.26
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 8.86
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.18
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.4
+       },
+       "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplit": {
+        "launches": 3.0,
+        "us": 5.31
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.29
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 3.0,
+        "us": 5.11
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.61
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.42
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.14
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 3.82
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.71
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.57
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.54
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.77
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.63
+       },
+       "Memset (Unknown)": {
+        "launches": 1.0,
+        "us": 0.51
+       }
+      }
+     }
+    },
+    "errors": {},
+    "served_loop": {
+     "steps": 64,
+     "wall_us": 6016.8,
+     "tokens_a_step": 1.0,
+     "spent_us_a_step": {
+      "stage_ple": 0.0,
+      "target_run": 26.1,
+      "draft_run": 4420.6,
+      "picks": 1539.1
+     },
+     "replays_us": 5815.7,
+     "host_us": 201.1
+    },
+    "stacks": {
+     "target": [
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 5,
+       "us": 9.6,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::nati",
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 2,
+       "us": 4.3,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      }
+     ],
+     "target calls": [
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 2
+      }
+     ],
+     "draft": [
+      {
+       "op": "aten::mm",
+       "where": "?",
+       "launches": 21,
+       "us": 964.2,
+       "kernels": [
+        "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2"
+       ]
+      },
+      {
+       "op": "aten::add",
+       "where": "?",
+       "launches": 6,
+       "us": 14.5,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 3,
+       "us": 6.2,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      },
+      {
+       "op": "aten::index_select",
+       "where": "?",
+       "launches": 3,
+       "us": 6.0,
+       "kernels": [
+        "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"
+       ]
+      },
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 3,
+       "us": 5.8,
+       "kernels": [
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"
+       ]
+      },
+      {
+       "op": "aten::bitwise_and",
+       "where": "?",
+       "launches": 3,
+       "us": 5.5,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"
+       ]
+      },
+      {
+       "op": "aten::sub",
+       "where": "?",
+       "launches": 3,
+       "us": 5.1,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"
+       ]
+      },
+      {
+       "op": "aten::cat",
+       "where": "?",
+       "launches": 1,
+       "us": 1.9,
+       "kernels": [
+        "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"
+       ]
+      }
+     ],
+     "draft calls": [
+      {
+       "func": "mm",
+       "where": "engine/kernels/common/skinny_gemv.py:146",
+       "count": 21
+      },
+      {
+       "func": "index_select",
+       "where": "engine/profiles/qwen38/net.py:972",
+       "count": 3
+      },
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 3
+      },
+      {
+       "func": "__and__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      },
+      {
+       "func": "__rsub__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      }
+     ],
+     "mtp_rows": {
+      "hidden_max_err": 0.0,
+      "hidden_equal": true,
+      "streams_equal": true
+     }
+    }
+   }
+  },
+  "experts-nvfp4": {
+   "4,5": {
+    "arm": "experts-nvfp4",
+    "counts": {
+     "fixed": 1,
+     "gdn": 2,
+     "qsa": 0,
+     "ple": 0
+    },
+    "kernel_shape": "record",
+    "free_GiB_at_start": 13.4,
+    "build_s": 4.8,
+    "peak_GiB": 2.84,
+    "graphs": {
+     "target rows 1 blocks 6": {
+      "wall_us": 1555.7,
+      "device_us": 1490.5,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 3.0
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 307.6
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 18.4
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 155.5
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.6
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 29.0
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 9.8
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.1
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 256.8
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 673.8
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 672.37
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 256.79
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 155.7
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 147.04
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 127.13
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 28.99
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 28.38
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.67
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.13
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 9.81
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.62
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.7
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.9
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.61
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.39
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.95
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.86
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.56
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.51
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.39
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.34
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.31
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.38
+       }
+      }
+     },
+     "draft rows 1 blocks 6": {
+      "wall_us": 4256.2,
+      "device_us": 4196.9,
+      "launches": 139.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.7
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 607.5
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 29.5
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 987.1
+       },
+       "elementwise (torch)": {
+        "launches": 31.0,
+        "us": 53.6
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 119.0
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.0
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.0
+       },
+       "moe b12x": {
+        "launches": 3.0,
+        "us": 321.7
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2037.9
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2033.56
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 505.66
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o1256025601_tensorptri32gmemo101_tensorptrf32gmemo101_tensorptri8gmemalign16o26214_0": {
+        "launches": 3.0,
+        "us": 321.75
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 290.67
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 275.15
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 273.58
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 1.0,
+        "us": 100.83
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 69.27
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 66.4
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 31.28
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 29.5
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 20.71
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.53
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.3
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.03
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 11.55
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.11
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 9.02
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 8.51
+       },
+       "Memcpy DtoD (Device -> Device)": {
+        "launches": 6.0,
+        "us": 7.21
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.66
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.21
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 5.87
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.76
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.62
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.58
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.38
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 5.11
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.92
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.86
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 3.0,
+        "us": 4.32
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.31
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.72
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.69
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.53
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<int>, std::array<char*, 1ul> >(int, at::native::FillFunctor<int>, std::array<char*, 1ul>)": {
+        "launches": 3.0,
+        "us": 3.36
+       },
+       "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{": {
+        "launches": 3.0,
+        "us": 2.95
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.83
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.62
+       }
+      }
+     },
+     "target rows 1 blocks 43": {
+      "wall_us": 1518.4,
+      "device_us": 1503.6,
+      "launches": 53.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.8
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 309.8
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 18.7
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 5.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 158.1
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 6.7
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 28.8
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 10.2
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 24.4
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 264.3
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 673.9
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 672.57
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 2.0,
+        "us": 264.33
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 155.55
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 149.31
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<1, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 129.06
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 29.02
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 28.76
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 2.0,
+        "us": 11.86
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.25
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 10.18
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 6.7
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 5.57
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.89
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.65
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.52
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 2.89
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.84
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.79
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.5
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.4
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.34
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 2.28
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.38
+       }
+      }
+     },
+     "draft rows 1 blocks 43": {
+      "wall_us": 4338.4,
+      "device_us": 4224.9,
+      "launches": 139.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.7
+       },
+       "other": {
+        "launches": 39.0,
+        "us": 687.4
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 28.6
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 21.0,
+        "us": 965.9
+       },
+       "elementwise (torch)": {
+        "launches": 31.0,
+        "us": 52.5
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 139.9
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.0
+       },
+       "route / moe glue": {
+        "launches": 6.0,
+        "us": 19.0
+       },
+       "moe b12x": {
+        "launches": 3.0,
+        "us": 311.9
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 1998.1
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 1993.95
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 6, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 494.76
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o1256025601_tensorptri32gmemo101_tensorptrf32gmemo101_tensorptri8gmemalign16o26214_0": {
+        "launches": 3.0,
+        "us": 311.94
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 5.0,
+        "us": 284.36
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 269.01
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 266.51
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 124.4
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 1.0,
+        "us": 99.6
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 7, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 6.0,
+        "us": 67.46
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 64.03
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 28.57
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 24.74
+       },
+       "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, float, false, true, true, false, 5, false, cublasGemvParamsEx<int, cublasGemvTensorS": {
+        "launches": 3.0,
+        "us": 19.76
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 17.24
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.27
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 14.99
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 14.01
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 10.9
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 8.95
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 8.62
+       },
+       "Memcpy DtoD (Device -> Device)": {
+        "launches": 6.0,
+        "us": 7.19
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.7
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 6.09
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.92
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 5.88
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.44
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 5.26
+       },
+       "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const::{lambda(float)#1}, std::a": {
+        "launches": 3.0,
+        "us": 5.19
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 4.71
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.58
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 3.0,
+        "us": 4.28
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.14
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.71
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.54
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.53
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<int>, std::array<char*, 1ul> >(int, at::native::FillFunctor<int>, std::array<char*, 1ul>)": {
+        "launches": 3.0,
+        "us": 3.33
+       },
+       "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arange_cuda_out(c10::Scalar const&, c10::Scalar const&, c10::Scalar const&, at::Tensor&)::{lambda()#1}::operator()() const::{": {
+        "launches": 3.0,
+        "us": 2.94
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.78
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.62
+       }
+      }
+     },
+     "target rows 4 blocks 43": {
+      "wall_us": 2362.4,
+      "device_us": 2291.7,
+      "launches": 51.0,
+      "families": {
+       "addressing": {
+        "launches": 1.0,
+        "us": 2.4
+       },
+       "other": {
+        "launches": 13.0,
+        "us": 365.5
+       },
+       "elementwise (torch)": {
+        "launches": 8.0,
+        "us": 30.9
+       },
+       "norm / rope": {
+        "launches": 3.0,
+        "us": 6.9
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 10.0,
+        "us": 213.5
+       },
+       "conv": {
+        "launches": 2.0,
+        "us": 9.1
+       },
+       "gdn / kda": {
+        "launches": 2.0,
+        "us": 124.8
+       },
+       "hc gated residual": {
+        "launches": 4.0,
+        "us": 13.5
+       },
+       "route / moe glue": {
+        "launches": 4.0,
+        "us": 12.4
+       },
+       "moe b12x": {
+        "launches": 2.0,
+        "us": 814.9
+       },
+       "dense w4/fp8": {
+        "launches": 2.0,
+        "us": 697.7
+       }
+      },
+      "kernels": {
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_static_kernelMoEStaticKernel_object_at__tensorptrbf16gmemalign16o16256025601_tensorptri32gmemo1601_tensorptrf32gmemo1601_tensorptri8gmemalign16o_0": {
+        "launches": 2.0,
+        "us": 814.86
+       },
+       "_fp8_rows": {
+        "launches": 1.0,
+        "us": 696.23
+       },
+       "_up_mean": {
+        "launches": 5.0,
+        "us": 187.78
+       },
+       "_down_gates": {
+        "launches": 5.0,
+        "us": 172.89
+       },
+       "void (anonymous namespace)::mk_gemm2_kernel<2, false, false, false, false>((anonymous namespace)::MKGemm2Ctx)": {
+        "launches": 8.0,
+        "us": 168.04
+       },
+       "fused_recurrent_gated_delta_rule_fwd_kernel": {
+        "launches": 2.0,
+        "us": 124.84
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 2.0,
+        "us": 45.48
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_vectorized<at::native::(anonymous namespace)::OpaqueType<2u>, unsigned int, 2, 128, 1, 16, 8>(char*, at::native::(anonymous namespace)::CatA": {
+        "launches": 1.0,
+        "us": 18.02
+       },
+       "_leave_norm": {
+        "launches": 4.0,
+        "us": 13.55
+       },
+       "_softmax_topk": {
+        "launches": 2.0,
+        "us": 10.06
+       },
+       "_single_conv": {
+        "launches": 2.0,
+        "us": 9.15
+       },
+       "_gated_norm": {
+        "launches": 2.0,
+        "us": 3.76
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 2.0,
+        "us": 3.69
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 2.0,
+        "us": 3.62
+       },
+       "_norm_streams": {
+        "launches": 1.0,
+        "us": 3.12
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#12}::operator()": {
+        "launches": 1.0,
+        "us": 3.05
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 2.0,
+        "us": 2.57
+       },
+       "_gated": {
+        "launches": 2.0,
+        "us": 2.56
+       },
+       "_swiglu": {
+        "launches": 2.0,
+        "us": 2.37
+       },
+       "_addresses": {
+        "launches": 1.0,
+        "us": 2.36
+       },
+       "_lookup": {
+        "launches": 1.0,
+        "us": 2.31
+       },
+       "_quantize": {
+        "launches": 1.0,
+        "us": 1.44
+       }
+      }
+     },
+     "draft rows 4 blocks 43": {
+      "wall_us": 4300.9,
+      "device_us": 4233.1,
+      "launches": 134.0,
+      "families": {
+       "addressing": {
+        "launches": 3.0,
+        "us": 6.2
+       },
+       "other": {
+        "launches": 34.0,
+        "us": 687.9
+       },
+       "norm / rope": {
+        "launches": 9.0,
+        "us": 30.2
+       },
+       "gemm (cublas/cutlass)": {
+        "launches": 24.0,
+        "us": 890.5
+       },
+       "elementwise (torch)": {
+        "launches": 25.0,
+        "us": 50.8
+       },
+       "qsa": {
+        "launches": 15.0,
+        "us": 249.2
+       },
+       "hc gated residual": {
+        "launches": 6.0,
+        "us": 15.3
+       },
+       "route / moe glue": {
+        "launches": 9.0,
+        "us": 36.7
+       },
+       "moe b12x": {
+        "launches": 3.0,
+        "us": 249.1
+       },
+       "dense w4/fp8": {
+        "launches": 6.0,
+        "us": 2017.2
+       }
+      },
+      "kernels": {
+       "_fp8_rows": {
+        "launches": 3.0,
+        "us": 2013.08
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2_tn_align8::Params)": {
+        "launches": 11.0,
+        "us": 451.05
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1_tn_align8::Params)": {
+        "launches": 6.0,
+        "us": 320.9
+       },
+       "_up_mean": {
+        "launches": 9.0,
+        "us": 270.94
+       },
+       "_down_gates": {
+        "launches": 9.0,
+        "us": 270.82
+       },
+       "kernel_cutlass_kernel_enginekernelsb12xmoe_micro_kernelMoEMicroKernel_object_at__tensorptrbf16gmemalign16o4256025601_tensorptri32gmemo401_tensorptrf32gmemo401_tensorptri8gmemalign16o26214_0": {
+        "launches": 3.0,
+        "us": 249.09
+       },
+       "_qsa_sparse_paged_gqa_splitk_kernel": {
+        "launches": 3.0,
+        "us": 162.1
+       },
+       "_select_rows": {
+        "launches": 3.0,
+        "us": 123.43
+       },
+       "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2>(cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_32x32_128x1_tn_align2::Params)": {
+        "launches": 1.0,
+        "us": 71.19
+       },
+       "_skinny_gemv_kernel": {
+        "launches": 3.0,
+        "us": 42.05
+       },
+       "_norm_streams": {
+        "launches": 9.0,
+        "us": 30.17
+       },
+       "_qsa_mqa_paged_kernel": {
+        "launches": 2.0,
+        "us": 28.04
+       },
+       "_qsa_mqa_paged_group_kernel": {
+        "launches": 1.0,
+        "us": 24.16
+       },
+       "_compact_topk_ids_kernel": {
+        "launches": 3.0,
+        "us": 17.42
+       },
+       "_qsa_inputs_kernel": {
+        "launches": 3.0,
+        "us": 16.77
+       },
+       "_softmax_topk": {
+        "launches": 3.0,
+        "us": 15.72
+       },
+       "_leave_norm": {
+        "launches": 6.0,
+        "us": 15.28
+       },
+       "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, long, unsigned int, 2, 2, -2>(at::cuda::detail::TensorInfo<c10::BFloat16, unsigned int>, at::cuda::detail::TensorInfo<c10::": {
+        "launches": 3.0,
+        "us": 11.02
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<at::native::CUDAFunctor_add<c10::BFloat16> >(at::TensorIteratorBase&, at::native::CUDAFunctor_add<c10::BFloat16> const&):": {
+        "launches": 3.0,
+        "us": 9.31
+       },
+       "_argmax_partials": {
+        "launches": 3.0,
+        "us": 9.29
+       },
+       "_qsa_index_keys_kernel": {
+        "launches": 3.0,
+        "us": 9.27
+       },
+       "_qsa_merge_splitk_kernel": {
+        "launches": 3.0,
+        "us": 8.86
+       },
+       "_addresses": {
+        "launches": 3.0,
+        "us": 6.17
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cuda(at::TensorIteratorBase&)::{lambda()#2}::operator()() const::{lambda()#2}::operator()() const::{lambda(float)#1}, std::": {
+        "launches": 3.0,
+        "us": 5.43
+       },
+       "void cublasLt::splitKreduce_kernel<32, 16, int, __nv_bfloat16, __nv_bfloat16, float, __nv_bfloat16, false, __nv_bfloat16, __nv_bfloat16, __nv_bfloat16, true, false, false, false>(cublasLt::cublasSplit": {
+        "launches": 3.0,
+        "us": 5.33
+       },
+       "_lookup": {
+        "launches": 3.0,
+        "us": 5.31
+       },
+       "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::native::direct_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda()#3}::operator()() const::{lambda()#7}::operator()() const": {
+        "launches": 3.0,
+        "us": 5.08
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnOther_add<long>, std::array<char*, 2ul>)": {
+        "launches": 3.0,
+        "us": 4.58
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long, long, long, at::native::BitwiseAndFunctor<long> >, std::array<char*, 2ul> >(int, at::native::AUnaryFunctor<long, long,": {
+        "launches": 3.0,
+        "us": 4.45
+       },
+       "_quantize": {
+        "launches": 3.0,
+        "us": 4.14
+       },
+       "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kernel_cuda(at::TensorIteratorBase&)::{lambda(float)#1}, std::array<char*, 2ul> >(int, at::native::bfloat16_copy_kernel_cuda": {
+        "launches": 3.0,
+        "us": 3.97
+       },
+       "_gated": {
+        "launches": 3.0,
+        "us": 3.9
+       },
+       "_argmax_finish": {
+        "launches": 3.0,
+        "us": 3.78
+       },
+       "_swiglu": {
+        "launches": 3.0,
+        "us": 3.56
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul> >(int, at::native::CUDAFunctorOnSelf_add<long>, std::array<char*, 2ul>)": {
+        "launches": 2.0,
+        "us": 3.54
+       },
+       "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::native::(anonymous namespace)::OpaqueType<8u>, unsigned int, 2, 128, 1, 16>(at::native::(anonymous namespace)::OpaqueTyp": {
+        "launches": 1.0,
+        "us": 1.77
+       },
+       "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul> >(int, at::native::CUDAFunctor_add<long>, std::array<char*, 3ul>)": {
+        "launches": 1.0,
+        "us": 1.64
+       },
+       "Memset (Unknown)": {
+        "launches": 1.0,
+        "us": 0.48
+       }
+      }
+     }
+    },
+    "errors": {},
+    "served_loop": {
+     "steps": 64,
+     "wall_us": 5898.7,
+     "tokens_a_step": 1.0,
+     "spent_us_a_step": {
+      "stage_ple": 0.0,
+      "target_run": 26.5,
+      "draft_run": 4298.6,
+      "picks": 1541.7
+     },
+     "replays_us": 5811.9,
+     "host_us": 86.8
+    },
+    "stacks": {
+     "target": [
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 5,
+       "us": 9.7,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl<at::nati",
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 2,
+       "us": 4.0,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      }
+     ],
+     "target calls": [
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 2
+      }
+     ],
+     "draft": [
+      {
+       "op": "aten::mm",
+       "where": "?",
+       "launches": 21,
+       "us": 979.4,
+       "kernels": [
+        "std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x1",
+        "void cutlass::Kernel2<cutlass_80_wmma_tensorop_bf16_s161616gemm_bf16_16x16_128x2"
+       ]
+      },
+      {
+       "op": "aten::copy_",
+       "where": "?",
+       "launches": 12,
+       "us": 18.8,
+       "kernels": [
+        "Memcpy DtoD (Device -> Device)",
+        "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda",
+        "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"
+       ]
+      },
+      {
+       "op": "aten::add",
+       "where": "?",
+       "launches": 6,
+       "us": 14.6,
+       "kernels": [
+        "void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_",
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"
+       ]
+      },
+      {
+       "op": "aten::sigmoid",
+       "where": "?",
+       "launches": 3,
+       "us": 5.9,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"
+       ]
+      },
+      {
+       "op": "aten::index_select",
+       "where": "?",
+       "launches": 3,
+       "us": 5.9,
+       "kernels": [
+        "void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"
+       ]
+      },
+      {
+       "op": "aten::bitwise_and",
+       "where": "?",
+       "launches": 3,
+       "us": 5.5,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"
+       ]
+      },
+      {
+       "op": "aten::sub",
+       "where": "?",
+       "launches": 3,
+       "us": 5.0,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"
+       ]
+      },
+      {
+       "op": "aten::fill_",
+       "where": "?",
+       "launches": 3,
+       "us": 3.9,
+       "kernels": [
+        "void at::native::vectorized_elementwise_kernel<4, at::native::FillFunctor<int>, "
+       ]
+      },
+      {
+       "op": "aten::arange",
+       "where": "?",
+       "launches": 3,
+       "us": 3.7,
+       "kernels": [
+        "void (anonymous namespace)::elementwise_kernel_with_index<int, at::native::arang"
+       ]
+      },
+      {
+       "op": "aten::cat",
+       "where": "?",
+       "launches": 1,
+       "us": 1.9,
+       "kernels": [
+        "void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"
+       ]
+      }
+     ],
+     "draft calls": [
+      {
+       "func": "mm",
+       "where": "engine/kernels/common/skinny_gemv.py:146",
+       "count": 21
+      },
+      {
+       "func": "index_select",
+       "where": "engine/profiles/qwen38/net.py:972",
+       "count": 3
+      },
+      {
+       "func": "arange",
+       "where": "engine/kernels/b12x/moe_dispatch.py:3859",
+       "count": 3
+      },
+      {
+       "func": "sigmoid",
+       "where": "engine/profiles/qwen38/net.py:747",
+       "count": 3
+      },
+      {
+       "func": "__and__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      },
+      {
+       "func": "__rsub__",
+       "where": "engine/modules/vocab.py:32",
+       "count": 3
+      }
+     ],
+     "mtp_rows": {
+      "hidden_max_err": 0.0,
+      "hidden_equal": true,
+      "streams_equal": true
+     }
+    }
+   }
+  }
+ },
+ "failed": {},
+ "step": {},
+ "served_loop": {
+  "steps": 64,
+  "wall_us": 6237.5,
+  "tokens_a_step": 1.0,
+  "spent_us_a_step": {
+   "stage_ple": 0.0,
+   "target_run": 26.3,
+   "draft_run": 4634.0,
+   "picks": 1546.1
+  },
+  "replays_us": 5835.4,
+  "host_us": 402.1
+ },
+ "step_by_arm": {
+  "served": {},
+  "mtp-w4": {},
+  "mtp-fp8": {},
+  "experts-fp8": {},
+  "experts-nvfp4": {}
+ },
+ "delta_from_first": {
+  "mtp-w4": {},
+  "mtp-fp8": {},
+  "experts-fp8": {},
+  "experts-nvfp4": {}
+ }
+}

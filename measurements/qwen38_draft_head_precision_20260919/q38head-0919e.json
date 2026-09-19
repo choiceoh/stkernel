@@ -1,0 +1,388 @@
+{
+ "device": "NVIDIA GB10",
+ "weight_MB": 159.0,
+ "rounds": 9,
+ "calls_a_graph": 8,
+ "qualify": {
+  "1": 0.002073,
+  "4": 0.001935,
+  "16": 0.002006
+ },
+ "rows": {
+  "1": {
+   "read only": {
+    "us": 697.4,
+    "GBps": 227.9
+   },
+   "deep_gemm": {
+    "us": 916.3,
+    "GBps": 173.5,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served": {
+    "us": 720.4,
+    "GBps": 220.7,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "draft w8a16": {
+    "us": 711.0,
+    "GBps": 223.6,
+    "rel_err": 0.027905,
+    "vs_deep_gemm": 0.027574,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 3)": {
+    "us": 712.5,
+    "GBps": 223.1,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (64, 4, 3)": {
+    "us": 721.7,
+    "GBps": 220.3,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 4, 3)": {
+    "us": 722.0,
+    "GBps": 220.2,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 8, 3)": {
+    "us": 718.8,
+    "GBps": 221.2,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 4)": {
+    "us": 728.1,
+    "GBps": 218.3,
+    "rel_err": 0.038447,
+    "vs_deep_gemm": 0.003676,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served_tile": [
+    32,
+    4,
+    4
+   ]
+  },
+  "2": {
+   "read only": {
+    "us": 704.4,
+    "GBps": 225.7
+   },
+   "deep_gemm": {
+    "us": 914.8,
+    "GBps": 173.8,
+    "rel_err": 0.037543,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served": {
+    "us": 718.9,
+    "GBps": 221.1,
+    "rel_err": 0.037543,
+    "vs_deep_gemm": 0.000862,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "draft w8a16": {
+    "us": 721.6,
+    "GBps": 220.3,
+    "rel_err": 0.027647,
+    "vs_deep_gemm": 0.030172,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 3)": {
+    "us": 717.7,
+    "GBps": 221.5,
+    "rel_err": 0.037543,
+    "vs_deep_gemm": 0.000862,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (64, 4, 3)": {
+    "us": 736.0,
+    "GBps": 216.0,
+    "rel_err": 0.037543,
+    "vs_deep_gemm": 0.000862,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 4, 3)": {
+    "us": 721.9,
+    "GBps": 220.2,
+    "rel_err": 0.037543,
+    "vs_deep_gemm": 0.000862,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 8, 3)": {
+    "us": 717.2,
+    "GBps": 221.6,
+    "rel_err": 0.037543,
+    "vs_deep_gemm": 0.000862,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 4)": {
+    "us": 726.2,
+    "GBps": 218.9,
+    "rel_err": 0.037543,
+    "vs_deep_gemm": 0.000862,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served_tile": [
+    32,
+    4,
+    4
+   ]
+  },
+  "4": {
+   "read only": {
+    "us": 712.2,
+    "GBps": 223.2
+   },
+   "deep_gemm": {
+    "us": 928.8,
+    "GBps": 171.2,
+    "rel_err": 0.040947,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served": {
+    "us": 724.7,
+    "GBps": 219.4,
+    "rel_err": 0.040947,
+    "vs_deep_gemm": 0.003472,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "draft w8a16": {
+    "us": 719.5,
+    "GBps": 220.9,
+    "rel_err": 0.027262,
+    "vs_deep_gemm": 0.026042,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 3)": {
+    "us": 723.5,
+    "GBps": 219.7,
+    "rel_err": 0.040947,
+    "vs_deep_gemm": 0.003472,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (64, 4, 3)": {
+    "us": 722.5,
+    "GBps": 220.0,
+    "rel_err": 0.040947,
+    "vs_deep_gemm": 0.003472,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 4, 3)": {
+    "us": 726.4,
+    "GBps": 218.8,
+    "rel_err": 0.040947,
+    "vs_deep_gemm": 0.003472,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 8, 3)": {
+    "us": 727.7,
+    "GBps": 218.4,
+    "rel_err": 0.040947,
+    "vs_deep_gemm": 0.003472,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 4)": {
+    "us": 730.4,
+    "GBps": 217.6,
+    "rel_err": 0.040947,
+    "vs_deep_gemm": 0.003472,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served_tile": [
+    32,
+    4,
+    4
+   ]
+  },
+  "8": {
+   "read only": {
+    "us": 706.5,
+    "GBps": 225.0
+   },
+   "deep_gemm": {
+    "us": 922.9,
+    "GBps": 172.2,
+    "rel_err": 0.036073,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served": {
+    "us": 719.0,
+    "GBps": 221.1,
+    "rel_err": 0.036073,
+    "vs_deep_gemm": 0.000762,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "draft w8a16": {
+    "us": 731.9,
+    "GBps": 217.2,
+    "rel_err": 0.024889,
+    "vs_deep_gemm": 0.02439,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 3)": {
+    "us": 731.6,
+    "GBps": 217.3,
+    "rel_err": 0.036073,
+    "vs_deep_gemm": 0.000762,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (64, 4, 3)": {
+    "us": 728.9,
+    "GBps": 218.1,
+    "rel_err": 0.036073,
+    "vs_deep_gemm": 0.000762,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 4, 3)": {
+    "us": 735.7,
+    "GBps": 216.1,
+    "rel_err": 0.036073,
+    "vs_deep_gemm": 0.000762,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 8, 3)": {
+    "us": 743.9,
+    "GBps": 213.7,
+    "rel_err": 0.036073,
+    "vs_deep_gemm": 0.000762,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 4)": {
+    "us": 725.3,
+    "GBps": 219.2,
+    "rel_err": 0.036073,
+    "vs_deep_gemm": 0.000762,
+    "argmax_as_bf16": 1.0,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served_tile": [
+    32,
+    4,
+    4
+   ]
+  },
+  "16": {
+   "read only": {
+    "us": 698.3,
+    "GBps": 227.6
+   },
+   "deep_gemm": {
+    "us": 926.3,
+    "GBps": 171.6,
+    "rel_err": 0.038407,
+    "vs_deep_gemm": 0.0,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served": {
+    "us": 730.4,
+    "GBps": 217.6,
+    "rel_err": 0.038407,
+    "vs_deep_gemm": 0.001613,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "draft w8a16": {
+    "us": 726.1,
+    "GBps": 218.9,
+    "rel_err": 0.025633,
+    "vs_deep_gemm": 0.028024,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 0.75
+   },
+   "fp8_rows (32, 4, 3)": {
+    "us": 734.9,
+    "GBps": 216.3,
+    "rel_err": 0.038407,
+    "vs_deep_gemm": 0.001613,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (64, 4, 3)": {
+    "us": 733.8,
+    "GBps": 216.6,
+    "rel_err": 0.038407,
+    "vs_deep_gemm": 0.001613,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 4, 3)": {
+    "us": 735.5,
+    "GBps": 216.1,
+    "rel_err": 0.038407,
+    "vs_deep_gemm": 0.001613,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (128, 8, 3)": {
+    "us": 738.8,
+    "GBps": 215.2,
+    "rel_err": 0.038407,
+    "vs_deep_gemm": 0.001613,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "fp8_rows (32, 4, 4)": {
+    "us": 730.1,
+    "GBps": 217.7,
+    "rel_err": 0.038407,
+    "vs_deep_gemm": 0.001613,
+    "argmax_as_bf16": 0.875,
+    "argmax_as_deep_gemm": 1.0
+   },
+   "served_tile": [
+    32,
+    4,
+    4
+   ]
+  }
+ }
+}
