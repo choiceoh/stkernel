@@ -114,6 +114,21 @@ def static_pad(rows: int, micro_cap: int = 8) -> int:
     return STATIC_TILE_ROWS - rows if micro_cap < rows < STATIC_TILE_ROWS else 0
 
 
+def pad_static_launch(x: torch.Tensor, ids: torch.Tensor, weights: torch.Tensor, fill: int,
+                      micro_cap: int = 8) -> "tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]":
+    """(x, ids, weights, rows): a captured MoE launch widened by `static_pad` rows of zeros routed to `fill` at weight
+    0 -- this rank's expert 0, by its global id on the global routes' path and 0 on route_local's -- and the rows the
+    caller keeps of the output. Both captured paths take it: route_local's is the one a served step runs, and a K=3
+    step of three rows (12) faulted there at capture on 2026-09-19 while the pad sat on the other path only."""
+    rows = x.shape[0]
+    pad = static_pad(rows, micro_cap)
+    if pad:
+        x = torch.cat([x, x.new_zeros(pad, x.shape[1])])
+        ids = torch.cat([ids, ids.new_full((pad, ids.shape[1]), fill)])
+        weights = torch.cat([weights, weights.new_zeros(pad, weights.shape[1])])
+    return x, ids, weights, rows
+
+
 def local_routes(ids: torch.Tensor, weights: torch.Tensor, first: int, local: int,
                  sentinel: "int | None" = None) -> "tuple[torch.Tensor, torch.Tensor]":
     """Global expert ids to this rank's [0, local): a route to another rank's expert gets weight 0 and names local
@@ -363,7 +378,8 @@ def served(*, tp=None) -> Lanes:
                                           intermediate_size=w13.shape[1] // 2, activation="silu", swiglu_limit=None)
 
     def route_local(scores, k, *, experts, first_expert, w13, hidden):
-        sentinel = sentinel_of(scores.shape[0], k, w13, hidden)
+        rows = scores.shape[0]                  # the launch `moe` makes of them: padded to the static kernel's tile
+        sentinel = sentinel_of(rows + static_pad(rows, md._MICRO_MAX_TOKENS), k, w13, hidden)
         return moe_route.softmax_topk(scores, k, experts=experts, first=first_expert, local=w13.shape[0],
                                       foreign=0 if sentinel is None else sentinel)
 
@@ -373,19 +389,16 @@ def served(*, tp=None) -> Lanes:
         if local:
             if compact:
                 raise ValueError("an eager step counts its own pairs from the global routes")
-            return dispatch(x, ids, weights, w13, sf13, w2, sf2, views, scales, E)
+            # the static kernel's rows below one 16-row tile: zero rows on local expert 0 at weight 0
+            x, ids, weights, rows = pad_static_launch(x, ids, weights, 0, md._MICRO_MAX_TOKENS)
+            out = dispatch(x, ids, weights, w13, sf13, w2, sf2, views, scales, E)
+            return out[:rows] if out.shape[0] != rows else out
         if not compact:
-            rows = x.shape[0]
-            pad = static_pad(rows, md._MICRO_MAX_TOKENS)
-            if pad:
-                # the static kernel's rows below one 16-row tile: zero rows routed to this rank's expert 0 at weight 0
-                x = torch.cat([x, x.new_zeros(pad, x.shape[1])])
-                ids = torch.cat([ids, ids.new_full((pad, ids.shape[1]), first_expert)])
-                weights = torch.cat([weights, weights.new_zeros(pad, weights.shape[1])])
+            x, ids, weights, rows = pad_static_launch(x, ids, weights, first_expert, md._MICRO_MAX_TOKENS)
             sentinel = sentinel_of(x.shape[0], ids.shape[1], w13, x.shape[1])
             local_ids, w = local_routes(ids, weights, first_expert, E, sentinel)
             out = dispatch(x, local_ids, w, w13, sf13, w2, sf2, views, scales, E)
-            return out[:rows] if pad else out
+            return out[:rows] if out.shape[0] != rows else out
         local_ids, w = local_routes(ids, weights, first_expert, E)
         # An eager step runs only this rank's (token, route) pairs, one route a row: at EP=4 the other ranks' routes are
         # ~3/4 of a prefill chunk's pairs, and on expert 0 they are rows of compute for a product of zero. Each pair's
@@ -432,4 +445,5 @@ def qualify(device, F) -> dict:
                                          max_position=F.max_position)}
 
 
-__all__ = ["Lanes", "KERNEL_MODULES", "import_kernels", "reference", "served", "qualify", "route_softmax_topk", "local_routes"]
+__all__ = ["Lanes", "KERNEL_MODULES", "import_kernels", "reference", "served", "qualify", "route_softmax_topk", "local_routes",
+           "static_pad", "pad_static_launch"]
