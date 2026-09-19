@@ -2480,7 +2480,13 @@ class Server:
                 # every rank has is the lowest one, and one rank seeing the prompt in flight makes every rank wait.
                 rows = self.tripwire.exchange("admit:prefix", [above, int(ahead is not None)])
                 above = min(row[0] for row in rows)
-                if any(row[1] for row in rows):
+                if tier is not None and tier[0] <= above:
+                    tier = None                                   # memory already gives as much: nothing to read
+                # Another row is reading this very boundary back from the tier: wait for it and adopt it from memory,
+                # as for a prefill that will cache it. A second read of it landed on the entry the first one had made
+                # (2026-09-19: six prompts sharing one tiered boundary). `_restoring` is every rank's alike.
+                reading = tier is not None and any(e["boundary"] == tier[1] for e in self._restoring.values())
+                if any(row[1] for row in rows) or reading:
                     if request not in self._deferred:
                         self._deferred.add(request)
                         self.runner.dedup_waits += 1
@@ -2490,8 +2496,6 @@ class Server:
                         continue
                     break
                 self._deferred.discard(request)
-                if tier is not None and tier[0] <= above:
-                    tier = None                                   # memory already gives as much: nothing to read
             if conversation is not None:
                 row = self._conversations.get(conversation)
                 if row is None and (conversation in self._retiring.values()
@@ -2552,7 +2556,7 @@ class Server:
                         self._failed_begins.add(row)              # (a rank that prefilled on its own here left the others in a vote it never joined)
                     self._restoring[row] = dict(request=request, ids=ids, limit=limit, temperature=temperature, promised=promised,
                                                 min_new=min_new, options=options, media=media, chain=chain, salt=salt,
-                                                cancelled=None)
+                                                boundary=tier[1], cancelled=None)
                     self._waiting.popleft()
                     continue
                 self.tier_restore_denials += 1        # every rank counts the same vote, so every rank counts this
@@ -2689,8 +2693,9 @@ class Server:
                     self._active[row] = (request, e["promised"])
                     self._note_cached(request, row)
                 else:
-                    if ok:
-                        self.runner.restore_undo(row)             # landed here but not everywhere, or nobody wants it: the row goes back
+                    # The row goes back empty: undone where the read landed (here but not everywhere, or nobody wants
+                    # it), and emptied of whatever a finish that raised here left in it -- the next prompt takes it.
+                    self.runner.restore_undo(row)
                     heapq.heappush(self._free_rows, row)
                     if e["cancelled"] is None:                    # prefill it the plain way, ahead of the queue
                         self._waiting.appendleft((request, e["ids"], e["limit"], e["temperature"], e["promised"], None, e["min_new"],
@@ -3018,7 +3023,8 @@ class Server:
                 ("counter", "st:prefix_tier_restore_denial_ranks_total",
                  "ranks that did hold those boundaries, summed: over the denials, the average agreement",
                  self.tier_restore_denial_ranks),
-                ("counter", "st:prefix_dedup_waits_total", "requests that waited for a running prefill's boundary instead of computing it",
+                ("counter", "st:prefix_dedup_waits_total",
+                 "requests that waited for a boundary a running prefill or tier read was bringing instead of computing or reading it",
                  getattr(runner, "dedup_waits", 0)),
                 ("gauge", "st:prefix_snapshots_free", "snapshot slots no boundary holds: what the next block boundary can take",
                  len(prefix.free_snaps)),

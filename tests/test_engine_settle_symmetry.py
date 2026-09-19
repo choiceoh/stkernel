@@ -216,7 +216,7 @@ class SettleSymmetryTests(unittest.TestCase):
         admit = serve[serve.index("    def _admit(self):"):serve.index("    def _transfer_done(self, row)")]
         self.assertIn('rows = self.tripwire.exchange("admit:prefix", [above, int(ahead is not None)])', admit)
         self.assertIn("above = min(row[0] for row in rows)", admit)
-        self.assertIn("if any(row[1] for row in rows):", admit)
+        self.assertIn("if any(row[1] for row in rows) or reading:", admit)   # `reading`: the books every rank keeps alike
         self.assertNotIn("if ahead is not None:", admit, "this rank's prefix cache no longer decides the branch alone")
         self.assertIn('if self._votes([fits], "admit:fits")[0] < world:', admit)
         self.assertNotIn("if promised > self.runner.kv.available - future + resident:", admit)

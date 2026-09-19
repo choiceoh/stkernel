@@ -385,7 +385,12 @@ class Runner:
 
     def restore_finish(self, seq: int) -> "tuple[int, int]":
         """The read landed: the boundary is a memory entry again (pinned by the cache, held by the row) -- returns
-        (tokens, snap) for `submit(prepared=...)`. A failed read frees the row and drops the tier's copy, and raises."""
+        (tokens, snap) for `submit(prepared=...)`. A failed read frees the row and drops the tier's copy, and raises.
+
+        Memory may hold the boundary by the time its read lands: a prefill admitted while it was still in memory
+        crossed it again. The entry is the boundary then; the row adopts it as a lookup would, and its own copy --
+        blocks and snapshot -- goes back. `insert` raised here instead, with the row still holding the blocks the
+        read had filled, and the loop handed that row to the next prompt (2026-09-19)."""
         h, tokens, snap, future = self._restores.pop(seq)
         try:
             future.result()
@@ -399,6 +404,12 @@ class Runner:
                 except Exception:                           # noqa: BLE001 -- the copy is unreadable either way
                     pass
             raise
+        if self.prefix.has(h):
+            self.kv.release(seq)
+            self.prefix.give_snapshot(snap)
+            entry = self.prefix.adopted(h)
+            self.kv.adopt(seq, entry.blocks, tokens)
+            return tokens, entry.snap
         blocks = tuple(self.kv.row(seq)[: tokens // self.kv.block_size])
         self.prefix.insert(h, blocks, tokens, snap)
         e = self.prefix.entries[h]

@@ -166,16 +166,20 @@ class PrefixCache:
         for tokens in sorted(chain, reverse=True):
             if tokens >= n:
                 continue
-            entry = self.entries.get(chain[tokens])
-            if entry is not None:
-                self.tick += 1
-                entry.used = self.tick
-                entry.hits += 1
-                entry.transient = False                 # something adopted it: it has served, and lives as any other
-                self.hits += 1
-                return tokens, entry, chain[tokens]
+            if chain[tokens] in self.entries:
+                return tokens, self.adopted(chain[tokens]), chain[tokens]
         self.misses += 1
         return 0, None, None
+
+    def adopted(self, h: bytes) -> Entry:
+        """A row takes the entry `h` as the head of its prompt: counted as served, a lookup's hit or not."""
+        entry = self.entries[h]
+        self.tick += 1
+        entry.used = self.tick
+        entry.hits += 1
+        entry.transient = False                         # something adopted it: it has served, and lives as any other
+        self.hits += 1
+        return entry
 
     def tier_lookup_chain(self, chain: dict, n: int, above: int = 0) -> "tuple[int, bytes] | None":
         for tokens in sorted(chain, reverse=True):
