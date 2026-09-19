@@ -432,19 +432,27 @@ class KdaDecayKernelTests(unittest.TestCase):
                     expected = ring.clone()
                     wide = ring.clone()
                     with kda_kernels():
-                        out_ref, states = fused_recurrent_kda(q, k, v, per_channel(decay, self.kd), beta,
+                        # GDN sigmoids in the projection's dtype before the FP32 recurrence. The generic KDA
+                        # functional entry takes those beta values, without applying a second sigmoid.
+                        out_ref, states = fused_recurrent_kda(q, k, v, per_channel(decay, self.kd), beta.sigmoid(),
                                                               scale=self.kd ** -0.5, initial_state=initial,
                                                               inplace_final_state=False, use_qk_l2norm_in_kernel=True,
-                                                              sigmoid_beta=True, compute_gate=False, state_layout="kv")
+                                                              sigmoid_beta=False, compute_gate=False, state_layout="kv")
                         out = recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context)
                         out_wide = recurrent_decay_ring(q, k, v, per_channel(decay, self.kd).contiguous(), beta, wide,
                                                         slot, context)
                     for i, state in enumerate(states):
                         expected[slot, (context + i) % cells_].copy_(state)
-                    self.assertTrue(torch.equal(out, out_ref))                 # the functional lane, byte for byte
-                    self.assertTrue(torch.equal(ring, expected))              # its states, written in the ring
+                    if INTERPRET:
+                        # FP32 torch.sigmoid and the interpreter's numpy exp differ in their last bit; GPU BF16
+                        # rounds both to the model's beta. Keep the storage equality check exact there.
+                        torch.testing.assert_close(out, out_ref, rtol=2e-6, atol=2e-7)
+                        torch.testing.assert_close(ring, expected, rtol=2e-6, atol=2e-7)
+                    else:
+                        self.assertTrue(torch.equal(out, out_ref))             # the functional lane, byte for byte
+                        self.assertTrue(torch.equal(ring, expected))          # its states, written in the ring
                     self.assertTrue(torch.equal(out_wide, out) and torch.equal(wide, ring))   # stride 0 == contiguous
-                    oracle, final = self.oracle(q, k, v, decay, torch.sigmoid(beta.float()), initial)
+                    oracle, final = self.oracle(q, k, v, decay, torch.sigmoid(beta), initial)
                     self.assertLessEqual(self.rel(out, oracle), 1e-5 if INTERPRET else 1e-2)
                     self.assertLessEqual(self.rel(ring[slot, (context + t - 1) % cells_], final[0]),
                                          1e-5 if INTERPRET else 1e-2)

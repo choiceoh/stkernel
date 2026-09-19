@@ -5,7 +5,8 @@ decay, a copy of the raw beta logits) and handed them to the ring kernel (kda/ri
 reads the decay through a stride-0 channel axis and sigmoids beta itself. kda/ring.recurrent_gdn_ring(_rows) reads a and
 b -- the in_proj columns -- through their strides and computes the same fp32 decay inside the recurrence's launch
 (HEAD_GATE in kda/fused_recurrent.py): one launch fewer on each of the 36 GDN layers of a step. The launch's outputs and
-ring writes are the two launches' bytes; every existing specialization of the kernel (HEAD_GATE off) is untouched.
+ring writes are the two launches' bytes. Both GDN entries round sigmoid to the projection dtype, matching prefill
+and the model before the FP32 recurrence; per-channel KDA keeps its existing FP32 sigmoid.
 
 Under TRITON_INTERPRET=1 the inputs are FP32 (the interpreter does not round BF16 as a GPU does) and libdevice's log1p,
 which the interpreter cannot call, is numpy's in both launches; on a GPU the same cases run in BF16 at Qwen3.8's per-rank
@@ -136,12 +137,57 @@ class GdnRingGateTests(unittest.TestCase):
             out = recurrent_gdn_ring(q, k, v, a[None], b[None], A_log, dt_bias, ring, 1, 5)
         group = self.hv // self.h
         oracle, final = gated_delta_rule(q.repeat_interleave(group, 2), k.repeat_interleave(group, 2), v,
-                                         gdn_decay(a[None], A_log, dt_bias), torch.sigmoid(b[None].float()), initial,
+                                         gdn_decay(a[None], A_log, dt_bias), torch.sigmoid(b[None]), initial,
                                          scale=self.kd ** -0.5, qk_l2norm=True)
         rel = lambda x, y: float((x.float() - y.float()).norm() / y.float().norm().clamp_min(1e-30))
         tolerance = 1e-5 if INTERPRET else 1e-2
         self.assertLessEqual(rel(out, oracle), tolerance)
         self.assertLessEqual(rel(ring[1, (5 + t - 1) % cells], final[0]), tolerance)
+
+    def test_bf16_beta_matches_prefill_and_the_model_at_every_saved_position(self):
+        """The model sigmoids the BF16 projection BEFORE widening it for the FP32 recurrence. Checking the
+        saved states, rather than just a BF16 output at a 1% tolerance, exposes a decode-only gate change."""
+        from engine.kernels.kda.ring import recurrent_gdn_ring, recurrent_decay_ring
+        from engine.modules.linear_attention import gated_delta_rule, gdn_decay
+        from tests.test_engine_qwen38_kernels import served_kernels
+        t = 2
+        q = torch.full((1, t, self.h, self.kd), .25, dtype=torch.bfloat16, device=DEVICE)
+        k = q.clone()
+        v = torch.full((1, t, self.hv, self.kd), .75, dtype=torch.bfloat16, device=DEVICE)
+        a = torch.zeros(1, t, self.hv, dtype=torch.bfloat16, device=DEVICE)
+        b = torch.full_like(a, 1.1)
+        A_log = torch.zeros(self.hv, device=DEVICE)
+        dt_bias = torch.zeros_like(A_log)
+        decay = gdn_decay(a, A_log, dt_bias)
+        group = self.hv // self.h
+        want, _, states = gated_delta_rule(q.repeat_interleave(group, 2), k.repeat_interleave(group, 2), v,
+                                           decay, b.sigmoid(), all_states=True)
+        for kind in ("fused", "decay"):
+            ring = torch.zeros(1, 4, self.hv, self.kd, self.kd, device=DEVICE)
+            with self.subTest(kind=kind), served_kernels(), ring_kernels():
+                got = (recurrent_gdn_ring(q, k, v, a, b, A_log, dt_bias, ring, 0, 0) if kind == "fused" else
+                       recurrent_decay_ring(q, k, v, decay, b, ring, 0, 0))
+            torch.testing.assert_close(ring[0, :t], states[0], rtol=2e-5, atol=2e-7)
+            torch.testing.assert_close(got, want, rtol=0, atol=0)
+
+
+@unittest.skipUnless(torch is not None and TRITON, "requires torch and the reference lane's Triton imports")
+class GdnReferenceGateTests(unittest.TestCase):
+    def test_chunk_and_ring_use_the_same_beta_values(self):
+        from engine.profiles.qwen38.lanes import reference
+        lane = reference()
+        q = torch.full((1, 2, 1, 16), .25, dtype=torch.bfloat16)
+        v = torch.full((1, 2, 2, 16), .75, dtype=torch.bfloat16)
+        a = torch.zeros(2, 2, dtype=torch.bfloat16)
+        b = torch.full_like(a, 1.1)
+        A_log = torch.zeros(2)
+        dt_bias = torch.zeros(2)
+        decay, beta = lane.gdn_gates(a, b, A_log, dt_bias, sigmoid_beta=True)
+        want, state = lane.gdn_chunk(q, q, v, decay[None], beta[None], None)
+        ring = torch.zeros(1, 4, 2, 16, 16)
+        got = lane.gdn_ring(q, q, v, a[None], b[None], A_log, dt_bias, ring, 0, 0)
+        torch.testing.assert_close(ring[0, 1], state[0], rtol=0, atol=0)
+        torch.testing.assert_close(got, want, rtol=0, atol=0)
 
 
 @unittest.skipUnless(torch is not None and TRITON, "the KDA modules import Triton")

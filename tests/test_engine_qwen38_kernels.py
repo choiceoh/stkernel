@@ -479,6 +479,35 @@ class NormRopeTests(Held):
     """qsa.norm_rope_partial at the four places net._qsa calls it, with the heads laid out as the step hands them over,
     against rmsnorm_unit_offset then apply_rope over the first rotary_dim channels, within qsa.qualify's band."""
 
+    def test_long_context_rotation_in_fp32_without_quantisation(self):
+        """FP32 inputs expose phase errors that the BF16 qualification band can hide. Check both the standalone
+        rotation and the fused helper that writes the served Q/K/index heads, up to the checkpoint's last position."""
+        from engine.kernels import qsa
+        from engine.modules.norm import rmsnorm_unit_offset
+        from engine.modules.rotary import apply_rope, rope_tables
+        gen = generator(52)
+        positions = torch.tensor([0, 1, 31, 4095, 32767, 32768, 65535, 131071, 131072, MAX_POSITION - 1],
+                                 device=DEVICE, dtype=torch.int64)
+        n, D, Di = len(positions), W.head_dim, W.idx_dim
+        q = randn(gen, n, W.heads, 2 * D, dtype=torch.float32)[..., :D]
+        k = randn(gen, n, 1, D, dtype=torch.float32)
+        iq = randn(gen, n, W.idx_heads, Di, dtype=torch.float32)
+        weights = [randn(gen, x.shape[-1], scale=.1, dtype=torch.float32) for x in (q, k, iq)]
+        kc, vc, rc = (torch.zeros(1, n, 1, dim, device=DEVICE) for dim in (D, D, Di))
+        slots = torch.arange(n, device=DEVICE, dtype=torch.int64)
+        with served_kernels():
+            qout, iqout = qsa.qsa_inputs(q, k, torch.zeros_like(k), iq, rc[0, :, 0].clone(), positions, *weights,
+                                         EPS, THETA, W.rotary, kc, vc, slots, rc, slots)
+            standalone = [qsa.norm_rope_partial(x, w, EPS, positions, THETA, W.rotary)
+                          for x, w in zip((q, k, iq), weights)]
+        cos, sin = rope_tables(positions, W.rotary, THETA, dtype=torch.float32)
+        for name, x, w, got, fused in zip(("query", "key", "index query"), (q, k, iq), weights,
+                                         standalone, (qout, kc[0], iqout)):
+            want = apply_rope(rmsnorm_unit_offset(x, w, EPS), cos, sin)
+            for entry, actual in (("standalone", got), ("fused", fused)):
+                with self.subTest(head=name, entry=entry):
+                    self.assertWithin(actual, want, (2e-5, 2e-5), f"{entry} {name} at long positions")
+
     def test_the_heads_as_the_attention_layer_hands_them_over(self):
         from engine.kernels import qsa
         from engine.modules.norm import rmsnorm_unit_offset

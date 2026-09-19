@@ -83,7 +83,7 @@ def recurrent_gdn_ring(q, k, v, a, b, A_log, dt_bias, ring, slot, context):
 
     `a` and `b` are the raw decay and beta projections per value head [1,T,HV] -- the in_proj columns, read through
     their strides without a copy; A_log and dt_bias are contiguous FP32 [HV]. The kernel computes engine/kernels/gdn.gates'
-    decay, -exp(A_log) * softplus(a + dt_bias) in FP32, and sigmoids b, as `recurrent_decay_ring` does on the decay and
+    decay, -exp(A_log) * softplus(a + dt_bias) in FP32, and sigmoids b in b's dtype, as `recurrent_decay_ring` does on the decay and
     raw beta that launch hands it: the same outputs and ring writes, one launch fewer. Q/K are l2-normalised in the
     kernel; the ring, slot and context contract is `recurrent_kda_ring`'s."""
     return _recurrent(q, k, v, a, b, A_log, dt_bias, ring, slot, context, None, head_gate=True)
@@ -101,9 +101,10 @@ def recurrent_decay_ring(q, k, v, decay, beta, ring, slot, context):
     """`recurrent_kda_ring` for a log-decay computed outside the kernel -- GDN's (glue, cells.GLUE).
 
     `decay` is the natural-log decay (<= 0) per head [1,T,HV], read through a stride-0 channel axis without a copy, or
-    per channel [1,T,HV,K]. Beta holds raw logits (the kernel sigmoids them), Q/K are l2-normalised in the kernel, and
+    per channel [1,T,HV,K]. Beta holds raw logits: GDN rounds sigmoid to beta's dtype before the FP32 recurrence;
+    KDA keeps its FP32 sigmoid. Q/K are l2-normalised in the kernel, and
     the ring, slot and context contract is `recurrent_kda_ring`'s. The launch and its ring writes are the fused entry's
-    with the in-kernel gate off, the recurrence fused_recurrent_kda(compute_gate=False) computes."""
+    with the in-kernel gate off, the recurrence fused_recurrent_kda(compute_gate=False) computes on those beta values."""
     return _recurrent(q, k, v, decay, beta, None, None, ring, slot, context, None, decay=True)
 
 
@@ -120,6 +121,11 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
     if decay and head_gate:
         raise ValueError("a ring launch takes a decay or GatedDeltaNet's projection, not both")
     _check_cell(decay, head_gate=head_gate)
+    from engine.base.kernel_shape import bound
+    # Qwen's beta is sigmoid(b) in b's dtype before the FP32 recurrence (gdn.gates and the model's GatedDeltaNet).
+    # Widening b before sigmoid changed the state solely on decode/verify, even with identical quantised inputs.
+    # The per-channel KDA contract keeps its existing FP32 sigmoid.
+    round_beta = (head_gate or decay) and bound().linear.decay == "head"
     if head_gate:
         if lower_bound is not None or deferred:
             raise ValueError("the GDN entries take no gate bound and keep no deferred state")
@@ -230,6 +236,6 @@ def _recurrent(q, k, v, g, beta, a_log, g_bias, ring, slot, context, lower_bound
         RING_SLOT_STRIDE=ring.stride(0), RING_DEVICE_INDICES=device_indices,
         RING_INDEX_STRIDE=1 if rows > 1 else 0,
         deferred_keys=factors[0], deferred_decay=factors[1], deferred_updates=factors[2],
-        DEFERRED_STATE=deferred, HEAD_GATE=head_gate,
+        DEFERRED_STATE=deferred, HEAD_GATE=head_gate, ROUND_BETA=round_beta,
         num_warps=1, num_stages=3)
     return (out, factors) if deferred else out

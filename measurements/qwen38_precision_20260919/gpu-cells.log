@@ -1,0 +1,104 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-precision-4436b-20260919-190405.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-precision-4436b-20260919-190405.txt
+GO qwen38-precision-4436b 2026-09-19_19:04:05
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 4 GiB beside production, no fleet lease)
+{"lane": "qwen38_qualify", "config_sha256": "e765305daba0951974308f4d32c075b52a6a45974730d273f2216718a994d624", "gated_residual": {"enter": [0.0062500000931322575, 0.0010940515203401446], "inject": [0.004854368977248669, 0.0013956144684925675], "leave_norm": [0.004975124262273312, 0.0024845092557370663], "leave": [0.004975124262273312, 0.0024845092557370663], "close": [0.005586592014878988, 0.0027172171976417303]}, "gdn": {"decay": [1.8527525469380635e-07, 1.2093259726952965e-07], "beta": [0.0, 0.0], "raw_beta": [0.0, 0.0], "norm": [7.038288458716124e-05, 2.438618139422033e-06]}, "qsa_norm_rope": {"norm_rope_6x256": [0.006172839552164078, 0.0015349400928243995], "norm_rope_4x128": [0.006896551698446274, 0.002324720611795783]}, "skinny_gemv": {"513x2560": 0.002813, "324x10240": 0.002272, "320x10240": 0.002349, "4224x2560": 0.003003, "2560x1536": 0.002604, "2560x2560": 0.002821, "320x2560": 0.003817, "2560x160": 0.002879}, "fp8_rows": {"1": 0.002073, "4": 0.001935, "16": 0.002006}}
+test_the_chunk_decay_entry_is_the_recurrence (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_chunk_decay_entry_is_the_recurrence) ... ok
+test_the_decay_entry_with_kda_s_gate_is_the_fused_entry (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_decay_entry_with_kda_s_gate_is_the_fused_entry)
+Hand the decay entry the per-channel decay KDA's fused gate computes and it is the fused ring entry. ... ok
+test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_ring_decay_entry_is_the_recurrence_and_the_functional_lane) ... ok
+test_the_rows_fold_is_the_one_row_launches (tests.test_engine_kernel_glue.KdaDecayKernelTests.test_the_rows_fold_is_the_one_row_launches) ... ok
+test_mhc_v41_on_the_megakernel (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_mhc_v41_on_the_megakernel) ... ok
+test_mla_glue_on_the_megakernel (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_mla_glue_on_the_megakernel) ... [megakernel] selftest mla rel=3.07e-03 prefill32=False -> ARM
+ok
+test_padded_dense_is_the_lane_over_padded_bytes (tests.test_engine_kernel_glue.GlueOnTheGpuTests.test_padded_dense_is_the_lane_over_padded_bytes) ... ok
+test_a_row_view_and_an_empty_step (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_a_row_view_and_an_empty_step) ... ok
+test_it_refuses_what_it_does_not_compute (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_it_refuses_what_it_does_not_compute) ... ok
+test_on_a_gpu_the_rounding_is_torchs (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_on_a_gpu_the_rounding_is_torchs) ... ok
+test_the_served_output_is_the_sum_rounded_once (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_the_served_output_is_the_sum_rounded_once) ... ok
+test_the_sum_is_the_torch_composition_byte_for_byte (tests.test_engine_qwen38_moe_finish.GatedSumTests.test_the_sum_is_the_torch_composition_byte_for_byte) ... ok
+test_it_refuses_a_narrower_output (tests.test_engine_swiglu_pad.SwigluPadTests.test_it_refuses_a_narrower_output) ... ok
+test_on_a_gpu_the_bf16_launch_is_the_torch_pair_padded (tests.test_engine_swiglu_pad.SwigluPadTests.test_on_a_gpu_the_bf16_launch_is_the_torch_pair_padded) ... ok
+test_the_padded_launch_is_the_launch_then_the_pad (tests.test_engine_swiglu_pad.SwigluPadTests.test_the_padded_launch_is_the_launch_then_the_pad) ... ok
+test_without_pad_to_the_launch_writes_what_the_old_launch_wrote (tests.test_engine_swiglu_pad.SwigluPadTests.test_without_pad_to_the_launch_writes_what_the_old_launch_wrote)
+The kernel as it was before `pad_to` (kept here verbatim), on the same inputs: GLM-5.3's drafter calls it ... ok
+test_bf16_beta_matches_prefill_and_the_model_at_every_saved_position (tests.test_engine_gdn_ring_gate.GdnRingGateTests.test_bf16_beta_matches_prefill_and_the_model_at_every_saved_position)
+The model sigmoids the BF16 projection BEFORE widening it for the FP32 recurrence. Checking the ... ok
+test_the_gate_in_the_ring_is_the_gates_launch_then_the_decay_entry (tests.test_engine_gdn_ring_gate.GdnRingGateTests.test_the_gate_in_the_ring_is_the_gates_launch_then_the_decay_entry) ... ok
+test_the_ring_is_the_recurrence_on_gdn_s_decay (tests.test_engine_gdn_ring_gate.GdnRingGateTests.test_the_ring_is_the_recurrence_on_gdn_s_decay) ... ok
+test_the_rows_fold_is_the_decay_rows_entry_and_the_one_row_launches (tests.test_engine_gdn_ring_gate.GdnRingGateTests.test_the_rows_fold_is_the_decay_rows_entry_and_the_one_row_launches) ... ok
+test_four_heads_normalise_as_the_contiguous_fallback (tests.test_engine_qk_norm_strided_heads.OnTheGpuTests.test_four_heads_normalise_as_the_contiguous_fallback) ... ok
+test_the_entries_refuse_before_any_launch (tests.test_engine_qwen38_qsa_inputs.QsaInputsTests.test_the_entries_refuse_before_any_launch) ... ok
+test_the_ring_is_read_before_it_is_written (tests.test_engine_qwen38_qsa_inputs.QsaInputsTests.test_the_ring_is_read_before_it_is_written)
+The order is the fold's: writing this step's raw keys first changes the continuing prefill's index keys. ... ok
+test_two_launches_are_the_nine (tests.test_engine_qwen38_qsa_inputs.QsaInputsTests.test_two_launches_are_the_nine) ... ok
+test_the_gate_must_match_the_query (tests.test_engine_qwen38_attention_gate.AttentionGateTests.test_the_gate_must_match_the_query) ... ok
+test_the_gated_store_is_the_layer_s_gate_over_the_attention (tests.test_engine_qwen38_attention_gate.AttentionGateTests.test_the_gated_store_is_the_layer_s_gate_over_the_attention) ... ok
+test_every_order_of_a_row_s_blocks_attends_alike (tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests.test_every_order_of_a_row_s_blocks_attends_alike)
+The selectors leave a row's set in their own orders (torch.topk by value, prefill_topk and st_dsa_select by ... ok
+test_the_attention_over_blocks_is_the_attention_over_their_expansion (tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests.test_the_attention_over_blocks_is_the_attention_over_their_expansion) ... ok
+test_the_blocks_entry_refuses_what_the_expansion_refuses (tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests.test_the_blocks_entry_refuses_what_the_expansion_refuses) ... ok
+test_paged_sparse_gqa_is_the_attention_over_the_selected_positions (tests.test_engine_qwen38_kernels.SparseAttentionTests.test_paged_sparse_gqa_is_the_attention_over_the_selected_positions) ... ok
+test_long_context_rotation_in_fp32_without_quantisation (tests.test_engine_qwen38_kernels.NormRopeTests.test_long_context_rotation_in_fp32_without_quantisation)
+FP32 inputs expose phase errors that the BF16 qualification band can hide. Check both the standalone ... ok
+test_the_heads_as_the_attention_layer_hands_them_over (tests.test_engine_qwen38_kernels.NormRopeTests.test_the_heads_as_the_attention_layer_hands_them_over) ... ok
+test_a_row_view_a_narrow_router_and_an_empty_step (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_a_row_view_a_narrow_router_and_an_empty_step) ... ok
+test_a_tie_names_the_lowest_experts_of_the_tied_set (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_a_tie_names_the_lowest_experts_of_the_tied_set) ... ok
+test_it_refuses_what_it_does_not_compute (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_it_refuses_what_it_does_not_compute) ... ok
+test_the_ep_remap_is_local_routes (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_the_ep_remap_is_local_routes) ... ok
+test_the_gates_column_beside_the_experts_never_enters_the_softmax (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_the_gates_column_beside_the_experts_never_enters_the_softmax) ... ok
+test_the_routes_are_the_compositions (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_the_routes_are_the_compositions) ... ok
+test_the_served_weights_are_bf16_values_a_step_from_the_compositions_at_most (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_the_served_weights_are_bf16_values_a_step_from_the_compositions_at_most) ... ok
+test_without_ties_the_experts_are_torchs_in_torchs_order (tests.test_engine_qwen38_moe_route.SoftmaxTopkTests.test_without_ties_the_experts_are_torchs_in_torchs_order) ... ok
+test_a_captured_steps_routes_are_the_composed_layers_and_its_gate_is_torchs (tests.test_engine_qwen38_moe_route.LayerTests.test_a_captured_steps_routes_are_the_composed_layers_and_its_gate_is_torchs) ... ok
+test_an_eager_step_keeps_the_global_routes (tests.test_engine_qwen38_moe_route.LayerTests.test_an_eager_step_keeps_the_global_routes) ... ok
+test_a_per_channel_gate_over_equal_heads_is_read_where_it_always_was (tests.test_engine_gdn_chunk_native.NativeChunkTests.test_a_per_channel_gate_over_equal_heads_is_read_where_it_always_was)
+KDA's form through the same kernels (G_HEAD false, QG 1): a per-channel decay, as many key heads as value ... ok
+test_it_is_still_the_recurrence (tests.test_engine_gdn_chunk_native.NativeChunkTests.test_it_is_still_the_recurrence) ... ok
+test_the_native_forms_are_the_widened_forms_byte_for_byte (tests.test_engine_gdn_chunk_native.NativeChunkTests.test_the_native_forms_are_the_widened_forms_byte_for_byte) ... /usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+ok
+test_a_captured_steps_rows_score_as_they_did_alone (tests.test_engine_qwen38_qsa_group_scores.GroupScoreTests.test_a_captured_steps_rows_score_as_they_did_alone) ... ok
+test_a_prefill_segment_with_a_short_last_run (tests.test_engine_qwen38_qsa_group_scores.GroupScoreTests.test_a_prefill_segment_with_a_short_last_run) ... ok
+test_one_row_is_the_row_launch (tests.test_engine_qwen38_qsa_group_scores.GroupScoreTests.test_one_row_is_the_row_launch) ... ok
+test_the_selection_is_the_row_launchs_through_both_entries (tests.test_engine_qwen38_qsa_group_scores.GroupScoreTests.test_the_selection_is_the_row_launchs_through_both_entries) ... ok
+test_the_scored_selection_of_a_covered_step_is_these_ids (tests.test_engine_qwen38_covered_blocks.ServedSelectionTests.test_the_scored_selection_of_a_covered_step_is_these_ids)
+Three segments ending inside the reach, the last exactly at it: what qsa_select_paged_blocks scores and ... ok
+test_a_prefill_segment_through_every_split_profile (tests.test_engine_qwen38_covered_attention.CoveredAttentionTests.test_a_prefill_segment_through_every_split_profile)
+Row counts on both sides of the profile's steps (2, 8 and 256 programs), the last run short. ... ok
+test_a_short_prompt_stops_at_its_own_end (tests.test_engine_qwen38_covered_attention.CoveredAttentionTests.test_a_short_prompt_stops_at_its_own_end)
+The whole prompt from position 0: most of the budget's columns are past every row. ... ok
+test_a_step_of_several_segments (tests.test_engine_qwen38_covered_attention.CoveredAttentionTests.test_a_step_of_several_segments)
+Runs of one: the rows are several requests'. A first position, a segment across a group boundary, one that ... ok
+test_the_split_selection_is_the_whole_ones_bytes (tests.test_engine_qwen38_query_shards.ServedSelectionTests.test_the_split_selection_is_the_whole_ones_bytes)
+One prefill segment that starts inside the budget's reach and ends well past it, on the served kernels: ... ok
+test_a_row_view_and_what_it_refuses (tests.test_engine_qwen38_qsa_select.SelectTests.test_a_row_view_and_what_it_refuses) ... ok
+test_columns_past_the_visible_blocks_are_never_chosen_whatever_they_hold (tests.test_engine_qwen38_qsa_select.SelectTests.test_columns_past_the_visible_blocks_are_never_chosen_whatever_they_hold) ... ok
+test_it_is_the_rule_at_every_visible_count (tests.test_engine_qwen38_qsa_select.SelectTests.test_it_is_the_rule_at_every_visible_count) ... ok
+test_negative_scores_order_as_floats_do (tests.test_engine_qwen38_qsa_select.SelectTests.test_negative_scores_order_as_floats_do) ... ok
+test_ties_across_the_kth_place_go_to_the_lower_blocks (tests.test_engine_qwen38_qsa_select.SelectTests.test_ties_across_the_kth_place_go_to_the_lower_blocks) ... ok
+test_where_torch_topk_had_no_choice_the_set_is_torch_topks (tests.test_engine_qwen38_qsa_select.SelectTests.test_where_torch_topk_had_no_choice_the_set_is_torch_topks) ... ok
+test_a_step_with_no_pair_and_rows_past_the_last_are_zeros (tests.test_engine_qwen38_moe_pairs.PairSumTests.test_a_step_with_no_pair_and_rows_past_the_last_are_zeros) ... ok
+test_each_row_is_its_pairs_summed_in_order_and_rounded_once (tests.test_engine_qwen38_moe_pairs.PairSumTests.test_each_row_is_its_pairs_summed_in_order_and_rounded_once) ... ok
+test_many_rows_find_their_own_pairs (tests.test_engine_qwen38_moe_pairs.PairSumTests.test_many_rows_find_their_own_pairs) ... ok
+test_the_entry_refuses_what_it_cannot_read (tests.test_engine_qwen38_moe_pairs.PairSumTests.test_the_entry_refuses_what_it_cannot_read) ... ok
+test_a_new_prompt_length_reads_a_kernel_it_already_has (tests.test_engine_causal_conv.SingleConvTests.test_a_new_prompt_length_reads_a_kernel_it_already_has) ... ok
+test_bf16_patterns_and_saturated_silu (tests.test_engine_causal_conv.SingleConvTests.test_bf16_patterns_and_saturated_silu) ... ok
+test_chunk_carry_and_torch_convolution (tests.test_engine_causal_conv.SingleConvTests.test_chunk_carry_and_torch_convolution) ... ok
+test_empty_and_invalid_arguments (tests.test_engine_causal_conv.SingleConvTests.test_empty_and_invalid_arguments) ... ok
+test_projection_stride_lengths_and_history_boundaries (tests.test_engine_causal_conv.SingleConvTests.test_projection_stride_lengths_and_history_boundaries) ... ok
+test_widths_channel_tails_dtypes_and_strided_weights_history (tests.test_engine_causal_conv.SingleConvTests.test_widths_channel_tails_dtypes_and_strided_weights_history) ... ok
+test_disjoint_slots_on_two_streams (tests.test_engine_conv_ring.ConvRingTests.test_disjoint_slots_on_two_streams) ... ok
+test_graph_slot_context_and_rejected_suffix (tests.test_engine_conv_ring.ConvRingTests.test_graph_slot_context_and_rejected_suffix) ... ok
+test_projection_slices_all_short_lengths_and_ring_wrap (tests.test_engine_conv_ring.ConvRingTests.test_projection_slices_all_short_lengths_and_ring_wrap) ... ok
+test_reject_invalid_contract_and_input_aliases (tests.test_engine_conv_ring.ConvRingTests.test_reject_invalid_contract_and_input_aliases) ... ok
+test_rows_fold_matches_one_row_launches_and_replays (tests.test_engine_conv_ring.ConvRingTests.test_rows_fold_matches_one_row_launches_and_replays)
+net._kda folds a captured step's rows into one conv launch (45차, the C=4 question): byte-equal to the ... ok
+test_strides_tails_widths_types_and_independent_reference (tests.test_engine_conv_ring.ConvRingTests.test_strides_tails_widths_types_and_independent_reference) ... ok
+test_zero_context_nan_and_bf16_patterns (tests.test_engine_conv_ring.ConvRingTests.test_zero_context_nan_and_bf16_patterns) ... {"lane": "glue_gpu", "passed": true, "tests": 77, "cases": ["tests.test_engine_kernel_glue.KdaDecayKernelTests", "tests.test_engine_kernel_glue.GlueOnTheGpuTests", "tests.test_engine_qwen38_moe_finish.GatedSumTests", "tests.test_engine_swiglu_pad.SwigluPadTests", "tests.test_engine_gdn_ring_gate.GdnRingGateTests", "tests.test_engine_qk_norm_strided_heads.OnTheGpuTests", "tests.test_engine_qwen38_qsa_inputs.QsaInputsTests", "tests.test_engine_qwen38_attention_gate.AttentionGateTests", "tests.test_engine_qwen38_qsa_blocks.BlockAttentionTests", "tests.test_engine_qwen38_kernels.SparseAttentionTests", "tests.test_engine_qwen38_kernels.NormRopeTests", "tests.test_engine_qwen38_moe_route.SoftmaxTopkTests", "tests.test_engine_qwen38_moe_route.LayerTests", "tests.test_engine_gdn_chunk_native.NativeChunkTests", "tests.test_engine_qwen38_qsa_group_scores.GroupScoreTests", "tests.test_engine_qwen38_covered_blocks.ServedSelectionTests", "tests.test_engine_qwen38_covered_attention.CoveredAttentionTests", "tests.test_engine_qwen38_query_shards.ServedSelectionTests", "tests.test_engine_qwen38_qsa_select.SelectTests", "tests.test_engine_qwen38_moe_pairs.PairSumTests", "tests.test_engine_causal_conv.SingleConvTests", "tests.test_engine_conv_ring.ConvRingTests"], "device": "NVIDIA GB10", "torch": "2.13.0+cu132", "cuda": "13.2"}
+ok
+
+----------------------------------------------------------------------
+Ran 77 tests in 54.874s
+
+OK

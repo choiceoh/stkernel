@@ -7,6 +7,7 @@ the rows' deltas, the pictures encoded once at the piece that reaches them, and 
 """
 import types
 import unittest
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -102,6 +103,46 @@ class CompositionTests(unittest.TestCase):
         self.assertEqual(comp.vision.encoded, [(1, 4, 6)])
         self.assertIsNone(rec["canvas"])                                     # its rows are in the caches now
         self.assertEqual(comp._patches(0, records, 16, 20), ())
+
+
+class PatchedForwardTests(unittest.TestCase):
+    def test_picture_rows_reach_the_host_forward_without_changing_its_step_kind(self):
+        """Run the real layer loop, including the PLE branch, instead of replacing net.forward with a recorder.
+        The image tensors must replace embeddings, never the boolean selecting host versus captured steps."""
+        from engine.profiles.qwen38.net import Qwen38Net, Step
+        from engine.profiles.qwen38.lanes import reference
+        net = object.__new__(Qwen38Net)
+        hidden, hc = 3, 2
+        net.F = SimpleNamespace(hc=hc, rms_eps=1e-6, ple_layers=(0,), is_qsa=lambda layer: False)
+        net.layers = [0]
+        net.p = {"close.norm": torch.zeros(hc * hidden), "close.down": torch.zeros(1, hc * hidden)}
+        net._hc_projections = {}
+        net.lanes = reference()
+        net.step_meta = lambda step, caches: None
+        net._site = lambda prefix, h, out, inject: (h[:, :hidden], torch.ones(len(h), hc), h)
+        net._mix = lambda prefix, h, name, inject: (h.reshape(-1, hc, hidden).mean(1), None)
+        net._ple_inject = lambda layer, h, step, meta, caches: torch.zeros_like(h)
+        net._gdn = lambda layer, x, step, caches: x
+
+        def moe(prefix, x, *, compact):
+            self.assertTrue(compact)
+            return x * .25
+
+        net._moe = moe
+        embeddings = torch.arange(15, dtype=torch.float32).reshape(5, hidden) / 10
+        replacements = torch.tensor([[3., 2., 1.], [-1., -2., -3.]])
+        at = torch.tensor([1, 3])
+        step = Step.prefill(torch.arange(5), 0, 0, 1)
+        net.embed = lambda ids: embeddings.clone()
+        step = replace(step, patches=((at, replacements),))
+        got = net.forward(step, None, last_hidden_only=True, streams=True)
+        expected = embeddings.clone()
+        expected[at] = replacements
+        net.embed = lambda ids: expected.clone()
+        step = replace(step, patches=())
+        want = net.forward(step, None, last_hidden_only=True, streams=True)
+        for actual, reference in zip(got, want):
+            torch.testing.assert_close(actual, reference, rtol=0, atol=0)
 
 
 class StepTests(unittest.TestCase):
