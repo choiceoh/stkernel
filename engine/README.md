@@ -31,6 +31,8 @@ stkernel 의 자체 추론 엔진. 네 가지를 옵션이 아니라 **형태**�
                 게이트 포함)·양자화, 하이퍼커넥션(mhc·split-sinkhorn·게이트 잔차), 노름, 회전, 로짓
     profiles/   모델별: 사실·가중치 지도(specs)·사전샤딩·레인 표·조합(net)·검증(check). glm53 이 첫 대상.
                 qwen38 은 base/composition 위에 계획과 가중치 이름만 선언한다(composition.py).
+                dsv41 은 계획 계층(shapes·budget·placement·caches·engram·dist_run)과 핀된 레퍼런스뿐이다 —
+                2026-09-19 에 범위로 돌아왔고(CHARTER D5), 레인 표도 조합도 아직 없다.
     kernels/    ST가 소유하는 Triton·TileLang·CuTe DSL·CUDA 커널과 필요한 보조 코드
 
 **조합 틀(base/composition, 2026-09-13).** 모델은 파일이 아니라 세 가지 선언이다: 층마다 어떤 토큰 믹서·채널
