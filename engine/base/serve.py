@@ -49,6 +49,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from engine.base import prefix as prefix_cache
 from engine.base.kv_tier import TierFull
+from engine.base.runner import history_head
 
 MEDIA_FETCH_TIMEOUT_S = {"image": 5.0, "video": 30.0}           # vLLM's VLLM_IMAGE_FETCH_TIMEOUT / VLLM_VIDEO_FETCH_TIMEOUT defaults
 MEDIA_MAX_BYTES = {"image": 64 << 20, "video": 512 << 20}        # a door-side ceiling on what one part may carry (vLLM has none)
@@ -1331,7 +1332,7 @@ class Server:
         return forget
 
     @staticmethod
-    def _parked_entries(tier, keys, rank: int = 0) -> "list[tuple[int, str]]":
+    def _parked_entries(tier, keys, rank: int = 0, keep=None) -> "list[tuple[int, str]]":
         """(key, digest) for every parked entry this rank's tier lists, in key order.
 
         The digest is what every rank must hold alike for a parked entry to be resumable: its host record
@@ -1339,6 +1340,9 @@ class Server:
         back. A park taken in lockstep writes the same record on every rank; a rank's leftover, a torn
         write or another run's entry under the same key does not. The per-rank file names and write times
         are not part of it. An entry this rank cannot read gets a digest no peer can match, so it goes too.
+
+        `keep(key, record)` is handed each record read (the runner's `hold_parked`): this is the one read of
+        a conversation an earlier process parked, and what the loop needs of it later is kept from here.
         """
         import hashlib
         out = []
@@ -1350,6 +1354,9 @@ class Server:
                 digest = hashlib.sha256(body.encode()).hexdigest()[:24]
             except Exception as exc:                                  # noqa: BLE001 -- unreadable is a reason to drop, not to stop
                 digest = f"unreadable on rank {rank}: {type(exc).__name__}"
+            else:
+                if keep is not None and isinstance(record, dict):
+                    keep(int(key), record)
             out.append((int(key), digest))
         return sorted(out)
 
@@ -1537,9 +1544,11 @@ class Server:
         self.arrivals = queue.Queue()
         self.pending, self.results = {}, {}
         # conversation ids are request ids; parked conversations from an earlier boot keep theirs --
-        # the ones every rank holds alike; the rest are dropped on the ranks that have them
+        # the ones every rank holds alike; the rest are dropped on the ranks that have them. Their records are
+        # read here once, and the runner keeps what the loop will need of them (`Runner.hold_parked`).
         parked = sorted(runner.parked_keys())
-        if self._reconcile_parked(comm, self._parked_entries(getattr(runner, "tiered", None), parked, comm.rank),
+        if self._reconcile_parked(comm, self._parked_entries(getattr(runner, "tiered", None), parked, comm.rank,
+                                                             keep=getattr(runner, "hold_parked", None)),
                                   forget=runner.forget_parked):
             parked = sorted(runner.parked_keys())                        # what every rank holds alike
         if getattr(runner, "load_prefix_tier", None) is not None:
@@ -1850,6 +1859,25 @@ class Server:
             return m - 1, True
         return None
 
+    @staticmethod
+    def _offer_digest(ids, marks, digest, ends) -> "tuple[int, bool] | None":
+        """`_offer` against a parked conversation's digest (`Runner.parked_digest`) instead of its history, with the same
+        answer: the history before its last token is compared by its hash (`runner.history_head`), the last token and
+        the pictures as they are. The loop asks this on every rank, and a parked history is on the disk there -- the
+        runner holds a few whole records, and only rank 0's scan reads one."""
+        n, m = len(ids), digest["tokens"]
+        last, prev = digest["last"], digest["prev"]
+        if m <= 1 or m - 1 >= n or (ids[m - 1] != last and ids[m - 2] != prev):
+            return None
+        if history_head(ids[:m - 1]) != digest["head"]:
+            return None                                           # ids[:m - 1] != history[:-1]: neither answer below holds
+        held = sorted((int(p), str(d)) for p, d in digest["media"])
+        if m < n and ids[m - 1] == last and [(p, d) for p, d in marks if p < m] == held:
+            return m, False
+        if last in ends and [(p, d) for p, d in marks if p < m - 1] == held:
+            return m - 1, True
+        return None
+
     def _stale_hint(self, key: int, ids, media, prefix: int, drop: bool) -> "str | None":
         """Why the continuation hint (`key`, `prefix`, `drop`) no longer holds for this prompt, or None when it does.
 
@@ -1860,8 +1888,10 @@ class Server:
         only parks the history again -- before calling this). "gone": no row and no tier holds it. "busy": another
         request is continuing it -- that turn will lengthen the history, so the hint cannot hold again (the n choices of
         one chat request all hint the same conversation). "changed": its history is no longer the one the hint was taken
-        from. One list compare of the history, once per look at the request."""
+        from. One list compare of a resident history, once per look at the request; a parked one is compared by its
+        digest (`_offer_digest`), which every rank keeps while the whole record is a disk read on ranks 1-3."""
         row = self._conversations.get(key)
+        digest = None
         if row is not None:
             if row not in self.runner.idle:
                 return "busy"
@@ -1873,15 +1903,16 @@ class Server:
         elif any(e["conversation"] == key for e in self._resuming.values()):
             return "busy"
         elif self.runner.is_parked(key):
-            record = self.runner.parked_record(key)
-            if record is None or "tokens" not in record:
+            digest = self.runner.parked_digest(key)               # every rank keeps it; the history is on the disk
+            if digest is None:
                 return "gone"
-            history, held = record["tokens"], [(r[2], r[1]) for r in record.get("media", [])]
         else:
             return "gone"
         marks = sorted((m["positions"][0], m["digest"]) for m in media)
         ends = set(getattr(self.engine, "eos", None) or ())
-        return None if self._offer(ids, marks, history, held, ends) == (prefix, drop) else "changed"
+        offer = (self._offer(ids, marks, history, held, ends) if digest is None
+                 else self._offer_digest(ids, marks, digest, ends))
+        return None if offer == (prefix, drop) else "changed"
 
     @staticmethod
     def _media_after(media, prefix: int):
@@ -2472,8 +2503,8 @@ class Server:
                     self._answer(request, RequestError("conversation is unknown, live or evicted", 409))
                     continue
                 if parked:
-                    record = self.runner.parked_record(conversation)
-                    end = record["context"] + record["pending"] + len(ids)
+                    summary = self.runner.parked_summary(conversation)   # every rank keeps it: the record may be on the disk
+                    end = summary["context"] + summary["pending"] + len(ids)
                     held = self.runner.parked_blocks(conversation)
                 else:
                     end = self.engine.context(row) + self.engine.extension_tokens(row, ids)

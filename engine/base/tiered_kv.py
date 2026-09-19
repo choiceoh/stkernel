@@ -150,6 +150,19 @@ class TieredKV:
         self.tier.forget(key)
         return got
 
+    def resume_cancel(self, seq: int) -> None:
+        """A resume that will not be committed, whatever its read did (the caller could not reopen the row): the
+        blocks go back and the disk copy stays."""
+        kind, key, tokens, future = self.inflight.pop(seq)
+        if kind != "resume":
+            self.inflight[seq] = (kind, key, tokens, future)
+            raise ValueError(f"row {seq} is parking, not resuming")
+        try:
+            future.result()                               # the blocks are not the pool's again while a read writes them
+        except BaseException:                             # noqa: BLE001 -- the resume is being given up either way
+            pass
+        self.pool.release(seq)
+
     def resume(self, seq: int, key: "int | None" = None, extra=None) -> int:
         self.resume_begin(seq, key, extra)
         return self.resume_finish(seq)
@@ -165,6 +178,12 @@ class TieredKV:
     def record(self, key: int) -> "dict | None":
         reader = getattr(self.tier, "record", None)
         return reader(key) if reader is not None else None
+
+    def read_record(self, key: int) -> Future:
+        """`record(key)` on the tier's thread: a resume whose record the runner no longer holds reads it beside the
+        blocks, because reading a whole history is disk work (7.2 ms of json.loads per 100K tokens), not a step's
+        (D10)."""
+        return self._submit(self.record, key)
 
     def blocks(self, key: int) -> int:
         """Blocks a parked conversation will need back."""
