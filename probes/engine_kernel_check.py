@@ -242,6 +242,12 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes == 'qwen38_site_components':
+        # mix_block's two launches one at a time against the cuBLAS product + elementwise launch each replaces, a tile
+        # sweep each -- which tiles the table takes, and from how many rows the fold wins
+        from probes.engine_qwen38_gemv import run_site_components
+        run_site_components(args.output)
+        return
     if args.lanes == 'qwen38_site_prefill':
         # the mixer at a prefill step's rows: the five launches it served before against gated_residual.mix_block's two
         # (the up product never written), with a tile sweep -- what the fold is worth where the chunk spends 43%
