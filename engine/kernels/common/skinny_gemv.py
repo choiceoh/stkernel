@@ -7,6 +7,10 @@ router [513, 2560] it took 27.9 / 33.6 / 35.7 us for 4 / 8 / 16 rows (94-74 GB/s
 the two tie (13.8 against 14.0, 31.0 against 31.1), and at the mixers' up projection [10240, 320] they tie at every row
 count (30.3-31.3 against 29.1-30.8) -- so `linear_rows` takes 2..16 rows of the shapes in CONFIGS and hands everything
 else to torch.mm: the same product in BF16 with FP32 accumulation, rounded once; only the order of the sums differs.
+The MTP head's BF16 projections are the exception to "one row ties": there cuBLAS's gemv reads 161-172 GB/s against this
+kernel's 213-257 (in_proj 132.0 against 96.8 us, fc 81.5 against 58.2, o_proj 48.1 against 36.8, shared down 4.8 against
+3.2) -- and one row is what a C=1 draft multiplies -- so those shapes take one row too (ONE_ROW); the shared gate_up,
+whose one row cuBLAS still wins (8.7 against 9.6), does not (ticket q38gemv-0919e).
 The mixers do not call it: engine/kernels/gated_residual.mix_rows folds both of a site's products, with the launch after
 each, into two kernels over `rows_dot` and `split_sum` here, at the down projection's tile in CONFIGS.
 (probes/engine_qwen38_gemv, ticket q38gemv-0919c, 2026-09-19: CUDA graphs of 16 calls, interleaved, weights rotated
@@ -25,7 +29,7 @@ import torch
 import triton
 import triton.language as tl
 
-MIN_ROWS, MAX_ROWS = 2, 16         # one row is cuBLAS's gemv, as fast; past 16 a GEMM's tiles serve
+MIN_ROWS, MAX_ROWS = 2, 16         # one row is cuBLAS's gemv, as fast (but ONE_ROW's); past 16 a GEMM's tiles serve
 MAX_BLOCKS = 4096                  # arrival words a device: column blocks of the widest split output
 
 # (N, K) of W -> (BLOCK_N, BLOCK_K, SPLIT, warps, stages), the fastest of twelve summed over 1/4/8/16 rows; absent ->
@@ -35,7 +39,16 @@ CONFIGS = {
     (513, 2560): (16, 256, 1, 4, 3),      # Qwen3.8's router and shared gate (512 experts + 1): 33 programs
     (324, 10240): (16, 256, 4, 4, 3),     # its mixers' down + inject (rank 320 + hc 4): 21 blocks x 4 splits
     (320, 10240): (16, 256, 4, 4, 3),     # its closing mixers' down (no inject)
+    # the MTP head's dense projections at its BF16 precision (net.linear with no dense lane), a rank's shard
+    (4224, 2560): (16, 256, 1, 4, 3),     # attention in: the rank's query+gate, k, v, index
+    (2560, 1536): (32, 256, 1, 4, 3),     # attention out (split by heads along its input)
+    (2560, 2560): (64, 256, 1, 8, 3),     # fc_embedding and fc_hidden (whole)
+    (320, 2560): (16, 128, 4, 4, 3),      # shared expert gate | up: 1.16-1.19x at 4-16 rows
+    (2560, 160): (64, 256, 1, 4, 1),      # shared expert down: one masked K tile
 }
+
+# Shapes whose ONE row this kernel takes as well: where cuBLAS's one-row gemv is behind it (the MTP head's, 1.31-1.49x).
+ONE_ROW = frozenset({(4224, 2560), (2560, 1536), (2560, 2560), (2560, 160)})
 
 _LOCKS: "dict[torch.device, torch.Tensor]" = {}
 
@@ -139,9 +152,12 @@ def gemv(x: torch.Tensor, w: torch.Tensor, cfg: "tuple[int, int, int, int, int]"
 
 
 def linear_rows(x: torch.Tensor, w: torch.Tensor) -> torch.Tensor:
-    """x @ w.T in BF16: this kernel for 2..16 rows of a CUDA shape `CONFIGS` names, torch.mm otherwise."""
-    cfg = CONFIGS.get(tuple(w.shape))
-    if (cfg is None or not x.is_cuda or not MIN_ROWS <= x.shape[0] <= MAX_ROWS or x.dtype != torch.bfloat16
+    """x @ w.T in BF16: this kernel for 2..16 rows of a CUDA shape `CONFIGS` names (1..16 of one in ONE_ROW),
+    torch.mm otherwise."""
+    shape = tuple(w.shape)
+    cfg = CONFIGS.get(shape)
+    least = 1 if shape in ONE_ROW else MIN_ROWS
+    if (cfg is None or not x.is_cuda or not least <= x.shape[0] <= MAX_ROWS or x.dtype != torch.bfloat16
             or w.dtype != torch.bfloat16 or x.stride(-1) != 1 or w.stride(-1) != 1):
         return torch.mm(x, w.t())
     return gemv(x, w, cfg)
@@ -170,5 +186,5 @@ def qualify(device, rows=(1, 4, 16)) -> dict:
     return out
 
 
-__all__ = ["CONFIGS", "MAX_ROWS", "MIN_ROWS", "gemv", "linear_rows", "prepare", "qualify", "rows_dot", "split_span",
-           "split_sum"]
+__all__ = ["CONFIGS", "MAX_ROWS", "MIN_ROWS", "ONE_ROW", "gemv", "linear_rows", "prepare", "qualify", "rows_dot",
+           "split_span", "split_sum"]

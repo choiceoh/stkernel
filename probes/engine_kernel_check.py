@@ -191,6 +191,11 @@ def main():
         from probes.engine_qwen38_step import LAYER_SETS, MTP_ARMS, run as qwen38_step
         qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=MTP_ARMS)
         return
+    if args.lanes == 'qwen38_step_mtp_gemv':
+        # the draft graph with the MTP head's BF16 projections on the skinny GEMV (served) and on torch.mm, one layer set
+        from probes.engine_qwen38_step import GEMV_ARMS, LAYER_SETS, run as qwen38_step
+        qwen38_step(args.output, args.ranks, layer_sets=LAYER_SETS[1:2], arms=GEMV_ARMS)
+        return
     if args.lanes == 'qwen38_mtp_window':
         # the MTP head's draft graph at every context bucket, its QSA selection scored against a sink-and-recent window
         # of groups (fleet --mtp-window): what the draft's index scoring costs as the context grows
