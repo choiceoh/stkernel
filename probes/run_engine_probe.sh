@@ -63,24 +63,28 @@ if [ -n "$probe_host" ] && { [ "$here" = 0 ] || [ -n "${ST_PROBE_LANE:-}" ]; }; 
   if at "test -d '$models'"; then
     mounts+=(--mount "type=bind,src=$models,dst=$models,readonly")
   fi
-  # The image production runs on that box, unless the caller named one: the check then
-  # judges the deployed build, and a box that serves has it by construction. A box of its own
-  # serves nothing: its check image is a fact about it (fleet_single.py HOSTS; ost-97x's is the
-  # x86_64 sm_120 build, never the production tag).
+  # A box of its own serves nothing: its check image is a fact about it (fleet_single.py HOSTS;
+  # ost-97x's is the x86_64 sm_120 build) and comes first -- a production tag copied there is
+  # ARM64 and would not run. Elsewhere the image production runs on that box, unless the caller
+  # named one: the check then judges the deployed build, and a box that serves has it by construction.
+  own_image=$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")
   if [ -z "${ST_IMAGE:-}" ]; then
+    image=$own_image
     # neither found is an answer, not a failure: under pipefail the bare assignment ended the script
     # silently on a box that serves nothing (ost-97x, 2026-09-19)
-    image=$(at "docker inspect st-glm53 --format '{{.Config.Image}}' 2>/dev/null \
+    [ -n "$image" ] || image=$(at "docker inspect st-glm53 --format '{{.Config.Image}}' 2>/dev/null \
               || docker image inspect st-engine:glm53 --format '{{index .RepoTags 0}}' 2>/dev/null" | tail -1) || image=
-    [ -n "$image" ] || image=$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")
     [ -n "$image" ] || { echo "ABORT: no ST image on $probe_host (no st-glm53 container, no st-engine:glm53); name one with ST_IMAGE" >&2; exit 1; }
   fi
   # That check image's flashinfer is pip's, and the b12x path imports a staticmethod only the Sparks'
   # vendored build carries (bench/compile_sm121a.sh): where the box keeps that build unpacked, it is
-  # mounted over the image's site-packages -- which shadow dist-packages, so that is the place.
+  # mounted over the image's site-packages -- which shadow dist-packages, so that is the place. A box
+  # that should keep it and does not is refused here: without it every b12x import fails in the check.
   read -r vendored site <<< "$(python3 "$repo/bench/fleet_single.py" vendored --host "$probe_host")" || true
-  if [ -n "${vendored:-}" ] && [ "$image" = "$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")" ]; then
-    for entry in $(at "ls -1 '$vendored' 2>/dev/null"); do
+  if [ -n "${vendored:-}" ] && [ "$image" = "$own_image" ]; then
+    entries=$(at "ls -1 '$vendored' 2>/dev/null") || entries=
+    [ -n "$entries" ] || { echo "ABORT: $probe_host keeps no vendored flashinfer at ~/$vendored -- the b12x path cannot import on $image without it (bench/OST_97X_LANE.md)" >&2; exit 1; }
+    for entry in $entries; do
       mounts+=(--mount "type=bind,src=$home/$vendored/$entry,dst=$site/$entry,readonly")
     done
   fi

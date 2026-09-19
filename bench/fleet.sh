@@ -288,9 +288,23 @@ single_gpu_label() {   # [host] -> "GB10 on srv3 beside production"; no host: th
   if [ -n "${1:-}" ]; then echo "$FLEET_SINGLE_GPU_NAME on $1$(single_on_fleet "$1" && echo ' beside production')"
   else echo "$FLEET_SINGLE_GPU_NAME on $FLEET_SINGLE_GPU_HOSTS$(single_on_fleet && echo ' beside production')"; fi
 }
+# One card, one check: a host both one-GPU lanes name -- FLEET_SINGLE_GPU_HOST=ost-97x left from before the check lane,
+# say -- has two holders, so each lane's live holder is evidence for the other. The room answer cannot tell: it is
+# cached for a TTL, and a probe's container comes up only after its GO.
+other_lane_holds() {   # kind host -> the session the OTHER one-GPU lane holds that card for; 1 when none
+  local hf
+  if [ "$1" = check ]; then
+    case " $FLEET_SINGLE_GPU_HOSTS " in *" $2 "*) hf=$(single_holder "$2") ;; *) return 1 ;; esac
+  else
+    [ -n "$FLEET_CHECK_GPU_HOST" ] && [ "$2" = "$FLEET_CHECK_GPU_HOST" ] || return 1
+    hf=$HC
+  fi
+  [ -s "$hf" ] && holder_alive "$hf" && cut -d'|' -f1 "$hf"
+}
 single_gpu_evidence() {   # [host] -- every reason to believe that pool host's GPU is not ours (the first's by default); empty = free
   [ -n "$FLEET_SINGLE_GPU_HOSTS" ] || { echo "single-GPU lane is off (FLEET_SINGLE_GPU_HOST is empty)"; return 0; }
-  local h=${1:-$FLEET_SINGLE_GPU_HOST} out
+  local h=${1:-$FLEET_SINGLE_GPU_HOST} out other
+  if other=$(other_lane_holds single "$h"); then echo "$h: the check lane's $other holds this card"; return 0; fi
   out=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_single.py" evidence --host "$h" --cache "$FLEET_DIR" 2>&1) && return 0
   echo "${out:-fleet_single.py gave no answer -- this queue cannot say the $FLEET_SINGLE_GPU_NAME on $h is free}"
 }
@@ -339,7 +353,10 @@ check_gpu_evidence() {   # every reason to believe the check lane's GPU is not o
   if FLEET_SINGLE_GPU_ON_FLEET= single_on_fleet "$FLEET_CHECK_GPU_HOST"; then
     echo "check lane: $FLEET_CHECK_GPU_HOST is one of the fleet's boxes -- the check lane is a box of its own"; return 0
   fi
-  local out
+  local out other
+  if other=$(other_lane_holds check "$FLEET_CHECK_GPU_HOST"); then
+    echo "$FLEET_CHECK_GPU_HOST: the single lane's $other holds this card"; return 0
+  fi
   out=$(python3 "${FLEET_RUNNER_REPO:-$REPO}/bench/fleet_single.py" evidence --lane check --cache "$FLEET_DIR" 2>&1) && return 0
   echo "${out:-fleet_single.py gave no answer -- this queue cannot say the $FLEET_CHECK_GPU_NAME is free}"
 }
@@ -405,7 +422,9 @@ check_line() {   # for status: the check lane's holder, else its evidence, else 
 #      the single lane and the fleet; checks only, never numbers (2026-09-19)
 #   7  the single lane is a pool of the four Sparks, a holder each: up to four GB10 checks at once,
 #      and a fleet boot waits for every one on a fleet box (2026-09-19)
-FLEET_RULES=7
+#   8  a card both one-GPU lanes name takes one check at a time -- each lane's live holder is the
+#      other's evidence -- and the lease passes only to the fleet lane's head (2026-09-19)
+FLEET_RULES=8
 entry_rules() { sed -n 's/^FLEET_RULES=\([0-9][0-9]*\).*/\1/p' "${1:?file}" 2>/dev/null | head -1; }
 entry_line() {
   local entry=$LOGD/fleet.sh theirs

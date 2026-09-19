@@ -255,7 +255,8 @@ class ContractTests(unittest.TestCase):
         self.assertIn('holds this box too', self.fleet)
         self.assertIn('single_refused "$s" "$why" "$kind"; return 1', self.fleet)
         self.assertIn('if [ "$rc" != 0 ]; then single_refused "$s" "$why" single; return 1; fi', self.fleet)
-        self.assertIn('FLEET_RULES=7', self.fleet)
+        self.assertIn('FLEET_RULES=8', self.fleet)
+        self.assertIn("#   8  a card both one-GPU lanes name takes one check at a time", self.fleet)
         # a single check's results come back to the controller from the pool host it ran on -- off the queue lock
         self.assertIn('logit "release $1 [single] on $sh"; _collect_single "$1" "${t0:-0}" single "$sh"; return 0', self.fleet)
         self.assertIn('fi ) 9>&- >/dev/null 2>&1 &', self.fleet)
@@ -295,7 +296,7 @@ class ContractTests(unittest.TestCase):
         self.assertIn('FLEET_CHECK_GPU_HOST is empty', boot)
         # the runner: a box of its own runs its check image, with the Sparks' flashinfer over its site-packages
         remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
-        self.assertIn('[ -n "$image" ] || image=$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")', remote)
+        self.assertIn('own_image=$(python3 "$repo/bench/fleet_single.py" image --host "$probe_host")', remote)
         self.assertIn('mounts+=(--mount "type=bind,src=$home/$vendored/$entry,dst=$site/$entry,readonly")', remote)
         # the lane's own admission: one GPU, and no more than a kernel check's budget of a discrete 8 GiB card
         self.assertIn('check', policy.KINDS)
@@ -366,6 +367,22 @@ class ContractTests(unittest.TestCase):
         self.assertNotIn('fleet_lease acquire', local)
         boot = (ROOT / 'bench/fleet_boot.py').read_text()
         self.assertIn("environment['ST_PROBE_HOST'] = host", boot)
+
+    def test_a_box_of_its_own_runs_its_own_image_and_needs_its_flashinfer(self):
+        """ost-97x's check image comes before any production tag found there (an ARM64 copy would not run), a box
+        whose facts name a vendored flashinfer it does not keep refuses before any container, and the setup script's
+        controller alias is the one the queue and HOSTS know, whatever the tailnet name (review of #1297)."""
+        remote = self.runner[self.runner.index('probe_host=${ST_PROBE_HOST:-}'):self.runner.index('mkdir -p "$cache"')]
+        self.assertLess(remote.index('image=$own_image'), remote.index("docker inspect st-glm53 --format '{{.Config.Image}}'"))
+        self.assertIn('[ -n "$image" ] || image=$(at "docker inspect st-glm53', remote)
+        self.assertIn('if [ -n "${vendored:-}" ] && [ "$image" = "$own_image" ]; then', remote)
+        self.assertLess(remote.index('keeps no vendored flashinfer at ~/$vendored'), remote.index('docker run --rm --name'))
+        setup = (ROOT / 'tools/ost-97x-lane-setup.sh').read_text()
+        self.assertIn('ALIAS=ost-97x', setup)
+        self.assertIn('    Host $ALIAS\n', setup)
+        self.assertNotIn('Host $NODE', setup)
+        self.assertEqual(single.CHECK_DEFAULT_HOST, 'ost-97x')
+        self.assertIn('ost-97x', single.HOSTS)
 
     def test_the_policy_counts_gpus(self):
         self.assertEqual(policy.gpus_needed('probes/run_engine_check.sh', ['--layers', '0-4']), 1)
@@ -594,6 +611,34 @@ echo "queue=$(grep -c . "$Q")"
         self.assertIn('kick --force [check]', log)
         ledger = [line.split('\t') for line in (self.fleet / 'ledger.tsv').read_text().splitlines()]
         self.assertEqual([(row[1], row[2], row[5].strip()) for row in ledger], [('A', 'boot', '0'), ('E', 'check', '0')])
+
+    def test_a_card_both_lanes_name_takes_one_check_at_a_time(self):
+        """FLEET_SINGLE_GPU_HOST=ost-97x left from before the check lane: both lanes name the 5050 with a holder each,
+        so each lane's live holder refuses the other -- one card, one check (review of #1297)."""
+        now, pid = int(time.time()), os.getpid()
+        self.queue((1, 'E', now, 5, 'a 5050 check', 'check', pid), (2, 'B', now, 5, 'a check', 'single', pid),
+                   (3, 'F', now, 5, 'another 5050 check', 'check', pid))
+        result = self.run_fleet('''
+with_lock _try_hold E $$ 5 "a 5050 check" check; echo "E=$?"
+with_lock _try_hold B $$ 5 "a check" single; echo "B=$?"
+single_line
+with_lock _release E; echo "releaseE=$?"
+with_lock _try_hold B $$ 5 "a check" single; echo "B2=$?"
+with_lock _try_hold F $$ 5 "another 5050 check" check; echo "F=$?"
+check_line
+with_lock _release B; echo "releaseB=$?"
+with_lock _try_hold F $$ 5 "another 5050 check" check; echo "F2=$?"
+''', FLEET_SINGLE_GPU_HOST='ost-97x')
+        out = result.stdout
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for expected in ('E=0', 'B=1', "single (GB10 on ost-97x): ost-97x: the check lane's E holds this card",
+                         'releaseE=0', 'B2=0', 'F=1',
+                         "check (RTX5050 on ost-97x, checks not numbers): ost-97x: the single lane's B holds this card",
+                         'releaseB=0', 'F2=0'):
+            self.assertIn(expected, out, out + result.stderr)
+        log = (self.fleet / 'log').read_text()
+        self.assertIn("hold refused (single): ost-97x: the check lane's E holds this card; B waits", log)
+        self.assertIn("hold refused (check): ost-97x: the single lane's B holds this card; F waits", log)
 
     def test_four_checks_take_the_four_sparks_and_a_fifth_waits(self):
         """The single lane is a pool (operator, 2026-09-19): each check takes the first Spark with no live holder and
@@ -835,6 +880,20 @@ class PriorityLaneTests(unittest.TestCase):
             by_lane.setdefault(row["lane"], []).append(row["session"])
         self.assertEqual(by_lane, {'fleet': ['boot'], 'single': ['s1', 's2'], 'check': ['c1', 'c2']})
         self.assertEqual({r["session"]: r["batch"] for r in rows if r["lane"] == "check"}, dict(c1=True, c2=False))
+
+    @unittest.skipUnless(Path('/proc/self/stat').exists(), 'the handoff receipt reads /proc')
+    def test_the_lease_passes_to_the_fleet_lane_s_head_not_to_a_one_gpu_check(self):
+        """A one-GPU check ranks ahead of a waiting boot in the one ranked order; the fleet's lease still goes to that
+        boot, not away with production restarting under it (review of #1297)."""
+        import fleet_priority
+        with tempfile.TemporaryDirectory() as name:
+            directory, pid = Path(name), os.getpid()
+            lines = [f'1|c1|100|5|a 5050 check|check|{pid}', f'2|s1|150|5|a GB10 check|single|{pid}',
+                     f'3|next|200|40|a boot|boot|{pid}']
+            (directory / 'queue').write_text(''.join(line + '\n' for line in lines))
+            self.assertEqual(fleet_priority.rank(lines, {}, time.time())[0]['session'], 'c1')     # the case at hand
+            handoff.ready(directory, 'next', pid)
+            self.assertEqual(handoff.successor(directory, 'donor')['session'], 'next')
 
 
 if __name__ == '__main__':
