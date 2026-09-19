@@ -12,8 +12,12 @@ import triton
 import triton.language as tl
 
 
+# T, the tokens (a prompt's length, a decode row's), is an argument and not a constant: as a constant it compiled one
+# kernel per prompt length a process ever saw -- every new length paid a compile before its first token (the served
+# compile census, measurements/qwen38_serve_compiles_20260919). As an argument Triton keys it only as 1, a multiple of 16,
+# or neither. It bounds the token loop, offsets a row and gates the final history store: no arithmetic reads it.
 @triton.jit(do_not_specialize=["ring_slot", "ring_context"])
-def _single_conv(X, W, S, Y, F, T: tl.constexpr, C: tl.constexpr,
+def _single_conv(X, W, S, Y, F, T, C: tl.constexpr,
                  XS: tl.constexpr, XC: tl.constexpr, WS: tl.constexpr, WC: tl.constexpr,
                  SS: tl.constexpr, SC: tl.constexpr, K: tl.constexpr,
                  HAS_STATE: tl.constexpr, BC: tl.constexpr, BT: tl.constexpr,
