@@ -404,9 +404,6 @@ def mtp_fp8_specs(F: Facts) -> "list[Spec]":
     multiplies -- stacked as w13 [E, 2I, H] rows [gate; up] with s13 [E, 2I/128, H/128] FP32, and w2 [E, H, I] with
     s2 [E, H/128, I/128] FP32 (the BF16 scales widened, exactly). The side file mtp_side.py writes beside the rank files;
     kernels/moe_rows serves it."""
-    if F.mtp_experts != "fp8_block" or F.mtp_block != 128:
-        raise ValueError(f"the MTP head's FP8 experts need NVIDIA's FP8 export (block 128); this checkpoint keeps "
-                         f"{F.mtp_experts!r} (block {F.mtp_block})")
     E, I, H = F.experts_local, F.moe_inter, F.hidden
     m = "mtp.layers.0.mlp."
 
@@ -441,9 +438,6 @@ def mtp_bf16_specs(F: Facts) -> "list[Spec]":
     Facts.mtp_experts "bf16": [512, 2I, H] rows [gate; up] and [512, H, I]): the rank's 128 sliced out as they are --
     w13 [E, 2I, H], w2 [E, H, I]. The side file mtp_side.py writes; kernels/moe_rows serves it (the operator's rule of
     2026-09-19: NVFP4 by default, precision where it costs little and moves acceptance)."""
-    if F.mtp_experts != "bf16":
-        raise ValueError(f"the MTP head's BF16 experts need the copy that keeps them fused in BF16; this checkpoint "
-                         f"keeps {F.mtp_experts!r}")
     E, I, H = F.experts_local, F.moe_inter, F.hidden
     m = "mtp.layers.0.mlp."
     gate_up, down = m + "experts.gate_up_proj", m + "experts.down_proj"
