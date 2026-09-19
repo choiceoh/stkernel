@@ -360,6 +360,12 @@ def main():
         from probes.engine_qwen38_qualify_soak import REPEATS, run as qwen38_qualify_soak
         qwen38_qualify_soak(args.output, repeats=int((args.lanes.split(':')[1:] or [REPEATS])[0]))
         return
+    if args.lanes == 'qwen38_up_tiles':
+        # the up fold's tile: up_mean_block at the table's tile and others, as site runs it, many rounds; every tile the
+        # table's bytes first
+        from probes.engine_qwen38_up_tiles import run as qwen38_up_tiles
+        qwen38_up_tiles(args.output)
+        return
     if args.lanes == 'qwen38_stream_order':
         # the stream launches' grid order: a stream's rows adjacent (the grid until 2026-09-20) against a row's streams
         # adjacent -- the leave's three forms at a prefill chunk's rows, many rounds; bytes checked first
