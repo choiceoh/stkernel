@@ -91,9 +91,14 @@ class LaneTests(unittest.TestCase):
         self.assertIn("total = chunk * chunks + F.block", source)          # the prompt outlasts what is prefilled
         self.assertEqual(probe.LAYER_SETS, ((4, 5, 6, 7), (4, 5), (7,), (1,)))
 
+    def test_the_memory_ceiling_is_the_tickets_budget(self):
+        self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": "6"}), 6.0)
+        self.assertEqual(probe.ceiling_gib({}), probe.MAX_GIB)
+        self.assertEqual(probe.ceiling_gib({"ST_PROBE_GIB": ""}), probe.MAX_GIB)
+
     def test_it_imports_only_what_the_lane_ships(self):
         tree = ast.parse((ROOT / "probes/engine_qwen38_prefill.py").read_text(encoding="utf-8"))
-        standard = ("__future__", "argparse", "json", "pathlib", "subprocess", "sys", "tempfile", "time", "torch")
+        standard = ("__future__", "argparse", "json", "os", "pathlib", "subprocess", "sys", "tempfile", "time", "torch")
         for node in ast.walk(tree):
             names = ([node.module] if isinstance(node, ast.ImportFrom) else
                      [alias.name for alias in node.names] if isinstance(node, ast.Import) else [])

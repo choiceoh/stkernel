@@ -24,7 +24,8 @@ Beside production the lane leaves a probe about 4 GiB, so as the step probe does
     python3 probes/engine_kernel_check.py --lanes qwen38_prefill --ranks /home/choiceoh/models/st-qwen38-tep4 \\
         --output /cache/qwen38-prefill.json                                       (the queue's single-GPU lane)
 
-`--lanes qwen38_prefill:8192` sets the chunk's tokens (default 4096: what 4 GiB holds with four layers of weights).
+`--lanes qwen38_prefill:8192` sets the chunk's tokens (default 4096). The process's device-memory ceiling is the
+ticket's budget (ST_PROBE_GIB, which the lane exports), 4 GiB without one.
 
 One rank's compute and launches, random token ids through real weights: the router sees real embeddings, so this
 rank's share of the routes is a real one, but it is not a prompt's. No collective is timed. Not a speed claim (D17):
@@ -33,6 +34,7 @@ it says what a chunk is made of, so the next prefill work is chosen by a number.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -46,7 +48,8 @@ from probes.engine_qwen38_step import (FULL, LAYER_SETS, OneRankComm, ZeroPLETab
 
 CHUNK = 4096
 CHUNKS = 2                                # the prompt's first chunk and its second: contexts 0 and CHUNK
-MAX_GIB = 4.0                             # this process's own device-memory ceiling: the lane's budget beside production
+MAX_GIB = 4.0                             # this process's device-memory ceiling where the ticket names no budget: the
+                                          # lane exports its own as ST_PROBE_GIB, and the ceiling follows it
 TOP = 25                                  # kernels kept a chunk, by device time
 SLACK = 128                               # tokens of cache beyond the prompt (two blocks: the MTP head's reach)
 
@@ -135,9 +138,17 @@ def prompt_passes(model, caches, F, *, chunk: int, chunks: int, seed: int) -> "l
     return rows
 
 
-def measure(ranks: Path, rank: int, layers, *, chunk: int = CHUNK, chunks: int = CHUNKS, max_gib: float = MAX_GIB) -> dict:
+def ceiling_gib(environ=None) -> float:
+    """The ticket's budget (the lane's ST_PROBE_GIB) where it names one, else MAX_GIB: the decode census's four-layer
+    set peaks at 3.7 GiB with no chunk's activations, so a chunk of thousands of tokens asks for a larger ticket."""
+    value = (os.environ if environ is None else environ).get("ST_PROBE_GIB", "")
+    return float(value) if value else MAX_GIB
+
+
+def measure(ranks: Path, rank: int, layers, *, chunk: int = CHUNK, chunks: int = CHUNKS, max_gib: "float | None" = None) -> dict:
     """One layer set, in this process: the kernel shape bound, the net built, the prompt's chunks -> the build's row."""
     import torch
+    max_gib = ceiling_gib() if max_gib is None else max_gib
     free, total = torch.cuda.mem_get_info()
     torch.cuda.set_per_process_memory_fraction(min(1.0, max_gib * (1 << 30) / total))
     from engine.base import kernel_shape
@@ -155,6 +166,7 @@ def measure(ranks: Path, rank: int, layers, *, chunk: int = CHUNK, chunks: int =
                           "wall_ms": row["wall_ms"], "device_ms": row["device_ms"], "host_ms": row["host_ms"],
                           "launches": row["launches"]}), flush=True)
     return {"counts": counts(F, layers), "kernel_shape": shape_source, "free_GiB_at_start": round(free / 2**30, 1),
+            "ceiling_GiB": max_gib,
             "build_s": round(built, 1), "peak_GiB": round(torch.cuda.max_memory_allocated() / 2**30, 2), "chunks": rows}
 
 
