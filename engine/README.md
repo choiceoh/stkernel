@@ -563,6 +563,8 @@ UMA 입장 검사는 공간이 부족하면 지정된 모델 보관 경로의 `.
 ```bash
 python3 tools/onboard.py --ckpt ~/models/<checkpoint> --placement ep     # 사람이 읽는 표
 python3 tools/onboard.py --config config.json --json                     # 기계가 읽는 문서
+python3 tools/onboard.py --config config.json --placement ep \
+    --state attention.kind=mla --state indexer.compress=ced              # 레퍼런스가 말한 사실을 채워서
 ```
 
 세 가지 답 중 하나가 나온다.
@@ -571,7 +573,15 @@ python3 tools/onboard.py --config config.json --json                     # 기�
 |---|---|---|
 | **profile \<name\>** | 그 `model_type` 을 선언한 프로필이 있다 | 프로필의 유도로 형상·레인 표가 바로 나온다 |
 | **generic + 형상** | 프로필은 없지만 설정이 필요한 것을 다 말했다 | 레인 표와 `cells.plan()` 의 작업 목록이 그대로 할 일이다 |
-| **generic + 빈칸** | 설정이 정하지 못한 것이 있다 | 빈칸마다 **무엇이 그것을 정하는지**가 같이 나온다 — 체크포인트의 레퍼런스 구현, `engine/profiles/` 의 프로필, 또는 `--placement` |
+| **generic + 빈칸** | 설정이 정하지 못한 것이 있다 | 빈칸마다 **무엇이 그것을 정하는지**가 같이 나온다 — 체크포인트의 레퍼런스 구현, `engine/profiles/` 의 프로필, `--placement`, 또는 `--state <필드>=<값>` |
+
+셋 다 **읽은 것을 먼저 표로 낸다**(필드 · 값 · 그 값이 온 키). 설정이 **이름을 대는** 축은 추측이 아니라 읽기다 —
+`index_kpool_compress` 는 인덱서의 압축을, `kda_layers` 는 선형 어텐션의 채널별 감쇠를, `mhc: true` 는 잔차 혼합을
+그 키가 말한다. 설정이 끝내 말하지 않는 축(`STATEABLE`: 어텐션 종류 · sink · 인덱서 압축 · 감쇠 · 혼합기 · 전문가
+양자화 · 게이트)은 운영자가 `--state` 로 **댈 수 있다**. 이것은 노브가 아니다(D11: 입력은 사실뿐) — **빈칸만
+채우고**, 설정이 이미 정한 필드를 대면 덮어쓰지 않고 **거부한다**. 세 프로필의 유도와 이 앞문이 필드 단위로
+**같다**는 것이 `tests/test_engine_onboard.py` 의 판정이고, 각 모델이 레퍼런스에서 가져오는 사실은 셋 · 다섯 ·
+여섯 개가 전부다.
 
 빈칸은 실패가 아니라 **작업 지시**다. 예: 인덱서를 선언한 설정은 키 압축 방식(kpool·ced·qsa)을 말하지 않고,
 KV 헤드가 하나인 설정은 MLA 인지 GQA 인지 말하지 않는다 — 둘 다 추측하면 **부팅되면서 틀린다.**
