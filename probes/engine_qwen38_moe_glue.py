@@ -45,13 +45,18 @@ def run(output=None) -> dict:
         steps = {
             "router mma [512]": lambda: router_logits_mma(x, gates[:EXPERTS]),
             "router mma [513] (shared gate folded)": lambda: router_logits_mma(x, gates),
-            "route: torch softmax + topk (prefill)": lambda: route_softmax_topk(scores, TOPK),
-            "route: moe_route.softmax_topk (captured)": lambda: moe_route.softmax_topk(scores, TOPK, experts=EXPERTS),
+            "route: torch softmax + topk (reference)": lambda: route_softmax_topk(scores, TOPK),
+            "route: moe_route.softmax_topk (served)": lambda: moe_route.softmax_topk(scores, TOPK, experts=EXPERTS),
             "shared gate: mm [1] + sigmoid": lambda: torch.sigmoid(torch.mm(x, gates[EXPERTS:].t()).float()),
-            "local_routes": lambda: local_routes(ids, weights, FIRST, LOCAL),
-            "mask + nonzero (host waits)": lambda: ((ids >= FIRST) & (ids < FIRST + LOCAL)).nonzero(as_tuple=True),
-            "gather: x rows + ids + weights": lambda: (x.index_select(0, token), local_ids[token, route][:, None],
-                                                        w[token, route][:, None]),
+            "remap + mask + nonzero (before)": lambda: (local_routes(ids, weights, FIRST, LOCAL),
+                                                        ((ids - FIRST >= 0) & (ids - FIRST < LOCAL))
+                                                        .nonzero(as_tuple=True)),
+            "compact_routes + nonzero": lambda: moe_route.compact_routes(ids, weights, FIRST, LOCAL)[2]
+                                                 .nonzero(as_tuple=True),
+            "gather: x rows + ids + weights (before)": lambda: (x.index_select(0, token),
+                                                                 local_ids[token, route][:, None],
+                                                                 w[token, route][:, None]),
+            "pair_rows": lambda: moe_route.pair_rows(x, local_ids, w, token, route),
             "pair_sum": lambda: moe_output.pair_sum(pairs, token, m),
         }
         times = {name: [] for name in steps}
@@ -68,8 +73,14 @@ def run(output=None) -> dict:
                 times[name].append((time.perf_counter() - began) / 4 * 1e6)
         row = {name: {"median": round(statistics.median(v), 1), "min": round(min(v), 1)} for name, v in times.items()}
         a, b = route_softmax_topk(scores, TOPK), moe_route.softmax_topk(scores, TOPK, experts=EXPERTS)
+        c_ids, c_w, c_mine = moe_route.compact_routes(ids, weights, FIRST, LOCAL)
+        xp, ip, wp = moe_route.pair_rows(x, local_ids, w, token, route)
         checks = {"pairs": int(token.numel()), "route_ids_equal": bool(torch.equal(a[0].to(torch.int32), b[0])),
-                  "route_weights_max_diff": float((a[1].float() - b[1]).abs().max())}
+                  "route_weights_max_diff": float((a[1].float() - b[1]).abs().max()),
+                  "compact_routes_bytes": bool(torch.equal(c_ids, local_ids) and torch.equal(c_w, w) and torch.equal(
+                      c_mine, (ids - FIRST >= 0) & (ids - FIRST < LOCAL))),
+                  "pair_rows_bytes": bool(torch.equal(xp, x.index_select(0, token)) and torch.equal(
+                      ip, local_ids[token, route][:, None]) and torch.equal(wp, w[token, route][:, None]))}
         report["rows"][m] = {"us_a_call": row, "checks": checks}
         print(json.dumps({f"moe glue rows {m}": {k: v["min"] for k, v in row.items()}, "checks": checks}), flush=True)
         torch.cuda.empty_cache()

@@ -1,0 +1,96 @@
+{
+ "device": "NVIDIA GB10",
+ "rounds": 21,
+ "rows": {
+  "512": {
+   "us_a_call": {
+    "router mma [512]": {
+     "median": 102.2,
+     "min": 99.8
+    },
+    "router mma [513] (shared gate folded)": {
+     "median": 99.3,
+     "min": 95.8
+    },
+    "route: torch softmax + topk (prefill)": {
+     "median": 151.6,
+     "min": 141.6
+    },
+    "route: moe_route.softmax_topk (captured)": {
+     "median": 69.2,
+     "min": 62.7
+    },
+    "shared gate: mm [1] + sigmoid": {
+     "median": 100.0,
+     "min": 96.1
+    },
+    "local_routes": {
+     "median": 203.7,
+     "min": 191.7
+    },
+    "mask + nonzero (host waits)": {
+     "median": 159.1,
+     "min": 152.8
+    },
+    "gather: x rows + ids + weights": {
+     "median": 120.2,
+     "min": 114.4
+    },
+    "pair_sum": {
+     "median": 78.1,
+     "min": 72.8
+    }
+   },
+   "checks": {
+    "pairs": 1223,
+    "route_ids_equal": true,
+    "route_weights_max_diff": 5.960464477539063e-08
+   }
+  },
+  "4096": {
+   "us_a_call": {
+    "router mma [512]": {
+     "median": 256.6,
+     "min": 254.3
+    },
+    "router mma [513] (shared gate folded)": {
+     "median": 309.4,
+     "min": 303.7
+    },
+    "route: torch softmax + topk (prefill)": {
+     "median": 494.1,
+     "min": 488.2
+    },
+    "route: moe_route.softmax_topk (captured)": {
+     "median": 135.0,
+     "min": 132.5
+    },
+    "shared gate: mm [1] + sigmoid": {
+     "median": 149.5,
+     "min": 143.6
+    },
+    "local_routes": {
+     "median": 211.9,
+     "min": 202.5
+    },
+    "mask + nonzero (host waits)": {
+     "median": 169.4,
+     "min": 163.1
+    },
+    "gather: x rows + ids + weights": {
+     "median": 348.4,
+     "min": 343.0
+    },
+    "pair_sum": {
+     "median": 417.9,
+     "min": 413.2
+    }
+   },
+   "checks": {
+    "pairs": 10199,
+    "route_ids_equal": true,
+    "route_weights_max_diff": 1.1920928955078125e-07
+   }
+  }
+ }
+}

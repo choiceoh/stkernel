@@ -428,16 +428,17 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
             local_ids, w = local_routes(ids, weights, first_expert, E, sentinel)
             out = dispatch(x, local_ids, w, w13, sf13, w2, sf2, views, scales, E)
             return out[:rows] if out.shape[0] != rows else out
-        local_ids, w = local_routes(ids, weights, first_expert, E)
         # An eager step runs only this rank's (token, route) pairs, one route a row: at EP=4 the other ranks' routes are
         # ~3/4 of a prefill chunk's pairs, and on expert 0 they are rows of compute for a product of zero. Each pair's
-        # weighted output (bf16) is summed per token in fp32, in the pairs' order, and rounded once (moe_output.pair_sum)
-        shifted = ids.to(torch.int32) - first_expert
-        token, route = ((shifted >= 0) & (shifted < E)).nonzero(as_tuple=True)
+        # weighted output (bf16) is summed per token in fp32, in the pairs' order, and rounded once (moe_output.pair_sum).
+        # The remap and the mask are one launch (moe_route.compact_routes: local_routes' bytes)
+        local_ids, w, mine = moe_route.compact_routes(ids.to(torch.int32).contiguous(), weights.float().contiguous(),
+                                                      first_expert, E)
+        token, route = mine.nonzero(as_tuple=True)
         if not token.numel():
             return torch.zeros_like(x, memory_format=torch.contiguous_format)
-        pairs = dispatch(x.index_select(0, token), local_ids[token, route][:, None], w[token, route][:, None],
-                         w13, sf13, w2, sf2, views, scales, E)
+        rows_p, ids_p, w_p = moe_route.pair_rows(x, local_ids, w, token, route)
+        pairs = dispatch(rows_p, ids_p, w_p, w13, sf13, w2, sf2, views, scales, E)
         return moe_output.pair_sum(pairs, token, x.shape[0])
 
     def on_main(fn):

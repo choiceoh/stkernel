@@ -80,7 +80,7 @@ class PairSumTests(unittest.TestCase):
 class ServedLaneTests(unittest.TestCase):
     def test_the_compact_path_combines_with_one_launch(self):
         source = (ROOT / "engine/profiles/qwen38/lanes.py").read_text(encoding="utf-8")
-        body = source[source.index("        local_ids, w = local_routes(ids, weights, first_expert, E)\n"):
+        body = source[source.index("        local_ids, w, mine = moe_route.compact_routes("):
                       source.index("    def on_main(fn):")]
         self.assertIn("return moe_output.pair_sum(pairs, token, x.shape[0])", body)
         self.assertNotIn("index_add_", body)
