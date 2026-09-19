@@ -575,6 +575,12 @@ python3 tools/onboard.py --config config.json --placement ep \
 | **generic + 형상** | 프로필은 없지만 설정이 필요한 것을 다 말했다 | 레인 표와 `cells.plan()` 의 작업 목록이 그대로 할 일이다 |
 | **generic + 빈칸** | 설정이 정하지 못한 것이 있다 | 빈칸마다 **무엇이 그것을 정하는지**가 같이 나온다 — 체크포인트의 레퍼런스 구현, `engine/profiles/` 의 프로필, `--placement`, 또는 `--state <필드>=<값>` |
 
+**라우팅 전문가가 없는 체크포인트**(평범한 dense LLM)도 형상이 선다: 모든 토큰이 지나는 MLP 하나를 이 엔진이 실제로
+서빙하는 **E=1 셀**로 읽는다 — b12x 의 게이트가 라우팅 튜플 옆에 `(1, hidden, dense_inter_local, 1)` 을 승인한다
+(`kernels/b12x/moe_dispatch._glm_tp_scatter_shape`). 그 MLP 는 여기 모든 dense·공유 MLP 처럼 TP 로 쪼개지므로 **고를
+배치가 없고 `--placement` 를 묻지 않는다.** 반대로 설정이 **전문가를 부르는데** 이 문이 못 읽는 철자라면(예: Mixtral 의
+`num_local_experts`) 그것은 **빈칸**이다 — dense 로 읽는 순간 모든 토큰을 MLP 하나로 보내는 모델이 된다.
+
 셋 다 **읽은 것을 먼저 표로 낸다**(필드 · 값 · 그 값이 온 키). 설정이 **이름을 대는** 축은 추측이 아니라 읽기다 —
 `index_kpool_compress` 는 인덱서의 압축을, `kda_layers` 는 선형 어텐션의 채널별 감쇠를, `mhc: true` 는 잔차 혼합을
 그 키가 말한다. 설정이 끝내 말하지 않는 축(`STATEABLE`: 어텐션 종류 · sink · 인덱서 압축 · 감쇠 · 혼합기 · 전문가
