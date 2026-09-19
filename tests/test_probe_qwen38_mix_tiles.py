@@ -1,6 +1,7 @@
 """gated_residual.mix_mean's tile axis and probes/engine_qwen38_mix_tiles.py (engine/QWEN38_CARRY.md H3): the rule is the
-one-block launch it always was, the hook is inert until set, validated and reaches the launch's grid, every tile width is
-the one-block launch's bytes (CUDA, or TRITON_INTERPRET=1), and the probe's table is the model's.
+GB10's (256-wide tiles at 4 warps up to 32 rows, one block a row above), the hook is inert until set, validated and
+reaches the launch's grid, every tile width is the one-block launch's bytes (CUDA, or TRITON_INTERPRET=1), and the
+probe's table is the model's.
 
     docker exec -w <repo> stk-test python3 -m unittest tests.test_probe_qwen38_mix_tiles
     docker exec -e TRITON_INTERPRET=1 -w <repo> stk-test python3 -m unittest tests.test_probe_qwen38_mix_tiles
@@ -71,20 +72,29 @@ class HookTests(unittest.TestCase):
         from engine.kernels import gated_residual
         self.hcr = gated_residual
 
-    def test_the_rule_is_the_one_block_launch(self):
-        self.assertIsNone(self.hcr._MIX_TILE_OVERRIDE)
-        self.assertEqual([self.hcr._mix_tile(hid) for hid in (16, 1024, 2560, 4096)],
-                         [(16, 4), (1024, 4), (4096, 8), (4096, 8)])
-        self.assertEqual(probe().rule_tile(), (4096, 8))
+    def test_the_rule_is_the_gb10_s(self):
+        """Up to MIX_TILE_ROWS rows 256-wide tiles at 4 warps (never wider than the row), above them one block a row as
+        before (measurements/qwen38_mix_tiles_20260919)."""
+        hcr = self.hcr
+        self.assertIsNone(hcr._MIX_TILE_OVERRIDE)
+        self.assertEqual(hcr.MIX_TILE_ROWS, 32)
+        self.assertEqual([hcr._mix_tile(2560, rows) for rows in (1, 4, 17, 32, 33, 64, 4096)],
+                         [(256, 4)] * 4 + [(4096, 8)] * 3)
+        self.assertEqual([hcr._mix_tile(hid, 4) for hid in (16, 100, 1024)], [(16, 4), (128, 4), (256, 4)])
+        self.assertEqual([hcr._mix_tile(hid, 64) for hid in (16, 1024, 4096)], [(16, 4), (1024, 4), (4096, 8)])
+        p = probe()
+        self.assertEqual((p.rule_tile(), p.rule_tile(2560, 64)), ((256, 4), (4096, 8)))
+        self.assertIn((256, 4), p.arms(2560, 4))
+        self.assertIn((4096, 8), p.arms(2560, 64))
 
     def test_forced_takes_validates_and_restores(self):
         p, hcr = probe(), self.hcr
         with p.forced((512, 2)):
-            self.assertEqual(hcr._mix_tile(2560), (512, 2))
+            self.assertEqual((hcr._mix_tile(2560, 4), hcr._mix_tile(2560, 4096)), ((512, 2), (512, 2)))
         self.assertIsNone(hcr._MIX_TILE_OVERRIDE)
         for bad in ((8, 4), (500, 4), (512, 3), (512,), [512, 4], (512.0, 4), (True, 4)):
             with self.subTest(bad=bad), p.forced(bad), self.assertRaisesRegex(ValueError, "_MIX_TILE_OVERRIDE"):
-                hcr._mix_tile(2560)
+                hcr._mix_tile(2560, 4)
         with self.assertRaises(RuntimeError):
             with p.forced((512, 2)):
                 raise RuntimeError("the block dies")
@@ -92,13 +102,14 @@ class HookTests(unittest.TestCase):
 
     def test_the_tile_reaches_mix_s_launch(self):
         p, hcr = probe(), self.hcr
-        hid, hc, rank, rows = 2560, 4, 8, 20                                # past the folded rows: mix launches mix_mean
-        normed = torch.zeros(rows, hc * hid, dtype=torch.bfloat16)
+        hid, hc, rank = 2560, 4, 8                                          # past the folded rows: mix launches mix_mean
         down, up = torch.zeros(rank + hc, hc * hid, dtype=torch.bfloat16), torch.zeros(hc * hid, rank,
                                                                                          dtype=torch.bfloat16)
-        for arm, grid, block, warps in (((512, 2), (rows, 5), 512, 2), (None, (rows, 1), 4096, 8)):
+        for arm, rows, grid, block, warps in (((512, 2), 20, (20, 5), 512, 2), (None, 20, (20, 10), 256, 4),
+                                              (None, 40, (40, 1), 4096, 8)):
+            normed = torch.zeros(rows, hc * hid, dtype=torch.bfloat16)
             mean, gates = Recorder(), Recorder()
-            with self.subTest(arm=arm), patch.object(hcr, "_mix_mean", mean), patch.object(hcr, "_gates", gates), \
+            with self.subTest(arm=arm, rows=rows), patch.object(hcr, "_mix_mean", mean), patch.object(hcr, "_gates", gates), \
                     patch.object(torch.Tensor, "is_cuda", property(lambda tensor: True)), \
                     patch.object(hcr, "folds", lambda *a: False), p.forced(arm):
                 hcr.mix(normed, down, up, hc)
@@ -114,8 +125,8 @@ class BytesTests(unittest.TestCase):
         gen = torch.Generator().manual_seed(7)
         for rows in (1, 3, 19):
             inputs = p.site_inputs(rows, hidden, hc, torch.device(DEVICE), gen, sites=2)
-            grid = [(16, 1), (32, 2), (64, 4), (128, 4)] if INTERPRET else p.arms(hidden)
-            rule = p.rule_tile(hidden)
+            grid = [(16, 1), (32, 2), (64, 4), (128, 4)] if INTERPRET else p.arms(hidden, rows)
+            rule = p.rule_tile(hidden, rows)
             gates = p.gate(inputs, hidden, hc, grid + [rule])
             with self.subTest(rows=rows):
                 self.assertTrue(all(row["exact"] for row in gates.values()), gates)

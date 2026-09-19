@@ -181,11 +181,17 @@ def _warps(width: int) -> int:
 # Probe hook (probes/engine_qwen38_mix_tiles.py, carry H3): mix_mean's (tile width, warps) forced when set, the rule when
 # None. Read when `mix` launches, so a captured graph keeps the tile it was captured with. Nothing served sets it.
 _MIX_TILE_OVERRIDE = None
+MIX_TILE_ROWS = 32                  # rows up to this take the narrow tile (measurements/qwen38_mix_tiles_20260919)
 
 
-def _mix_tile(hid: int) -> "tuple[int, int]":
-    """(tile width, warps) of mix_mean's launch over `hid` channels: one block over the whole row, as it always was."""
+def _mix_tile(hid: int, rows: int) -> "tuple[int, int]":
+    """(tile width, warps) of mix_mean's launch over `rows` rows of `hid` channels, as a GB10 measured it (carry H3):
+    a step of up to MIX_TILE_ROWS rows -- a captured step past the folded mixer's 16, or any under --hc-fp8 -- in
+    256-wide tiles at 4 warps, 30-51% less time than one block a row at 4, 17 and 32 rows; more rows in one block a row,
+    as always (from 64 rows the launch is the bandwidth's: every geometry within 2%). A tile is the same bytes."""
     if _MIX_TILE_OVERRIDE is None:
+        if rows <= MIX_TILE_ROWS:
+            return min(256, triton.next_power_of_2(hid)), 4
         return triton.next_power_of_2(hid), _warps(hid)
     forced = _MIX_TILE_OVERRIDE
     if (type(forced) is not tuple or len(forced) != 2 or not all(type(n) is int and n > 0 and not n & (n - 1)
@@ -301,7 +307,7 @@ def mix(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: i
     if weights.shape != (rows, normed.shape[1]) or weights.dtype != normed.dtype or weights.stride(1) != 1:
         raise ValueError("the up projection returns packed [N, hc*H] rows in the streams' dtype")
     if rows:
-        tile, warps = _mix_tile(hid)
+        tile, warps = _mix_tile(hid, rows)
         _mix_mean[(rows, triton.cdiv(hid, tile))](weights, normed, mixed, weights.stride(0), normed.stride(0),
                                                   mixed.stride(0), float(hc), HID=hid, BD=tile, HC=hc, num_warps=warps)
     return mixed, injection
