@@ -1,0 +1,9 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-hc-headroom-0919-20260919-092723.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-hc-headroom-0919-20260919-092723.txt
+GO qwen38-hc-headroom-0919 2026-09-19_09:27:23
+  single GPU: probes/engine_qwen38_hc_mix_fused.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 4 GiB beside production, no fleet lease)
+Traceback (most recent call last):
+  File "/repo/probes/engine_qwen38_hc_mix_fused.py", line 47, in <module>
+    from bench.probe_report import write_report  # noqa: E402
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'bench'

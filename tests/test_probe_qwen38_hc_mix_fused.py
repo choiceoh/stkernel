@@ -45,6 +45,16 @@ class ProbeShapeTests(unittest.TestCase):
         # the number a GB10 run is for: what a launch costs there is what any fold could recover
         self.assertIn('metrics[f"headroom_us_rows{rows}"] = round(lane - gemms, 2)', source)
 
+    def test_it_imports_only_what_the_lane_ships(self):
+        """probes/run_engine_probe.sh rsyncs engine/ and probes/ to the lane's box: a probe that needs bench/ at import
+        dies there in seconds (the first headroom ticket did, 2026-09-19). The report contract is optional."""
+        tree = ast.parse(PROBE.read_text(encoding="utf-8"))
+        needed = [node.module for node in tree.body if isinstance(node, ast.ImportFrom)]
+        self.assertTrue(all(m.split(".")[0] in ("__future__", "engine", "pathlib") for m in needed), needed)
+        guarded = [n for n in tree.body if isinstance(n, ast.Try)]
+        self.assertEqual([h.type.id for n in guarded for h in n.handlers], ["ModuleNotFoundError"])
+        self.assertEqual(guarded[0].body[0].module, "bench.probe_report")
+
     @unittest.skipUnless(TRITON, "the probe imports Triton")
     def test_without_a_device_it_refuses_rather_than_report(self):
         import torch

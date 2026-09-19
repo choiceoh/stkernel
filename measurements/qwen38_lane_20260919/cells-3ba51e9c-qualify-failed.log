@@ -1,0 +1,23 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-cells-0919-20260919-091423.txt
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 22.9 GiB, this check's budget 8.0 GiB, floor 16.0: 14.9 GiB would be left 2026-09-19_09:14:24
+waiting: pos 1/1, srv4: no room beside production -- MemAvailable 23.4 GiB, this check's budget 8.0 GiB, floor 16.0: 15.4 GiB would be left 2026-09-19_09:14:45
+[... 39 more `waiting:` lines, MemAvailable 22.4-23.4 GiB, elided ...]
+waiting: pos 1/3, srv4: no room beside production -- MemAvailable 22.4 GiB, this check's budget 8.0 GiB, floor 16.0: 14.4 GiB would be left 2026-09-19_09:24:30
+waiting: pos 1/3, srv4: no room beside production -- MemAvailable 22.7 GiB, this check's budget 8.0 GiB, floor 16.0: 14.7 GiB would be left 2026-09-19_09:24:31
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-cells-0919-20260919-091423.txt
+GO qwen38-cells-0919 2026-09-19_09:24:33
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+Traceback (most recent call last):
+  File "/repo/probes/engine_kernel_check.py", line 488, in <module>
+    main()
+  File "/repo/probes/engine_kernel_check.py", line 149, in main
+    qwen38_cells(args.output)
+  File "/repo/probes/engine_qwen38_cells.py", line 73, in run
+    **{name: {k: list(v) for k, v in worst.items()} for name, worst in lanes.qualify(torch.device('cuda'), F).items()})
+                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/profiles/qwen38/lanes.py", line 443, in qualify
+    "qsa_norm_rope": qsa.qualify(device, heads=((F.heads_local, F.head_dim), (F.idx_heads, F.idx_dim)),
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/repo/engine/kernels/qsa.py", line 1977, in qualify
+    raise RuntimeError(f"QSA norm and partial rotation drift from engine/modules beyond max {band_max:g} / "
+RuntimeError: QSA norm and partial rotation drift from engine/modules beyond max 0.05 / rms 0.02: {'norm_rope_4x128': (0.9379310607910156, 0.017086993902921677)}

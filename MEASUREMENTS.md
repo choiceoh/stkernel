@@ -4682,6 +4682,11 @@ e뭐시기 그건 ssd로 내리고 / 이미지는 파트로 사전 샤딩해서"
 - **큐 결함 하나:** main 의 `fleet_prepare.py create` 가 #1152 이후 TypeError 로 죽어 `fleet.sh run` 으로 티켓을 낼 수 없었다 → #1198.
   [표·원시 로그](measurements/qwen38_qsa_folds_20260918/README.md).
 
+### Qwen3.8 이식 — Q7(디코드 블록 선택 한 발사) GB10 통과, 부팅 qualify 가 한 번 죽고 재현되지 않음 (2026-09-19, srv4 단일 GPU 레인 3회)
+- **Q7 판정.** 티켓 `qwen38-cells-0919b`(main `51a332a4`, 프로덕션 옆, 예산 8 GiB): `engine_kernel_check --lanes qwen38_cells` qualify 통과, GPU 케이스 **57 건 전부 통과**(118 s) — `SelectTests` 6 건(#1202: k 512, 32,768 열까지 규칙 대조, 동률은 낮은 블록부터, 동률 없는 점수에서 torch.topk 와 같은 집합) 포함.
+- **발견.** 3 분 앞의 같은 프로브(`qwen38-cells-0919`, main `3ba51e9c`, 엔진 코드 동일)는 `lanes.qualify` 에서 죽었다: `norm_rope_4x128 (0.938, 0.0171)` — 문턱 0.05 / 0.02. 재실행 값은 `(0.00690, 0.00232)` 로 09-18 실행·RTX 5050 과 소수점까지 같다. 크기는 헤드 하나의 회전 절반 32 채널 정도. "같은 주소 두 번 저장의 경합" 가설은 컴파일된 TTGIR 로 기각(32 원소 저장은 모든 워프가 `tid % 32` 로 중복 실행). 양쪽이 모두 GPU 계산이라 어느 쪽이 틀렸는지 모른다. 이 qualify 는 플릿 부팅도 돈다 — **원인 미상, 빈도 미실측.**
+- **headroom 프로브**(`engine_qwen38_hc_mix_fused.py`, 예산 4 GiB)는 4 s 만에 임포트로 죽었다: 레인은 `engine/`·`probes/` 만 보내는데 `bench.probe_report` 를 임포트했다. 고쳤고 다시 넣는다. 속도 주장 없음. [표·원시 로그](measurements/qwen38_lane_20260919/README.md).
+
 **Qwen3.8 MoE 정적 디코드 커널 — 10·12 토큰에서 illegal access, 14~32 통과; 16행 패딩으로 8행 사다리 전부 통과 (2026-09-18 18:14~18:24 srv4 세션 창, 운영자 "8행으로 가자", PR #1192)**
 - **무엇.** 8행 부팅이 캡처하는 디코드 런치 전부를 C4 프로브로 판정: K=1·K=3 사다리 = 2·4·6·8(micro) + 10·12·14·16·20·24·28·32(정적,
   micro 상한 8 위). 정적 모양은 작은 것부터, 한 프로세스씩(`ST_PROBE_DECODE_TOKENS`; fault 가 CUDA 컨텍스트를 죽인다).
