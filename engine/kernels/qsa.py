@@ -1162,7 +1162,13 @@ def _norm_rope_partial(X, W, POS, INV, OUT, sXr, sXh, sO, sP, EPS, D: tl.constex
     x = tl.load(base + d, mask=m, other=0.0).to(tl.float32)
     scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
     w = tl.load(W + d, mask=m, other=0.0).to(tl.float32)
-    tl.store(out + d, ((x * scale) * (1.0 + w)).to(OUT.dtype.element_ty), mask=m)
+    # ONE store an address. The norm used to be stored over the whole head and the rotation over its first 2 * R2
+    # channels afterwards: two stores to one address are ordered only when the same GPU thread makes both, and at
+    # D 128 under four warps channels 32..63 are another thread's in the wide store than in the narrow one. On a GB10
+    # 7 of 2000 boot qualifies lost that race -- one head's second rotated half left as the norm, not repeating
+    # (measurements/qwen38_qualify_soak_20260919). The rotation is computed from the inputs, never read back, so
+    # leaving those channels out of this store changes no byte.
+    tl.store(out + d, ((x * scale) * (1.0 + w)).to(OUT.dtype.element_ty), mask=m & (d >= 2 * R2))
     i = tl.arange(0, BR)
     mi = i < R2
     xl = tl.load(base + i, mask=mi, other=0.0).to(tl.float32)
@@ -1214,7 +1220,8 @@ def _norm_rope_into(base, W, pos, INV, out, live, EPS, D: tl.constexpr, R2: tl.c
     x = tl.load(base + d, mask=m, other=0.0).to(tl.float32)
     scale = tl.rsqrt(tl.sum(x * x) / D + EPS)
     w = tl.load(W + d, mask=m, other=0.0).to(tl.float32)
-    tl.store(out + d, ((x * scale) * (1.0 + w)).to(out.dtype.element_ty), mask=m)
+    # one store an address, as in _norm_rope_partial: here a lost race would stay in the K cache and the index keys
+    tl.store(out + d, ((x * scale) * (1.0 + w)).to(out.dtype.element_ty), mask=m & (d >= 2 * R2))
     i = tl.arange(0, BR)
     mi = (i < R2) & live
     xl = tl.load(base + i, mask=mi, other=0.0).to(tl.float32)
