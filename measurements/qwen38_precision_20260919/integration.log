@@ -1,0 +1,8 @@
+................../usr/local/lib/python3.12/site-packages/triton/language/core.py:2625: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+.......................................................
+----------------------------------------------------------------------
+Ran 73 tests in 34.477s
+
+OK
+  expert_layout: tile-major bytes read back row-major per expert OK

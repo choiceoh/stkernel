@@ -210,7 +210,7 @@ def reference() -> Lanes:
         state = state0
         for i in range(q.shape[1]):
             o, state = gated_delta_rule(q[:, i:i + 1], k[:, i:i + 1], v[:, i:i + 1], decay[:, i:i + 1],
-                                        torch.sigmoid(b_raw[:, i:i + 1].float()), state, scale=q.shape[-1] ** -0.5,
+                                        torch.sigmoid(b_raw[:, i:i + 1]), state, scale=q.shape[-1] ** -0.5,
                                         qk_l2norm=True, decay_per_channel=False)
             ring[slot, (context + i) % r].copy_(state[0])
             outs.append(o)

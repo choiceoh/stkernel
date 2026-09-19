@@ -1,0 +1,7 @@
+/usr/local/lib/python3.12/site-packages/triton/language/core.py:2625: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+.........................ssssssss......................................
+----------------------------------------------------------------------
+Ran 71 tests in 67.004s
+
+OK (skipped=8)

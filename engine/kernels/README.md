@@ -92,6 +92,11 @@ API와 구분한다. GLM TP4의 16 heads·128×128·1~6토큰에서는 BV16·1 w
 달라질 수 있으며, 측정된 수치 차이·전체 KDA 블록 시간·재현 절차는
 [GB10 KDA 상태 측정](../../measurements/st_gb10_kda_state_20260911/README.md)에 있다.
 
+GDN 링의 beta는 모델·프리필과 같이 투영 dtype에서 sigmoid를 반올림한 뒤 FP32 재귀에 넣는다.
+이전 디코드·검증 경로는 sigmoid를 FP32로 유지해 동일한 BF16 입력에서도 저장 상태가 달랐다.
+`ROUND_BETA`는 헤드별 decay 셀에 적용하며, 채널별 KDA의 sigmoid는 기존 FP32 계약을 유지한다.
+[정밀도 수정 기록](../../measurements/qwen38_precision_20260919/README.md)에 수정 전 재현과 GB10 77개 검사 결과가 있다.
+
 KDA 출력 정규화는 128차원 head마다 한 warp가 FP32 reduction과 gate를 계산한다.
 FP32 임시 tensor를 없애며, sigmoid가 매우 작을 때도 BF16 subnormal을 보존하도록
 `div.rn.f32`를 사용한다. 일반 실행과 그래프에서 같은 커널을 호출하고 LocalTP의 main-thread
