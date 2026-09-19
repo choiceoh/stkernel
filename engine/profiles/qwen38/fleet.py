@@ -112,7 +112,7 @@ def rank_loader(path, *, expected_layout: str):
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, mtp_precision: str = "bf16",
-          draft_index: "tuple[int, int] | None" = None, mtp_experts_dir: "str | None" = None):
+          draft_index: "tuple[int, int] | None" = None, mtp_experts_dir: "str | None" = None, tap_rows: int = 0):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it."""
@@ -139,6 +139,10 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, mtp_precision=mtp_precision,
                     mtp_experts="fp8" if mtp_experts_dir else "nvfp4")
     specs = net.specs()
+    if tap_rows and drafter and comm.rank == 0:
+        # the draft queries the head's argmax reads, and its picks, recorded inside the captured draft graphs
+        from engine.kernels.common.row_tap import RowTap
+        net.draft_tap = RowTap(tap_rows, F.hidden, "cuda")
     nb, snapshots = cache_capacity(F, net.layers, kv_gib, max_seqs, SNAPSHOT_GIB, mtp=drafter)
     if nb < 2:
         raise MemoryError(f"KV {kv_gib} GiB leaves {nb} blocks")
@@ -268,6 +272,24 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         raise
 
 
+def drain_draft_tap(tap, directory, every_s: float = 30.0) -> None:
+    """Rank 0's draft queries to `directory` as they come (the tap is drained on a stream of its own), one npz a drain:
+    `rows` the BF16 queries as int16 bits, `ids` the picks. Runs until the process ends -- a stopped container runs no
+    `finally`, so nothing waits for the end to write."""
+    import numpy as np
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    tap.drained = int(tap.count.to("cpu"))              # the boot's warmup and capture rows are not queries
+    part = 0
+    while True:
+        time.sleep(every_s)
+        rows, ids, count = tap.drain()
+        if len(ids):
+            np.savez(directory / f"draft-queries-{part:05d}.npz", rows=rows.view(torch.int16).numpy(),
+                     ids=ids.numpy(), count=count)
+            part += 1
+
+
 def draft_index(text: "str | None") -> "tuple[int, int] | None":
     """`--draft-index CLUSTERS/PROBES` -> (clusters, probes), or None for the whole head."""
     if text is None:
@@ -324,6 +346,9 @@ def main(argv=None) -> int:
     ap.add_argument("--mtp-experts-dir", default=None,
                     help="the MTP head's experts in the export's own FP8 from this directory's side files "
                          "(engine/profiles/qwen38/mtp_fp8.py) instead of the rank file's NVFP4 re-encoding")
+    ap.add_argument("--tap-draft-queries", type=int, default=0, metavar="ROWS",
+                    help="rank 0 records the MTP head's draft queries and picks in a ring of ROWS inside the captured "
+                         "graphs and writes them under --dump-dir/draft-queries every 30 s (the IVF head's real recall)")
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
                          "the first fleet boot, 2026-09-18, stalled in it at every sum)")
@@ -380,7 +405,12 @@ def main(argv=None) -> int:
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                               drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
                                               query_shards=not a.no_query_shards, mtp_precision=a.mtp_precision,
-                                              draft_index=draft_index(a.draft_index), mtp_experts_dir=a.mtp_experts_dir)
+                                              draft_index=draft_index(a.draft_index), mtp_experts_dir=a.mtp_experts_dir,
+                                              tap_rows=a.tap_draft_queries)
+        if getattr(net, "draft_tap", None) is not None:
+            import threading
+            threading.Thread(target=drain_draft_tap, args=(net.draft_tap, Path(a.dump_dir) / "draft-queries"),
+                             name="draft-tap", daemon=True).start()
         print(f"  drafter: {'MTP head, K=' + str(model.k) if model.drafter is not None else 'none'} "
               f"(verify step {model.k + 1} tokens a row)", flush=True)
         with rec.phase("door"):
