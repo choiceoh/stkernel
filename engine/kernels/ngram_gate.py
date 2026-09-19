@@ -9,7 +9,13 @@ qwen38_prefill_census_20260919: PLE 54.44 ms, 5.4% of the chunk) for about 350 M
 memory's rate.
 
 One program is one stream of one row: it reads the row's stream, the key's stream and the shared value once, and writes the
-gated stream and its conv norm. Every elementwise step rounds to BF16 where the torch form's does (a BF16 tensor op
+gated stream and its conv norm.
+
+`conv_add` is the rest of the injection: the dilated causal conv over the normed rows (engine/modules/causal_conv's torch
+form: four taps accumulated in fp32 in tap order, silu, rounded to BF16) and the gated rows added back -- another dozen torch
+launches (a cat, the taps' products and sums in fp32 over [hc*H, T], the silu, the casts, the add) as one. A program is one
+row and a block of channels; a tap before the step reads the history the caller gathered from its ring. The products and
+sums may contract into fused multiply-adds, so an element can differ from torch's in the fp32 last bit before it rounds. Every elementwise step rounds to BF16 where the torch form's does (a BF16 tensor op
 computes in fp32 and rounds once); the three reductions are the kernel's own -- the norms' sums of squares and the
 query-key dot -- and can differ from torch's in the last bit, which rounding then carries or drops. `qualify` holds it to
 the torch form within a few BF16 steps (D3).
@@ -54,6 +60,51 @@ def _gate(H, KEY, VALUE, QW, KW, CW, GATED, NORMED, sH, sK, sV, sG, sN, EPS, INV
     tl.store(GATED + r * sG + off, gated, mask=m)
     normed = _unit_offset_norm(gated.to(tl.float32), tl.load(CW + off, mask=m, other=0.0).to(tl.float32), EPS, HID, dt)
     tl.store(NORMED + r * sN + off, normed.to(dt), mask=m)
+
+
+@triton.jit
+def _conv_add(X, G, W, HELD, OUT, C, sX, sG, sW, sH, sO, K: tl.constexpr, DIL: tl.constexpr, SPAN: tl.constexpr,
+              BC: tl.constexpr):
+    t = tl.program_id(0)
+    c = tl.program_id(1) * BC + tl.arange(0, BC)
+    m = c < C
+    acc = tl.zeros((BC,), dtype=tl.float32)
+    for i in tl.static_range(K):
+        j = t + i * DIL                                              # the tap's index into [history, this step's rows]
+        before = j < SPAN
+        xh = tl.load(HELD + c * sH + j, mask=m & before, other=0.0)
+        xs = tl.load(X + (j - SPAN) * sX + c, mask=m & (j >= SPAN), other=0.0)
+        x = tl.where(before, xh.to(tl.float32), xs.to(tl.float32))
+        w = tl.load(W + c * sW + i, mask=m, other=0.0).to(tl.float32)
+        acc += w * x
+    local = (acc / (1.0 + tl.exp(-acc))).to(OUT.dtype.element_ty)   # silu in fp32, then the rounding
+    g = tl.load(G + t * sG + c, mask=m, other=0.0)
+    tl.store(OUT + t * sO + c, (g.to(tl.float32) + local.to(tl.float32)).to(OUT.dtype.element_ty), mask=m)
+
+
+def conv_add(normed: torch.Tensor, gated: torch.Tensor, weight: torch.Tensor, held: torch.Tensor,
+             dilation: int, *, out: "torch.Tensor | None" = None) -> torch.Tensor:
+    """gated + causal_conv1d(normed, weight, None, held, "silu", dilation)[0]: normed, gated [T, C] BF16, weight [C, K],
+    held [C, (K-1)*dilation] -- the inputs before the step (zeros before the sequence) -> [T, C] BF16, into `out` (rows
+    packed along C) when given."""
+    t, c = normed.shape
+    k = weight.shape[1] if weight.ndim == 2 else 0
+    span = (k - 1) * dilation
+    if (gated.shape != (t, c) or weight.shape != (c, k) or k < 1 or held.shape != (c, span) or dilation < 1
+            or normed.stride(1) != 1 or gated.stride(1) != 1 or weight.stride(1) != 1 or held.stride(1) != 1):
+        raise ValueError(f"conv_add takes normed and gated [T, C], weight [C, K] and held [C, (K-1)*dilation], packed "
+                         f"along their last dimension; got {tuple(normed.shape)} {tuple(gated.shape)} "
+                         f"{tuple(weight.shape)} {tuple(held.shape)}")
+    if out is None:
+        out = torch.empty_like(gated)
+    elif out.shape != (t, c) or out.dtype != gated.dtype or out.stride(1) != 1:
+        raise ValueError("conv_add writes [T, C] rows of the gated rows' dtype, packed along C")
+    if t:
+        block = 1024
+        _conv_add[(t, triton.cdiv(c, block))](normed, gated, weight, held, out, c, normed.stride(0), gated.stride(0),
+                                              weight.stride(0), held.stride(0), out.stride(0), K=k, DIL=dilation,
+                                              SPAN=span, BC=block, num_warps=4)
+    return out
 
 
 def gate(h: torch.Tensor, key: torch.Tensor, value: torch.Tensor, q_norm: torch.Tensor, k_norm: torch.Tensor,
@@ -123,4 +174,4 @@ def torch_form(h, key, value, q_norm, k_norm, conv_norm, eps, hc):
     return gated, rmsnorm_unit_offset(gated, conv_norm, eps, group=hid)
 
 
-__all__ = ["gate", "qualify", "reference", "torch_form"]
+__all__ = ["conv_add", "gate", "qualify", "reference", "torch_form"]
