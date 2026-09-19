@@ -106,7 +106,8 @@ class Lanes:
                                     #  torch.mm past its shapes); None: torch.mm
     router_logits: object = None   # (x BF16, w FP32) -> IEEE FP32 logits, including the top-k boundary's low bits
     router_bf16: bool = False       # router_logits takes the checkpoint's BF16 gates as they are (router_fp32
-                                    #  .router_logits_mma: exact products, FP32 sums), so no FP32 copy is admitted
+                                    #  .router_logits_mma: exact products, FP32 sums), so no FP32 copy is admitted --
+                                    #  all experts + 1 rows: the shared gate's column comes out of the same launch
     leave: object = None            # how the served leaves meet the TP sum before them (served(leave=...), LEAVES);
                                     #  None: a table whose leaves are not the served kernel's
     ple_gate: object = None         # (h [N, hc*H], key [N, hc*H], value [N, H], q_norm, k_norm, conv_norm, eps, hc)

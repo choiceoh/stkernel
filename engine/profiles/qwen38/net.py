@@ -341,10 +341,11 @@ class Qwen38Net:
             if weight.dtype != BF16 or weight.shape != (self.F.experts + 1, self.F.hidden):
                 raise ValueError("Qwen router requires BF16 [experts + shared gate, hidden] weights")
         for prefix in prefixes:
-            weight = self.p[prefix + "moe.gates"][:self.F.experts]
             if getattr(getattr(self, "lanes", None), "router_bf16", False):
-                self._router_weights[prefix] = weight                  # the gates' own rows: exact in the MMA router
+                # the gates' own rows, the shared gate's with them: exact in the MMA router, one launch for both
+                self._router_weights[prefix] = self.p[prefix + "moe.gates"]
                 continue
+            weight = self.p[prefix + "moe.gates"][:self.F.experts]
             resident = arena.carve(weight.numel() * 4, f"router/{prefix}").view(F32).view_as(weight)
             resident.copy_(weight)
             self._router_weights[prefix] = resident
@@ -960,9 +961,14 @@ class Qwen38Net:
                                              w13=w13, hidden=x.shape[1])
             routed = self._experts[prefix](x, ids, weights, compact=False, local=True)
         # torch's sigmoid, not the router launch's: the gate is consumed in FP32 and Triton's exp is not torch's
-        rows_linear = getattr(lanes, "rows_linear", None)
-        shared = gates[F.experts:]
-        shared_score = rows_linear(x, shared) if rows_linear is not None else torch.mm(x, shared.t())
+        if router.shape[0] == F.experts + 1:
+            # the MMA router's last column is the shared gate's product (Lanes.router_bf16), rounded to BF16 as the
+            # BF16 matmul's output it replaces is -- the same launch in a prefill chunk and a decode step
+            shared_score = scores[:, F.experts:].to(BF16)
+        else:
+            rows_linear = getattr(lanes, "rows_linear", None)
+            shared = gates[F.experts:]
+            shared_score = rows_linear(x, shared) if rows_linear is not None else torch.mm(x, shared.t())
         gate = torch.sigmoid(shared_score.float())
         return routed, gate
 
