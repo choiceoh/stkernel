@@ -94,6 +94,10 @@ class Lanes:
                                     #  without blocks -- a dense causal launch, a run of `group` rows of one request
                                     #  sharing each K/V tile; the same bytes (carry Q10). None: such a step attends its
                                     #  unscored ids through qsa_attend
+    gdn_chunk_long: object = None    # gdn_prefill_sm120.chunk: gdn_chunk's call on FlashInfer's SM120 kernel for a prefill
+                                    #  segment gdn_prefill_sm120.admits takes (1,024+ tokens), q/k normalised first
+                                    #  (flashinfer#5255); within the served kernel's band. None: gdn_chunk takes every
+                                    #  segment
     qsa_attend_union: object = None  # qsa_tile_union.attention(q, k, v caches, blocks, positions, starts, ratio, topk,
                                     #  table, token_to_req, *, gate): qsa_attend for a prefill step
                                     #  qsa_tile_union.admits takes -- two rows of a segment walk the union of their
@@ -322,6 +326,7 @@ def reference() -> Lanes:
 KERNEL_MODULES = ("engine.kernels.gated_residual", "engine.kernels.gdn", "engine.kernels.moe_output",
                   "engine.kernels.moe_route", "engine.kernels.moe_rows", "engine.kernels.ngram_gate",
                   "engine.kernels.qsa", "engine.kernels.qsa_tile_union", "engine.kernels.router_fp32",
+                  "engine.kernels.gdn_prefill_sm120",
                   "engine.kernels.causal_conv_ring", "engine.kernels.causal_conv_single", "engine.kernels.kda.chunk_decay",
                   "engine.kernels.kda.index", "engine.kernels.kda.ring", "engine.kernels.b12x", "engine.kernels.moe_route",
                   "engine.modules.nvfp4_sf", "engine.kernels.common.decode_commit", "engine.kernels.common.norm_rope",
@@ -350,7 +355,7 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
         raise ValueError(f"leave {leave!r}: one of {LEAVES}")
     from engine.base.lanes import served as common_lanes
     from engine.kernels import gated_residual as hcr
-    from engine.kernels import gdn, moe_output, moe_route, qsa, qsa_tile_union
+    from engine.kernels import gdn, gdn_prefill_sm120, moe_output, moe_route, qsa, qsa_tile_union
     from engine.kernels.causal_conv_ring import causal_conv1d_ring, causal_conv1d_ring_rows
     from engine.kernels.causal_conv_single import causal_conv1d_single
     from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
@@ -480,20 +485,22 @@ def served(*, tp=None, leave: str = LEAVE) -> Lanes:
                  moe_finish=on_main(moe_output.gated_sum), qsa_index_keys=on_main(qsa.qsa_index_keys),
                  qsa_inputs=on_main(qsa.qsa_inputs), qsa_select_alike=qsa.shards_select_alike,
                  qsa_attend_covered=on_main(qsa.qsa_covered_paged_attention),
-                 qsa_attend_union=on_main(qsa_tile_union.attention), route_local=on_main(route_local),
+                 qsa_attend_union=on_main(qsa_tile_union.attention), gdn_chunk_long=on_main(gdn_prefill_sm120.chunk),
+                 route_local=on_main(route_local),
                  rows_linear=on_main(linear_rows), router_logits=on_main(router_fp32.router_logits_mma),
                  router_bf16=True,
                  moe_rows=on_main(moe_rows.moe), ple_gate=on_main(ngram_gate.gate), hc_site=on_main(hc_site),
                  ple_conv=on_main(ngram_gate.conv_add), leave=leave)
 
 
-def qualify(device, F, *, tile_union: bool = True) -> dict:
+def qualify(device, F, *, tile_union: bool = True, gdn_flashinfer: bool = True) -> dict:
     """The served lanes that own arithmetic the wizard's glue does not cover, held to their oracles on `device` before
     a boot serves (D3): the gated residual at the model's widths, GDN's gates and output norm, QSA's head norm with
     its partial rotation (the query heads and the indexer's), the skinny GEMV at the shapes it takes, and the head's
     FP8 decode-row kernel against its recipe, the PLE injection's gate, and the tile-union prefill attention against
-    the split-K launch it replaces (unless the boot declined it: `tile_union`, fleet.py --no-tile-union)."""
-    from engine.kernels import gated_residual, gdn, ngram_gate, qsa, qsa_tile_union
+    the split-K launch it replaces (unless the boot declined it: `tile_union`, fleet.py --no-tile-union), and the long
+    prefill's GDN on FlashInfer against the served chunk kernel (`gdn_flashinfer`, fleet.py --no-gdn-flashinfer)."""
+    from engine.kernels import gated_residual, gdn, gdn_prefill_sm120, ngram_gate, qsa, qsa_tile_union
     from engine.kernels.common import skinny_gemv
     from engine.kernels.dense import fp8_rows
     return {"gated_residual": gated_residual.qualify(device, hc=F.hc, hidden=F.hidden, rank=F.hc_rank, eps=F.rms_eps),
@@ -505,7 +512,10 @@ def qualify(device, F, *, tile_union: bool = True) -> dict:
             "ngram_gate": ngram_gate.qualify(device, hc=F.hc, hidden=F.hidden, eps=F.rms_eps),
             **({"qsa_tile_union": qsa_tile_union.qualify(device, heads=F.heads_local, head_dim=F.head_dim,
                                                          ratio=F.idx_ratio, budget=F.idx_budget, page_size=F.block)}
-               if tile_union else {})}
+               if tile_union else {}),
+            **({"gdn_prefill_sm120": gdn_prefill_sm120.qualify(device, k_heads=F.k_heads_local, v_heads=F.v_heads_local,
+                                                               dim=F.k_dim)}
+               if gdn_flashinfer else {})}
 
 
 __all__ = ["Lanes", "KERNEL_MODULES", "LEAVES", "LEAVE", "import_kernels", "reference", "served", "qualify",

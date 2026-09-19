@@ -179,6 +179,7 @@ def rank_loader(path, *, expected_layout: str):
 def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, recorder, max_new: int,
           temperature: float, seed: int, drafter: bool, workspace_gib: float = WORKSPACE_GIB, hc_fp8: bool = False,
           spec_k: "int | None" = None, prelude=None, query_shards: bool = True, tile_union: bool = True,
+          gdn_flashinfer: bool = True,
           mtp_precision: str = "bf16", draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
@@ -214,6 +215,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
         # caches derive from spec_k follow, the fixed ones are checked (caches.check_rings)
         F = dataclasses.replace(F, spec_k=spec_k)
     net = Qwen38Net(F, comm, lanes, mtp=drafter, hc_fp8=hc_fp8, query_shards=query_shards, tile_union=tile_union,
+                    gdn_flashinfer=gdn_flashinfer,
                     mtp_precision=mtp_precision, mtp_experts=mtp_experts, shared_overlap=shared_overlap)
     if mtp_window is not None:
         # the head attends a sink and a recent window of groups instead of scoring (Windowed-MTP; its index keys are
@@ -817,6 +819,10 @@ def main(argv=None) -> int:
                     help="every prefill step's sparse QSA attention on the split-K launch, as before sm121 intake U12: the "
                          "rollback of the tile-union launch, on by the operator's decision of 2026-09-19 with the fleet "
                          "unmeasured")
+    ap.add_argument("--no-gdn-flashinfer", action="store_true",
+                    help="every prefill segment's GDN on the served KDA chunk kernel, as before sm121 intake U13: the "
+                         "rollback of FlashInfer's SM120 GDN prefill, on by the operator's decision of 2026-09-19 with the "
+                         "fleet unmeasured")
     ap.add_argument("--shared-overlap", choices=("off", "one", "all"), default="one",
                     help="a captured step's shared expert on a second stream beside its routed experts (carry M5): 'one' (the "
                          "default: steps of one request's rows, C=1 -5%% a step on the fleet, measurements/"
@@ -890,7 +896,8 @@ def main(argv=None) -> int:
                 os.environ.get("FLASHINFER_WORKSPACE_BASE"), "qwen38"))
         F = facts.load(a.ckpt_meta)
         with rec.phase("qualify lanes"):
-            qualified = lane_tables.qualify(torch.device("cuda"), F, tile_union=not a.no_tile_union)
+            qualified = lane_tables.qualify(torch.device("cuda"), F, tile_union=not a.no_tile_union,
+                                            gdn_flashinfer=not a.no_gdn_flashinfer)
         print(f"  lanes qualified: {qualified}", flush=True)
         # The door's host half builds under the load and the packs; build() joins it before the capture.
         prelude = Background(partial(door_host_half, a.ckpt_meta, renderer=comm.rank == 0), "boot-prelude").start()
@@ -898,6 +905,7 @@ def main(argv=None) -> int:
                                               recorder=rec, max_new=a.max_new, temperature=a.temperature, seed=a.seed,
                                               drafter=not a.no_drafter, hc_fp8=a.hc_fp8, spec_k=a.spec_k, prelude=prelude,
                                               query_shards=not a.no_query_shards, tile_union=not a.no_tile_union,
+                                              gdn_flashinfer=not a.no_gdn_flashinfer,
                                               mtp_precision=a.mtp_precision,
                                               shared_overlap={"off": False, "one": True, "all": "all"}[a.shared_overlap],
                                               draft_index=draft_index(a.draft_index), mtp_experts=a.mtp_experts,

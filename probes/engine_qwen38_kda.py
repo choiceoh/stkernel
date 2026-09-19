@@ -684,3 +684,54 @@ def run(output=None):
 
 if __name__ == "__main__":
     run(sys.argv[1] if len(sys.argv) > 1 else None)
+
+
+def run_flashinfer_prefill(output=None, tokens=(1024, 2048, 4096, 8192), rounds=9):
+    """The `qwen38_gdn_flashinfer` lane (engine/SM121_INTAKE.md U13): the whole engine lane
+    (kernels/gdn_prefill_sm120.chunk -- q/k normalised, v made contiguous, the gate exponentiated, FlashInfer's SM120
+    kernel, the states transposed) against the served chunk_kda_with_decay on the same carried-state inputs, the two
+    arms alternating inside each round so production's steps land on both; the output and final state against the
+    served kernel's first. Medians and minimums in us."""
+    import torch
+    from engine.base import kernel_shape as ks
+    from engine.kernels import gdn_prefill_sm120
+    from engine.kernels.kda.chunk_decay import chunk_kda_with_decay
+    from engine.profiles.qwen38 import shapes
+    config = Path(__file__).with_name("qwen38_config.json")
+    ks.bind(shapes.kernel_shape(json.loads(config.read_text())["text_config"]))
+    props = torch.cuda.get_device_properties(0)
+    torch.cuda.set_per_process_memory_fraction(min(1.0, MEMORY_CAP_GIB * 2**30 / props.total_memory))
+    rows = {}
+    start, end = (torch.cuda.Event(enable_timing=True) for _ in range(2))
+    with torch.inference_mode():
+        for t in tokens:
+            args = prefill_args(QWEN38, t, torch.device("cuda"))
+            state0 = args["initial_state"].transpose(-1, -2).contiguous()           # the engine's [HV, K, V]
+            q, k, v, decay, beta = args["q"], args["k"], args["v"], args["decay"], args["beta"]
+            arms = {"served": lambda: chunk_kda_with_decay(**args),
+                    "flashinfer lane": lambda: gdn_prefill_sm120.chunk(q, k, v, decay, beta, state0)}
+            o_s, st_s = arms["served"]()
+            o_f, st_f = arms["flashinfer lane"]()
+            err = {"o": float((o_f.float() - o_s.float()).abs().max() / o_s.float().abs().max()),
+                   "state": float((st_f.float() - st_s.transpose(-1, -2).float()).abs().max()
+                                  / st_s.float().abs().max())}
+            samples = {name: [] for name in arms}
+            for r in range(rounds):
+                for name in (list(arms) if r % 2 == 0 else list(arms)[::-1]):
+                    torch.cuda.synchronize()
+                    start.record()
+                    arms[name]()
+                    end.record()
+                    end.synchronize()
+                    samples[name].append(start.elapsed_time(end) * 1000)
+            rows[t] = {"errors": {n: round(e, 6) for n, e in err.items()},
+                       **{name: {"median_us": round(statistics.median(s), 1), "min_us": round(min(s), 1)}
+                          for name, s in samples.items()}}
+            rows[t]["speedup_median"] = round(rows[t]["served"]["median_us"] / rows[t]["flashinfer lane"]["median_us"], 3)
+            print(json.dumps({f"gdn prefill {t}": rows[t]}), flush=True)
+            del args
+            torch.cuda.empty_cache()
+    report = {"lane": "qwen38_gdn_flashinfer", "device": props.name, "rounds": rounds, "rows": rows}
+    if output:
+        Path(output).write_text(json.dumps(report, indent=1) + "\n")
+    return report

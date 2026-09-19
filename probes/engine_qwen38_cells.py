@@ -53,7 +53,9 @@ GLUE_CASES = ('tests.test_engine_kernel_glue.KdaDecayKernelTests', 'tests.test_e
               'tests.test_engine_causal_conv.SingleConvTests', 'tests.test_engine_conv_ring.ConvRingTests',
               # the QSA prefill attention over a tile's union of blocks (sm_121a intake U12, vLLM PR 55430) against the
               # split-K launch at the per-rank cell, steps of 1,024+ rows: not served, judged before anyone wires it
-              'tests.test_engine_qsa_tile_union.TileUnionTests')
+              'tests.test_engine_qsa_tile_union.TileUnionTests',
+              # the long prefill's GDN on FlashInfer's SM120 kernel against the served chunk kernel (sm121 intake U13)
+              'tests.test_engine_gdn_prefill_sm120.GdnPrefillOnTheGpuTests')
 GLUE_LEFT_OUT = ('tests.test_engine_causal_conv.SingleConvTests.test_graph_replay_changed_inputs_state_and_independent_streams',
                  'tests.test_engine_conv_ring.ConvRingTests.test_declared_reference_conv_disables_direct_ring')
 """Cases of those classes this lane does not run: they build GLM-5.3's served lane table (glm53.lanes.served), which arms
