@@ -181,6 +181,12 @@ def main():
         from probes.engine_qwen38_gemv import run as qwen38_gemv
         qwen38_gemv(args.output)
         return
+    if args.lanes == 'qwen38_head':
+        # component timings: the vocabulary head at decode rows -- deep_gemm (Qwen3.8's lane) against GLM-5.3's
+        # cuBLASLt reader (direct MX, five-way split, block-128 inputs), with each one's error and argmax agreement
+        from probes.engine_qwen38_head import run as qwen38_head
+        qwen38_head(args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as five launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H1 + H2), 16 sites a graph -- what the fold is worth on a GB10
