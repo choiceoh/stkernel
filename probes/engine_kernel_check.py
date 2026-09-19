@@ -249,6 +249,12 @@ def main():
         from probes.engine_qwen38_leave import run as qwen38_leave
         qwen38_leave(args.output)
         return
+    if args.lanes == 'qwen38_moe_packets':
+        # the packet grid computing Qwen3.8's gated MoE output into TX and the leave folding it, against the finalizer,
+        # the consumer and the leave; then the GPU side of the three ways a MoE layer's output meets its leave (X2)
+        from probes.engine_qwen38_rank_packets import run_moe as qwen38_moe_packets
+        qwen38_moe_packets(args.output)
+        return
     if args.lanes == 'direct_producer_timing':
         # the GPU side of a dense projection's packets: GEMM then the packet grid's copy, against the GEMM writing its
         # reserved TX slot (GLM's #826), at GLM's direct shapes, peers landed ahead -- carry X2's gate for Qwen3.8
