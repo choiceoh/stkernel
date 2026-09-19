@@ -650,6 +650,12 @@ class QwenProductionLaunchTests(LaunchHarness):
         ranks = Path(self.env["RANKS_DIR"])
         for name in ("config.json", "tokenizer.json"):
             (ranks / name).write_text("{}")
+        # the launcher's default MTP experts are the checkpoint's BF16 side files (#1235): each node checks its rank's
+        experts = self.home / "models" / "mtp-bf16"
+        experts.mkdir()
+        for r in range(4):
+            (experts / f"mtp-bf16-r{r}of4.safetensors").write_bytes(b"x")
+        self.env.update(ST_MTP_EXPERTS_DIR=str(experts))
 
     def test_a_window_still_may_not_rsync_over_production_s_tree(self):
         result = self.run_script("start-st-qwen38.sh")          # the harness's own boots are a session's
