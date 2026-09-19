@@ -119,15 +119,15 @@ HC, HIDDEN, RANK = 4, 2560, 320                     # Qwen3.8's streams, hidden 
 
 
 def run_site(output=None) -> dict:
-    """A mixer site two ways, 16 sites a graph over rotated weights, interleaved: the five-launch site on cuBLAS (the
+    """A site's mixer two ways, 16 sites a graph over rotated weights, interleaved: its four launches on cuBLAS (the
     lane before the skinny GEMV: both products through torch.mm) and engine/kernels/gated_residual.mix as it serves a
-    decode step's rows (`mix_rows`, two launches: carry H1 + H2). The fold is held byte for byte to the five-launch
-    arithmetic on its own products (tests/test_engine_gated_residual_rows' composition) and to the cuBLAS site within
-    two BF16 steps. The first run of this lane (q38site-0919a) timed the prototypes the engine's kernels came from."""
+    decode step's rows (`mix_rows`, two launches: carry H2). The fold is held byte for byte to the unfolded mixer on its
+    own products (tests/test_engine_gated_residual_rows' composition) and to the cuBLAS mixer within two BF16 steps. The
+    first run of this lane (q38site-0919a) timed the prototypes the engine's kernels came from."""
     import torch
     from engine.kernels import gated_residual as hcr
     from engine.kernels.common import skinny_gemv
-    from tests.test_engine_gated_residual_rows import five_launches
+    from tests.test_engine_gated_residual_rows import unfolded
     torch.manual_seed(0)
     skinny_gemv.prepare("cuda")
     width = HC * HIDDEN
@@ -164,13 +164,13 @@ def run_site(output=None) -> dict:
             return hcr.mix(normed, d, u, HC)
 
         got, ref = served(downs[0], ups[0]), cublas(downs[0], ups[0])
-        want = five_launches(normed, downs[0], ups[0], True)
+        want = unfolded(normed, downs[0], ups[0], True)
         checks = {"folds": hcr.folds(normed, downs[0], ups[0]),
                   "byte_equal_mixed": bool(torch.equal(got[0], want[0])),
                   "byte_equal_inject": bool(torch.equal(got[1], want[1])),
                   "vs_cublas_mixed": round(hcr.drift(got[0], ref[0])[0], 6),
                   "vs_cublas_inject": round(hcr.drift(got[1], ref[1])[0], 6)}
-        arms = {"cublas five launches": graph_of(cublas), "served (two launches)": graph_of(served)}
+        arms = {"cublas (four launches)": graph_of(cublas), "served (two launches)": graph_of(served)}
         times = {name: [] for name in arms}
         for _ in range(ROUNDS):
             for name, g in arms.items():

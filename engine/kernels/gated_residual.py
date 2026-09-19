@@ -16,7 +16,8 @@ closing mixer), over rows 10,240 wide. Here a site is:
 
 A decode step's rows (1..16, `DECODE_ROWS`) take `mix_rows` instead: the two products on the skinny GEMV
 (engine/kernels/common/skinny_gemv -- one read of each weight tile for every row), each with the elementwise launch
-after it folded into its store -- carry H1 + H2, three launches a site:
+after it folded into its store -- carry H2's two launches a site (the gates ride the down launch rather than the up
+one), three launches a site:
 
     leave_norm   as above                                                                              one launch
     down_gates   down(+inject) for the rows, split over K; the last program of a column block sums     one launch
@@ -26,8 +27,8 @@ after it folded into its store -- carry H1 + H2, three launches a site:
 
 The arithmetic after each product is `_gates`' and `_mix_mean`'s, on the same BF16 product, so the site's outputs are
 byte for byte the five-launch site's with the same products (probes/engine_qwen38_gemv, q38site-0919a). On a GB10 at
-Qwen3.8's widths a site went from 66.5-70.5 us (cuBLAS, five launches) to 60.3-61.8 us for 1-16 rows, 16 sites a
-graph over rotated weights: 13.2 MB of weights at about 218 GB/s.
+Qwen3.8's widths the mixer went from 66.5-70.5 us (its four launches on cuBLAS, plus an output copy the probe added)
+to 60.3-61.8 us for 1-16 rows, 16 sites a graph over rotated weights: 13.2 MB of weights at about 218 GB/s.
 
 `norm_streams` opens the first site (no output to add yet) and follows an injection feature that reads the
 streams between two sites (Qwen3.8's PLE before layer 1, the config's one-indexed 2); `leave` adds an output without the norm for the same
@@ -297,7 +298,7 @@ def folds(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor) -> 
 
 def mix_rows(normed: torch.Tensor, down_inject: torch.Tensor, up: torch.Tensor, hc: int, *,
              inject: bool = True) -> "tuple[torch.Tensor, torch.Tensor | None]":
-    """`mix` for a decode step's rows in two launches (the module's docstring: carry H1 + H2): (mixed [N, H],
+    """`mix` for a decode step's rows in two launches (the module's docstring: carry H2): (mixed [N, H],
     injection [N, hc] or None). `mix` takes it on CUDA where `folds` says; the Triton interpreter runs it on the CPU."""
     hid = _check_streams(normed, hc)
     rank = up.shape[1]

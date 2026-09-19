@@ -1,5 +1,5 @@
-"""engine/kernels/gated_residual.mix_rows -- a decode step's mixer site in two launches (carry H1 + H2) -- held byte for
-byte to the five-launch site's arithmetic on the same products (skinny_gemv's, then `_gates` and `_mix_mean`), and
+"""engine/kernels/gated_residual.mix_rows -- a decode step's mixer in two launches (carry H2) -- held byte for byte to
+the unfolded mixer's four launches on the same products (skinny_gemv's, then `_gates` and `_mix_mean`), and
 where `mix` takes it. The oracle band is test_engine_qwen38_kernels' (GatedResidualTests: on a GPU its 1- and 7-row
 sites fold) and the boot's qualify.
 
@@ -27,8 +27,8 @@ def site(inject: bool, rows: int, device="cpu", seed=0):
     return normed, down, up
 
 
-def five_launches(normed, down, up, inject):
-    """The five-launch site's arithmetic on skinny_gemv's products at mix_rows' tiles (the site probe reads it too)."""
+def unfolded(normed, down, up, inject):
+    """The unfolded mixer's four launches on skinny_gemv's products at mix_rows' tiles (the site probe reads it too)."""
     import triton
     from engine.kernels import gated_residual as hcr
     from engine.kernels.common import skinny_gemv as sg
@@ -59,7 +59,7 @@ class FoldsTests(unittest.TestCase):
         self.assertFalse(hcr.folds(normed, down[:300], up), "a down projection skinny_gemv has no tile for")
         self.assertFalse(hcr.folds(normed, down, up.t().contiguous().t()), "an up weight not packed along its rank")
 
-    def test_a_projection_lane_keeps_the_five_launch_site(self):
+    def test_a_projection_lane_keeps_the_unfolded_mixer(self):
         """hc_fp8's projections replace the two BF16 products; the fold is of those products, so it steps aside."""
         import inspect
         from engine.kernels import gated_residual as hcr
@@ -78,7 +78,7 @@ class FoldsTests(unittest.TestCase):
 @unittest.skipUnless(READY and (INTERPRET or (torch is not None and torch.cuda.is_available())),
                      "CUDA or Triton interpreter required")
 class MixRowsTests(unittest.TestCase):
-    def test_a_site_is_the_five_launch_site_byte_for_byte(self):
+    def test_the_fold_is_the_unfolded_mixer_byte_for_byte(self):
         from engine.kernels import gated_residual as hcr
         from engine.kernels.common import skinny_gemv as sg
         for inject in (True, False):
@@ -86,7 +86,7 @@ class MixRowsTests(unittest.TestCase):
                 normed, down, up = site(inject, rows, DEVICE, seed=rows + 7 * inject)
                 mixed, injection = hcr.mix_rows(normed, down, up, HC, inject=inject)
                 again = hcr.mix_rows(normed, down, up, HC, inject=inject)
-                want_mixed, want_injection = five_launches(normed, down, up, inject)
+                want_mixed, want_injection = unfolded(normed, down, up, inject)
                 with self.subTest(inject=inject, rows=rows):
                     self.assertEqual((tuple(mixed.shape), mixed.dtype), ((rows, HIDDEN), torch.bfloat16))
                     self.assertTrue(torch.equal(mixed, want_mixed))
