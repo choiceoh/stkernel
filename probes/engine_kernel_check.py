@@ -242,6 +242,12 @@ def main():
         from probes.engine_sm121_inventory import run as sm121_inventory
         sm121_inventory(args.output)
         return
+    if args.lanes in ('sm121_gdn', 'sm121_fp8_l2'):
+        # component numbers for engine/SM121_INTAKE.md U13 (FlashInfer's GDN prefill against the served chunk kernel)
+        # and U11 (the FP8 prefill GEMM's throughput as M grows past the L2)
+        from probes.engine_sm121_candidates import run_fp8_l2, run_gdn
+        (run_gdn if args.lanes == 'sm121_gdn' else run_fp8_l2)(args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10
