@@ -69,7 +69,9 @@ class LaunchTests(unittest.TestCase):
     look like a GPU's -- or, `compiled` False, like the interpreter's (is_cuda stood in, the device still the CPU)."""
 
     def launch(self, rows=4, compiled=True, norm=True, **kwargs):
+        """-> (the launch's arguments by the kernel's parameter names, its keywords)."""
         from engine.kernels import gated_residual as hcr
+        names = list(inspect.signature(hcr._leave_norm.fn).parameters)
         h, out, inject, w = operands(rows, hidden=64)
         calls = []
 
@@ -88,15 +90,15 @@ class LaunchTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         grid, args, kw = calls[0]
         self.assertEqual(grid, (rows, HC))
-        return args, kw
+        return dict(zip(names, args)), kw
 
     def test_the_ordinary_launch_by_default(self):
         args, kw = self.launch()
-        self.assertEqual((kw["PDL"], kw["PREFETCH"], kw["launch_pdl"], args[11]), (False, False, False, 0))
+        self.assertEqual((kw["PDL"], kw["PREFETCH"], kw["launch_pdl"], args["SECTORS"]), (False, False, False, 0))
 
     def test_pdl_is_a_dependent_launch_without_a_prefetch(self):
         args, kw = self.launch(pdl=True)
-        self.assertEqual((kw["PDL"], kw["PREFETCH"], kw["launch_pdl"], args[11]), (True, False, True, 0))
+        self.assertEqual((kw["PDL"], kw["PREFETCH"], kw["launch_pdl"], args["SECTORS"]), (True, False, True, 0))
         args, kw = self.launch(norm=False, pdl=True)                          # the leave before an injection feature
         self.assertEqual((kw["PDL"], kw["NORM"], kw["launch_pdl"]), (True, False, True))
 
@@ -104,21 +106,21 @@ class LaunchTests(unittest.TestCase):
         weight = torch.randn(RANK + HC, HC * 64).bfloat16()
         args, kw = self.launch(pdl=True, prefetch=weight)
         self.assertEqual((kw["PDL"], kw["PREFETCH"], kw["launch_pdl"]), (True, True, True))
-        self.assertIs(args[5], weight)                                       # NEXT
-        self.assertEqual(args[11], weight.numel() * 2 // 32)                 # SECTORS
+        self.assertIs(args["NEXT"], weight)
+        self.assertEqual(args["SECTORS"], weight.numel() * 2 // 32)
 
     def test_no_prefetch_without_the_wait_or_past_decode_rows(self):
         from engine.kernels import gated_residual as hcr
         weight = torch.randn(RANK + HC, HC * 64).bfloat16()
         args, kw = self.launch(prefetch=weight)                              # launched after its sum: nothing to fill
-        self.assertEqual((kw["PDL"], kw["PREFETCH"], args[11]), (False, False, 0))
+        self.assertEqual((kw["PDL"], kw["PREFETCH"], args["SECTORS"]), (False, False, 0))
         args, kw = self.launch(rows=hcr.DECODE_ROWS + 1, pdl=True, prefetch=weight)
-        self.assertEqual((kw["PDL"], kw["PREFETCH"], args[11]), (True, False, 0))
+        self.assertEqual((kw["PDL"], kw["PREFETCH"], args["SECTORS"]), (True, False, 0))
 
     def test_the_interpreter_launches_the_ordinary_kernel(self):
         weight = torch.randn(RANK + HC, HC * 64).bfloat16()
         args, kw = self.launch(compiled=False, pdl=True, prefetch=weight)
-        self.assertEqual((kw["PDL"], kw["PREFETCH"], kw["launch_pdl"], args[11]), (False, False, False, 0))
+        self.assertEqual((kw["PDL"], kw["PREFETCH"], kw["launch_pdl"], args["SECTORS"]), (False, False, False, 0))
 
     def test_pdl_is_declared(self):
         with self.assertRaises(ValueError):
@@ -156,9 +158,10 @@ class LanesTests(unittest.TestCase):
         source = inspect.getsource(__import__("engine.profiles.qwen38.lanes", fromlist=["served"]).served)
         self.assertIn('pdl = leave != "off"', source)
         self.assertIn("return hcr.leave(h, out, inject, hc, pdl=pdl)", source)
-        self.assertIn('pdl=pdl, prefetch=prefetch if leave == "prefetch" else None)', source)
+        self.assertIn('prefetch = prefetch if leave == "prefetch" else None', source)
+        self.assertIn("return hcr.leave_norm(h, out, inject, w, eps, hc, pdl=pdl, prefetch=prefetch)", source)
         self.assertIn("bound = [hcr.norm_streams, hc_leave, hc_leave_norm, hcr.mix,", source)
-        self.assertIn("leave=leave)", source)
+        self.assertIn("leave=leave, packets=True)", source)
         from engine.profiles.qwen38 import lanes
         table = lanes.reference()
         h, out, inject, w = operands(2, hidden=16)

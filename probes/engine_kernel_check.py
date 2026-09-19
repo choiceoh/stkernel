@@ -249,6 +249,21 @@ def main():
         from probes.engine_qwen38_leave import run as qwen38_leave
         qwen38_leave(args.output)
         return
+    if args.lanes == 'qwen38_rank_packets':
+        # the one-shot oracle's four ranks: the leave folding the ranks' packets against the consumer's sum and the
+        # leave after it, byte for byte, eager and replayed, then the GPU side of both with peers landed ahead (H5).
+        # First GLM-5.3's own packet gates on the same transport source (carry Q8: a shared kernel changed)
+        import unittest
+        suite = unittest.defaultTestLoader.loadTestsFromNames(('tests.test_engine_direct_mhc_cuda',
+                                                               'tests.test_engine_direct_producer_cuda',
+                                                               'tests.test_engine_oneshot_consumer_cuda'))
+        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        if not result.wasSuccessful() or result.skipped:
+            raise RuntimeError("GLM-5.3's packet transport gates failed or skipped")
+        print(json.dumps(dict(lane='glm53_packet_gates', passed=True, tests=result.testsRun)), flush=True)
+        from probes.engine_qwen38_rank_packets import run as qwen38_rank_packets
+        qwen38_rank_packets(args.output)
+        return
     if args.lanes == 'qwen38_moe':
         # the b12x EP cell held to its oracle within 2%, then micro tile x MAC and prefill tile_m timings (C4)
         from probes.engine_qwen38_moe import run as qwen38_moe
