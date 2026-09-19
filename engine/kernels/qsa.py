@@ -12,7 +12,8 @@ are unchanged. What changed around them (engine/kernels/SOURCES.json lists it):
   launch a step, the same rule) for every other device step -- decode and capture -- and torch.topk on the CPU. Columns
   past a row's visible blocks are never written by the scorer; every selector reads a row's visible prefix only;
 - the split-K profile of the sparse attention is upstream's, without the DENEB_QSA_MAX_SPLITS environment cap (D11:
-  the kernel package reads no knobs). Whether GB10 wants fewer splits is the wizard's measurement, not a default;
+  the kernel package reads no knobs). Whether GB10 wants fewer splits is a measurement, not a default: the lane probe
+  probes/engine_qwen38_qsa_geometry.py forces a launch's geometry through the `_OVERRIDE` probe hooks below (carry Q9);
 - `norm_rope_partial` is new: Qwen3.8 normalises query and key heads with a unit-offset weight and rotates only the
   first `rotary_dim` channels (64 of 256, 64 of the indexer's 128) as neox halves -- engine/kernels/common/norm_rope
   rotates the whole head and weights plainly;
@@ -42,6 +43,21 @@ import triton
 import triton.language as tl
 
 _LOGITS_WORKSPACE_BYTES = 128 * 1024 * 1024
+
+# Probe hooks (probes/engine_qwen38_qsa_geometry.py, carry Q9): a launch's geometry forced when set, the rule when None.
+# A launcher reads its hook when it runs, so a captured graph keeps the geometry it was captured with. Nothing served
+# sets them (D11: the kernel package reads no knobs).
+_SPLIT_PROFILE_OVERRIDE = None      # (tile width, target splits, warps): the sparse and the covered attention
+_SCORE_PROFILE_OVERRIDE = None      # (tile width, tiles a program, warps): qsa_mqa_paged, the row and the run kernel
+_INPUT_WARPS_OVERRIDE = None        # warps of qsa_index_keys' and of qsa_inputs' launch
+
+
+def _forced_geometry(name: str, value, fields: int) -> tuple:
+    """A probe hook's value: `fields` powers of two, a tile width no narrower than upstream's 16 first."""
+    if (type(value) is not tuple or len(value) != fields
+            or not all(type(n) is int and n > 0 and not n & (n - 1) for n in value) or (fields > 1 and value[0] < 16)):
+        raise ValueError(f"{name} is {fields} powers of two" + (", the tile width 16 or wider" if fields > 1 else ""))
+    return value
 
 
 @triton.jit
@@ -1378,7 +1394,7 @@ def qsa_index_keys(raw_keys, compressor_state_cache, compressor_state_block_tabl
         rows, compressor_state_cache.shape[0], num_requests, key_cache.shape[0], eps,
         COMPRESSOR_STATE_SIZE=compressor_state_cache.shape[1], COMPRESS_RATIO=compress_ratio, HEAD_DIM=head_dim,
         BLOCK_D=triton.next_power_of_2(head_dim), R2=rotary_dim // 2, BR=triton.next_power_of_2(rotary_dim // 2),
-        KEY_PAGE=key_cache.shape[1], num_warps=4,
+        KEY_PAGE=key_cache.shape[1], num_warps=_input_warps(),
     )
 
 
@@ -1426,9 +1442,24 @@ def qsa_inputs(q, k, v, iq, ik, positions, q_norm, k_norm, iq_norm, eps, theta, 
         v_cache.stride(0), v_cache.stride(1), ring.stride(0), ring.stride(1), k_cache.shape[0], ring.shape[0], eps,
         HQ=hq, HI=hi, D=dim, DI=di, R2=rotary_dim // 2, KV_PAGE=k_cache.shape[1], RING_PAGE=ring.shape[1],
         BD=triton.next_power_of_2(dim), BDI=triton.next_power_of_2(di), BR=triton.next_power_of_2(rotary_dim // 2),
-        num_warps=4,
+        num_warps=_input_warps(),
     )
     return q_out, iq_out
+
+
+def _input_warps() -> int:
+    """The warps of a layer's two input launches (qsa_index_keys, qsa_inputs): 4, or the probe hook's."""
+    if _INPUT_WARPS_OVERRIDE is None:
+        return 4
+    return _forced_geometry("_INPUT_WARPS_OVERRIDE", _INPUT_WARPS_OVERRIDE, 1)[0]
+
+
+def _score_profile(rows: int):
+    """(tile width, tiles a program, warps) of a scoring launch over `rows` rows: upstream's -- a tile a program for
+    a decode step's few rows, eight for prefill's many."""
+    if _SCORE_PROFILE_OVERRIDE is not None:
+        return _forced_geometry("_SCORE_PROFILE_OVERRIDE", _SCORE_PROFILE_OVERRIDE, 3)
+    return 64, 1 if rows <= 32 else 8, 2
 
 
 def _validate_mqa(q: torch.Tensor) -> None:
@@ -1487,17 +1518,16 @@ def qsa_mqa_paged(q, k_cache, page_table, token_to_req, query_positions, sequenc
     visible_blocks = torch.empty(q.shape[0], dtype=torch.int32, device=q.device)
     if not q.shape[0] or not columns:
         return logits, visible_blocks
-    BLOCK_N = 64
+    BLOCK_N, tiles_per_program, warps = _score_profile(q.shape[0])
     BLOCK_D = max(16, triton.next_power_of_2(q.shape[2]))
     MAX_N = max(16, triton.next_power_of_2(q.shape[1]))
-    tiles_per_program = 1 if q.shape[0] <= 32 else 8
     args = (q, k_cache, page_table, token_to_req, query_positions, sequence_lengths, visible_blocks, logits,
             q.stride(0), q.stride(1), q.stride(2), k_cache.stride(0), k_cache.stride(1), k_cache.stride(3),
             page_table.stride(0), page_table.stride(1), logits.stride(0), q.shape[0], columns, k_cache.shape[0],
             page_table.shape[0], float(score_divisor))
     shape = dict(PAGE_SIZE=k_cache.shape[1], PAGE_TABLE_WIDTH=page_table.shape[1], NUM_HEADS=q.shape[1],
                  HEAD_DIM=q.shape[2], BLOCK_N=BLOCK_N, BLOCK_D=BLOCK_D, TILES_PER_PROG=tiles_per_program, STAGES=2,
-                 MAX_N=MAX_N, COMPRESS_RATIO=compress_ratio, num_warps=2)
+                 MAX_N=MAX_N, COMPRESS_RATIO=compress_ratio, num_warps=warps)
     tile_programs = triton.cdiv(columns, BLOCK_N * tiles_per_program)
     if group == 1 or q.shape[0] == 1:
         _qsa_mqa_paged_kernel[(q.shape[0], tile_programs)](*args, **shape)
@@ -1694,7 +1724,9 @@ def _split_profile(rows: int, kv_heads: int, block_m: int, width: int):
     for prefill. The covered launch takes it from the same rows, so its tiles and splits are the sparse launch's."""
     base_programs = rows * kv_heads
     small_profile_limit = 8 if block_m <= 8 else 4
-    if base_programs <= small_profile_limit:
+    if _SPLIT_PROFILE_OVERRIDE is not None:
+        block_n, target_splits, partial_warps = _forced_geometry("_SPLIT_PROFILE_OVERRIDE", _SPLIT_PROFILE_OVERRIDE, 3)
+    elif base_programs <= small_profile_limit:
         block_n, target_splits, partial_warps = 16, 64, 4
     elif base_programs < 32:
         block_n, target_splits, partial_warps = 16, 32, 4

@@ -163,6 +163,12 @@ def main():
         from probes.engine_qwen38_moe import run as qwen38_moe
         qwen38_moe(args.output)
         return
+    if args.lanes == 'qwen38_qsa_geometry':
+        # component timings: the QSA launches' geometry at Qwen3.8's cell -- the attention's split profile, the scorer's
+        # tiles, the decode selection against its torch form, the input launches' warps -- each gated first (Q9)
+        from probes.engine_qwen38_qsa_geometry import run as qwen38_qsa_geometry
+        qwen38_qsa_geometry(args.output)
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check

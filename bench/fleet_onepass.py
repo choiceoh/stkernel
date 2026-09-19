@@ -61,6 +61,8 @@ ST_PROBES = ('probes/engine_kernel_check.py', 'probes/engine_decode_graph_check.
              'probes/engine_qwen38_moe.py',
              # carry H1/H2's verdict: what a launch costs inside a captured graph on this card (headroom)
              'probes/engine_qwen38_hc_mix_fused.py',
+             # carry Q9/Q13: the QSA launches' geometry and the K/V record layout
+             'probes/engine_qwen38_qsa_geometry.py',
              'engine/profiles/glm53/check.py')
 ST_FLAGS = {'--layers', '--tokens', '--chunk', '--seed', '--moe-static', '--mla-prefill',
             '--lanes', '--moe-experts', '--samples', '--contexts', '--output', '--ranks',
