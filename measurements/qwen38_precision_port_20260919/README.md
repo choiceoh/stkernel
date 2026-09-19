@@ -61,6 +61,8 @@ both read the same shared store's Hessians; no new quantizer algorithm is introd
   rollback switch. No deployment was performed by this test.
 - [`final-cpu.log`](final-cpu.log): 47 final routing/precision/boot/source/probe checks pass without skips.
 - [`integration.log`](integration.log): 39 checks pass after integrating main's PLE gate.
+- [`ci-regressions.log`](ci-regressions.log): 28 head/leave checks, 26 pass and 2 GPU-only skips. The full CI found an
+  old GLM-only W8A16 declaration assertion and a launcher argument-order assertion; both now reflect the port.
 - CPU runtime: isolated Docker `stk-test` checkout, PyTorch `2.14.0+cpu`, Triton `3.8.0`, `OMP_NUM_THREADS=1`.
   `cpu.log`, `final-cpu.log` and `integration.log` use `TRITON_INTERPRET=1`; `adapter.log` does not.
 
