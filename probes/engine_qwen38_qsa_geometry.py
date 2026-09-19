@@ -102,7 +102,9 @@ ORACLE_BAND = (2 * BF16_STEP, BF16_STEP)           # SparseAttentionTests' band:
 # (requests, tokens a request): N = 1 -- a draft step at C=1, three of them a step at K=3 -- then 2, 4, 8, 16, 32
 DECODE_STEPS = ((1, 1), (1, 2), (2, 2), (4, 2), (8, 2), (8, 4))
 ATTEND_CONTEXT = 12000                             # past the budget: every row chooses 512 of ~3,000 blocks
-ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS = (16, 32, 64), (1, 4, 16, 64), (1, 2, 4, 8)
+# every power of two of splits: the first full-grid run (1, 4, 16, 64) put each step's best at a different one -- 64
+# at N = 2, 16 at 4 and 8, 4 at 16, 1 at 32 -- so the steps between them are where a rule's tiers fall
+ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS = (16, 32, 64), (1, 2, 4, 8, 16, 32, 64), (2, 4, 8)
 WIDE_TILE = (128, 1, 4)                            # one arm past the widest tile tl.dot compiles (see the docstring)
 PREFILL_ROWS, PREFILL_CONTEXT = 4096, 28000        # a chunk's rows deep in the 32K bucket
 PREFILL_TILES, PREFILL_SPLITS, PREFILL_WARPS = (16, 32, 64), (1, 4), (1, 2, 4, 8)

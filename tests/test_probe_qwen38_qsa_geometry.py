@@ -150,7 +150,7 @@ class CaseTable(unittest.TestCase):
                                 (32, 64, 2), (64, 1, 2), (64, 4, 2), (64, 16, 2), (64, 32, 2), (16, 64, 4), (64, 8, 2)])
         self.assertEqual(len(set(grid)), len(grid))
         full = p.split_grid(cell, p.ATTEND_TILES, p.ATTEND_SPLITS, p.ATTEND_WARPS, [p.WIDE_TILE])
-        self.assertEqual(len(full), 3 * 4 * 4 + 1)
+        self.assertEqual(len(full), (7 + 7 + 6) * 3 + 1)                  # 64-wide tiles: 33 of them, 32 splits at most
         self.assertTrue(all(n <= 64 for n, _, _ in full[:-1]) and full[-1][0] == 128)
 
     def test_bf16_steps_count_adjacent_values_across_zero(self):
