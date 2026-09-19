@@ -37,8 +37,10 @@ import queue
 import re
 import select
 import socket
+import sys
 import threading
 import time
+import traceback
 import unicodedata
 import urllib.request
 import uuid
@@ -1596,6 +1598,11 @@ class Server:
         # the second path always and the first never. This census is how that stops being an
         # argument (45차 §68).
         self.reuse_paths = {"continuation": 0, "prefix_or_cold": 0}
+        # ... and the continuations counted there that admission turned into fresh prompts after all: the conversation
+        # went ("gone"), changed ("changed"), was being continued by another request ("busy"), or a picture crossed the
+        # cut ("picture"). Counted where the check runs, on every rank alike (see _stale_hint).
+        self.continuation_fallbacks = {}
+        self.http_internal_errors = 0               # requests a handler failure answered 500 (it used to drop the socket)
         self.reasoning_shapes = {}                  # (thinking, effort) -> chat requests: see note_reasoning
         self.reasoning_budgeted_total = 0           # chat choices that thought under a budget ...
         self.reasoning_budget_reached_total = 0     # ... and those whose reasoning reached it
@@ -1627,7 +1634,8 @@ class Server:
         `continue_history`: the OpenAI path re-sends a whole chat every turn -- when a retained conversation's history
         (prompt + what it generated) is a proper prefix of `ids`, continue it with the new suffix instead of
         prefilling everything again (45차 §23 B1). The hint is taken here, on rank 0; admission re-checks it and
-        falls back to a fresh prompt if the conversation left in between.
+        falls back to a fresh prompt if the conversation left, changed or is being continued by another request
+        in between (`_stale_hint`).
         `media`: the pictures standing at placeholder runs inside `ids` (the profile's door built them: kind, digest,
         positions, canvas, grid); they ride to every rank with the request and are encoded there (45차 §23 A7).
         `cache_salt`: vLLM's field of the same name -- a tenant's own string, folded into the first block of the
@@ -1776,7 +1784,12 @@ class Server:
         does not splice the held reasoning into the prompt to make it match, although it could: the model would then
         see that reasoning only while the conversation happens to be retained, and a fresh prefill of the same request
         would not -- a cache deciding the answer. The fix is the client's: echo the reasoning of the turns that had
-        it (the gateway's preserveThinking), which also keeps the prefix cache whole."""
+        it (the gateway's preserveThinking), which also keeps the prefix cache whole.
+
+        The scan runs on the request's thread, off the lock: comparing long histories must not hold up admission. So the
+        loop evicts, parks and continues the very rows it reads, and a candidate can go while it is being read -- two
+        chat requests of ~530 died on `KeyError` from `history_ref` at concurrency 6 (2026-09-19). Such a candidate is
+        skipped: a miss costs a prefill, never an answer, and `_admit` re-checks whatever this returns on the loop."""
         best = None
         n = len(ids)
         marks = sorted((m["positions"][0], m["digest"]) for m in media)
@@ -1785,38 +1798,89 @@ class Server:
             nonlocal best
             if self._tenant_of.get(key) != salt:
                 return                                            # another tenant's turn, or one this boot cannot vouch for
-            m = len(history)
-            if m <= 1 or m - 1 >= n or (ids[m - 1] != history[m - 1] and ids[m - 2] != history[m - 2]):
-                return                                            # the cheap test first: no list compare for the many that cannot match
-            history = list(history)
-            if (0 < m < n and (best is None or m > best[1]) and ids[:m] == history
-                    and [(p, d) for p, d in marks if p < m] == sorted((int(p), str(d)) for p, d in history_marks)):
-                best = (key, m, False)
-            # the history ended with an end token the template does not render back (<|endoftext|> after an answer,
-            # where the next turn renders <|user|>): the caches stand before that token, which was sampled but never fed
-            elif (m > 1 and m - 1 < n and history[-1] in ends and (best is None or m - 1 > best[1]) and ids[:m - 1] == history[:-1]
-                    and [(p, d) for p, d in marks if p < m - 1] == sorted((int(p), str(d)) for p, d in history_marks)):
-                best = (key, m - 1, True)
+            offer = self._offer(ids, marks, history, history_marks, ends)
+            if offer is not None and (best is None or offer[0] > best[1]):
+                best = (key, *offer)
         view = getattr(self.engine, "history_ref", None) or getattr(self.engine, "history", None)
         for row in list(self._idle_order):
             key = self._conversation_of.get(row)
-            if key is not None and view is not None:
+            if key is None or view is None:
+                continue
+            try:
                 consider(key, view(row),                                  # read, compared, never mutated
                          self.engine.media_marks(row) if hasattr(self.engine, "media_marks") else [])
+            except (KeyError, IndexError):
+                continue                                          # evicted, parked or continued while this read it
         for key in self.runner.parked_keys():
             # The digest is three numbers; the token list behind it is 3.8 MiB of Python ints for
             # a 100K-token conversation, and reading one per parked conversation per request kept
             # 1.04 GiB resident at this fleet's 280 (45차 §62). Reject on the digest, read on a hit.
-            digest = self.runner.parked_digest(key)
-            if digest is None:
-                continue
-            m = digest["tokens"]
-            if m <= 1 or m - 1 >= n or (ids[m - 1] != digest["last"] and ids[m - 2] != digest["prev"]):
-                continue
-            record = self.runner.parked_record(key)
-            if record is not None and "tokens" in record:
-                consider(key, record["tokens"], [(r[2], r[1]) for r in record.get("media", [])])
+            try:
+                digest = self.runner.parked_digest(key)
+                if digest is None:
+                    continue
+                m = digest["tokens"]
+                if m <= 1 or m - 1 >= n or (ids[m - 1] != digest["last"] and ids[m - 2] != digest["prev"]):
+                    continue
+                record = self.runner.parked_record(key)
+                if record is not None and "tokens" in record:
+                    consider(key, record["tokens"], [(r[2], r[1]) for r in record.get("media", [])])
+            except (KeyError, IndexError, OSError, ValueError):
+                continue                                          # resumed or forgotten while this read it (its record went too),
+                                                                  # or a record that does not parse: a miss, not a dead request
         return best
+
+    @staticmethod
+    def _offer(ids, marks, history, history_marks, ends) -> "tuple[int, bool] | None":
+        """How much of `ids` the retained `history` covers: (its length, False) when it is a proper prefix of `ids`;
+        (its length - 1, True) when it is one but for a last end token the template does not render back
+        (<|endoftext|> after an answer, where the next turn renders <|user|>: the caches stand before that token, which
+        was sampled but never fed); None otherwise. The pictures inside the covered part must be the same ones in the
+        same places. `marks` are the prompt's (first position, digest) pairs, sorted."""
+        n, m = len(ids), len(history)
+        if m <= 1 or m - 1 >= n or (ids[m - 1] != history[m - 1] and ids[m - 2] != history[m - 2]):
+            return None                                           # the cheap test first: no list compare for the many that cannot match
+        history = list(history)                                   # one read: the scan's list may be the one a turn is extending
+        if len(history) != m:
+            return None
+        held = sorted((int(p), str(d)) for p, d in history_marks)
+        if m < n and ids[:m] == history and [(p, d) for p, d in marks if p < m] == held:
+            return m, False
+        if history[-1] in ends and ids[:m - 1] == history[:-1] and [(p, d) for p, d in marks if p < m - 1] == held:
+            return m - 1, True
+        return None
+
+    def _stale_hint(self, key: int, ids, media, prefix: int, drop: bool) -> "str | None":
+        """Why the continuation hint (`key`, `prefix`, `drop`) no longer holds for this prompt, or None when it does.
+
+        The scan took it on rank 0, off the lock, while the loop kept evicting, parking and continuing rows; so it is
+        checked again here, on the loop, against the conversation as every rank holds it. Only the books every rank
+        keeps alike decide which history is read (the tier alone is not: a park still landing is on one rank's disk
+        before another's, which is why `_admit` waits out `_retiring` before calling this). "gone": no row and no tier
+        holds it. "busy": another request is continuing it -- that turn will lengthen the history, so the hint cannot hold
+        again (the n choices of one chat request all hint the same conversation). "changed": its history is no longer the
+        one the hint was taken from. One list compare of the history, once per look at the request."""
+        row = self._conversations.get(key)
+        if row is not None:
+            if row not in self.runner.idle:
+                return "busy"
+            view = getattr(self.engine, "history_ref", None) or getattr(self.engine, "history", None)
+            if view is None:
+                return "gone"
+            history = view(row)
+            held = self.engine.media_marks(row) if hasattr(self.engine, "media_marks") else []
+        elif any(e["conversation"] == key for e in self._resuming.values()):
+            return "busy"
+        elif self.runner.is_parked(key):
+            record = self.runner.parked_record(key)
+            if record is None or "tokens" not in record:
+                return "gone"
+            history, held = record["tokens"], [(r[2], r[1]) for r in record.get("media", [])]
+        else:
+            return "gone"
+        marks = sorted((m["positions"][0], m["digest"]) for m in media)
+        ends = set(getattr(self.engine, "eos", None) or ())
+        return None if self._offer(ids, marks, history, held, ends) == (prefix, drop) else "changed"
 
     @staticmethod
     def _media_after(media, prefix: int):
@@ -2362,18 +2426,15 @@ class Server:
             drop = False
             if conversation is None and hint is not None:
                 key, prefix, drop = hint
-                row_ = self._conversations.get(key)
                 rest = self._media_after(media, prefix)
-                if rest is None:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain, salt)   # a picture straddles the cut
+                if rest is not None and key in self._retiring.values():
+                    break                                         # its park is still landing: every rank looks again next step
+                stale = "picture" if rest is None else self._stale_hint(key, ids, media, prefix, drop)   # a picture straddles the cut
+                if stale is not None:
+                    self.continuation_fallbacks[stale] = self.continuation_fallbacks.get(stale, 0) + 1
+                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain, salt)   # a fresh prompt
                     continue
-                if (row_ is not None and row_ in self.runner.idle) or (row_ is None and self.runner.is_parked(key)):
-                    conversation, ids, media = key, ids[prefix:], rest     # continue the retained conversation with the new turn
-                elif row_ is not None or key in self._retiring.values() or any(e["conversation"] == key for e in self._resuming.values()):
-                    break                                         # it is mid-park/resume or live: decide next step
-                else:
-                    self._waiting[0] = (request, ids, limit, temperature, promised, None, min_new, options, None, media, tier, chain, salt)   # gone: fresh prompt
-                    continue
+                conversation, ids, media = key, ids[prefix:], rest     # continue the retained conversation with the new turn
             salts = ([salt] if salt else []) + [(m["positions"][0], bytes.fromhex(m["digest"])) for m in media]
             if conversation is None and hint is None and getattr(self.runner, "prefix", None) is not None:
                 if chain is None:
@@ -2858,6 +2919,9 @@ class Server:
             ("gauge", "st:decode_batch_capacity", "maximum resident decode rows", runner.c.max_running),
             ("counter", "st:requests_cancelled_total", "requests cancelled, for any reason", self.cancelled),
             ("counter", "st:requests_timed_out_total", "the subset the deadline scan took", self.timed_out),
+            ("counter", "st:http_internal_errors_total",
+             "requests that failed inside the door: answered 500, or an error event once the answer had begun (traceback in the log)",
+             self.http_internal_errors),
             ("gauge", "st:handing_over", "1 while the fleet is being handed to another session",
              int(self.draining is not None)),
             # `_quiet` is the engine's own answer to "is there anything left to finish", and it is
@@ -3004,6 +3068,11 @@ class Server:
             labelled.append(("st:reuse_path_total", "counter",
                              "prompts by how they found their KV: a conversation they extend, or blocks they share",
                              [(f'path="{path}"', count) for path, count in sorted(self.reuse_paths.items())]))
+        if self.continuation_fallbacks:
+            labelled.append(("st:continuation_fallbacks_total", "counter",
+                             "continuations counted above that admission prefilled as fresh prompts, by why: the conversation "
+                             "went, changed, was being continued by another request (busy), or a picture crossed the cut",
+                             [(f'reason="{reason}"', count) for reason, count in sorted(self.continuation_fallbacks.items())]))
         if self.turns_not_retained:
             labelled.append(("st:turns_not_retained_total", "counter",
                              "finished turns released instead of kept or parked: asked (retain false) or short (park_min_tokens)",
@@ -3226,7 +3295,42 @@ class Server:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def send_response(self, code, message=None):
+                self.responded = True                     # the status line is written: a later failure can no longer be one
+                super().send_response(code, message)
+
+            def fail(self, status, message, headers=None):
+                """Tell the client its request failed: a status and a JSON body -- or, once the answer has begun and its
+                status is on the wire, an error event on the stream the client is reading (after a whole reply, nothing)."""
+                try:
+                    if not getattr(self, "responded", False):
+                        self.reply(status, {"error": message}, headers)
+                    elif getattr(self, "streaming", False):
+                        self.sse({"error": {"message": message, "type": "server_error" if status >= 500 else "invalid_request_error"}})
+                except OSError:
+                    pass                                  # the client already left: nobody to tell
+
+            def internal(self, exc):
+                """A failure in the door itself: 500 with a JSON error, the traceback in the log. A handler thread that
+                died took its connection with it -- the client read RemoteDisconnected, which says nothing a gateway can
+                act on, and wormhole retries by status (2026-09-19: the continuation scan's KeyError, 2 of ~530)."""
+                server.http_internal_errors += 1
+                began = getattr(self, "responded", False)
+                print(f"  http: {self.command} {self.path} failed {'after its answer began' if began else 'and was answered 500'}:",
+                      file=sys.stderr, flush=True)
+                traceback.print_exc()
+                self.fail(500, f"internal error: {type(exc).__name__}: {exc}"[:500])
+
             def do_GET(self):
+                self.responded = self.streaming = False
+                try:
+                    self.get()
+                except ConnectionError:
+                    pass                                  # the client hung up mid-answer
+                except Exception as exc:                  # noqa: BLE001 -- answered, never dropped
+                    self.internal(exc)
+
+            def get(self):
                 if self.path == "/v1/models":
                     catalog, code = server.catalog()
                     self.reply(code, catalog)
@@ -3282,6 +3386,7 @@ class Server:
                 return req
 
             def sse(self, payload):
+                self.streaming = True
                 self.wfile.write(b"data: " + json.dumps(payload, ensure_ascii=False).encode() + b"\n\n")
                 self.wfile.flush()
 
@@ -3987,6 +4092,7 @@ class Server:
                     server.latency_replies.pop(ident, None)
 
             def do_POST(self):
+                self.responded = self.streaming = False
                 try:
                     active = server.latency.active
                     if active and self.path != '/v1/engine/latency' and self.headers.get('X-ST-Latency-Token') != active['token']:
@@ -4007,9 +4113,13 @@ class Server:
                     # quietly read it back).
                     handler(self.body(allow_empty=self.path in BODYLESS))
                 except RequestError as exc:
-                    self.reply(exc.status, {"error": str(exc)}, exc.headers)
+                    self.fail(exc.status, str(exc), exc.headers)
                 except (ValueError, TypeError, UnicodeError) as exc:
-                    self.reply(400, {"error": str(exc)})
+                    self.fail(400, str(exc))
+                except ConnectionError:
+                    pass                                  # the client hung up mid-answer
+                except Exception as exc:                  # noqa: BLE001 -- answered, never dropped
+                    self.internal(exc)
 
         httpd = ThreadingHTTPServer((self.host, self.port), Handler)
         threading.Thread(target=httpd.serve_forever, daemon=True, name="http").start()

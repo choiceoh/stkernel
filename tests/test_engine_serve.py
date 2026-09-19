@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import functools
 import importlib.util
+import io
 import json
 import queue
 import socket
@@ -531,6 +533,127 @@ class ServeTests(unittest.TestCase):
         self.assertTrue(event.is_set())
         self.assertEqual(s.take_result(first), [3] * 4)
 
+    def test_an_idle_row_the_loop_forgets_while_the_scan_reads_it_is_skipped(self):
+        """2026-09-19, st-qwen38 at concurrency 6: two chat requests of ~530 died with no answer. The continuation scan
+        reads the idle rows on the request's thread, off the lock; the loop's eviction forgets a row's tokens first and
+        pops it from `_idle_order` after, and a scan between the two read `history_ref(3)` -> KeyError."""
+        s = server(keep_idle=True)
+        first, _ = s.submit([3, 4], 2, 0)
+        self.drain(s, retained=True)
+        row = s._conversations[first]
+        prompt = s.engine.history(row) + [5]
+        self.assertEqual(s._continuation(prompt), (first, len(prompt) - 1, False))   # left alone, it would continue
+        real = s.engine.history
+
+        def history(seq):
+            if seq == row:
+                raise KeyError(seq)                               # `forget` has run ...
+            return real(seq)
+        with patch.object(s.engine, "history", history):
+            self.assertIn(row, s._idle_order)                     # ... and `_idle_order.pop` has not
+            request, _ = s.submit(prompt, 2, 0, continue_history=True)
+        self.assertIsNone(s.arrivals.queue[-1][8], "no continuation hint")
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(request), [5, 5])          # answered, as a fresh prompt in its own row
+        self.assertNotEqual(s._conversations[request], row)
+        self.assertEqual(s.engine.history(row), prompt[:-1])      # the conversation it skipped is untouched
+
+    def test_a_history_that_shrinks_while_the_scan_reads_it_is_skipped(self):
+        """`extend(drop_unfed=True)` deletes a row's last token in place, so the scan's list can be one shorter than
+        the length it just read."""
+        s = server(keep_idle=True)
+        first, _ = s.submit([3, 4], 2, 0)
+        self.drain(s, retained=True)
+        prompt = s.engine.history(s._conversations[first]) + [5]
+
+        class Shrunk(list):
+            def __len__(self):
+                return super().__len__() + 1                      # the length from before the delete, the items from after
+        with patch.object(s.engine, "history", lambda seq: Shrunk(prompt[:-2])):
+            self.assertIsNone(s._continuation(prompt))
+
+    def test_a_parked_conversation_resumed_or_forgotten_while_the_scan_reads_it_is_skipped(self):
+        """The tier's half of the same race: the loop resumes or forgets a parked conversation between the scan listing
+        it and reading it -- its digest is gone, or its record file goes between `exists` and the read."""
+        s = server(keep_idle=True)
+
+        class Runner:
+            def __init__(self, inner): self.inner = inner
+            def __getattr__(self, name): return getattr(self.inner, name)
+            def parked_keys(self): return [11, 22, 33]
+
+            def parked_digest(self, key):
+                if key == 11:
+                    raise KeyError(key)
+                return {"tokens": 2, "last": ord("a"), "prev": ord("z"), "media": []}
+
+            def parked_record(self, key):
+                if key == 22:
+                    raise FileNotFoundError(f"conversation-{key}.json")
+                return {"tokens": [ord("z"), ord("a")], "media": []}
+
+        s.runner = Runner(s.runner)
+        self.assertEqual(s._continuation([ord("z"), ord("a"), ord("b")]), (33, 2, False))
+
+    def test_the_n_choices_of_one_prompt_do_not_continue_each_other(self):
+        """Every choice of an n > 1 chat request hints the same retained conversation. The first continues it. The
+        second found it live, waited at the head of the queue for the whole of that turn -- nobody behind it admitted --
+        and then continued the history the first had just lengthened: its prompt stacked after the other answer."""
+        s = server(rows=3, keep_idle=True)
+        first, _ = s.submit([3, 4], 2, 0)
+        self.drain(s, retained=True)
+        prompt = s.engine.history(s._conversations[first]) + [7]
+        a, _ = s.submit(prompt, 6, 0, continue_history=True)
+        b, _ = s.submit(prompt, 2, 0, continue_history=True)
+        self.assertEqual([entry[8] for entry in list(s.arrivals.queue)], [(first, len(prompt) - 1, False)] * 2)
+        s.once()                                                  # one pass admits both
+        self.assertEqual(s._active[s._conversations[first]][0], a)
+        self.assertEqual(s._active[s._conversations[b]][0], b)   # its own row, not queued behind a's turn
+        self.assertEqual(s.continuation_fallbacks, {"busy": 1})
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(a), [7] * 6)
+        self.assertEqual(s.take_result(b), [7, 7])
+        self.assertEqual(s.engine.history(s._conversations[b]), prompt + [7, 7])   # a's answer never entered b's context
+        self.assertIn('st:continuation_fallbacks_total{engine="st",reason="busy"} 1\n', s.metrics())
+
+    def test_a_hint_whose_conversation_comes_back_from_the_tier_for_another_request_prefills_fresh(self):
+        s = server(rows=3, keep_idle=True, tiered=True)
+        first, _ = s.submit([3, 4], 2, 0)
+        self.drain(s, retained=True)
+        prompt = s.runner.parked_record(first)["tokens"] + [7]
+        a, _ = s.submit(prompt, 3, 0, continue_history=True)
+        b, _ = s.submit(prompt, 2, 0, continue_history=True)
+        s.once()
+        self.assertEqual([e["request"] for e in s._resuming.values()], [a])
+        self.assertIn(b, [request for request, _ in s._active.values()])     # admitted beside it, not held behind it
+        self.assertEqual(s.continuation_fallbacks, {"busy": 1})
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(a), [7] * 3)
+        self.assertEqual(s.take_result(b), [7, 7])
+        self.assertEqual(s.runner.parked_record(b)["tokens"], prompt)          # its own conversation, parked beside `first`
+
+    def test_admission_rechecks_a_hint_against_the_conversation_as_it_stands(self):
+        """The hint is taken before the lock and admitted steps later; in between the conversation can move on. Only
+        its current history, read on the loop, decides."""
+        s = server(keep_idle=True)
+        first, _ = s.submit([3, 4], 2, 0)
+        self.drain(s, retained=True)
+        prompt = s.engine.history(s._conversations[first]) + [7]
+        hint = s._continuation(prompt)
+        self.assertIsNone(s._stale_hint(hint[0], prompt, [], hint[1], hint[2]))
+        self.assertEqual(s._stale_hint(first + 1000, prompt, [], hint[1], hint[2]), "gone")
+        turn, _ = s.submit([9], 2, 0, conversation=first)        # the conversation takes another turn after the hint
+        self.drain(s, retained=True)
+        self.assertEqual(s.take_result(turn), [9, 9])
+        self.assertEqual(s._stale_hint(hint[0], prompt, [], hint[1], hint[2]), "changed")
+        with patch.object(s, "_continuation", return_value=hint):
+            late, _ = s.submit(prompt, 1, 0, continue_history=True)
+        self.drain(s, retained=True)
+        self.assertEqual(s.continuation_fallbacks, {"changed": 1})
+        self.assertEqual(s.take_result(late), [7])
+        self.assertEqual(s.engine.history(s._conversations[late]), prompt + [7])   # a fresh prompt ...
+        self.assertEqual(s.engine.history(s._conversations[first])[-3:], [9, 9, 9])   # ... not stacked on `first`'s turn
+
     def test_public_ids_outlive_rows_and_uncollected_results_keep_their_tokens(self):
         s = server()
         jobs = [s.submit([i], 1 + i % 3, 0) for i in range(40)]
@@ -707,6 +830,38 @@ class ServeTests(unittest.TestCase):
         self.assertFalse(out[0][2])
         self.assertEqual(snapshots[0], [[i] * (1 + i % 3) for i in range(12)])
         self.assertEqual(snapshots[1], [99, 99])
+
+    @unittest.skipUnless(importlib.util.find_spec('torch') is not None, 'requires PyTorch for LocalTP')
+    def test_four_ranks_admit_hinted_turns_alike_while_a_park_lands_at_different_speeds(self):
+        """A hint is rank 0's; admission re-checks it on every rank, and only from the books every rank keeps alike. The
+        tier is not one of them while a park is landing -- it reaches rank 0's disk before rank 3's -- and a rank that
+        read the conversation there and one that did not would admit the same turn two ways."""
+        from engine.base.comm import LocalTP
+        from test_engine_tier import MemoryTier
+        answers = []
+
+        def rank_main(comm, _):
+            s = server(comm=comm, rows=3, keep_idle=True, tier=MemoryTier(delay=0.02 * (comm.rank + 1)))
+            first = turn = other = None
+            if comm.rank == 0:
+                first, _ = s.submit([3, 4], 2, 0)
+            for _ in range(300):
+                if comm.rank == 0 and turn is None and first in s._retiring.values() and s.runner.tiered.tier.has(first):
+                    prompt = s.runner.tiered.tier.record(first)["tokens"] + [7]      # on rank 0's disk, not yet on rank 3's
+                    turn, _ = s.submit(prompt, 2, 0, continue_history=True)          # waits for the park, then resumes it
+                    other, _ = s.submit(prompt, 3, 0, continue_history=True)         # finds it coming back for `turn`
+                s.once()
+                threading.Event().wait(0.002)
+            if comm.rank == 0:
+                answers.append((s.take_result(turn), s.take_result(other)))
+                s.alive = False
+            s.once()
+            return (sorted(s.runner.parked_keys()), s.served, dict(s.continuation_fallbacks), s.runner.kv.available,
+                    len(s.runner.retiring), len(s.runner.resuming))
+        out = LocalTP(4).run(rank_main, None)
+        self.assertTrue(all(row == out[0] for row in out), out)
+        self.assertEqual(answers, [([7, 7], [7, 7, 7])])
+        self.assertEqual(out[0][:3], ([0, 2], 3, {"busy": 1}))  # `turn` continued conversation 0; `other` is its own
 
 
 class Encoded:
@@ -3273,6 +3428,63 @@ class OpenAIDialectTests(unittest.TestCase):
         best = s._continuation(ids)
         self.assertEqual(reads, [11], "only the candidate the digest could not reject was read")
         self.assertEqual(best, (11, 2, False))
+
+    def test_a_chat_request_is_answered_when_its_scan_meets_a_row_the_loop_just_forgot(self):
+        """The 2026-09-19 failure end to end: the client read RemoteDisconnected instead of an answer."""
+        s = chat_server(keep_idle=True)
+        ask = lambda text: self._serve(s, lambda base: self._post(base, "/v1/chat/completions", {        # noqa: E731
+            "messages": [{"role": "user", "content": text}], "max_tokens": 2}))
+        ask("ab")
+        row = s._conversations[0]
+        self.assertEqual(s.engine.history(row), [97, 98, 98, 98])              # "ab" and its answer "bb"
+        real = s.engine.history
+
+        def history(seq):
+            if seq == row:
+                raise KeyError(seq)                                            # the loop forgot it mid-scan
+            return real(seq)
+        with patch.object(s.engine, "history", history):
+            out = ask("abbbq")                                                 # would have continued row 0
+        self.assertEqual(out["choices"][0]["message"]["content"], "qq")
+        self.assertEqual(out["usage"]["prompt_tokens_details"]["cached_tokens"], 0)   # prefilled fresh instead
+
+    def test_a_failure_inside_the_door_is_answered_500_and_the_door_keeps_serving(self):
+        """A handler thread that raised took its connection with it: RemoteDisconnected, a failure no gateway can
+        classify, where wormhole retries by status."""
+        s = chat_server(keep_idle=True)
+        body = {"messages": [{"role": "user", "content": "ab"}], "max_tokens": 1}
+        log = io.StringIO()
+        with patch.object(s, "_continuation", side_effect=RuntimeError("scan blew up")), contextlib.redirect_stderr(log):
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        with error.exception as answer:
+            self.assertEqual(answer.code, 500)
+            self.assertEqual(json.load(answer), {"error": "internal error: RuntimeError: scan blew up"})
+        self.assertIn("RuntimeError: scan blew up", log.getvalue())          # the traceback still reaches the log
+        self.assertIn('st:http_internal_errors_total{engine="st"} 1\n', s.metrics())
+        out = self._serve(s, lambda base: self._post(base, "/v1/chat/completions", body))
+        self.assertEqual(out["choices"][0]["message"]["content"], "b")
+        self.assertFalse(s.pending or s.results)
+
+    def test_a_failure_after_a_stream_began_ends_it_with_an_error_event(self):
+        """Once the 200 and the first chunks are on the wire a status is no longer possible: the stream's last event is
+        the error, as an engine error's is -- never a second status line inside the body."""
+        s = chat_server()
+        body = json.dumps({"messages": [{"role": "user", "content": "ab"}], "max_tokens": 2, "stream": True}).encode()
+
+        def post(base):
+            req = urllib.request.Request(base + "/v1/chat/completions", data=body, headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, r.read().decode()
+        log = io.StringIO()
+        with patch.object(s.diagnostic_metrics, "response", side_effect=RuntimeError("late")), contextlib.redirect_stderr(log):
+            status, text = self._serve(s, post)
+        events = [part[len("data: "):] for part in text.split("\n\n") if part.startswith("data: ")]
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(events[0])["choices"][0]["delta"], {"role": "assistant", "content": ""})
+        self.assertEqual(json.loads(events[-1]), {"error": {"message": "internal error: RuntimeError: late", "type": "server_error"}})
+        self.assertNotIn("HTTP/1", text)
+        self.assertEqual(s.http_internal_errors, 1)
 
     def test_a_continuing_turn_tokenizes_only_its_tail(self):
         """An agent resends its whole conversation every turn. Measured on the real checkpoint:

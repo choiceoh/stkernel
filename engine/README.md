@@ -211,7 +211,12 @@ prefix 재사용의 단위는 풀의 **블록 768**(`facts.BLOCK`; 프리필 청
 (`messages`/`prompt`/`ids`, `pin: true`)로 알려진 시스템 프롬프트를 미리 넣고 고정, `POST /v1/prefix/unpin` 으로 해제
 (`probes/st_prefix_warm.py prompts.jsonl --pin`); `/metrics` 의 `st:prefix_{reused_tokens_total,entries,pinned_entries,tier_entries,
 tier_spills_total,tier_restores_total,dedup_waits_total}`. 이어가기(B1)는 히스토리가 끝 토큰(`<|endoftext|>` 등, 템플릿이 되그리지 않는)으로 끝났으면
-그 토큰 앞까지 맞아도 이어간다 — 그 토큰은 뽑혔지만 먹인 적이 없어 캐시가 정확히 그 앞에 서 있다(`extend(drop_unfed=True)`). 디코드는
+그 토큰 앞까지 맞아도 이어간다 — 그 토큰은 뽑혔지만 먹인 적이 없어 캐시가 정확히 그 앞에 서 있다(`extend(drop_unfed=True)`).
+이어갈 대화를 찾는 훑기(`_continuation`)는 rank 0 의 요청 스레드가 락 밖에서 한다(긴 기록 비교가 입장을 막지 않게). 그 사이 루프가
+행을 비우거나 파킹·재개한 후보는 건너뛰고(2026-09-19: `history_ref` 의 `KeyError` 로 채팅 ~530건 중 2건이 응답 없이 끊겼다), 입장은
+루프에서 **모든 랭크가 같이 가진 장부**로 그 대화가 아직 같은 기록인지 다시 비교해 아니면 새 프롬프트로 넣는다 — 사라짐·바뀜·다른 요청이
+잇는 중(n>1 선택지는 모두 같은 대화를 가리킨다)·그림이 자름선에 걸침(`st:continuation_fallbacks_total{reason="gone|changed|busy|picture"}`).
+파킹이 착지 중인 대화만 기다린다: 티어는 랭크마다 다른 순간에 착지하므로 그것만으로 가르면 랭크가 갈라진다(`_stale_hint`). 디코드는
 **호스트보다 앞서 돈다**(`profiles/glm53/pipeline.py`, vLLM 의 비동기 스케줄링): 타깃
 그래프 → 샘플러 → 커밋(`base/sampler.commit_batch`) → 마스크 관측 → 제안 → 다음 스텝 ids 가 장치에 남고, 결과만 핀 버퍼로 건너와
 다음 스텝이 이미 도는 동안 읽힌다(`runner.inflight`, 깊이 2). 장치에서 끝난 행은 상태 슬롯을 null 슬롯으로 돌려 유령 스텝이 링에 아무
@@ -425,7 +430,9 @@ HTTP 요청 번호는 내부 KV 행 번호와 분리한다. `Server`는 기본 6
 대화 ID 위에서 시작하고, 엔진이 죽어도 파킹된 대화는 디스크에 남는다(정지 때 진행 중이던 전송은 기다려서 마무리한다).
 알 수 없거나 실행 중·정리된 대화는 기존 요청을 건드리지 않고 409로 응답하고, 모델의 학습 위치(`facts.max_position`)를 넘는
 문맥은 400 이다. 누적 요청 수와 보존 대화 수는 KV 행 수에 제한되지 않는다.
-잘못된 입력은 400, 대기열 초과와 종료된 엔진은 503으로 응답한다. 종료 신호는 모든 랭크로
+잘못된 입력은 400, 대기열 초과와 종료된 엔진은 503으로 응답한다. 문 안에서 예상 못 한 예외는 연결을 끊지 않고 500(JSON
+`{"error": …}`)으로, 스트림이 이미 시작됐으면 마지막 이벤트로 알리고 트레이스백은 로그에 남긴다(`st:http_internal_errors_total`).
+종료 신호는 모든 랭크로
 전달하며, 실행·대기 중 요청의 자원을 정리하고 기다리는 HTTP 호출을 깨운다.
 
 **갈라진 랭크는 기다리지 않고 말하며 죽는다**(`base/tripwire`, `base/stall`, 45차 2026-09-13). 호스트 투표와 교환은 전부 고정 길이(80 int64)
