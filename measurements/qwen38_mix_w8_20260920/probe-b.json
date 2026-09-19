@@ -1,0 +1,984 @@
+{
+ "device": "NVIDIA GB10",
+ "rank": 3,
+ "sites": [
+  "L0.hc.attn.",
+  "L0.hc.mlp.",
+  "L1.hc.attn.",
+  "L1.hc.mlp.",
+  "L2.hc.attn.",
+  "L2.hc.mlp.",
+  "L3.hc.attn.",
+  "L3.hc.mlp.",
+  "L4.hc.attn.",
+  "L4.hc.mlp.",
+  "L5.hc.attn.",
+  "L5.hc.mlp.",
+  "L6.hc.attn.",
+  "L6.hc.mlp.",
+  "L7.hc.attn.",
+  "L7.hc.mlp.",
+  "close."
+ ],
+ "scope": "single GPU mixer component; random activations, real weights; no quality verdict",
+ "source_bytes": 224133120,
+ "packed_bytes": 133726080,
+ "rows": {
+  "1": {
+   "checks": [
+    {
+     "recipe_error": 0.0017482517287135124,
+     "recipe_equal": false,
+     "quantization_error": 0.015184858813881874,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02678571455180645,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.026143791154026985,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02142857201397419,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.04430379718542099,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.016335226595401764,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.026923077180981636,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.020075757056474686,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02380952425301075,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.026073619723320007,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.04268292710185051,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.002793296007439494,
+     "recipe_equal": false,
+     "quantization_error": 0.024725275114178658,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.030201341956853867,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.034161489456892014,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02575107291340828,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.013944223523139954,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.017807262018322945,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.012000000104308128,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0031645570416003466,
+     "recipe_equal": false,
+     "quantization_error": 0.034591194242239,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.018895348533988,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.03030303120613098,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.022482015192508698,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.028985507786273956,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.022912779822945595,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.018656715750694275,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.027173912152647972,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.020588235929608345,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0019841270986944437,
+     "recipe_equal": false,
+     "quantization_error": 0.03784860670566559,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.021844660863280296,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.023668639361858368,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0008389261784031987,
+     "recipe_equal": false,
+     "quantization_error": 0.02621212601661682,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.028703704476356506,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.03169013932347298,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.013888888992369175,
+     "finite": true
+    }
+   ],
+   "samples_us": {
+    "bf16": [
+     221.92753062528723,
+     77.34588314505184,
+     73.53223772609935,
+     63.429650138406195,
+     63.66870683782241,
+     63.99247225593118,
+     64.22776334425983,
+     63.14729241763844,
+     63.43529504888198,
+     64.03200065388398
+    ],
+    "w8a16": [
+     59.78917374330408,
+     56.78305906407974,
+     53.77505807315602,
+     40.961882647346044,
+     40.23905712015488,
+     40.86964621263392,
+     40.41976437849157,
+     40.927999159869024,
+     44.21458875431734,
+     42.82541134778191
+    ]
+   },
+   "median_us": {
+    "bf16": 64.01223645490758,
+    "w8a16": 41.89364699756398
+   },
+   "speedup": 1.5279700155641678
+  },
+  "4": {
+   "checks": [
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.012857142835855484,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0031250000465661287,
+     "recipe_equal": false,
+     "quantization_error": 0.03281249850988388,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0028248587623238564,
+     "recipe_equal": false,
+     "quantization_error": 0.025139665231108665,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.029329609125852585,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.026533018797636032,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.019900497049093246,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.05179794505238533,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.025265958160161972,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.034638553857803345,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02976190485060215,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.003144653979688883,
+     "recipe_equal": false,
+     "quantization_error": 0.03481012582778931,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.028947368264198303,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02292899414896965,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.025280898436903954,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02923976629972458,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0007812500116415322,
+     "recipe_equal": false,
+     "quantization_error": 0.03398437425494194,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.024725275114178658,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.012417218647897243,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.04139072820544243,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.03846153989434242,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.020202020183205605,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.033742330968379974,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.002673796843737364,
+     "recipe_equal": false,
+     "quantization_error": 0.035904254764318466,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02684563770890236,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0028735632076859474,
+     "recipe_equal": false,
+     "quantization_error": 0.022857142612338066,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0013440860202535987,
+     "recipe_equal": false,
+     "quantization_error": 0.020304568111896515,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.028409091755747795,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0026455025654286146,
+     "recipe_equal": false,
+     "quantization_error": 0.0462239570915699,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0026881720405071974,
+     "recipe_equal": false,
+     "quantization_error": 0.050337836146354675,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.023876404389739037,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.03038674034178257,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02639751508831978,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0005547337350435555,
+     "recipe_equal": false,
+     "quantization_error": 0.030510354787111282,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.020618556067347527,
+     "finite": true
+    }
+   ],
+   "samples_us": {
+    "bf16": [
+     210.4640007019043,
+     62.432001618778,
+     68.81882162655101,
+     66.50164548088523,
+     62.64658535228056,
+     62.302119591656854,
+     62.66164779663086,
+     62.46588510625503,
+     62.586349599501666,
+     62.64658535228056
+    ],
+    "w8a16": [
+     40.78117538900936,
+     40.961882647346044,
+     40.899764089023364,
+     43.07011646382949,
+     41.918116457322064,
+     40.71717753129847,
+     40.66070738960715,
+     40.72658805286183,
+     40.81882448757396,
+     40.60988215839161
+    ]
+   },
+   "median_us": {
+    "bf16": 62.64658535228056,
+    "w8a16": 40.79999993829166
+   },
+   "speedup": 1.5354555256625237
+  },
+  "8": {
+   "checks": [
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02484472095966339,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.04722222313284874,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.001207729452289641,
+     "recipe_equal": false,
+     "quantization_error": 0.03125,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.00034340660204179585,
+     "recipe_equal": false,
+     "quantization_error": 0.041208792477846146,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.000735294132027775,
+     "recipe_equal": false,
+     "quantization_error": 0.02631578966975212,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.027912620455026627,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0022727272007614374,
+     "recipe_equal": false,
+     "quantization_error": 0.029680365696549416,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0024509804788976908,
+     "recipe_equal": false,
+     "quantization_error": 0.03431372717022896,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.028735632076859474,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02291666716337204,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.0980902761220932,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0005506607703864574,
+     "recipe_equal": false,
+     "quantization_error": 0.02901785634458065,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.036269430071115494,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.029243119060993195,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0006313131307251751,
+     "recipe_equal": false,
+     "quantization_error": 0.030612245202064514,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.04242081567645073,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0026041667442768812,
+     "recipe_equal": false,
+     "quantization_error": 0.015706805512309074,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0014880952658131719,
+     "recipe_equal": false,
+     "quantization_error": 0.014880952425301075,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0028409091755747795,
+     "recipe_equal": false,
+     "quantization_error": 0.09322033822536469,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0025641026441007853,
+     "recipe_equal": false,
+     "quantization_error": 0.02331606298685074,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.03143712505698204,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.002747252816334367,
+     "recipe_equal": false,
+     "quantization_error": 0.02970466949045658,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.033149171620607376,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.031976744532585144,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0013586956774815917,
+     "recipe_equal": false,
+     "quantization_error": 0.025102458894252777,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.025139665231108665,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.024611398577690125,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.052259888499975204,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02688172087073326,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.029639175161719322,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.002793296007439494,
+     "recipe_equal": false,
+     "quantization_error": 0.03324652835726738,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.023058252409100533,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.0234375,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.01953125,
+     "finite": true
+    }
+   ],
+   "samples_us": {
+    "bf16": [
+     224.86023341908174,
+     66.50164548088523,
+     67.64611777137307,
+     66.55435001148896,
+     65.53788044873406,
+     64.83200017143699,
+     64.81505842769847,
+     65.11623719159294,
+     63.96988560171688,
+     64.15811706991757
+    ],
+    "w8a16": [
+     42.10635143167832,
+     42.13458650252398,
+     42.10635143167832,
+     44.06776498345768,
+     41.504000916200525,
+     41.827766334309295,
+     45.31764633515302,
+     55.804235093733844,
+     41.70729482875151,
+     52.242822506848505
+    ]
+   },
+   "median_us": {
+    "bf16": 65.3270588201635,
+    "w8a16": 42.12046896710115
+   },
+   "speedup": 1.550957537324388
+  },
+  "16": {
+   "checks": [
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.02459016442298889,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0024999999441206455,
+     "recipe_equal": false,
+     "quantization_error": 0.05472636967897415,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0025252525229007006,
+     "recipe_equal": false,
+     "quantization_error": 0.028894472867250443,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0006345177534967661,
+     "recipe_equal": false,
+     "quantization_error": 0.02806122414767742,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0013020833721384406,
+     "recipe_equal": false,
+     "quantization_error": 0.035340312868356705,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0021551724057644606,
+     "recipe_equal": false,
+     "quantization_error": 0.03205128386616707,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.00016025641525629908,
+     "recipe_equal": false,
+     "quantization_error": 0.030456852167844772,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0028409091755747795,
+     "recipe_equal": false,
+     "quantization_error": 0.04073033854365349,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0025641026441007853,
+     "recipe_equal": false,
+     "quantization_error": 0.036082472652196884,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0005787037080153823,
+     "recipe_equal": false,
+     "quantization_error": 0.034866899251937866,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0013888889225199819,
+     "recipe_equal": false,
+     "quantization_error": 0.03229166567325592,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0022421525791287422,
+     "recipe_equal": false,
+     "quantization_error": 0.02594866044819355,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.001308900536969304,
+     "recipe_equal": false,
+     "quantization_error": 0.03125,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0012953367549926043,
+     "recipe_equal": false,
+     "quantization_error": 0.0559895820915699,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.001168224262073636,
+     "recipe_equal": false,
+     "quantization_error": 0.032710280269384384,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0012755101779475808,
+     "recipe_equal": false,
+     "quantization_error": 0.034263961017131805,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0013157895300537348,
+     "recipe_equal": false,
+     "quantization_error": 0.023560209199786186,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0007062146905809641,
+     "recipe_equal": false,
+     "quantization_error": 0.016853932291269302,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.002673796843737364,
+     "recipe_equal": false,
+     "quantization_error": 0.03922872245311737,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0024999999441206455,
+     "recipe_equal": false,
+     "quantization_error": 0.055276382714509964,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.040048543363809586,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0029069767333567142,
+     "recipe_equal": false,
+     "quantization_error": 0.029069768264889717,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0012886597542092204,
+     "recipe_equal": false,
+     "quantization_error": 0.03853626921772957,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.05151515081524849,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.002475247485563159,
+     "recipe_equal": false,
+     "quantization_error": 0.03155940771102905,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.00034916200092993677,
+     "recipe_equal": false,
+     "quantization_error": 0.02822580561041832,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0,
+     "recipe_equal": true,
+     "quantization_error": 0.03153153136372566,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0029411765281111,
+     "recipe_equal": false,
+     "quantization_error": 0.05588235333561897,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0011261261533945799,
+     "recipe_equal": false,
+     "quantization_error": 0.02873883955180645,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0026315790601074696,
+     "recipe_equal": false,
+     "quantization_error": 0.042328041046857834,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0026041667442768812,
+     "recipe_equal": false,
+     "quantization_error": 0.02864583395421505,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0025906735099852085,
+     "recipe_equal": false,
+     "quantization_error": 0.03947368264198303,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.0012820513220503926,
+     "recipe_equal": false,
+     "quantization_error": 0.03076923079788685,
+     "finite": true
+    },
+    {
+     "recipe_error": 0.002222222276031971,
+     "recipe_equal": false,
+     "quantization_error": 0.01897321455180645,
+     "finite": true
+    }
+   ],
+   "samples_us": {
+    "bf16": [
+     255.6781207813936,
+     92.32187972349278,
+     296.3557523839614,
+     89.41176358391257,
+     87.77223615085377,
+     252.68894083359663,
+     89.73176339093376,
+     93.74870272243724,
+     243.80610970889822,
+     96.4047067305621
+    ],
+    "w8a16": [
+     72.73599680732278,
+     68.54964705074535,
+     69.69223302953384,
+     74.59200129789464,
+     75.15670271480785,
+     75.65740978016572,
+     67.76658927693086,
+     66.61082015318028,
+     70.83482602063347,
+     72.70399963154512
+    ]
+   },
+   "median_us": {
+    "bf16": 95.07670472649967,
+    "w8a16": 71.7694128260893
+   },
+   "speedup": 1.324752439550931
+  }
+ }
+}

@@ -1,0 +1,57 @@
+{
+ "rank": 3,
+ "layer_sets": [
+  [
+   4,
+   5,
+   6,
+   7
+  ]
+ ],
+ "shapes": [
+  [
+   1,
+   6
+  ],
+  [
+   2,
+   6
+  ],
+  [
+   3,
+   6
+  ],
+  [
+   4,
+   6
+  ],
+  [
+   4,
+   43
+  ]
+ ],
+ "replays": 50,
+ "arms": [
+  "served",
+  "moe-chunks"
+ ],
+ "builds": {
+  "served": {},
+  "moe-chunks": {}
+ },
+ "failed": {
+  "served 4,5,6,7": "rc=1",
+  "moe-chunks 4,5,6,7": "rc=1"
+ },
+ "step": {},
+ "served_loop": null,
+ "step_by_arm": {
+  "served": {},
+  "moe-chunks": {}
+ },
+ "served_loop_by_arm": {
+  "served": null,
+  "moe-chunks": null
+ },
+ "delta": {}
+}

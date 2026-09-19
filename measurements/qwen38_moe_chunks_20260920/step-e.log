@@ -1,0 +1,105 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen-moe-step-0920e-20260920-002004.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen-moe-step-0920e-20260920-002004.txt
+GO qwen-moe-step-0920e 2026-09-20_00:20:05
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+USDT:2026-09-19 15:20:36 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:36 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 1 blocks 6", "wall_us": 4040.0, "device_us": 4168.1, "launches": 107.0}
+USDT:2026-09-19 15:20:37 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:37 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 1 blocks 6", "wall_us": 7935.4, "device_us": 7489.2, "launches": 169.0}
+USDT:2026-09-19 15:20:38 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:38 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 2 blocks 6", "wall_us": 4282.5, "device_us": 4167.3, "launches": 107.0}
+USDT:2026-09-19 15:20:39 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:39 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 2 blocks 6", "wall_us": 8060.8, "device_us": 8009.1, "launches": 166.0}
+USDT:2026-09-19 15:20:40 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:41 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 3 blocks 6", "wall_us": 5976.7, "device_us": 6517.1, "launches": 127.0}
+USDT:2026-09-19 15:20:42 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:42 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 3 blocks 6", "wall_us": 8774.8, "device_us": 8282.4, "launches": 170.0}
+USDT:2026-09-19 15:20:43 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:43 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 6", "wall_us": 6291.6, "device_us": 6925.7, "launches": 103.0}
+USDT:2026-09-19 15:20:44 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:45 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 6", "wall_us": 9066.9, "device_us": 9335.4, "launches": 167.0}
+USDT:2026-09-19 15:20:46 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:46 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 43", "wall_us": 6655.8, "device_us": 6416.7, "launches": 103.0}
+USDT:2026-09-19 15:20:47 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:47 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 43", "wall_us": 8581.9, "device_us": 8944.2, "launches": 167.0}
+USDT:2026-09-19 15:20:48 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:48 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "stacks": "target", "top": [{"op": "aten::copy_", "where": "?", "launches": 13, "us": 122.8, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda", "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"]}, {"op": "aten::mm", "where": "?", "launches": 4, "us": 18.6, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 4, "us": 8.7, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}]}
+{"arm": "served", "calls": "target", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 4}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1022", "count": 4}]}
+USDT:2026-09-19 15:20:48 53:53 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:20:48 53:53 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "stacks": "draft", "top": [{"op": "aten::copy_", "where": "?", "launches": 6, "us": 73.8, "kernels": ["void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"]}, {"op": "aten::mm", "where": "?", "launches": 9, "us": 70.5, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo", "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __n"]}, {"op": "aten::add", "where": "?", "launches": 6, "us": 14.4, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 3, "us": 6.9, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}, {"op": "aten::bitwise_and", "where": "?", "launches": 3, "us": 5.8, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"]}, {"op": "aten::sub", "where": "?", "launches": 3, "us": 5.1, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"]}, {"op": "aten::index_select", "where": "?", "launches": 2, "us": 3.9, "kernels": ["void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"]}, {"op": "aten::cat", "where": "?", "launches": 1, "us": 1.9, "kernels": ["void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"]}]}
+{"arm": "served", "calls": "draft", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 6}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1022", "count": 3}, {"func": "__and__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "__rsub__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "index_select", "where": "engine/profiles/qwen38/net.py:702", "count": 2}]}
+{"arm": "served", "mtp_rows": {"hidden_max_err": 0.0, "hidden_equal": true, "streams_equal": true}}
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=896 -> rows 2928/2928 tiles 183/183 tasks 915/915
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1315 -> rows 3360/3360 tiles 210/210 tasks 1050/1050
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1134 -> rows 3168/3360 tiles 198/210 tasks 990/1050
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1654 -> rows 3696/3696 tiles 231/231 tasks 1155/1155
+{"arm": "served", "layers": [4, 5, 6, 7], "served_loop": {"steps": 64, "wall_us": 16843.6, "tokens_a_step": 1.0, "spent_us_a_step": {"stage_ple": 0.0, "target_run": 321.7, "draft_run": 8899.4, "picks": 6377.1}, "ahead_steps": 0, "ahead_misses": 0, "replays_us": 11975.4, "host_us": 4868.2}}
+2026-09-19 15:21:13,511 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m8_k2560_n640_t10_r80_48c107bb329936d1
+2026-09-19 15:21:16,997 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m8_k2560_n640_t10_r80_48c107bb329936d1.o
+2026-09-19 15:21:17,663 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m6_k2560_n640_t10_r80_c5866be232f6b892
+2026-09-19 15:21:20,379 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m6_k2560_n640_t10_r80_c5866be232f6b892.o
+2026-09-19 15:21:20,735 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r80_5bd36dace1ccf0d4
+2026-09-19 15:21:23,474 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r80_5bd36dace1ccf0d4.o
+USDT:2026-09-19 15:21:25 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:26 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "target rows 1 blocks 6", "wall_us": 4301.7, "device_us": 4189.2, "launches": 107.0}
+USDT:2026-09-19 15:21:26 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:27 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "draft rows 1 blocks 6", "wall_us": 6939.5, "device_us": 7466.7, "launches": 169.0}
+USDT:2026-09-19 15:21:28 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:28 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "target rows 2 blocks 6", "wall_us": 4331.5, "device_us": 4428.7, "launches": 107.0}
+USDT:2026-09-19 15:21:28 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:29 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "draft rows 2 blocks 6", "wall_us": 8113.3, "device_us": 7767.1, "launches": 166.0}
+USDT:2026-09-19 15:21:30 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:30 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "target rows 3 blocks 6", "wall_us": 4643.0, "device_us": 4391.1, "launches": 123.0}
+USDT:2026-09-19 15:21:31 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:31 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "draft rows 3 blocks 6", "wall_us": 7883.9, "device_us": 7864.8, "launches": 170.0}
+USDT:2026-09-19 15:21:32 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:32 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 6", "wall_us": 5616.2, "device_us": 5695.0, "launches": 123.0}
+USDT:2026-09-19 15:21:33 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:34 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 6", "wall_us": 8081.5, "device_us": 8801.4, "launches": 167.0}
+USDT:2026-09-19 15:21:34 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:35 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 43", "wall_us": 5419.7, "device_us": 5505.1, "launches": 123.0}
+USDT:2026-09-19 15:21:35 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:36 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 43", "wall_us": 8544.8, "device_us": 8327.0, "launches": 167.0}
+USDT:2026-09-19 15:21:37 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:37 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "stacks": "target", "top": [{"op": "aten::copy_", "where": "?", "launches": 13, "us": 128.7, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda", "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"]}, {"op": "aten::mm", "where": "?", "launches": 4, "us": 18.6, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 4, "us": 8.9, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}]}
+{"arm": "moe-chunks", "calls": "target", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 4}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1022", "count": 4}]}
+USDT:2026-09-19 15:21:37 120:120 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:21:37 120:120 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "moe-chunks", "stacks": "draft", "top": [{"op": "aten::copy_", "where": "?", "launches": 6, "us": 77.6, "kernels": ["void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"]}, {"op": "aten::mm", "where": "?", "launches": 9, "us": 70.0, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo", "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __n"]}, {"op": "aten::add", "where": "?", "launches": 6, "us": 14.7, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 3, "us": 6.8, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}, {"op": "aten::bitwise_and", "where": "?", "launches": 3, "us": 5.9, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"]}, {"op": "aten::sub", "where": "?", "launches": 3, "us": 5.1, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"]}, {"op": "aten::index_select", "where": "?", "launches": 2, "us": 4.4, "kernels": ["void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"]}, {"op": "aten::cat", "where": "?", "launches": 1, "us": 1.9, "kernels": ["void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"]}]}
+{"arm": "moe-chunks", "calls": "draft", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 6}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1022", "count": 3}, {"func": "__and__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "__rsub__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "index_select", "where": "engine/profiles/qwen38/net.py:702", "count": 2}]}
+{"arm": "moe-chunks", "mtp_rows": {"hidden_max_err": 0.0, "hidden_equal": true, "streams_equal": true}}
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=896 -> rows 2928/2928 tiles 183/183 tasks 915/915
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1315 -> rows 3360/3360 tiles 210/210 tasks 1050/1050
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1134 -> rows 3168/3360 tiles 198/210 tasks 990/1050
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1654 -> rows 3696/3696 tiles 231/231 tasks 1155/1155
+{"arm": "moe-chunks", "layers": [4, 5, 6, 7], "served_loop": {"steps": 64, "wall_us": 14688.5, "tokens_a_step": 1.0, "spent_us_a_step": {"stage_ple": 0.0, "target_run": 36.2, "draft_run": 7589.3, "picks": 6114.6}, "ahead_steps": 0, "ahead_misses": 0, "replays_us": 11241.2, "host_us": 3447.3}}
+{
+ "served": {},
+ "moe-chunks": {}
+}
+{
+ "delta": {}
+}

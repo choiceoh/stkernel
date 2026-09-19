@@ -5154,3 +5154,12 @@ split-K 와 바이트 동일이 아니라 대역 안(최대 0.0066, rms 0.0011).
 - U11: vLLM 의 L2 절벽 없음(16,384×2,560 M 16,384 에서 123 TFLOPS); 번갈아 잰 2차는 L2 안 대조군까지 같이 떨어져 경합. U15: sanitizer 가 컨테이너에서 계측 불가.
   [상세·원시](measurements/sm121_candidates_20260919/README.md).
 
+
+
+### Qwen3.8 C1 믹서·C3/C4 MoE 후보 — 단일 GPU에서는 이득, 전체 서비스 판정 전 (2026-09-20, PR 미개설)
+
+- 사용자 목표: C2~4 전체 처리량 우선, 품질 유지, C1 하락 최대 5%. 추가로 C1 자체 개선 요청.
+- 두 발사의 W8A16 믹서: srv4 실제 rank3 가중치, 무작위 BF16 입력, 17사이트 cold 교대. 1행 64.012→41.894µs(1.528배), 4행 62.647→40.800µs, 8행 65.327→42.120µs, 16행 95.077→71.769µs. FP8 recipe 오차는 최대0.003165이나 원래 BF16 대비 최대0.098090이므로 출력 품질 증거가 아니다.
+- 서빙에 연결한 믹서의 A B B A: srv3 rank2 실제 4층+MTP, OneRankComm, C1 target 평균2549.1→2410.2µs(시간−5.45%), draft4374.35→4217.55µs(−3.58%). 호출 수 동일, peak4.55→4.64GiB. TP 통신·48층·실제 tok/s 미검증. [상세·원시](measurements/qwen38_mix_w8_20260920/README.md).
+- MoE 9~16행을 두 micro로 나누기: srv4 synthetic Qwen geometry. 28검사 통과, 두 입력·모든 폭에서 기존 결과와 바이트 동일. cold12행674.99→493.18µs, 16행719.01→681.84µs. 4/8행 경로는 동일. 축소 그래프 한 방향 비교의 C1은 +6.48% 시간이 걸려 가드 통과로 판정하지 않는다. [상세·실패 기록](measurements/qwen38_moe_chunks_20260920/README.md).
+- `ST_HC_W8A16`와 `ST_MOE_DECODE_CHUNKS` 모두 기본 끔. 고정 A/B SHA와 캐시 조건으로 TP4 screen 다음 extended onepass를 준비했다. [플릿 비교 상태](measurements/qwen38_decode_ab_20260920/README.md). **D17 채택·배포·품질 통과 주장 없음.**

@@ -1,0 +1,8 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen-mix-w8-0920b-20260920-003312.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen-mix-w8-0920b-20260920-003312.txt
+GO qwen-mix-w8-0920b 2026-09-20_00:33:13
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+{"rows": 1, "median_us": {"bf16": 64.01223645490758, "w8a16": 41.89364699756398}, "speedup": 1.5279700155641678, "max_recipe_error": 0.0031645570416003466, "max_quantization_error": 0.04430379718542099}
+{"rows": 4, "median_us": {"bf16": 62.64658535228056, "w8a16": 40.79999993829166}, "speedup": 1.5354555256625237, "max_recipe_error": 0.003144653979688883, "max_quantization_error": 0.05179794505238533}
+{"rows": 8, "median_us": {"bf16": 65.3270588201635, "w8a16": 42.12046896710115}, "speedup": 1.550957537324388, "max_recipe_error": 0.0028409091755747795, "max_quantization_error": 0.0980902761220932}
+{"rows": 16, "median_us": {"bf16": 95.07670472649967, "w8a16": 71.7694128260893}, "speedup": 1.324752439550931, "max_recipe_error": 0.0029411765281111, "max_quantization_error": 0.0559895820915699}

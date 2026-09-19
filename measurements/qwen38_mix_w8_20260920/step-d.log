@@ -1,0 +1,180 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen-mix-step-0920d-20260920-004345.txt
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen-mix-step-0920d-20260920-004345.txt
+GO qwen-mix-step-0920d 2026-09-20_00:43:46
+  single GPU: probes/engine_kernel_check.py on srv3 (tree ~/st-probe-tree, image st-engine:glm53, budget 6 GiB beside production, no fleet lease)
+2026-09-19 15:45:21,700 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_109a3c77dc8949bb
+2026-09-19 15:45:26,253 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/static_m16_k2560_n640_t10_r160_109a3c77dc8949bb.o
+2026-09-19 15:46:03,317 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m8_k2560_n640_t10_r160_66fe92b120bfb63f
+2026-09-19 15:46:06,271 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m8_k2560_n640_t10_r160_66fe92b120bfb63f.o
+2026-09-19 15:46:18,974 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r160_174f93fc46867b60
+2026-09-19 15:46:21,544 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/micro_m4_k2560_n640_t10_r160_174f93fc46867b60.o
+USDT:2026-09-19 15:47:03 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:03 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 1 blocks 6", "wall_us": 2543.8, "device_us": 2575.3, "launches": 107.0}
+USDT:2026-09-19 15:47:04 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:04 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 1 blocks 6", "wall_us": 4334.7, "device_us": 4269.8, "launches": 169.0}
+USDT:2026-09-19 15:47:05 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:05 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 2 blocks 6", "wall_us": 2677.1, "device_us": 2756.3, "launches": 107.0}
+USDT:2026-09-19 15:47:05 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:05 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 2 blocks 6", "wall_us": 4507.7, "device_us": 4406.7, "launches": 166.0}
+USDT:2026-09-19 15:47:06 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:06 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 3 blocks 6", "wall_us": 4042.5, "device_us": 4023.1, "launches": 127.0}
+USDT:2026-09-19 15:47:07 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:07 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 3 blocks 6", "wall_us": 5072.4, "device_us": 4815.1, "launches": 170.0}
+USDT:2026-09-19 15:47:08 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:08 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 6", "wall_us": 4227.4, "device_us": 4283.9, "launches": 103.0}
+USDT:2026-09-19 15:47:09 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:09 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 6", "wall_us": 5098.9, "device_us": 5039.0, "launches": 167.0}
+USDT:2026-09-19 15:47:10 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:10 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "stacks": "target", "top": [{"op": "aten::copy_", "where": "?", "launches": 13, "us": 111.5, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda", "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"]}, {"op": "aten::mm", "where": "?", "launches": 4, "us": 18.5, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 4, "us": 8.6, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}]}
+{"arm": "served", "calls": "target", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 4}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 4}]}
+USDT:2026-09-19 15:47:10 51:51 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:47:10 51:51 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "stacks": "draft", "top": [{"op": "aten::mm", "where": "?", "launches": 9, "us": 96.4, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo", "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __n"]}, {"op": "aten::copy_", "where": "?", "launches": 6, "us": 68.5, "kernels": ["void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"]}, {"op": "aten::add", "where": "?", "launches": 6, "us": 14.5, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 3, "us": 6.5, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}, {"op": "aten::bitwise_and", "where": "?", "launches": 3, "us": 5.8, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"]}, {"op": "aten::sub", "where": "?", "launches": 3, "us": 5.1, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"]}, {"op": "aten::index_select", "where": "?", "launches": 2, "us": 3.9, "kernels": ["void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"]}, {"op": "aten::cat", "where": "?", "launches": 1, "us": 1.9, "kernels": ["void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"]}]}
+{"arm": "served", "calls": "draft", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 6}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 3}, {"func": "__and__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "__rsub__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "index_select", "where": "engine/profiles/qwen38/net.py:720", "count": 2}]}
+{"arm": "served", "mtp_rows": {"hidden_max_err": 0.0007267441833391786, "hidden_equal": false, "streams_equal": false}}
+/usr/local/lib/python3.12/dist-packages/triton/language/core.py:2284: UserWarning: tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.
+  warn("tl.make_block_ptr is deprecated. Use TensorDescriptor or tl.make_tensor_descriptor instead.")
+2026-09-19 15:48:15,694 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_2838358fdbd3df7e
+2026-09-19 15:48:20,081 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_53b4691ab8d2_sm121a_cute_dsl/dynamic_e128_k2560_n640_t1_2838358fdbd3df7e.o
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=953 -> rows 2992/2992 tiles 187/187 tasks 935/935
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=990 -> rows 3024/3024 tiles 189/189 tasks 945/945
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1381 -> rows 3424/3424 tiles 214/214 tasks 1070/1070
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1367 -> rows 3408/3424 tiles 213/214 tasks 1065/1070
+{"arm": "served", "layers": [4, 5, 6, 7], "served_loop": {"steps": 64, "wall_us": 7729.5, "tokens_a_step": 1.0, "spent_us_a_step": {"stage_ple": 0.0, "target_run": 149.9, "draft_run": 4785.7, "picks": 2593.5}, "ahead_steps": 0, "ahead_misses": 0, "replays_us": 6878.5, "host_us": 851.0}}
+USDT:2026-09-19 15:48:42 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:42 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 1 blocks 6", "wall_us": 2397.9, "device_us": 2429.2, "launches": 107.0}
+USDT:2026-09-19 15:48:42 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:43 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 1 blocks 6", "wall_us": 4160.6, "device_us": 4079.6, "launches": 169.0}
+USDT:2026-09-19 15:48:43 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:43 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 2 blocks 6", "wall_us": 2520.9, "device_us": 2542.1, "launches": 107.0}
+USDT:2026-09-19 15:48:43 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:44 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 2 blocks 6", "wall_us": 4260.9, "device_us": 4199.9, "launches": 166.0}
+USDT:2026-09-19 15:48:44 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:44 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 3 blocks 6", "wall_us": 3834.0, "device_us": 3848.9, "launches": 127.0}
+USDT:2026-09-19 15:48:45 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:45 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 3 blocks 6", "wall_us": 4676.1, "device_us": 4647.4, "launches": 170.0}
+USDT:2026-09-19 15:48:45 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:46 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 6", "wall_us": 4073.3, "device_us": 4131.1, "launches": 103.0}
+USDT:2026-09-19 15:48:46 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:46 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 6", "wall_us": 4714.4, "device_us": 4631.8, "launches": 167.0}
+USDT:2026-09-19 15:48:47 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:47 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "stacks": "target", "top": [{"op": "aten::copy_", "where": "?", "launches": 13, "us": 100.6, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda", "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"]}, {"op": "aten::mm", "where": "?", "launches": 4, "us": 18.6, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 4, "us": 9.1, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}]}
+{"arm": "mix-w8", "calls": "target", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 4}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 4}]}
+USDT:2026-09-19 15:48:47 492:492 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:48:47 492:492 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "stacks": "draft", "top": [{"op": "aten::mm", "where": "?", "launches": 9, "us": 96.9, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo", "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __n"]}, {"op": "aten::copy_", "where": "?", "launches": 6, "us": 68.9, "kernels": ["void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"]}, {"op": "aten::add", "where": "?", "launches": 6, "us": 14.4, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 3, "us": 6.6, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}, {"op": "aten::bitwise_and", "where": "?", "launches": 3, "us": 5.8, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"]}, {"op": "aten::sub", "where": "?", "launches": 3, "us": 5.1, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"]}, {"op": "aten::index_select", "where": "?", "launches": 2, "us": 3.9, "kernels": ["void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"]}, {"op": "aten::cat", "where": "?", "launches": 1, "us": 1.9, "kernels": ["void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"]}]}
+{"arm": "mix-w8", "calls": "draft", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 6}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 3}, {"func": "__and__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "__rsub__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "index_select", "where": "engine/profiles/qwen38/net.py:720", "count": 2}]}
+{"arm": "mix-w8", "mtp_rows": {"hidden_max_err": 0.0, "hidden_equal": true, "streams_equal": true}}
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=953 -> rows 2992/2992 tiles 187/187 tasks 935/935
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=990 -> rows 3024/3024 tiles 189/189 tasks 945/945
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1381 -> rows 3424/3424 tiles 214/214 tasks 1070/1070
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1367 -> rows 3408/3424 tiles 213/214 tasks 1065/1070
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "served_loop": {"steps": 64, "wall_us": 7276.5, "tokens_a_step": 1.0, "spent_us_a_step": {"stage_ple": 0.0, "target_run": 133.1, "draft_run": 4571.5, "picks": 2395.4}, "ahead_steps": 0, "ahead_misses": 0, "replays_us": 6558.5, "host_us": 718.0}}
+{
+ "served": {},
+ "mix-w8": {}
+}
+{
+ "delta": {}
+}
+USDT:2026-09-19 15:49:08 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:08 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 1 blocks 6", "wall_us": 2422.5, "device_us": 2443.9, "launches": 107.0}
+USDT:2026-09-19 15:49:09 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:09 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 1 blocks 6", "wall_us": 4274.5, "device_us": 4203.2, "launches": 169.0}
+USDT:2026-09-19 15:49:10 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:10 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 2 blocks 6", "wall_us": 2549.5, "device_us": 2576.9, "launches": 107.0}
+USDT:2026-09-19 15:49:10 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:11 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 2 blocks 6", "wall_us": 4377.4, "device_us": 4295.7, "launches": 166.0}
+USDT:2026-09-19 15:49:11 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:11 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 3 blocks 6", "wall_us": 3821.1, "device_us": 3851.1, "launches": 127.0}
+USDT:2026-09-19 15:49:12 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:12 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 3 blocks 6", "wall_us": 4814.1, "device_us": 4860.3, "launches": 170.0}
+USDT:2026-09-19 15:49:13 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:13 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 6", "wall_us": 4063.3, "device_us": 4131.3, "launches": 103.0}
+USDT:2026-09-19 15:49:14 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:14 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 6", "wall_us": 4871.3, "device_us": 4752.9, "launches": 167.0}
+USDT:2026-09-19 15:49:14 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:14 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "stacks": "target", "top": [{"op": "aten::copy_", "where": "?", "launches": 13, "us": 101.7, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda", "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"]}, {"op": "aten::mm", "where": "?", "launches": 4, "us": 18.6, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 4, "us": 8.5, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}]}
+{"arm": "mix-w8", "calls": "target", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 4}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 4}]}
+USDT:2026-09-19 15:49:15 563:563 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:15 563:563 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "mix-w8", "stacks": "draft", "top": [{"op": "aten::mm", "where": "?", "launches": 9, "us": 87.7, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo", "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __n"]}, {"op": "aten::copy_", "where": "?", "launches": 6, "us": 68.4, "kernels": ["void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"]}, {"op": "aten::add", "where": "?", "launches": 6, "us": 14.4, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 3, "us": 6.2, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}, {"op": "aten::bitwise_and", "where": "?", "launches": 3, "us": 5.8, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"]}, {"op": "aten::sub", "where": "?", "launches": 3, "us": 5.1, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"]}, {"op": "aten::index_select", "where": "?", "launches": 2, "us": 3.8, "kernels": ["void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"]}, {"op": "aten::cat", "where": "?", "launches": 1, "us": 1.9, "kernels": ["void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"]}]}
+{"arm": "mix-w8", "calls": "draft", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 6}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 3}, {"func": "__and__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "__rsub__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "index_select", "where": "engine/profiles/qwen38/net.py:720", "count": 2}]}
+{"arm": "mix-w8", "mtp_rows": {"hidden_max_err": 0.0, "hidden_equal": true, "streams_equal": true}}
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=953 -> rows 2992/2992 tiles 187/187 tasks 935/935
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=990 -> rows 3024/3024 tiles 189/189 tasks 945/945
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1381 -> rows 3424/3424 tiles 214/214 tasks 1070/1070
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1367 -> rows 3408/3424 tiles 213/214 tasks 1065/1070
+{"arm": "mix-w8", "layers": [4, 5, 6, 7], "served_loop": {"steps": 64, "wall_us": 6913.0, "tokens_a_step": 1.0, "spent_us_a_step": {"stage_ple": 0.0, "target_run": 35.5, "draft_run": 4478.4, "picks": 2365.7}, "ahead_steps": 0, "ahead_misses": 0, "replays_us": 6697.0, "host_us": 216.0}}
+USDT:2026-09-19 15:49:35 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:35 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 1 blocks 6", "wall_us": 2554.4, "device_us": 2590.2, "launches": 107.0}
+USDT:2026-09-19 15:49:35 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:35 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 1 blocks 6", "wall_us": 4414.0, "device_us": 4325.2, "launches": 169.0}
+USDT:2026-09-19 15:49:36 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:36 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 2 blocks 6", "wall_us": 2696.9, "device_us": 2742.8, "launches": 107.0}
+USDT:2026-09-19 15:49:36 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:37 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 2 blocks 6", "wall_us": 4517.7, "device_us": 4437.4, "launches": 166.0}
+USDT:2026-09-19 15:49:37 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:37 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 3 blocks 6", "wall_us": 4161.0, "device_us": 4029.8, "launches": 127.0}
+USDT:2026-09-19 15:49:38 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:38 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 3 blocks 6", "wall_us": 4916.1, "device_us": 4847.3, "launches": 170.0}
+USDT:2026-09-19 15:49:38 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:39 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "target rows 4 blocks 6", "wall_us": 4246.9, "device_us": 4328.9, "launches": 103.0}
+USDT:2026-09-19 15:49:39 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:39 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "layers": [4, 5, 6, 7], "graph": "draft rows 4 blocks 6", "wall_us": 5144.2, "device_us": 5068.0, "launches": 167.0}
+USDT:2026-09-19 15:49:40 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:40 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "stacks": "target", "top": [{"op": "aten::copy_", "where": "?", "launches": 13, "us": 113.6, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda", "void at::native::vectorized_elementwise_kernel<4, at::native::bfloat16_copy_kern"]}, {"op": "aten::mm", "where": "?", "launches": 4, "us": 18.5, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 4, "us": 8.5, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}]}
+{"arm": "served", "calls": "target", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 4}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 4}]}
+USDT:2026-09-19 15:49:40 625:625 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 15:49:40 625:625 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"arm": "served", "stacks": "draft", "top": [{"op": "aten::mm", "where": "?", "launches": 9, "us": 91.0, "kernels": ["std::enable_if<!(false), void>::type internal::gemvx::kernel<int, int, __nv_bflo", "void cublasLt::splitKreduce_kernel<32, 16, int, float, __nv_bfloat16, float, __n"]}, {"op": "aten::copy_", "where": "?", "launches": 6, "us": 67.2, "kernels": ["void at::native::unrolled_elementwise_kernel<at::native::direct_copy_kernel_cuda"]}, {"op": "aten::add", "where": "?", "launches": 6, "us": 14.6, "kernels": ["void at::native::elementwise_kernel<128, 4, at::native::gpu_kernel_impl_nocast<a", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnSelf_", "void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctor_add<lo"]}, {"op": "aten::sigmoid", "where": "?", "launches": 3, "us": 6.5, "kernels": ["void at::native::vectorized_elementwise_kernel<4, at::native::sigmoid_kernel_cud"]}, {"op": "aten::bitwise_and", "where": "?", "launches": 3, "us": 5.9, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::AUnaryFunctor<long"]}, {"op": "aten::sub", "where": "?", "launches": 3, "us": 5.1, "kernels": ["void at::native::vectorized_elementwise_kernel<2, at::native::CUDAFunctorOnOther"]}, {"op": "aten::index_select", "where": "?", "launches": 2, "us": 3.9, "kernels": ["void at::native::(anonymous namespace)::indexSelectSmallIndex<c10::BFloat16, lon"]}, {"op": "aten::cat", "where": "?", "launches": 1, "us": 1.9, "kernels": ["void at::native::(anonymous namespace)::CatArrayBatchedCopy_alignedK_contig<at::"]}]}
+{"arm": "served", "calls": "draft", "top": [{"func": "mm", "where": "engine/kernels/common/skinny_gemv.py:162", "count": 6}, {"func": "sigmoid", "where": "engine/profiles/qwen38/net.py:1047", "count": 3}, {"func": "__and__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "__rsub__", "where": "engine/modules/vocab.py:38", "count": 3}, {"func": "index_select", "where": "engine/profiles/qwen38/net.py:720", "count": 2}]}
+{"arm": "served", "mtp_rows": {"hidden_max_err": 0.0007267441833391786, "hidden_equal": false, "streams_equal": false}}
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=953 -> rows 2992/2992 tiles 187/187 tasks 935/935
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=990 -> rows 3024/3024 tiles 189/189 tasks 945/945
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1381 -> rows 3424/3424 tiles 214/214 tasks 1070/1070
+[b12x-bounds] state_E=128 n=640 tile_m=16 routed_rows=1367 -> rows 3408/3424 tiles 213/214 tasks 1065/1070
+{"arm": "served", "layers": [4, 5, 6, 7], "served_loop": {"steps": 64, "wall_us": 7858.6, "tokens_a_step": 1.0, "spent_us_a_step": {"stage_ple": 0.0, "target_run": 135.9, "draft_run": 4902.9, "picks": 2639.7}, "ahead_steps": 0, "ahead_misses": 0, "replays_us": 6968.4, "host_us": 890.2}}
+{
+ "mix-w8": {},
+ "served": {}
+}
+{
+ "delta": {}
+}
