@@ -250,6 +250,20 @@ start. 재시작 간격은 60 s 부터 두 배씩 30 분까지, 5 회 실패 뒤
 `ST_SUPERVISOR_ONCE=1` 로 한 사이클만 판정할 수 있다. 한 노드는 **자기 자신에게 ssh 하지 못하므로**(srv2 가 자기 키를 거부한다) 런처와
 슈퍼바이저는 대상 IP 가 자기 것이면 로컬 셸로 돌린다 — 그래서 헤드에서 도는 슈퍼바이저가 rank 0 의 컨테이너·로그·잠금을 본다.
 
+프로덕션 모델 선택(2026-09-19, 운영자: 데네브에서 엔진의 모델을 고른다): 프로덕션이 어느 모델을 서빙하는지는 한 파일
+`~/glm53-logs/st-production.json` 이 정하고, 슈퍼바이저·deploy-watch·prebuild 가 모두 `launchers/st_production.py` 로 그것을 읽는다.
+파일이 없으면 glm53 — 고른 적 없는 박스는 예전 그대로다. 선택이 바뀌면 슈퍼바이저가 문이 조용해지길(최대 `ST_SWITCH_QUIET_S`, 120 s)
+기다렸다가 돌던 플릿을 내리고 고른 프로필을 같은 production 리스로 띄우며, 단계마다 `st-production-state.json` 에 적는다(데네브가 ssh
+로 읽는 것). 창(티켓·세션)이 플릿을 쥐고 있으면 아무것도 내리지 않고, 창이 끝난 뒤의 프로덕션 부팅이 새 모델이 된다. 고른 모델이
+`LAUNCH_HOLD_AFTER` 번 연속 못 뜨면 HELD 대신 glm53 으로 되돌리고 이유를 선택 파일에 남긴다 — 프로덕션이 못 띄우는 모델은 프로덕션이
+아니다. 프로덕션의 트리·이미지는 모델과 무관하게 프로덕션의 것이고(ST 이미지에는 모델이 없고 릴리스는 엔진 트리 전체다), 모델마다 다른
+것은 런처·컨테이너 이름·문이 답하는 모델 id·실행 환경뿐이다. 실행 환경은 프로필마다 `~/.config/st-<profile>.env` 이고, 다른 모델의
+부팅은 어느 프로필이든 정하는 키(예: st-glm53.env 의 `RANKS_DIR`)를 전부 지운 뒤 자기 것만 얹는다 — `ST_REPO`·`ST_ENGINE_DIR`·
+`ST_IMAGE` 는 프로덕션의 것이라 유지된다. D17 표본(onepass 프로브)은 GLM-5.3 의 계열이라 프로덕션이 다른 모델일 때는 걸지 않는다.
+
+    python3 launchers/st_production.py show                            # 선택·상태·서빙 가능한 프로필
+    python3 launchers/st_production.py select qwen38 --note "why"      # 다음 사이클(≤30 s)에 전환
+
 프로덕션 전환: 프로덕션 vLLM 을 되살리는 경로는 `fleet-idle-recovery.timer`(5 분 유휴 뒤 복구) 하나뿐이다. ST 가 프로덕션이 되는 동안은
 그 타이머를 끄고(`st-glm53.service` 의 `Conflicts=`가 같은 일을 한다) 슈퍼바이저 유닛을 켠다. 되돌리기는 그 반대 순서다:
 

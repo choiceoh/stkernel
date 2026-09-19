@@ -33,7 +33,11 @@ class FleetHarness(unittest.TestCase):
         self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
                         FAKE_HOME=str(self.home), ST_FORENSICS=str(self.home / "forensics"),
                         ST_REPO=str(self.repo), ST_SUPERVISOR_ONCE="1", ST_LEASE_KIND="session",
-                        CKPT=str(self.home / "missing-checkpoint"), FLEET_DIR=str(self.fleet_dir))
+                        CKPT=str(self.home / "missing-checkpoint"), FLEET_DIR=str(self.fleet_dir),
+                        # which model production serves (launchers/st_production.py): this box's, never the host's
+                        ST_PRODUCTION_FILE=str(self.home / "st-production.json"),
+                        ST_PRODUCTION_STATE=str(self.home / "st-production-state.json"),
+                        ST_PROFILE_CONFIG_DIR=str(self.home / "config"))
         self.script("hostname", "#!/bin/sh\necho 192.0.2.1\n")
         self.script("ssh", '''#!/usr/bin/env python3
 import os, pathlib, subprocess, sys
@@ -635,6 +639,174 @@ print('{}')
         self.assertIn("launch: healthy after", out.stdout)
         self.assertNotIn("launch attempt", out.stdout)
         self.assertNotIn("health check failed", out.stdout)
+
+
+class QwenProductionLaunchTests(LaunchHarness):
+    """start-st-qwen38.sh as production's boot: the production lease, and production's tree and image. A window
+    keeps refusing that tree -- the guard is for a session's experiment, not for production itself."""
+
+    def setUp(self):
+        super().setUp()
+        ranks = Path(self.env["RANKS_DIR"])
+        for name in ("config.json", "tokenizer.json"):
+            (ranks / name).write_text("{}")
+
+    def test_a_window_still_may_not_rsync_over_production_s_tree(self):
+        result = self.run_script("start-st-qwen38.sh")          # the harness's own boots are a session's
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("is production's release tree", result.stderr)
+        self.assertEqual(self.boot_commands(), [])
+
+    def test_production_boots_it_under_the_production_lease_on_production_s_tree(self):
+        self.env.update(ST_LEASE_KIND="production", LEASE_OWNER_PRODUCTION="production/srv2/4242")
+        result = self.run_script("start-st-qwen38.sh")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        lease = json.loads(self.lock.read_text())
+        self.assertEqual((lease["owner"], lease["kind"], lease["container"]),
+                         ("production/srv2/4242", "production", "st-qwen38"))
+        runs = self.boot_commands()
+        self.assertEqual(len(runs), 4, runs)
+        self.assertTrue(all("--name st-qwen38" in run and f"{self.env['ST_ENGINE_DIR']}:/repo:ro" in run for run in runs))
+        # and it is production's to stop, by its kind, like GLM-5.3's
+        result = self.run_script("start-st-qwen38.sh", "stop")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(self.lock.exists(), "a production stop releases the production lease")
+
+    def test_a_production_stop_leaves_a_session_s_boot_alone(self):
+        self.lock.write_text(json.dumps(dict(owner="session/qwen38-window", kind="session", container="st-qwen38",
+                                             since=0, beat=9e12, host="srv2", pid=1)))
+        self.env.update(ST_LEASE_KIND="production")
+        result = self.run_script("start-st-qwen38.sh", "stop")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not by a production boot", result.stderr)
+        self.assertEqual(json.loads(self.lock.read_text())["owner"], "session/qwen38-window")
+
+
+@unittest.skipUnless(GNU_DATE, "the supervisor's container age needs GNU date: run this inside a Linux container")
+class ProductionModelTests(FleetHarness):
+    """Which model production serves is launchers/st_production.py's selection (2026-09-19, the operator:
+    choose the engine's model from Deneb). A fake fleet that remembers which model it runs: each profile's
+    launcher starts its own container and door, and `stop` takes them down."""
+
+    loop = SupervisorLoopTests.loop
+    activity = SupervisorLoopTests.activity
+    launches = SupervisorLoopTests.launches
+
+    def setUp(self):
+        super().setUp()
+        self.env.update(ST_SUPERVISOR_ONCE="0", ST_SUPERVISOR_LOOPS="2", ST_SUPERVISOR_SLEEP="0", ST_BOOT_POLL="0",
+                        BOOT_GRACE="3", CHAT_TIMEOUT="1", FLEET_DIR=str(self.fleet_dir))
+        for profile, container, model in (("glm53", "st-glm53", "glm-5.3-flash"),
+                                          ("qwen38", "st-qwen38", "qwen3.8-flash-next")):
+            launcher = self.home / f"launcher-{profile}.sh"
+            launcher.write_text(
+                '#!/bin/sh\n'
+                f'echo "{profile} $* RANKS_DIR=${{RANKS_DIR:-unset}} CKPT=${{CKPT:-unset}}" >> "$FAKE_HOME/events"\n'
+                'if [ "$1" = stop ]; then rm -f "$FAKE_HOME/containers-up" "$FAKE_HOME/served-model"; exit 0; fi\n'
+                f'[ -n "$FAKE_FAIL_{profile.upper()}" ] && exit 1\n'
+                f'echo {container} > "$FAKE_HOME/containers-up"; echo {model} > "$FAKE_HOME/served-model"\n')
+            self.env[f"ST_LAUNCHER_{profile.upper()}"] = str(launcher)
+        self.env["ST_LAUNCHER"] = str(self.home / "launcher-glm53.sh")
+        self.script("docker", '''#!/usr/bin/env python3
+import os, pathlib, sys
+a = sys.argv[1:]
+h = pathlib.Path(os.environ['FAKE_HOME'])
+f = h / 'containers-up'
+up = f.read_text().strip() if f.exists() else ''
+if a[:1] == ['inspect']:
+    print(os.environ.get('FAKE_STARTED_AT', '2000-01-01T00:00:00Z')); sys.exit(0 if up else 1)
+if a and a[0] == 'ps':
+    if '-q' in a:
+        wanted = next((x.split('=', 1)[1].strip('^$') for x in a if x.startswith('name=')), '')
+        if up and (not wanted or wanted == up): print('container-id')
+    else:
+        print(up)
+''')
+        self.script("curl", '''#!/usr/bin/env python3
+import os, pathlib, sys
+h = pathlib.Path(os.environ['FAKE_HOME'])
+url = [a for a in sys.argv[1:] if a.startswith('http')][0]
+served = (h / 'served-model').read_text().strip() if (h / 'served-model').exists() else ''
+if not served: sys.exit(7)                          # nothing listens
+if '/v1/models' in url: print('{"data":[{"id":"%s"}]}' % served); sys.exit(0)
+if '/v1/chat/completions' in url: print('{"choices":[{}]}'); sys.exit(0)
+print('{}')
+''')
+        config = self.home / "config"
+        config.mkdir()
+        # what systemd hands the supervisor: GLM-5.3's own launch environment
+        (config / "st-glm53.env").write_text("RANKS_DIR=/models/glm-ranks\nCKPT=/models/glm-meta\nST_ENGINE_DIR=/pinned/release\n")
+        self.env.update(RANKS_DIR="/models/glm-ranks", CKPT="/models/glm-meta", ST_SWITCH_QUIET_S="0")
+        self.activity(ago=1000)
+
+    def select(self, profile):
+        (self.home / "st-production.json").write_text(json.dumps({"profile": profile, "by": "deneb", "note": "test"}))
+
+    def state(self):
+        return json.loads((self.home / "st-production-state.json").read_text())
+
+    def run_as(self, profile):
+        (self.home / "containers-up").write_text(("st-glm53" if profile == "glm53" else "st-qwen38") + "\n")
+        (self.home / "served-model").write_text(("glm-5.3-flash" if profile == "glm53" else "qwen3.8-flash-next") + "\n")
+
+    def test_nothing_chosen_is_glm53_exactly_as_before(self):
+        out = self.loop()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.launches(), ["glm53 stop RANKS_DIR=/models/glm-ranks CKPT=/models/glm-meta",
+                                           "glm53  RANKS_DIR=/models/glm-ranks CKPT=/models/glm-meta"])
+        self.assertEqual((self.state()["serving"], self.state()["phase"]), ("glm53", "serving"))
+
+    def test_the_chosen_model_boots_on_its_own_environment_not_glm53_s(self):
+        """st-glm53.env is what systemd hands this loop. Its RANKS_DIR would boot Qwen3.8 on GLM-5.3's rank
+        files, so another model's launch clears every model key and sets its own -- and keeps production's
+        tree (ST_ENGINE_DIR), which belongs to production, not to a model."""
+        self.select("qwen38")
+        out = self.loop()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.launches(), ["qwen38 stop RANKS_DIR=/home/choiceoh/models/st-qwen38-tep4 CKPT=unset",
+                                           "qwen38  RANKS_DIR=/home/choiceoh/models/st-qwen38-tep4 CKPT=unset"])
+        self.assertIn("launching the ST fleet (production lease as production/", out.stdout)
+        self.assertIn("qwen38, qwen3.8-flash-next", out.stdout)
+        self.assertEqual((self.state()["serving"], self.state()["phase"]), ("qwen38", "serving"))
+        lines = subprocess.run(["python3", str(self.repo / "launchers/st_production.py"), "env", "qwen38"],
+                               env=self.env, text=True, capture_output=True).stdout.splitlines()
+        self.assertNotIn("unset ST_ENGINE_DIR", lines, "production's tree is production's, whichever model")
+
+    def test_a_new_choice_moves_a_healthy_fleet_to_it(self):
+        self.run_as("glm53")
+        self.select("qwen38")
+        out = self.loop()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("the head runs glm53 while qwen38 is selected: adopting glm53 first", out.stdout)
+        self.assertIn("production model: glm53 -> qwen38 (chosen: deneb -- test)", out.stdout)
+        steps = [line.split(" RANKS_DIR")[0] for line in self.launches()]
+        self.assertEqual(steps, ["glm53 stop", "qwen38 stop", "qwen38 "], "the old fleet down, then the new one up")
+        self.assertEqual((self.state()["serving"], self.state()["wanted"]), ("qwen38", "qwen38"))
+
+    def test_a_choice_made_while_a_window_holds_the_fleet_waits_for_it(self):
+        """A ticket's or a session's boot is not production's to stop. The next production boot is the new model."""
+        self.lock.write_text("st-replay-other-session")
+        self.select("qwen38")
+        out = self.loop()
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.launches(), [], "nothing stopped, nothing booted under the window")
+        self.assertEqual(self.state()["phase"], "waiting")
+        self.assertEqual(self.state()["wanted"], "qwen38")
+
+    def test_a_chosen_model_that_cannot_boot_hands_production_back_to_glm53(self):
+        """HELD is right for the model production always served: it needs a person. A model somebody chose
+        and that does not boot is not production -- production goes back to what boots, and says why."""
+        self.select("qwen38")
+        out = self.loop(FAKE_FAIL_QWEN38="1", ST_LAUNCH_HOLD_AFTER="1", ST_LAUNCH_BACKOFF_BASE="0",
+                        FAILS_NEEDED="1", ST_SUPERVISOR_LOOPS="3")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("qwen38 did not boot in 1 attempts in a row: production returns to glm53", out.stdout)
+        selection = json.loads((self.home / "st-production.json").read_text())
+        self.assertEqual((selection["profile"], selection["by"]), ("glm53", "supervisor"))
+        self.assertIn("did not boot", selection["note"])
+        self.assertEqual(self.launches()[-1].split(" RANKS_DIR")[0], "glm53 ", "production is GLM-5.3 again")
+        self.assertEqual(self.state()["serving"], "glm53")
+        self.assertNotIn("HELD", out.stdout)
 
 
 if __name__ == "__main__":

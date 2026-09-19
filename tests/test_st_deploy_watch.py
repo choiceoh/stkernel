@@ -282,7 +282,7 @@ class LaunchFailureTests(unittest.TestCase):
         release. Recording it as deployed would both stop the retry and make the next gate compare
         against a tree that is not running."""
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
-        body = source[source.index("    ok = deploy(release, log)"):]
+        body = source[source.index("    ok = deploy(release, log, profile)"):]
         body = body[:body.index("\n\ndef ", 10)]
         self.assertIn("if not ok:", body)
         self.assertIn('"rejected": head', body[body.index("if not ok:"):], "a failed launch is a rejection")
@@ -441,12 +441,12 @@ class AfterDeployTests(unittest.TestCase):
     def test_it_runs_only_after_a_deploy_that_is_recorded(self):
         """A failed launch is a rejection; nothing follows it, and no probe samples a fleet in recovery."""
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
-        body = source[source.index("    ok = deploy(release, log)"):]
+        body = source[source.index("    ok = deploy(release, log, profile)"):]
         body = body[:body.index("\n\ndef ", 10)]
         failed = body[body.index("if not ok:"):body.index("return 1")]
         self.assertNotIn("after_deploy", failed)
         recorded = body[body.index('"launched_ok": True'):]
-        self.assertIn("after_deploy(head, a, log)", recorded)
+        self.assertIn("after_deploy(head, a, log, profile)", recorded)
         for flag in ("--controller", "--no-follow", "--no-probe"):
             self.assertIn(flag, source)
 
@@ -687,8 +687,8 @@ class QueueGraceTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
         body = source[source.index("def cycle("):source.index("def cycle(") + source[source.index("def cycle("):].index("\n\n\n")]
         self.assertLess(body.index("fleet_taken_by_another(log)"), body.index("queue_active_within(a.queue_grace)"))
-        self.assertLess(body.index("queue_active_within(a.queue_grace)"), body.index("ok = deploy(release, log)"))
-        self.assertLess(body.index("boot_ticket_waiting()"), body.index("ok = deploy(release, log)"))
+        self.assertLess(body.index("queue_active_within(a.queue_grace)"), body.index("ok = deploy(release, log, profile)"))
+        self.assertLess(body.index("boot_ticket_waiting()"), body.index("ok = deploy(release, log, profile)"))
         self.assertIn("--queue-grace", source)
 
 
@@ -855,7 +855,60 @@ class PrebuildTests(unittest.TestCase):
     def test_the_cycle_prebuilds_after_the_deferrals_and_before_production_stops(self):
         source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
         body = source[source.index("def cycle("):source.index("def follow_controller(")]
-        pre = body.index("prebuild(release, log)")
+        pre = body.index("prebuild(release, log, profile)")
         self.assertGreater(pre, body.index("boot_ticket_waiting()"))
-        self.assertLess(pre, body.index("ok = deploy(release, log)"))
+        self.assertLess(pre, body.index("ok = deploy(release, log, profile)"))
         self.assertIn('getattr(a, "prebuild", True)', body)
+
+
+class ProductionModelDeployTests(unittest.TestCase):
+    """A deploy boots the model production serves (launchers/st_production.py), and waits while it is between two:
+    booting the selected model over the other one's containers would be refused and recorded as a failed launch,
+    which drops the gate's baseline until a person --seeds it."""
+
+    def setUp(self):
+        import os
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = Path(tmp.name)
+        patcher = patch.dict(os.environ, {"ST_PRODUCTION_FILE": str(self.dir / "st-production.json"),
+                                          "ST_PRODUCTION_STATE": str(self.dir / "st-production-state.json"),
+                                          "ST_PROFILE_CONFIG_DIR": str(self.dir / "config")})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_box_that_never_chose_deploys_as_it_always_did(self):
+        self.assertIsNone(watch.production_switching(), "no selection and no state: glm53, as before the selection")
+
+    def test_a_deploy_waits_while_production_is_between_models(self):
+        import json
+        st = watch.st_production
+        st.select("qwen38", by="deneb")
+        self.assertIn("no supervisor says it serves it", watch.production_switching())
+        st.publish_state("glm53", "qwen38", "switching", "glm53 -> qwen38")
+        self.assertIn("qwen38 is selected, glm53 serves (switching)", watch.production_switching())
+        st.publish_state("qwen38", "qwen38", "serving")
+        self.assertIsNone(watch.production_switching())
+        self.assertEqual(json.loads((self.dir / "st-production-state.json").read_text())["serving"], "qwen38")
+
+    def test_the_prebuild_replays_the_served_model_s_kernels(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as root:
+            release = Path(root) / "st-releases" / "abc123"
+            (release / "launchers").mkdir(parents=True)
+            (release / "launchers" / "b12x-prebuild.sh").write_text("exit 0\n")
+            with patch.object(watch, "run", return_value=(0, "", "")) as run:
+                watch.prebuild(release, [].append, "qwen38")
+        self.assertEqual(run.call_args.args[0][-2:], ["--profile", "qwen38"])
+
+    def test_the_cycle_reads_the_model_once_and_waits_before_it_prebuilds(self):
+        source = (Path(__file__).resolve().parents[1] / "launchers/st-deploy-watch.py").read_text()
+        body = source[source.index("def cycle("):source.index("def follow_controller(")]
+        self.assertEqual(body.count("st_production.selected()"), 1, "one reading per cycle: prebuild and boot agree")
+        switching = body.index("production_switching()")
+        self.assertGreater(switching, body.index("boot_ticket_waiting()"))
+        self.assertLess(switching, body.index("prebuild(release, log, profile)"))
+        self.assertIn("# deferred, not rejected", body[switching:body.index("prebuild(release, log, profile)")])
+        self.assertIn("if profile == st_production.DEFAULT:\n        ensure_probe(", body,
+                      "a D17 sample is GLM-5.3's series: none is taken while production serves another model")
