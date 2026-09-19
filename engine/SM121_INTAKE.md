@@ -55,8 +55,8 @@
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U9 | GLM KDA chunked prefill 을 FlashKDA 로(업스트림 GB300 1.7~3.8×; sm_121a 빌드부터) | vllm#55737 | kernel | gpu→fleet | 열림 |
-| U10 | skinny FP8 GEMM(M=1 GEMV, M≥2 CUTLASS)을 `dense/fp8_rows`·W8A16 과 GB10 에서 대조 | sglang#38082 | measure | gpu | 열림 |
+| U9 | GLM KDA chunked prefill 을 FlashKDA 로(업스트림 GB300 1.7~3.8×; sm_121a 빌드부터) | vllm#55737 | kernel | gpu→fleet | **기각(하드웨어)**: FlashInfer 의 FlashKDA 는 `_FLASH_KDA_SUPPORTED_COMPUTE_CAPABILITIES = {(10, 0), (10, 3)}`(kda_prefill.py:40) — SM100 의 tcgen05/TMEM 커널이라 sm_121a 에서는 부를 수 없다. 업스트림의 1.7~3.8× 는 GB300 수치. 이식은 재설계(D8)라 다음 목록으로 |
+| U10 | skinny FP8 GEMM(M=1 GEMV, M≥2 CUTLASS)을 `dense/fp8_rows`·W8A16 과 GB10 에서 대조 | sglang#38082 | measure | gpu | **기각(측정된 상한)**: 이 엔진이 FP8 로 읽는 디코드 행은 헤드뿐이고(나머지 dense 는 W4A8), 헤드의 W8A16 은 이미 가중치를 한 번 읽는 바닥의 96% 다 — `glm53-head-0919a` 8 행 731.3 vs read-only 703.5 µs, 16 행 742.9 vs 699.6 µs([기록](../measurements/glm53_decode_rows_20260919/README.md)). 어느 skinny GEMM 도 4~6% 넘게 줄일 수 없다 |
 | U11 | FP8 prefill GEMM 의 L2 절벽(가중치 > 24 MiB, M ≥ 8k) — 우리 cuBLASLt 에도 있나, 있으면 래스터 스위즐 | vllm#55180 | measure | gpu | 열림 |
 | U12 | Qwen3.8 QSA prefill 타일 합집합(연속 행이 고른 블록의 합집합을 한 번씩) | vllm#55430 | kernel | gpu→fleet | PR(기본 켬, 운영자 09-19 "빠른건 기본에 켜"): GB10 1,024 행 1.7~2.7배·4,096 행 1.33~1.41배, 부팅 자격 검사 통과, 플릿 미측정 — [기록](../measurements/qwen38_tile_union_20260919/README.md) |
 | U13 | Qwen3.8 GDN prefill 을 FlashInfer 로, GDN gate 투영 | vllm#55715, #57318 | kernel | gpu→fleet | PR(기본 켬, 운영자 09-19): 이미지 커널은 우리 호출대로면 NaN — flashinfer#5255(q/k 정규화 무시) → 먼저 정규화. GB10 레인 전체 1,024 토큰 1.37배·8,192 토큰 2.50배, 부팅 자격 검사 통과, 플릿 미측정 — [기록](../measurements/qwen38_gdn_flashinfer_20260919/README.md) |
@@ -67,7 +67,7 @@
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
 | U15 | 로드된 id 로 주소를 만드는 gather 의 clamp·mask 감사, 단일 레인 compute-sanitizer 한 번 | vllm#49049 | audit | cpu+gpu | 감사 끝(아래) — 서빙 경로 버그 없음, 방어 빈틈 1, 죽은 커널 2. sanitizer 실행 남음 |
-| U16 | 긴 컨텍스트(≥120k) 디코드 정확성 검사 — SM121 에서만 토큰 0 을 내던 종류 | sglang#36845 | test | gpu | 열림 |
+| U16 | 긴 컨텍스트(≥120k) 디코드 정확성 검사 — SM121 에서만 토큰 0 을 내던 종류 | sglang#36845 | test | gpu | **닫음(감사 + 이미 있는 검사)**: 긴 컨텍스트가 조용히 틀리는 두 길 중 (a) 커널 고유의 결함은 플릿 onepass 의 C=1 128K 브래킷이 답의 품질로 잡고, (b) 주소 산술의 int32 넘침은 감사(아래)에서 서빙 경로에 없었다 |
 | U17 | PDL: wait 앞의 읽기가 부팅 상수뿐인가 | sglang#38290 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
 | U18 | 캡처 뒤 패딩·null 슬롯의 비유한 값(0×NaN)이 실제 행을 오염시키나 | vllm#57158 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
 | U19 | 드래프터 상태가 TP 랭크마다 어긋나는 자리 | sglang#33614 | audit | cpu | 감사 끝(아래) — GLM 안전, Qwen3.8 은 랭크 간 대조가 없다 |
@@ -77,8 +77,8 @@
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U21 | 통합 메모리 회계: NVML 이 장치 메모리를 못 읽을 때, 프로세스 자신의 사용량으로 KV 를 잰다 | vllm#57378, #49760, #55828 | audit | cpu | 열림 |
-| U22 | 가중치 스트리밍(O_DIRECT, 읽기 전용 매핑)을 `mapped_staging` 과 부팅 시간으로 대조 | sglang#37680, #38441 | measure | gpu | 열림 |
+| U21 | 통합 메모리 회계: NVML 이 장치 메모리를 못 읽을 때, 프로세스 자신의 사용량으로 KV 를 잰다 | vllm#57378, #49760, #55828 | audit | cpu | **닫음(이미 있음)**: 엔진은 NVML 을 쓰지 않는다. KV 는 부팅 전에 선언한 예산(`engine/base/budget.py` "GATE: KV … declared before load")이고, 아레나(`engine/base/arena.py`)는 `/proc/meminfo` 의 MemAvailable 과 earlyoom 하한으로 받으며, `box.check_box` 가 장치 총량 == MemTotal(통합 메모리)을 단정한다 — vllm#57378·#49760·#55828 의 세 문제가 설 자리가 없다 |
+| U22 | 가중치 스트리밍(O_DIRECT, 읽기 전용 매핑)을 `mapped_staging` 과 부팅 시간으로 대조 | sglang#37680, #38441 | measure | gpu | **닫음(이미 있음)**: `engine/base/loader.py` 가 같은 설계다 — 연속 바이트 구간을 O_DIRECT 로(페이지 캐시가 아레나와 같은 풀이라), 핀 버퍼 둘로 읽기와 업로드를 겹치고, 텐서는 장치 블록 하나의 뷰. 디스크 5.1~8.3 GB/s, 2026-09-16 부팅의 load 47.8 GB / 13.2 s([기록](../measurements/st_boot_20260916/README.md)) |
 
 ## U0 이 정한 것 — 이미지에 있는 후보
 
@@ -110,6 +110,14 @@ clamp 하고 모든 로드를 `physical_page >= 0 & < num_pages` 로 가린다. 
   `kpool.py` 의 쓰기 커널들(마스크가 없으면 loc -1 로 저장) — 엔진 어디서도 부르지 않는다.
 - `draft_attention.py:75` 의 값 로드는 창(`near`) 밖 컨텍스트 칸도 읽고 확률 0 을 곱한다(0 × 유한). 링이 부팅·캡처·입장
   때 0 으로 채워지고 실제 출력만 쓰이므로 안전하다 — 불변식으로 지켜지는 자리다.
+
+**U16 — 긴 컨텍스트의 주소 폭.** 두 프로필 모두 페이지 KV 가 층을 가로지르는 아레나 하나다(GLM 랭크당 24 GiB·최대
+2 요청: 잠재 행 4,880 만·fp8 원소 2.5e10, Qwen3.8 16 GiB·4 요청: K/V 페이지 stride 5,431,296 → 최대 오프셋 8.2e9). 2^31 을
+넘을 수 있는 오프셋은 전부 곱하기 전에 64 비트다 — `qsa.py`(`page.to(int64) * stride_k_block` 등), `mla/decode_inputs.py`,
+`mla/prefill_dense.py`, `indexer.py`, 메가커널과 `dense/kernels.cu` 의 `(size_t)slot * MLA_D`, `decode_topk.cu` 의
+`(long long)row*row_stride`. 32 비트로 남은 것은 행 번호(최대 4,880 만)와 호출당 활성 오프셋뿐이다. 하나: `kda/chunk_delta_h.py:104-109`
+는 `((boh*H+i_h)*V*K).to(tl.int64)` 로 **곱한 뒤에** 넓혀 캐스트가 아무것도 하지 않는다 — 한 프리필 조각이 약 100 만 토큰을 넘어야
+문제라 서빙에선 닿지 않는다(다음 목록).
 
 **U17 — PDL wait 앞의 읽기.** PDL 은 `dense/kernels.cu`, `mla/glm53_megakernel.cu`, `mhc/tilelang_kernels.py`,
 `oneshot/dsv4_oneshot_ar.cu`, `causal_conv.py`(두 호출 모두 `launch_pdl=False`)에만 있다. wait 앞에서 읽는 것은

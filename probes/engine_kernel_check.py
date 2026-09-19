@@ -278,6 +278,38 @@ def main():
         from probes.engine_qwen38_gemv import run_site_prefill
         run_site_prefill(args.output)
         return
+    if args.lanes.startswith('sm121_batch:'):
+        # several sm121 lanes in one ticket, each its own process with its own deadline and output
+        from probes.engine_sm121_batch import run as sm121_batch
+        sm121_batch(args.lanes.split(':', 1)[1].split(','), args.output)
+        return
+    if args.lanes in ('sm121_fp4_gemm', 'sm121_fp4_moe'):
+        # the image's block-scaled FP4 GEMMs (U5) and its MXFP4 MoEs (U3) against dequantized references
+        from probes.engine_sm121_fp4 import run_gemm, run_moe
+        (run_gemm if args.lanes == 'sm121_fp4_gemm' else run_moe)(args.output)
+        return
+    if args.lanes == 'sm121_attention':
+        # the image's paged GQA with window, sinks, soft cap and FP8/NVFP4 KV against a torch reference (U7, U8)
+        from probes.engine_sm121_attention import run as sm121_attention
+        sm121_attention(args.output)
+        return
+    if args.lanes == 'sm121_sparse_mla':
+        # the image's SM120 sparse MLA at DeepSeek-V3.2's rank against the oracle, then under sustained load
+        # (vllm#54929's livelock) -- engine/SM121_INTAKE.md U6
+        from probes.engine_sm121_sparse_mla import run as sm121_sparse_mla
+        sm121_sparse_mla(args.output)
+        return
+    if args.lanes == 'sm121_sanitizer':
+        # correctness only: the served kernels' GPU cases under compute-sanitizer memcheck (engine/SM121_INTAKE.md U15)
+        from probes.engine_sm121_sanitizer import run as sm121_sanitizer
+        sm121_sanitizer(args.output)
+        return
+    if args.lanes in ('sm121_gdn', 'sm121_gdn_diag', 'sm121_fp8_l2'):
+        # component numbers for engine/SM121_INTAKE.md U13 (FlashInfer's GDN prefill against the served chunk kernel,
+        # and which input it read differently) and U11 (the FP8 prefill GEMM's throughput as M grows past the L2)
+        from probes.engine_sm121_candidates import run_fp8_l2, run_gdn, run_gdn_diag
+        {'sm121_gdn': run_gdn, 'sm121_gdn_diag': run_gdn_diag, 'sm121_fp8_l2': run_fp8_l2}[args.lanes](args.output)
+        return
     if args.lanes == 'qwen38_site':
         # component timings: a hyper-connection site's mixer as four launches on cuBLAS and as gated_residual.mix serves
         # a decode step's rows (two launches, carry H2), 16 sites a graph -- what the fold is worth on a GB10
