@@ -20,7 +20,9 @@ BF16, 2.5 B parameters), the shared embedding and head, and the target's closing
 
     python3 -m engine.profiles.qwen38.mtp_tune data   --taps DIR[,DIR..] --out DATA   fleet --tap-mtp-inputs shards ->
                                                                                       contiguous runs a sequence
-    python3 -m engine.profiles.qwen38.mtp_tune train  --data DATA --ckpt CKPT --out RUN
+    python3 -m engine.profiles.qwen38.mtp_tune train  --data DATA --ckpt CKPT --out RUN   (RANK/WORLD_SIZE/MASTER_*:
+                                                                                      one process a node, data parallel)
+    python3 -m engine.profiles.qwen38.mtp_tune extract --ckpt CKPT --out BASE            the 33 tensors, ~7.8 GB, alone
     python3 -m engine.profiles.qwen38.mtp_tune eval   --data DATA --ckpt CKPT [--tuned RUN/head.safetensors]
     python3 -m engine.profiles.qwen38.mtp_tune export --tuned RUN/head.safetensors --ckpt CKPT --out DIR
 
@@ -428,43 +430,91 @@ def config(ckpt: Path) -> "tuple[dict, str]":
     return text, "model.language_model." if "text_config" in cfg else "model."
 
 
-def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0) -> dict:
-    """The held-out windows' metrics, position-weighted."""
+def distributed() -> "tuple[int, int]":
+    """(rank, world) of a run torch.distributed started (RANK, WORLD_SIZE, MASTER_ADDR, MASTER_PORT: one process a
+    node, NCCL on GPUs), (0, 1) for one process."""
+    import os
+    world = int(os.environ.get("WORLD_SIZE", "1"))
+    if world <= 1:
+        return 0, 1
+    import torch.distributed as dist
+    if not dist.is_initialized():
+        dist.init_process_group("nccl" if torch.cuda.is_available() else "gloo")
+    return dist.get_rank(), dist.get_world_size()
+
+
+def all_sum(values: "list[float]", world: int, device) -> "list[float]":
+    """Every rank's numbers summed, the same list on each (one all-reduce)."""
+    if world <= 1:
+        return list(values)
+    import torch.distributed as dist
+    t = torch.tensor(values, dtype=torch.float64, device=device)
+    dist.all_reduce(t)
+    return t.tolist()
+
+
+def average_gradients(params, world: int) -> None:
+    """Every rank's gradients averaged in place, one flat all-reduce: the step every rank then takes is the same, so
+    the ranks' weights stay the same bits."""
+    if world <= 1:
+        return
+    import torch.distributed as dist
+    grads = [p.grad for p in params]
+    flat = torch.cat([g.reshape(-1) for g in grads])
+    dist.all_reduce(flat)
+    flat.div_(world)
+    at = 0
+    for g in grads:
+        g.copy_(flat[at:at + g.numel()].view_as(g))
+        at += g.numel()
+
+
+def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0, rank: int = 0, world: int = 1) -> dict:
+    """The held-out windows' metrics, position-weighted -- window n on rank n % world, the sums gathered, so every
+    rank holds the same answer."""
     sums, weight = {}, 0
+    device = next(iter(model.frozen.values())).device
     with torch.no_grad():
         for n, (streams, tokens, start) in enumerate(runs.every_window()):
             if limit and n >= limit:
                 break
-            device = next(iter(model.frozen.values())).device
+            if n % world != rank:
+                continue
             loss, metrics = window_loss(model, streams.to(device), tokens.to(device), start, depth)
             rows = streams.shape[0] - depth
             weight += rows
             for key, value in metrics.items():
                 sums[key] = sums.get(key, 0.0) + value * rows
-    return {key: round(value / max(weight, 1), 5) for key, value in sums.items()} | {"positions": weight}
+    keys = sorted(set(sums) | {f"{m}_{d}" for m in ("loss", "agree", "chain", "text_chain") for d in range(1, depth + 1)}
+                  | {"tokens_a_step"})
+    total = all_sum([sums.get(k, 0.0) for k in keys] + [float(weight)], world, device)
+    weight = total[-1]
+    return {key: round(value / max(weight, 1), 5) for key, value in zip(keys, total)} | {"positions": int(weight)}
 
 
 def train(args) -> None:
     cfg, prefix = config(args.ckpt)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    rank, world = distributed()
     torch.manual_seed(args.seed)
-    rng = random.Random(args.seed)
+    rng = random.Random(args.seed * 1000 + rank)                   # each rank its own windows
     model = Head(cfg, checkpoint_tensors(args.ckpt, prefix), prefix=prefix, device=device)
     train_runs = Runs(args.data, "train", window=args.window, depth=args.depth)
     eval_runs = Runs(args.data, "eval", window=args.window, depth=args.depth)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    log = (out / "log.jsonl").open("a")
+    log = (out / "log.jsonl").open("a") if rank == 0 else None
 
     def note(record):
         record["t"] = round(time.time(), 1)
-        log.write(json.dumps(record) + "\n")
-        log.flush()
-        print(json.dumps(record), flush=True)
+        if log is not None:
+            log.write(json.dumps(record) + "\n")
+            log.flush()
+            print(json.dumps(record), flush=True)
 
-    note({"event": "start", "args": {k: str(v) for k, v in vars(args).items()},
+    note({"event": "start", "args": {k: str(v) for k, v in vars(args).items()}, "world": world,
           "trained_parameters": sum(p.numel() for p in model.weights.values())})
-    base = evaluate(model, eval_runs, depth=args.depth, limit=args.eval_windows)
+    base = evaluate(model, eval_runs, depth=args.depth, limit=args.eval_windows, rank=rank, world=world)
     note({"event": "eval", "step": 0, **base})
     optimizer = torch.optim.AdamW(model.weights.values(), lr=args.lr, betas=(0.9, 0.95), weight_decay=0.0)
     total = args.steps
@@ -481,19 +531,25 @@ def train(args) -> None:
             (loss / args.accumulate).backward()
             for key, value in metrics.items():
                 seen[key] = seen.get(key, 0.0) + value / args.accumulate
+        average_gradients(list(model.weights.values()), world)
         norm = torch.nn.utils.clip_grad_norm_(model.weights.values(), args.clip)
         optimizer.step()
         if step % args.log_every == 0:
             note({"event": "train", "step": step, "lr": lr, "grad_norm": round(float(norm), 4),
                   **{k: round(v, 5) for k, v in seen.items()}})
         if step % args.eval_every == 0 or step == total:
-            result = evaluate(model, eval_runs, depth=args.depth, limit=args.eval_windows)
+            result = evaluate(model, eval_runs, depth=args.depth, limit=args.eval_windows, rank=rank, world=world)
             note({"event": "eval", "step": step, **result})
-            if result["tokens_a_step"] > best:
+            if result["tokens_a_step"] > best:                      # every rank the same numbers, the same choice
                 best = result["tokens_a_step"]
-                save(model, out / "head.safetensors", {"step": step, "eval": result, "base": base})
+                if rank == 0:
+                    save(model, out / "head.safetensors", {"step": step, "eval": result, "base": base, "world": world})
                 note({"event": "saved", "step": step, "tokens_a_step": best})
     note({"event": "end", "best_tokens_a_step": best, "base_tokens_a_step": base["tokens_a_step"]})
+    if world > 1:
+        import torch.distributed as dist
+        dist.barrier()
+        dist.destroy_process_group()
 
 
 def save(model: Head, path: Path, meta: dict) -> None:
@@ -539,6 +595,34 @@ def export(args) -> None:
     print(json.dumps(manifest["ranks"]), flush=True)
 
 
+def extract(args) -> None:
+    """The tensors the tuning reads, out of a checkpoint copy into a small one of its own (one shard, its index, the
+    config): what the other nodes train from without the 126 GB copy."""
+    import shutil
+    from engine.base.checkpoint import Checkpoint
+    from engine.base.params import Spec
+    from engine.base.preshard import RankWriter
+    cfg, prefix = config(args.ckpt)
+    names = [*TRAINED, *EXPERTS, HEAD, *target_names(prefix).values()]
+    source = Checkpoint(str(args.ckpt))
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    # one tensor in memory at a time, read through the shard mapping (the largest, the experts' gate_up, is 3.4 GB,
+    # copied once by the writer): it runs beside production under a 6 GB cap
+    dtypes = {"BF16": torch.bfloat16, "F32": torch.float32, "F16": torch.float16}
+    specs = []
+    for name in names:
+        header = source.reader(source.weight_map[name]).header[name]
+        specs.append(Spec(name, tuple(header["shape"]), dtypes[header["dtype"]]))
+    writer = RankWriter(out / "tune-base.safetensors", specs, {"layout": "qwen38-mtp-tune-base-v1"})
+    for name in names:
+        writer.put(name, source.views([name])[name])            # the mapped bytes: page cache, not this process
+    writer.close()
+    (out / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {n: "tune-base.safetensors" for n in names}}))
+    shutil.copy(Path(args.ckpt) / "config.json", out / "config.json")
+    print(json.dumps({"tensors": len(names), "bytes": (out / "tune-base.safetensors").stat().st_size}), flush=True)
+
+
 def tuned_file(rank: int) -> str:
     from engine.profiles.qwen38 import facts
     return f"mtp-tuned-r{rank}of{facts.TP}.safetensors"
@@ -579,6 +663,9 @@ def main(argv=None) -> int:
             p.add_argument("--eval-every", type=int, default=200)
         else:
             p.add_argument("--tuned", type=Path, default=None)
+    x = sub.add_parser("extract")
+    x.add_argument("--ckpt", required=True, type=Path)
+    x.add_argument("--out", required=True)
     e = sub.add_parser("export")
     e.add_argument("--tuned", required=True, type=Path)
     e.add_argument("--ckpt", required=True, type=Path)
@@ -589,6 +676,8 @@ def main(argv=None) -> int:
         index = build_runs(shards([Path(p) for p in a.taps.split(",")]), Path(a.out), holdout=a.holdout,
                            min_length=a.min_length)
         print(json.dumps({k: v for k, v in index.items() if k != "runs"}), flush=True)
+    elif a.command == "extract":
+        extract(a)
     elif a.command == "train":
         train(a)
     elif a.command == "eval":
