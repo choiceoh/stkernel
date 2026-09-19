@@ -34,8 +34,10 @@ HC, HIDDEN, RANK, EPS = 4, 2560, 320, 1e-6       # Qwen3.8's site at TP=4: 324 d
 ROWS = (512, 1024, 2048, 4096)
 CALLS = 8                                        # sites a graph
 ROUNDS = 21
-TILES = ((32, 64, 64, 8, 3), (64, 64, 64, 8, 3), (32, 64, 64, 4, 3), (32, 64, 32, 8, 3), (32, 128, 64, 8, 3),
-         (64, 128, 64, 8, 2))                    # (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) of leave_down_block
+TILES = ((32, 64, 32, 8, 3), (32, 64, 64, 8, 2), (64, 64, 32, 8, 3), (64, 64, 64, 8, 2), (32, 128, 64, 8, 2),
+         (32, 64, 32, 4, 3))                     # (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) of leave_down_block: every
+                                                 # stage holds the A tile and all six W tiles, so 64 x 64 x 64 at three
+                                                 # stages wants 111 KB of shared memory (the GB10 has 99): out of resources
 BAND = 2.0 ** -6                                 # a few BF16 steps: rounding order, not a wrong formula
 
 
@@ -99,9 +101,17 @@ def run(output=None) -> dict:
               "table": hcr.LEAVE_DOWN_TILES, "gpu_busy_percent": {"start": gpu_busy()}, "rows": {}}
     for t in ROWS:
         tiles = hcr.block_tiles(t)
-        checks = {str(tile): check(t, device, gen, tile) for tile in TILES}
-        for tile, record in checks.items():
-            print(json.dumps({f"check rows {t} tile {tile}": record, "passes": passes(record)}), flush=True)
+        checks, fits = {}, []
+        for tile in TILES:
+            try:
+                checks[str(tile)] = record = check(t, device, gen, tile)
+            except Exception as e:                       # a tile the card cannot hold (shared memory) is recorded, not run
+                checks[str(tile)] = record = {"error": f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"}
+                torch.cuda.synchronize()
+            if "error" not in record:
+                fits.append(tile)
+            print(json.dumps({f"check rows {t} tile {tile}": record,
+                              "passes": "error" not in record and passes(record)}), flush=True)
         h, out, injection, w, di, up, _, _ = operands(t, device, gen)
         gates = torch.empty(t, RANK, dtype=h.dtype, device=device)
         ij = torch.empty(t, HC, dtype=h.dtype, device=device)
@@ -118,7 +128,7 @@ def run(output=None) -> dict:
         def up_fold():
             hcr.up_mean_block(gates, up, h, mixed, HC, tile=tiles["up"], norm=(scale_two, w))
 
-        arms = {"two launches (main)": two_launches, **{f"fused {tile}": fused(tile) for tile in TILES},
+        arms = {"two launches (main)": two_launches, **{f"fused {tile}": fused(tile) for tile in fits},
                 "up fold (both)": up_fold}
         graphs = {}
         for name, fn in arms.items():

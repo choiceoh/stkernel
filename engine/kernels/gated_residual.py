@@ -123,7 +123,7 @@ UP_BLOCK_TILE = (64, 64, 32, 4, 4)
 # The fused leave + down fold's tile (BLOCK_M, BLOCK_N, BLOCK_K, warps, stages) by the rows it serves from, as DOWN_TILES
 # (`leave_down_block`; probes/engine_qwen38_leave_down). Rows short of every entry leave with `stream_scales` and fold
 # with mix_block's two launches.
-LEAVE_DOWN_TILES = ((512, (32, 64, 64, 8, 3)),)
+LEAVE_DOWN_TILES = ((512, (32, 64, 32, 8, 3)),)     # a stage holds the A tile and six W tiles: 64-deep at 3 stages is 111 KB
 LEAVE_DOWN_BLOCKS = 5                       # full column blocks the fused kernel unrolls at most (the mixer's 320 in 64s), plus a tail
 UP_TILE = (32, 64, 4, 3)                    # up_mean's BLOCK_D, BLOCK_K, warps, stages (the best of five, q38site-0919a)
 
