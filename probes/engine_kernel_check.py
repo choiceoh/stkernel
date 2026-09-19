@@ -182,8 +182,8 @@ def main():
         qwen38_gemv(args.output)
         return
     if args.lanes == 'qwen38_head':
-        # component timings: the vocabulary head at decode rows -- deep_gemm (Qwen3.8's lane) against GLM-5.3's
-        # cuBLASLt reader (direct MX, five-way split, block-128 inputs), with each one's error and argmax agreement
+        # component timings: the vocabulary head at decode rows -- deep_gemm against dense/fp8_rows (the served lane and
+        # a tile sweep) and a pure read of the weight, with each one's error and argmax agreement
         from probes.engine_qwen38_head import run as qwen38_head
         qwen38_head(args.output)
         return
