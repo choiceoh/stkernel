@@ -44,6 +44,11 @@ EDGE = 64
 EAGER_PAIRS = 8
 """= engine/kernels/b12x/moe_dispatch._MICRO_MAX_TOKENS: an eager launch of more one-route pairs than this over every
 local expert runs the dynamic kernel, whose artifact is free of the count (select_sm120_moe_backend)."""
+DYNAMIC_BANDS = (15, 48, 96)
+"""= moe_dispatch._select_dynamic_tile_m's crossovers, in routed rows a local expert: the dynamic kernel is one artifact
+a tile (16 below 15, 32 below 48, 64 below 96, 128 above) -- free of the count, not of the band. The served compile
+census found three of them first built inside requests (measurements/qwen38_serve_compiles_20260919): the prefill
+passes' zeros are token 0 a row, whose ten routes put a whole pass on a rank's same few experts or on none."""
 
 
 def rungs(block: int, capacity: int, top: int) -> "list[int]":
@@ -140,10 +145,15 @@ def warmup(net, caches, *, memory, chunk: int, max_context: int, mtp: bool, head
     return paid
 
 
-def eager_counts(pairs: int = EAGER_PAIRS) -> "list[int]":
-    """The pair counts `eager_moe` launches, in order: the ceiling first -- the workspace grows to it and never again,
-    so every count after it (and every request's) is keyed by that one capacity -- then each count below it."""
-    return [pairs] + list(range(1, pairs))
+def eager_counts(pairs: int = EAGER_PAIRS, *, local: int = 0) -> "list[int]":
+    """The pair counts `eager_moe` launches, in order: the micro ceiling first -- the workspace grows to it and never
+    again, so every count after it (and every request's) is keyed by that one capacity -- then each count below it;
+    with `local` (this rank's experts), then one count in each of the dynamic kernel's tile bands: one past the micro
+    ceiling, and each crossover of DYNAMIC_BANDS spread over the local experts."""
+    counts = [pairs] + list(range(1, pairs))
+    if local:
+        counts += [pairs + 1] + [band * local for band in DYNAMIC_BANDS]
+    return counts
 
 
 def eager_routes(pairs: int, *, first_expert: int, local: int, experts: int, topk: int):
@@ -160,7 +170,8 @@ def eager_routes(pairs: int, *, first_expert: int, local: int, experts: int, top
 
 
 def eager_moe(net, *, pairs: int = EAGER_PAIRS) -> dict:
-    """Every decode-sized eager MoE launch this rank can make, once, before the door (the module docstring's `eager`):
+    """Every eager MoE kernel this rank can build, once, before the door (the module docstring's `eager`): each
+    decode-sized count at the one capacity the micro workspace keeps, then each tile band of the dynamic kernel --
     through one target layer's experts -- they share the MTP head's workspace and kernels (same experts, hidden and
     width) -- or the MTP head's when the net has no target layer. Zeros for x: the kernel is keyed by shapes. The MTP
     head on FP8 experts takes another path and is not this one's. -> {"eager/<pairs>": seconds}. A rank that raised
@@ -176,7 +187,7 @@ def eager_moe(net, *, pairs: int = EAGER_PAIRS) -> dict:
     local, device = w13.shape[0], w13.device               # this rank's experts, as lanes.moe counts them
     paid, error = {}, None
     try:
-        for m in eager_counts(pairs):
+        for m in eager_counts(pairs, local=local):
             began = time.perf_counter()
             ids, weights = eager_routes(m, first_expert=net.first_expert, local=local, experts=F.experts,
                                         topk=F.topk_experts)
@@ -195,4 +206,4 @@ def eager_moe(net, *, pairs: int = EAGER_PAIRS) -> dict:
     return paid
 
 
-__all__ = ["WIDTHS", "EDGE", "EAGER_PAIRS", "rungs", "plan", "warmup", "eager_counts", "eager_routes", "eager_moe"]
+__all__ = ["WIDTHS", "EDGE", "EAGER_PAIRS", "DYNAMIC_BANDS", "rungs", "plan", "warmup", "eager_counts", "eager_routes", "eager_moe"]

@@ -104,8 +104,9 @@ class ServeTests(unittest.TestCase):
 class LaneTests(unittest.TestCase):
     def test_the_kernel_check_runs_it(self):
         source = (ROOT / "probes/engine_kernel_check.py").read_text(encoding="utf-8")
-        self.assertIn("args.lanes == 'qwen38_serve_compiles'", source)
-        self.assertIn("qwen38_serve_compiles(args.output, args.ranks)", source)
+        self.assertIn("args.lanes == 'qwen38_serve_compiles' or args.lanes.startswith('qwen38_serve_compiles:')", source)
+        self.assertIn("qwen38_serve_compiles(args.output, args.ranks, spec_k=int((args.lanes.split(':')[1:] or [SPEC_K])[0]))",
+                      source)
         self.assertIn("--lanes qwen38_serve_compiles --ranks", probe.__doc__)
 
     def test_it_boots_in_the_fleets_order(self):

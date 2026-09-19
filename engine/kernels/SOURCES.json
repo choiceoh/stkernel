@@ -105,11 +105,12 @@
       "source": "engine/kernels/causal_conv.py @ b7a6e44c",
       "sha256": "5a768e68031ffe92f79fe1fbe4e1cd7615f6305ecc8d145e9125c382b716dd65",
       "origin": "repository",
-      "local_sha256": "64be6258557e7ca594c7be602f0235238630af58aff68ce12f1241a1ddbcbf62",
+      "local_sha256": "67e929ab17ff4387c0cb1dc7be83e7d8530b7d5697ab7cc44f7a9beeb742ebd5",
       "local_modifications": [
         "2026-09-12 GB10: specialize the forward recurrence for one sequence; remove batching metadata and mutable state table; use 128 channels and eight tokens per CTA; preserve arithmetic order and rounded history.",
         "2026-09-12 GB10 short conv: optional direct raw-input ring history loads and writes; one time tile, no history buffers.",
-        "2026-09-13 (C=4 row fold): a row axis for the captured decode step -- RING_INDEX_STRIDE selects each row's slot/context entry; the row's token span follows from its program id; the arithmetic per program is unchanged"
+        "2026-09-13 (C=4 row fold): a row axis for the captured decode step -- RING_INDEX_STRIDE selects each row's slot/context entry; the row's token span follows from its program id; the arithmetic per program is unchanged",
+        "2026-09-19 tokens an argument (Qwen3.8 served compile census, measurements/qwen38_serve_compiles_20260919): T is no longer a constexpr -- it compiled one kernel per prompt length a process saw, before that prompt's first token; it bounds the token loop, offsets a row and gates the final history store, and no arithmetic reads it, so the bytes are unchanged (RTX 5050: 18 prefill lengths and 16 ring shapes equal to the constant form)"
       ]
     },
     "kpool.py": {

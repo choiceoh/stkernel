@@ -1,0 +1,88 @@
+wait work: step_sim 재검증(최근 onepass 기록 3개, CPU) → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-prefill-census-0919e-20260919-135549.txt
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door) 2026-09-19_13:55:49
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door), srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 15.6 GiB, this check's budget 8.0 GiB, floor 16.0: 7.6 GiB would be left 2026-09-19_13:56:09
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door), srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 15.0 GiB, this check's budget 8.0 GiB, floor 16.0: 7.0 GiB would be left 2026-09-19_13:56:30
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door), srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 15.1 GiB, this check's budget 8.0 GiB, floor 16.0: 7.1 GiB would be left 2026-09-19_13:56:51
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door), srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 19.2 GiB, this check's budget 8.0 GiB, floor 16.0: 11.2 GiB would be left 2026-09-19_13:57:13
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door), srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 18.8 GiB, this check's budget 8.0 GiB, floor 16.0: 10.8 GiB would be left 2026-09-19_13:57:34
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door), srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 19.0 GiB, this check's budget 8.0 GiB, floor 16.0: 11.0 GiB would be left 2026-09-19_13:57:55
+waiting: pos 3/3, held by qwen38-serve-compiles-main-0919e [single] (pid 270956@srv2, since 13:55, est 20m, compile census on main: the served model in the boot's order, the window's requests, what compiles after the door), srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 18.4 GiB, this check's budget 8.0 GiB, floor 16.0: 10.4 GiB would be left 2026-09-19_13:58:16
+waiting: pos 2/3, srv4: a probe is already running there (st-probe-srv2-271224); srv4: no room beside production -- MemAvailable 18.4 GiB, this check's budget 8.0 GiB, floor 16.0: 10.4 GiB would be left 2026-09-19_13:58:20
+waiting: pos 1/2, held by qwen38-eager-moe-0919e [single] (pid 271053@srv2, since 13:58, est 12m, eager MoE after the boot's warm pass (#1230, in main): no request may compile a micro kernel; capacity vs bytes) 2026-09-19_13:58:37
+wait work: 끝났다 — 4줄 → /home/choiceoh/glm53-logs/wait-sim/wait-qwen38-prefill-census-0919e-20260919-135549.txt
+GO qwen38-prefill-census-0919e 2026-09-19_13:58:49
+  single GPU: probes/engine_kernel_check.py on srv4 (tree ~/st-probe-tree, image st-engine:glm53, budget 8 GiB beside production, no fleet lease)
+2026-09-19 04:59:10,711 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t1_r5_1ff18ef33b280e63
+2026-09-19 04:59:13,456 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m2_k2560_n640_t1_r5_1ff18ef33b280e63.o
+2026-09-19 04:59:13,573 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m4_k2560_n640_t1_r5_9fea2e923e19ed2d
+2026-09-19 04:59:15,906 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m4_k2560_n640_t1_r5_9fea2e923e19ed2d.o
+USDT:2026-09-19 04:59:18 52:52 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 04:59:18 52:52 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-19 04:59:18 52:52 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 04:59:18 52:52 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"layers": [4, 5, 6, 7], "context": 0, "tokens": 4096, "wall_ms": 2448.12, "device_ms": 102.97, "host_ms": 2345.15, "launches": 692}
+{"layers": [4, 5, 6, 7], "context": 4096, "tokens": 4096, "wall_ms": 110.92, "device_ms": 103.72, "host_ms": 7.2, "launches": 712}
+2026-09-19 04:59:37,172 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r3_04dc19bb5a7298cc
+2026-09-19 04:59:39,843 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m1_k2560_n640_t1_r3_04dc19bb5a7298cc.o
+USDT:2026-09-19 04:59:40 112:112 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 04:59:40 112:112 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-19 04:59:41 112:112 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 04:59:41 112:112 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"layers": [4, 5], "context": 0, "tokens": 4096, "wall_ms": 73.9, "device_ms": 60.41, "host_ms": 13.49, "launches": 453}
+{"layers": [4, 5], "context": 4096, "tokens": 4096, "wall_ms": 2742.54, "device_ms": 59.76, "host_ms": 2682.78, "launches": 466}
+USDT:2026-09-19 04:59:48 166:166 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 04:59:48 166:166 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-19 04:59:48 166:166 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 04:59:48 166:166 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"layers": [7], "context": 0, "tokens": 4096, "wall_ms": 51.73, "device_ms": 51.27, "host_ms": 0.46, "launches": 320}
+{"layers": [7], "context": 4096, "tokens": 4096, "wall_ms": 51.72, "device_ms": 51.44, "host_ms": 0.28, "launches": 319}
+2026-09-19 05:00:06,115 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t1_r5_26a00b87b473f703
+2026-09-19 05:00:08,854 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t1_r5_26a00b87b473f703.o
+USDT:2026-09-19 05:00:10 211:211 SyncActivityProfilerHandler.cpp:52] profiler_start
+USDT:2026-09-19 05:00:10 211:211 SyncActivityProfilerHandler.cpp:59] profiler_stop
+USDT:2026-09-19 05:00:10 211:211 SyncActivityProfilerHandler.cpp:52] profiler_start
+2026-09-19 05:00:10,334 - INFO - cute_dsl_core.py:177 - flashinfer.jit: Compiling CuTe-DSL kernel st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t1_r6_36f1962b0d816b17
+2026-09-19 05:00:11,558 - INFO - cute_dsl_core.py:246 - flashinfer.jit: Persisted CuTe-DSL kernel to /cache/cu132/.cache/flashinfer/0.6.18.dev20260819/121a/cached_ops/st_b12x_moe_e96383066039_sm121a_cute_dsl/micro_m3_k2560_n640_t1_r6_36f1962b0d816b17.o
+USDT:2026-09-19 05:00:11 211:211 SyncActivityProfilerHandler.cpp:59] profiler_stop
+{"layers": [1], "context": 0, "tokens": 4096, "wall_ms": 107.54, "device_ms": 97.62, "host_ms": 9.92, "launches": 424}
+{"layers": [1], "context": 4096, "tokens": 4096, "wall_ms": 110.67, "device_ms": 97.57, "host_ms": 13.1, "launches": 421}
+{
+ "context 0": {
+  "wall_ms": 46970.5,
+  "device_ms": 1004.7,
+  "host_ms": 45965.8,
+  "launches": 6144.0,
+  "families_ms": {
+   "hc gated residual": 226.3,
+   "gemm (cublas/cutlass)": 214.4,
+   "elementwise (torch)": 174.2,
+   "moe b12x": 148.4,
+   "qsa": 119.3,
+   "other": 37.0,
+   "gdn / kda": 35.2,
+   "route / moe glue": 21.5,
+   "dense w4/fp8": 15.0,
+   "conv": 6.8,
+   "norm / rope": 6.5
+  }
+ },
+ "context 4096": {
+  "wall_ms": -31014.9,
+  "device_ms": 1025.9,
+  "host_ms": -32040.8,
+  "launches": 6386.0,
+  "families_ms": {
+   "hc gated residual": 227.5,
+   "gemm (cublas/cutlass)": 221.0,
+   "elementwise (torch)": 179.8,
+   "moe b12x": 157.6,
+   "qsa": 116.0,
+   "other": 37.7,
+   "gdn / kda": 35.1,
+   "route / moe glue": 21.5,
+   "dense w4/fp8": 15.9,
+   "norm / rope": 7.0,
+   "conv": 6.7
+  }
+ }
+}
