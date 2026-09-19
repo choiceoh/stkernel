@@ -42,10 +42,10 @@
 
 | ID | 무엇 | 출처 | 종류 | 판정 | 상태 |
 |---|---|---|---|---|---|
-| U1 | 입구가 `hf_quant_config.json` 을 읽는다: quant_algo(NVFP4·W4A16_NVFP4·FP8·MXFP4·MIXED_PRECISION 층별), group_size, kv_cache_quant_algo, exclude_modules. 설정 읽기의 나머지 빈틈도(바깥 `mtp_config`, `dense_intermediate_size`, `local_layer_ids`/`sliding_window_size`, 바깥 `model_type`) | vllm#56050, #56535 | door | cpu | PR (이 PR) |
-| U2 | 모양(`kernel_shape.Attention`)이 윈도·상대 편향·k/v conv 를 말하고, `cells` 가 그런 어텐션을 평범한 GQA 로 통과시키지 않는다(D3) | 조사(Inkling) | door | cpu | PR (이 PR) |
+| U1 | 입구가 `hf_quant_config.json` 을 읽는다: quant_algo(NVFP4·W4A16_NVFP4·FP8·MXFP4·MIXED_PRECISION 층별), group_size, kv_cache_quant_algo, exclude_modules. 설정 읽기의 나머지 빈틈도(바깥 `mtp_config`, `dense_intermediate_size`, `local_layer_ids`/`sliding_window_size`, 바깥 `model_type`) | vllm#56050, #56535 | door | cpu | **머지 #1268** |
+| U2 | 모양(`kernel_shape.Attention`)이 윈도·상대 편향·k/v conv 를 말하고, `cells` 가 그런 어텐션을 평범한 GQA 로 통과시키지 않는다(D3) | 조사(Inkling) | door | cpu | **머지 #1268** |
 | U3 | MoE MXFP4 **W4A8** — b12x 의 MXFP4 전문가를 FP8 활성으로(cells 레시피 (c)) | sglang#34878 | kernel | gpu | **막힘(이미지)**: 이미지의 MXFP8×MXFP4 MoE(유일한 W4A8)는 SM100 전용("No supported CUDA architectures for major versions [10]"). b12x `mxfp4` 는 돌지만 W4A4 이고 참조와 16~24% — sglang#34878 의 새 b12x(W4A8)를 가져와야 한다(다음 목록) — [기록](../measurements/sm121_candidates_20260919/README.md) |
-| U4 | MoE 활성 정밀도를 체크포인트가 정한다 — W4A16 체크포인트가 W4A4 로 돌지 않게(U1 이 읽은 값으로 셀 선택) | vllm#56535 | fix | cpu+gpu | PR (이 PR): 입구가 `nvfp4-a16` 으로 읽고 셀이 이름으로 거절 — A16 셀 자체는 다음 목록 |
+| U4 | MoE 활성 정밀도를 체크포인트가 정한다 — W4A16 체크포인트가 W4A4 로 돌지 않게(U1 이 읽은 값으로 셀 선택) | vllm#56535 | fix | cpu+gpu | **머지 #1268**: 입구가 `nvfp4-a16` 으로 읽고 셀이 이름으로 거절 — A16 셀 자체는 다음 목록 |
 | U5 | dense NVFP4 GEMM 레인 — 어텐션 투영·공유 전문가까지 NVFP4 인 체크포인트를 변환 없이 | sglang#38685, #38170, vllm#54614 | kernel | gpu | **커널 검증**: W4A4 NVFP4 `mm_fp4` b12x·cutlass·cudnn 이 sm_121a 에서 정확(0.20~0.35%), M 8,192 에서 FP8 deep_gemm 보다 빠름(1.3~4.0 vs 2.6~7.6 ms). cute-dsl W4A4 는 거절, W4A16 은 큰 M 에서 느림. 엔진 레인(어댑터) 배선은 다음 목록 — [기록](../measurements/sm121_candidates_20260919/README.md) |
 | U6 | sparse-MLA Triton 레인 — 메가커널 인스턴스가 없는 MLA/DSA 형상(DSv3.2·GLM-5.2 류)을 입구가 이 레인으로 판정 | vllm#54929 (대안 vllm#54976 B12X) | kernel | gpu | **커널 검증**: 이미지의 SM120 sparse MLA 가 sm_121a 로 빌드(49 s), DSv3.2 랭크에서 디코드 30~51 µs, 오라클과 5.2~8.3%(FP8 q), 2만 회 연속 호출에 livelock 없음 — `cells` 가 이 판정을 적는다. 어댑터 배선은 다음 목록 — [기록](../measurements/sm121_candidates_20260919/README.md) |
 | U7 | GQA 레인 — paged KV + 윈도 + sink(가장 넓은 가족: gpt-oss·Gemma·Mistral·Qwen3 류) | vllm#50022, #55078(재료) | kernel | gpu | **커널 검증**: fa2·CUDA-core 페이지 디코드/프리필이 window·soft cap 에서 0.2~0.5%. **`sinks=` 는 받고 무시한다** → sink 는 xqa·AttentionSink 변형(0.2~0.6%) — `cells` 가 둘을 구분해 적는다. cute-dsl 은 거절. 어댑터 배선은 다음 목록 — [기록](../measurements/sm121_candidates_20260919/README.md) |
@@ -71,7 +71,7 @@
 | U17 | PDL: wait 앞의 읽기가 부팅 상수뿐인가 | sglang#38290 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
 | U18 | 캡처 뒤 패딩·null 슬롯의 비유한 값(0×NaN)이 실제 행을 오염시키나 | vllm#57158 | audit | cpu | 닫음: 감사(아래) — 버그 없음 |
 | U19 | 드래프터 상태가 TP 랭크마다 어긋나는 자리 | sglang#33614 | audit | cpu | 감사 끝(아래) — GLM 안전, Qwen3.8 은 랭크 간 대조가 없다 |
-| U20 | DeepGEMM 스케일: FP32 스케일(2 의 거듭제곱 아님)을 받으면 부팅에서 거절 | sglang#39482, vllm#57512, #54600 | fix | cpu | 브랜치 `sm121-u20-scale-guard`(PR 전: GLM 부팅이 지나는 `FP8Linear` 바인드를 바꾼다) — 우리 스케일은 이미 UE8M0(`packing.fp8_block_scales`, `fp8.py:14`) |
+| U20 | DeepGEMM 스케일: FP32 스케일(2 의 거듭제곱 아님)을 받으면 부팅에서 거절 | sglang#39482, vllm#57512, #54600 | fix | cpu | **머지 #1272**: `FP8Linear` 이 받는 준비된 스케일이 2 의 거듭제곱이 아니면 바인드에서 거절 — 우리 스케일은 이미 UE8M0(`packing.fp8_block_scales`, `fp8.py:14`) |
 
 ### D. 통합 메모리·플랫폼
 
@@ -92,7 +92,7 @@
 | U7 | `decode.py`(`window_left`·`sinks`·`logits_soft_cap`), `cute_dsl/attention/gqa_decode_paged.py` | 바인딩 |
 | U8 | `decode.py` 의 FP8·NVFP4 KV(`kv_cache_sf`) | 바인딩 |
 | U9 | `kda_prefill.py` + `csrc/kda/flashkda_*.cu` | 바인딩(JIT, nvcc 는 이미지에 있다) |
-| U13 | `gdn_prefill.chunk_gated_delta_rule`, `delta_rule_dsl/delta_rule_sm120.py` | PR(기본 켬, 운영자 09-19): 이미지 커널은 우리 호출대로면 NaN — flashinfer#5255(q/k 정규화 무시) → 먼저 정규화. GB10 레인 전체 1,024 토큰 1.37배·8,192 토큰 2.50배, 부팅 자격 검사 통과, 플릿 미측정 — [기록](../measurements/qwen38_gdn_flashinfer_20260919/README.md) |
+| U13 | `gdn_prefill.chunk_gated_delta_rule`, `delta_rule_dsl/delta_rule_sm120.py` | 바인딩 — q/k 를 먼저 정규화해야 한다(flashinfer#5255) |
 
 엔진의 `engine/kernels/b12x` 는 이미지의 `blackwell_sm12x` 의 포크다(같은 바이트 9, 다름 9, 엔진에만 28, 이미지에만 0).
 
