@@ -1,0 +1,291 @@
+{
+ "lane": "sm121_fp8_l2",
+ "unavailable": {},
+ "shapes": {
+  "vllm#55180 16384x2560 (42 MB)": {
+   "n": 16384,
+   "k": 2560,
+   "weight_MB": 41.9,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 925.7,
+      "best_us": 920.6,
+      "TFLOPS": 92.8
+     },
+     "cublaslt (served)": {
+      "median_us": 816.9,
+      "best_us": 810.3,
+      "TFLOPS": 105.2
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 2878.3,
+      "best_us": 2865.8,
+      "TFLOPS": 119.4
+     },
+     "cublaslt (served)": {
+      "median_us": 3099.1,
+      "best_us": 3075.0,
+      "TFLOPS": 110.9
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 5561.7,
+      "best_us": 5534.6,
+      "TFLOPS": 123.6
+     },
+     "cublaslt (served)": {
+      "median_us": 5801.7,
+      "best_us": 5768.4,
+      "TFLOPS": 118.4
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 11161.8,
+      "best_us": 11066.3,
+      "TFLOPS": 123.1
+     },
+     "cublaslt (served)": {
+      "median_us": 11326.9,
+      "best_us": 11299.6,
+      "TFLOPS": 121.3
+     }
+    }
+   }
+  },
+  "vllm#55180 5120x5120 (26 MB)": {
+   "n": 5120,
+   "k": 5120,
+   "weight_MB": 26.2,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 696.1,
+      "best_us": 689.9,
+      "TFLOPS": 77.1
+     },
+     "cublaslt (served)": {
+      "median_us": 662.1,
+      "best_us": 577.1,
+      "TFLOPS": 81.1
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 2370.8,
+      "best_us": 1973.5,
+      "TFLOPS": 90.6
+     },
+     "cublaslt (served)": {
+      "median_us": 2016.6,
+      "best_us": 1993.9,
+      "TFLOPS": 106.5
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 3805.5,
+      "best_us": 3795.1,
+      "TFLOPS": 112.9
+     },
+     "cublaslt (served)": {
+      "median_us": 3861.5,
+      "best_us": 3812.6,
+      "TFLOPS": 111.2
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 8250.2,
+      "best_us": 7567.6,
+      "TFLOPS": 104.1
+     },
+     "cublaslt (served)": {
+      "median_us": 8130.7,
+      "best_us": 7503.7,
+      "TFLOPS": 105.6
+     }
+    }
+   }
+  },
+  "glm53 dense gate_up 24576x4096 (101 MB)": {
+   "n": 24576,
+   "k": 4096,
+   "weight_MB": 100.7,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 1619.7,
+      "best_us": 1608.5,
+      "TFLOPS": 127.3
+     },
+     "cublaslt (served)": {
+      "median_us": 1596.7,
+      "best_us": 1590.1,
+      "TFLOPS": 129.1
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 7822.6,
+      "best_us": 6660.6,
+      "TFLOPS": 105.4
+     },
+     "cublaslt (served)": {
+      "median_us": 18951.5,
+      "best_us": 17978.9,
+      "TFLOPS": 43.5
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 29760.8,
+      "best_us": 15393.2,
+      "TFLOPS": 55.4
+     },
+     "cublaslt (served)": {
+      "median_us": 15572.1,
+      "best_us": 13757.2,
+      "TFLOPS": 105.9
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 45281.6,
+      "best_us": 37491.6,
+      "TFLOPS": 72.8
+     },
+     "cublaslt (served)": {
+      "median_us": 39462.5,
+      "best_us": 34439.1,
+      "TFLOPS": 83.6
+     }
+    }
+   }
+  },
+  "glm53 dense down 4096x12288 (50 MB)": {
+   "n": 4096,
+   "k": 12288,
+   "weight_MB": 50.3,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 1489.0,
+      "best_us": 1214.9,
+      "TFLOPS": 69.2
+     },
+     "cublaslt (served)": {
+      "median_us": 2919.6,
+      "best_us": 1951.4,
+      "TFLOPS": 35.3
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 3911.2,
+      "best_us": 3878.1,
+      "TFLOPS": 105.4
+     },
+     "cublaslt (served)": {
+      "median_us": 4428.7,
+      "best_us": 4044.0,
+      "TFLOPS": 93.1
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 9720.8,
+      "best_us": 8469.3,
+      "TFLOPS": 84.8
+     },
+     "cublaslt (served)": {
+      "median_us": 7986.0,
+      "best_us": 7935.1,
+      "TFLOPS": 103.3
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 15696.5,
+      "best_us": 15206.8,
+      "TFLOPS": 105.1
+     },
+     "cublaslt (served)": {
+      "median_us": 16745.9,
+      "best_us": 16670.7,
+      "TFLOPS": 98.5
+     }
+    }
+   }
+  },
+  "inside the L2 4096x4096 (17 MB)": {
+   "n": 4096,
+   "k": 4096,
+   "weight_MB": 16.8,
+   "rows": {
+    "1024": {
+     "deep_gemm": {
+      "median_us": 525.7,
+      "best_us": 510.2,
+      "TFLOPS": 65.4
+     },
+     "cublaslt (served)": {
+      "median_us": 422.7,
+      "best_us": 419.5,
+      "TFLOPS": 81.3
+     }
+    },
+    "4096": {
+     "deep_gemm": {
+      "median_us": 1381.6,
+      "best_us": 1375.4,
+      "TFLOPS": 99.5
+     },
+     "cublaslt (served)": {
+      "median_us": 1362.8,
+      "best_us": 1357.8,
+      "TFLOPS": 100.9
+     }
+    },
+    "8192": {
+     "deep_gemm": {
+      "median_us": 2618.9,
+      "best_us": 2600.2,
+      "TFLOPS": 105.0
+     },
+     "cublaslt (served)": {
+      "median_us": 2608.9,
+      "best_us": 2603.6,
+      "TFLOPS": 105.4
+     }
+    },
+    "16384": {
+     "deep_gemm": {
+      "median_us": 5198.6,
+      "best_us": 5157.7,
+      "TFLOPS": 105.8
+     },
+     "cublaslt (served)": {
+      "median_us": 5504.2,
+      "best_us": 5492.3,
+      "TFLOPS": 99.9
+     }
+    }
+   }
+  }
+ },
+ "device": {
+  "name": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "memory_cap_gib": 6
+ }
+}

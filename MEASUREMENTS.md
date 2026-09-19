@@ -5145,4 +5145,12 @@ split-K 와 바이트 동일이 아니라 대역 안(최대 0.0066, rms 0.0011).
 - `sm121-u13cells-0919g`: 부팅 자격 검사 o 0.0037, 상태 0.0068, 경계 상태 0.0059(대역 0.0156); GPU 글루 93 통과.
 - 운영자 "빠른건 기본에 켜"(09-19) → 기본 켬, `--no-gdn-flashinfer`/`ST_GDN_FLASHINFER=0` 롤백. **플릿 onepass 미측정**(D17).
   [상세·원시](measurements/qwen38_gdn_flashinfer_20260919/README.md).
+### 시드 이미지의 커널을 GB10 에서 판정 — sm121 intake U3·U5·U6·U7·U8·U11·U15 (2026-09-19, srv4 단일 GPU 레인 묶음 티켓)
+`probes/engine_sm121_*`(묶음 러너 `engine_sm121_batch`, 레인마다 자식 프로세스). 프로덕션 옆·eager 라 작은 호출은 호스트 시간이 섞인다.
+- U7/U8: FlashInfer fa2·CUDA-core 페이지 GQA 가 window·soft cap 에서 fp32 대비 0.2~0.5%. **`sinks=` 는 받고 무시**(오차 = sink 없는 참조), xqa·AttentionSink
+  변형은 0.2~0.6%. FP8 KV 는 캐시가 BF16 대비 3.7~7.2%, NVFP4 KV 는 13~20%. cute-dsl 은 sm_121a 거절(tcgen05).
+- U5: `mm_fp4` W4A4 b12x·cutlass·cudnn 0.20~0.35%, M 8,192 1.3~4.0 ms(FP8 deep_gemm 2.6~7.6). U3: MXFP8×MXFP4 MoE 는 SM100 전용, b12x mxfp4 는 W4A4·16~24%.
+- U6: SM120 sparse MLA(DSv3.2 랭크) 49 s 빌드, 디코드 30~51 µs, 5.2~8.3%(FP8 q), 2만 회 livelock 없음.
+- U11: vLLM 의 L2 절벽 없음(16,384×2,560 M 16,384 에서 123 TFLOPS); 번갈아 잰 2차는 L2 안 대조군까지 같이 떨어져 경합. U15: sanitizer 가 컨테이너에서 계측 불가.
+  [상세·원시](measurements/sm121_candidates_20260919/README.md).
 

@@ -1,0 +1,29 @@
+{
+ "lane": "sm121_batch",
+ "lanes": {
+  "sm121_fp4_gemm": {
+   "returncode": 0,
+   "seconds": 700.4,
+   "output": "/cache/sm121-batchB-0919b-sm121_fp4_gemm.json",
+   "log": "/cache/sm121-batchB-0919b-sm121_fp4_gemm.log"
+  },
+  "sm121_fp4_moe": {
+   "returncode": 0,
+   "seconds": 97.4,
+   "output": "/cache/sm121-batchB-0919b-sm121_fp4_moe.json",
+   "log": "/cache/sm121-batchB-0919b-sm121_fp4_moe.log"
+  },
+  "sm121_attention": {
+   "returncode": 0,
+   "seconds": 1240.3,
+   "output": "/cache/sm121-batchB-0919b-sm121_attention.json",
+   "log": "/cache/sm121-batchB-0919b-sm121_attention.log"
+  },
+  "sm121_sparse_mla": {
+   "returncode": 0,
+   "seconds": 56.6,
+   "output": "/cache/sm121-batchB-0919b-sm121_sparse_mla.json",
+   "log": "/cache/sm121-batchB-0919b-sm121_sparse_mla.log"
+  }
+ }
+}

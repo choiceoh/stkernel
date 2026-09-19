@@ -1,0 +1,23 @@
+{
+ "lane": "sm121_batch",
+ "lanes": {
+  "sm121_gdn": {
+   "returncode": 0,
+   "seconds": 33.1,
+   "output": "/cache/sm121-batchC-0919c-sm121_gdn.json",
+   "log": "/cache/sm121-batchC-0919c-sm121_gdn.log"
+  },
+  "sm121_fp8_l2": {
+   "returncode": 0,
+   "seconds": 10.7,
+   "output": "/cache/sm121-batchC-0919c-sm121_fp8_l2.json",
+   "log": "/cache/sm121-batchC-0919c-sm121_fp8_l2.log"
+  },
+  "sm121_sanitizer": {
+   "returncode": 0,
+   "seconds": 4.8,
+   "output": "/cache/sm121-batchC-0919c-sm121_sanitizer.json",
+   "log": "/cache/sm121-batchC-0919c-sm121_sanitizer.log"
+  }
+ }
+}

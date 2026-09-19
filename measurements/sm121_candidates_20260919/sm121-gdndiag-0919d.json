@@ -1,0 +1,293 @@
+{
+ "lane": "sm121_gdn_diag",
+ "tokens": 1024,
+ "unavailable": {},
+ "variants": {
+  "gva 4/12 | gate alpha | state carried": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "gva 4/12 | gate alpha | state zero": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "gva 4/12 | gate alpha | state carried swapped": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "gva 4/12 | gate log | state carried": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "gva 4/12 | gate log | state zero": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "gva 4/12 | gate log | state carried swapped": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "widened 12/12 | gate alpha | state carried": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "widened 12/12 | gate alpha | state zero": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "widened 12/12 | gate alpha | state carried swapped": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "widened 12/12 | gate log | state carried": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "widened 12/12 | gate log | state zero": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  },
+  "widened 12/12 | gate log | state carried swapped": {
+   "o_nan": 1572864,
+   "o_inf": 0,
+   "o_numel": 1572864,
+   "state_nan": 196608,
+   "o_vs_oracle": 1.0,
+   "state_vs_oracle": 1.0,
+   "state_vs_oracle_swapped": 1.0,
+   "nan_heads": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+   ]
+  }
+ },
+ "device": {
+  "name": "NVIDIA GB10",
+  "capability": [
+   12,
+   1
+  ],
+  "torch": "2.13.0+cu132",
+  "cuda": "13.2",
+  "memory_cap_gib": 6
+ }
+}
