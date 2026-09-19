@@ -84,13 +84,23 @@ class Attention:
     `sink` is part of the math, not the geometry: True when the softmax denominator carries a learned
     per-head sink term (DeepSeek-V4.1's sparse_attn, engine/modules/sparse_attention.sparse_attn), False
     when it does not (GLM-5.3's MLA, mla_sparse_mqa), None when the model's reference has not been read
-    yet. It is keyword-only and has no default: a profile states it or the shape does not build."""
+    yet. It is keyword-only and has no default: a profile states it or the shape does not build.
+
+    The rest is what the logits carry beyond softmax(q.k), and the positions a query reads -- math a lane must compute,
+    so a lane that does not is refused by name (engine/kernels/cells) rather than admitted as a plain attention:
+    `window` the positions a query reads back on the layers that declare one (0: its whole context), `relative` the
+    form of a learned relative-position bias added to the logits ("": none), `softcap` a tanh cap on the logits (0:
+    none), `kv_conv` the taps of a per-sequence causal conv on the keys and values before the cache (0: none)."""
     kind: str
     heads: int
     head_dim: int
     kv_heads: int = 1
     _: KW_ONLY
     sink: "bool | None"
+    window: int = 0
+    relative: str = ""
+    softcap: float = 0.0
+    kv_conv: int = 0
 
     def __post_init__(self):
         if self.kind not in ("mla", "gqa"):
@@ -100,6 +110,14 @@ class Attention:
             raise ValueError("Attention.heads must be a multiple of kv_heads")
         if self.sink not in (True, False, None):
             raise ValueError(f"Attention.sink must be True, False or None (not established), got {self.sink!r}")
+        for name in ("window", "kv_conv"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"Attention.{name} is a count of positions or taps (0: none), got {value!r}")
+        if not isinstance(self.relative, str):
+            raise ValueError(f"Attention.relative names the bias form ('': none), got {self.relative!r}")
+        if isinstance(self.softcap, bool) or not isinstance(self.softcap, (int, float)) or self.softcap < 0:
+            raise ValueError(f"Attention.softcap is a non-negative cap (0: none), got {self.softcap!r}")
 
 
 @dataclass(frozen=True)
@@ -229,6 +247,10 @@ class KernelShape:
                   else "linear none")
         indexer = f"indexer {i.compress} {i.heads}x{i.head_dim} pool {i.pool} top {i.topk}" if i else "indexer none"
         sink = {True: "sink", False: "no sink", None: "sink ?"}[a.sink]
+        sink += "".join(f" {text}" for present, text in ((a.window, f"window {a.window}"),
+                                                          (a.relative, f"relative {a.relative}"),
+                                                          (a.softcap, f"softcap {a.softcap}"),
+                                                          (a.kv_conv, f"kv conv {a.kv_conv}")) if present)
         return (f"hidden {self.hidden} hc {self.hc} {self.hc_variant or 'form ?'} tp {self.tp} | {a.kind} {a.heads}x{a.head_dim} "
                 f"{sink} | {linear} | {indexer} | "
                 f"moe {m.experts}({m.experts_local} local) I{m.inter}/{m.inter_local} top{m.topk} {m.quant} {m.activation} | "

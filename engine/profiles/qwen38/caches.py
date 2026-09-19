@@ -25,7 +25,8 @@ from math import lcm, prod
 
 from engine.base.arena import ALIGN
 from engine.base.kv import BlockPool, SlotPool
-from engine.base.slot_caches import SIZES, SlotCaches, StateField, aligned, typed_view
+from engine.base.slot_caches import SIZES, SlotCaches, StateField, aligned, blocks_for, region_bytes, snapshots_for, typed_view
+from engine.modules.state_rings import StateRings
 
 QSA_KEY_RING = 8            # raw index keys kept per sequence: the open group (3) plus a verify step (K+1), no aliasing
 PLE_ID_RING = 8             # token ids kept per sequence: the n-gram's previous 2 plus a verify step (check_rings: K <= 4)
@@ -40,7 +41,7 @@ class CacheLayout:
     fields: tuple
 
     def nbytes(self, num_blocks: int, max_seqs: int) -> int:
-        return num_blocks * self.block_bytes + (max_seqs + 1) * self.slot_bytes + max_seqs * num_blocks * 4
+        return region_bytes(num_blocks, max_seqs, self.block_bytes, self.slot_bytes)
 
 
 def qsa_layers(F, layers, mtp: bool):
@@ -124,12 +125,10 @@ def snapshot_layout(F, layers):
 
 def cache_capacity(F, layers, kv_gib: float, max_seqs: int, snapshot_gib: float, *, mtp: bool = True):
     p = layout(F, layers, mtp=mtp)
-    blocks = int((kv_gib * (1 << 30) - (max_seqs + 1) * p.slot_bytes) // (p.block_bytes + max_seqs * 4))
-    snapshots = max(9, int(snapshot_gib * (1 << 30)) // snapshot_layout(F, layers)[0])
-    return blocks, snapshots
+    return blocks_for(kv_gib, max_seqs, p.block_bytes, p.slot_bytes), snapshots_for(snapshot_gib, snapshot_layout(F, layers)[0])
 
 
-class Qwen38Caches(SlotCaches):
+class Qwen38Caches(SlotCaches, StateRings):
     def __init__(self, arena, F, layers, num_blocks: int, max_seqs: int, snapshots: int = 0, *, mtp: bool = True):
         import torch
         self.F, self.layers, self.mtp = F, tuple(layers), mtp
@@ -196,8 +195,7 @@ class Qwen38Caches(SlotCaches):
         """[slots, 8, 1, idx_dim] bf16: every slot's raw index keys by position % 8 (the compressor-state ring)."""
         return self._fields["keys", layer]
 
-    def gdn(self, layer: int, slot: int):
-        return self._fields["conv", layer][slot], self._fields["rec", layer][slot]
+    gdn = StateRings.rings
 
     def gdn_fields(self, layer: int):
         """Every slot's (conv ring [slots, C, W], state ring [slots, K+1, HV, K, V]): what the row kernels address."""
@@ -219,17 +217,8 @@ class Qwen38Caches(SlotCaches):
 
     # -- prefix snapshots at block boundaries --------------------------------------------------------------------
     def checkpoint(self, slot: int, position: int, snap: int) -> None:
+        self.save_rings(slot, position, snap)
         F = self.F
-        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
-            raise IndexError("checkpoint needs a real state slot and a declared snapshot")
-        if position <= 0 or position % F.block:
-            raise ValueError("a checkpoint sits at a block boundary")
-        for L in self.layers:
-            if F.is_qsa(L):
-                continue
-            conv, rec = self.gdn(L, slot)
-            self._snap["conv", L][snap].copy_(conv.index_select(1, self._ring_cells(position, F.conv - 1, conv.shape[1])))
-            self._snap["rec", L][snap].copy_(rec[(position - 1) % rec.shape[0]])
         if ("ple_ids", -1) in self._snap:
             ids, conv = self.ple(slot)
             self._snap["ple_ids", -1][snap].copy_(ids.index_select(0, self._ring_cells(position, F.ngram_size - 1, ids.shape[0])))
@@ -237,30 +226,19 @@ class Qwen38Caches(SlotCaches):
             self._snap["ple_conv", -1][snap].copy_(conv.index_select(1, self._ring_cells(position, span, conv.shape[1])))
 
     def restore(self, slot: int, position: int, snap: int) -> None:
+        self.load_rings(slot, position, snap)
         F = self.F
-        if not 0 <= snap < self.snapshots or not 0 < slot < self.slots.num_slots:
-            raise IndexError("restore needs a real state slot and a declared snapshot")
-        if position <= 0 or position % F.block:
-            raise ValueError("a restore sits at a block boundary")
-        for L in self.layers:
-            if F.is_qsa(L):
-                continue
-            conv, rec = self.gdn(L, slot)
-            conv.index_copy_(1, self._ring_cells(position, F.conv - 1, conv.shape[1]), self._snap["conv", L][snap])
-            rec[(position - 1) % rec.shape[0]].copy_(self._snap["rec", L][snap])
         if ("ple_ids", -1) in self._snap:
             ids, conv = self.ple(slot)
             ids.index_copy_(0, self._ring_cells(position, F.ngram_size - 1, ids.shape[0]), self._snap["ple_ids", -1][snap])
             span = (F.ple_conv - 1) * F.ngram_size
             conv.index_copy_(1, self._ring_cells(position, span, conv.shape[1]), self._snap["ple_conv", -1][snap])
 
-    def mark_gdn(self, layer: int, snap: int, state, taps) -> None:
-        """A block boundary inside a prefill chunk: the state there [HV, K, V] and the conv's conv-1 inputs before it
-        [conv-1, C]."""
-        if not 0 <= snap < self.snapshots:
-            raise IndexError("a mark needs a declared snapshot")
-        self._snap["rec", layer][snap].copy_(state)
-        self._snap["conv", layer][snap].copy_(taps.T)
+    mark_gdn = StateRings.mark_state
+
+    def ring_layers(self) -> tuple:
+        """The GDN layers: every layer that is not QSA."""
+        return tuple(L for L in self.layers if not self.F.is_qsa(L))
 
     def mark_ple(self, snap: int, ids, taps) -> None:
         """PLE at a block boundary inside a prefill chunk: the previous ngram_size-1 ids and the conv inputs

@@ -4938,3 +4938,29 @@ MTP dense BF16(#1226)이 `lanes.rows_linear` 를 타는데 `skinny_gemv.CONFIGS`
 - **12 개의 정체.** `_single_conv` 5(토큰 수 T 가 constexpr — 처음 보는 프롬프트 길이마다 컴파일: 실제 트래픽은 거의 모든 요청), b12x dynamic MoE 3(타일 밴드별; 워밍업 입력이 토큰 0 뿐이라 라우트가 한 곳에 몰림), 덮인 QSA 2(짧은 프리필과 첫 디코드 스텝 1.10 s), 점수 커널 G 1 변형 1(3,223 토큰), GDN `_gates` 1. 첫 디코드 스텝 말고 모든 디코드 스텝은 16 ms 이하 — 요청 중 느린 스텝은 전부 이 목록에서 나왔다.
 - **eager MoE 워밍업(#1230) 확인** — `--lanes qwen38_eager_moe`: 워밍업 뒤 요청이 더한 micro 커널 0, 용량 8 하나. 용량 대 바이트는 판정 못 함: 같은 용량(m 8)에서도 호출마다 마지막 자리가 달랐다(≤ 1.2e-4, 원자 누적 순서로 보인다).
 - **고침 하나(이 PR):** conv 의 T 를 인자로 — RTX 5050 에서 상수 형태와 바이트 동일(프리필 18 길이 × 초기 상태 유무, 링 16 모양), 컴파일 36 → 6. 나머지 넷(dynamic 밴드, 덮인 QSA, G 변형, `_gates`)은 열린 일. 속도 주장 없음. [표 · 원시](measurements/qwen38_serve_compiles_20260919/README.md).
+
+### GLM-5.3 어휘 헤드 — 디코드 행을 BF16 행 × FP8 가중치 한 발사로(W8A16): 호출당 850~929 → 731~743 µs, 오차 3분의 1 감소 (2026-09-19, srv4 단일 GPU 레인, PR #1264)
+
+- **무엇.** Qwen3.8 캠페인의 행 커널(`dense/fp8_rows`, #1217·#1246)이 GLM 헤드(랭크당 38,720 × 4,096 e4m3, 159 MB)에서도 이기는지
+  GLM 모양·행으로 잰 레인 티켓 둘(`glm53-head-0919a`, `glm53-gemv-0919a`, 프로브 #1251). 합성 가중치, 팔은 CUDA 그래프 안에서 번갈아.
+- **헤드(호출당 µs, 7·8·14·16 행).** 서빙 cuBLASLt 검증 891·906·929·911, 드래프트(MX 행) 853·859·850·908 → **W8A16 733·731·734·743**
+  (fp8_rows 736~743, deep_gemm 926~937, 순수 읽기 694~706). BF16 곱 대비 최대 오차 W8A16 0.026~0.029, 행을 양자화하는 팔 전부 0.036~0.043.
+  GLM 은 MAX_SEQS 2·SPEC_K 7 이라 헤드 호출이 전부 16 행 이하: C=1·2 스텝당 약 −0.3 ms(부품 수치, 플릿 미실측 — D17).
+- **skinny GEMV.** 인덱서 wk+gate [256, 4096] 1.13~1.15배(스텝당 약 19 µs), 드래프터 context K/V 1.04배 — 붙이지 않음(분할 설정이 캡처 전
+  `prepare` 를 부팅에 요구, 0.04% 를 위해).
+- **적용.** 공용 `FP8Linear(decode_rows="w8a16")` 레인으로, 검증·드래프트 헤드 둘 다(운영자 결정 2026-09-19: 검증 logits 가 BF16 곱 쪽으로
+  움직이므로 동률에 가까운 토큰은 다른 것을 고를 수 있다). cuBLASLt 리더는 16 행 초과와 부팅 교차검사(`qualify_decode_rows`)를 맡는다.
+  **GLM 부팅으로는 아직 미검증.** [원시 기록](measurements/glm53_decode_rows_20260919/README.md).
+
+### Qwen3.8 디코드 스텝 커널 프로파일 — C=1 K=3: 스텝 36.9 ms 중 커널 87%, TP 통신 21% · 믹서 22% · MoE 19% (2026-09-19 17:12~17:16, 다른 세션 창의 슬롯)
+- **무엇.** GLM-5.3 09-14 기록(`st_decode_profile_20260914`)과 같은 도구(`/v1/engine/profile` 32 스텝 + `/metrics`)로 Qwen3.8 C=1 · C=4 디코드 스텝을 잡았다. 부팅은 MTP 튜닝 창의 것: `1aec0aac` + mtp_tune, `--spec-k 3 --draft-threshold off`, 3차 튜닝 헤드 — 최신 main 아님(#1258 등 없음). 프로덕션을 따로 내리지 않았다.
+- **C=1(창 #1):** 스텝 36.9 ms(프로파일러 하 39.0), 커널 합 32.0 ms · 발사 1,566 — **커널 밖은 13%**. 믹서 사이트 7.1 ms(22%), **TP 통신 6.9 ms(21%**, GLM 8%), MoE 전문가 5.9 ms(19%), dense W4 3.6 ms, 어휘 헤드 2.8 ms, MTP BF16 투영 1.4 ms. 수용 0.656 → 스텝당 약 3.0 토큰(카운터). 첫 프로파일 창은 consumer 대기가 86.7 ms 로 부풀어 무효.
+- **읽기.** 통신이 GLM 보다 두 배 넘게 무겁다(작은 합의 지연) — 캐리 H4 · H5 · X1 · X2 의 자리. 믹서는 가중치 읽기 약 200 GB/s(대역폭의 70%). C=4: 스텝 61.8 ms, 커널 92%, MoE 가 가장 커진다. 속도 주장 없음. [표 · 원시](measurements/qwen38_decode_profile_20260919/README.md).
+### Qwen3.8 비전 타워 1단계 — 전처리기 pixel_values 비트 일치(9/9), mRoPE 위치 vLLM 과 일치, 실가중치 타워는 transformers bf16 과 같은 오차 (2026-09-19, srv2 CPU, PR #1267)
+체크포인트(`Qwen4ExpForConditionalGeneration`)의 Qwen3-VL 타워(27 블록, 1152 폭, 16 px 패치, 2×2 병합 → 2560)와 전처리기를 vLLM·transformers 없이
+`engine/profiles/qwen38/vision.py` 로. **서빙 전** — mRoPE 적용·프리필 행 교체·부팅 연결은 다음 단계.
+- **참조**: `probes/qwen38_vision_reference.py` 를 서빙 이미지 안에서 → `tests/fixtures/qwen38_vision_reference.json`(생성기 저장소에 둠). 합성 그림 아홉 가지의
+  pixel_values sha256 이 ST 이미지에서 전부 일치, vLLM 의 mRoPE 위치·delta 세 프롬프트 일치, 장난감 타워 vs transformers fp32 상대 0.0051.
+- **실가중치**: 우리 bf16 vs transformers fp32 5.6~5.8%(행 cos 최소 0.983) — transformers 를 bf16 으로 돌려도 5.4~5.9% 라 구현 차이가 아니라 bf16 몫.
+- **곁**: 그림 디코드(`engine/modules/pictures`)를 GLM 과 공유, 디코드 중 깨지는 그림이 GLM 에서도 500 대신 400. `preshard --vision` 이 `vision.safetensors`.
+  [상세·원시](measurements/qwen38_vision_tower_20260919/README.md).

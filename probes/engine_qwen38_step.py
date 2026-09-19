@@ -421,7 +421,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
         shape = (n, F.spec_k + 1, blocks)
         where = {}
         for label, g, fn in (("target", target, lambda i: net.forward(i, caches, streams=True)),
-                             ("draft", draft, lambda i: draft_chain(net, caches, *i, F.spec_k))):
+                             ("draft", draft, lambda i: draft_chain(net, caches, *i[:4], F.spec_k))):
             if shape in g.graphs.inputs:
                 seat(g, caches, F, shape)
                 inputs = g.graphs.inputs[shape]
@@ -433,7 +433,7 @@ def measure(ranks: Path, rank: int, layers, *, shapes=SHAPES, replays: int = REP
                 print(json.dumps({"arm": arm, "calls": label, "top": where[label + " calls"][:30]}), flush=True)
         if shape in draft.graphs.inputs:
             # net.mtp_forward `rows`: the rows past the attention alone against every row and then the same rows
-            step, given, last, _ = draft.graphs.inputs[shape]
+            step, given, last, _counts, _sampler = draft.graphs.inputs[shape]
             seat(draft, caches, F, shape)
             full, full_streams = net.mtp_forward(step, given, caches, last_hidden_only=False)
             part, part_streams = net.mtp_forward(step, given, caches, last_hidden_only=False, rows=last)

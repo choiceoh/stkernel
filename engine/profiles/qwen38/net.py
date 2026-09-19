@@ -451,6 +451,25 @@ class Qwen38Net:
             tap(h, picks)
         return picks
 
+    def draft_sample(self, h: torch.Tensor, temperature: torch.Tensor, top_k: torch.Tensor, top_p: torch.Tensor,
+                     uniform: torch.Tensor, *, candidates: int):
+        """The drafter's sampled picks, for block verification (base/sampler.block_verify_batch): the head's
+        `candidates` largest logits over the whole vocabulary (modules/vocab.topk -- the same ids and values on every
+        rank), the row's own sampler over them (base/sampler.rows: its temperature, top-k and top-p, the one definition
+        the target's picks use too), drawn with the row's keyed uniform (base/draws, DRAFT) -> (picks [rows], each
+        pick's probability under that distribution [rows] fp32, the candidates' ids [rows, C] int64 and the distribution
+        over them [rows, C] fp32). The draft is zero outside its candidates and the nucleus -- what the verification's
+        accept test divides by. A row at temperature 0 picks the head's argmax with all its mass there."""
+        if self.draft_index is not None:
+            raise ValueError("the draft index reads a few clusters of the head, not the row a sampled draft needs")
+        from engine.base.sampler import rows as sample_rows
+        from engine.modules.vocab import topk
+        values, ids = topk(self.draft_logits(h), self.comm, self.rank * self.vp, candidates)
+        values = values.contiguous()
+        probs = torch.empty(values.shape, dtype=torch.float32, device=values.device)
+        at = sample_rows(values, temperature, top_k, top_p, uniform, None, probs).view(-1, 1)
+        return ids.gather(1, at).view(-1), probs.gather(1, at).view(-1), ids, probs
+
     # -- the step's addressing -----------------------------------------------------------------------------------------
     def step_meta(self, step, caches) -> StepMeta:
         """The step's addressing. A host step's page table is cut to the bucket rung its longest segment reaches (the

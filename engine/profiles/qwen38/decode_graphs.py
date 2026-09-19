@@ -185,29 +185,44 @@ class TargetGraphs(_Rows):
         return logits, streams, rows, t
 
 
-def draft_chain(net, caches, step, given, last, counts, k: int, *, probability: bool = False):
+def draft_chain(net, caches, step, given, last, counts, k: int, *, probability: bool = False, sampled=None):
     """The MTP head's picks for a draft step: the head over the observation step (`given` the target's streams at
     its rows, `last` each row's last observed row, `counts` each row's observed positions), its greedy pick at `last`,
     then k-1 chain steps of one position a row -- the head at the position after the row's last observed one, taking
     the row's pick as its token and the head's own streams there as its state (engine/modules/mtp.MTPDrafter's chain,
     run over every row at once) -- each step's pick: [rows, k] int64. The chain's rows sit in the target's blocks at
     their positions like a padded row's: provisional, overwritten by the row's next step. `probability`: (picks, the
-    head's probability of each pick [rows, k] fp32) -- net.draft_tokens', the same on every rank."""
-    def pick(hidden):
+    head's probability of each pick [rows, k] fp32) -- net.draft_tokens', the same on every rank. `sampled`:
+    (temperature [rows], top_k [rows], top_p [rows], uniforms [rows, k], candidates) -- each pick DRAWN from the head's
+    distribution under the row's sampler (net.draft_sample, for block verification) and the chain continuing from the
+    drawn token -> (picks, their probabilities, the candidates [rows, k, C], the distributions over them [rows, k, C])."""
+    cands, dists = [], []
+
+    def pick(hidden, depth):
+        if sampled is not None:
+            temperature, top_k, top_p, uniforms, candidates = sampled
+            got, p, cand, dist = net.draft_sample(hidden, temperature, top_k, top_p, uniforms[:, depth],
+                                                  candidates=candidates)
+            cands.append(cand)
+            dists.append(dist)
+            return got, p
         return net.draft_tokens(hidden, probability=True) if probability else (net.draft_tokens(hidden), None)
 
     # past its attention the observation runs each row's last observed position only (net.mtp_forward `rows`)
     hidden, given = net.mtp_forward(step, given, caches, last_hidden_only=False, rows=last)
-    first, p = pick(hidden)
+    first, p = pick(hidden, 0)
     picks, probs = [first], [p]
     contexts = step.contexts + counts
-    for _ in range(1, k):
+    for depth in range(1, k):
         chain = DeviceStep(picks[-1], contexts, step.slots, step.seqs, 1, step.blocks)
         hidden, streams = net.mtp_forward(chain, given, caches, last_hidden_only=False)
-        got, p = pick(hidden)
+        got, p = pick(hidden, depth)
         picks.append(got)
         probs.append(p)
         given, contexts = streams, contexts + 1
+    if sampled is not None:
+        return (torch.stack(picks, dim=1), torch.stack(probs, dim=1), torch.stack(cands, dim=1),
+                torch.stack(dists, dim=1))
     if probability:
         return torch.stack(picks, dim=1), torch.stack(probs, dim=1)
     return torch.stack(picks, dim=1)
@@ -216,14 +231,19 @@ def draft_chain(net, caches, step, given, last, counts, k: int, *, probability: 
 class DraftGraphs(_Rows):
     """The head's draft step: each row's observed positions padded to the verify width `tokens` (k+1) in one launch,
     then the chain of k-1 single-position launches, in one replay (draft_chain). A row reaches tokens+k-1 positions
-    from its context at most (`extent`), and `reach` sizes the buckets for it."""
+    from its context at most (`extent`), and `reach` sizes the buckets for it. `candidates` > 0: the sampled chain
+    (draft_chain `sampled`) -- each row's temperature, top-k, top-p and its k DRAFT uniforms are inputs of the replay
+    (a greedy row passes temperature 0 and draws the argmax), and `run` also returns each row's candidates and the
+    distribution over them."""
 
     def __init__(self, net, caches, max_seqs: int, tokens: int, *, k: int, ceiling: int, memory=None,
-                 detail: bool = False, probability: bool = False):
+                 detail: bool = False, probability: bool = False, candidates: int = 0):
         if not 1 <= k < tokens:
             raise ValueError("the draft graphs chain k >= 1 picks after an observation of up to k+1 positions")
+        if candidates < 0:
+            raise ValueError(f"a sampled draft reads a positive number of candidates, not {candidates}")
         super().__init__(net, caches, max_seqs, tokens, ceiling, reach=tokens + k - 1)
-        self.k, self.probability = k, probability
+        self.k, self.probability, self.candidates = k, probability or candidates > 0, candidates
         F, dev = net.F, caches.device
         width = F.hc * F.hidden
         self._meta_host = torch.empty(5 * max_seqs, dtype=torch.int64, pin_memory=True)
@@ -240,12 +260,17 @@ class DraftGraphs(_Rows):
             torch.add(seqs * t, t - 1, out=last)
             counts.fill_(t)
             given = torch.zeros(n * t, width, dtype=torch.bfloat16, device=dev)
+            sampler = None
+            if candidates:
+                sampler = (torch.zeros(n, dtype=torch.float32, device=dev), torch.zeros(n, dtype=torch.int32, device=dev),
+                           torch.ones(n, dtype=torch.float32, device=dev), torch.zeros(n, k, dtype=torch.float32, device=dev))
             return DeviceStep(torch.zeros(n * t, dtype=torch.int64, device=dev), contexts, slots, seqs, t, blocks), \
-                given, last, counts
+                given, last, counts, sampler
 
         def forward(inputs):
-            step, given, last, counts = inputs
-            return draft_chain(net, caches, step, given, last, counts, k, probability=probability)
+            step, given, last, counts, sampler = inputs
+            return draft_chain(net, caches, step, given, last, counts, k, probability=probability,
+                               sampled=None if sampler is None else (*sampler, candidates))
 
         try:
             self.graphs = DecodeGraphs(forward, make_inputs, self.shapes, memory=memory, label="draft",
@@ -258,9 +283,12 @@ class DraftGraphs(_Rows):
         then the chain's k-1 positions after the observed ones."""
         return max(self.tokens, observed + self.k - 1)
 
-    def run(self, rows):
+    def run(self, rows, sampling=None):
         """rows: (seq, slot, ctx, next ids [m], given streams [m, hc*H]) with 1 <= m <= tokens -> each row's k drafts,
-        and with `probability` (drafts, each draft's probability under the head) -- lists a row."""
+        and with `probability` (drafts, each draft's probability under the head) -- lists a row. With `candidates`:
+        `sampling` a row's (temperature, top_k, top_p, its k DRAFT uniforms) or None (the argmax), and the answer
+        (drafts, probabilities, candidates [n, k, C], distributions [n, k, C]) -- the last two copied off the replay's
+        outputs, which the next replay overwrites."""
         t = self.tokens
         n = len(rows)
         for _seq, _slot, _ctx, next_ids, streams in rows:
@@ -280,13 +308,34 @@ class DraftGraphs(_Rows):
         given = torch.cat(given)
         host_meta, host_ids = self._meta_host[:5 * n].view(5, n), self._ids_host[:n * t]
 
+        settings = None
+        if self.candidates:
+            sampling = [None] * n if sampling is None else list(sampling)
+            if len(sampling) != n:
+                raise ValueError(f"{n} draft rows need {n} sampling settings, not {len(sampling)}")
+            greedy = (0.0, 0, 1.0, [0.0] * self.k)
+            chosen = [greedy if s is None else s for s in sampling]
+            for s in chosen:
+                if len(s[3]) != self.k:
+                    raise ValueError(f"a sampled draft row draws {self.k} uniforms, not {len(s[3])}")
+            settings = (torch.tensor([float(s[0]) for s in chosen], dtype=torch.float32),
+                        torch.tensor([int(s[1]) for s in chosen], dtype=torch.int32),
+                        torch.tensor([float(s[2]) for s in chosen], dtype=torch.float32),
+                        torch.tensor([[float(u) for u in s[3]] for s in chosen], dtype=torch.float32))
+
         def fill(inputs):
-            step, given_in, _last, _counts = inputs
+            step, given_in, _last, _counts, sampler = inputs
             step.ids.copy_(host_ids, non_blocking=True)
             self.metadata[shape].copy_(host_meta, non_blocking=True)
             given_in.copy_(given)
+            if sampler is not None:
+                for into, value in zip(sampler, settings):
+                    into.copy_(value)
 
         out = self.graphs.run(shape, fill)
+        if self.candidates:
+            picks, probs, cand, dist = out
+            return picks.tolist(), probs.tolist(), cand[:n].clone(), dist[:n].clone()
         if self.probability:
             picks, probs = out
             return picks.tolist(), probs.tolist()

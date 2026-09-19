@@ -63,6 +63,7 @@ MTP_WINDOW = (1, 511)
 # every draft
 DRAFT_THRESHOLD = 0.1
 NARROW_ROWS = 2
+DRAFT_CANDIDATES = 20       # the served default top_k (generation_config.json): a sampled draft's whole nucleus
 # rank 0 records what the head observes, the fine-tuning data (MTPInputTap) -- on by the same decision, at most
 # TAP_CAP_GIB under --dump-dir/mtp-inputs, counting what earlier boots left there
 TAP_CAP_GIB = 64.0
@@ -128,7 +129,7 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
           draft_index: "tuple[int, int] | None" = None, mtp_experts: str = "bf16", mtp_experts_dir: "str | None" = None,
           shared_overlap: "bool | str" = False, tap_rows: int = 0, draft_threshold: "float | None" = None,
           draft_ledger=None, narrow_rows: int = 0, mtp_window: "tuple[int, int] | None" = None,
-          mtp_tuned_dir: "str | None" = None):
+          mtp_tuned_dir: "str | None" = None, draft_candidates: int = 0):
     """One rank's engine, admitted, loaded, packed and captured -> (F, net, caches, model, runner). `prelude` (a started
     base/background.Background) is joined in its own row before the capture: the capture is Python dispatch, and a host
     thread still running there would take the GIL from it. `draft_ledger`: a factory of rank 0's ledger (DraftLedger); the
@@ -264,7 +265,8 @@ def build(comm, lanes, ranks_dir, ckpt_meta, *, kv_gib: float, max_seqs: int, re
             ledger = None if draft_ledger is None else (draft_ledger() if comm.rank == 0 else (lambda record: None))
             model, _store = build_model(net, caches, F, eos_ids=eos_ids(Path(ckpt_meta), F.config), max_new=max_new,
                                         temperature=temperature, top_p=float(gen.get("top_p", 1.0)), seed=seed,
-                                        drafter=drafter, draft_threshold=draft_threshold, draft_ledger=ledger)
+                                        drafter=drafter, draft_threshold=draft_threshold, draft_ledger=ledger,
+                                        draft_candidates=draft_candidates)
             k = model.k
             contract = sched.Contract(chunk_align=F.chunk_align, token_budget=TOKEN_BUDGET, draft_slots=k,
                                       max_wait_s=MAX_WAIT_S, max_running=max_seqs,
@@ -538,6 +540,13 @@ def main(argv=None) -> int:
                          "`off` verifies every draft")
     ap.add_argument("--narrow-rows", type=int, default=NARROW_ROWS,
                     help="with --draft-threshold: the row counts whose narrower verify widths are captured (1..N)")
+    ap.add_argument("--draft-candidates", type=int, default=DRAFT_CANDIDATES, metavar="C",
+                    help="a sampled row (temperature > 0, no rich options) draws its drafts from the MTP head's "
+                         "distribution over its C largest logits under the row's own sampler, and the verify step "
+                         "keeps them by block verification (base/sampler.block_verify_batch) -- the target's own "
+                         "distribution out, more drafts kept than the exact match of the head's argmax, which keeps a "
+                         f"draft only where the target's draw lands on it. Default {DRAFT_CANDIDATES}; 0 keeps the "
+                         "argmax and the exact match. A greedy row always does")
     ap.add_argument("--mtp-tuned", default=None, metavar="DIR",
                     help="the MTP head's dense weights from mtp_tune.py's export (mtp-tuned-r{r}of4.safetensors) instead "
                          "of the rank file's: the head fine-tuned on the target's own streams; acceptance moves, output "
@@ -575,9 +584,13 @@ def main(argv=None) -> int:
                          "MTP layer and K > 1 chains it K-1 times inside the draft replay, the verify step K+1 tokens "
                          "wide). --spec-k 1 is the rollback")
     a = ap.parse_args(argv)
-    if (draft_threshold(a.draft_threshold) is not None or a.draft_ledger) and a.draft_index is not None:
-        raise SystemExit("--draft-threshold and --draft-ledger (both on by default) read the head's whole row; "
-                         "--draft-index reads a few of its clusters: pass --draft-threshold off --no-draft-ledger with it")
+    if (draft_threshold(a.draft_threshold) is not None or a.draft_ledger or a.draft_candidates) \
+            and a.draft_index is not None:
+        raise SystemExit("--draft-threshold, --draft-ledger and --draft-candidates (all on by default) read the head's "
+                         "whole row; --draft-index reads a few of its clusters: pass --draft-threshold off "
+                         "--no-draft-ledger --draft-candidates 0 with it")
+    if a.draft_candidates < 0:
+        raise SystemExit(f"--draft-candidates {a.draft_candidates}: a candidate count, or 0 for the argmax drafts")
 
     started = time.perf_counter()
     print(f"  box: {facts.check_box()}", flush=True)       # CUDA is initialised here, on this thread, before any other
@@ -631,7 +644,8 @@ def main(argv=None) -> int:
                                               draft_ledger=partial(DraftLedger, Path(a.dump_dir) / "draft-ledger")
                                               if a.draft_ledger else None,
                                               narrow_rows=a.narrow_rows,
-                                              mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned)
+                                              mtp_window=mtp_window(a.mtp_window), mtp_tuned_dir=a.mtp_tuned,
+                                              draft_candidates=a.draft_candidates)
         if a.tap_mtp_inputs and comm.rank == 0 and model.drafter is not None:
             model.drafter.inputs_tap = MTPInputTap(Path(a.dump_dir) / "mtp-inputs", cap_bytes=int(TAP_CAP_GIB * 2**30))
         if getattr(net, "draft_tap", None) is not None:

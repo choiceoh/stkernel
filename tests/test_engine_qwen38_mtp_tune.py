@@ -117,6 +117,32 @@ class LossTests(unittest.TestCase):
         self.assertTrue(torch.allclose(kl_chunk(h, h, head), torch.zeros(6), atol=1e-6))
         self.assertTrue(bool((kl_chunk(h, torch.randn(6, 8, generator=g), head) > 0).all()))
 
+    def test_the_sampled_rates_are_the_greedy_agreement_at_temperature_zero(self):
+        """`window_loss(sampler=)`: what a served row at a sampler keeps -- at temperature 0 the exact match and the shared
+        mass are the argmax agreement itself; at temperature 1 they are probabilities, and two candidates hold the
+        target's argmax at least as often as one."""
+        from engine.base.composition import State, Step
+        from engine.profiles.qwen38.mtp_tune import Head, window_loss
+        from tests.test_engine_composed import prompt
+        comp, _, cfg, weights = tiny()
+        tokens = prompt(9, 30)
+        with torch.no_grad():
+            _, streams = comp.forward(Step.of([(0, 0, torch.tensor(tokens[:28]))]), State(), logits="all", hidden=True)
+            model = Head(cfg, weights.__getitem__, prefix="model.", dtype=torch.float32)
+            nxt = torch.tensor(tokens[1:29])
+            _, greedy = window_loss(model, streams, nxt, 0, 3, sampler=(0.0, 0, 1.0), candidates=8)
+            for d in (1, 2, 3):
+                self.assertAlmostEqual(greedy[f"exact_{d}"], greedy[f"agree_{d}"], places=6)
+                self.assertAlmostEqual(greedy[f"spec_{d}"], greedy[f"agree_{d}"], places=6)
+                self.assertAlmostEqual(greedy[f"exact_chain_{d}"], greedy[f"chain_{d}"], places=6)
+            self.assertAlmostEqual(greedy["exact_tokens_a_step"], greedy["tokens_a_step"], places=5)
+            _, sampled = window_loss(model, streams, nxt, 0, 3, sampler=(1.0, 0, 1.0), candidates=cfg["vocab_size"])
+            for d in (1, 2, 3):
+                self.assertTrue(0.0 <= sampled[f"exact_{d}"] <= 1.0 and 0.0 <= sampled[f"spec_{d}"] <= 1.0 + 1e-6)
+            self.assertGreaterEqual(sampled["top2_1"], sampled["agree_1"])
+            self.assertAlmostEqual(sampled["spec_tokens_a_step"],
+                                   1.0 + sum(sampled[f"spec_chain_{d}"] for d in (1, 2, 3)), places=6)
+
     def test_the_cut_counts_a_depth_only_where_the_depths_before_it_were_kept(self):
         from engine.profiles.qwen38.mtp_tune import Head, window_loss
         cfg, weights, streams, tokens = self.window()
@@ -277,6 +303,23 @@ class DataTests(unittest.TestCase):
             for streams, tokens, start in windows:
                 self.assertEqual((streams.shape, tokens.shape), ((19, width), (19,)))
                 self.assertTrue(0 <= start <= 42 - 19)
+
+    def test_the_evaluation_takes_every_boot_in_turn(self):
+        """A limit on the held-out windows samples every data set: one window from each boot before a second from any."""
+        import numpy as np
+        from engine.profiles.qwen38.mtp_tune import Runs, build_runs
+        with tempfile.TemporaryDirectory() as d:
+            for boot, n in (("20260919-063523", 3), ("20260919-075000", 1)):
+                meta = [[s, p, 7, 0] for s in range(n) for p in range(40)]
+                np.savez(Path(d) / f"mtp-inputs-{boot}-00000.npz", streams=np.zeros((len(meta), 4), np.int16),
+                         meta=np.array(meta, dtype=np.int64))
+            build_runs(sorted(Path(d).glob("*.npz")), Path(d) / "data", holdout=1.0, min_length=8)
+            runs = Runs(Path(d) / "data", "eval", window=16, depth=3)
+            self.assertEqual(runs.boots(), ["20260919-063523", "20260919-075000"])
+            order = [boot[-6:] for *_rest, boot in runs.every_window()]
+            self.assertEqual(order[:4], ["063523", "075000", "063523", "075000"])
+            self.assertEqual(order.count("075000"), 3)                 # 40 positions: windows at 0, 16, 32
+            self.assertEqual(len(order), 12)
 
     def test_a_slot_id_serving_one_request_after_another_is_two_runs(self):
         """The door's sequence ids are its slots' (the 2026-09-19 window: four ids over 1,441 requests): a record that
