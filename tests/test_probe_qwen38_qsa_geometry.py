@@ -68,8 +68,12 @@ class CaseTable(unittest.TestCase):
         self.assertEqual((p.FIRST_BUCKET, p.MAX_POSITION), (net.FIRST_BUCKET, F.max_position))
         cell = p.QWEN38
         self.assertEqual((cell.width, cell.index_blocks, cell.key_page), (2051, F.index_blocks, F.block // F.idx_ratio))
-        self.assertEqual([r * t for r, t in p.DECODE_STEPS], [2, 4, 8, 16, 32])        # K=1 rows 1..8, K=3 rows 8
-        self.assertTrue(all(t - 1 in (1, 3) for _, t in p.DECODE_STEPS + p.SCORE_STEPS + p.INPUT_STEPS))
+        self.assertEqual([r * t for r, t in p.DECODE_STEPS], [1, 2, 4, 8, 16, 32])    # a draft row; K=1 rows 1..8, K=3 rows 8
+        self.assertTrue(all(t - 1 in (0, 1, 3) for _, t in p.DECODE_STEPS + p.SCORE_STEPS + p.INPUT_STEPS))
+        from engine.kernels import qsa
+        for rows, bucket in p.SCORE_PREFILL_SHAPES:                                    # one scoring call's rows
+            columns = p.bucket_pages(cell, bucket) * cell.key_page
+            self.assertLessEqual(rows, qsa._rows_a_scoring_call(columns, 4))
         self.assertEqual(p.COVERED_ROWS // cell.ratio, cell.index_blocks)              # the longest covered prompt
         self.assertGreater(p.ATTEND_CONTEXT // cell.ratio, 4 * cell.index_blocks)      # a real choice among the blocks
 
@@ -128,12 +132,16 @@ class CaseTable(unittest.TestCase):
         self.assertIn("bf.storage_offset() + (offset + F.block * kv_row) // 2)", source)
         self.assertIn("paged += 2 * F.block * kv_row", source)
 
-    def test_the_rule_s_profiles_are_upstream_s(self):
+    def test_the_rule_s_profiles_are_the_record_s(self):
+        """What the sweep calls today's rule is the table its own record set (qsa._split_profile): every tier is
+        reached by a step of the ladder or an eager arm, so a later run re-judges each against the grid."""
         p = probe()
         self.assertEqual([p.rule_profile(p.QWEN38, r * t) for r, t in p.DECODE_STEPS],
-                         [(16, 64, 4), (16, 64, 4), (16, 64, 4), (16, 32, 4), (64, 8, 2)])
-        self.assertEqual(p.rule_profile(p.QWEN38, p.PREFILL_ROWS), (64, 1, 2))
-        self.assertEqual(p.rule_profile(p.QWEN38, p.COVERED_ROWS), (64, 1, 2))
+                         [(16, 64, 4), (16, 64, 4), (16, 16, 4), (16, 16, 4), (16, 4, 4), (16, 4, 4)])
+        self.assertEqual([p.rule_profile(p.QWEN38, rows) for rows in p.MID_ROWS],
+                         [(16, 4, 4), (16, 4, 4), (16, 1, 4), (16, 1, 4)])
+        self.assertEqual(p.rule_profile(p.QWEN38, p.PREFILL_ROWS), (16, 1, 4))
+        self.assertEqual(p.rule_profile(p.QWEN38, p.COVERED_ROWS), (16, 1, 4))
 
     def test_a_split_grid_clips_to_what_a_width_s_tiles_can_use(self):
         p = probe()
@@ -143,8 +151,19 @@ class CaseTable(unittest.TestCase):
                                 (32, 64, 2), (64, 1, 2), (64, 4, 2), (64, 16, 2), (64, 32, 2), (16, 64, 4), (64, 8, 2)])
         self.assertEqual(len(set(grid)), len(grid))
         full = p.split_grid(cell, p.ATTEND_TILES, p.ATTEND_SPLITS, p.ATTEND_WARPS, [p.WIDE_TILE])
-        self.assertEqual(len(full), 3 * 4 * 4 + 1)
+        self.assertEqual(len(full), (7 + 7 + 6) * 3 + 1)                  # 64-wide tiles: 33 of them, 32 splits at most
         self.assertTrue(all(n <= 64 for n, _, _ in full[:-1]) and full[-1][0] == 128)
+
+    def test_bf16_steps_count_adjacent_values_across_zero(self):
+        p = probe()
+        bits = [0, 1, 0x8001 - 65536, -32768, 0x3F80, 0x3F81, 0xBF80 - 65536]    # +0, the next value, its mirror, -0, 1, ...
+        tiny = torch.tensor(bits, dtype=torch.int16).view(torch.bfloat16)
+        zero, up, down, minus_zero, one, above_one, minus_one = tiny
+        self.assertEqual(p.bf16_steps(torch.stack([zero, up, one]), torch.stack([minus_zero, down, above_one])), (2, 2))
+        self.assertEqual(p.bf16_steps(one[None], one[None]), (0, 0))
+        self.assertEqual(p.bf16_steps(torch.stack([one, zero]), torch.stack([above_one, zero])), (1, 1))
+        self.assertEqual(p.bf16_steps(one[None], minus_one[None])[0], 2 * 0x3F80)
+        self.assertEqual(p.bf16_steps(tiny[:0], tiny[:0]), (0, 0))
 
     def test_a_verdict_names_the_fastest_passing_geometry(self):
         p = probe()
@@ -159,7 +178,6 @@ class CaseTable(unittest.TestCase):
         self.assertNotIn("fastest_launched", tie)
         self.assertEqual(p.verdict(rule, {rule: False}, {}, "us"), dict(rule=[16, 64, 4], passing=0,
                                                                         failing=[[16, 64, 4]]))
-        self.assertEqual(p.ranked({rule: True, fast: True, inexact: False}, timings, "us", 5), [fast, rule])
 
 
 @unittest.skipUnless(KERNELS, "requires torch and triton")
@@ -175,7 +193,7 @@ class HookTests(unittest.TestCase):
     def test_the_hooks_start_unset_and_the_rules_stand(self):
         self.assertEqual(self.unset(), [None] * 5)
         self.assertEqual([self.qsa._score_profile(rows) for rows in (1, 32, 33, 4096)],
-                         [(64, 1, 2), (64, 1, 2), (64, 8, 2), (64, 8, 2)])
+                         [(64, 1, 2), (64, 1, 2), (128, 32, 4), (128, 32, 4)])       # the record's prefill geometry
         self.assertEqual(self.qsa._input_warps(), 4)
         self.assertEqual(self.qsa._split_profile(2, 1, 8, 2051), (16, 129, 64, 4))
 
@@ -304,7 +322,7 @@ class GateTests(unittest.TestCase):
         for arm, row in rows.items():
             with self.subTest(arm=arm):
                 self.assertTrue(row["passed"], row)
-                self.assertTrue(row["gated_exact"])
+                self.assertEqual((row["gated_steps"], row["gated_differ"]), (0, 0))     # the interpreter's exp is numpy's
                 self.assertNotIn("alike", row)
         self.assertEqual(rows[rule]["from_rule"], [0.0, 0.0])
         self.assertTrue(all(0 <= x <= 2 ** -6 for row in rows.values() for x in row["from_rule"]))
@@ -318,7 +336,7 @@ class GateTests(unittest.TestCase):
             rows = p.attention_gate(case, [(16, 1, 4), (32, 2, 2)], rule, sample=torch.tensor([0, 3, 17, 39]))
         for arm, row in rows.items():
             with self.subTest(arm=arm):
-                self.assertTrue(row["passed"] and row["alike"] and row["gated_exact"], row)
+                self.assertTrue(row["passed"] and row["alike"] and row["gated_steps"] <= 1, row)
 
     def test_the_records_layout_is_the_same_launch_and_the_same_bytes(self):
         p, cell = self.p, self.cell
@@ -338,6 +356,7 @@ class GateTests(unittest.TestCase):
             with self.subTest(arm=arm):
                 self.assertTrue(row["passed"] and row["launched"], row)
                 self.assertEqual(row["largest_difference"], 0.0)
+
 
 class LaneRoutingTests(unittest.TestCase):
     def test_kernel_check_routes_the_lane_to_the_probe(self):

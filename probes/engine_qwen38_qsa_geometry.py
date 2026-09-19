@@ -19,12 +19,16 @@ launched by the served layer (carry Q1-Q5 folded them into the launches above), 
 
 Arms -- each geometry forced through the launchers' probe hooks (qsa._SPLIT_PROFILE_OVERRIDE, _SCORE_PROFILE_OVERRIDE,
 _INPUT_WARPS_OVERRIDE, qsa_select._WARPS_OVERRIDE), which keep the rule when None:
-  attend          captured, N = 2..32 rows (C requests x K+1 tokens), every request past the budget: 512 chosen blocks
-                  scattered over its context, the output gate in the final store as served
+  attend          captured, N = 1..32 rows (a draft step's one row; C requests x K+1 tokens), every request past the
+                  budget: 512 chosen blocks scattered over its context, the output gate in the final store as served
   attend_prefill  eager, one request's 4,096 rows deep in a 32K context: the sparse launch
   covered         eager, a fresh prompt's 2,048 rows in runs of four: the covered launch
-  score           captured, N = 2 and 8 rows in runs of K+1 at the 4K / 32K / 256K context buckets
-  score_prefill   eager, 2,048 rows in runs of four at the 32K bucket
+  attend_mid / covered_mid   eager, 64 / 256 / 512 / 1,024 rows -- a short turn, a chunk's tail -- over the decode grid: where
+                  upstream's rule changes tiers (8, 32, 256 and 512 programs), and the two runs before this arm existed
+                  measured nothing between 32 rows and 2,048
+  score           captured, N = 1, 2 and 8 rows in runs of K+1 at the 4K / 32K / 256K context buckets
+  score_prefill   eager, a scoring call's rows in runs of four: 2,048 at the 4K and 32K buckets, 508 at the 256K one
+                  (what the 128 MiB logits workspace holds of its 65,664 columns, in whole runs)
   select          captured, 2 rows, k 512, every context bucket's columns: the one launch against the torch form it
                   replaced, and its warps -- where the two cross is qsa_select.WIDEST
   inputs          captured, N = 2, 8, 32: qsa_index_keys then qsa_inputs
@@ -44,7 +48,10 @@ Gates, before any timing; a geometry that fails one is reported and not timed, a
            (tests/test_engine_qwen38_kernels.SparseAttentionTests') -- of engine/modules/sparse_attention.gqa_sparse over
            the same positions in fp32. A split profile changes where the online softmax rounds, so bytes are not asked
            of it; `from_rule` reports its drift from today's rule's output in the same two measures.
-  gated    the gated store is BF16(attention * sigmoid(gate)) of the same geometry's ungated output, byte for byte.
+  gated    the gated store is BF16(attention * sigmoid(gate)) of the same geometry's ungated output: no element further
+           than the adjacent BF16 value from torch's form, and how many differ at all is reported. Bytes hold at a decode
+           step's rows; over a prefill chunk's 6.3M elements a few land on the other side of a rounding boundary, because
+           the store's sigmoid is Triton's exp and the reference's is torch's (the first GB10 run: today's rule itself).
   alike    the covered launch holds the sparse launch's bytes over the covered ids at the same forced profile (carry Q10's
            claim, which the rule's own profiles are tested for).
   layout   the records layout's output equals the block layout's, byte for byte.
@@ -92,19 +99,22 @@ FIRST_BUCKET, MAX_POSITION = 4096, 262144          # net.FIRST_BUCKET; the check
 BF16_STEP = 2 ** -7
 ORACLE_BAND = (2 * BF16_STEP, BF16_STEP)           # SparseAttentionTests' band: (largest / largest, rms / rms)
 
-DECODE_STEPS = ((1, 2), (2, 2), (4, 2), (8, 2), (8, 4))     # (requests, tokens a request): N = 2, 4, 8, 16, 32
-LADDER_TOP = 5                                     # geometries carried from the N <= 8 sweep to N = 16 and 32
+# (requests, tokens a request): N = 1 -- a draft step at C=1, three of them a step at K=3 -- then 2, 4, 8, 16, 32
+DECODE_STEPS = ((1, 1), (1, 2), (2, 2), (4, 2), (8, 2), (8, 4))
 ATTEND_CONTEXT = 12000                             # past the budget: every row chooses 512 of ~3,000 blocks
-ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS = (16, 32, 64), (1, 4, 16, 64), (1, 2, 4, 8)
+# every power of two of splits: the first full-grid run (1, 4, 16, 64) put each step's best at a different one -- 64
+# at N = 2, 16 at 4 and 8, 4 at 16, 1 at 32 -- so the steps between them are where a rule's tiers fall
+ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS = (16, 32, 64), (1, 2, 4, 8, 16, 32, 64), (2, 4, 8)
 WIDE_TILE = (128, 1, 4)                            # one arm past the widest tile tl.dot compiles (see the docstring)
 PREFILL_ROWS, PREFILL_CONTEXT = 4096, 28000        # a chunk's rows deep in the 32K bucket
 PREFILL_TILES, PREFILL_SPLITS, PREFILL_WARPS = (16, 32, 64), (1, 4), (1, 2, 4, 8)
 COVERED_ROWS = 2048                                # a fresh prompt the budget covers (facts.index_blocks groups)
+MID_ROWS = (64, 256, 512, 1024)                    # eager steps between the ladder and a chunk: the rule's tiers
 ORACLE_ROWS = 48                                   # the rows of an eager arm held to the fp32 oracle
-SCORE_STEPS = ((1, 2), (4, 2))
+SCORE_STEPS = ((1, 1), (1, 2), (4, 2))             # a draft step's one row takes the row kernel, a run the run kernel
 SCORE_BUCKETS = (4096, 32768, 262144)              # context buckets (tokens) of the captured ladder
 SCORE_TILES, SCORE_PROGRAM_TILES, SCORE_WARPS = (64, 128, 256), (1, 4), (1, 2, 4)
-SCORE_PREFILL_ROWS, SCORE_PREFILL_BUCKET = 2048, 32768
+SCORE_PREFILL_SHAPES = ((2048, 4096), (2048, 32768), (508, 262144))   # (rows of a scoring call, context bucket)
 SCORE_PREFILL_TILES, SCORE_PREFILL_PROGRAM_TILES, SCORE_PREFILL_WARPS = (64, 128, 256), (2, 8, 32), (1, 2, 4)
 SELECT_ROWS, SELECT_WARPS = 2, (4, 8, 16)
 INPUT_STEPS, INPUT_WARPS, INPUT_RULE = ((1, 2), (4, 2), (8, 4)), ((1,), (2,), (4,), (8,)), (4,)
@@ -325,6 +335,16 @@ def gated_reference(plain, gate):
     return (plain.float() * torch.sigmoid(gate.float())).to(torch.bfloat16)
 
 
+def bf16_steps(a, b) -> "tuple[int, int]":
+    """(the largest distance in adjacent BF16 values, the elements that differ at all): BF16 bits in value order, +0 and
+    -0 both 0 (probes/engine_qwen38_moe._bf16_order)."""
+    def order(t):
+        bits = t.contiguous().view(torch.int16).to(torch.int32)
+        return torch.where(bits < 0, -32768 - bits, bits)
+    distance = (order(a) - order(b)).abs()
+    return (int(distance.max()), int((distance != 0).sum())) if a.numel() else (0, 0)
+
+
 # -- timing --------------------------------------------------------------------------------------------------------------
 def summary(cold_us, warm_us) -> dict:
     return dict(cold_us=round(statistics.median(cold_us), 2), warm_us=round(statistics.median(warm_us), 2),
@@ -399,11 +419,6 @@ def verdict(rule, passing: dict, timings: dict, metric: str) -> dict:
     return result
 
 
-def ranked(passing: dict, timings: dict, metric: str, top: int) -> list:
-    timed = sorted((timings[arm][metric], arm) for arm in passing if passing[arm] and arm in timings)
-    return [arm for _, arm in timed[:top]]
-
-
 # -- attention arms --------------------------------------------------------------------------------------------------------
 @dataclass
 class Attention:
@@ -468,9 +483,10 @@ def attention_gate(case: Attention, arms, rule, sample=None) -> dict:
             rule_plain = plain
         held = plain if sample is None else plain.index_select(0, sample)
         largest, rms = drift(held, want)
-        gated_exact = bool(torch.equal(gated, gated_reference(plain, case.gate)))
-        passed = largest <= ORACLE_BAND[0] and rms <= ORACLE_BAND[1] and gated_exact and alike is not False
-        rows[arm] = dict(row, passed=passed, largest=round(largest, 6), rms=round(rms, 6), gated_exact=gated_exact,
+        gated_steps, gated_differ = bf16_steps(gated, gated_reference(plain, case.gate))
+        passed = largest <= ORACLE_BAND[0] and rms <= ORACLE_BAND[1] and gated_steps <= 1 and alike is not False
+        rows[arm] = dict(row, passed=passed, largest=round(largest, 6), rms=round(rms, 6), gated_steps=gated_steps,
+                         gated_differ=gated_differ,
                          from_rule=[round(x, 6) for x in drift(plain, rule_plain)],
                          **({} if alike is None else dict(alike=alike)))
         if arm == rule and not passed:
@@ -479,21 +495,19 @@ def attention_gate(case: Attention, arms, rule, sample=None) -> dict:
 
 
 def attend_arm(report, cell: Cell = QWEN38, steps=DECODE_STEPS, grid=None, iterations: int = ITERATIONS,
-               context: int = ATTEND_CONTEXT, top: int = LADDER_TOP) -> dict:
-    """The captured sparse attention over the decode ladder: the whole grid while N <= 8, then the `top` fastest
-    geometries of the widest of those steps (and the rule) at the steps above."""
+               context: int = ATTEND_CONTEXT) -> dict:
+    """The captured sparse attention over the decode ladder, the whole grid at every step: the first GB10 run carried
+    only the N = 8 step's five fastest `cold` geometries up to N = 16 and 32, and they were not the `warm` ones."""
     device = torch.device("cuda")
     generator = torch.Generator().manual_seed(SEED)
     stream = torch.cuda.Stream()
     trash = torch.empty(TRASH_MIB * 2 ** 20, dtype=torch.uint8, device=device)
-    verdicts, carried = {}, None
+    verdicts = {}
     for requests, tokens in steps:
         rows = requests * tokens
         rule = rule_profile(cell, rows)
         arms = (split_grid(cell, ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS, [rule, WIDE_TILE]) if grid is None
                 else list(grid))
-        if rows > 8 and carried is not None:
-            arms = carried
         arms = arms + [rule] if rule not in arms else arms
         case = attention_case(cell, requests, tokens, context, device, generator)
         gates = attention_gate(case, arms, rule)
@@ -509,8 +523,6 @@ def attend_arm(report, cell: Cell = QWEN38, steps=DECODE_STEPS, grid=None, itera
         verdicts[rows] = dict(cold=verdict(rule, passing, timings, "cold_us"),
                               warm=verdict(rule, passing, timings, "warm_us"))
         report("attend_verdict", rows=rows, **verdicts[rows])
-        if rows <= 8:
-            carried = ranked(passing, timings, "cold_us", top)
         del graphs, case
         torch.cuda.empty_cache()
     return verdicts
@@ -693,8 +705,11 @@ def score_arm(report, cell: Cell = QWEN38, steps=SCORE_STEPS, buckets=SCORE_BUCK
     return verdicts
 
 
-def score_prefill_arm(report, cell: Cell = QWEN38, rows: int = SCORE_PREFILL_ROWS, bucket: int = SCORE_PREFILL_BUCKET,
-                      grid=None) -> dict:
+def score_prefill_arm(report, cell: Cell = QWEN38, shapes=SCORE_PREFILL_SHAPES, grid=None) -> dict:
+    return {f"{bucket}x{rows}": score_prefill_case(report, cell, rows, bucket, grid) for rows, bucket in shapes}
+
+
+def score_prefill_case(report, cell: Cell, rows: int, bucket: int, grid=None) -> dict:
     device = torch.device("cuda")
     qsa = _qsa()
     generator = torch.Generator().manual_seed(SEED + rows + bucket)
@@ -878,12 +893,18 @@ def run(output=None):
         prefill = eager_attention_arm(report, "attend_prefill", cell, PREFILL_ROWS, PREFILL_CONTEXT, prefill_grid,
                                       covered=False)
         covered = eager_attention_arm(report, "covered", cell, COVERED_ROWS, 0, prefill_grid, covered=True)
+        mid_grid = split_grid(cell, ATTEND_TILES, ATTEND_SPLITS, ATTEND_WARPS)
+        mid = {rows: dict(sparse=eager_attention_arm(report, "attend_mid", cell, rows, ATTEND_CONTEXT, mid_grid,
+                                                     covered=False),
+                          covered=eager_attention_arm(report, "covered_mid", cell, rows, 0, mid_grid, covered=True))
+               for rows in MID_ROWS}
         score = score_arm(report)
         score_prefill = score_prefill_arm(report)
         select = select_arm(report)
         inputs = inputs_arm(report)
         records = records_arm(report)
     report("summary", attend={str(rows): v for rows, v in attend.items()}, attend_prefill=prefill, covered=covered,
+           mid={str(rows): v for rows, v in mid.items()},
            score=score, score_prefill=score_prefill, select={str(b): v for b, v in select.items()},
            inputs={str(rows): v for rows, v in inputs.items()}, records={str(rows): v for rows, v in records.items()})
     return events
