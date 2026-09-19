@@ -99,6 +99,22 @@ class DraftHeadTests(unittest.TestCase):
             self.assertEqual(tuple(net.draft_logits(h).shape), (20, 200))
             verify.assert_called_once()
 
+    def test_a_pick_is_the_same_with_its_probability(self):
+        from unittest import mock
+        from engine.profiles.qwen38.net import Qwen38Net
+        net = object.__new__(Qwen38Net)
+        net.draft_index, net.draft_tap, net.rank, net.vp = None, None, 0, 10
+        net.comm = mock.Mock(all_reduce_max=lambda t: t, all_gather=lambda t, dim: t)
+        logits = torch.zeros(2, 10)
+        logits[0, 7], logits[1, 2] = 3.0, 3.0
+        with mock.patch.object(Qwen38Net, "draft_logits", return_value=logits) as draft:
+            picks = net.draft_tokens(torch.zeros(2, 4))
+            same, probs = net.draft_tokens(torch.zeros(2, 4), probability=True)
+        self.assertEqual(picks.tolist(), [7, 2])
+        self.assertEqual(same.tolist(), [7, 2])
+        self.assertEqual(draft.call_count, 2)                     # both paths read the drafter's head, not the verify step's
+        self.assertTrue(torch.all(probs > 0.5))
+
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available() and importlib.util.find_spec("deep_gemm")
                      is not None, "a GPU with deep_gemm")
