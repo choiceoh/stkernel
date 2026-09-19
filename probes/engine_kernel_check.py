@@ -215,6 +215,12 @@ def main():
         from probes.engine_qwen38_qualify_soak import REPEATS, run as qwen38_qualify_soak
         qwen38_qualify_soak(args.output, repeats=int((args.lanes.split(':')[1:] or [REPEATS])[0]))
         return
+    if args.lanes == 'qwen38_prefill' or args.lanes.startswith('qwen38_prefill:'):
+        # component census: a prefill chunk's wall, device and host time by kernel family, solved from four small
+        # nets of the rank file's own weights (--ranks); `:N` sets the chunk's tokens
+        from probes.engine_qwen38_prefill import CHUNK, run as qwen38_prefill
+        qwen38_prefill(args.output, args.ranks, chunk=int((args.lanes.split(':')[1:] or [CHUNK])[0]))
+        return
     if args.lanes == 'select_rows':
         # a captured step's joined C=2 indexer selection against its per-row control, then bounded timings
         from probes.engine_decode_select_rows import run as select_rows_check
