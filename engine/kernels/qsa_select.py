@@ -70,11 +70,17 @@ def _select_rows(Logits, Visible, Out, sL, sO, COLUMNS, K: tl.constexpr, KB: tl.
 
 WIDEST = 32768                  # columns one program's threads still beat the torch form at (the module docstring)
 
+# Probe hooks (probes/engine_qwen38_qsa_geometry.py, carry Q9: where the launch and the torch form cross on a GB10, and
+# at which warps): forced when set, the rule when None. Nothing served sets them.
+_WIDEST_OVERRIDE = None         # the columns `admits` takes, in WIDEST's place
+_WARPS_OVERRIDE = None          # (warps,) of the launch
+
 
 def admits(logits: torch.Tensor, block_topk: int) -> bool:
     """Whether `select` serves these logits: CUDA FP32 rows with packed columns, no wider than one program pays for."""
     return (logits.is_cuda and logits.dtype == torch.float32 and logits.ndim == 2 and logits.stride(1) == 1
-            and 0 < logits.shape[1] <= WIDEST and 0 < block_topk <= (1 << 16))
+            and 0 < logits.shape[1] <= (WIDEST if _WIDEST_OVERRIDE is None else _WIDEST_OVERRIDE)
+            and 0 < block_topk <= (1 << 16))
 
 
 def select(logits: torch.Tensor, visible_blocks: torch.Tensor, block_topk: int, out: torch.Tensor) -> torch.Tensor:
@@ -92,9 +98,14 @@ def select(logits: torch.Tensor, visible_blocks: torch.Tensor, block_topk: int, 
         raise ValueError("block selection writes int32 [rows, block_topk] with packed columns")
     if rows:
         block = triton.next_power_of_2(columns)
+        warps = 8 if block >= 4096 else 4
+        if _WARPS_OVERRIDE is not None:
+            forced = _WARPS_OVERRIDE
+            if type(forced) is not tuple or len(forced) != 1 or type(forced[0]) is not int or forced[0] <= 0                     or forced[0] & (forced[0] - 1):
+                raise ValueError("_WARPS_OVERRIDE is (warps,), a power of two")
+            warps = forced[0]
         _select_rows[(rows,)](logits, visible_blocks, out, logits.stride(0), out.stride(0), columns, K=block_topk,
-                              KB=triton.next_power_of_2(block_topk), BLOCK=block,
-                              num_warps=8 if block >= 4096 else 4)
+                              KB=triton.next_power_of_2(block_topk), BLOCK=block, num_warps=warps)
     return out
 
 
