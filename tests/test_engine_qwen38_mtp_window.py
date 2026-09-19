@@ -17,8 +17,10 @@ import types
 import unittest
 from types import SimpleNamespace
 
-from tests.test_engine_qwen38_kernels import (DEVICE, INTERPRET, RUNS, RUNS_REASON, W, Held, BF16_STEP, block_table,
-                                              generator, host_meta, paged, randn, served_kernels, torch)
+from unittest import mock
+
+from tests.test_engine_qwen38_kernels import (DEVICE, INTERPRET, RUNS, RUNS_REASON, W, Held, BF16_STEP, Launches,
+                                              block_table, generator, host_meta, paged, randn, served_kernels, torch)
 
 
 def expected(seen: int, width: int, sink: int, recent: int) -> "list[int]":
@@ -159,11 +161,47 @@ class ProbeTests(unittest.TestCase):
                 self.assertEqual(arm, f"window-{window[1]}")
                 self.assertTrue(window[0] >= 0 and window[1] > 0 and sum(window) <= 512)
 
+    def test_the_saving_is_the_scored_head_less_each_window_per_bucket(self):
+        from probes.engine_qwen38_mtp_window import saving
+        arm = lambda wall, dev, launches, qsa: {"wall_us": wall, "device_us": dev, "launches": launches, "qsa_us": qsa}
+        report = {"arms": {"scored": None, "window-511": (1, 511)},
+                  "buckets": {"6": {"context": 4601, "scored": arm(7000.0, 6900.0, 127.0, 170.0),
+                                    "window-511": arm(6900.5, 6850.0, 124.0, 90.0)}}}
+        self.assertEqual(saving(report), {"6": {"context": 4601, "window-511": {"wall_us": 99.5, "device_us": 50.0,
+                                                                                "launches": 3.0, "qsa_us": 80.0}}})
+
+    def test_the_arms_are_captured_from_one_net_and_replayed_in_turns(self):
+        from pathlib import Path
+        source = (Path(__file__).resolve().parents[1] / "probes/engine_qwen38_mtp_window.py").read_text()
+        self.assertIn("net.mtp_window = ARMS[arm]", source)
+        self.assertIn("for arm in (arms if turn % 2 == 0 else tuple(reversed(arms))):", source)
+
     def test_the_kernel_check_dispatches_the_lane(self):
         from pathlib import Path
         source = (Path(__file__).resolve().parents[1] / "probes/engine_kernel_check.py").read_text()
         self.assertIn("args.lanes == 'qwen38_mtp_window'", source)
         self.assertIn("from probes.engine_qwen38_mtp_window import run", source)
+
+
+@unittest.skipUnless(RUNS, RUNS_REASON)
+class WindowKernelTests(unittest.TestCase):
+    """kernels/qsa_window: the ids in one launch a step, byte for byte the torch form's."""
+
+    def test_one_launch_writes_what_the_torch_form_does(self):
+        from engine.kernels import qsa_window
+        from engine.modules.prefill_indexer import window_pool_ids
+        g = torch.Generator().manual_seed(9)
+        positions = torch.cat([torch.arange(0, 12), torch.randint(0, 5000, (40,), generator=g)]).to(torch.int32)
+        launches = Launches(qsa_window._window_rows)
+        cases = ((16, 1, 15), (16, 1, 5), (16, 0, 6), (512, 1, 511), (512, 1, 127))
+        for width, sink, recent in cases:
+            with served_kernels(), mock.patch.object(qsa_window, "_window_rows", launches):
+                got = qsa_window.window_ids(positions.to(DEVICE), 4, width, sink, recent)
+            want = window_pool_ids((positions + 1) // 4, width, sink, recent)
+            with self.subTest(width=width, sink=sink, recent=recent):
+                self.assertEqual(got.dtype, torch.int32)
+                self.assertTrue(torch.equal(got.cpu(), want))
+        self.assertEqual(launches.grids, [(len(positions),)] * len(cases))
 
 
 @unittest.skipUnless(RUNS, RUNS_REASON)

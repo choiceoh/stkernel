@@ -687,12 +687,10 @@ class Qwen38Net:
 
     def _window_blocks(self, meta: StepMeta, window) -> torch.Tensor:
         """The groups a windowed head attends (`mtp_window`): the first `sink` and the last `recent` complete groups
-        each row sees, or all of them while they fit -- modules/prefill_indexer.window_pool_ids, no score read."""
-        F = self.F
-        if meta.groups_seen is None:
-            meta.groups_seen = (meta.positions32 + 1) // F.idx_ratio
-        from engine.modules.prefill_indexer import window_pool_ids
-        return window_pool_ids(meta.groups_seen, F.index_blocks, *window)
+        each row sees, or all of them while they fit -- modules/prefill_indexer.window_pool_ids, no score read; one
+        launch on the device (kernels/qsa_window)."""
+        from engine.kernels.qsa_window import window_ids
+        return window_ids(meta.positions32, self.F.idx_ratio, self.F.index_blocks, *window)
 
     def _qsa(self, L: int, x: torch.Tensor, step: Step, meta: StepMeta, caches, *, prefix=None, cache_layer=None,
              window=None):
