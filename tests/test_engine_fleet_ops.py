@@ -650,6 +650,14 @@ class QwenProductionLaunchTests(LaunchHarness):
         ranks = Path(self.env["RANKS_DIR"])
         for name in ("config.json", "tokenizer.json"):
             (ranks / name).write_text("{}")
+        # The served default is the MTP head's ORIGINAL BF16 experts (facts/#1235), which live in side files beside
+        # the rank files -- and the launcher refuses to start a rank whose file is missing. The fake ssh runs the
+        # check on this box, so point it at a directory this test owns instead of the fleet's absolute path.
+        experts = self.home / "mtp-bf16"
+        experts.mkdir(parents=True, exist_ok=True)
+        for rank in range(4):
+            (experts / f"mtp-bf16-r{rank}of4.safetensors").write_bytes(b"x")
+        self.env["ST_MTP_EXPERTS_DIR"] = str(experts)
 
     def test_a_window_still_may_not_rsync_over_production_s_tree(self):
         result = self.run_script("start-st-qwen38.sh")          # the harness's own boots are a session's
