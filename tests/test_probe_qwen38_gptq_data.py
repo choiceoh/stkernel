@@ -71,6 +71,15 @@ class SplitTests(unittest.TestCase):
 
 
 class CollectionTests(unittest.TestCase):
+    def test_nested_rank_scoring_requires_the_inherited_verified_owner(self):
+        from probes.qwen38_gptq_score import verify_gpu_owner
+        args = SimpleNamespace(device="cuda", parent_verified=True, owner="session/ours")
+        with mock.patch.dict("os.environ", {"ST_LEASE_OWNER": "session/ours"}):
+            verify_gpu_owner(args)
+        with mock.patch.dict("os.environ", {"ST_LEASE_OWNER": "session/another"}):
+            with self.assertRaisesRegex(RuntimeError, "verified parent's"):
+                verify_gpu_owner(args)
+
     def test_other_fleet_owner_prevents_every_http_request(self):
         with tempfile.TemporaryDirectory() as root:
             root = Path(root)

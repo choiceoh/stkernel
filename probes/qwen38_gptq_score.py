@@ -10,8 +10,24 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import statistics
+
+
+def verify_gpu_owner(args):
+    from probes.qwen38_gptq_feed import verify_owner
+    if args.device != "cuda":
+        return
+    if args.parent_verified:
+        # Like run_engine_probe.sh's nested mode: the head owns and verifies
+        # the single central lease, then keeps it until all rank jobs finish.
+        # Peer nodes do not have a second copy of that lease file.
+        if (not args.owner.startswith(("session/", "queue/"))
+                or os.environ.get("ST_LEASE_OWNER") != args.owner):
+            raise RuntimeError("nested scoring must inherit its verified parent's fleet owner")
+    else:
+        verify_owner(args.lease, args.owner)
 
 
 def output_error(weight, quantized, hessian, chunk=128):
@@ -38,9 +54,9 @@ def score(args):
     from safetensors import safe_open
     from engine.profiles.qwen38.net import HEAD_NAME
     from engine.kernels.dense.packing import fp8_rtn, mk_w4_dequant, FP8_BLOCK
-    from probes.qwen38_gptq_feed import verify_owner
-    if args.device == "cuda":
-        verify_owner(args.lease, args.owner)
+    if args.fit.resolve() == args.heldout.resolve():
+        raise ValueError("held-out scoring requires a separate statistics store")
+    verify_gpu_owner(args)
     torch.set_num_threads(2)
     report = json.loads(args.audit.read_bytes())
     if not report["serving_gptq_verified"]:
@@ -60,8 +76,7 @@ def score(args):
     rows = []
     with safe_open(str(args.weights), framework="pt", device="cpu") as weights:
         for name, row in sorted(records.items()):
-            if args.device == "cuda":
-                verify_owner(args.lease, args.owner)
+            verify_gpu_owner(args)
             raw = weights.get_tensor(row["key"])
             weight = torch.nn.functional.pad(raw, (0, row["width"] - raw.shape[1]))
             weight_sha = hashlib.sha256(weight.contiguous().view(torch.uint8).numpy()).hexdigest()
@@ -116,6 +131,8 @@ def main():
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     ap.add_argument("--owner", default="")
+    ap.add_argument("--parent-verified", action="store_true",
+                    help="nested fleet job: head caller verifies and retains the central lease until this job exits")
     ap.add_argument("--lease", type=Path, default=Path("/home/choiceoh/glm53-logs/st-fleet.lock"))
     score(ap.parse_args())
 

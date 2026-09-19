@@ -9,6 +9,8 @@ TREE=$(cd "$(dirname "$0")/../.." && pwd)
 OWNER=session/q38gptq-0919
 LOCK=/home/choiceoh/glm53-logs/st-fleet.lock
 OUT=/home/choiceoh/glm53-logs/qwen38-gptq-20260919
+# Keep the failed first scoring attempt beside (not underneath) the final run.
+if [ "$MODE" = compare ]; then OUT=$OUT/compare; fi
 PRIVATE=/home/choiceoh/st-calibration-private/qwen38-gptq-20260919
 PACK=/cache/qwen38-gptq-20260919
 export PORT=8001 ST_ENGINE_DIR=/home/choiceoh/st-engine-qwen38-gptq-4436
@@ -165,14 +167,16 @@ compare() {
       echo "== actual GPTQ packs verified; held-out projection scoring $(date -Is)"
       jobs=()
       for r in 0 1 2 3; do
+        lease verify --owner "$OWNER" >/dev/null
         ip=${NODES[$r]}
         node "$ip" "docker exec -e PYTHONPATH=/repo:$OUT/tools st-qwen38 python3 -m probes.qwen38_gptq_score \
           --fit '$PACK/fit' --heldout '$PACK/heldout' --weights /home/choiceoh/models/st-qwen38-tep4/rank${r}of4.safetensors \
-          --audit '$OUT/Bpack-audit-rank$r.json' --out '$OUT/projection-rank$r.json' --device cuda --owner '$OWNER'" \
+          --audit '$OUT/Bpack-audit-rank$r.json' --out '$OUT/projection-rank$r.json' --device cuda --owner '$OWNER' --parent-verified" \
           > "$OUT/projection-rank$r.log" 2>&1 &
         jobs+=("$!")
       done
       failed=0; for pid in "${jobs[@]}"; do wait "$pid" || failed=1; done
+      lease verify --owner "$OWNER" >/dev/null
       [ "$failed" = 0 ] || { echo 'held-out projection scoring failed' >&2; return 1; }
       bash launchers/start-st-qwen38.sh stop >> "$OUT/stop.log" 2>&1
       continue
