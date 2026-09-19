@@ -35,6 +35,99 @@ def indexer_logits(q: torch.Tensor, k: torch.Tensor, weights: torch.Tensor) -> t
     return torch.einsum("mhn,mh->mn", s, weights.float())
 
 
+def ced_compress(x: torch.Tensor, wkv: torch.Tensor, wgate: "torch.Tensor | None", norm_weight: torch.Tensor, *,
+                 ratio: int, eps: float, tail: "tuple[torch.Tensor, torch.Tensor] | None" = None):
+    """DSv4.1's CED compressor: `ratio` positions pooled into one key -> (keys [G, D], tail | None).
+
+    `x` [T, H] are the layer's inputs; `wkv` [D, H] and `wgate` [D, H] the checkpoint's projections; the returned tail
+    is the (kv, score) rows of an incomplete group, fp32, to hand back as `tail` on the next call. Four things about
+    it are load-bearing, and each is a way a caller gets plausible numbers that are wrong (the retired overlay's
+    `dsv41_compressor.py`, git history at 11c779a^, whose probe held it bit-identical to the vendor class):
+
+      a group that is not full yields nothing.  At ratio 2 a decode step produces a key only every other step. A cache
+        written as if every step produced one keeps the wrong history by a factor of `ratio`.
+      ratio 1 is a different path, not a special case.  No gate, no fp32, no state -- the reference builds `wgate`
+        only above ratio 1 (which is why the decoder's layers have none).
+      the pooling is fp32.  Above ratio 1 the projections are promoted (a load step: the checkpoint stores bf16) and
+        the per-channel softmax over the group's slots runs in fp32. In bf16 it is a different pooling weight for
+        every group.
+      it is pre-RoPE on purpose.  The indexer needs the unrotated key; the rotation happens in attention afterwards.
+        Rotating here is invisible to any shape check and wrong in every score.
+
+    The norm is the vendor's order -- fp32 through the weight, rounded once at the end -- which is NOT
+    modules/norm.rmsnorm's (that rounds before the weight, T5's order). They differ in the last bit.
+    """
+    if ratio < 1:
+        raise ValueError(f"a compress ratio is at least 1, not {ratio}")
+    dtype = x.dtype
+
+    def rms(v: torch.Tensor) -> torch.Tensor:
+        f = v.float()
+        return (f * torch.rsqrt(f.pow(2).mean(-1, keepdim=True) + eps) * norm_weight.float()).to(dtype)
+
+    if ratio == 1:
+        if tail is not None:
+            raise ValueError("ratio 1 pools nothing, so it carries no tail")
+        return rms(torch.nn.functional.linear(x, wkv.to(dtype))), None
+    if wgate is None:
+        raise ValueError("above ratio 1 the pooling is gated: wgate is the reference's second projection")
+    xf = x.float()
+    kv = torch.nn.functional.linear(xf, wkv.float())
+    score = torch.nn.functional.linear(xf, wgate.float())
+    if tail is not None:
+        kv = torch.cat([tail[0].float(), kv])
+        score = torch.cat([tail[1].float(), score])
+    rows = kv.shape[0]
+    cut = rows - rows % ratio
+    kept = (kv[cut:], score[cut:]) if cut < rows else None
+    if not cut:
+        return torch.zeros(0, kv.shape[-1], dtype=dtype, device=x.device), kept
+    groups = (kv[:cut].unflatten(0, (-1, ratio)) * score[:cut].unflatten(0, (-1, ratio)).softmax(dim=1)).sum(dim=1)
+    return rms(groups.to(dtype)), kept
+
+
+def ced_candidate_blocks(logits: torch.Tensor, lengths, *, topk_blocks: int, block_size: int, mask: bool = False):
+    """DSv4.1's candidate stage: the `topk_blocks` best blocks of `block_size` compressed positions, as int32 ids.
+
+    `logits` [..., queries, positions] carry the reference's causal -inf mask already; `lengths` is a scalar or
+    broadcasts to [..., queries, 1] (how many positions each query sees). Returns ids [..., queries, C] ascending and
+    -1 padded, C = min(positions, topk_blocks * block_size); with `mask`, also the dense block mask from the SAME
+    selection -- taking it from a second one would let equal block scores choose differently on the two sides.
+
+    Exactly pad -> amax -> the newest block forced in -> `torch.topk`, the retired overlay's `dsv41_indexer.py`
+    (git history at 11c779a^). This narrows the domain; it does NOT replace the final top-k over the candidates
+    (`topk_positions`), whose handling of ties is the reference's.
+    """
+    if logits.ndim < 2 or not logits.is_floating_point():
+        raise ValueError("logits are floating [..., queries, positions]")
+    if block_size < 1 or topk_blocks < 1:
+        raise ValueError("a candidate stage takes whole blocks and at least one of them")
+    width = logits.shape[-1]
+    if isinstance(lengths, int):
+        lengths = torch.full((*logits.shape[:-1], 1), lengths, dtype=torch.int64, device=logits.device)
+    else:
+        lengths = torch.broadcast_to(lengths.to(torch.int64), (*logits.shape[:-1], 1))
+    if not width:
+        ids = torch.empty_like(logits, dtype=torch.int32)
+        return (ids, torch.empty_like(logits, dtype=torch.bool)) if mask else ids
+    scores = torch.nn.functional.pad(logits, (0, -width % block_size), value=float("-inf"))
+    scores = scores.unflatten(-1, (-1, block_size)).amax(dim=-1)
+    blocks = scores.shape[-1]
+    newest = (lengths - 1) // block_size
+    scores = scores.masked_fill(torch.arange(blocks, device=logits.device) == newest, float("inf"))
+    top = scores.topk(min(topk_blocks, blocks), dim=-1)
+    reachable = top.values > float("-inf")                     # a block of masked positions is not a candidate
+    positions = top.indices.unsqueeze(-1) * block_size + torch.arange(block_size, device=logits.device)
+    keep = reachable.unsqueeze(-1) & (positions < width)
+    positions = positions.masked_fill(~keep, width).flatten(-2).sort(dim=-1).values
+    ids = positions[..., :min(width, topk_blocks * block_size)]
+    ids = ids.masked_fill(ids == width, -1).to(torch.int32).contiguous()
+    if not mask:
+        return ids
+    dense = torch.zeros_like(scores, dtype=torch.bool).scatter_(-1, top.indices, reachable)
+    return ids, dense.repeat_interleave(block_size, dim=-1)[..., :width]
+
+
 def tail_pin_pools(seq_lens: torch.Tensor, pool_size: int) -> torch.Tensor:
     """The pool each row must keep out of the top-k competition, or -1.
 
