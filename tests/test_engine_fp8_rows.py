@@ -51,10 +51,9 @@ class RoutingTests(unittest.TestCase):
         users = [p for p in (root / "engine").rglob("*.py") if "decode_rows=True" in p.read_text(encoding="utf-8")]
         self.assertEqual([p.relative_to(root).as_posix() for p in users], ["engine/profiles/qwen38/net.py"])
 
-    def test_the_tile_follows_the_rows(self):
-        from engine.kernels.dense.fp8_rows import tile
-        self.assertEqual(tile(1)[0], 128)
-        self.assertEqual({tile(r)[0] for r in (2, 4, 8, 16)}, {32})
+    def test_one_tile_for_every_decode_row_count(self):
+        from engine.kernels.dense.fp8_rows import MAX_ROWS, tile
+        self.assertEqual({tile(r) for r in range(1, MAX_ROWS + 1)}, {(32, 4, 4)})
 
 
 @unittest.skipUnless(torch is not None and torch.cuda.is_available() and importlib.util.find_spec("deep_gemm")

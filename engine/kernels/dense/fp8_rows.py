@@ -7,9 +7,10 @@ program owning BLOCK_N weight rows over the whole K. The inputs and scales are d
 FP32 sums differs, so an output moves by a BF16 step at most.
 
 Qwen3.8's vocabulary head is the shape it is for: 62,080 x 2,560 a rank, 159 MB, read once by the verify step and once
-by each of a K=3 draft chain's three steps. On a GB10 beside production (probes/engine_qwen38_head, q38head-0919b)
-deep_gemm's sm120 GEMM took 949-1013 us for 1-16 rows (157-168 GB/s); this kernel 742-836 us, within 0-12% of a pure
-read of the same bytes (695-747 us); max difference from deep_gemm 0.0037 of the largest logit, argmax identical.
+by each of a K=3 draft chain's three steps. On a GB10 with production idle beside it (probes/engine_qwen38_head,
+q38head-0919c, 1/2/4/8/16 rows) deep_gemm's call -- its sm120 GEMM and the scale conversions it runs every call -- took
+873-893 us (178-182 GB/s); this kernel at its tile 688-709 us, 3-5% over a pure read of the same bytes (669-673 us);
+max difference from deep_gemm 0.0037 of the largest logit, argmax identical on every row.
 """
 from __future__ import annotations
 
@@ -21,8 +22,9 @@ MAX_ROWS = 16
 
 
 def tile(rows: int) -> "tuple[int, int, int]":
-    """(BLOCK_N, warps, stages) for `rows` rows: 128 weight rows a program for one row, 32 above (q38head-0919b)."""
-    return (128, 4, 3) if rows == 1 else (32, 4, 3)
+    """(BLOCK_N, warps, stages): 32 weight rows a program, four stages in flight -- the fastest of five tiles at every
+    row count from 1 to 16 (q38head-0919c; the others 1-5% behind)."""
+    return (32, 4, 4)
 
 
 @triton.jit
