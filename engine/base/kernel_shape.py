@@ -4,8 +4,8 @@ the profile and read by the kernels -- so a lane is bound to a SHAPE, not to a m
 Until 2026-09-13 the kernel package spelled GLM-5.3's geometry in its own source: the MoE
 admission gate compared against (288, 4096, 512, 8), the one-shot transport checked
 `shape[1] != 4096`, the MK mHC wrapper sized its workspace for hc 4 x hidden 4096, the draft
-kernels refused any head but 128. Those numbers are one model's, and a second profile (CHARTER
-D5: Qwen3.8-Flash-Next) could not reach the same kernels without editing them. This module is
+kernels refused any head but 128. Those numbers are one model's, and a second profile
+(Qwen3.8-Flash-Next) could not reach the same kernels without editing them. This module is
 the seam: a profile derives a `KernelShape` from its facts, `bind()`s it at boot, and each lane
 reads `bound()` instead of a literal.
 
