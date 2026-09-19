@@ -146,6 +146,17 @@ class CaseTable(unittest.TestCase):
         self.assertEqual(len(full), 3 * 4 * 4 + 1)
         self.assertTrue(all(n <= 64 for n, _, _ in full[:-1]) and full[-1][0] == 128)
 
+    def test_bf16_steps_count_adjacent_values_across_zero(self):
+        p = probe()
+        bits = [0, 1, 0x8001 - 65536, -32768, 0x3F80, 0x3F81, 0xBF80 - 65536]    # +0, the next value, its mirror, -0, 1, ...
+        tiny = torch.tensor(bits, dtype=torch.int16).view(torch.bfloat16)
+        zero, up, down, minus_zero, one, above_one, minus_one = tiny
+        self.assertEqual(p.bf16_steps(torch.stack([zero, up, one]), torch.stack([minus_zero, down, above_one])), (2, 2))
+        self.assertEqual(p.bf16_steps(one[None], one[None]), (0, 0))
+        self.assertEqual(p.bf16_steps(torch.stack([one, zero]), torch.stack([above_one, zero])), (1, 1))
+        self.assertEqual(p.bf16_steps(one[None], minus_one[None])[0], 2 * 0x3F80)
+        self.assertEqual(p.bf16_steps(tiny[:0], tiny[:0]), (0, 0))
+
     def test_a_verdict_names_the_fastest_passing_geometry(self):
         p = probe()
         rule, fast, inexact = (16, 64, 4), (64, 1, 2), (32, 4, 2)
@@ -304,7 +315,7 @@ class GateTests(unittest.TestCase):
         for arm, row in rows.items():
             with self.subTest(arm=arm):
                 self.assertTrue(row["passed"], row)
-                self.assertTrue(row["gated_exact"])
+                self.assertEqual((row["gated_steps"], row["gated_differ"]), (0, 0))     # the interpreter's exp is numpy's
                 self.assertNotIn("alike", row)
         self.assertEqual(rows[rule]["from_rule"], [0.0, 0.0])
         self.assertTrue(all(0 <= x <= 2 ** -6 for row in rows.values() for x in row["from_rule"]))
@@ -318,7 +329,7 @@ class GateTests(unittest.TestCase):
             rows = p.attention_gate(case, [(16, 1, 4), (32, 2, 2)], rule, sample=torch.tensor([0, 3, 17, 39]))
         for arm, row in rows.items():
             with self.subTest(arm=arm):
-                self.assertTrue(row["passed"] and row["alike"] and row["gated_exact"], row)
+                self.assertTrue(row["passed"] and row["alike"] and row["gated_steps"] <= 1, row)
 
     def test_the_records_layout_is_the_same_launch_and_the_same_bytes(self):
         p, cell = self.p, self.cell

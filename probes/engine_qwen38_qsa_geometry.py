@@ -44,7 +44,10 @@ Gates, before any timing; a geometry that fails one is reported and not timed, a
            (tests/test_engine_qwen38_kernels.SparseAttentionTests') -- of engine/modules/sparse_attention.gqa_sparse over
            the same positions in fp32. A split profile changes where the online softmax rounds, so bytes are not asked
            of it; `from_rule` reports its drift from today's rule's output in the same two measures.
-  gated    the gated store is BF16(attention * sigmoid(gate)) of the same geometry's ungated output, byte for byte.
+  gated    the gated store is BF16(attention * sigmoid(gate)) of the same geometry's ungated output: no element further
+           than the adjacent BF16 value from torch's form, and how many differ at all is reported. Bytes hold at a decode
+           step's rows; over a prefill chunk's 6.3M elements a few land on the other side of a rounding boundary, because
+           the store's sigmoid is Triton's exp and the reference's is torch's (the first GB10 run: today's rule itself).
   alike    the covered launch holds the sparse launch's bytes over the covered ids at the same forced profile (carry Q10's
            claim, which the rule's own profiles are tested for).
   layout   the records layout's output equals the block layout's, byte for byte.
@@ -325,6 +328,16 @@ def gated_reference(plain, gate):
     return (plain.float() * torch.sigmoid(gate.float())).to(torch.bfloat16)
 
 
+def bf16_steps(a, b) -> "tuple[int, int]":
+    """(the largest distance in adjacent BF16 values, the elements that differ at all): BF16 bits in value order, +0 and
+    -0 both 0 (probes/engine_qwen38_moe._bf16_order)."""
+    def order(t):
+        bits = t.contiguous().view(torch.int16).to(torch.int32)
+        return torch.where(bits < 0, -32768 - bits, bits)
+    distance = (order(a) - order(b)).abs()
+    return (int(distance.max()), int((distance != 0).sum())) if a.numel() else (0, 0)
+
+
 # -- timing --------------------------------------------------------------------------------------------------------------
 def summary(cold_us, warm_us) -> dict:
     return dict(cold_us=round(statistics.median(cold_us), 2), warm_us=round(statistics.median(warm_us), 2),
@@ -468,9 +481,10 @@ def attention_gate(case: Attention, arms, rule, sample=None) -> dict:
             rule_plain = plain
         held = plain if sample is None else plain.index_select(0, sample)
         largest, rms = drift(held, want)
-        gated_exact = bool(torch.equal(gated, gated_reference(plain, case.gate)))
-        passed = largest <= ORACLE_BAND[0] and rms <= ORACLE_BAND[1] and gated_exact and alike is not False
-        rows[arm] = dict(row, passed=passed, largest=round(largest, 6), rms=round(rms, 6), gated_exact=gated_exact,
+        gated_steps, gated_differ = bf16_steps(gated, gated_reference(plain, case.gate))
+        passed = largest <= ORACLE_BAND[0] and rms <= ORACLE_BAND[1] and gated_steps <= 1 and alike is not False
+        rows[arm] = dict(row, passed=passed, largest=round(largest, 6), rms=round(rms, 6), gated_steps=gated_steps,
+                         gated_differ=gated_differ,
                          from_rule=[round(x, 6) for x in drift(plain, rule_plain)],
                          **({} if alike is None else dict(alike=alike)))
         if arm == rule and not passed:
