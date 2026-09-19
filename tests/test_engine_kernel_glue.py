@@ -516,9 +516,11 @@ class DenseGlueTests(unittest.TestCase):
         from engine.kernels import dense
         seen = {}
 
-        def init(layer, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None):
+        def init(layer, weight, *, prefill=True, hessians=None, store=None, name=None, smooth=None,
+                 decode_precision="w4", fp8_decode_rows=False):
             layer.rows, layer.cols, layer.weight, layer.observer = *weight.shape, weight, None
             seen["smooth"] = smooth
+            seen["decode"] = (decode_precision, fp8_decode_rows)     # the padded layer hands its parent both (#1226)
 
         def call(layer, x, rows_ok=None, *, observe=True):
             if x.shape[-1] != layer.cols:
