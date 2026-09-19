@@ -442,15 +442,34 @@ class Runs:
             at = rng.randrange(0, run["length"] - span + 1)
             yield streams[at:at + span], tokens[at:at + span], run["start"] + at
 
+    def boots(self) -> "list[str]":
+        """The boots the runs came from, in the order their first run appears -- every rank the same list."""
+        return list(dict.fromkeys(run["boot"] for run in self.runs))
+
     def every_window(self):
-        """Each run cut into consecutive windows (evaluation)."""
-        for run in self.runs:
-            streams, tokens = self._load(run)
-            span = self.window + self.depth
-            for at in range(0, max(1, run["length"] - self.depth), self.window):
-                piece = slice(at, min(at + span, run["length"]))
-                if piece.stop - piece.start > self.depth + 1:
-                    yield streams[piece], tokens[piece], run["start"] + at
+        """Each run cut into consecutive windows (evaluation), the boots taken in turn -- one window from each before a
+        second from any -> (streams, tokens, start, boot). A limit on the windows then samples every data set the runs
+        hold, not the first one's (the 2026-09-19 third training's 64 windows were all the prefilled text's)."""
+        span = self.window + self.depth
+
+        def windows(boot):
+            for run in self.runs:
+                if run["boot"] != boot:
+                    continue
+                streams, tokens = self._load(run)
+                for at in range(0, max(1, run["length"] - self.depth), self.window):
+                    piece = slice(at, min(at + span, run["length"]))
+                    if piece.stop - piece.start > self.depth + 1:
+                        yield streams[piece], tokens[piece], run["start"] + at, boot
+
+        going = [windows(boot) for boot in self.boots()]
+        while going:
+            for source in list(going):
+                got = next(source, None)
+                if got is None:
+                    going.remove(source)
+                else:
+                    yield got
 
 
 # -- the checkpoint --------------------------------------------------------------------------------------------------
@@ -514,11 +533,15 @@ def average_gradients(params, world: int) -> None:
 def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0, rank: int = 0, world: int = 1, sampler=None,
              candidates: int = 20) -> dict:
     """The held-out windows' metrics, position-weighted -- window n on rank n % world, the sums gathered, so every
-    rank holds the same answer."""
+    rank holds the same answer -- and `by_boot`, each data set's tokens/step alone: a head that gains on the newest set
+    while it loses on the others is fitting the one it was fed, not the target (the operator, 2026-09-19: "무조건
+    서빙환경으로만 학습하면 일반 상황에서 과적합될수 있어서")."""
     sums, weight = {}, 0
+    boots = runs.boots()
+    per = [0.0] * (2 * len(boots))                                # tokens/step x positions, then positions, a boot
     device = next(iter(model.frozen.values())).device
     with torch.no_grad():
-        for n, (streams, tokens, start) in enumerate(runs.every_window()):
+        for n, (streams, tokens, start, boot) in enumerate(runs.every_window()):
             if limit and n >= limit:
                 break
             if n % world != rank:
@@ -529,11 +552,17 @@ def evaluate(model: Head, runs: Runs, *, depth: int, limit: int = 0, rank: int =
             weight += rows
             for key, value in metrics.items():
                 sums[key] = sums.get(key, 0.0) + value * rows
+            b = boots.index(boot)
+            per[b] += metrics["tokens_a_step"] * rows
+            per[len(boots) + b] += rows
     keys = sorted(set(sums) | {f"{m}_{d}" for m in ("loss", "agree", "chain", "text_chain") for d in range(1, depth + 1)}
                   | {"tokens_a_step"})
-    total = all_sum([sums.get(k, 0.0) for k in keys] + [float(weight)], world, device)
+    total = all_sum([sums.get(k, 0.0) for k in keys] + per + [float(weight)], world, device)
     weight = total[-1]
-    return {key: round(value / max(weight, 1), 5) for key, value in zip(keys, total)} | {"positions": int(weight)}
+    out = {key: round(value / max(weight, 1), 5) for key, value in zip(keys, total)}
+    per = total[len(keys):len(keys) + len(per)]
+    by_boot = {boot: round(per[b] / per[len(boots) + b], 5) for b, boot in enumerate(boots) if per[len(boots) + b]}
+    return out | {"positions": int(weight), "by_boot": by_boot}
 
 
 def learning_rate(step: int, *, total: int, peak: float, warmup: int) -> float:
