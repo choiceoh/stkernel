@@ -66,7 +66,7 @@ class LaneTests(unittest.TestCase):
         self.assertEqual({shape for label, (shape, _) in SHAPES.items() if label.startswith("mtp ")}, set(MTP_GEMV))
         source = (ROOT / "probes/engine_kernel_check.py").read_text(encoding="utf-8")
         self.assertIn("if args.lanes == 'qwen38_step_mtp_gemv':", source)
-        self.assertIn("arms=GEMV_ARMS)", source)
+        self.assertIn("for arms in (GEMV_ARMS, GEMV_ARMS[::-1], GEMV_ARMS)]", source)   # both orders, alternating
 
     def test_the_ab_lane_is_the_first_arm_less_the_second(self):
         from probes.engine_qwen38_step import ARMS, difference
