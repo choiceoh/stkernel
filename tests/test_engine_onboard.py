@@ -371,7 +371,8 @@ AGREEMENT = (
       "linear.decay": "head",                        # GatedDeltaNet: one decay a head
       "attention.sink": False,                       # "QSA does not support ALiBi or attention sinks"
       "hc_variant": "gated_residual"},               # Qwen4ExpTextGatedResidual
-     {}),
+     {"spec_k": "the served draft count is the operator's (facts.SPEC_K 3: the one MTP layer chained, the 09-18 "
+                "fleet pair); this config declares one MTP layer and the door reads one token a step"}),
     ("dsv41", dsv41_config, "ep", dsv41_shape,
      {"moe.quant": "mxfp4-a8",                       # FP4 e2m1 in groups of 32 with E8M0 scales, FP8 activations
       "moe.activation": "silu",

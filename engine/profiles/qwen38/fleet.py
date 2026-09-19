@@ -475,13 +475,17 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-drafter", action="store_true", help="serve without the MTP head")
     ap.add_argument("--hc-fp8", action="store_true",
-                    help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them; the mixer's numbers change, so a quality bracket judges it)")
+                    help="the hyper-connection mixers on block-scaled FP8 (half the bytes a step reads from them). Off "
+                         "by default because it changes the mixer's NUMBERS and no quality bracket has judged it (D4) -- "
+                         "the one lever here that moves the output")
     ap.add_argument("--mtp-precision", choices=("bf16", "fp8", "w4"), default="bf16",
                     help="the MTP head's dense projections: the checkpoint's BF16 (default), block-scaled FP8, or the "
                          "target layers' W4A8 at decode rows (before 2026-09-19); acceptance moves, output does not")
     ap.add_argument("--draft-index", default=None, metavar="CLUSTERS/PROBES",
                     help="the drafter's argmax from an inverted-file index over the head's rows (e.g. 1024/32): a few MB "
-                         "a draft instead of the head's 159; unset, the whole head. Acceptance moves, output does not")
+                         "a draft instead of the head's 159; unset, the whole head. Acceptance moves, output does not. "
+                         "Off by default: its acceptance is unmeasured (PR #1226/#1232) and the drafter is where this "
+                         "engine spends precision rather than bytes (the operator's rule, PR #1235)")
     ap.add_argument("--mtp-experts", choices=("bf16", "fp8", "nvfp4"), default="bf16",
                     help="the MTP head's routed experts: the checkpoint's original BF16 (default; the operator's rule of "
                          "2026-09-19) or the export's FP8 from side files (engine/profiles/qwen38/mtp_side.py), or the "
@@ -494,7 +498,8 @@ def main(argv=None) -> int:
     ap.add_argument("--draft-threshold", default=None, metavar="P",
                     help="a row's drafts end before the first pick the MTP head gives less than P (LibraSpec's rule): "
                          "the verify step is as wide as what is proposed -- steps of up to --narrow-rows rows replay "
-                         "narrower graphs, captured at boot. Unset, every draft is verified")
+                         "narrower graphs, captured at boot. Unset, every draft is verified. Off by default: no window "
+                         "has measured a P, and the ledger carries no draft-threshold entry to take one from")
     ap.add_argument("--narrow-rows", type=int, default=2,
                     help="with --draft-threshold: the row counts whose narrower verify widths are captured (1..N)")
     ap.add_argument("--mtp-tuned", default=None, metavar="DIR",
@@ -511,7 +516,8 @@ def main(argv=None) -> int:
     ap.add_argument("--mtp-window", default=None, metavar="SINK,RECENT",
                     help="the MTP head attends its first SINK and last RECENT groups (4 positions each) instead of its "
                          "scored selection -- Windowed-MTP: no index scoring in the draft; acceptance moves, output does "
-                         "not. SINK + RECENT <= 512 (e.g. 1,511)")
+                         "not. SINK + RECENT <= 512 (e.g. 1,511). Off by default: the ledger carries no entry for it, so "
+                         "its acceptance is unmeasured -- the same trade as --draft-index")
     ap.add_argument("--no-oneshot", action="store_true",
                     help="every collective on NCCL: the one-shot RDMA transport is not bound (its hidden-2560 cell is unmeasured; "
                          "the first fleet boot, 2026-09-18, stalled in it at every sum)")
@@ -524,8 +530,9 @@ def main(argv=None) -> int:
                          "qwen38_shared_overlap_20260919), 'all' (every captured step: C=4 +6%%), 'off' (the rollback)")
     ap.add_argument("--dump-dir", default=DUMP_DIR, help="where every rank writes boot-rank{r}.json and memory-rank{r}.json")
     ap.add_argument("--spec-k", type=int, default=None,
-                    help="drafts a step from the MTP head (the checkpoint's 1): K > 1 chains the head K-1 times inside "
-                         "the draft replay and the verify step is K+1 tokens wide")
+                    help=f"drafts a step from the MTP head (this profile serves {facts.SPEC_K}; the checkpoint has one "
+                         "MTP layer and K > 1 chains it K-1 times inside the draft replay, the verify step K+1 tokens "
+                         "wide). --spec-k 1 is the rollback")
     a = ap.parse_args(argv)
     if (a.draft_threshold is not None or a.draft_ledger) and a.draft_index is not None:
         raise SystemExit("--draft-threshold and --draft-ledger read the head's whole row; --draft-index reads a few "

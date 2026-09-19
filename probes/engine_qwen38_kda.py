@@ -5,15 +5,15 @@ Qwen3.8 serves GatedDeltaNet -- one log-decay per head -- on the KDA kernels: a 
 kda/ring.recurrent_gdn_ring_rows, the ring kernel computing GDN's decay from the in_proj columns in its own launch
 (engine/profiles/qwen38/net._gdn_rows; HEAD_GATE, carry K1), the functional recurrent lane is
 fused_recurrent_kda(compute_gate=False) over linear_decay.per_channel (kda/kda.py, glue), and prefill is
-kda/chunk_decay.chunk_kda_with_decay (glue). A rank's cell is 4 key / 12 value heads x 128 x 128 with a two-cell state ring
-(SPEC_K=1): a C=1 step is one row of two tokens, C=2 two rows. Both recurrent launchers tile the value axis by BV and
+kda/chunk_decay.chunk_kda_with_decay (glue). A rank's cell is 4 key / 12 value heads x 128 x 128 with a state ring of
+SPEC_K + 1 cells (the profile's K, facts.SPEC_K = 3): a C=1 step is one row of K + 1 tokens, C=2 two rows. Both recurrent launchers tile the value axis by BV and
 pick 16 only at GLM-5.3's cell (16/16 x 128, T <= 6; kda/ring.py records that BV=16 at seven tokens changed rollback
 results in the GPU exact gate), min(next_power_of_2(V), 8) = 8 everywhere else. This cell has served BV=8 unmeasured:
 cells.KDA_MEASURED_CELLS names GLM-5.3's cell only.
 
 Arms -- each tile forced through the launchers' probe hooks (kda/ring._BV_OVERRIDE, kda/kda._BV_OVERRIDE):
-  ring        recurrent_gdn_ring_rows, rows 1/2/4 x tokens 1/2        BV 8 | 16 | 32
-  ring_eager  recurrent_gdn_ring, one row x tokens 1/2                BV 8 | 16 | 32, gated and not timed: net._gdn's
+  ring        recurrent_gdn_ring_rows, rows 1/2/4 x tokens 1..K+1    BV 8 | 16 | 32
+  ring_eager  recurrent_gdn_ring, one row x tokens 1..K+1            BV 8 | 16 | 32, gated and not timed: net._gdn's
               uncaptured decode (host slot and context, its own specialization) under the same rule in `_recurrent`
   recurrent   fused_recurrent_kda(compute_gate=False), tokens 1/2/4   BV 8 | 16 | 32
   prefill     chunk_kda_with_decay at 128/1024/8192 tokens            no tile: the record's prefill baseline
@@ -62,14 +62,15 @@ import torch
 
 # Qwen3.8-Flash-Next per rank at TP=4 (engine/profiles/qwen38/shapes.kernel_shape: 16 key and 48 value heads over four
 # ranks, 128 wide; facts.SPEC_K); tests/test_probe_qwen38_kda.py holds these to the derived kernel shape
-K_HEADS, V_HEADS, DIM, SPEC_K = 4, 12, 128, 1
+from engine.profiles.qwen38.facts import SPEC_K   # noqa: E402 -- the profile owns K, never this probe
+K_HEADS, V_HEADS, DIM = 4, 12, 128
 RING_CELLS = SPEC_K + 1                 # GDN states a slot keeps: one per verify position (net.rec_ring)
 GDN_LAYERS = 36                         # a step's GDN layers: 48 layers, a QSA layer closing every four
 MAX_ROWS = 4
 RULE_BV = 8                             # min(next_power_of_2(128), 8): not GLM-5.3's 16/16 cell, so no BV=16 branch
 BVS = (8, 16, 32)
-RING_CASES = tuple((rows, tokens) for rows in (1, 2, 4) for tokens in (1, 2))
-RING_EAGER_TOKENS = (1, 2)
+RING_CASES = tuple((rows, tokens) for rows in (1, 2, 4) for tokens in range(1, RING_CELLS + 1))
+RING_EAGER_TOKENS = tuple(range(1, RING_CELLS + 1))
 RECURRENT_TOKENS = (1, 2, 4)
 PREFILL_TOKENS = (128, 1024, 8192)
 RECURRENT_SETS = 3                      # input sets a recurrent gate runs: a carried state, a fresh zero one, a carried one
