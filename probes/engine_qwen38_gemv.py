@@ -481,5 +481,92 @@ def run_site_whole(output=None) -> dict:
     return report
 
 
+# down tiles measured both ways -- over the normalised streams, and over the streams normalised as each tile is read
+# (site's way) -- and the rounds: beside a serving production, only the minimum of many interleaved rounds is clean
+NORM_TRIES = ((64, 128, 64, 4, 3, 2), (128, 64, 64, 4, 3, 1), (128, 128, 64, 8, 3, 1), (128, 128, 32, 8, 3, 1),
+              (256, 64, 64, 8, 3, 1), (128, 64, 32, 4, 4, 1), (64, 128, 32, 4, 4, 2))
+NORM_ROUNDS = 21
+
+
+def run_site_norm_in(output=None) -> dict:
+    """mix_block's two launches with and without `norm` (the streams normalised inside the launch, gated_residual.site's
+    way, against the normalised streams read as written), `PREFILL_SITES` a graph, NORM_ROUNDS interleaved rounds: the
+    down fold at every tile of NORM_TRIES and the up fold at the table's, beside cuBLAS down + `_gates`. The two ways'
+    outputs held byte for byte at every tile."""
+    import torch
+    from engine.kernels import gated_residual as hcr
+    torch.manual_seed(0)
+    width, eps = HC * HIDDEN, 1e-6
+    down = torch.randn(RANK + HC, width, device="cuda", dtype=torch.bfloat16) * 0.02
+    up = torch.randn(width, RANK, device="cuda", dtype=torch.bfloat16) * 0.02
+    w = torch.randn(width, device="cuda", dtype=torch.bfloat16) * 0.1
+    report = {"device": torch.cuda.get_device_name(), "rounds": NORM_ROUNDS, "sites_a_graph": PREFILL_SITES, "rows": {}}
+    for m in COMPONENT_ROWS:
+        h = torch.randn(m, width, device="cuda", dtype=torch.bfloat16)
+        normed = hcr.norm_streams(h, w, eps, HC)
+        scale = hcr.stream_scales(h, None, None, eps, HC)
+        gates = torch.nn.functional.silu(torch.randn(m, RANK, device="cuda", dtype=torch.bfloat16))
+        keep = []
+
+        def graph_of(fn):
+            keep.append(fn())
+            torch.cuda.synchronize()
+            g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(g):
+                for _ in range(PREFILL_SITES):
+                    keep.append(fn())
+            return g
+
+        def cublas_down():
+            return hcr.mix_block(normed, down, up, HC, tiles={"down": None, "up": hcr.UP_BLOCK_TILE})
+
+        def fold_down(tile, norm):
+            def fn():
+                g = torch.empty(m, RANK, device="cuda", dtype=torch.bfloat16)
+                inj = torch.empty(m, HC, device="cuda", dtype=torch.bfloat16)
+                hcr.down_gates_block(h if norm else normed, down, g, inj, HC, inject=True, tile=tile,
+                                     norm=(scale, w) if norm else None)
+                return g, inj
+            return fn
+
+        def fold_up(norm):
+            def fn():
+                mixed = torch.empty(m, HIDDEN, device="cuda", dtype=torch.bfloat16)
+                hcr.up_mean_block(gates, up, h if norm else normed, mixed, HC, tile=hcr.UP_BLOCK_TILE,
+                                  norm=(scale, w) if norm else None)
+                return mixed
+            return fn
+
+        checks = {f"down {t}": all(torch.equal(a, b) for a, b in zip(fold_down(t, False)(), fold_down(t, True)()))
+                  for t in NORM_TRIES}
+        checks["up"] = bool(torch.equal(fold_up(False)(), fold_up(True)()))
+        arms = {"mixer: cublas down + gates, up fold": graph_of(cublas_down)}
+        for tile in NORM_TRIES:
+            arms[f"down {tile}"] = graph_of(fold_down(tile, False))
+            arms[f"down norm {tile}"] = graph_of(fold_down(tile, True))
+        arms["up"] = graph_of(fold_up(False))
+        arms["up norm"] = graph_of(fold_up(True))
+        times = {name: [] for name in arms}
+        for r in range(NORM_ROUNDS):
+            for name, g in (arms.items() if r % 2 == 0 else list(arms.items())[::-1]):
+                g.replay()
+                torch.cuda.synchronize()
+                began = time.perf_counter()
+                g.replay()
+                torch.cuda.synchronize()
+                times[name].append((time.perf_counter() - began) / PREFILL_SITES * 1e6)
+        del arms, keep
+        row = {name: {"median": round(statistics.median(v), 1), "min": round(min(v), 1)} for name, v in times.items()}
+        report["rows"][m] = {"us_a_site": row, "bytes_alike": checks}
+        print(json.dumps({f"norm_in rows {m}": {k: v["min"] for k, v in row.items()}, "bytes_alike": checks}),
+              flush=True)
+        del h, normed, scale, gates
+        torch.cuda.empty_cache()
+    if output:
+        Path(output).parent.mkdir(parents=True, exist_ok=True)
+        Path(output).write_text(json.dumps(report, indent=1) + "\n")
+    return report
+
+
 if __name__ == "__main__":
     run(sys.argv[1] if len(sys.argv) > 1 else None)

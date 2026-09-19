@@ -254,6 +254,12 @@ def main():
         from probes.engine_qwen38_gemv import run_site_components
         run_site_components(args.output)
         return
+    if args.lanes == 'qwen38_site_norm_in':
+        # mix_block's two launches over the normalised streams and over the streams normalised as read (site's way),
+        # the down fold at several tiles, many interleaved rounds -- the tiles the served table takes for site
+        from probes.engine_qwen38_gemv import run_site_norm_in
+        run_site_norm_in(args.output)
+        return
     if args.lanes == 'qwen38_site_whole':
         # a whole site at a prefill step's rows -- leave, norm, mixer -- as main served it, with the normalised streams
         # written for mix_block, and as gated_residual.site serves it (stream scales kept, the tiles normalised as read)
